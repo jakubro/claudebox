@@ -1,0 +1,127 @@
+/* Turn meta — duration, timestamp, collapse controls */
+
+.turn-meta {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.turn-duration {
+  /* Part of turn-meta now */
+}
+
+.turn-timestamp {
+  /* No special cursor or hover effects - simple text display */
+}
+
+.turn-meta-collapsible {
+  /* Extend clickable area with padding + negative margin */
+  padding: 8px 12px 8px 24px;
+  margin: -8px -12px -8px -24px;
+}
+
+.turn-meta-collapsible:hover:not(:has(.turn-copy-btn-wrapper:hover)) {
+  color: var(--text-primary);
+}
+
+/* When collapsed, hovering anywhere on bubble highlights meta */
+.turn-collapsed .turn:hover .turn-meta-collapsible {
+  color: var(--text-primary);
+}
+
+.turn-collapse-icon {
+  position: relative;
+  top: 0;
+  margin-right: 4px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.turn-meta-collapsible:hover .turn-collapse-icon {
+  color: inherit;
+}
+
+.turn-preview {
+  padding: 8px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.turn-preview:hover {
+  opacity: 0.8;
+}
+
+.turn-preview-text {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.turn-preview-status {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.turn-collapsed .turn-preview-status {
+  color: #4caf50;
+}
+
+.turn-error .turn-preview-status {
+  color: #f44336;
+}
+
+/* Turn-level bookmark button wrapper (isolates click/hover from collapse) */
+.turn-bookmark-btn-wrapper {
+  position: relative;
+  top: 0;
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+/* Shared reset for inline turn-meta action buttons */
+.turn-bookmark-btn,
+.turn-copy-btn {
+  position: static;
+  opacity: 1;
+  transition: none;
+  border-radius: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.turn-bookmark-btn:hover,
+.turn-copy-btn:hover {
+  color: var(--text-primary);
+}
+
+.turn-bookmark-btn.active {
+  color: #e8b931;
+}
+
+/* Turn-level copy button wrapper (isolates click/hover from collapse) */
+.turn-copy-btn-wrapper {
+  position: relative;
+  top: 0;
+  display: flex;
+  align-items: center;
+  margin-right: 4px; /* Half gap to chevron */
+}

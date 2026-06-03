@@ -1,0 +1,23 @@
+{
+  "sessions": [
+    {
+      "session_id": "test-session-001",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 5,
+      "total_cost_usd": 0.12,
+      "total_duration_ms": 15000,
+      "last_context_tokens": 5000,
+      "started_at": "2025-01-18T12:00:00Z",
+      "updated_at": "2025-01-18T13:00:00Z",
+      "first_message": "This is a very long first message that should definitely be truncated with an ellipsis when displayed in the sessions panel because it exceeds the maximum width",
+      "last_message": "And this is also a very long last message that should be truncated with ellipsis as well since it's way too long to display fully",
+      "session_dir": "/tmp/sessions/test-session-001",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null,
+      "container_id": "test-cid"
+    }
+  ]
+}

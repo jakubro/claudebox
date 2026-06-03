@@ -1,0 +1,98 @@
+{
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "useExhaustiveDependencies": "warn",
+        "noUnusedImports": "warn",
+        "noUnusedVariables": "warn"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "useBlockStatements": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noConsole": "off",
+        "noArrayIndexKey": "off",
+        "noAssignInExpressions": "off"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": {
+            "maxAllowedComplexity": 60
+          }
+        },
+        "useSimplifiedLogicExpression": "warn",
+        "noForEach": "warn"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "bracketSpacing": true
+  },
+  "javascript": {
+    "formatter": {
+      "semicolons": "asNeeded",
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "trailingCommas": "all",
+      "arrowParentheses": "asNeeded",
+      "bracketSameLine": true
+    }
+  },
+  "css": {
+    "formatter": {
+      "enabled": true,
+      "indentStyle": "space",
+      "indentWidth": 2,
+      "lineWidth": 100
+    },
+    "linter": {
+      "enabled": true
+    }
+  },
+  "files": {
+    "includes": [
+      "src/**",
+      "e2e/**",
+      "scripts/**",
+      "tests/**",
+      "!**/.venv",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/coverage",
+      "!**/playwright-report",
+      "!**/test-results"
+    ]
+  },
+  "overrides": [
+    {
+      "includes": ["src/claudebox_frontend/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noStaticElementInteractions": "off",
+            "useKeyWithClickEvents": "off",
+            "useButtonType": "warn",
+            "noAutofocus": "off",
+            "useSemanticElements": "warn"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+/* Overlay action button overrides — base styles provided by .copy-btn (copy-button.css) */
+
+.collapsible-copy-btn,
+.tool-copy-btn,
+.tool-expand-btn,
+.tool-download-btn {
+  background: var(--bg-secondary);
+  z-index: 1;
+}
+
+.collapsible-copy-btn:hover,
+.tool-copy-btn:hover,
+.tool-expand-btn:hover,
+.tool-download-btn:hover {
+  background: var(--bg-tertiary);
+}

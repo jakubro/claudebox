@@ -1,0 +1,27 @@
+{
+  "session_id": "test-session-001",
+  "name": null,
+  "workspace": "/home/user/my-project",
+  "model": "claude-sonnet-4-20250514",
+  "num_turns": 25,
+  "total_cost_usd": 1.47,
+  "total_duration_ms": 180000,
+  "last_context_tokens": 150000,
+  "started_at": "2025-01-18T09:00:00Z",
+  "updated_at": "2025-01-18T15:30:00Z",
+  "first_message": "Let's build a web app",
+  "last_message": "Deployment complete!",
+  "todos": [],
+  "commands": {
+    "custom": [
+      { "name": "help" },
+      { "name": "clear" },
+      { "name": "compact" },
+      { "name": "review" }
+    ],
+    "mcp": [],
+    "builtin": []
+  },
+  "session_dir": "/tmp/sessions/test-session-001",
+  "parent_session_id": null
+}

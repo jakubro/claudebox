@@ -1,0 +1,43 @@
+FROM ubuntu
+
+LABEL app=claudebox
+
+# Locale
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
+
+###########################################################
+# Installation
+###########################################################
+
+COPY fs/_install.sh /_install.sh
+
+# Install base system (system dependencies, mise runtime manager, and language runtimes)
+COPY fs/install_base.sh /install_base.sh
+RUN /_install.sh /install_base.sh && rm /install_base.sh
+
+# Install profile customizations (placeholder swapped with {profile}/hooks/image-build.sh)
+COPY fs/install_profile.sh /install_profile.sh
+RUN /_install.sh /install_profile.sh && rm /install_profile.sh
+
+# Install agents (allows selective updates using --update CLI flag without full rebuild)
+ARG CLAUDEBOX_FORCE_AGENT_UPDATE=0
+COPY fs/install_agent.sh /install_agent.sh
+COPY pyproject.toml /tmp/claudebox-install/
+RUN /_install.sh /install_agent.sh && rm /install_agent.sh
+
+RUN rm /_install.sh
+
+###########################################################
+# Runtime
+###########################################################
+
+# Configuration script for both interactive and non-interactive shells
+RUN touch /root/.bash_env \
+ && echo 'source /root/.bash_env' >>/root/.bashrc
+ENV BASH_ENV=/root/.bash_env
+
+# Overriden at runtime
+WORKDIR /workdir
+EXPOSE 8080
+ENTRYPOINT ["/entrypoint.sh"]

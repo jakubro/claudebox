@@ -1,0 +1,8 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Run a command","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"user","subtype":"text","is_human":false,"content":"<local-command-stdout>Hello from stdout\nLine 2</local-command-stdout>","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":false}
+{"type":"assistant","subtype":"text","content":"I see the output.","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_004","primary":false,"is_human":false,"ts":"2025-01-18T12:00:03Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"Another command","ts":"2025-01-18T12:00:10Z","turn_id":"turn_002","id":"evt_005","primary":true}
+{"type":"user","subtype":"text","is_human":false,"content":"<local-command-stderr>Error: something failed</local-command-stderr>","ts":"2025-01-18T12:00:11Z","id":"evt_006","primary":false}
+{"type":"assistant","subtype":"text","content":"I see the error.","ts":"2025-01-18T12:00:12Z","id":"evt_007","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","id":"evt_008","primary":false,"is_human":false,"ts":"2025-01-18T12:00:13Z"}

@@ -1,0 +1,21 @@
+#!/bin/bash
+# Configuration script for both interactive and non-interactive shells
+
+# Execute only once since this file is sourced from each new shell and we don't want to override
+# any changes made by the user:
+#
+# - Call ./first_script.sh
+#   - Source .bash_env
+#   - Make modifications to PATH
+#   - Call ./second_script.sh
+#      - Source .bash_env
+#      - Without this check, PATH would be modified again
+
+if [[ -z $__CLAUDEBOX_BASHENV_LOADED__ ]]; then
+  export __CLAUDEBOX_BASHENV_LOADED__=1
+
+  eval "$(mise activate bash)"
+  export PATH=~/.local/bin:~/.cargo/bin:$PATH
+
+  export PYTHONPATH=~/.claudebox/lib/src:${PYTHONPATH:-}
+fi

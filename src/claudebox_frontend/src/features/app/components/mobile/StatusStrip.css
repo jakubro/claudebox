@@ -1,0 +1,44 @@
+.status-strip {
+  display: flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.status-strip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.status-strip-dot.connected {
+  background: #4ade80;
+}
+
+.status-strip-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.status-strip-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.status-strip-pct {
+  font-size: 9px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 24px;
+  text-align: right;
+}

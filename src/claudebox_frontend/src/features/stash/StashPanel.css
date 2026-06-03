@@ -1,0 +1,82 @@
+/* Stash panel styles */
+
+/* Stash panel */
+.stash-panel {
+  height: 100%;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Empty state mirrors .todos-panel.todos-empty for visual parity across panels.
+   Loading state shares the same shape — only the copy and lifecycle differ. */
+.stash-panel.stash-empty,
+.stash-panel.stash-loading {
+  justify-content: center;
+  align-items: center;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+.stash-hint {
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.stash-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+}
+
+.stash-text {
+  flex: 1;
+  font-family: monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stash-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.stash-actions button,
+.stash-actions .copy-btn {
+  position: static;
+  height: 12px;
+  padding: 0;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 1;
+  transition: color 0.15s;
+}
+
+.stash-actions button:hover {
+  color: var(--text-primary);
+}
+
+.stash-footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}

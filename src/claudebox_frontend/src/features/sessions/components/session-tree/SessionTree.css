@@ -1,0 +1,109 @@
+/* Session tree node (wrapper for expand button + item) */
+.sessions-tree-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.sessions-tree-node .sessions-item {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Session tree gutter - fixed width for consistent alignment */
+.sessions-tree-gutter {
+  width: 16px;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: 8px;
+  align-self: stretch;
+  padding-bottom: 6px;
+}
+
+/* Vertical line (continues down to next sibling) */
+.sessions-tree-gutter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  transform: translateX(-50%);
+}
+
+/* Horizontal branch line (connects to session item) */
+.sessions-tree-gutter::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  width: 8px;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Root level: no tree lines */
+.sessions-tree-gutter-root::before,
+.sessions-tree-gutter-root::after {
+  display: none;
+}
+
+/* Last child: vertical line stops at junction */
+.sessions-tree-gutter-last::before {
+  bottom: calc(100% - 16px);
+}
+
+/* Pass-through gutter: vertical continuation line from an ancestor */
+.sessions-tree-gutter-passthrough {
+  width: 16px;
+  flex-shrink: 0;
+  position: relative;
+  align-self: stretch;
+  padding-bottom: 6px;
+}
+
+.sessions-tree-gutter-passthrough::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  transform: translateX(-50%);
+}
+
+/* Pass-through gutter: empty spacer (ancestor was last child, no line) */
+.sessions-tree-gutter-passthrough-empty {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+/* Expand/collapse button inside gutter */
+.sessions-expand-btn {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+}
+
+.sessions-expand-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Hide horizontal branch when expand button is present */
+.sessions-tree-gutter:has(.sessions-expand-btn)::after {
+  display: none;
+}

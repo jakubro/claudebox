@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Run the build in background","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Task","ts":"2025-01-18T12:00:01Z","tool_use_id":"task_bg_kill_001","tool_name":"Task","tool_input":{"description":"Build project","prompt":"Run npm build","subagent_type":"Bash","run_in_background":true},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Background task started","ts":"2025-01-18T12:00:02Z","tool_use_id":"task_bg_kill_001","tool_use_result":{"isAsync":true,"agentId":"agent_bg_kill_001","outputFile":"/tmp/bg_build.output","description":"Build project"},"id":"evt_003","primary":false,"is_human":false}
+{"type":"system","subtype":"task_notification","ts":"2025-01-18T12:00:10Z","message_data":{"task_id":"agent_bg_kill_001","status":"killed","summary":"Task was cancelled by user"},"id":"evt_004","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:11Z","id":"evt_005","primary":false,"is_human":false}

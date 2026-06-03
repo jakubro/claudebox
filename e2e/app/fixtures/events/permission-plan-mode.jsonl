@@ -1,0 +1,4 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Review the code changes","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"system","subtype":"permission_mode_changed","permission_mode":"plan","previous_permission_mode":"bypassPermissions","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"I'm now in plan mode. I'll present my analysis for your review before making any changes.","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":false,"is_human":false}

@@ -1,0 +1,8 @@
+{"type":"user","subtype":"message","is_human":true,"content":"Hello, help me with my project","id":"evt_001","primary":true,"ts":"2025-01-18T12:00:00Z"}
+{"type":"assistant","subtype":"text","content":"Sure, I'd be happy to help with your project.","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_003","primary":false,"is_human":false,"ts":"2025-01-18T12:00:02Z"}
+{"type":"system","subtype":"compact_boundary","id":"compact_1","content":"Session compacted due to context limit","ts":"2025-01-18T12:00:03Z","message_data":{"compact_metadata":{"trigger":"context_limit","pre_tokens":128000}},"primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":false,"content":"Previous conversation covered: project setup and initial discussion.","id":"evt_004","primary":true,"ts":"2025-01-18T12:00:04Z"}
+{"type":"user","subtype":"text","is_human":false,"content":"<system-reminder>\nAlways run tests before committing\n</system-reminder>","id":"evt_005","primary":true,"ts":"2025-01-18T12:00:05Z"}
+{"type":"assistant","subtype":"text","content":"Understood, continuing with your project. I'll make sure to run tests before committing.","ts":"2025-01-18T12:00:06Z","id":"evt_006","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","id":"evt_007","primary":false,"is_human":false,"ts":"2025-01-18T12:00:07Z"}

@@ -1,0 +1,84 @@
+/* Session header strip — chrome of the main panel slot, replacing the chat-group tab bar in-place. */
+
+.session-header-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--accent-tab-bg, var(--bg-primary));
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  position: relative;
+  z-index: 5;
+}
+
+.session-header-strip-left,
+.session-header-strip-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 100%;
+}
+
+.session-header-strip-spinner {
+  color: var(--text-muted);
+}
+
+.session-header-strip-name {
+  background: transparent;
+  border: none;
+  color: var(--header-icon-color);
+  cursor: pointer;
+  font-size: 13px;
+  height: var(--chrome-btn-h);
+  padding: var(--chrome-btn-pad-y) 8px;
+  margin: var(--chrome-btn-mar-y) 0;
+  line-height: var(--chrome-btn-line-height);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.session-header-strip-name-copied {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-primary);
+}
+
+.session-header-strip-name:hover {
+  background: var(--accent-hover, var(--bg-tertiary));
+}
+
+.session-header-strip-name-creating {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.session-header-strip-name-creating:hover {
+  background: transparent;
+}
+
+.session-header-strip-stop {
+  background: transparent;
+  border: none;
+  color: var(--header-icon-color);
+  cursor: pointer;
+  height: var(--chrome-btn-h);
+  padding: var(--chrome-btn-pad-y) var(--chrome-btn-pad-y);
+  margin: var(--chrome-btn-mar-y) 0;
+  line-height: var(--chrome-btn-line-height);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-header-strip-stop:hover {
+  background: var(--accent-hover, var(--bg-tertiary));
+  color: var(--text-primary);
+}

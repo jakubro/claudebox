@@ -1,0 +1,124 @@
+/* Status indicator — connection status dot, animations, elapsed timer */
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.status-dot.status-connected {
+  background: #4caf50;
+}
+
+.status-dot.status-connecting {
+  background: #ff9800;
+}
+
+.status-dot.status-error {
+  background: #f44336;
+}
+
+.footer-error {
+  color: #f44336;
+  margin-left: 0.3em;
+}
+
+.footer-status-text {
+  min-width: 65px;
+}
+
+.footer-status-text .dot {
+  opacity: 0;
+  animation: dot-fade 1.2s infinite;
+}
+
+.footer-status-text .dot-1 {
+  animation-delay: 0s;
+}
+.footer-status-text .dot-2 {
+  animation-delay: 0.2s;
+}
+.footer-status-text .dot-3 {
+  animation-delay: 0.4s;
+}
+
+@keyframes dot-fade {
+  0%,
+  20% {
+    opacity: 0;
+  }
+  40%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.status-dot.status-working {
+  animation: color-cycle 1.2s ease-in-out infinite;
+  box-shadow: 0 0 6px currentColor;
+}
+
+@keyframes color-cycle {
+  0%,
+  100% {
+    background: #3b82f6;
+  }
+  33% {
+    background: #8b5cf6;
+  }
+  66% {
+    background: #c026d3;
+  }
+}
+
+.status-dot.status-stopping {
+  background: #f59e0b;
+  animation: amber-glow 1.2s ease-in-out infinite;
+  box-shadow: 0 0 6px #f59e0b;
+}
+
+@keyframes amber-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px #f59e0b;
+  }
+  50% {
+    box-shadow: 0 0 10px #f59e0b;
+  }
+}
+
+.status-dot.status-stopped {
+  background: #f59e0b;
+}
+
+.status-silent {
+  opacity: 0.6;
+}
+
+.status-dot.status-silent {
+  animation: none;
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+.footer-elapsed {
+  color: var(--text-muted);
+  display: inline-block;
+  min-width: 9ch;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.footer-interrupt {
+  margin-right: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.footer-error-text {
+  color: #f44336;
+}

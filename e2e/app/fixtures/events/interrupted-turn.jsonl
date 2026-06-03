@@ -1,0 +1,8 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Tell me a long story about dragons","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Once upon a time, in a land far beyond the mountains, there lived a magnificent dragon named","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"system","subtype":"interrupt_sent","ts":"2025-01-18T12:00:02Z","turn_id":"turn_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":false,"content":"[Request interrupted by user]","ts":"2025-01-18T12:00:03Z","turn_id":"turn_001","id":"evt_004","primary":true}
+{"type":"result","subtype":"interrupted","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"What is 2 + 2?","ts":"2025-01-18T12:00:05Z","turn_id":"turn_002","id":"evt_006","primary":true}
+{"type":"assistant","subtype":"text","content":"2 + 2 equals 4.","ts":"2025-01-18T12:00:06Z","id":"evt_007","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","ts":"2025-01-18T12:00:07Z","id":"evt_008","primary":false,"is_human":false}

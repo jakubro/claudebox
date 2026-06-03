@@ -1,0 +1,59 @@
+/* Bottom-panel container — 1-or-2 slot strip above the footer. */
+
+.bottom-panel-container {
+  position: fixed;
+  bottom: 24px; /* match Footer height */
+  left: 0;
+  right: 0;
+  height: var(--logs-strip-h, 0);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  z-index: 99; /* footer sits above at 100 */
+}
+
+.bottom-panel-handle {
+  flex-shrink: 0;
+  height: 6px;
+  cursor: row-resize;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+.bottom-panel-handle:hover,
+.bottom-panel-handle:active {
+  background: var(--bg-hover);
+}
+
+.bottom-panel-slots {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+}
+
+.bottom-panel-slot {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.bottom-panel-slot-full {
+  flex: 1;
+}
+
+.bottom-panel-slot-split {
+  flex: 1 1 50%;
+}
+
+.bottom-panel-slot-left.bottom-panel-slot-split {
+  border-right: 1px solid var(--border);
+}
+
+/* The inner panel takes the remaining height inside its slot. */
+.bottom-panel-slot > * {
+  flex: 1;
+  min-height: 0;
+}

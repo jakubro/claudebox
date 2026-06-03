@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Find console.log","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Grep","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Grep","tool_input":{"pattern":"console\\.log","path":"/home/user/project","output_mode":"content"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"/home/user/project/app.js:5:  console.log('hello')\n/home/user/project/app.js:12:  console.log('world')\n/home/user/project/test.js:8:  console.log('test')","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Found 3 matches.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

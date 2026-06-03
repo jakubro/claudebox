@@ -1,0 +1,48 @@
+{
+  "tree": [
+    {
+      "id": "/workspace/src",
+      "name": "src",
+      "type": "directory",
+      "children": [
+        {
+          "id": "/workspace/src/index.js",
+          "name": "index.js",
+          "type": "file",
+          "children": []
+        },
+        {
+          "id": "/workspace/src/App.jsx",
+          "name": "App.jsx",
+          "type": "file",
+          "children": []
+        },
+        {
+          "id": "/workspace/src/components",
+          "name": "components",
+          "type": "directory",
+          "children": [
+            {
+              "id": "/workspace/src/components/Header.jsx",
+              "name": "Header.jsx",
+              "type": "file",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "/workspace/package.json",
+      "name": "package.json",
+      "type": "file",
+      "children": []
+    },
+    {
+      "id": "/workspace/README.md",
+      "name": "README.md",
+      "type": "file",
+      "children": []
+    }
+  ]
+}

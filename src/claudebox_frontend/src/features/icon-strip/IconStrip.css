@@ -1,0 +1,30 @@
+/* Icon strip — sidebar button strip and section layout */
+
+.icon-strip {
+  display: flex;
+  flex-direction: column;
+  width: 32px;
+  background: var(--bg-secondary);
+}
+
+.icon-strip-left {
+  border-right: 1px solid var(--border);
+}
+
+.icon-strip-right {
+  border-left: 1px solid var(--border);
+}
+
+/* Icon strip sections */
+.icon-strip-top {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.icon-strip-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

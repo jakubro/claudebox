@@ -1,0 +1,25 @@
+{
+  "workspace": {
+    "tree": [],
+    "path": "/workspace"
+  },
+  "tmp": {
+    "tree": [],
+    "path": "/tmp"
+  },
+  "home_claudebox": {
+    "tree": [],
+    "path": "/home/user/.claudebox"
+  },
+  "home_claude": {
+    "tree": [
+      {
+        "id": "/home/user/.claude/settings.json",
+        "name": "settings.json",
+        "type": "file",
+        "children": []
+      }
+    ],
+    "path": "/home/user/.claude"
+  }
+}

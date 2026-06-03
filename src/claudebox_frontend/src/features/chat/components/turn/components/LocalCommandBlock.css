@@ -1,0 +1,55 @@
+/* Local command output blocks */
+.local-command-block {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.local-command-stdout {
+  background: var(--bg-tertiary);
+}
+
+.local-command-stderr {
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.local-command-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.local-command-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.local-command-stderr .local-command-header {
+  color: #f44336;
+}
+
+.local-command-label {
+  font-family: monospace;
+}
+
+.local-command-content {
+  margin: 0;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+}
+
+.local-command-stderr .local-command-content {
+  color: #f44336;
+}

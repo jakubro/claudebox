@@ -1,0 +1,75 @@
+/* Skills panel */
+
+.skills-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+/* Empty state mirrors .todos-panel.todos-empty for visual parity across panels.
+   Loading state shares the same shape — only the copy and lifecycle differ. */
+.skills-panel.skills-empty,
+.skills-panel.skills-loading {
+  justify-content: center;
+  align-items: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.skills-tabs {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.skills-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+/* Empty state mirrors `.todos-panel.todos-empty` for visual parity across panels. */
+.skills-list-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.skills-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.skills-item-usage {
+  font-family: monospace;
+}
+
+.skills-item-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skills-icon {
+  font-size: 8px;
+  margin-right: 6px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}

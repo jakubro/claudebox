@@ -1,0 +1,2 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Continue our conversation","id":"evt_001","primary":true,"ts":"2025-01-18T12:00:00Z"}
+{"type":"system","subtype":"compact_start","id":"compact_1","content":"Compacting conversation","ts":"2025-01-18T12:00:01Z","message_data":{"compact_metadata":{"trigger":"context_limit","pre_tokens":95000}},"primary":false,"is_human":false}

@@ -1,0 +1,68 @@
+/* Chat-specific control bar overrides — shared chrome lives in PanelControlBar.css */
+
+/* Pin button vertical alignment nudge (different icon shape) */
+.panel-control-btn[data-control="pin"] > svg {
+  transform: translateY(0.5px);
+}
+
+/* Pin button active (pinned) state — match sessions panel orange */
+.panel-control-btn[data-control="pin"].pressed {
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.panel-control-btn[data-control="pin"].pressed:hover {
+  color: #fb923c;
+}
+
+/* Edit mode for rename */
+.chat-control-edit-mode {
+  flex: 1;
+  max-width: 250px;
+}
+
+.chat-control-edit-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.chat-control-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.chat-control-edit-input::placeholder {
+  color: var(--text-muted);
+}
+
+.chat-control-edit-save:hover {
+  color: var(--success);
+}
+
+.chat-control-edit-cancel:hover {
+  color: var(--error);
+}
+
+/* Fork split-button */
+.chat-control-fork-split {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.chat-control-fork-chevron {
+  padding: 1px 2px;
+}
+
+.chat-control-fork-dropdown {
+  left: 0;
+  right: auto;
+  z-index: 200;
+}

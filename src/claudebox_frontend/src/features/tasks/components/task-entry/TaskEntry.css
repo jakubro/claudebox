@@ -1,0 +1,48 @@
+.task-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: all 0.15s;
+}
+
+.task-entry:hover {
+  background: var(--bg-tertiary);
+}
+
+.task-entry.task-running {
+  border-left-color: #3b82f6;
+}
+
+.task-entry.task-completed {
+  border-left-color: #4caf50;
+}
+
+.task-entry.task-failed {
+  border-left-color: #f44336;
+}
+
+.task-description {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-duration {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+}

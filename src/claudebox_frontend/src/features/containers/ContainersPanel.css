@@ -1,0 +1,179 @@
+/* Containers panel — cross-workspace container list. */
+
+.containers-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+/* Shared grid context — column tracks declared here so every .containers-row
+   (subgrid) lines up against the same edges. grid-auto-rows: min-content mirrors
+   .board-board in BoardTab.css; required for scrollable grid containers so rows
+   size to content rather than stretching to fill the visible area. */
+.containers-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px;
+  display: grid;
+  grid-template-columns: 8px auto auto 1fr auto auto auto auto;
+  column-gap: 8px;
+  grid-auto-rows: min-content;
+}
+
+/* Loading / empty / error share the canonical centered-italic shape. */
+.containers-panel.containers-loading,
+.containers-panel.containers-empty,
+.containers-panel.containers-error {
+  justify-content: center;
+  align-items: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.containers-panel.containers-error {
+  text-align: center;
+  color: var(--error, #ef4444);
+}
+
+/* Row — subgrid participant in .containers-list so columns align across all
+   rows regardless of per-cell content width. Baseline alignment so text columns
+   share a baseline with the action buttons. Card pattern shared with
+   .skills-item and .task-entry. */
+.containers-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.containers-row > * {
+  line-height: 28px;
+}
+
+.containers-row:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Current-container row — accent left border + tertiary bg, mirroring
+   .sessions-item-current. */
+.containers-row-current {
+  border-left-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.containers-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.containers-id {
+  color: var(--text-primary);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 11px;
+}
+
+.containers-session-id {
+  color: var(--text-secondary);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 11px;
+}
+
+/* Click-to-copy id cells (container id + session id) — relative positioning so
+   the "Copied!" overlay can absolute-position into the same slot, mirroring
+   `.sessions-id-clickable` / `.sessions-id-copied` in SessionItem.css. */
+.containers-id-clickable,
+.containers-session-id-clickable {
+  position: relative;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.containers-id-clickable:hover,
+.containers-session-id-clickable:hover {
+  color: var(--text-primary);
+}
+
+.containers-id-copied,
+.containers-session-id-copied {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  color: var(--success);
+}
+
+.containers-state {
+  color: var(--text-muted);
+}
+
+.containers-state-running {
+  color: #22c55e;
+}
+.containers-state-starting {
+  color: #3b82f6;
+}
+.containers-state-stopping {
+  color: #f59e0b;
+}
+.containers-state-crashed {
+  color: #ef4444;
+}
+
+.containers-kind {
+  color: var(--text-muted);
+}
+
+.containers-age {
+  color: var(--text-muted);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+}
+
+.containers-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  /* Nudge the action cluster 1px down so the icon buttons sit on the row's
+     text baseline. Paired with the matching translateY on .containers-action-btn
+     below — composite nudge keeps the cluster's wrapping (e.g. ResumeControl)
+     aligned with the per-button glyphs. */
+  transform: translateY(1px);
+}
+
+/* Scope ResumeControl to the panel: its base rule (in SessionItem.css) uses
+   align-items: center, but in the containers grid we want baseline alignment
+   so the Play icon vertically aligns with the row's text baseline. */
+.containers-actions .sessions-resume-split {
+  align-items: baseline;
+}
+
+.containers-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* Nudge the button itself 1px down to align with the row's text baseline —
+     paired with the matching translateY on .containers-actions. */
+  transform: translateY(1px);
+}
+
+.containers-action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}

@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Check the background task","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"TaskOutput","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"TaskOutput","tool_input":{"task_id":"bg_task_fail_001"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"<retrieval_status>success</retrieval_status>\n<task_id>bg_task_fail_001</task_id>\n<task_type>background_shell</task_type>\n<status>failed</status>\n<output>Error: Build failed with exit code 1\nnpm ERR! Test failed</output>","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The background task failed.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

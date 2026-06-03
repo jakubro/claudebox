@@ -1,0 +1,42 @@
+{
+  "sessions": [
+    {
+      "session_id": "s-foo-1",
+      "name": "Fixing the bug",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 0,
+      "total_cost_usd": 0,
+      "total_duration_ms": 0,
+      "last_context_tokens": 0,
+      "started_at": "2025-05-15T08:00:00Z",
+      "updated_at": "2025-05-15T08:00:00Z",
+      "first_message": null,
+      "last_message": null,
+      "session_dir": "/home/u/.claudebox/sessions/s-foo-1",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null,
+      "container_id": "c11111111111-aaaa"
+    },
+    {
+      "session_id": "s-bar-1",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 0,
+      "total_cost_usd": 0,
+      "total_duration_ms": 0,
+      "last_context_tokens": 0,
+      "started_at": "2025-05-15T07:00:00Z",
+      "updated_at": "2025-05-15T07:00:00Z",
+      "first_message": null,
+      "last_message": null,
+      "session_dir": "/home/u/.claudebox/sessions/s-bar-1",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null,
+      "container_id": "c22222222222-bbbb"
+    }
+  ]
+}

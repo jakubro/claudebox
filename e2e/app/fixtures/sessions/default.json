@@ -1,0 +1,23 @@
+{
+  "sessions": [
+    {
+      "session_id": "test-session-001",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 0,
+      "total_cost_usd": 0,
+      "total_duration_ms": 0,
+      "last_context_tokens": 0,
+      "started_at": "2025-01-18T12:00:00Z",
+      "updated_at": "2025-01-18T12:00:00Z",
+      "first_message": null,
+      "last_message": null,
+      "session_dir": "/tmp/sessions/test-session-001",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null,
+      "container_id": "test-cid"
+    }
+  ]
+}

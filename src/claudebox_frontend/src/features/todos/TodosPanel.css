@@ -1,0 +1,76 @@
+/* Todos panel styles */
+
+/* Todos panel */
+.todos-panel {
+  height: 100%;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+/* Canonical empty/loading shape — referenced by GUIDELINES.md §6 as the precedent
+   for every panel's `.{panel}-empty` / `.{panel}-loading` shape.
+   Loading state shares the same shape — only the copy and lifecycle differ. */
+.todos-panel.todos-empty,
+.todos-panel.todos-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.todo-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.todo-item:last-child {
+  border-bottom: none;
+}
+
+.todo-status {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.todo-content {
+  flex: 1;
+  word-break: break-word;
+}
+
+.todo-pending .todo-status {
+  color: var(--text-muted);
+}
+
+.todo-in_progress .todo-status {
+  color: #ff9800;
+}
+
+.todo-completed .todo-status {
+  color: #4caf50;
+}
+
+.todo-completed .todo-content {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Subagent section header */
+.todo-section-header {
+  padding: 8px 0 4px;
+  font-size: 0.8em;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-secondary) 50%, var(--border) 50%);
+}
+
+.todo-section-label {
+  display: block;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

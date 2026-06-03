@@ -1,0 +1,2 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Read file","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Read","tool_input":{"file_path":"/tmp/test.txt"},"id":"evt_002","primary":false,"is_human":false}

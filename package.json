@@ -1,0 +1,11 @@
+{
+  "name": "claudebox",
+  "private": true,
+  "type": "module",
+  "description": "Containerized isolation, customizable agent profiles, and a visual web UI — all for Claude Code.",
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
+    "jscpd": "^4.0.5",
+    "knip": "^5"
+  }
+}

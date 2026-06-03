@@ -1,0 +1,29 @@
+/* Panel list item — tab/filter button with active state */
+
+.panel-list-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  font-size: 11px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.panel-list-item:hover {
+  color: var(--text-secondary);
+}
+
+.panel-list-item.active {
+  border-bottom-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.panel-list-item-count {
+  font-size: 10px;
+  opacity: 0.7;
+}

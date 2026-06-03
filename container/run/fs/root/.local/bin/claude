@@ -1,0 +1,7 @@
+#!/bin/bash
+# Claude Code wrapper
+# - Masks vendor "claude" command
+# - Ensures the execution is routed through our claudebox-agent wrapper
+set -euo pipefail
+
+~/.local/bin/claudebox-agent claude "$@"

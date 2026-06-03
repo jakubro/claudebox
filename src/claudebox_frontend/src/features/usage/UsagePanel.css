@@ -1,0 +1,33 @@
+/* Usage panel styles */
+
+/* Usage panel */
+.usage-panel {
+  height: 100%;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.usage-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.usage-table tr:last-child td {
+  border-bottom: none;
+}
+
+.usage-label {
+  color: var(--text-secondary);
+}
+
+.usage-cost {
+  font-family: monospace;
+  text-align: right;
+}

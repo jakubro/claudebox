@@ -1,0 +1,48 @@
+/* Shared toolbar styles for preview containers (MermaidDiagram, MarkdownPreview).
+   Each component provides its own -container and -toolbar class names;
+   these rules target the common inner elements. */
+
+/* CopyButton override: join flex flow, inherit toolbar opacity */
+.preview-toolbar .copy-btn {
+  position: static;
+  opacity: 1;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: 3px;
+  color: var(--text-muted);
+}
+
+.preview-toolbar .copy-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.preview-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.preview-toolbar-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.preview-toolbar-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.preview-toolbar-btn.pressed {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+}

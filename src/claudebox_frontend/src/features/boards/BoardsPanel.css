@@ -1,0 +1,169 @@
+.boards-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.boards-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.boards-item {
+  display: flex;
+  align-items: center;
+  position: relative;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.boards-item:hover {
+  background: var(--bg-hover);
+}
+
+.boards-item-clickable {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  min-width: 0;
+}
+
+.boards-item-pencil {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  margin-right: 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.boards-item:hover .boards-item-pencil {
+  display: flex;
+}
+
+.boards-item-pencil:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.boards-item-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.boards-item-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boards-item-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  width: 100%;
+}
+
+.boards-item-edit {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text-primary);
+  padding: 3px 4px;
+  outline: none;
+  min-width: 0;
+}
+
+.boards-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.boards-edit-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Loading / error states share the canonical .todos-empty shape. */
+.boards-panel.boards-loading,
+.boards-panel.boards-error {
+  justify-content: center;
+  align-items: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.boards-panel.boards-error {
+  text-align: center;
+  color: var(--error);
+}
+
+/* Empty state — placeholder line + meta-refresh below, no centered flex. */
+.boards-empty-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* Refresh meta-item — appended after the boards list, visually distinct. */
+.boards-meta-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-top: 4px;
+  border: 1px dashed var(--border-primary);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.boards-meta-refresh:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}

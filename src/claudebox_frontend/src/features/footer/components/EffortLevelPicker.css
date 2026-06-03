@@ -1,0 +1,5 @@
+/* Effort level picker styles — extends .footer-picker base */
+
+.footer-effort-dropdown {
+  min-width: 140px;
+}

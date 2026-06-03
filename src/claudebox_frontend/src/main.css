@@ -1,0 +1,36 @@
+/**
+ * Cascade orchestrator — deterministic import order for all styles.
+ *
+ * App foundation first, then shared, then features in stable order.
+ * Each feature's index.css is the public entry point to its private styles/.
+ * 🚫 Never import feature CSS directly from components.
+ */
+
+/* Vendor CSS */
+@import "katex/dist/katex.min.css";
+
+/* App foundation — variables, resets, layout, theme */
+@import "./features/app/index.css";
+
+/* Shared components */
+@import "./components/index.css";
+
+/* Features — chat */
+@import "./features/chat/index.css";
+
+/* Features — panels */
+@import "./features/boards/index.css";
+@import "./features/containers/index.css";
+@import "./features/footer/index.css";
+@import "./features/sessions/index.css";
+@import "./features/todos/index.css";
+@import "./features/stash/index.css";
+@import "./features/mcp/index.css";
+@import "./features/bookmarks/index.css";
+@import "./features/help/index.css";
+@import "./features/usage/index.css";
+@import "./features/tasks/index.css";
+@import "./features/icon-strip/index.css";
+@import "./features/layout/index.css";
+@import "./features/logs/index.css";
+@import "./features/skills/index.css";

@@ -1,0 +1,79 @@
+/* CollapsibleSection component styles */
+
+/* Collapsible section */
+.collapsible-section {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: monospace;
+  text-align: left;
+}
+
+.collapsible-header:hover {
+  color: var(--text-secondary);
+}
+
+.collapsible-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #a8a8a8;
+}
+
+.collapsible-preview {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  margin-left: 16px;
+}
+
+.collapsible-content {
+  position: relative;
+  margin-top: 4px;
+  margin-left: 16px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.collapsible-content.turn-text:last-child {
+  margin-bottom: 8px;
+}
+
+/* Copy button for collapsible content */
+.collapsible-copy-btn {
+  top: 6px;
+  right: 6px;
+}
+
+.collapsible-content:hover .collapsible-copy-btn {
+  opacity: 1;
+}
+
+/* Force sans-serif for expanded content with turn-text */
+.collapsible-content,
+.collapsible-content p {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Task activity section — nested blocks have own styling, strip content box */
+.task-activity .collapsible-content {
+  background: transparent;
+  padding: 0;
+  margin-left: 0;
+}

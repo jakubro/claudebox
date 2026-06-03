@@ -1,0 +1,34 @@
+/* Icon tab — shared tab base for icon-based and session tabs */
+
+.icon-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 100%;
+}
+
+.icon-tab.icon-tab-closeable {
+  padding: 0 6px 0 12px;
+}
+
+.icon-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  margin-left: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.icon-tab-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}

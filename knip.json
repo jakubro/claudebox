@@ -1,0 +1,30 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.js"],
+      "project": ["scripts/*.js"],
+      "ignoreDependencies": ["@biomejs/biome", "jscpd"]
+    },
+    "src/claudebox_frontend": {
+      "project": [
+        "src/**/*.{js,jsx}",
+        "!src/**/*.test.{js,jsx}"
+      ],
+      "ignoreDependencies": [
+        "@testing-library/*",
+        "@vitest/*",
+        "jsdom",
+        "katex",
+        "vitest"
+      ],
+      "vitest": false
+    },
+    "e2e/app": {
+      "entry": ["tests/**/*.spec.{js,jsx}"],
+      "project": ["**/*.{js,jsx}"],
+      "ignoreDependencies": ["serve"]
+    }
+  }
+}

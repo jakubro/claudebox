@@ -1,0 +1,22 @@
+{
+  "session_id": "test-session-001",
+  "name": null,
+  "workspace": "/home/user/project",
+  "model": "claude-sonnet-4-20250514",
+  "num_turns": 10,
+  "total_cost_usd": 0.25,
+  "total_duration_ms": 15000,
+  "last_context_tokens": 50000,
+  "started_at": "2025-01-18T12:00:00Z",
+  "updated_at": "2025-01-18T13:00:00Z",
+  "first_message": "Help me with the project",
+  "last_message": "Working on implementation...",
+  "todos": [],
+  "commands": {
+    "custom": [{ "name": "help" }, { "name": "clear" }, { "name": "compact" }],
+    "mcp": [],
+    "builtin": []
+  },
+  "session_dir": "/tmp/sessions/test-session-001",
+  "parent_session_id": null
+}

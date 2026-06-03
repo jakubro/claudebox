@@ -1,0 +1,139 @@
+/* Unified code block — table layout with sticky gutter */
+
+/* Container: table that extends into parent padding on all sides */
+.code-block {
+  display: table;
+  width: calc(100% + 16px); /* Fill parent padding box (compensates for -8px margin) */
+  margin: -8px; /* Extend into .tool-details 8px padding */
+  border-spacing: 0;
+}
+
+/* Row */
+.code-block-row {
+  display: table-row;
+}
+
+/* All cells */
+.code-block-cell {
+  display: table-cell;
+  vertical-align: top;
+}
+
+/* Gutter cell — single sticky cell containing file + linenum spans */
+.code-block-gutter {
+  position: sticky;
+  left: -8px; /* Stick at parent edge (compensates for container -8px margin) */
+  user-select: none;
+  white-space: nowrap;
+  z-index: 1;
+  background: #252526; /* Opaque — matches --bg-tertiary */
+  padding-left: 8px; /* Brings content flush with parent edge */
+  padding-right: 12px; /* Gap between gutter and content */
+}
+
+/* File span inside gutter — uses CSS variable for consistent width */
+.code-block-file {
+  display: inline-block;
+  vertical-align: top; /* Prevent baseline shift from overflow:hidden */
+  width: var(--file-col-width, 0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #42a5f5;
+  margin-right: 8px;
+}
+
+/* Clickable file — hover effect */
+.code-block-file:not(:empty) {
+  cursor: pointer;
+}
+
+.code-block-file:not(:empty):hover {
+  text-decoration: underline;
+  color: #64b5f6;
+}
+
+/* Line number span inside gutter — uses CSS variable for consistent width */
+.code-block-linenum {
+  display: inline-block;
+  vertical-align: top; /* Match file span alignment */
+  min-width: var(--linenum-col-width, 4ch);
+  text-align: right;
+  color: var(--text-muted);
+}
+
+/* Content column */
+.code-block-content {
+  white-space: pre;
+  padding-left: 8px; /* Gap from gutter */
+  width: 100%; /* Fill remaining table width so row highlights extend to edge */
+}
+
+.code-block-content:empty::after {
+  content: "\200B"; /* Zero-width space — ensures row height for empty cells (blank lines in diffs) */
+}
+
+/* No gutter — content gets its own left padding */
+.code-block-content.code-block-no-gutter {
+  padding-left: 8px;
+}
+
+/* First/last row — compensate for negative container margin */
+.code-block-row:first-child .code-block-cell {
+  padding-top: 8px;
+}
+
+.code-block-row:last-child .code-block-cell {
+  padding-bottom: 8px;
+}
+
+/* --- Row type: match (grep match line) --- */
+.code-block-type-match {
+  background: rgba(255, 235, 59, 0.15);
+}
+
+.code-block-type-match .code-block-gutter {
+  background: #3d3820; /* Yellow-tinted dark to blend with highlight */
+  box-shadow: inset 2px 0 0 rgba(255, 235, 59, 0.6);
+}
+
+/* --- Row type: context (grep context line, dimmed) --- */
+.code-block-type-context {
+  opacity: 0.6;
+}
+
+/* --- Row type: separator (grep -- divider) --- */
+.code-block-separator .code-block-cell {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.code-block-separator .code-block-gutter {
+  background: #1e1e1e; /* Opaque dark — must be solid for sticky to cover content */
+}
+
+.code-block-separator .code-block-linenum {
+  color: var(--text-muted);
+}
+
+/* --- Row type: diff-add --- */
+.code-block-type-diff-add {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+/* --- Row type: diff-remove --- */
+.code-block-type-diff-remove {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+/* --- Row type: diff-context (unchanged line in diff) --- */
+.code-block-type-diff-context {
+  /* Inherits default styling */
+}
+
+/* --- Row type: normal (Read/Write lines) --- */
+.code-block-type-normal {
+  /* Inherits default styling */
+}

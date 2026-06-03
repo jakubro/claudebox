@@ -1,0 +1,57 @@
+{
+  "workspace": {
+    "tree": [
+      {
+        "id": "/workspace/.claude",
+        "name": ".claude",
+        "type": "directory",
+        "children": [
+          {
+            "id": "/workspace/.claude/settings.json",
+            "name": "settings.json",
+            "type": "file",
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "/workspace/.claudebox",
+        "name": ".claudebox",
+        "type": "directory",
+        "children": [
+          {
+            "id": "/workspace/.claudebox/config.json",
+            "name": "config.json",
+            "type": "file",
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "/workspace/AGENTS.md",
+        "name": "AGENTS.md",
+        "type": "file",
+        "children": []
+      },
+      {
+        "id": "/workspace/.mcp.json",
+        "name": ".mcp.json",
+        "type": "file",
+        "children": []
+      }
+    ],
+    "path": "/workspace"
+  },
+  "tmp": {
+    "tree": [],
+    "path": "/tmp"
+  },
+  "home_claudebox": {
+    "tree": [],
+    "path": "/home/user/.claudebox"
+  },
+  "home_claude": {
+    "tree": [],
+    "path": "/home/user/.claude"
+  }
+}

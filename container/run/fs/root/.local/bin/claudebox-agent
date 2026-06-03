@@ -1,0 +1,194 @@
+#!/bin/bash
+# AI Agent wrapper
+# - Dynamically launches the desired AI agent implementation
+# - Ensures our Claudebox customizations apply consistently to all implementations
+set -euo pipefail
+
+# --------------------------------------------------------------------------------------------------
+# Agents
+# --------------------------------------------------------------------------------------------------
+
+# Executes Claude Code agent
+execute-claude() {
+  local args=()
+
+  # Check noninteractive mode (forces TUI, overrides web mode)
+  if item-in-array "mcp" "$@" || item-in-array "plugin" "$@" || item-in-array "setup-token" "$@" \
+    || item-in-array "doctor" "$@" || item-in-array "update" "$@" || item-in-array "install" "$@" \
+    || item-in-array "-p" "$@" || item-in-array "--print" "$@"; then
+    export __CLAUDEBOX_AGENT_NONINTERACTIVE__=1
+  fi
+
+  # Custom system prompt
+  if ! item-in-array "--system-prompt" "$@"; then
+    local prompt
+    prompt="$(get-agent-prompt)"
+
+    if [[ -n $prompt ]]; then
+      args+=(--system-prompt "$prompt")
+    fi
+  fi
+
+  # YOLO mode
+  # bashsupport disable=BP2001
+  export IS_SANDBOX=1
+  args+=(--permission-mode bypassPermissions)
+
+  # Build command
+  local agent
+
+  if [[ ${CLAUDEBOX_WEB:-0} == 1 ]] && [[ ${__CLAUDEBOX_AGENT_NONINTERACTIVE__:-0} == 0 ]]; then
+    agent=~/.claudebox/lib/src/container_api_server.py
+
+    # Dev mode: sync dependencies before launch
+    if [[ ${CLAUDEBOX_DEV:-0} == 1 ]]; then
+      (
+        export UV_PROJECT_ENVIRONMENT=/opt/claudebox/.venv
+        uv sync --directory ~/.claudebox/lib
+      )
+    fi
+  else
+    agent=claude
+  fi
+
+  local agent_cmd
+  agent_cmd=$(get-agent-cmd "$agent")
+
+  local cmd=(
+    mise exec npm:@anthropic-ai/claude-code --
+      /bin/bash -c "$agent_cmd" --
+        "${args[@]}"
+        "$@"
+  )
+
+  # Verbose mode
+  if [[ ${CLAUDEBOX_VERBOSE:-0} == 1 ]]; then
+    string-replace "${cmd[*]}" "${prompt:-}" "[[prompt]]"
+  fi
+
+  # Launch Claude Code
+  "${cmd[@]}"
+}
+
+# --------------------------------------------------------------------------------------------------
+# Agent
+# --------------------------------------------------------------------------------------------------
+
+# Compiles prompt starting at entrypoint prompt file
+get-agent-prompt() {
+  local prompt_file=~/.claudebox/profile/prompt.md
+
+  if [[ -e $prompt_file ]]; then
+    ~/.local/bin/claudebox-prompt "$prompt_file"
+  fi
+}
+
+# Constructs command to execute agent
+get-agent-cmd() {
+  local agent=${1//\"/\\\"}
+
+  # Alter PATH so nested agent sessions hit this script again
+  # shellcheck disable=SC2016
+  echo '
+    AGENT_PATH=$(which "'"${agent}"'")
+    export PATH=~/.local/bin:$PATH
+    export CLAUDEBOX_VERBOSE=0
+    exec "$AGENT_PATH" "$@"
+  '
+}
+
+# --------------------------------------------------------------------------------------------------
+# Hooks
+# --------------------------------------------------------------------------------------------------
+
+# Executes profile hook before interactive session starts
+on-agent-start-hook() {
+  if [[ ${__CLAUDEBOX_AGENT_START_HOOK_EXECUTED__:-0} == 0 ]] && [[ ${__CLAUDEBOX_AGENT_NONINTERACTIVE__:-0} == 0 ]]; then
+    # bashsupport disable=BP2001
+    export __CLAUDEBOX_AGENT_START_HOOK_EXECUTED__=1
+    export CLAUDEBOX_VERBOSE=0
+
+    local hook_file=~/.claudebox/profile/hooks/agent-start.sh
+
+    if [[ -e $hook_file ]]; then
+      "$hook_file"
+    fi
+  fi
+}
+
+# Executes profile hook once interactive session ends
+on-agent-stop-hook() {
+  if [[ ${__CLAUDEBOX_AGENT_STOP_HOOK_EXECUTED__:-0} == 0 ]] && [[ ${__CLAUDEBOX_AGENT_NONINTERACTIVE__:-0} == 0 ]]; then
+    # bashsupport disable=BP2001
+    export __CLAUDEBOX_AGENT_STOP_HOOK_EXECUTED__=1
+    export CLAUDEBOX_VERBOSE=0
+
+    local hook_file=~/.claudebox/profile/hooks/agent-stop.sh
+
+    if [[ -e $hook_file ]]; then
+      "$hook_file"
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------------------------------
+# Utils
+# --------------------------------------------------------------------------------------------------
+
+# Checks if $1 exist in $2..N
+item-in-array() {
+  local item=$1
+  shift
+
+  local it
+
+  for it in "$@"; do
+    if [[ $it == "$item" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Replaces all $2 with $3 in $1
+string-replace() {
+  python -c "
+import sys
+
+_, arg, tok, rep, *_ = sys.argv
+print(arg.replace(tok, rep))
+" "$@"
+
+}
+
+# --------------------------------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------------------------------
+
+main() {
+  # bashsupport disable=BP2001
+  CLAUDEBOX_PWD=$(pwd)
+  export CLAUDEBOX_PWD
+
+  # Hooks
+  on-agent-start-hook
+  trap on-agent-stop-hook EXIT
+
+  # Execute agent
+  local agent=${1:-}
+  shift
+
+  case "$agent" in
+    claude)
+      execute-claude "$@"
+      ;;
+
+    *)
+      echo "Usage: $0 claude [<arg>...]"
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

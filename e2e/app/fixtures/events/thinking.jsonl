@@ -1,0 +1,4 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Explain how this works","id":"evt_001","primary":true,"ts":"2025-01-18T12:00:00Z"}
+{"type":"assistant","subtype":"thinking","content":"Let me think about how to explain this clearly...\n\nFirst, I should consider the **user's perspective** and what level of detail they need.\n\nThe key concepts are:\n1. The *input processing*\n2. The transformation logic\n3. The output formatting","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Here's how it works:\n\n1. **Input**: The system receives your request\n2. **Processing**: It analyzes and transforms the data\n3. **Output**: Results are formatted and returned","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_004","primary":false,"is_human":false,"ts":"2025-01-18T12:00:03Z"}

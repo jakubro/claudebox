@@ -1,0 +1,13 @@
+*.egg-info/
+*.pyc
+.coverage/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.vite/
+__pycache__/
+coverage/
+dist/
+node_modules/
+playwright-report/
+test-results/

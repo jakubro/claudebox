@@ -1,0 +1,59 @@
+{
+  "sessions": [
+    {
+      "session_id": "test-session-001",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 5,
+      "total_cost_usd": 0.15,
+      "total_duration_ms": 30000,
+      "last_context_tokens": 5000,
+      "started_at": "2025-01-18T12:00:00Z",
+      "updated_at": "2025-01-18T12:30:00Z",
+      "first_message": "Hello Claude",
+      "last_message": "Thanks!",
+      "parent_session_id": null,
+      "session_dir": "/tmp/sessions/test-session-001",
+      "todos": [],
+      "commands": [],
+      "container_id": "test-cid"
+    },
+    {
+      "session_id": "test-session-002",
+      "name": "Forked Session",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 3,
+      "total_cost_usd": 0.08,
+      "total_duration_ms": 15000,
+      "last_context_tokens": 3000,
+      "started_at": "2025-01-18T12:35:00Z",
+      "updated_at": "2025-01-18T12:40:00Z",
+      "first_message": "Hello Claude",
+      "last_message": "Different path",
+      "parent_session_id": "test-session-001",
+      "session_dir": "/tmp/sessions/test-session-002",
+      "todos": [],
+      "commands": []
+    },
+    {
+      "session_id": "test-session-003",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 8,
+      "total_cost_usd": 0.25,
+      "total_duration_ms": 45000,
+      "last_context_tokens": 8000,
+      "started_at": "2025-01-17T10:00:00Z",
+      "updated_at": "2025-01-17T11:00:00Z",
+      "first_message": "Another session",
+      "last_message": "Done",
+      "parent_session_id": null,
+      "session_dir": "/tmp/sessions/test-session-003",
+      "todos": [],
+      "commands": []
+    }
+  ]
+}

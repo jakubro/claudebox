@@ -1,0 +1,4 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Fetch that URL","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"WebFetch","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"WebFetch","tool_input":{"url":"https://example.com/page","prompt":"summarize"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"## Page Summary\n\nThis page contains **important information** about the topic.\n\n- Key point one\n- Key point two\n- Key point three\n\n> A notable quote from the page","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":false,"is_human":false}

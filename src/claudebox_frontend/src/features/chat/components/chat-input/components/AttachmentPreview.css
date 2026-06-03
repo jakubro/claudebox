@@ -1,0 +1,65 @@
+/* Attachment preview row (above textarea in chat input) */
+.attachment-preview {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  flex-wrap: wrap;
+}
+
+.attachment-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  max-width: 200px;
+}
+
+.attachment-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.attachment-file-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.attachment-ext {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.attachment-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.attachment-remove:hover {
+  color: var(--text-primary);
+}

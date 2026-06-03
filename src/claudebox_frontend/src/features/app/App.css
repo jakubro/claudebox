@@ -1,0 +1,126 @@
+/* App shell — global foundation, theme, layout */
+
+/* Global rotation utility. Apply `.spin` to any element to rotate it
+   clockwise at one turn per `--spin-duration` (default 1s). Single source
+   of truth for spinner motion across all sites. */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin var(--spin-duration, 1s) linear infinite;
+}
+
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #212122;
+  --bg-tertiary: #2d2d30;
+  --text-primary: #cccccc;
+  --text-muted: #808080;
+  --text-secondary: #a6a6a6;
+  --accent: #0e639c;
+  --border: #3c3c3c;
+  --bg-hover: #2a2d2e;
+  --error: #f44747;
+  --success: #22c55e;
+
+  /* Chrome button vertical metrics — single source of truth for the inset
+     hover-bg system used by panel headers, the session header strip, and
+     session-item icon buttons. Sized so 22 + 3 + 3 = 28px (the strip height). */
+  --chrome-btn-h: 22px;
+  --chrome-btn-pad-y: 3px;
+  --chrome-btn-mar-y: 3px;
+  --chrome-btn-line-height: 1;
+
+  /* Brighter icon color for the four main-area-header buttons (stop, +,
+     chevron, workspace switcher) so they read as a coherent action set
+     against the strip's accent gradient. */
+  --header-icon-color: var(--text-primary);
+}
+
+/* Shared chrome-icon-button metrics for the sessions panel header and
+   per-row icon buttons. Centralised here to avoid duplication between
+   SessionsPanel.css and SessionItem.css; per-component CSS keeps only
+   its own color/hover specifics. */
+.sessions-new,
+.sessions-refresh,
+.sessions-new-chevron,
+.sessions-edit-btn,
+.sessions-pin-btn,
+.sessions-kill-btn,
+.sessions-resume-btn,
+.sessions-resume-chevron,
+.containers-action-btn {
+  height: var(--chrome-btn-h);
+  margin: var(--chrome-btn-mar-y) 0;
+  line-height: var(--chrome-btn-line-height);
+  padding: var(--chrome-btn-pad-y);
+  border-radius: 4px;
+}
+
+.sessions-new-chevron,
+.sessions-resume-chevron {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 13px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Dockview theme overrides */
+.dockview-theme-dark {
+  --dv-tabs-and-actions-container-background-color: #161618;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-secondary);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-tertiary);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-tertiary);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-tertiary);
+  --dv-tab-divider-color: var(--border);
+  --dv-group-view-background-color: var(--bg-primary);
+  --dv-tabs-and-actions-container-height: 26px;
+  /* Consistent border colors (override dodgerblue defaults) */
+  --dv-paneview-active-outline-color: var(--border);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+}
+
+.dockview-theme-dark .dv-tab {
+  padding: 0;
+}
+
+/* App layout */
+.app-container {
+  display: flex;
+  /* Reserve 24px for the fixed footer; shrink further when the logs strip is open. */
+  height: calc(100% - 24px - var(--logs-strip-h, 0px));
+  width: 100%;
+}
+
+.dockview-container {
+  flex: 1;
+  min-height: 0;
+  min-width: 0; /* Allow flex shrinking below Dockview's intrinsic panel widths */
+}

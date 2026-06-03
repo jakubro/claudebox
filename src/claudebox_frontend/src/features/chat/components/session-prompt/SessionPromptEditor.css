@@ -1,0 +1,62 @@
+/* Session prompt editor dropdown */
+.session-prompt-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Blue badge dot when content is set */
+.session-prompt-btn.has-content::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.session-prompt-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  z-index: 9999;
+  min-width: 280px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 8px;
+}
+
+.session-prompt-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.session-prompt-textarea {
+  width: 100%;
+  min-height: 80px;
+  max-height: 200px;
+  resize: vertical;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.session-prompt-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.session-prompt-textarea::placeholder {
+  color: var(--text-muted);
+}

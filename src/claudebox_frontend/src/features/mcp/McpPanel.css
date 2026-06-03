@@ -1,0 +1,149 @@
+/* MCP panel styles */
+
+/* MCP panel */
+.mcp-panel {
+  height: 100%;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.mcp-panel .panel-header h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mcp-server-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Empty state mirrors `.todos-panel.todos-empty` for visual parity across panels. */
+.mcp-panel.mcp-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.mcp-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  margin: 0;
+}
+
+.mcp-error {
+  color: var(--text-error, #f44336);
+  font-size: 12px;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  background: var(--bg-error, rgba(244, 67, 54, 0.1));
+  border-radius: 4px;
+}
+
+.mcp-server-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.mcp-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mcp-status-dot.connected {
+  background: #4caf50;
+}
+
+.mcp-status-dot.disconnected {
+  background: #f44336;
+}
+
+.mcp-status-dot.disabled {
+  background: var(--text-muted);
+}
+
+.mcp-status-dot.pending {
+  background: #ff9800;
+}
+
+.mcp-server-name {
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-server-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mcp-server-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mcp-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.mcp-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.mcp-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-toggle-btn {
+  padding: 2px 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mcp-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.mcp-toggle-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-toggle-btn.toggled-off {
+  border-color: #4caf50;
+  color: #4caf50;
+}

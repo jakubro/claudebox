@@ -1,0 +1,9 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Build it","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"TodoWrite","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_m_001","tool_name":"TodoWrite","tool_input":{"todos":[{"content":"Main task","status":"in_progress","activeForm":"Working"}]},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Todos have been modified successfully.","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_m_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Task","ts":"2025-01-18T12:00:03Z","tool_use_id":"task_cleanup_001","tool_name":"Task","tool_input":{"description":"Run tests","prompt":"Run tests","subagent_type":"Bash"},"id":"evt_004","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"TodoWrite","ts":"2025-01-18T12:00:04Z","tool_use_id":"tool_s_001","tool_name":"TodoWrite","tool_input":{"todos":[{"content":"Subagent task","status":"pending","activeForm":"Running"}]},"parent_tool_use_id":"task_cleanup_001","id":"evt_005","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Todos have been modified successfully.","ts":"2025-01-18T12:00:05Z","tool_use_id":"tool_s_001","id":"evt_006","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Task completed.","ts":"2025-01-18T12:00:06Z","tool_use_id":"task_cleanup_001","id":"evt_007","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Done building.","ts":"2025-01-18T12:00:07Z","id":"evt_008","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:08Z","id":"evt_009","primary":false,"is_human":false}

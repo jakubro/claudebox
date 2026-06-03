@@ -1,0 +1,100 @@
+/* Tool block header styles */
+
+.tool-header-area {
+  /* Clickable header + summary area */
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.tool-bullet {
+  font-weight: bold;
+  position: relative;
+  top: -2px;
+}
+
+.tool-bullet.pending {
+  animation: tool-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes tool-pulse {
+  0%,
+  100% {
+    color: #00bcd4;
+  }
+  50% {
+    color: #2196f3;
+  }
+}
+
+.tool-bullet.completed {
+  color: #4caf50;
+}
+
+.tool-bullet.error {
+  color: #f44336;
+}
+
+.tool-bullet.killed {
+  color: #ffb74d;
+}
+
+.tool-name {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.block-timing {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tool-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-left: 2px;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.tool-corner {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.tool-pending {
+  display: flex;
+  align-items: center;
+}
+
+.tool-pending .spinner {
+  animation: spin 1s linear infinite;
+  color: var(--text-muted);
+  position: relative;
+  top: 1px; /* Align spinner with text */
+}
+
+.tool-summary {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-summary.error {
+  color: #ef5350;
+}

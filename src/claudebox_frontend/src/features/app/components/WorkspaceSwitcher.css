@@ -1,0 +1,191 @@
+/* Workspace switcher dropdown in session header strip */
+
+.workspace-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.workspace-switcher-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--chrome-btn-h);
+  padding: var(--chrome-btn-pad-y) 8px;
+  margin: var(--chrome-btn-mar-y) 0;
+  line-height: var(--chrome-btn-line-height);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--header-icon-color);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.workspace-switcher-btn:hover {
+  color: var(--text-primary);
+  background: var(--accent-hover, var(--bg-tertiary));
+}
+
+.workspace-switcher-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  z-index: 200;
+  min-width: 220px;
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 4px 0;
+}
+
+.dropdown-option.workspace-switcher-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-switcher-option.selected {
+  color: var(--accent);
+}
+
+.workspace-switcher-check {
+  width: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.workspace-switcher-name {
+  flex-shrink: 0;
+}
+
+.workspace-switcher-path {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: 4px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Open in new tab button per workspace item */
+.workspace-switcher-newtab {
+  flex-shrink: 0;
+  margin-left: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
+}
+
+.workspace-switcher-option:hover .workspace-switcher-newtab {
+  opacity: 1;
+}
+
+.workspace-switcher-newtab:hover {
+  color: var(--text-primary);
+}
+
+/* Colored dot indicator next to workspace name in button */
+.workspace-switcher-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Divider between workspace list and color palette */
+.workspace-switcher-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
+}
+
+/* Color palette row */
+.workspace-color-palette {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+.workspace-color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    border-color 0.15s,
+    transform 0.1s;
+}
+
+.workspace-color-swatch:hover {
+  transform: scale(1.2);
+  border-color: var(--text-muted);
+}
+
+.workspace-color-swatch.active {
+  border-color: var(--text-primary);
+}
+
+/* Clear swatch — empty circle with dashed border */
+.workspace-color-clear {
+  background: transparent;
+  border: 1.5px dashed var(--text-muted);
+}
+
+.workspace-color-clear:hover {
+  border-color: var(--text-primary);
+}
+
+/* Trash icon — hover-reveal danger affordance, per workspace row. */
+.workspace-switcher-trash {
+  flex-shrink: 0;
+  margin-left: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
+}
+
+.workspace-switcher-option:hover .workspace-switcher-trash {
+  opacity: 1;
+}
+
+.workspace-switcher-trash:hover {
+  color: #ef4444;
+}
+
+/* "+ Register workspace…" footer item below the color palette. */
+.workspace-switcher-register {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 12px;
+}

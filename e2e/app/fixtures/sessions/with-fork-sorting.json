@@ -1,0 +1,59 @@
+{
+  "sessions": [
+    {
+      "session_id": "test-session-001",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 3,
+      "total_cost_usd": 0.1,
+      "total_duration_ms": 10000,
+      "last_context_tokens": 3000,
+      "started_at": "2025-01-10T10:00:00Z",
+      "updated_at": "2025-01-10T11:00:00Z",
+      "first_message": "Parent session",
+      "last_message": "Done",
+      "parent_session_id": null,
+      "session_dir": "/tmp/sessions/test-session-001",
+      "todos": [],
+      "commands": [],
+      "container_id": "test-cid"
+    },
+    {
+      "session_id": "test-session-002",
+      "name": "Recent Fork",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 2,
+      "total_cost_usd": 0.05,
+      "total_duration_ms": 5000,
+      "last_context_tokens": 2000,
+      "started_at": "2025-01-15T10:00:00Z",
+      "updated_at": "2025-01-15T12:00:00Z",
+      "first_message": "Forked approach",
+      "last_message": "Fork done",
+      "parent_session_id": "test-session-001",
+      "session_dir": "/tmp/sessions/test-session-002",
+      "todos": [],
+      "commands": []
+    },
+    {
+      "session_id": "test-session-003",
+      "name": null,
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-20250514",
+      "num_turns": 4,
+      "total_cost_usd": 0.2,
+      "total_duration_ms": 20000,
+      "last_context_tokens": 5000,
+      "started_at": "2025-01-12T10:00:00Z",
+      "updated_at": "2025-01-12T14:00:00Z",
+      "first_message": "Independent session",
+      "last_message": "All good",
+      "parent_session_id": null,
+      "session_dir": "/tmp/sessions/test-session-003",
+      "todos": [],
+      "commands": []
+    }
+  ]
+}

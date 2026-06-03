@@ -1,0 +1,68 @@
+/* TodoWrite list */
+.todo-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.todo-list-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.todo-icon {
+  flex-shrink: 0;
+  font-weight: 600;
+  width: 14px;
+  text-align: center;
+}
+
+.todo-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-completed {
+  color: #4caf50;
+}
+
+.todo-completed .todo-content {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.todo-in-progress {
+  color: #ffb74d;
+}
+
+.todo-in-progress .todo-content {
+  color: var(--text-primary);
+}
+
+.todo-pending {
+  color: var(--text-muted);
+}
+
+.todo-pending .todo-content {
+  color: var(--text-secondary);
+}
+
+.todo-removed {
+  color: var(--text-muted);
+}
+
+.todo-removed .todo-content {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}

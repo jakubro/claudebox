@@ -1,0 +1,45 @@
+/* Tool block styles */
+/* Tool blocks - TUI style */
+.tool-block {
+  margin: 10px 0;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.tool-block:first-child {
+  margin-top: 0;
+}
+
+.tool-expanded-content {
+  margin-left: 12px;
+}
+
+.tool-block:last-child {
+  margin-bottom: 0;
+}
+
+.tool-block.tool-error .tool-summary {
+  color: #ef5350;
+}
+
+/* Nested tool block - slightly smaller */
+.tool-block.nested {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.tool-block.nested .tool-bullet {
+  font-size: 12px;
+}
+
+.tool-block.nested .tool-expanded-content {
+  margin-left: 10px;
+}
+
+.tool-block.nested .tool-details {
+  max-height: 200px;
+}
+
+.tool-block.nested .tool-json {
+  max-height: 200px;
+}

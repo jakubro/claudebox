@@ -1,0 +1,6 @@
+{
+  "workspace": { "tree": [], "path": "/workspace" },
+  "tmp": { "tree": [], "path": "/tmp" },
+  "home_claudebox": { "tree": [], "path": "/home/user/.claudebox" },
+  "home_claude": { "tree": [], "path": "/home/user/.claude" }
+}

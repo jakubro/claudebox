@@ -1,0 +1,48 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Hello","id":"evt_001","primary":true,"ts":"2025-01-18T12:00:00Z"}
+{"type":"assistant","subtype":"text","content":"Hello! How can I help you today?","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_003","primary":false,"is_human":false,"ts":"2025-01-18T12:00:02Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What is JavaScript?","id":"evt_004","primary":true,"ts":"2025-01-18T12:00:03Z"}
+{"type":"assistant","subtype":"text","content":"JavaScript is a high-level, interpreted programming language that is one of the core technologies of the World Wide Web, alongside HTML and CSS.","ts":"2025-01-18T12:00:11Z","id":"evt_005","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","id":"evt_006","primary":false,"is_human":false,"ts":"2025-01-18T12:00:05Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What about TypeScript?","id":"evt_007","primary":true,"ts":"2025-01-18T12:00:06Z"}
+{"type":"assistant","subtype":"text","content":"TypeScript is a strongly typed superset of JavaScript that compiles to plain JavaScript. It adds optional static typing and class-based object-oriented programming.","ts":"2025-01-18T12:00:21Z","id":"evt_008","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_003","id":"evt_009","primary":false,"is_human":false,"ts":"2025-01-18T12:00:08Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"How do I declare a variable?","id":"evt_010","primary":true,"ts":"2025-01-18T12:00:09Z"}
+{"type":"assistant","subtype":"text","content":"In JavaScript/TypeScript, you can declare variables using:\n- `const` for constants\n- `let` for block-scoped variables\n- `var` for function-scoped variables (legacy)","ts":"2025-01-18T12:00:31Z","id":"evt_011","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_004","id":"evt_012","primary":false,"is_human":false,"ts":"2025-01-18T12:00:11Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What is a function?","id":"evt_013","primary":true,"ts":"2025-01-18T12:00:12Z"}
+{"type":"assistant","subtype":"text","content":"A function is a reusable block of code that performs a specific task. Functions can take parameters and return values.","ts":"2025-01-18T12:00:41Z","id":"evt_014","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_005","id":"evt_015","primary":false,"is_human":false,"ts":"2025-01-18T12:00:14Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"Show me an arrow function","id":"evt_016","primary":true,"ts":"2025-01-18T12:00:15Z"}
+{"type":"assistant","subtype":"text","content":"Here's an arrow function:\n```javascript\nconst add = (a, b) => a + b;\n```","ts":"2025-01-18T12:00:51Z","id":"evt_017","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_006","id":"evt_018","primary":false,"is_human":false,"ts":"2025-01-18T12:00:17Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What are promises?","id":"evt_019","primary":true,"ts":"2025-01-18T12:00:18Z"}
+{"type":"assistant","subtype":"text","content":"Promises are objects representing the eventual completion or failure of an asynchronous operation. They allow you to handle async code more cleanly.","ts":"2025-01-18T12:01:01Z","id":"evt_020","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_007","id":"evt_021","primary":false,"is_human":false,"ts":"2025-01-18T12:00:20Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"How do I use async/await?","id":"evt_022","primary":true,"ts":"2025-01-18T12:00:21Z"}
+{"type":"assistant","subtype":"text","content":"Async/await is syntactic sugar over promises:\n```javascript\nasync function fetchData() {\n  const response = await fetch(url);\n  return await response.json();\n}\n```","ts":"2025-01-18T12:01:11Z","id":"evt_023","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_008","id":"evt_024","primary":false,"is_human":false,"ts":"2025-01-18T12:00:23Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What is React?","id":"evt_025","primary":true,"ts":"2025-01-18T12:00:24Z"}
+{"type":"assistant","subtype":"text","content":"React is a JavaScript library for building user interfaces, particularly single-page applications. It uses a component-based architecture and a virtual DOM.","ts":"2025-01-18T12:01:21Z","id":"evt_026","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_009","id":"evt_027","primary":false,"is_human":false,"ts":"2025-01-18T12:00:26Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What are React hooks?","id":"evt_028","primary":true,"ts":"2025-01-18T12:00:27Z"}
+{"type":"assistant","subtype":"text","content":"React hooks are functions that let you use state and other React features in functional components. Common hooks include useState, useEffect, useCallback, and useMemo.","ts":"2025-01-18T12:01:31Z","id":"evt_029","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_010","id":"evt_030","primary":false,"is_human":false,"ts":"2025-01-18T12:00:29Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"Show me useState","id":"evt_031","primary":true,"ts":"2025-01-18T12:00:30Z"}
+{"type":"assistant","subtype":"text","content":"Here's useState:\n```javascript\nconst [count, setCount] = useState(0);\n```","ts":"2025-01-18T12:01:41Z","id":"evt_032","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_011","id":"evt_033","primary":false,"is_human":false,"ts":"2025-01-18T12:00:32Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"And useEffect?","id":"evt_034","primary":true,"ts":"2025-01-18T12:00:33Z"}
+{"type":"assistant","subtype":"text","content":"useEffect runs side effects:\n```javascript\nuseEffect(() => {\n  document.title = `Count: ${count}`;\n}, [count]);\n```","ts":"2025-01-18T12:01:51Z","id":"evt_035","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_012","id":"evt_036","primary":false,"is_human":false,"ts":"2025-01-18T12:00:35Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What is JSX?","id":"evt_037","primary":true,"ts":"2025-01-18T12:00:36Z"}
+{"type":"assistant","subtype":"text","content":"JSX is a syntax extension for JavaScript that looks similar to HTML. It allows you to write UI components in a declarative way within JavaScript code.","ts":"2025-01-18T12:02:01Z","id":"evt_038","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_013","id":"evt_039","primary":false,"is_human":false,"ts":"2025-01-18T12:00:38Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"How do I handle events?","id":"evt_040","primary":true,"ts":"2025-01-18T12:00:39Z"}
+{"type":"assistant","subtype":"text","content":"In React, handle events with camelCase props:\n```javascript\n<button onClick={handleClick}>Click me</button>\n```","ts":"2025-01-18T12:02:11Z","id":"evt_041","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_014","id":"evt_042","primary":false,"is_human":false,"ts":"2025-01-18T12:00:41Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"What about forms?","id":"evt_043","primary":true,"ts":"2025-01-18T12:00:42Z"}
+{"type":"assistant","subtype":"text","content":"Forms in React typically use controlled components where form data is handled by React state:\n```javascript\n<input value={name} onChange={e => setName(e.target.value)} />\n```","ts":"2025-01-18T12:02:21Z","id":"evt_044","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_015","id":"evt_045","primary":false,"is_human":false,"ts":"2025-01-18T12:00:44Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"Thanks for all the help!","id":"evt_046","primary":true,"ts":"2025-01-18T12:00:45Z"}
+{"type":"assistant","subtype":"text","content":"You're welcome! Feel free to ask if you have more questions. Happy coding!","ts":"2025-01-18T12:02:31Z","id":"evt_047","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_016","id":"evt_048","primary":false,"is_human":false,"ts":"2025-01-18T12:00:47Z"}

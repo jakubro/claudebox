@@ -1,0 +1,43 @@
+{
+  "session_id": "test-session-001",
+  "name": null,
+  "workspace": "/home/user/project",
+  "model": "claude-sonnet-4-20250514",
+  "num_turns": 5,
+  "total_cost_usd": 0.12,
+  "total_duration_ms": 8000,
+  "last_context_tokens": 20000,
+  "started_at": "2025-01-18T12:00:00Z",
+  "updated_at": "2025-01-18T13:00:00Z",
+  "first_message": "Help me implement the feature",
+  "last_message": "Working on it...",
+  "todos": [
+    {
+      "content": "Set up project structure",
+      "status": "completed",
+      "activeForm": "Setting up project structure"
+    },
+    {
+      "content": "Implement authentication",
+      "status": "in_progress",
+      "activeForm": "Implementing authentication"
+    },
+    {
+      "content": "Write unit tests",
+      "status": "pending",
+      "activeForm": "Writing unit tests"
+    },
+    {
+      "content": "Add documentation",
+      "status": "pending",
+      "activeForm": "Adding documentation"
+    }
+  ],
+  "commands": {
+    "custom": [{ "name": "help" }, { "name": "clear" }, { "name": "compact" }],
+    "mcp": [],
+    "builtin": []
+  },
+  "session_dir": "/tmp/sessions/test-session-001",
+  "parent_session_id": null
+}

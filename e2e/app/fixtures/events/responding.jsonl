@@ -1,0 +1,2 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Write a function to calculate fibonacci","id":"evt_001","primary":true,"ts":"2025-01-18T12:00:00Z","turn_id":"turn_001"}
+{"type":"assistant","subtype":"text","content":"I'll write a fibonacci function for you...","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}

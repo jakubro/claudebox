@@ -1,0 +1,9 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Help me with the project","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Let me analyze your project.","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"thinking","content":"I should look at the project structure first.","ts":"2025-01-18T12:00:36Z","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:01:06Z","tool_use_id":"tool_001","tool_name":"Read","tool_input":{"file_path":"/home/user/project/config.json"},"id":"evt_004","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"{\n  \"name\": \"my-project\"\n}","ts":"2025-01-18T12:01:09Z","tool_use_id":"tool_001","id":"evt_005","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Grep","ts":"2025-01-18T12:01:41Z","tool_use_id":"tool_002","tool_name":"Grep","tool_input":{"pattern":"TODO","path":"/home/user/project"},"id":"evt_006","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"/home/user/project/src/main.js\n/home/user/project/src/utils.js","ts":"2025-01-18T12:01:43Z","tool_use_id":"tool_002","id":"evt_007","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"I found the project config and some TODOs.","ts":"2025-01-18T12:01:45Z","id":"evt_008","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:01:46Z","id":"evt_009","primary":false,"is_human":false}

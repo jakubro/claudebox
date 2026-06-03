@@ -1,0 +1,39 @@
+/* Help overlay (Alt+?) */
+
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.help-overlay-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.help-overlay-modal .help-panel {
+  height: auto;
+}
+
+.help-overlay-modal .help-columns {
+  display: flex;
+  gap: 12px;
+  height: 100%;
+}
+
+.help-overlay-modal .help-columns .help-table {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.help-overlay-modal .help-columns td {
+  height: 1px; /* distribute rows evenly across table height */
+}

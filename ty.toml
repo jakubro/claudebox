@@ -1,0 +1,3 @@
+[src]
+respect-ignore-files = true
+exclude = ["scripts/test-ui/"]

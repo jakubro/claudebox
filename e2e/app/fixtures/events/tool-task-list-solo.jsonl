@@ -1,0 +1,6 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Show me the current task list","ts":"2025-05-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Looking up the current task list:","ts":"2025-05-18T12:00:01Z","id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"TaskList","ts":"2025-05-18T12:00:02Z","tool_use_id":"tool_001","tool_name":"TaskList","tool_input":{},"id":"evt_003","primary":false,"is_human":false}
+{"type":"user","subtype":"tool_result","content":"No tasks defined","ts":"2025-05-18T12:00:03Z","tool_use_id":"tool_001","tool_use_result":{"tasks":[]},"id":"evt_004","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The task list is empty.","ts":"2025-05-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-05-18T12:00:05Z","id":"evt_006","primary":false,"is_human":false}

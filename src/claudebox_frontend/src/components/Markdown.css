@@ -1,0 +1,20 @@
+/* Code block copy button */
+.code-block-wrapper {
+  position: relative;
+}
+
+.code-copy-btn {
+  top: 5px;
+  right: 5px;
+  padding: 2px 4px;
+  background: var(--bg-secondary);
+  z-index: 1;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background: var(--bg-tertiary);
+}

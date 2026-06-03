@@ -1,0 +1,3 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Tell me about security","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Here is the security overview.\n<system-reminder>\nAlways validate user input before processing.\n</system-reminder>","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":false,"is_human":false}

@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Continue our conversation","id":"evt_001","primary":true,"ts":"2025-01-18T12:00:00Z"}
+{"type":"system","subtype":"compact_boundary","id":"compact_1","content":"Session compacted due to context limit","ts":"2025-01-18T12:00:01Z","message_data":{"compact_metadata":{"trigger":"context_limit","pre_tokens":128000}},"primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":false,"content":"Previous conversation covered: project setup, file structure, and initial implementation of the main module.","id":"evt_003","primary":true,"ts":"2025-01-18T12:00:02Z"}
+{"type":"assistant","subtype":"text","content":"I've reviewed our previous conversation. We were working on the main module implementation. What would you like to continue with?","ts":"2025-01-18T12:00:02Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_005","primary":false,"is_human":false,"ts":"2025-01-18T12:00:04Z"}

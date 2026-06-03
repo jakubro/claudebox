@@ -1,0 +1,77 @@
+/* Mermaid diagram rendering — container, toolbar, zoom overlay */
+
+.mermaid-container {
+  position: relative;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+/* Toolbar — top-right buttons */
+.mermaid-toolbar {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.mermaid-container:hover .mermaid-toolbar {
+  opacity: 1;
+}
+
+/* Diagram area */
+.mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  cursor: zoom-in;
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Loading state */
+.mermaid-loading {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Zoom overlay */
+.mermaid-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.mermaid-zoom-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 90vw;
+  height: 90vh;
+  overflow: auto;
+  padding: 24px;
+}
+
+/* Override mermaid's inline max-width on SVG to fill viewport */
+.mermaid-zoom-content svg {
+  /* biome-ignore lint/complexity/noImportantStyles: required to override mermaid's inline style */
+  max-width: none !important;
+  max-height: 90vh;
+  width: auto;
+  height: auto;
+}

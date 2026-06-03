@@ -1,0 +1,183 @@
+/* Footer status bar — fixed to viewport bottom */
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 24px;
+  color: var(--text-muted);
+  background: #161618;
+  border-top: 1px solid var(--border);
+  z-index: 100;
+}
+
+.footer-dev-indicator {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.footer-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.footer-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-bar {
+  width: 60px;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.context-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition:
+    width 0.3s ease,
+    background 0.3s ease;
+}
+
+.context-pct {
+  color: var(--text-muted);
+  min-width: 28px;
+}
+
+.footer-sep {
+  margin: 0 8px;
+  color: var(--border);
+}
+
+.footer-session {
+  font-family: monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-width: 0;
+  flex-shrink: 10;
+}
+
+.footer-session-clickable {
+  transition: color 0.15s;
+}
+
+.footer-session-clickable:hover {
+  color: var(--text-primary);
+}
+
+.footer-session-copied-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-primary);
+}
+
+/* Backend (runtime) container ID — same font/spacing as session ID. */
+.footer-backend-id {
+  font-family: monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-width: 0;
+  flex-shrink: 10;
+  transition: color 0.15s;
+}
+
+.footer-backend-id:hover {
+  color: var(--text-primary);
+}
+
+.footer-backend-id-copied-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-primary);
+}
+
+.footer-copy-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.footer-copy-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Notifications toggle - bell with strikethrough when disabled */
+.footer-notifications-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.footer-notifications-toggle.enabled {
+  color: var(--text-secondary);
+}
+
+.footer-notifications-toggle .strikethrough {
+  position: absolute;
+  width: 14px;
+  height: 1.5px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  top: 50%;
+  left: 50%;
+  margin-left: -7px;
+  margin-top: -0.75px;
+}
+
+.footer-spacer {
+  flex: 1;
+  min-width: 3px;
+}
+
+/* Claude service status indicator (rendered directly by Footer) */
+.footer-claude-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.footer-claude-status .status-dot {
+  margin-right: 0;
+}
+
+.status-dot.status-claude-none {
+  background: #22c55e;
+}
+
+.status-dot.status-claude-minor {
+  background: #eab308;
+}
+
+.status-dot.status-claude-major {
+  background: #f97316;
+}
+
+.status-dot.status-claude-critical {
+  background: #ef4444;
+}
+
+.status-dot.status-claude-error {
+  background: var(--text-muted);
+  opacity: 0.5;
+}

@@ -1,0 +1,59 @@
+{
+  "sessions": [
+    {
+      "session_id": "test-session-001",
+      "name": "Current Session",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-6",
+      "num_turns": 8,
+      "total_cost_usd": 0.42,
+      "total_duration_ms": 35000,
+      "last_context_tokens": 15000,
+      "started_at": "2025-01-18T12:00:00Z",
+      "updated_at": "2025-01-18T12:30:00Z",
+      "first_message": "Hello Claude",
+      "last_message": "Thanks for the help",
+      "session_dir": "/tmp/sessions/test-session-001",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null,
+      "container_id": "test-cid"
+    },
+    {
+      "session_id": "test-session-002",
+      "name": "Feature Implementation",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-4-6",
+      "num_turns": 25,
+      "total_cost_usd": 1.85,
+      "total_duration_ms": 120000,
+      "last_context_tokens": 45000,
+      "started_at": "2025-01-18T08:00:00Z",
+      "updated_at": "2025-01-18T10:00:00Z",
+      "first_message": "Help me implement auth",
+      "last_message": "All tests passing",
+      "session_dir": "/tmp/sessions/test-session-002",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null
+    },
+    {
+      "session_id": "test-session-003",
+      "name": "Bug Fix Sprint",
+      "workspace": "/home/user/project",
+      "model": "claude-opus-4-6",
+      "num_turns": 42,
+      "total_cost_usd": 5.2,
+      "total_duration_ms": 300000,
+      "last_context_tokens": 85000,
+      "started_at": "2025-01-17T09:00:00Z",
+      "updated_at": "2025-01-17T14:00:00Z",
+      "first_message": "Fix the login bug",
+      "last_message": "Deployed to staging",
+      "session_dir": "/tmp/sessions/test-session-003",
+      "todos": [],
+      "commands": [],
+      "parent_session_id": null
+    }
+  ]
+}

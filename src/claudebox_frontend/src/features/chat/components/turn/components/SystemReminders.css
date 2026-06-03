@@ -1,0 +1,60 @@
+/* System reminders - muted brown-ish styling */
+.system-reminders {
+  margin-top: 8px;
+}
+
+.system-reminders-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  color: #8b7765;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.system-reminders-header:hover {
+  opacity: 0.8;
+}
+
+.system-reminders-label {
+  font-weight: 600;
+}
+
+.system-reminders-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.system-reminder-entry {
+  position: relative;
+}
+
+.system-reminder-count {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 10px;
+  font-family: monospace;
+  color: #8b7765;
+  opacity: 0.7;
+}
+
+.system-reminder-item {
+  margin: 0;
+  padding: 8px;
+  background: rgba(139, 119, 101, 0.08);
+  border-left: 2px solid #8b7765;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 150px;
+  overflow-y: auto;
+  color: var(--text-muted);
+}

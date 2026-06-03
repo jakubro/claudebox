@@ -1,0 +1,68 @@
+/* Markdown preview — container, toolbar, content area */
+
+.markdown-preview-container {
+  position: relative;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+/* Toolbar — top-right buttons */
+.markdown-preview-toolbar {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.markdown-preview-container:hover .markdown-preview-toolbar {
+  opacity: 1;
+}
+
+/* Toolbar buttons blend with tertiary background */
+.markdown-preview-toolbar .copy-btn,
+.markdown-preview-toolbar .preview-toolbar-btn {
+  background: var(--bg-tertiary);
+}
+
+.markdown-preview-toolbar .copy-btn:hover,
+.markdown-preview-toolbar .preview-toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+}
+
+/* Rendered markdown content area — reset font from tool-block monospace */
+.markdown-preview-content {
+  padding: 8px 12px;
+}
+
+/* Reset font from tool-block monospace — match assistant text (body defaults) */
+.markdown-preview-content,
+.markdown-preview-content p {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 13px;
+  line-height: normal;
+}
+
+/* Inline code/blockquote: container is --bg-tertiary, so use slightly lighter tint for contrast */
+.markdown-preview-content code {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.markdown-preview-content blockquote {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Prevent margin stacking with container padding */
+.markdown-preview-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-preview-content > :last-child {
+  margin-bottom: 0;
+}

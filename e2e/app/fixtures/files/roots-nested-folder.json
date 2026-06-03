@@ -1,0 +1,32 @@
+{
+  "workspace": {
+    "tree": [
+      {
+        "id": "/workspace/src",
+        "name": "src",
+        "type": "directory",
+        "children": [
+          {
+            "id": "/workspace/src/index.js",
+            "name": "index.js",
+            "type": "file",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "path": "/workspace"
+  },
+  "tmp": {
+    "tree": [],
+    "path": "/tmp"
+  },
+  "home_claudebox": {
+    "tree": [],
+    "path": "/home/user/.claudebox"
+  },
+  "home_claude": {
+    "tree": [],
+    "path": "/home/user/.claude"
+  }
+}

@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","content":"Session initialized","ts":"2025-01-18T11:59:59Z","message_data":{"mcp_servers":[{"name":"jina","status":"connected"},{"name":"chroma","status":"connected"},{"name":"octocode","status":"disconnected"}]},"id":"evt_001","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Hello","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_002","primary":true}
+{"type":"assistant","subtype":"text","content":"Hi there!","ts":"2025-01-18T12:00:01Z","id":"evt_003","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:02Z","id":"evt_004","primary":false,"is_human":false}

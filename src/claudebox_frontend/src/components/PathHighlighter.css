@@ -1,0 +1,13 @@
+/* Path highlighting */
+.path-link {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background-color 0.15s ease-out;
+}
+
+.path-link.copied {
+  background-color: rgba(46, 160, 67, 0.25);
+}

@@ -1,0 +1,20 @@
+/* Setting change divider (model/permission mode changes) */
+.setting-change-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 11px;
+}
+
+.setting-change-line {
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.3;
+}
+
+.setting-change-label {
+  white-space: nowrap;
+  opacity: 0.7;
+}

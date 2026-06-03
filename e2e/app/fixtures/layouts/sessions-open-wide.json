@@ -1,0 +1,95 @@
+{
+  "layout": {
+    "grid": {
+      "root": {
+        "type": "branch",
+        "data": [
+          {
+            "type": "leaf",
+            "data": {
+              "views": ["sessions"],
+              "activeView": "sessions",
+              "id": "4"
+            },
+            "size": 320
+          },
+          {
+            "type": "leaf",
+            "data": {
+              "views": ["chat"],
+              "activeView": "chat",
+              "id": "1"
+            },
+            "size": 1130
+          },
+          {
+            "type": "branch",
+            "data": [
+              {
+                "type": "leaf",
+                "data": {
+                  "views": ["todos"],
+                  "activeView": "todos",
+                  "id": "2"
+                },
+                "size": 515
+              },
+              {
+                "type": "leaf",
+                "data": {
+                  "views": ["stash"],
+                  "activeView": "stash",
+                  "id": "3"
+                },
+                "size": 516
+              }
+            ],
+            "size": 400
+          }
+        ],
+        "size": 1031
+      },
+      "width": 1850,
+      "height": 1031,
+      "orientation": "HORIZONTAL"
+    },
+    "panels": {
+      "sessions": {
+        "id": "sessions",
+        "contentComponent": "sessions",
+        "tabComponent": "icon",
+        "title": "Sessions"
+      },
+      "chat": {
+        "id": "chat",
+        "contentComponent": "chat",
+        "tabComponent": "icon",
+        "title": "session-id"
+      },
+      "todos": {
+        "id": "todos",
+        "contentComponent": "todos",
+        "tabComponent": "icon",
+        "title": "Todos"
+      },
+      "stash": {
+        "id": "stash",
+        "contentComponent": "stash",
+        "tabComponent": "icon",
+        "title": "Stash"
+      }
+    },
+    "activeGroup": "1"
+  },
+  "panelGroups": {
+    "left": {
+      "width": 320,
+      "order": ["sessions"]
+    },
+    "right": {
+      "width": 400,
+      "order": ["todos", "stash"]
+    }
+  },
+  "updated_at": "2026-01-19T21:25:27.658447+00:00"
+}

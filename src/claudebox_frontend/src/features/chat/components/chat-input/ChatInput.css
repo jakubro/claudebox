@@ -1,0 +1,209 @@
+/* Chat input, textarea, and autocomplete styles */
+
+/* CSS Houdini: Enable animating conic-gradient properties */
+@property --ripple-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@property --ripple-base {
+  syntax: "<color>";
+  initial-value: #3b3b3b;
+  inherits: false;
+}
+
+@property --ripple-highlight {
+  syntax: "<color>";
+  initial-value: rgba(160, 160, 160, 0.6);
+  inherits: false;
+}
+
+@property --focus-glow {
+  syntax: "<color>";
+  initial-value: rgba(76, 175, 80, 0.45);
+  inherits: false;
+}
+
+@property --focus-outer {
+  syntax: "<color>";
+  initial-value: rgba(76, 175, 80, 0.2);
+  inherits: false;
+}
+
+@property --focus-inner {
+  syntax: "<color>";
+  initial-value: rgba(76, 175, 80, 0.15);
+  inherits: false;
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+  padding: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input input,
+.chat-input textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.chat-input textarea {
+  resize: none;
+  overflow-y: hidden; /* JS controls overflow based on content */
+  min-height: 36px;
+  /* max-height controlled by JS based on panel size (75%) */
+  line-height: 1.4;
+}
+
+.chat-input input:focus,
+.chat-input textarea:focus {
+  outline: none;
+  --focus-glow: rgba(76, 175, 80, 0.45);
+  --focus-outer: rgba(76, 175, 80, 0.2);
+  --focus-inner: rgba(76, 175, 80, 0.15);
+  border-color: var(--focus-glow);
+  box-shadow:
+    0 0 10px 1px var(--focus-outer),
+    inset 0 0 4px 1px var(--focus-inner);
+}
+
+/* Working state: breathing glow through theme colors */
+.chat-input.status-working input:focus,
+.chat-input.status-working textarea:focus {
+  animation: focus-breathe 3.6s ease-in-out infinite;
+}
+
+.chat-input input:disabled,
+.chat-input textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-input textarea:placeholder-shown:not(:focus) {
+  --ripple-angle: 0deg;
+  --ripple-base: var(--border);
+  --ripple-highlight: rgba(160, 160, 160, 0.6);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+    conic-gradient(
+      from var(--ripple-angle),
+      var(--ripple-base) 0deg,
+      var(--ripple-highlight) 20deg,
+      var(--ripple-base) 40deg
+    )
+    border-box;
+  animation: border-ripple 4s linear infinite;
+}
+
+/* Working state: color-cycling ripple matching footer/favicon */
+.chat-input.status-working textarea:placeholder-shown:not(:focus) {
+  animation:
+    border-ripple 4s linear infinite,
+    ripple-colors 1.2s ease-in-out infinite;
+}
+
+@keyframes border-ripple {
+  to {
+    --ripple-angle: 360deg;
+  }
+}
+
+@keyframes ripple-colors {
+  0%,
+  100% {
+    --ripple-base: rgba(59, 130, 246, 0.4);
+    --ripple-highlight: #93c5fd;
+  }
+  33% {
+    --ripple-base: rgba(139, 92, 246, 0.4);
+    --ripple-highlight: #c4b5fd;
+  }
+  66% {
+    --ripple-base: rgba(192, 38, 211, 0.4);
+    --ripple-highlight: #e879f9;
+  }
+}
+
+@keyframes focus-breathe {
+  0%,
+  100% {
+    --focus-glow: rgba(59, 130, 246, 0.45);
+    --focus-outer: rgba(59, 130, 246, 0.2);
+    --focus-inner: rgba(59, 130, 246, 0.15);
+  }
+  33% {
+    --focus-glow: rgba(139, 92, 246, 0.45);
+    --focus-outer: rgba(139, 92, 246, 0.2);
+    --focus-inner: rgba(139, 92, 246, 0.15);
+  }
+  66% {
+    --focus-glow: rgba(192, 38, 211, 0.45);
+    --focus-outer: rgba(192, 38, 211, 0.2);
+    --focus-inner: rgba(192, 38, 211, 0.15);
+  }
+}
+
+/* Attachment input area */
+.chat-input-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-input-wrapper.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+/* Chat input row — wraps textarea and optional mobile send button */
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.chat-input-row.mobile {
+  gap: 6px;
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Mobile send button */
+.mobile-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: var(--accent, #4ade80);
+  color: var(--bg-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mobile-send-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mobile-send-btn:not(:disabled):hover {
+  filter: brightness(1.1);
+}

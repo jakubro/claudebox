@@ -1,0 +1,6 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Hello","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Let me think about this...","ts":"2025-01-18T12:00:00Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Reading files","ts":"2025-01-18T12:00:30Z","id":"evt_003","primary":true,"is_human":false,"tool_use_id":"tool_001","tool_name":"Read"}
+{"type":"assistant","subtype":"tool_result","content":"file contents here","ts":"2025-01-18T12:00:50Z","id":"evt_004","primary":true,"is_human":false,"tool_use_id":"tool_001"}
+{"type":"assistant","subtype":"text","content":"Here is my detailed response.","ts":"2025-01-18T12:01:23Z","id":"evt_005","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","duration_ms":83000,"ts":"2025-01-18T12:01:23Z","id":"evt_006","primary":false,"is_human":false}

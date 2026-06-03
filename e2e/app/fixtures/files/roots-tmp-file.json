@@ -1,0 +1,25 @@
+{
+  "workspace": {
+    "tree": [],
+    "path": "/workspace"
+  },
+  "tmp": {
+    "tree": [
+      {
+        "id": "/tmp/temp.txt",
+        "name": "temp.txt",
+        "type": "file",
+        "children": []
+      }
+    ],
+    "path": "/tmp"
+  },
+  "home_claudebox": {
+    "tree": [],
+    "path": "/home/user/.claudebox"
+  },
+  "home_claude": {
+    "tree": [],
+    "path": "/home/user/.claude"
+  }
+}

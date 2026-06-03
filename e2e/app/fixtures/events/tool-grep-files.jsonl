@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Find files with TODO","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Grep","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Grep","tool_input":{"pattern":"TODO","path":"/home/user/project","output_mode":"files_with_matches"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"/home/user/project/src/app.js\n/home/user/project/src/utils.js\n/home/user/project/tests/test.js\n/home/user/project/README.md","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Found 4 files containing TODO.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

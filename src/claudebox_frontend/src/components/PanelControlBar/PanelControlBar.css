@@ -1,0 +1,53 @@
+/* Shared panel control bar — outer chrome reused across chat, board, etc. */
+.panel-control-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: #161618;
+}
+
+.panel-control-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.panel-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.panel-control-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.panel-control-btn:disabled {
+  cursor: default;
+}
+
+/* Pressed state for toggle buttons */
+.panel-control-btn.pressed {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+.panel-control-separator {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}

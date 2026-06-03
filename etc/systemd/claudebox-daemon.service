@@ -1,0 +1,15 @@
+[Unit]
+Description=Claudebox Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/claudeboxd
+KillMode=process
+Delegate=yes
+TimeoutStopSec=15
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=default.target

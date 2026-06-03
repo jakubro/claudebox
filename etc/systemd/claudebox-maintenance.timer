@@ -1,0 +1,10 @@
+[Unit]
+Description=Claudebox Maintenance Timer
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

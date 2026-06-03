@@ -1,0 +1,18 @@
+{
+  "path": [
+    "src",
+    "e2e",
+    "scripts",
+    "tests"
+  ],
+  "ignore": [
+    "**/*.json",
+    "**/*.jsonl",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/test_*"
+  ],
+  "absolute": true,
+  "gitignore": true,
+  "mode": "weak"
+}

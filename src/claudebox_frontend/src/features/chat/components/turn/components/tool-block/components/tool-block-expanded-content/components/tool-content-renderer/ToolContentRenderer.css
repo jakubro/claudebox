@@ -1,0 +1,66 @@
+/* Tool content renderer styles */
+
+.tool-details {
+  margin-top: 4px;
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 336px; /* ~20 lines at 12px * 1.4 line-height */
+  overflow: auto;
+}
+
+/* Wrapper for tool details with copy button */
+.tool-details-wrapper {
+  position: relative;
+  margin-top: 4px;
+}
+
+.tool-copy-btn,
+.tool-expand-btn,
+.tool-download-btn {
+  top: 4px;
+}
+
+.tool-copy-btn {
+  right: 4px;
+}
+
+.tool-expand-btn {
+  right: 60px;
+  text-decoration: none;
+}
+
+.tool-download-btn {
+  right: 32px;
+  text-decoration: none;
+}
+
+.tool-details-wrapper:hover .tool-copy-btn,
+.tool-details-wrapper:hover .tool-expand-btn,
+.tool-details-wrapper:hover .tool-download-btn {
+  opacity: 1;
+}
+
+.tool-expand-btn .spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Adjust details when inside wrapper */
+.tool-details-wrapper .tool-details {
+  margin-top: 0;
+}
+
+/* Reset browser defaults on pre/code inside tool details — prevents margin/padding stacking
+   with .tool-details padding and normalizes SyntaxHighlighter typography to match table-based CodeBlock */
+.tool-details pre,
+.tool-details code {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  line-height: inherit;
+}

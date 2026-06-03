@@ -1,0 +1,66 @@
+/* Tool block expanded content styles */
+
+.tool-json {
+  margin-top: 4px;
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 336px;
+  overflow-y: auto;
+}
+
+.tool-json [data-testid] {
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+}
+
+/* Nested tool blocks (subagent operations) */
+.tool-nested {
+  margin-top: 8px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.tool-skill-content,
+.tool-markdown-content {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+/* ExitPlanMode rendering */
+.tool-plan {
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+/* Task result section - margin override for CollapsibleSection */
+.task-result {
+  margin-top: 8px;
+}
+
+/* Prevent margin stacking with container padding in markdown/skill content */
+.tool-markdown-content > :first-child,
+.tool-skill-content > :first-child {
+  margin-top: 0;
+}
+
+.tool-markdown-content > :last-child,
+.tool-skill-content > :last-child {
+  margin-bottom: 0;
+}
+
+/* Force sans-serif for expanded content with turn-text, overriding .tool-block monospace */
+.tool-plan,
+.tool-plan p,
+.tool-skill-content,
+.tool-skill-content p,
+.tool-markdown-content,
+.tool-markdown-content p {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}

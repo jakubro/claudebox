@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Read the README","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Read","tool_input":{"file_path":"/home/user/project/README.md"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"     1\t# My Project\n     2\t\n     3\tA sample project for testing.\n     4\t\n     5\t## Installation\n     6\t\n     7\t```bash\n     8\tnpm install\n     9\t```\n    10\t\n    11\t## Features\n    12\t\n    13\t- **Fast** rendering\n    14\t- Easy to use\n    15\t- [Documentation](https://example.com)","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Here is the README file.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

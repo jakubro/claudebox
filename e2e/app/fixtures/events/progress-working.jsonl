@@ -1,0 +1,2 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Do something for me","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"I'm working on it...","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}

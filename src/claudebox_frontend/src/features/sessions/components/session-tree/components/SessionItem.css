@@ -1,0 +1,301 @@
+/* Session item - fixed height grid layout */
+.sessions-item {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  min-height: 88px;
+}
+
+.sessions-item-current {
+  border-left-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+/* Row base styles */
+.sessions-row {
+  display: flex;
+  align-items: center;
+  min-height: 14px;
+  min-width: 0;
+}
+
+/* Row 1: Header (ID + Name + Edit button) */
+.sessions-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sessions-id {
+  position: relative;
+  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  flex-shrink: 0;
+}
+
+.sessions-id-clickable {
+  transition: color 0.15s;
+}
+
+.sessions-id-clickable:hover {
+  color: var(--text-primary);
+}
+
+.sessions-id-copied {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--success);
+}
+
+.sessions-name {
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Vertical metrics live in App.css shared block. */
+.sessions-edit-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.sessions-item:hover .sessions-edit-btn {
+  opacity: 1;
+}
+
+.sessions-edit-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Row 2: Meta + Buttons */
+.sessions-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sessions-meta-left {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sessions-buttons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Row 3: Meta overflow (narrow only) */
+.sessions-meta-overflow {
+  display: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Rows 4-5: Message previews */
+.sessions-first,
+.sessions-last {
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 14px;
+  line-height: 1.2;
+}
+
+.sessions-first {
+  color: var(--text-secondary);
+}
+
+.sessions-last {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.sessions-first span,
+.sessions-last span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Buttons (pin/kill/newtab/resume) — vertical metrics live in App.css. */
+.sessions-pin-btn,
+.sessions-kill-btn,
+.sessions-resume-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.sessions-pin-btn:hover,
+.sessions-kill-btn:hover,
+.sessions-resume-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.sessions-kill-btn:hover {
+  color: var(--error);
+}
+
+/* Pin icon vertical alignment nudge (matches tab bar fix from ChatControlBar) */
+.sessions-pin-btn > svg {
+  transform: translateY(1px);
+}
+
+.sessions-pin-btn.pinned {
+  color: #f97316;
+}
+
+.sessions-pin-btn.pinned:hover {
+  color: #fb923c;
+}
+
+/* Resume split-button (Play + chevron dropdown) */
+.sessions-resume-split {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.sessions-resume-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.sessions-resume-chevron > svg {
+  transform: translateY(-1px);
+}
+
+.sessions-resume-chevron:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Inherits chrome from .dropdown-menu; this rule sets only the overrides.
+   position: fixed lets the dropdown escape the sessions-list overflow:auto
+   container; top/left are computed via useDropdownPosition and applied inline. */
+.sessions-resume-dropdown {
+  position: fixed;
+  z-index: 9999;
+  min-width: 220px;
+}
+
+/* Edit mode (inline input + buttons) */
+.sessions-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sessions-edit-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.sessions-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sessions-edit-cancel,
+.sessions-edit-save {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.sessions-edit-cancel {
+  color: var(--text-muted);
+}
+
+.sessions-edit-cancel:hover {
+  color: var(--error);
+  background: var(--bg-tertiary);
+}
+
+.sessions-edit-save {
+  color: var(--text-muted);
+}
+
+.sessions-edit-save:hover {
+  color: var(--success);
+  background: var(--bg-tertiary);
+}
+
+/* Container query: narrow layout (< 300px) */
+@container sessions-panel (max-width: 300px) {
+  .sessions-item {
+    min-height: 102px;
+  }
+
+  .sessions-meta-extra {
+    display: none;
+  }
+
+  .sessions-meta-overflow {
+    display: block;
+  }
+}

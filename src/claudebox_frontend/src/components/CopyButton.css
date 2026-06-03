@@ -1,0 +1,19 @@
+/* CopyButton base — absolute-positioned overlay button with hover reveal */
+
+.copy-btn {
+  position: absolute;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.copy-btn:hover {
+  color: var(--text-primary);
+}

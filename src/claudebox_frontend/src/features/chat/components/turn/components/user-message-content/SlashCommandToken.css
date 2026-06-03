@@ -1,0 +1,10 @@
+/* Slash-command hover card chrome — wraps CommandDetailPanel in a floating shell. */
+
+.slash-command-hover-card {
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 360px;
+}

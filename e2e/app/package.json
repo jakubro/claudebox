@@ -1,0 +1,10 @@
+{
+  "name": "claudebox-e2e-app",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E tests for the claudebox frontend.",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "serve": "^14.2.5"
+  }
+}

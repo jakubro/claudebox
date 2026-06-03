@@ -1,0 +1,3 @@
+{"type":"user","subtype":"text","is_human":true,"content":"<command-name>/help</command-name><command-args></command-args>","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Here are the available commands...","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_003","primary":false,"is_human":false,"ts":"2025-01-18T12:00:02Z"}

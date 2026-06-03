@@ -1,0 +1,33 @@
+/* Passive toast surfaced when the user replaces a still-responding session. */
+
+.still-running-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 150;
+  text-align: left;
+}
+
+.still-running-toast:hover {
+  background: var(--bg-tertiary);
+}
+
+.still-running-toast-text strong {
+  font-weight: 600;
+}
+
+.still-running-toast-cta {
+  color: var(--text-muted);
+  font-size: 11px;
+}

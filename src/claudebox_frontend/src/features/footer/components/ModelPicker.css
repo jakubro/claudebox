@@ -1,0 +1,11 @@
+/* Model picker styles — extends .footer-picker base */
+
+.footer-model-dropdown {
+  min-width: 280px;
+}
+
+.footer-model-option-id {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: auto;
+}

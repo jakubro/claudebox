@@ -1,0 +1,66 @@
+/* Split-button for creating new sessions — flat layout, no chrome by default. */
+
+.new-session-split {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  position: relative;
+}
+
+.new-session-split-btn,
+.new-session-split-chevron {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  height: var(--chrome-btn-h);
+  padding: var(--chrome-btn-pad-y) 6px;
+  margin: var(--chrome-btn-mar-y) 0;
+  line-height: var(--chrome-btn-line-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.new-session-split--accent .new-session-split-btn,
+.new-session-split--accent .new-session-split-chevron {
+  color: var(--header-icon-color);
+}
+
+.new-session-split--plain .new-session-split-btn,
+.new-session-split--plain .new-session-split-chevron {
+  color: var(--text-muted);
+}
+
+.new-session-split--accent .new-session-split-btn:hover:not(:disabled),
+.new-session-split--accent .new-session-split-chevron:hover:not(:disabled) {
+  background: var(--accent-hover, var(--bg-tertiary));
+  color: var(--text-primary);
+}
+
+.new-session-split--plain .new-session-split-btn:hover:not(:disabled),
+.new-session-split--plain .new-session-split-chevron:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.new-session-split-btn:disabled,
+.new-session-split-chevron:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Chevron gets symmetric horizontal padding so the icon centers in its
+   hover-bg rectangle (was asymmetric `padding-left: 2px; padding-right: 4px`). */
+.new-session-split-chevron {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+.new-session-dropdown {
+  z-index: 200;
+}
+
+.new-session-dropdown-portal {
+  position: fixed;
+}

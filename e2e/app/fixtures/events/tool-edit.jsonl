@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Fix the typo in app.js","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Edit","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Edit","tool_input":{"file_path":"/home/user/project/app.js","old_string":"consle.log","new_string":"console.log"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"The file /home/user/project/app.js has been updated.\n---old\n+++ new\n@@ -1,3 +1,3 @@\n function main() {\n-  consle.log('hello')\n+  console.log('hello')\n }","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Fixed the typo: changed `consle.log` to `console.log`.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

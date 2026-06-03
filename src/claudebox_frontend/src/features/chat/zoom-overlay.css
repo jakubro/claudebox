@@ -1,0 +1,23 @@
+/* Shared close button for fullscreen zoom overlays (mermaid diagrams, attachment previews) */
+
+.zoom-overlay-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.zoom-overlay-close:hover {
+  background: var(--bg-secondary);
+}

@@ -1,0 +1,3 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Explain formatting","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Here is **bold text** and `inline code` and a\n# Heading\nwith more content","ts":"2025-01-18T12:00:03Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:05Z","id":"evt_003","primary":false,"is_human":false}

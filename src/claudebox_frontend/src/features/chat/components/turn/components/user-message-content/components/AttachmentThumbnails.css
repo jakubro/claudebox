@@ -1,0 +1,78 @@
+/* Attachment thumbnails in user message history */
+.message-attachments {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.message-attachment-item {
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+}
+
+.message-attachment-thumb {
+  display: block;
+  max-width: 200px;
+  max-height: 150px;
+  object-fit: contain;
+}
+
+.message-attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.message-attachment-ext {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.message-attachment-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attachment-thumb {
+  cursor: zoom-in;
+}
+
+/* Attachment zoom overlay — mirrors mermaid-zoom-overlay pattern */
+.attachment-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.attachment-zoom-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 24px;
+}
+
+.attachment-zoom-content img {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+}

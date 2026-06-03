@@ -1,0 +1,7 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Help me refactor this code","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"ExitPlanMode","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"ExitPlanMode","tool_input":{"plan":"# Refactoring Plan\n\n## Overview\n\nWe will restructure the authentication module.\n\n## Steps\n\n1. Extract authentication logic to separate file\n2. Create interface for auth providers\n3. Update existing code to use new interface\n\n## Benefits\n\n- Better separation of concerns\n- Easier testing\n- Supports multiple auth providers"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Waiting for approval","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","id":"evt_004","primary":false,"is_human":false,"ts":"2025-01-18T12:00:03Z"}
+{"type":"user","subtype":"text","is_human":true,"content":"Actually wait, let me reconsider the approach first.","ts":"2025-01-18T12:00:10Z","turn_id":"turn_002","id":"evt_005","primary":true}
+{"type":"assistant","subtype":"text","content":"Sure, take your time to reconsider.","ts":"2025-01-18T12:00:11Z","id":"evt_006","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","id":"evt_007","primary":false,"is_human":false,"ts":"2025-01-18T12:00:06Z"}

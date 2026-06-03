@@ -1,0 +1,28 @@
+/* User message content styles */
+
+/* Local command output blocks */
+.message-content-with-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #424245;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+/* Slash commands — bold for both recognised and unrecognised; resolved
+   gets a dotted underline + pointer cursor (hover card affordance). */
+.slash-command {
+  display: inline;
+  font-weight: 700;
+}
+.slash-command.resolved {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.slash-command.unresolved {
+  text-decoration: none;
+}

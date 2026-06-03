@@ -1,0 +1,523 @@
+/* Board — columns, swimlanes, cards, overlays */
+
+.board-tab {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.board-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.board-spinner {
+  animation: board-spin 1s linear infinite;
+}
+
+@keyframes board-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.board-error {
+  padding: 16px;
+  color: var(--error);
+  font-size: 13px;
+}
+
+/* Board grid — single CSS grid container, grid-template-columns set inline by
+   BoardTab.jsx based on columns order and collapsedColumns state. Rows + bands
+   use display: contents so their children participate in the parent grid as
+   direct items, keeping every cell in the same column horizontally aligned
+   regardless of which row's content is widest. */
+.board-board {
+  flex: 1;
+  overflow: auto;
+  display: grid;
+  /* grid-template-columns set inline (e.g. "minmax(200px, 1fr) 32px ...") */
+  grid-auto-rows: min-content;
+}
+
+/* Column headers — display: contents on the row so individual headers sit on
+   the parent grid; sticky is applied per-cell since display:contents drops
+   the wrapper from the layout tree. */
+.board-header-row {
+  display: contents;
+}
+
+.board-col-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  border-right: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.board-col-header:last-child {
+  border-right: none;
+}
+
+.board-col-header.collapsed {
+  overflow: hidden;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.board-col-toggle {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.board-col-header.collapsed .board-col-toggle {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  justify-content: flex-start;
+  padding: 4px 0;
+}
+
+.board-col-chevron {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* Drag handles for sortable headers */
+.board-drag-handle {
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  padding: 2px;
+}
+
+.board-drag-handle:active {
+  cursor: grabbing;
+}
+
+.board-col-header:hover .board-drag-handle,
+.swimlane-header:hover .board-drag-handle {
+  opacity: 0.6;
+}
+
+.board-col-header:hover .board-drag-handle:hover,
+.swimlane-header:hover .board-drag-handle:hover {
+  opacity: 1;
+}
+
+/* Swimlane bands — display: contents so their children (header + cells) are
+   direct children of the parent grid. Borders are painted by the band header
+   and cells, not the band element. */
+.swimlane-band {
+  display: contents;
+}
+
+.swimlane-header {
+  /* Spans all grid columns so the lane name + collapse toggle stretch across
+     the full board width regardless of column count. */
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: default;
+  position: relative;
+  user-select: none;
+}
+
+.swimlane-header.unsorted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.swimlane-collapse-toggle {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.swimlane-name {
+  flex: 1;
+}
+
+.swimlane-name-input,
+.board-col-name-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 1px 4px;
+  outline: none;
+}
+
+.board-col-name-input {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* swimlane-columns wrapper: display: contents so cells participate in the
+   parent grid directly. Cells inherit width from the grid track instead of
+   flex sizing, so every column has the same width across all swimlanes. */
+.swimlane-columns {
+  display: contents;
+}
+
+/* Column cells — width comes entirely from the parent grid track. */
+.board-cell {
+  padding: 4px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 40px;
+  min-width: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  transition: background 0.15s;
+}
+
+.board-cell.collapsed {
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+}
+
+.board-cell.terse {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  align-items: baseline;
+}
+
+/* TicketLink renders as <button> for a11y; reset chrome to inline-link feel. */
+.ticket-link {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ticket-link:hover {
+  text-decoration: underline;
+}
+
+.ticket-link.session-active {
+  color: var(--accent);
+}
+
+.ticket-link.selected {
+  background: rgba(14, 99, 156, 0.18);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.board-cell.drag-over,
+.board-col-header.drag-over {
+  background: var(--bg-hover);
+}
+
+.board-cell-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.board-cell-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  opacity: 0.6;
+}
+
+/* Ticket cards */
+.ticket-card {
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: grab;
+  font-size: 12px;
+  min-height: 52px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.ticket-card:hover {
+  border-color: var(--text-muted);
+}
+
+.ticket-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ticket-card.dragging {
+  opacity: 0.4;
+}
+
+.ticket-card.drag-overlay {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: grabbing;
+}
+
+.ticket-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ticket-card-checkbox {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.ticket-card-title {
+  color: var(--text-primary);
+  line-height: 1.3;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ticket-card-session {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ticket-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ticket-status-dot.running {
+  background: var(--success, #4caf50);
+}
+
+.ticket-status-dot.stopped {
+  background: var(--text-muted);
+}
+
+.ticket-session-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Add swimlane row */
+.swimlane-add-row {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.swimlane-add-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.swimlane-add-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Context menus (swimlane header + ticket card) — shared chrome */
+
+.swimlane-context-backdrop,
+.ticket-context-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+.swimlane-context-menu,
+.ticket-context-menu {
+  position: fixed;
+  z-index: 101;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  min-width: 120px;
+}
+
+.swimlane-context-menu button,
+.ticket-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.swimlane-context-menu button:hover,
+.ticket-context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.swimlane-context-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
+
+/* Ticket detail overlay */
+.ticket-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.ticket-detail-panel {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  width: 80vw;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ticket-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ticket-detail-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ticket-detail-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.ticket-detail-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ticket-detail-meta {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ticket-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ticket-meta-label {
+  color: var(--text-muted);
+  min-width: 72px;
+}
+
+.ticket-meta-value {
+  color: var(--text-primary);
+}
+
+.ticket-detail-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.ticket-detail-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+}

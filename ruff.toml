@@ -1,0 +1,36 @@
+line-length = 100
+indent-width = 4
+target-version = "py311"
+
+[format]
+line-ending = "lf"
+
+[lint]
+ignore = [
+  "F401",
+]
+
+extend-select = [
+  "I",
+  "TID251",
+]
+
+[lint.flake8-tidy-imports.banned-api]
+"claude_agent_sdk".msg = "Import claude_agent_sdk only from claudebox/agent_session/runtime_claude.py — see GUIDELINES §SDK Containment"
+
+[lint.per-file-ignores]
+"src/claudebox/agent_session/runtime_claude.py" = ["TID251"]
+"tests/**/*.py" = ["TID251"]
+
+[lint.isort]
+case-sensitive = true
+no-lines-before = ["local-folder"]
+relative-imports-order = "closest-to-furthest"
+lines-after-imports = 2
+known-first-party = [
+  "claudebox",
+  "claudebox_cli",
+  "claudebox_container_api",
+  "claudebox_daemon",
+  "claudebox_frontend"
+]

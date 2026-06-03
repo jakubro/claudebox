@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","content":null,"primary":false,"is_human":false,"id":"evt_000000001","ts":"2025-01-18T12:00:00Z","turn_id":null,"message_data":{"session_id":"test-session-001"}}
+{"type":"user","subtype":"message","is_human":true,"primary":true,"content":"Check this image","id":"evt_000000002","ts":"2025-01-18T12:00:01Z","turn_id":"turn_att_001","attachments":[{"name":"screenshot.png","type":"image/png","filename":"att_001_screenshot.png","size":24576}]}
+{"type":"assistant","subtype":"text","content":"I can see the screenshot.","primary":true,"is_human":false,"id":"evt_000000003","ts":"2025-01-18T12:00:02Z","turn_id":"turn_att_001"}
+{"type":"result","subtype":"success","content":null,"primary":false,"is_human":false,"id":"evt_000000004","ts":"2025-01-18T12:00:03Z","turn_id":"turn_att_001","cost_usd":0.01,"duration_ms":1500}

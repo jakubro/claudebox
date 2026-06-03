@@ -1,0 +1,70 @@
+/* Rewind confirmation modal */
+.rewind-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.rewind-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  max-width: 320px;
+}
+
+.rewind-modal-title {
+  margin: 0 0 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.rewind-modal-detail {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rewind-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.rewind-modal-cancel,
+.rewind-modal-confirm {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.rewind-modal-cancel {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.rewind-modal-cancel:hover {
+  color: var(--text-primary);
+}
+
+.rewind-modal-confirm {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.rewind-modal-confirm:hover {
+  opacity: 0.9;
+}
+
+.rewind-modal-cancel:disabled,
+.rewind-modal-confirm:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

@@ -1,0 +1,98 @@
+{
+  "tree": [
+    {
+      "id": "/workspace/src",
+      "name": "src",
+      "type": "directory",
+      "children": [
+        {
+          "id": "/workspace/src/index.js",
+          "name": "index.js",
+          "type": "file",
+          "children": []
+        },
+        {
+          "id": "/workspace/src/App.jsx",
+          "name": "App.jsx",
+          "type": "file",
+          "children": []
+        },
+        {
+          "id": "/workspace/src/components",
+          "name": "components",
+          "type": "directory",
+          "children": [
+            {
+              "id": "/workspace/src/components/Header.jsx",
+              "name": "Header.jsx",
+              "type": "file",
+              "children": []
+            },
+            {
+              "id": "/workspace/src/components/Footer.jsx",
+              "name": "Footer.jsx",
+              "type": "file",
+              "children": []
+            },
+            {
+              "id": "/workspace/src/components/Sidebar.jsx",
+              "name": "Sidebar.jsx",
+              "type": "file",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "/workspace/src/utils",
+          "name": "utils",
+          "type": "directory",
+          "children": [
+            {
+              "id": "/workspace/src/utils/helpers.js",
+              "name": "helpers.js",
+              "type": "file",
+              "children": []
+            },
+            {
+              "id": "/workspace/src/utils/formatters.js",
+              "name": "formatters.js",
+              "type": "file",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "/workspace/tests",
+      "name": "tests",
+      "type": "directory",
+      "children": [
+        {
+          "id": "/workspace/tests/App.test.jsx",
+          "name": "App.test.jsx",
+          "type": "file",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "/workspace/package.json",
+      "name": "package.json",
+      "type": "file",
+      "children": []
+    },
+    {
+      "id": "/workspace/README.md",
+      "name": "README.md",
+      "type": "file",
+      "children": []
+    },
+    {
+      "id": "/workspace/.gitignore",
+      "name": ".gitignore",
+      "type": "file",
+      "children": []
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+/* Shared dropdown picker base classes */
+
+.footer-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 5;
+}
+
+.footer-picker-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  transition: color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.footer-picker-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.footer-picker-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.footer-picker-dropdown {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  z-index: 200;
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+  padding: 4px 0;
+}
+
+.footer-dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-dropdown-option.selected {
+  color: var(--accent);
+}
+
+.footer-dropdown-error {
+  color: #f44336;
+}
+
+.footer-dropdown-check {
+  width: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.footer-dropdown-name {
+  flex-shrink: 0;
+}

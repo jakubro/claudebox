@@ -1,0 +1,39 @@
+/* Help panel */
+.help-panel {
+  height: 100%;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.help-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-table tr:last-child td {
+  border-bottom: none;
+}
+
+.help-key {
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+  width: 1%;
+}
+
+.help-section td {
+  padding-top: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: none;
+}

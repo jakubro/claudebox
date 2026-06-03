@@ -1,0 +1,75 @@
+/* Confirm-deregister modal — mirrors ConfirmStopModal layout. */
+
+.confirm-deregister-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.confirm-deregister-modal {
+  width: 380px;
+  max-width: 90vw;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 16px;
+  color: var(--text-primary);
+}
+
+.confirm-deregister-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.confirm-deregister-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.confirm-deregister-detail code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.confirm-deregister-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-deregister-cancel,
+.confirm-deregister-confirm {
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.confirm-deregister-cancel:hover {
+  background: var(--bg-hover);
+}
+
+.confirm-deregister-confirm {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.confirm-deregister-confirm:hover {
+  filter: brightness(1.1);
+}

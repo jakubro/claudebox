@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Read the config file","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Read","tool_input":{"file_path":"/home/user/project/config.json"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"{\n  \"name\": \"my-project\",\n  \"version\": \"1.0.0\"\n}","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The config file contains the project name and version.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

@@ -1,0 +1,104 @@
+/* Register workspace modal — overlay + form. */
+
+.register-workspace-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.register-workspace-modal {
+  width: 360px;
+  max-width: 90vw;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.register-workspace-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+.register-workspace-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.register-workspace-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+}
+
+.register-workspace-input:focus {
+  outline: none;
+  border-color: var(--accent, #4ade80);
+}
+
+.register-workspace-error {
+  margin: 0;
+  color: #ef4444;
+  font-size: 12px;
+}
+
+.register-workspace-notice {
+  margin: 0;
+  color: #4ade80;
+  font-size: 12px;
+}
+
+.register-workspace-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.register-workspace-cancel,
+.register-workspace-confirm {
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.register-workspace-cancel:hover,
+.register-workspace-confirm:hover {
+  background: var(--bg-hover);
+}
+
+.register-workspace-confirm {
+  background: var(--accent, #4ade80);
+  border-color: var(--accent, #4ade80);
+  color: var(--bg-primary);
+}
+
+.register-workspace-confirm:hover {
+  filter: brightness(1.1);
+}
+
+.register-workspace-confirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

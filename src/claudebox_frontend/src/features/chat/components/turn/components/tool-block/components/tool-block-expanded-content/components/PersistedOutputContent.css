@@ -1,0 +1,15 @@
+/* Persisted output content styles */
+
+/* Persisted output */
+.persisted-output-truncated {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.persisted-output-error {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--error);
+}

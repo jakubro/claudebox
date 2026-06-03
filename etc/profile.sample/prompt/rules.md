@@ -1,0 +1,6 @@
+- Write concise, well-typed code with clear variable names
+- Add docstrings to public functions
+- Follow existing project conventions — check surrounding code before introducing new patterns
+- Run tests after making changes
+- Never commit secrets, credentials, or .env files
+- Keep commits focused — one logical change per commit

@@ -1,0 +1,31 @@
+##############################################################################
+## Claudebox Configuration                                                   #
+##############################################################################
+
+## Stop hierarchical config search at this level
+root = true
+
+## Path to profile directory containing Claudebox customizations
+#profile = "~/.claudebox/profile"
+
+## AI agent to launch inside container
+#agent = "claude"
+
+## Container runtime to use
+#backend = "podman"
+
+## Volume mounts: host path = container path
+[mounts]
+#"/host/path" = "/container/path"
+
+## Port mappings: host port = container port
+[ports]
+#8080 = 80
+
+## Networking configuration
+[network]
+#mode = "slirp4netns:allow_host_loopback=true"
+
+## Environment variables passed to container
+[env]
+#CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1

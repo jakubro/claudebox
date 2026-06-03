@@ -1,0 +1,9 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Initial message","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Acknowledged.","ts":"2025-01-18T12:00:01Z","turn_id":"turn_001","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Switch model and effort","ts":"2025-01-18T12:00:10Z","turn_id":"turn_002","id":"evt_004","primary":true}
+{"type":"system","subtype":"model_changed","model":"claude-opus-4-20250514","previous_model":"claude-sonnet-4-20250514","ts":"2025-01-18T12:00:11Z","turn_id":"turn_002","id":"evt_005","primary":false,"is_human":false}
+{"type":"system","subtype":"effort_level_changed","effort_level":"max","previous_effort_level":"medium","ts":"2025-01-18T12:00:12Z","turn_id":"turn_002","id":"evt_006","primary":false,"is_human":false}
+{"type":"system","subtype":"permission_mode_changed","permission_mode":"bypassPermissions","previous_permission_mode":"default","ts":"2025-01-18T12:00:13Z","turn_id":"turn_002","id":"evt_007","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Settings applied.","ts":"2025-01-18T12:00:14Z","turn_id":"turn_002","id":"evt_008","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","ts":"2025-01-18T12:00:15Z","id":"evt_009","primary":false,"is_human":false}

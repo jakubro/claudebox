@@ -1,0 +1,8 @@
+/* Inline character-level diff highlights (within paired lines) */
+.diff-inline-removed {
+  background: rgba(244, 67, 54, 0.35);
+}
+
+.diff-inline-added {
+  background: rgba(76, 175, 80, 0.35);
+}

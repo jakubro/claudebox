@@ -1,0 +1,189 @@
+#!/bin/bash
+# System prompt compilation script
+set -euo pipefail
+
+# --------------------------------------------------------------------------------------------------
+# Interpolation logic
+# --------------------------------------------------------------------------------------------------
+
+# Interpolates {{ ... }} patterns in content with automatic indentation
+interpolate() {
+  local unprocessed=${1:-$(cat)}
+  local result=$unprocessed
+  local nl=$'\n'
+
+  # Match line prefix and {{ ... }} pattern together
+  while [[ $unprocessed =~ (^|$nl)([^$nl]*)(\{\{([^}]+)\}\}) ]]; do
+    local prefix=${BASH_REMATCH[2]}  # Everything before {{ on the line
+    local pattern=${BASH_REMATCH[3]} # The full {{ path }}
+    local path=${BASH_REMATCH[4]}    # Just the path part
+
+    path=$(trim_str "$path")
+
+    # Resolve path to content
+    local resolved
+    if [[ $path =~ ^! ]]; then
+      resolved=$("fn_${path#'!'}")
+    else
+      path=$(resolve_path "$path")
+      resolved=$(resolve_content "$path")
+    fi
+
+    # Adds prefix to the beginning of all lines (except first because that is already prefixed)
+    if [[ $prefix =~ ^[[:space:]]*$ ]]; then
+      resolved=${resolved//$nl/$nl$prefix}
+    fi
+
+    # Escape special characters in replacement string
+    # In ${var/pattern/replacement}, & means "the matched text" and \ is escape char
+    resolved=${resolved//\\/\\\\} # Escape backslashes first
+    resolved=${resolved//&/\\&}   # Then escape ampersands
+
+    # Remove processed pattern
+    unprocessed=${unprocessed#*"$pattern"}
+    result=${result/$pattern/$resolved}
+  done
+
+  echo "$result"
+}
+
+# Resolves path (/absolute, @workspace, or prompt-relative)
+resolve_path() {
+  local path=$1
+
+  if [[ $path =~ ^/ ]]; then
+    # Absolute path
+    echo "$path"
+  elif [[ $path =~ ^@ ]]; then
+    # Relative to workspace root (current working directory)
+    echo "${path#@}"
+  else
+    # Relative to prompt file
+    echo "$PROMPT_DIR/$path"
+  fi
+}
+
+# Resolves content from path (executes if executable, interpolates if in same directory as prompt)
+resolve_content() {
+  local path=$1
+
+  if [[ -x $path ]]; then
+    "$path"
+  elif [[ -f $path ]]; then
+    if [[ $path == "$PROMPT_DIR"/* ]]; then
+      interpolate <"$path"
+    else
+      cat "$path"
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------------------------------
+# Interpolation callables
+# --------------------------------------------------------------------------------------------------
+
+# Prints current working directory
+fn_path() {
+  pwd
+}
+
+# Prints directory tree filtered for important content, excludes paths from .ignore/.gitignore files
+fn_tree() {
+  local path=${1:-}
+
+  # Find all files of interest
+
+  local patterns=(
+    "^AGENTS(\.local)?\.md$"
+    "^MEMORY$"
+    "^\.ignore$"
+    "^\.workspace$"
+    "^\.module$"
+    "^\.git$"
+  )
+
+  local fd_args=(
+    --hidden
+    --no-ignore-vcs
+    --no-require-git
+    --case-sensitive
+    --exclude ".git/*"
+    --exclude ".claudebox"
+    --color never
+    "$(join_str "|" "${patterns[@]}")"
+  )
+
+  if [[ -n $path ]]; then
+    fd_args+=("$path")
+  fi
+
+  local paths
+  paths=$(fdfind "${fd_args[@]}")
+
+  # Visualize paths as a tree
+
+  local result
+  result=$(
+    tree \
+      -a \
+      --noreport \
+      -F \
+      --dirsfirst \
+      -v \
+      -A \
+      -n \
+      --fromfile \
+      <<<"$paths"
+  )
+
+  # Replace the top-level directory if operating on current directory
+
+  if [[ -z $path ]]; then
+    echo "$(pwd)/${result#./}"
+  else
+    echo "$result"
+  fi
+}
+
+# --------------------------------------------------------------------------------------------------
+# String manipulation
+# --------------------------------------------------------------------------------------------------
+
+# Trims leading and trailing whitespaces from $1
+trim_str() {
+  local str=$1
+
+  str="${str#"${str%%[![:space:]]*}"}" # Remove leading
+  str="${str%"${str##*[![:space:]]}"}" # Remove trailing
+
+  echo "$str"
+}
+
+# Joins $2..$N using $1 as separator
+join_str() {
+  local sep=$1
+  shift
+
+  (
+    IFS=$sep
+    echo "$*"
+  )
+}
+
+# --------------------------------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------------------------------
+
+main() {
+  local prompt_file=${1:-}
+  PROMPT_DIR=$(dirname "$prompt_file")
+
+  if [[ -z $prompt_file ]]; then
+    echo "Usage: $0 <file>"
+    exit 1
+  fi
+
+  interpolate <"$prompt_file"
+}
+
+main "$@"

@@ -1,0 +1,14 @@
+*.egg-info
+*.pyc
+.coverage
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+node_modules
+
+src/claudebox_frontend/.vite
+src/claudebox_frontend/coverage
+src/claudebox_frontend/dist
+src/claudebox_frontend/playwright-report
+src/claudebox_frontend/test-results

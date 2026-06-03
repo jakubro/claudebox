@@ -1,0 +1,38 @@
+/* Turn progress indicator styles */
+
+.turn-progress {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.turn-progress-working {
+  color: var(--text-muted);
+}
+
+.turn-progress-working .progress-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.turn-progress-working .dot {
+  opacity: 0;
+  animation: dot-fade 1.2s infinite;
+}
+
+.turn-progress-working .dot-1 {
+  animation-delay: 0s;
+}
+.turn-progress-working .dot-2 {
+  animation-delay: 0.2s;
+}
+.turn-progress-working .dot-3 {
+  animation-delay: 0.4s;
+}
+
+.turn-progress-complete {
+  color: #4caf50;
+}

@@ -1,0 +1,371 @@
+/* Turn component styles */
+
+.chat-message-user {
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.message-copy-btn {
+  top: 4px;
+  right: 4px;
+  background: var(--bg-tertiary);
+}
+
+.message-bookmark-btn {
+  position: absolute;
+  top: 4px;
+  right: 32px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  height: 22px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.message-bookmark-btn.active {
+  color: #e8b931;
+}
+
+.message-rewind-split {
+  position: absolute;
+  top: 4px;
+  right: 60px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.message-rewind-btn {
+  border: 1px solid var(--border);
+  border-radius: 4px 0 0 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  box-sizing: border-box;
+}
+
+.message-rewind-chevron {
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  padding: 4px 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  height: 22px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-message-user:hover .message-copy-btn,
+.chat-message-user:hover .message-rewind-split,
+.chat-message-user:hover .message-bookmark-btn,
+.chat-message-user.forking .message-copy-btn,
+.chat-message-user.forking .message-rewind-split,
+.chat-message-user.forking .message-bookmark-btn {
+  opacity: 1;
+}
+
+.message-copy-btn:hover,
+.message-bookmark-btn:hover,
+.message-rewind-btn:hover,
+.message-rewind-chevron:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.rewind-dropdown {
+  right: 0;
+  z-index: 100;
+}
+
+.chat-message-user .message-content {
+  display: block;
+  background: #424245;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 6px;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-family: monospace;
+}
+
+/* Force trailing newlines visible — pre-wrap doesn't create a line box for
+   a final \n at block boundary; zero-width space provides the needed content */
+.chat-message-user .message-content::after {
+  content: "\200b";
+}
+
+/* Highlight flash when jumping to a human message */
+.chat-message-user.jump-highlight .message-content {
+  animation: jump-highlight-pulse 1.5s ease-out;
+}
+
+@keyframes jump-highlight-pulse {
+  0% {
+    background: rgba(59, 130, 246, 0.3);
+  }
+  100% {
+    background: #424245;
+  }
+}
+
+/* Turn component */
+.turn-container {
+  margin-bottom: 16px;
+  /* Skip layout and paint for off-screen turns. Median observed turn height
+     ~400px; setting this lower causes scrollbar jump as turns materialize,
+     higher wastes initial layout budget. Off-screen turns remain in the DOM
+     so browser find, selection, and print keep working.
+
+     Two-declaration cascade: Safari ≤17 + older Firefox parse-error the
+     `auto <length>` syntax and ignore that declaration entirely; the literal
+     fallback above keeps a 400px floor for them. Modern Chromium/Firefox 125+/
+     Safari 18+ promote to the `auto` variant which auto-caches the last
+     rendered size as the intrinsic estimate (residual smoothing). The
+     per-turn JS cache in useTurnHeights covers all browsers; this CSS is the
+     belt-and-suspenders layer for modern UAs. */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 400px;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: intentional Safari ≤17 / older Firefox cascade fallback (see comment above) */
+  contain-intrinsic-size: auto 400px;
+}
+
+.turn-container.pending {
+  opacity: 0.6;
+}
+
+/* Opt-out applied by useTurnHeights warmup pass to force real layout on off-screen
+   turns so the JS cache can replace the predicted height with the measured one. */
+.turn-container.force-measure {
+  content-visibility: visible;
+}
+
+.turn {
+  position: relative;
+  margin-top: 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+/* Corner triangle indicator for bookmarked messages */
+.chat-message-user.bookmarked::after,
+.turn.bookmarked::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-top: 6px solid #e8b931;
+  border-right: 6px solid #e8b931;
+  border-bottom: 6px solid transparent;
+  border-left: 6px solid transparent;
+  border-radius: 0 3px 0 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Highlight flash when jumping to an assistant turn */
+.turn.jump-highlight {
+  animation: turn-jump-highlight-pulse 1.5s ease-out;
+}
+
+@keyframes turn-jump-highlight-pulse {
+  0% {
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.5);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+.turn-content {
+  padding-top: 0;
+}
+
+.turn-content-collapsed {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+}
+
+.turn > .turn-content > :first-child {
+  margin-top: 20px;
+}
+
+.turn-error {
+  border-left: 3px solid #f44336;
+}
+
+.turn-interrupted {
+  border-left: 3px solid #ffeb3b;
+}
+
+/* Interrupt acknowledgment indicator */
+.interrupt-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: #ffeb3b;
+}
+
+.interrupt-dash {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.turn-text {
+  position: relative;
+  word-break: break-word;
+  margin: 10px 0;
+}
+
+/* Individual message copy button (right edge, aligned with message top) */
+.turn-text-copy-btn {
+  top: 0;
+  right: 0;
+  background: var(--bg-tertiary);
+}
+
+.turn-text:hover .turn-text-copy-btn {
+  opacity: 1;
+}
+
+.turn-text-copy-btn:hover {
+  background: var(--bg-secondary);
+}
+
+/* Hide text copy button when first child is a code block (buttons would overlap) */
+.turn-text:has(> pre:first-child) .turn-text-copy-btn {
+  display: none;
+}
+
+.turn-text:last-child {
+  margin-bottom: 0;
+}
+
+/* Markdown styles */
+.turn-text p {
+  margin: 0 0 0.75em 0;
+}
+
+.turn-text p:last-child {
+  margin-bottom: 0;
+}
+
+.turn-text code {
+  font-family: monospace;
+  background: var(--bg-tertiary);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.turn-text pre {
+  margin: 0.75em 0;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.turn-text pre code {
+  background: none;
+  padding: 0;
+}
+
+.turn-text h1,
+.turn-text h2,
+.turn-text h3,
+.turn-text h4 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+}
+
+.turn-text h1:first-child,
+.turn-text h2:first-child,
+.turn-text h3:first-child {
+  margin-top: 0;
+}
+
+.turn-text h1 {
+  font-size: 1.4em;
+}
+.turn-text h2 {
+  font-size: 1.2em;
+}
+.turn-text h3 {
+  font-size: 1.1em;
+}
+
+.turn-text ul,
+.turn-text ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.turn-text li {
+  margin: 0.25em 0;
+}
+
+.turn-text blockquote {
+  margin: 0.75em 0;
+  padding: 0.5em 1em;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.turn-text table {
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  width: 100%;
+}
+
+.turn-text th,
+.turn-text td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.turn-text th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.turn-text a {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+.turn-text a:hover {
+  text-decoration: underline;
+}
+
+.turn-text strong {
+  font-weight: 600;
+}
+
+.turn-text hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}

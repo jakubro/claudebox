@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Query chroma for patterns","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"mcp__chroma__chroma_query_documents","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"mcp__chroma__chroma_query_documents","tool_input":{"collection_name":"share","query_texts":["claudebox patterns"],"n_results":5},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"{\"ids\":[[\"id-1\",\"id-2\"]],\"documents\":[[\"doc one\",\"doc two\"]],\"distances\":[[0.5,0.8]]}","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Found 2 relevant documents.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

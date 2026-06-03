@@ -1,0 +1,43 @@
+{
+  "session_id": "test-session-001",
+  "name": null,
+  "workspace": "/home/user/project",
+  "permission_mode": "bypassPermissions",
+  "model": "claude-sonnet-4-6",
+  "num_turns": 0,
+  "total_cost_usd": 0,
+  "total_duration_ms": 0,
+  "last_context_tokens": 0,
+  "context_window": 200000,
+  "started_at": "2025-01-18T12:00:00Z",
+  "updated_at": "2025-01-18T12:00:00Z",
+  "first_message": null,
+  "last_message": null,
+  "todos": [],
+  "commands": {
+    "custom": [{ "name": "help" }, { "name": "clear" }, { "name": "compact" }],
+    "mcp": [],
+    "builtin": []
+  },
+  "session_dir": "/tmp/sessions/test-session-001",
+  "parent_session_id": null,
+  "session_prompt": null,
+  "runtime_name": "Claude",
+  "capabilities": {
+    "supports_set_model_mid_session": true,
+    "supports_set_permission_mode": true,
+    "supports_set_effort_level": true,
+    "supports_pre_compact_hook": true,
+    "supports_mcp_delegation": true,
+    "supports_models": true,
+    "supports_effort_levels": true,
+    "supports_permission_modes": true,
+    "supports_skills": true,
+    "supports_context_usage": true,
+    "supports_cost_telemetry": true,
+    "supports_manual_compact": true,
+    "supports_session_resume": true,
+    "supports_session_fork": true,
+    "supports_session_rewind": true
+  }
+}

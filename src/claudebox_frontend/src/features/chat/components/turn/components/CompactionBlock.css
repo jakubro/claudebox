@@ -1,0 +1,97 @@
+/* Compaction block */
+.compaction-block {
+  margin: 4px 0;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.compaction-header:hover {
+  opacity: 0.8;
+}
+
+.compaction-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.compaction-bullet {
+  color: #b388ff;
+  position: relative;
+  top: -2px;
+}
+
+.compaction-bullet.compacting {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.compaction-pending .spinner {
+  animation: spin 1s linear infinite;
+  color: var(--text-muted);
+}
+
+.compaction-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-left: 2px;
+  color: var(--text-muted);
+}
+
+.compaction-corner {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.compaction-summary {
+  margin-left: 12px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.compaction-summary p {
+  margin: 0 0 0.5em 0;
+}
+
+.compaction-summary p:last-child {
+  margin-bottom: 0;
+}
+
+.compaction-summary ul,
+.compaction-summary ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.compaction-summary li {
+  margin: 0.25em 0;
+}
+
+.compaction-summary code {
+  font-family: monospace;
+  background: var(--bg-secondary);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.compaction-summary strong {
+  font-weight: 600;
+}

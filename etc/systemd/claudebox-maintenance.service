@@ -1,0 +1,9 @@
+[Unit]
+Description=Claudebox Maintenance Service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.claudebox/lib/bin/install.sh --verbose
+
+[Install]
+WantedBy=default.target
