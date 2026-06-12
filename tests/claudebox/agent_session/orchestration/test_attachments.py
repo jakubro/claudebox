@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.attachments — path resolution and MIME inference."""
+"""Tests for claudebox.agent_session.orchestration.attachments - path resolution and MIME inference."""
 
 import pytest
 

@@ -1,0 +1,3 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Help me pick a refactor approach.","ts":"2026-06-08T11:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"ask_user_question","ts":"2026-06-08T11:00:01Z","tool_use_id":"tool_001","tool_name":"ask_user_question","tool_input":{"questions":[{"header":"Approach","question":"Which approach should I take?","options":[{"label":"Rewrite","description":"Replace the module wholesale"},{"label":"Refactor","description":"Iterate on the existing module"}],"multiSelect":false}]},"id":"evt_002","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-06-08T11:00:02Z","id":"evt_003","primary":false,"is_human":false}

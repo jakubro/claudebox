@@ -1,4 +1,4 @@
-/** Tests for NewSessionSplitButton — split-button for creating new sessions. */
+/** Tests for NewSessionSplitButton - split-button for creating new sessions. */
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -68,7 +68,7 @@ describe('NewSessionSplitButton', () => {
     expect(screen.getByTestId('session-new-session-btn')).toBeDisabled()
   })
 
-  it('chevron toggles dropdown — opens then closes', async () => {
+  it('chevron toggles dropdown - opens then closes', async () => {
     const user = userEvent.setup()
     render(<NewSessionSplitButton />)
 

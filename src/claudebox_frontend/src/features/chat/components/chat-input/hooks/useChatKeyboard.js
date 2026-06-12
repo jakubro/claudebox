@@ -66,7 +66,7 @@ export default function useChatKeyboard({
   wrapSelection,
   isMobile = false,
 }) {
-  // Submit handler — peek input, send, commit only on success to preserve text on failure
+  // Submit handler - peek input, send, commit only on success to preserve text on failure
   // During session creation, first message defers (auto-sends when ready);
   // subsequent messages during creation route to the queue.
   const handleSubmit = useCallback(async () => {
@@ -86,13 +86,13 @@ export default function useChatKeyboard({
       await send(input.rawPrompt, input.currentAttachments)
       commitInput(input.rawPrompt)
     } catch {
-      // Text remains in textarea — nothing to restore
+      // Text remains in textarea - nothing to restore
     } finally {
       setSending(false)
     }
   }, [peekInput, commitInput, send, setSending, isCreating, deferSend])
 
-  // Queue handler — Alt+Enter queues message for later sending
+  // Queue handler - Alt+Enter queues message for later sending
   const handleQueue = useCallback(() => {
     const input = extractInput()
     if (!input) {
@@ -153,7 +153,7 @@ export default function useChatKeyboard({
   // Key handler - includes all textarea-focused shortcuts
   const handleKeyDown = useCallback(
     e => {
-      // Tab — indent (Shift+Tab — dedent). Picker priority is enforced upstream by
+      // Tab - indent (Shift+Tab - dedent). Picker priority is enforced upstream by
       // ChatInput.jsx delegation; if the picker handled Tab, this code never runs.
       if (e.key === 'Tab') {
         e.preventDefault()
@@ -165,7 +165,7 @@ export default function useChatKeyboard({
         return
       }
 
-      // Shift+Enter — smart newline. Layer 1: inherit current line's leading
+      // Shift+Enter - smart newline. Layer 1: inherit current line's leading
       // whitespace on the new line. Layer 2 (list lines): continue the marker
       // (auto-incremented for numbered, always unchecked for tasks). Empty
       // marker exits the list. Plain Enter (submit) and Alt+Enter (queue)
@@ -188,7 +188,7 @@ export default function useChatKeyboard({
         return
       }
 
-      // Enter to submit (desktop only — mobile uses send button)
+      // Enter to submit (desktop only - mobile uses send button)
       if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         void handleSubmit()

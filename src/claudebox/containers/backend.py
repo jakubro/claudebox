@@ -34,6 +34,7 @@ class ContainerBackend:
 
         if not detach:
             result = self._exec("run", "--rm", *args)
+
             return result.returncode  # ty: ignore[unresolved-attribute]
         else:
             result = self._exec("run", "--detach", *args, capture_output=True)
@@ -46,6 +47,7 @@ class ContainerBackend:
                     self.print_container_logs(container_id)
                 finally:
                     self.remove_container(container_id)
+
                 raise
 
             return container_id
@@ -59,12 +61,14 @@ class ContainerBackend:
         """Send SIGTERM, then SIGKILL after ``timeout`` seconds."""
 
         result = self._exec("stop", "--time", str(timeout), container_id, check=True)
+
         return result.returncode  # ty: ignore[unresolved-attribute]
 
     def kill(self, container_id: str) -> int:
         """Send SIGKILL to the container immediately."""
 
         result = self._exec("kill", "--signal", "KILL", container_id, check=True)
+
         return result.returncode  # ty: ignore[unresolved-attribute]
 
     def remove_container(self, container_id: str) -> None:
@@ -80,6 +84,7 @@ class ContainerBackend:
 
     def inspect_container(self, container_id: str) -> dict:
         result = self._exec("inspect", container_id, capture_output=True, check=True)
+
         return json.loads(result.stdout.decode())  # ty: ignore[unresolved-attribute]
 
     def get_host_port(
@@ -93,6 +98,7 @@ class ContainerBackend:
         data = self.inspect_container(container_id)
         port_key = f"{container_port}/{protocol}"
         host_port = data[0]["NetworkSettings"]["Ports"][port_key][0]["HostPort"]
+
         return int(host_port)
 
     def list_containers(self, labels: dict[str, str] | None = None) -> list[dict]:

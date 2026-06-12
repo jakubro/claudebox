@@ -215,7 +215,7 @@ describe('extractToolResult', () => {
 
   describe('Read formatter', () => {
     it('counts lines with line number format', () => {
-      const content = '     1→first\n     2→second\n     3→third'
+      const content = '     1\u2192first\n     2\u2192second\n     3\u2192third'
       const result = extractToolResult('Read', {}, content)
 
       expect(result.summary).toBe('Read 3 lines')
@@ -230,7 +230,8 @@ describe('extractToolResult', () => {
     })
 
     it('extracts system reminders from content', () => {
-      const content = '     1→code\n<system-reminder>reminder1</system-reminder>\n     2→more code'
+      const content =
+        '     1\u2192code\n<system-reminder>reminder1</system-reminder>\n     2\u2192more code'
       const result = extractToolResult('Read', {}, content)
 
       expect(result.systemReminders).toEqual(['reminder1'])
@@ -239,14 +240,14 @@ describe('extractToolResult', () => {
 
     it('extracts multiple system reminders', () => {
       const content =
-        '     1→code\n<system-reminder>first</system-reminder>\n<system-reminder>second</system-reminder>'
+        '     1\u2192code\n<system-reminder>first</system-reminder>\n<system-reminder>second</system-reminder>'
       const result = extractToolResult('Read', {}, content)
 
       expect(result.systemReminders).toEqual(['first', 'second'])
     })
 
     it('returns null systemReminders when none present', () => {
-      const content = '     1→just code'
+      const content = '     1\u2192just code'
       const result = extractToolResult('Read', {}, content)
 
       expect(result.systemReminders).toBeNull()
@@ -271,9 +272,9 @@ describe('extractToolResult', () => {
 
       expect(result.summary).toBe('Wrote 3 lines')
       expect(result.isError).toBe(false)
-      expect(result.details).toContain('1→line1')
-      expect(result.details).toContain('2→line2')
-      expect(result.details).toContain('3→line3')
+      expect(result.details).toContain('1\u2192line1')
+      expect(result.details).toContain('2\u2192line2')
+      expect(result.details).toContain('3\u2192line3')
     })
 
     it('handles "created successfully" message variant', () => {
@@ -282,7 +283,7 @@ describe('extractToolResult', () => {
 
       expect(result.summary).toBe('Wrote 2 lines')
       expect(result.isError).toBe(false)
-      expect(result.details).toContain('1→import os')
+      expect(result.details).toContain('1\u2192import os')
     })
 
     it('falls back to default when no input.content', () => {
@@ -565,7 +566,7 @@ Some preview content here
 Multiple lines</persisted-output>`
       const result = extractToolResult('Bash', { command: 'ls -la' }, content)
 
-      // Bash formatter: multiline → "N lines output"
+      // Bash formatter: multiline -> "N lines output"
       expect(result.summary).toBe('2 lines output')
       expect(result.isError).toBe(false)
       expect(result.persistedOutput).toEqual({ fileSize: '50.7KB', previewSize: '2KB' })
@@ -576,7 +577,7 @@ Multiple lines</persisted-output>`
       const content = `<persisted-output>Output too large (10KB). Full output saved to: /tmp/output.log</persisted-output>`
       const result = extractToolResult('Bash', {}, content)
 
-      // Bash formatter: empty content → 'Done', details is empty string
+      // Bash formatter: empty content -> 'Done', details is empty string
       expect(result.summary).toBe('Done')
       expect(result.persistedOutput).toEqual({ fileSize: '10KB', previewSize: null })
       expect(result.details).toBe('')
@@ -930,7 +931,7 @@ describe('shouldCollapseByDefault', () => {
     })
 
     it('returns false for completed Task without nested events', () => {
-      // Task with no nested and not pending — no special collapse rule
+      // Task with no nested and not pending - no special collapse rule
       expect(shouldCollapseByDefault('Task', null, false, false)).toBe(false)
     })
 

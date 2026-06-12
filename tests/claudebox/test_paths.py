@@ -1,4 +1,4 @@
-"""Tests for claudebox._paths — workspace discovery and session naming."""
+"""Tests for claudebox._paths - workspace discovery and session naming."""
 
 from datetime import UTC, datetime
 from unittest.mock import patch
@@ -27,7 +27,7 @@ class TestGetWorkspaceRoot:
         assert get_workspace_root(subdir) == tmp_workspace
 
     def test_returns_none_without_marker(self, tmp_path, monkeypatch):
-        # Constrain walk to tmp_path only — prevents finding host .workspace markers
+        # Constrain walk to tmp_path only - prevents finding host .workspace markers
         monkeypatch.setattr("claudebox.paths.walk_up", lambda *_a, **_kw: [tmp_path])
         assert get_workspace_root(tmp_path) is None
 
@@ -59,6 +59,7 @@ class TestMakeSessionDirName:
     def test_format(self):
         with patch("claudebox.paths.get_timestamp", return_value="20260308-120000"):
             name = make_session_dir_name("abc123")
+
         assert name == "20260308-120000--abc123"
 
     def test_contains_session_id(self):

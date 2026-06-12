@@ -1,4 +1,4 @@
-/** Board view rendered inside the main panel — columns, swimlanes, and drag-and-drop. */
+/** Board view rendered inside the main panel - columns, swimlanes, and drag-and-drop. */
 
 import {
   DndContext,
@@ -86,7 +86,7 @@ function BoardTab({ boardId }) {
 
   // Drive the board grid's column track widths. Collapsed columns shrink to
   // 32px; expanded columns share remaining space via minmax(200px, 1fr).
-  // Recomputed when columns reorder or collapse state changes — every cell
+  // Recomputed when columns reorder or collapse state changes - every cell
   // and header in the same column inherits the same track width.
   const gridTemplateColumns = useMemo(
     () => columns.map(c => (collapsedColumns.has(c) ? '32px' : 'minmax(200px, 1fr)')).join(' '),
@@ -225,15 +225,15 @@ function BoardTab({ boardId }) {
         return
       }
 
-      // Ticket card move — bulk-aware. Dragging a selected ticket carries
+      // Ticket card move - bulk-aware. Dragging a selected ticket carries
       // every selected ticket with it; dragging an unselected ticket moves
       // just that one (selection unchanged).
       const ticketPath = activeStr
 
-      // over-id parsing — three shapes:
-      //   `col-header:` / `col:`  — column-only move, lane preserved per ticket
-      //   `${col}::${lane}`       — cell drop (target col + lane)
-      //   another ticket path      — drop ON a ticket (insert at that visual slot)
+      // over-id parsing - three shapes:
+      //   `col-header:` / `col:`  - column-only move, lane preserved per ticket
+      //   `${col}::${lane}`       - cell drop (target col + lane)
+      //   another ticket path      - drop ON a ticket (insert at that visual slot)
       let targetCol
       let targetSwimlane
       let dropIndex
@@ -263,7 +263,7 @@ function BoardTab({ boardId }) {
         : [ticketPath]
 
       // When the selection spans multiple swimlanes, preserve each ticket's
-      // origin lane on cell drops — unifying every ticket into the drop
+      // origin lane on cell drops - unifying every ticket into the drop
       // target's lane unconditionally would lose per-ticket categorization.
       const sourceLanes = new Set(
         ticketsToMove.map(p => ticketsByPath[p]?.swimlane || '__unsorted__'),

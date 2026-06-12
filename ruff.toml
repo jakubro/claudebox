@@ -12,15 +12,7 @@ ignore = [
 
 extend-select = [
   "I",
-  "TID251",
 ]
-
-[lint.flake8-tidy-imports.banned-api]
-"claude_agent_sdk".msg = "Import claude_agent_sdk only from claudebox/agent_session/runtime_claude.py — see GUIDELINES §SDK Containment"
-
-[lint.per-file-ignores]
-"src/claudebox/agent_session/runtime_claude.py" = ["TID251"]
-"tests/**/*.py" = ["TID251"]
 
 [lint.isort]
 case-sensitive = true

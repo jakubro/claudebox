@@ -1,4 +1,4 @@
-"""Local container runtime — subprocess-based, no podman/docker required."""
+"""Local container runtime - subprocess-based, no podman/docker required."""
 
 import os
 import signal as _signal
@@ -42,10 +42,10 @@ class LocalRuntime:
         os.environ["CLAUDEBOX_NO_TMP_REMAP"] = "1"
 
     def build(self, mode: "ImageBuildMode | None" = None) -> None:
-        """No-op — local runtime has no image to build."""
+        """No-op - local runtime has no image to build."""
 
     def run(self, args: Iterable = (), *, kind: str = "agent") -> int:
-        """Not supported — use run_container with detach=True."""
+        """Not supported - use run_container with detach=True."""
 
         raise NotImplementedError("LocalRuntime does not support interactive run")
 
@@ -72,7 +72,7 @@ class LocalRuntime:
         proc_env = {**os.environ, **env}
         # Remove container API args that belong to the host daemon
         proc_env.pop("CLAUDEBOX_CONTAINER_API_ARGS", None)
-        # Prevent subcontainer from remapping /tmp — it shares the host filesystem
+        # Prevent subcontainer from remapping /tmp - it shares the host filesystem
         proc_env["CLAUDEBOX_NO_TMP_REMAP"] = "1"
 
         proc = subprocess.Popen(
@@ -103,14 +103,17 @@ class LocalRuntime:
         """Return the port assigned during run_container."""
 
         entry = self._registry.get(backend_id)
+
         if not entry:
             raise KeyError(f"Unknown backend_id: {backend_id}")
+
         return entry.port
 
     def list_containers(self, labels: dict[str, str] | None = None) -> list[dict]:
         """Return in-memory registry as synthetic podman-format dicts."""
 
         result = []
+
         for backend_id, entry in self._registry.items():
             # Check if process is still alive
             if entry.process.poll() is not None:
@@ -135,6 +138,7 @@ class LocalRuntime:
         """Send SIGTERM and wait up to ``grace_seconds`` before escalating to SIGKILL."""
 
         entry = self._registry.get(backend_id)
+
         if not entry or entry.process.poll() is not None:
             return
 
@@ -147,6 +151,7 @@ class LocalRuntime:
 
         try:
             os.killpg(proc.pid, _signal.SIGTERM)
+
             try:
                 proc.wait(timeout=grace_seconds)
             except subprocess.TimeoutExpired:
@@ -163,11 +168,13 @@ class LocalRuntime:
         """Send SIGKILL to the tracked process group immediately."""
 
         entry = self._registry.get(backend_id)
+
         if not entry or entry.process.poll() is not None:
             return
 
         proc = entry.process
         self._logger.info("Killing local container", backend_id=backend_id, pid=proc.pid)
+
         try:
             os.killpg(proc.pid, _signal.SIGKILL)
             proc.wait(timeout=5)
@@ -178,10 +185,12 @@ class LocalRuntime:
         """SIGTERM with a 5s grace, then SIGKILL; drop the registry entry."""
 
         entry = self._registry.pop(backend_id, None)
+
         if not entry:
             return
 
         proc = entry.process
+
         if proc.poll() is not None:
             return
 
@@ -198,7 +207,7 @@ class LocalRuntime:
             pass
 
     def create_network(self, name: str) -> None:
-        """No-op — local processes share the host network."""
+        """No-op - local processes share the host network."""
 
     @staticmethod
     def _find_free_port() -> int:
@@ -206,4 +215,5 @@ class LocalRuntime:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
+
             return s.getsockname()[1]

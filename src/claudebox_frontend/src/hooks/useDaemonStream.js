@@ -8,7 +8,7 @@ import useSSE from './useSSE'
  * Subscribe to daemon-level SSE and expose event signals.
  *
  * `sessionsChanged` and `containerStatus` are monotonic counters that increment
- * on each respective event — consumers use them as useEffect dependencies to
+ * on each respective event - consumers use them as useEffect dependencies to
  * trigger refetches without needing the event payload.
  *
  * `daemonReconnected` increments each time the daemon SSE transitions from

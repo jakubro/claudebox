@@ -38,7 +38,7 @@ export function buildSessionTree(sessions, pinnedSessions, currentSessionId) {
     }, own)
   }
 
-  // Sort: pinned first → unpinned with container → unpinned without, each by timestamp desc
+  // Sort: pinned first -> unpinned with container -> unpinned without, each by timestamp desc
   const byTimestamp = (a, b) => {
     const ta = getMaxTimestamp(a)
     const tb = getMaxTimestamp(b)

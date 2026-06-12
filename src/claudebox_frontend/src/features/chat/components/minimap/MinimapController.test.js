@@ -182,7 +182,7 @@ describe('MinimapController', () => {
       controller.show()
       vi.advanceTimersByTime(500)
 
-      // Only 500ms since last show — still visible
+      // Only 500ms since last show - still visible
       expect(controller.isVisible).toBe(true)
 
       vi.advanceTimersByTime(250)
@@ -428,7 +428,7 @@ describe('MinimapController', () => {
       controller.attach(containerEl, mapEl)
       onViewportChange.mockClear()
 
-      // Simulate container resize — new dimensions
+      // Simulate container resize - new dimensions
       containerEl.scrollHeight = 4000
       containerEl.clientHeight = 800
       mapEl.clientHeight = 800
@@ -466,7 +466,7 @@ describe('MinimapController', () => {
 
       controller.updateViewport()
 
-      // height = (500 / 4000) * 400 = 50 — uses logical, not native 2000
+      // height = (500 / 4000) * 400 = 50 - uses logical, not native 2000
       expect(onViewportChange).toHaveBeenCalledWith(expect.objectContaining({ height: 50 }))
     })
 
@@ -496,7 +496,7 @@ describe('MinimapController', () => {
 
       controller.updateViewport()
 
-      // height = (500 / 2000) * 400 = 100 — size falls back to native
+      // height = (500 / 2000) * 400 = 100 - size falls back to native
       expect(onViewportChange).toHaveBeenCalledWith(expect.objectContaining({ height: 100 }))
     })
   })
@@ -529,7 +529,7 @@ describe('MinimapController', () => {
 
       const viewport = onViewportChange.mock.calls.at(-1)[0]
       expect(viewport.height).toBe(16) // clamped to MINIMAP_MIN_THUMB_HEIGHT
-      // Without the native-denominator split, ratio = 99800/89800 > 1 → overshoots 400.
+      // Without the native-denominator split, ratio = 99800/89800 > 1 -> overshoots 400.
       expect(viewport.top + viewport.height).toBeCloseTo(400, 5)
     })
 

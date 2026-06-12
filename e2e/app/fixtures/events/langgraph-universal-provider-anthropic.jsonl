@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","content":"","ts":"2026-06-09T12:00:00Z","model":"anthropic:claude-sonnet-4-5","id":"evt_001","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Hello.","ts":"2026-06-09T12:00:01Z","turn_id":"turn_001","id":"evt_002","primary":true}
+{"type":"assistant","subtype":"text","content":"Same brain, different runtime - the Anthropic Sonnet model answering through LangGraph.","ts":"2026-06-09T12:00:02Z","model":"anthropic:claude-sonnet-4-5","id":"evt_003","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-06-09T12:00:03Z","total_cost_usd":10.5,"id":"evt_004","primary":false,"is_human":false}

@@ -56,7 +56,7 @@ export default function StatusIndicator({
     )
   }
 
-  // Forking state — ranks above creating because fork-here reuses the current
+  // Forking state - ranks above creating because fork-here reuses the current
   // tab and must show feedback before the new session takes over.
   if (isForking) {
     return (
@@ -93,7 +93,7 @@ export default function StatusIndicator({
     )
   }
 
-  // Opening board state — synchronous local transition, brief paint feedback
+  // Opening board state - synchronous local transition, brief paint feedback
   if (isOpeningBoard) {
     return (
       <>
@@ -111,7 +111,7 @@ export default function StatusIndicator({
     )
   }
 
-  // Opening workspace state — synchronous local transition, brief paint feedback
+  // Opening workspace state - synchronous local transition, brief paint feedback
   if (isOpeningWorkspace) {
     return (
       <>
@@ -200,7 +200,7 @@ export default function StatusIndicator({
     )
   }
 
-  // Reconnecting state — exponential backoff in progress
+  // Reconnecting state - exponential backoff in progress
   if (connectionStatus === ConnectionStatus.RECONNECTING) {
     return (
       <>

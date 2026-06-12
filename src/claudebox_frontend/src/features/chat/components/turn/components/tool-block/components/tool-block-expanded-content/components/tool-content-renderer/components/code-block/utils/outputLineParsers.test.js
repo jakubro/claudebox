@@ -5,7 +5,7 @@ import { parseEditLines, parseGrepLines, parseReadWriteLines } from './outputLin
 
 describe('parseReadWriteLines', () => {
   it('parses Read format with arrow separator', () => {
-    const details = '     1→# Heading\n     2→\n     3→Body text'
+    const details = '     1\u2192# Heading\n     2\u2192\n     3\u2192Body text'
     const lines = parseReadWriteLines(details)
 
     expect(lines).toHaveLength(3)
@@ -15,7 +15,7 @@ describe('parseReadWriteLines', () => {
   })
 
   it('parses Write format with narrower padding', () => {
-    const details = ' 1→/**\n 2→ * Comment.\n 3→ */'
+    const details = ' 1\u2192/**\n 2\u2192 * Comment.\n 3\u2192 */'
     const lines = parseReadWriteLines(details)
 
     expect(lines).toHaveLength(3)

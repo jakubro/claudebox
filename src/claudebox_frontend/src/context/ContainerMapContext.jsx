@@ -1,4 +1,4 @@
-/** Map session IDs to container IDs — eagerly populated at creation/resume time. */
+/** Map session IDs to container IDs - eagerly populated at creation/resume time. */
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { resolveContainerId } from '../utils/containerLookup'
@@ -6,7 +6,7 @@ import { resolveContainerId } from '../utils/containerLookup'
 const ContainerMapContext = createContext(null)
 
 /**
- * Provide an eagerly-populated session→container mapping.
+ * Provide an eagerly-populated session->container mapping.
  *
  * SessionTab reads from this map first, falling back to the sessions list
  * for page-reload scenarios where the map hasn't been populated yet.
@@ -42,7 +42,7 @@ export function ContainerMapProvider({ children }) {
     })
   }, [])
 
-  // Single source of truth for a session's container status — stopping wins
+  // Single source of truth for a session's container status - stopping wins
   // over running wins over none. Every status dot (panel, header, bookmarks)
   // routes through this so the surfaces cannot diverge. Container presence
   // resolves via the eager map then the canonical sessions list;
@@ -84,7 +84,7 @@ export function ContainerMapProvider({ children }) {
 }
 
 /**
- * Access the session→container mapping.
+ * Access the session->container mapping.
  * @returns {{ containerMap: Record<string, string>, setSessionContainer: Function, removeSessionContainer: Function, stoppingSessions: Set<string>, addStoppingSession: Function, removeStoppingSession: Function, deriveSessionStatus: Function }}
  */
 export function useContainerMap() {

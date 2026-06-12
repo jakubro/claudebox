@@ -1,4 +1,4 @@
-"""Handler for the ``run`` verb — launch agent session in container."""
+"""Handler for the ``run`` verb - launch agent session in container."""
 
 import argparse
 

@@ -1,4 +1,4 @@
-"""Session facade — SDK client, pipeline, persistence coordination."""
+"""Session facade - SDK client, pipeline, persistence coordination."""
 
 import asyncio
 import base64
@@ -17,7 +17,12 @@ from .models import EventSubtype, EventType, PublishedEvent, SessionSummary
 from .pipeline import EventPipeline
 from .projection import Projection
 from .tool_output import ToolOutput, ToolOutputContent
-from ..config import ClaudeAgentSessionConfig, RuntimeCapabilities
+from ..config import (
+    AgentSessionConfig,
+    ClaudeAgentSessionConfig,
+    LangGraphAgentSessionConfig,
+    RuntimeCapabilities,
+)
 from ..errors import UnknownRuntime
 from ..hooks import CompactStartPayload, HookCallbacks
 from ..protocol import AgentSession
@@ -52,7 +57,6 @@ class SessionService:
         permission_mode: str | None = None,
         on_start: Callable[[BaseSession], None] | None = None,
         on_stop: Callable[[], None] | None = None,
-        **kwargs,
     ):
         """Initialize session state. Components attach in start(); lifecycle hooks fire from start()/stop()."""
 
@@ -74,7 +78,7 @@ class SessionService:
 
         # Cast to non-Optional; start() populates them.
         #
-        # TODO: type-honest refactor (sweep 11) — Builder + Started container
+        # TODO: type-honest refactor (sweep 11) - Builder + Started container
         # so post-start access is genuinely non-Optional without the cast lie.
         # 80+ internal access sites to migrate. Out of scope for this batch.
         self._sdk_client: AgentSession = cast(AgentSession, None)
@@ -156,32 +160,63 @@ class SessionService:
 
         workspace_config = Config.load(workspace_path=self._workspace.path)
 
-        if workspace_config.agent != "claude":
-            raise UnknownRuntime(workspace_config.agent)
+        config: AgentSessionConfig  # tightened below to the right subclass
 
-        config = ClaudeAgentSessionConfig(
-            runtime="claude",
-            model=self._last_known_model,
-            permission_mode=self._permission_mode,
-            effort_level=self._last_known_effort_level,
-            cwd=os.getcwd(),
-            env=os.environ.copy(),
-            session_id=session_id,
-            resume_session_id=resume_session_id,
-            session_dir=session.path,
-            hooks=HookCallbacks(
-                on_session_start=self._on_session_start,
-                on_pre_compact=self._on_compact_start,
-                on_permission_mode_changed=self._on_permission_mode_changed,
-                on_model_changed=self._on_model_changed,
-                on_effort_level_changed=self._on_effort_level_changed,
-            ),
-            system_prompt=self._system_prompt,
-            setting_sources=["user", "project"],
-            sdk_passthrough={},
-            max_buffer_size=SDK_PROCESS_BUFFER_SIZE,
-            debug_mode=is_dev_mode(),
-        )
+        if workspace_config.agent == "claude":
+            config = ClaudeAgentSessionConfig(
+                runtime="claude",
+                model=self._last_known_model,
+                permission_mode=self._permission_mode,
+                effort_level=self._last_known_effort_level,
+                cwd=os.getcwd(),
+                env=os.environ.copy(),
+                session_id=session_id,
+                resume_session_id=resume_session_id,
+                session_dir=session.path,
+                hooks=HookCallbacks(
+                    on_session_start=self._on_session_start,
+                    on_pre_compact=self._on_compact_start,
+                    on_permission_mode_changed=self._on_permission_mode_changed,
+                    on_model_changed=self._on_model_changed,
+                    on_effort_level_changed=self._on_effort_level_changed,
+                ),
+                system_prompt=self._system_prompt,
+                setting_sources=["user", "project"],
+                sdk_passthrough={},
+                max_buffer_size=SDK_PROCESS_BUFFER_SIZE,
+                debug_mode=is_dev_mode(),
+            )
+        elif workspace_config.agent == "langgraph":
+            # set_model / set_permission_mode / set_effort_level are unsupported
+            # under LangGraph v1 (graph-construction-time bind); the corresponding
+            # change-callbacks are intentionally not registered.
+            raw_model = workspace_config.langgraph_model or ""
+            provider = raw_model.partition(":")[0]
+            provider_kwargs = dict(workspace_config.langgraph_provider_kwargs.get(provider, {}))
+
+            config = LangGraphAgentSessionConfig(
+                runtime="langgraph",
+                model=raw_model,
+                permission_mode=None,
+                effort_level=None,
+                cwd=os.getcwd(),
+                env=os.environ.copy(),
+                session_id=session_id,
+                resume_session_id=resume_session_id,
+                session_dir=session.path,
+                hooks=HookCallbacks(
+                    on_session_start=self._on_session_start,
+                    on_pre_compact=self._on_compact_start,
+                ),
+                max_tokens_override=workspace_config.langgraph_max_tokens_override,
+                web_search_provider=workspace_config.langgraph_web_search_provider,
+                web_search_api_key_env=workspace_config.langgraph_web_search_api_key_env,
+                mcp_servers=workspace_config.langgraph_mcp_servers or {},
+                provider_kwargs=provider_kwargs,
+                cost_overrides=workspace_config.langgraph_cost_overrides,
+            )
+        else:
+            raise UnknownRuntime(workspace_config.agent)
 
         self._sdk_client = make_agent_session(config)
 
@@ -248,6 +283,7 @@ class SessionService:
         self._logger.info("Restarting session...", resume_id=resume_session_id, **self._log_context)
 
         await self.stop()
+
         return await self.start(resume_session_id)
 
     async def _dispose(self, attr: str, cleanup_method: str):
@@ -260,6 +296,7 @@ class SessionService:
 
         if isinstance(obj, asyncio.Task):
             getattr(obj, cleanup_method)()
+
             try:
                 await obj
             except asyncio.CancelledError:
@@ -290,6 +327,7 @@ class SessionService:
 
         for metadata in self._repo.list_all():
             session = self._workspace.find_session(metadata.session_id)
+
             if session is None:
                 continue
 
@@ -308,6 +346,7 @@ class SessionService:
         """Get session summary for active or specified session."""
 
         projection = self._resolve_projection(session_id)
+
         return projection.value if projection else None
 
     def update(self, session_id: str, **data) -> SessionSummary:
@@ -315,6 +354,7 @@ class SessionService:
 
         projection = self._resolve_projection(session_id)
         projection.update_fields(**data)
+
         return projection.value
 
     def get_tool_output(self, session_id: str, tool_use_id: str) -> ToolOutputContent:
@@ -377,6 +417,7 @@ class SessionService:
 
         self._logger.info("Reconnecting MCP server", server_name=server_name, **self._log_context)
         await self._sdk_client.reconnect_mcp_server(server_name)
+
         return await self._sdk_client.get_mcp_status()
 
     async def toggle_mcp_server(self, server_name: str, *, enabled: bool) -> dict:
@@ -389,6 +430,7 @@ class SessionService:
             **self._log_context,
         )
         await self._sdk_client.toggle_mcp_server(server_name, enabled)
+
         return await self._sdk_client.get_mcp_status()
 
     async def get_mcp_status(self) -> dict:
@@ -402,10 +444,10 @@ class SessionService:
     async def send(self, prompt: str, attachments: list[dict] | None = None) -> None:
         """Send user prompt to SDK, injecting synthetic events where needed.
 
-        Three paths: (1) attachments — validates, builds content blocks, injects
+        Three paths: (1) attachments - validates, builds content blocks, injects
         synthetic user event with display metadata; (2) internal commands
-        (/compact, /context) — injects synthetic user event since SDK won't echo;
-        (3) normal — sets prompt on pipeline for result-only turn injection,
+        (/compact, /context) - injects synthetic user event since SDK won't echo;
+        (3) normal - sets prompt on pipeline for result-only turn injection,
         then queries SDK.
 
         Raises AttachmentInvalid if any attachment fails base64 decode or
@@ -424,6 +466,7 @@ class SessionService:
             attachments_dir.mkdir(exist_ok=True)
 
             attachment_meta = []
+
             for a in attachments:
                 decoded = base64.b64decode(a["data"])
                 stored_name = f"{uuid.uuid4().hex[:8]}_{a['name']}"
@@ -447,7 +490,7 @@ class SessionService:
                 attachments=attachment_meta,
             )
 
-            # Signal pipeline to suppress the SDK echo — synthetic injection is canonical
+            # Signal pipeline to suppress the SDK echo - synthetic injection is canonical
             # One suppression suffices: all attachments are sent in a single SDK
             # query, so the SDK emits exactly one user message echo to suppress.
             self._event_pipeline.suppress_next_user_echo()
@@ -455,6 +498,7 @@ class SessionService:
             # Build content blocks for SDK (with full base64 data)
             content_blocks = self._build_content_blocks(prompt, attachments)
             await self._sdk_client.query(content_blocks)
+
             return
 
         # For internal commands (like /compact), SDK doesn't emit user message events.
@@ -480,6 +524,7 @@ class SessionService:
                 decoded = base64.b64decode(a["data"])
             except Exception:
                 raise AttachmentInvalid("invalid_base64", name=a.get("name", "?"))
+
             if len(decoded) > MAX_ATTACHMENT_BYTES:
                 raise AttachmentInvalid(
                     "attachment_too_large",
@@ -496,12 +541,15 @@ class SessionService:
         """
 
         subscriber_id, queue = self._broadcaster.subscribe()
+
         try:
             await self.send(prompt)
 
             chunks: list[str] = []
+
             while True:
                 event = await queue.get()
+
                 if not isinstance(event, dict):
                     continue
 
@@ -604,7 +652,11 @@ class SessionService:
         """Create and initialize projection when pipeline discovers session_id."""
 
         self._base_session = BaseSession(session_id=session_id, workspace=self._workspace)
-        self._projection = Projection(session_id=session_id, workspace=self._workspace)
+        self._projection = Projection(
+            session_id=session_id,
+            workspace=self._workspace,
+            runtime=self._sdk_client,
+        )
 
         # Replay events into projection when session.json was not found on disk
         # (fork copies events.jsonl but not session.json; also self-heals corruption)
@@ -644,6 +696,7 @@ class SessionService:
         """
 
         historical = self._event_pipeline.get_historical_events()
+
         if not historical:
             return
 
@@ -680,6 +733,7 @@ class SessionService:
         # Send session prompt to Claude after compaction boundary
         if event.subtype == "compact_boundary":
             self._pending_compact_trigger = None
+
             if self._pending_session_prompt:
                 prompt = self._pending_session_prompt
                 self._pending_session_prompt = None
@@ -698,7 +752,7 @@ class SessionService:
         self._context_refresh_timer = loop.call_later(0.5, self._fire_context_refresh)
 
     def _fire_context_refresh(self) -> None:
-        """Timer callback — kicks off async context usage fetch."""
+        """Timer callback - kicks off async context usage fetch."""
 
         self._context_refresh_timer = None
         asyncio.ensure_future(self._refresh_context_usage())
@@ -710,6 +764,7 @@ class SessionService:
             usage = await self._sdk_client.get_context_usage()
         except Exception as exc:
             self._logger.warning("Context usage fetch failed", error=str(exc))
+
             return
 
         if usage is None:

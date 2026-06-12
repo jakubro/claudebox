@@ -14,7 +14,7 @@ test.describe('Notifications', () => {
   test.describe('Tab Title', () => {
     // SPEC: notify:title-format
     test('tab title matches both documented formats (named + pre-init)', async ({ page }) => {
-      // Default fixture has no session name → 2-segment form: `[Workspace] | Claudebox`.
+      // Default fixture has no session name -> 2-segment form: `[Workspace] | Claudebox`.
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
       const preInit = await page.title()
@@ -23,7 +23,7 @@ test.describe('Notifications', () => {
       expect(preSegs[0]).not.toBe('')
       expect(preSegs[1]).toBe('Claudebox')
 
-      // Provide a named session via /api/sessions/current and reload — the
+      // Provide a named session via /api/sessions/current and reload - the
       // 3-segment form `[Session Name] | [Workspace] | Claudebox` must appear.
       await page.route('**/api/sessions/current**', async route => {
         if (route.request().method() === 'GET') {
@@ -47,7 +47,7 @@ test.describe('Notifications', () => {
       })
       await page.reload()
       await waitForAppReady(page)
-      // Title updates asynchronously after the session payload arrives — poll.
+      // Title updates asynchronously after the session payload arrives - poll.
       await expect.poll(async () => (await page.title()).split('|').length).toBe(3)
       const namedTitle = await page.title()
       const segs = namedTitle.split('|').map(s => s.trim())
@@ -189,7 +189,7 @@ test.describe('Notifications', () => {
 
       const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await expect(toggle).toBeVisible()
-      // Default is disabled — no 'enabled' class
+      // Default is disabled - no 'enabled' class
       await expect(toggle).not.toHaveClass(/enabled/)
     })
 
@@ -210,20 +210,20 @@ test.describe('Notifications', () => {
       const strike = toggle.locator('.strikethrough')
       await expect(strike).toBeVisible()
       const transform = await strike.evaluate(el => getComputedStyle(el).transform)
-      // matrix(a, b, c, d, ...) for rotate(-45deg) has b < 0 — corresponds to a
+      // matrix(a, b, c, d, ...) for rotate(-45deg) has b < 0 - corresponds to a
       // line that descends from top-left to bottom-right.
       const m = transform.match(/matrix\(([-\d.]+),\s*([-\d.]+),/)
       expect(m).toBeTruthy()
       expect(Number(m[2])).toBeLessThan(0)
 
-      // Click to enable — strike-through must disappear.
+      // Click to enable - strike-through must disappear.
       await toggle.click()
       await expect(toggle).toHaveClass(/enabled/)
       await expect(toggle.locator('.strikethrough')).toHaveCount(0)
       // Bell remains visible in enabled state.
       await expect(bell).toBeVisible()
 
-      // Click again to disable — strike-through returns.
+      // Click again to disable - strike-through returns.
       await toggle.click()
       await expect(toggle).not.toHaveClass(/enabled/)
       await expect(toggle.locator('.strikethrough')).toBeVisible()
@@ -372,7 +372,7 @@ test.describe('Notifications', () => {
 
       // Multiple PATCH calls may fire in rapid succession (layout, panelGroups,
       // notifications toggle, etc.). Find the one that carries the notification
-      // key — it must arrive under SESSION scope, not GLOBAL.
+      // key - it must arrive under SESSION scope, not GLOBAL.
       let notifPatch = null
       await expect
         .poll(() => {
@@ -670,7 +670,7 @@ test.describe('Notifications', () => {
       await toggle.click()
       await expect(toggle).toHaveClass(/enabled/)
 
-      // Tab stays focused (default) — do NOT simulate hidden
+      // Tab stays focused (default) - do NOT simulate hidden
 
       // Send a complete turn
       await sendCompleteTurn(controller)
@@ -678,7 +678,7 @@ test.describe('Notifications', () => {
       // Wait for response to render
       await expect(page.getByText('Done with sound test').first()).toBeVisible()
 
-      // Verify oscillator.start() was NOT called — tab was focused
+      // Verify oscillator.start() was NOT called - tab was focused
       const startCalls = await page.evaluate(() => window.__audioMockCalls.oscillatorStart)
       expect(startCalls).toBe(0)
     })
@@ -801,7 +801,7 @@ test.describe('Notifications', () => {
 
   test.describe('Favicon', () => {
     // SPEC: notify:favicon
-    test('favicon reflects session state — idle vs processing produce different icons', async ({
+    test('favicon reflects session state - idle vs processing produce different icons', async ({
       page,
     }) => {
       const controller = await createSSEController(page)
@@ -815,7 +815,7 @@ test.describe('Notifications', () => {
         .toMatch(/^data:image\/png/)
       const idleHref = await page.evaluate(() => document.querySelector('link[rel="icon"]').href)
 
-      // Start a response (enters processing state — no result yet)
+      // Start a response (enters processing state - no result yet)
       await controller.sendEvents([
         {
           type: 'user',
@@ -1157,7 +1157,7 @@ test.describe('Notifications', () => {
         () => document.querySelector('link[rel="icon"]').href,
       )
 
-      // Send a user message and begin an assistant response (no result yet — still processing)
+      // Send a user message and begin an assistant response (no result yet - still processing)
       await controller.sendEvents([
         {
           type: 'user',
@@ -1394,14 +1394,14 @@ test.describe('Notifications', () => {
 
     // Sample coords: the 3×3 region at (22,22) sits inside the badge fill area
     // AND inside the C-arc's empty interior (radial distance from canvas
-    // center ≤ 11.3, below the arc's inner edge at radius 12). When no badge
+    // center <= 11.3, below the arc's inner edge at radius 12). When no badge
     // is drawn, the region is transparent; when a badge is drawn, it fills
     // with the workspace color.
 
     // SPEC: notify:favicon-workspace-badge
     // SPEC: notify:favicon-workspace-badge-color
     test('badge appears in bottom-right corner with workspace color when set', async ({ page }) => {
-      // Deep red workspace color — distinguishable from arc gradient.
+      // Deep red workspace color - distinguishable from arc gradient.
       const colorHex = '#c81818'
       await mockApiWithColor(page, colorHex)
       await mockSSE(page)
@@ -1414,9 +1414,9 @@ test.describe('Notifications', () => {
         .toMatch(/^data:image\/png/)
 
       // The badge sits at x∈[18,30], y∈[18,30] on the 32×32 canvas.
-      // Sample center pixels [22..27]×[22..27] — squarely inside the badge fill.
+      // Sample center pixels [22..27]×[22..27] - squarely inside the badge fill.
       const pixel = await samplePixelInPage(page, { x: 22, y: 22, w: 3, h: 3 })
-      // Expected color: #c81818 → r=200, g=24, b=24. Allow ±25 per channel for
+      // Expected color: #c81818 -> r=200, g=24, b=24. Allow ±25 per channel for
       // PNG quantisation / outline anti-aliasing on the sample border.
       expect(pixel.r).toBeGreaterThan(150)
       expect(pixel.g).toBeLessThan(80)
@@ -1453,7 +1453,7 @@ test.describe('Notifications', () => {
       await waitForAppReady(page)
 
       // Capture baseline badge pixel + href in normal (non-notification) state
-      // BEFORE triggering processing — otherwise the post-trigger href IS the
+      // BEFORE triggering processing - otherwise the post-trigger href IS the
       // notification variant and the poll-for-change never finds a delta.
       await expect
         .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
@@ -1461,7 +1461,7 @@ test.describe('Notifications', () => {
       const normalHref = await page.evaluate(() => document.querySelector('link[rel="icon"]').href)
       const normalPixel = await samplePixelInPage(page, { x: 22, y: 22, w: 3, h: 3 })
 
-      // Begin processing, then hide the tab, then complete — the
+      // Begin processing, then hide the tab, then complete - the
       // notification favicon paints once the result arrives while hidden.
       await controller.sendEvents([
         {
@@ -1503,7 +1503,7 @@ test.describe('Notifications', () => {
       // the badge's contribution to alpha.
       const notifPixel = await samplePixelInPage(page, { x: 22, y: 22, w: 3, h: 3 })
 
-      // Normal badge alpha ~255; dimmed alpha ~127. Assert ≥30% drop.
+      // Normal badge alpha ~255; dimmed alpha ~127. Assert >=30% drop.
       expect(notifPixel.a).toBeLessThan(normalPixel.a * 0.7)
     })
   })

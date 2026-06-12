@@ -41,7 +41,7 @@ test.describe('Tools Display', () => {
       const summary = toolBlock.locator('.tool-summary')
       await expect(summary).toBeVisible()
       const summaryText = await summary.textContent()
-      // Multi-line output → line count summary (e.g., "6 lines")
+      // Multi-line output -> line count summary (e.g., "6 lines")
       expect(summaryText).toMatch(/\d+ lines?/)
     })
 
@@ -285,7 +285,7 @@ test.describe('Tools Display', () => {
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
 
-      // Bash should be expanded by default — assert expanded content is visible
+      // Bash should be expanded by default - assert expanded content is visible
       const expandedContent = toolBlock.locator('.tool-expanded-content')
       await expect(expandedContent).toBeVisible()
 
@@ -349,7 +349,7 @@ test.describe('Tools Display', () => {
       // Should show Task header
       await expect(taskBlock).toContainText('Task')
 
-      // Completed Task with nested blocks auto-collapses — expand first
+      // Completed Task with nested blocks auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
       // Nested tools should be visible (Glob and Read are nested)
@@ -369,7 +369,7 @@ test.describe('Tools Display', () => {
       // Wait for Task result to arrive
       await expect(taskBlock).toHaveAttribute('data-tool-status', 'completed')
 
-      // Completed Task with nested blocks auto-collapses — expand first
+      // Completed Task with nested blocks auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
       // The fixture has nested Glob and Read tools
@@ -391,7 +391,7 @@ test.describe('Tools Display', () => {
       // Wait for Task result to arrive
       await expect(taskBlock).toHaveAttribute('data-tool-status', 'completed')
 
-      // Completed Task with nested blocks auto-collapses — expand first
+      // Completed Task with nested blocks auto-collapses - expand first
       await taskBlock.locator(':scope > .tool-header-area').click()
       await expect(taskBlock.locator('.task-prompt .collapsible-label')).toBeVisible()
 
@@ -650,7 +650,7 @@ test.describe('Tools Display', () => {
       await expect(nestedBlock).toBeVisible()
       await expect(nestedBlock).toContainText('Glob')
 
-      // Task itself is still pending — nested tools are shown during execution
+      // Task itself is still pending - nested tools are shown during execution
       await expect(taskBlock).toHaveAttribute('data-tool-status', 'pending')
     })
 
@@ -782,7 +782,7 @@ test.describe('Tools Display', () => {
         .first()
       await expect(taskBlock).toBeVisible()
 
-      // Completed Task with nested blocks auto-collapses — expand first
+      // Completed Task with nested blocks auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
       // Prompt starts expanded (defaultExpanded={true}), click to collapse
@@ -806,10 +806,10 @@ test.describe('Tools Display', () => {
         .first()
       await expect(taskBlock).toBeVisible()
 
-      // Completed Task with nested blocks auto-collapses — expand first
+      // Completed Task with nested blocks auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
-      // Prompt starts expanded — collapse it
+      // Prompt starts expanded - collapse it
       await taskBlock.locator('.task-prompt .collapsible-header').click()
       await expect(taskBlock.locator('.task-prompt .collapsible-content')).not.toBeVisible()
 
@@ -972,7 +972,7 @@ test.describe('Tools Display', () => {
 
     // SPEC: tool:todowrite
     test('TodoWrite tool shows full diff count format ●N ◐N ○N ✕N', async ({ page }) => {
-      // Use the diff fixture so all four count categories are exercised — the
+      // Use the diff fixture so all four count categories are exercised - the
       // claim names a specific structured format, not just "any one symbol".
       await mockSSE(page, 'events/tool-todowrite-diff.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
@@ -983,7 +983,7 @@ test.describe('Tools Display', () => {
       const diffBlock = toolBlocks.nth(1)
       await expect(diffBlock).toBeVisible()
 
-      // Each count must appear with its sigil — proves the structured format,
+      // Each count must appear with its sigil - proves the structured format,
       // not just incidental presence of one symbol.
       await expect(diffBlock).toContainText(/●\d+/)
       await expect(diffBlock).toContainText(/◐\d+/)
@@ -1234,19 +1234,19 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Fixture has TaskCreate + TaskCreate + TaskUpdate — three consecutive
+      // Fixture has TaskCreate + TaskCreate + TaskUpdate - three consecutive
       // task-list tool_uses in one turn. After grouping, exactly one Todos
       // group container renders (not three separate ToolBlock chrome boxes).
       const groups = page.locator('[data-testid="todos-group"]')
       await expect(groups).toHaveCount(1)
 
-      // Two distinct rows (one per _taskId) — TaskUpdate collapses into the
+      // Two distinct rows (one per _taskId) - TaskUpdate collapses into the
       // existing task #2's row.
       const rows = groups.locator('.todo-item')
       await expect(rows).toHaveCount(2)
 
       // The original three ToolBlock chrome boxes for these task-list tools
-      // should NOT appear separately — they were replaced by the group.
+      // should NOT appear separately - they were replaced by the group.
       const taskCreateBlocks = page
         .locator('[data-testid="tool-block"]')
         .filter({ hasText: 'TaskCreate' })
@@ -1268,7 +1268,7 @@ test.describe('Tools Display', () => {
       const icons = await todosGroup.locator('.todo-icon').allTextContents()
       expect(icons).toContain('⊘')
 
-      // Legacy `⊘ #N,#M` chip is gone — no trailing-chip selector anywhere in the group.
+      // Legacy `⊘ #N,#M` chip is gone - no trailing-chip selector anywhere in the group.
       await expect(todosGroup.locator('[data-testid="todo-blocked-by"]')).toHaveCount(0)
     })
 
@@ -1283,9 +1283,9 @@ test.describe('Tools Display', () => {
 
       const group = page.locator('[data-testid="todos-group"]')
       await expect(group).toBeVisible()
-      // Chrome host carries .tool-block — same as every other tool block.
+      // Chrome host carries .tool-block - same as every other tool block.
       await expect(group).toHaveClass(/tool-block/)
-      // Body visible without clicking — default-expanded.
+      // Body visible without clicking - default-expanded.
       await expect(group.locator('[data-testid="todos-group-rows"]')).toBeVisible()
 
       // Header click collapses the body; second click re-expands.
@@ -1310,7 +1310,7 @@ test.describe('Tools Display', () => {
       // Each row contributes three children (icon · content · description) directly
       // to the parent grid (rows use display: contents). With 2 rows and 3 cells per
       // row, the grid contains 6 cells whose x-positions form 3 distinct column
-      // groups — every icon shares one x, every title shares another, every
+      // groups - every icon shares one x, every title shares another, every
       // description shares the third.
       const rects = await rowBody.evaluate(el => {
         return [
@@ -1344,7 +1344,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // No grouped Todos container — inspection-only runs demote to per-block rendering.
+      // No grouped Todos container - inspection-only runs demote to per-block rendering.
       await expect(page.locator('[data-testid="todos-group"]')).toHaveCount(0)
 
       // The TaskList renders as an ordinary tool-block.
@@ -1352,6 +1352,26 @@ test.describe('Tools Display', () => {
         .locator('[data-testid="tool-block"]')
         .filter({ hasText: 'TaskList' })
       await expect(taskListBlock).toHaveCount(1)
+    })
+
+    // SPEC: tool:todos-block-empty-suppressed
+    test('a TaskUpdate that produces no rows does not render the Todos panel', async ({ page }) => {
+      // The session emits a single TaskUpdate with empty input - no taskId,
+      // no status change, no addBlockedBy. groupBlocks.flushRun still emits a
+      // 'todos-group' segment (TaskUpdate is in TASK_MUTATION_TOOLS), but
+      // mergeRunItems produces zero items because the classified diff is empty.
+      // bucketize returns rowGroups: [] -> TodosGroup returns null and no
+      // [data-testid="todos-group"] node is in the DOM.
+      await mockSSE(page, 'events/todos-empty-update.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      // Wait for the assistant message that follows the TaskUpdate so the
+      // turn has fully streamed in.
+      await expect(page.locator('[data-testid="message-assistant"]').first()).toBeVisible()
+
+      // The Todos panel must NOT be rendered.
+      await expect(page.locator('[data-testid="todos-group"]')).toHaveCount(0)
     })
   })
 
@@ -1365,12 +1385,12 @@ test.describe('Tools Display', () => {
       const toolBlock = page.locator('[data-testid="tool-block"][data-tool-status="pending"]')
       await expect(toolBlock).toBeVisible()
 
-      // Bullet carries the .pending class — CSS owns the cyan color, so the
+      // Bullet carries the .pending class - CSS owns the cyan color, so the
       // class is the contract. Visual regression covers the pixel rendering.
       const bullet = toolBlock.locator('.tool-bullet')
       await expect(bullet).toHaveClass(/pending/)
 
-      // Spinner element exists AND has a non-empty CSS animation name —
+      // Spinner element exists AND has a non-empty CSS animation name -
       // proves the "pulsing animation" half of the claim, not just element presence.
       const spinner = toolBlock.locator('.spinner')
       await expect(spinner).toBeVisible()
@@ -1936,7 +1956,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Read is collapsed by default — click to expand
+      // Read is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2027,7 +2047,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2101,7 +2121,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2126,7 +2146,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2144,7 +2164,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2169,7 +2189,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2191,7 +2211,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2206,7 +2226,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2234,7 +2254,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2257,7 +2277,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2282,7 +2302,7 @@ test.describe('Tools Display', () => {
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(taskBlock).toBeVisible()
 
-      // Completed async Task with nested blocks auto-collapses — expand first
+      // Completed async Task with nested blocks auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
       // Nested tools (Read and Bash) should be visible
@@ -2300,7 +2320,7 @@ test.describe('Tools Display', () => {
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(taskBlock).toBeVisible()
 
-      // Completed async Task auto-collapses — expand first
+      // Completed async Task auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
       // Nested Bash result content should be accessible
@@ -2317,7 +2337,7 @@ test.describe('Tools Display', () => {
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(taskBlock).toBeVisible()
 
-      // Completed async Task auto-collapses — expand first
+      // Completed async Task auto-collapses - expand first
       await taskBlock.locator('.tool-header').click()
 
       // All nested tools should be visible from persisted events
@@ -2484,7 +2504,7 @@ test.describe('Tools Display', () => {
       // Confirm no nested tool blocks exist yet
       await expect(page.locator('[data-testid="tool-block"].nested')).toHaveCount(0)
 
-      // Send nested Bash tool_use — no result yet, task still running
+      // Send nested Bash tool_use - no result yet, task still running
       await controller.sendEvent({
         type: 'assistant',
         subtype: 'tool_use',
@@ -2558,7 +2578,7 @@ test.describe('Tools Display', () => {
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
 
-      // JSON result causes default collapse — expand first
+      // JSON result causes default collapse - expand first
       await toolBlock.locator('.tool-header').click()
 
       // Input section should be visible with collapsible label
@@ -2578,7 +2598,7 @@ test.describe('Tools Display', () => {
       await waitForAppReady(page)
 
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
-      // JSON result causes default collapse — expand first
+      // JSON result causes default collapse - expand first
       await toolBlock.locator('.tool-header').click()
 
       const expandedContent = toolBlock.locator('.tool-expanded-content')
@@ -2617,7 +2637,7 @@ test.describe('Tools Display', () => {
       await waitForAppReady(page)
 
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
-      // JSON result causes default collapse — expand block first
+      // JSON result causes default collapse - expand block first
       await toolBlock.locator('.tool-header').click()
 
       const inputSection = toolBlock.locator('.tool-input-section')
@@ -2697,7 +2717,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2739,7 +2759,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2794,7 +2814,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2837,7 +2857,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2866,7 +2886,7 @@ test.describe('Tools Display', () => {
       const count = await gutterCells.count()
       expect(count).toBeGreaterThanOrEqual(2)
 
-      // Every gutter cell renders the same width — the block sizes its gutter
+      // Every gutter cell renders the same width - the block sizes its gutter
       // column to the widest line number once, then locks it across every row.
       const widths = await gutterCells.evaluateAll(cells =>
         cells.map(el => el.getBoundingClientRect().width),
@@ -2916,7 +2936,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2936,7 +2956,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -2960,7 +2980,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -3076,7 +3096,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -3102,7 +3122,7 @@ test.describe('Tools Display', () => {
         .first()
       await expect(taskBlock).toBeVisible()
 
-      // Task is expanded by default during execution — nested tools should be visible
+      // Task is expanded by default during execution - nested tools should be visible
       await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
 
       // Nested Glob tool should be visible inside expanded content
@@ -3163,7 +3183,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Send user message and a Task tool_use (no result — keeps it pending with spinner)
+      // Send user message and a Task tool_use (no result - keeps it pending with spinner)
       await controller.sendEvents([
         {
           type: 'user',
@@ -3362,7 +3382,7 @@ test.describe('Tools Display', () => {
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
 
-      // Running TaskOutput has effectiveIsPending=true → spinner shown instead of summary
+      // Running TaskOutput has effectiveIsPending=true -> spinner shown instead of summary
       const spinner = toolBlock.locator('.spinner')
       await expect(spinner).toBeVisible()
 
@@ -3464,7 +3484,7 @@ test.describe('Tools Display', () => {
         .first()
       await expect(toolBlock).toBeVisible()
 
-      // Bash is expanded by default — persisted output truncation indicator should be visible
+      // Bash is expanded by default - persisted output truncation indicator should be visible
       const truncationIndicator = toolBlock.locator('.persisted-output-truncated')
       await expect(truncationIndicator).toBeVisible()
 
@@ -3507,7 +3527,7 @@ test.describe('Tools Display', () => {
       await expect(expandBtn).toBeVisible()
       await expect(expandBtn).toHaveAttribute('title', 'Show full output')
 
-      // Download button must also be present — the claim names BOTH buttons.
+      // Download button must also be present - the claim names BOTH buttons.
       // Match by class first; fall back to a button whose title mentions download.
       const downloadBtn = toolBlock.locator('.tool-download-btn, button[title*="ownload"]').first()
       await expect(downloadBtn).toBeVisible()
@@ -3606,7 +3626,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Grep is collapsed by default — click to expand
+      // Grep is collapsed by default - click to expand
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await toolBlock.locator('.tool-header').click()
 
@@ -3645,7 +3665,7 @@ test.describe('Tools Display', () => {
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
 
-      // WebSearch should be collapsed — expanded content not visible
+      // WebSearch should be collapsed - expanded content not visible
       await expect(toolBlock.locator('.tool-expanded-content')).not.toBeVisible()
     })
 
@@ -3658,7 +3678,7 @@ test.describe('Tools Display', () => {
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
 
-      // WebFetch should be collapsed — expanded content not visible
+      // WebFetch should be collapsed - expanded content not visible
       await expect(toolBlock.locator('.tool-expanded-content')).not.toBeVisible()
     })
 
@@ -3717,7 +3737,7 @@ test.describe('Tools Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Bash is expanded by default — find the /tmp path highlight
+      // Bash is expanded by default - find the /tmp path highlight
       const pathLink = page.locator('.path-link').first()
       await expect(pathLink).toBeVisible()
 

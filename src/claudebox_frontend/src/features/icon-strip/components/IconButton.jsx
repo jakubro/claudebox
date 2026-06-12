@@ -9,7 +9,7 @@ import PANEL_CONFIGS from '../../../config/panel'
  * @param {string[]} props.activePanels - Currently active panel IDs.
  * @param {function} props.onTogglePanel - Callback to toggle panel visibility.
  * @param {number} [props.badgeCount=0] - Optional badge count to display.
- * @param {'default'|'danger'} [props.badgeVariant='default'] - Badge color variant. 'danger' renders in red — used for failure counts (e.g., failed MCP servers) where the count signals attention is required, not just work in flight.
+ * @param {'default'|'danger'} [props.badgeVariant='default'] - Badge color variant. 'danger' renders in red - used for failure counts (e.g., failed MCP servers) where the count signals attention is required, not just work in flight.
  * @param {boolean} [props.hasDot=false] - Show a small dot badge (no number).
  * @param {function} [props.onIconEnter] - Mouse enter handler (floating panel).
  * @param {function} [props.onIconLeave] - Mouse leave handler (floating panel).

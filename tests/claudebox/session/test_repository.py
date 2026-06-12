@@ -1,4 +1,4 @@
-"""Tests for claudebox.session.repository — shared session disk I/O."""
+"""Tests for claudebox.session.repository - shared session disk I/O."""
 
 import json
 from datetime import datetime
@@ -26,7 +26,13 @@ def repo(workspace):
 
 
 def _create_session_dir(workspace, session_id, data=None):
-    """Create a session directory with optional session.json."""
+    """Create a session directory with optional session.json.
+
+    `fork_point_cost_usd` is auto-populated when missing - it is a required
+    field on SessionMetadata, but each individual case in this file is asserting
+    against unrelated metadata and would otherwise need the field threaded in
+    by hand.
+    """
 
     sessions_root = workspace.sessions_root
     sessions_root.mkdir(parents=True, exist_ok=True)
@@ -36,6 +42,7 @@ def _create_session_dir(workspace, session_id, data=None):
     session_dir.mkdir()
 
     if data is not None:
+        data = {"fork_point_cost_usd": 0.0, **data}
         write_json(session_dir / "session.json", data)
 
     return session_dir

@@ -1,25 +1,26 @@
-"""Session lifecycle orchestration — list, create, resume, fork from workspace disk."""
+"""Session lifecycle orchestration - list, create, resume, fork from workspace disk."""
 
 import asyncio
 import json
 import shutil
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
 
 from claudebox import (
     Broadcaster,
-    ClaudeRuntime,
     SessionRepository,
     Workspace,
     get_logger,
     read_json,
+    resolve_runtime_class,
     write_json,
 )
 from claudebox import SessionNotFound as SharedSessionNotFound
-from claudebox.constants import SESSION_METADATA_FILE
+from claudebox.constants import SESSION_EVENTS_FILE, SESSION_METADATA_FILE
 from .errors import SessionNotFound
 from .models import SessionInfo, SessionProgressEvent, SessionsChangedEvent
 from ...constants import (
@@ -33,6 +34,25 @@ from ...constants import (
 if TYPE_CHECKING:
     from ..containers import ContainerService
     from ..workspaces import RegisteredWorkspace
+
+
+# Session.json fields a fork inherits verbatim from its parent. Identity (id,
+# parent link, paths, timestamps) is set fresh. Accumulated counters and
+# last-value snapshots are derived from the (possibly truncated) child
+# events.jsonl - spreading them from parent_data would attach the parent's
+# full-transcript tail to a child whose events only cover the pre-fork prefix.
+INHERITED_CONFIG_FIELDS = frozenset(
+    {
+        "name",
+        "model",
+        "permission_mode",
+        "effort_level",
+        "session_prompt",
+        "first_message",
+        "context_window",
+        "commands",
+    }
+)
 
 
 class SessionService:
@@ -53,6 +73,7 @@ class SessionService:
         workspace: "RegisteredWorkspace",
         containers: "ContainerService",
         events: Broadcaster,
+        agent: str,
     ) -> None:
         self._logger = get_logger(__name__)
 
@@ -60,6 +81,11 @@ class SessionService:
         self._repo = SessionRepository(Workspace(workspace.path))
         self._containers = containers
         self._events = events
+        # Workspace's configured runtime - drives synthesis defaults so Claude
+        # constants don't leak into LangGraph workspaces. The daemon resolves
+        # capability matrix + catalog defaults through `resolve_runtime_class(agent)`
+        # rather than hardcoding ClaudeRuntime.
+        self._agent = agent
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -88,6 +114,7 @@ class SessionService:
 
         sessions = []
         seen_session_ids = set()
+
         for metadata in metadata_list:
             container = await self._containers.find_by_session(metadata.session_id)
 
@@ -128,6 +155,7 @@ class SessionService:
 
         data = metadata.asdict()
         data["container_id"] = container.id if container else None
+
         return SessionInfo.fromdict(data)
 
     async def update(self, session_id: str, **fields) -> SessionInfo:
@@ -140,6 +168,7 @@ class SessionService:
 
         result = await self.get(session_id)
         await self._broadcast_sessions_changed()
+
         return result
 
     async def create(self) -> SessionInfo:
@@ -160,6 +189,7 @@ class SessionService:
 
         # Tell container to start a new session and use its authoritative session ID
         await self._broadcast_progress("Starting session")
+
         async with httpx.AsyncClient(
             timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
         ) as client:
@@ -177,7 +207,9 @@ class SessionService:
         # events flow), so we don't read from repo here.
         workspace = Workspace(self._workspace.path)
         new_session_dir = workspace.ensure_session(session_id).path
+        cls = resolve_runtime_class(self._agent)
         now = datetime.now(timezone.utc)
+
         return SessionInfo(
             session_id=session_id,
             container_id=container.id,
@@ -187,9 +219,10 @@ class SessionService:
             updated_at=now,
             num_turns=0,
             total_cost_usd=0.0,
-            model=ClaudeRuntime.DEFAULT_MODEL,
-            permission_mode=ClaudeRuntime.DEFAULT_PERMISSION_MODE,
-            effort_level=ClaudeRuntime.DEFAULT_EFFORT_LEVEL,
+            fork_point_cost_usd=0.0,
+            model=cls.get_default_model(),
+            permission_mode=cls.get_default_permission_mode(),
+            effort_level=cls.get_default_effort_level(),
         )
 
     async def resume(self, session_id: str) -> SessionInfo:
@@ -203,6 +236,7 @@ class SessionService:
 
         # Check for existing container serving this session
         existing = await self._containers.find_by_session(session_id, sync=True)
+
         if existing:
             return await self._build_session_info(session_id, existing.id)
 
@@ -215,12 +249,14 @@ class SessionService:
 
         # Tell container to resume the session
         await self._broadcast_progress("Resuming session", session_id=session_id)
+
         async with httpx.AsyncClient(
             timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
         ) as client:
             await client.post(f"{container.base_url}/api/sessions/{session_id}/resume")
 
         await self._broadcast_sessions_changed()
+
         return await self._build_session_info(session_id, container.id)
 
     async def _build_session_info(self, session_id: str, container_id: str) -> SessionInfo:
@@ -235,13 +271,15 @@ class SessionService:
         except SharedSessionNotFound:
             return self._synthesize_session_info(session_id, container_id)
 
+        cls = resolve_runtime_class(self._agent)
         workspace = Workspace(self._workspace.path)
         data = metadata.asdict()
         data["container_id"] = container_id
         data.setdefault("workspace", str(workspace.path))
-        data.setdefault("effort_level", ClaudeRuntime.DEFAULT_EFFORT_LEVEL)
-        data.setdefault("model", ClaudeRuntime.DEFAULT_MODEL)
-        data.setdefault("permission_mode", ClaudeRuntime.DEFAULT_PERMISSION_MODE)
+        data.setdefault("effort_level", cls.get_default_effort_level())
+        data.setdefault("model", cls.get_default_model())
+        data.setdefault("permission_mode", cls.get_default_permission_mode())
+
         return SessionInfo.fromdict(data)
 
     def _synthesize_session_info(
@@ -257,17 +295,21 @@ class SessionService:
         (list_all merge path) and for resume() when on-disk metadata is absent.
         """
 
+        cls = resolve_runtime_class(self._agent)
         workspace = Workspace(self._workspace.path)
         data: dict = {
             "session_id": session_id,
             "container_id": container_id,
             "workspace": str(workspace.path),
-            "model": ClaudeRuntime.DEFAULT_MODEL,
-            "permission_mode": ClaudeRuntime.DEFAULT_PERMISSION_MODE,
-            "effort_level": ClaudeRuntime.DEFAULT_EFFORT_LEVEL,
+            "fork_point_cost_usd": 0.0,
+            "model": cls.get_default_model(),
+            "permission_mode": cls.get_default_permission_mode(),
+            "effort_level": cls.get_default_effort_level(),
         }
+
         if started_at is not None:
             data["started_at"] = started_at
+
         return SessionInfo.fromdict(data)
 
     async def fork(
@@ -323,12 +365,13 @@ class SessionService:
         # Seed session.json with parent link so the container Projection picks it up.
         new_session = workspace.ensure_session(new_session_id)
 
-        # Read parent's session.json directly to inherit all parent settings
-        # (permission mode, effort, prompt, name, model, display state) —
-        # _copy_claudebox_session excludes session.json from the new directory.
+        # Read parent's session.json directly so we can build the seed below
+        # from a config allow-list (see INHERITED_CONFIG_FIELDS) - _copy_claudebox_session
+        # excludes session.json from the new directory.
         source_session_path = (
             workspace.ensure_session(source_session_id).path / SESSION_METADATA_FILE
         )
+
         try:
             parent_data = read_json(source_session_path, default={}) or {}
         except ValueError as exc:
@@ -340,20 +383,10 @@ class SessionService:
             )
             parent_data = {}
 
-        now = datetime.now(timezone.utc).isoformat()
-        seed: dict = {
-            **parent_data,
-            "session_id": new_session_id,
-            "parent_session_id": source_session_id,
-            "session_dir": str(new_session.path),
-            "workspace": str(workspace.path),
-            "started_at": now,
-            "updated_at": now,
-        }
-
-        write_json(new_session.path / SESSION_METADATA_FILE, seed)
-
-        # Truncate at turn boundary only when forking from a specific turn
+        # Truncate at turn boundary BEFORE deriving counters so the child's
+        # totals reflect the events its transcript will actually contain,
+        # not the parent's tail. Truncation is skipped entirely when forking
+        # without a turn boundary (whole-session copy).
         if turn_id is not None:
             await loop.run_in_executor(
                 None,
@@ -370,11 +403,44 @@ class SessionService:
                 turn_id,
             )
 
+        # Derive accumulated counters and last-value snapshots from the
+        # (possibly truncated) child events.jsonl. Spreading these from
+        # parent_data instead would carry the parent's full-transcript tail
+        # values into the child, double-counting them in any rollup that
+        # sums across sibling sessions.
+        events_path = new_session.path / SESSION_EVENTS_FILE
+        derived = await loop.run_in_executor(
+            None,
+            self._compute_derived_fields,
+            events_path,
+        )
+
+        # Inherit identity/config from parent; counters/snapshots come from
+        # derived; identity-specific fields are set fresh below.
+        inherited = {k: v for k, v in parent_data.items() if k in INHERITED_CONFIG_FIELDS}
+
+        now = datetime.now(timezone.utc).isoformat()
+        seed: dict = {
+            **inherited,
+            **derived,
+            "session_id": new_session_id,
+            "parent_session_id": source_session_id,
+            "session_dir": str(new_session.path),
+            "workspace": str(workspace.path),
+            "started_at": now,
+            "updated_at": now,
+            "fork_point_cost_usd": derived["total_cost_usd"],
+        }
+
+        write_json(new_session.path / SESSION_METADATA_FILE, seed)
+
         if reuse_container:
             # Reuse the source session's existing container
             container = await self._containers.find_by_session(source_session_id)
+
             if not container:
                 raise ValueError(f"No running container for source session {source_session_id}")
+
             # Transfer container ownership to the child: without it, find_by_session()
             # still resolves the parent, so stopping the parent kills the active child.
             await self._containers.update(container, session_id=new_session_id)
@@ -387,12 +453,14 @@ class SessionService:
             await self._wait_for_health(container.id)
 
         await self._broadcast_progress("Resuming session", session_id=new_session_id)
+
         async with httpx.AsyncClient(
             timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
         ) as client:
             await client.post(f"{container.base_url}/api/sessions/{new_session_id}/resume")
 
         await self._broadcast_sessions_changed()
+
         # Return the full SessionInfo so callers can act on the new session
         # without waiting for the SSE-debounced refresh round-trip.
         return SessionInfo.fromdict({**seed, "container_id": container.id})
@@ -414,6 +482,7 @@ class SessionService:
                 ) as client:
                     response = await client.get(f"{container.base_url}/api/health")
                     response.raise_for_status()
+
                     return
             except Exception:
                 if attempt < CONTAINER_HEALTH_STARTUP_MAX_RETRIES - 1:
@@ -424,6 +493,7 @@ class SessionService:
             container={"id": container_id},
             **self._log_context,
         )
+
         raise ContainerTimeout(container_id=container_id)
 
     # Fork Helpers
@@ -433,6 +503,7 @@ class SessionService:
         """Copy SDK session directory (tool-results, subagents). Skip if absent."""
 
         src = workspace.sdk_project_dir / source_id
+
         if src.exists():
             try:
                 shutil.copytree(
@@ -454,6 +525,7 @@ class SessionService:
         """Copy SDK transcript JSONL file. Skip if absent."""
 
         src = workspace.sdk_project_dir / f"{source_id}.jsonl"
+
         if src.exists():
             shutil.copy2(src, workspace.sdk_project_dir / f"{new_id}.jsonl")
 
@@ -462,15 +534,20 @@ class SessionService:
         """Truncate SDK transcript, keeping lines before user message with matching turn_id."""
 
         path = workspace.sdk_project_dir / f"{session_id}.jsonl"
+
         if not path.exists():
             return
+
         lines = path.read_text().splitlines(keepends=True)
 
         kept = []
+
         for line in lines:
             data = json.loads(line)
+
             if data.get("type") == "user" and data.get("uuid") == turn_id:
                 break
+
             kept.append(line)
 
         path.write_text("".join(kept))
@@ -480,6 +557,7 @@ class SessionService:
 
         src = workspace.ensure_session(source_id).path
         dst = workspace.ensure_session(new_id).path
+
         try:
             shutil.copytree(
                 src,
@@ -505,13 +583,69 @@ class SessionService:
         lines = path.read_text().splitlines(keepends=True)
 
         kept = []
+
         for line in lines:
             data = json.loads(line)
+
             if data.get("turn_id") == turn_id:
                 break
+
             kept.append(line)
 
         path.write_text("".join(kept))
+
+    @classmethod
+    def _compute_derived_fields(cls, events_path: Path) -> dict:
+        """Sum counters and snapshot last-value fields from an events JSONL log.
+
+        Mirrors Projection.update accumulation so a fresh fork's session.json
+        carries totals consistent with the events its transcript will replay.
+        Returns a dict ready to spread into the session seed; absent file
+        yields zeros / None snapshots.
+        """
+
+        cost = 0.0
+        duration_ms = 0
+        num_turns = 0
+        last_message: str | None = None
+        last_context_tokens = 0
+        todos: list[dict] | None = None
+
+        if events_path.exists():
+            for line in events_path.read_text().splitlines():
+                if not line.strip():
+                    continue
+
+                data = json.loads(line)
+
+                if data.get("cost_usd"):
+                    cost += data["cost_usd"]
+
+                if data.get("duration_ms"):
+                    duration_ms += data["duration_ms"]
+
+                if data.get("is_human"):
+                    num_turns += 1
+
+                    if data.get("content"):
+                        last_message = data["content"]
+
+                if data.get("context_tokens"):
+                    last_context_tokens = data["context_tokens"]
+
+                tool_input = data.get("tool_input")
+
+                if tool_input and "todos" in tool_input:
+                    todos = tool_input["todos"]
+
+        return {
+            "total_cost_usd": cost,
+            "total_duration_ms": duration_ms,
+            "num_turns": num_turns,
+            "last_message": last_message,
+            "last_context_tokens": last_context_tokens,
+            "todos": todos,
+        }
 
     # Misc
     # ----------------------------------------------------------------------------------------------

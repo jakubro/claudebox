@@ -1,4 +1,4 @@
-/** Default-renderer code block — syntax highlighting with auto language detection. */
+/** Default-renderer code block - syntax highlighting with auto language detection. */
 
 import { memo } from 'react'
 import SyntaxHighlighter from 'react-syntax-highlighter'
@@ -48,7 +48,7 @@ function DefaultCodeBlock({ content, filePath = null, renderer = null }) {
 // per render. Tool outputs whose content has stopped changing must bail out.
 // `renderer` is null at the only production call site (ToolContentRenderer's
 // default fallback); if future callers pass inline `{markdown: X}` objects,
-// memo bail-out will degrade — stabilize renderer identity at the call site.
+// memo bail-out will degrade - stabilize renderer identity at the call site.
 export default memo(
   DefaultCodeBlock,
   (prev, next) =>

@@ -1,5 +1,6 @@
 """Constants and paths for the claudebox runtime."""
 
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -22,7 +23,7 @@ the Free Software Foundation, either version 3 of the License, or
 # Paths: Config
 # -------------------------------------
 #
-# Home-derived paths are accessor functions, not module-level constants —
+# Home-derived paths are accessor functions, not module-level constants -
 # evaluating Path.home() at import time freezes the resolved path and silently
 # defeats Path.home monkeypatching in tests. See GUIDELINES.md "Home-derived
 # paths" for the contract.
@@ -150,6 +151,16 @@ WEB_CONTAINER_PORT = 8080
 DAEMON_PORT = 41820
 DAEMON_DEV_PORT = 41920
 GIT_SUBPROCESS_TIMEOUT = timedelta(seconds=5)
+
+
+def daemon_base_url() -> str:
+    """Daemon HTTP base URL - honors CLAUDEBOX_DAEMON_URL env override.
+
+    Called at handler time so test fixtures can mutate the env before the
+    CLI binds the URL. Empty env value falls back to the canonical default.
+    """
+
+    return os.environ.get("CLAUDEBOX_DAEMON_URL") or f"https://localhost:{DAEMON_PORT}"
 
 
 # Session

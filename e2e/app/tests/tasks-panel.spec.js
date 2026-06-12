@@ -214,7 +214,7 @@ test.describe('Tasks Panel', () => {
       await expect(tasksIcon).toBeVisible()
       await expect(usageIcon).toBeVisible()
 
-      // Get vertical positions (top values) — icons are stacked vertically in the strip
+      // Get vertical positions (top values) - icons are stacked vertically in the strip
       const stashTop = await stashIcon.evaluate(el => el.getBoundingClientRect().top)
       const tasksTop = await tasksIcon.evaluate(el => el.getBoundingClientRect().top)
       const usageTop = await usageIcon.evaluate(el => el.getBoundingClientRect().top)
@@ -383,7 +383,7 @@ test.describe('Tasks Panel', () => {
 
       await openTasksPanel(page)
 
-      // Default "Active" filter — completed task should not show
+      // Default "Active" filter - completed task should not show
       // The fixture has a completed task, so Active filter should show "No tasks"
       await expect(page.locator('.tasks-list-empty')).toBeVisible()
     })
@@ -425,7 +425,7 @@ test.describe('Tasks Panel', () => {
       const match = borderColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
       expect(match, `Expected valid rgb() value, got: ${borderColor}`).toBeTruthy()
       const [, r, g, b] = match.map(Number)
-      // Not black/transparent — any meaningful staleness color
+      // Not black/transparent - any meaningful staleness color
       const isNonDefault = r > 0 || g > 0 || b > 0
       expect(isNonDefault, `Expected non-black border color, got rgb(${r},${g},${b})`).toBe(true)
     })
@@ -518,7 +518,7 @@ test.describe('Tasks Panel', () => {
       const taskEntry = page.locator('[data-testid="task-entry"]').first()
       await expect(taskEntry).toBeVisible()
 
-      // Killed should display as failed — same CSS class/border as failed tasks
+      // Killed should display as failed - same CSS class/border as failed tasks
       await expect(taskEntry).toHaveClass(/task-failed|task-error/)
     })
   })

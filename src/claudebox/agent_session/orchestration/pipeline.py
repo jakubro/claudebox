@@ -1,4 +1,4 @@
-"""Event pipeline — SDK messages to persisted, broadcast events."""
+"""Event pipeline - SDK messages to persisted, broadcast events."""
 
 import asyncio
 import dataclasses
@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Protocol
 
 from .async_tasks import AsyncTaskManager
-from .conversion import dict_message_to_events, to_published_event
+from .conversion import agent_event_to_events, to_published_event
 from .models import Event, EventSubtype, EventType, PublishedEvent
 from .persistence import EventLog
 from .turn_tracker import TurnTracker
-from ..events import AgentEvent
+from ..events import AgentEvent, SystemInitPayload, UserMessagePayload
 from ..protocol import AgentSession
 from ...core.logging import get_logger
 from ...workspace import Workspace
@@ -31,7 +31,7 @@ class OnEvent(Protocol):
 
 
 class EventPipeline:
-    """Pipeline: SDK message → enriched, persisted, broadcast PublishedEvent."""
+    """Pipeline: SDK message -> enriched, persisted, broadcast PublishedEvent."""
 
     def __init__(
         self,
@@ -83,7 +83,7 @@ class EventPipeline:
 
     @property
     def turn_tracker(self) -> TurnTracker:
-        """The turn tracker — exposes is_compacting for fallback emitters."""
+        """The turn tracker - exposes is_compacting for fallback emitters."""
 
         return self._turn_tracker
 
@@ -108,6 +108,7 @@ class EventPipeline:
 
         if self._task:
             self._task.cancel()
+
             try:
                 await self._task
             except asyncio.CancelledError:
@@ -182,10 +183,12 @@ class EventPipeline:
     async def _run(self) -> None:
         """Main loop: read SDK messages, enrich, persist, broadcast.
 
-        Tracks whether user and assistant events were seen during each response
-        cycle. When a result arrives without any assistant event (e.g., unknown
-        slash command), injects synthetic user and assistant events to surface
-        the SDK's response content visibly.
+        Tracks the user event per response cycle and assistant emission per turn.
+        When a result arrives for a turn that produced no assistant event (e.g.,
+        unknown slash command), injects synthetic user and assistant events to
+        surface the SDK's response content. Turn-scoped assistant tracking keeps a
+        trailing result after a mid-response crash-restart from duplicating the
+        already-emitted message.
         """
 
         await self._sdk_client.ready.wait()
@@ -195,7 +198,6 @@ class EventPipeline:
 
             try:
                 saw_user_event = False
-                saw_assistant_event = False
 
                 async for agent_event in self._sdk_client.receive_events():
                     self._logger.debug("Received agent event", kind=agent_event.kind)
@@ -203,10 +205,7 @@ class EventPipeline:
                     if not self._running:
                         break
 
-                    if (
-                        agent_event.kind == "system"
-                        and agent_event.payload.get("subtype") == "init"
-                    ):
+                    if agent_event.kind == "system_init":
                         await self._initialize(agent_event=agent_event)
 
                     # Suppress SDK echo of user message when synthetic injection
@@ -216,8 +215,8 @@ class EventPipeline:
                     # messages, not tool result messages which share the user kind.
                     if (
                         self._suppress_user_echo
-                        and agent_event.kind == "user"
-                        and agent_event.payload.get("tool_use_result") is None
+                        and isinstance(agent_event.payload, UserMessagePayload)
+                        and agent_event.payload.tool_use_result is None
                     ):
                         self._suppress_user_echo = False
                         self._logger.debug("Suppressed SDK echo of attachment user message")
@@ -225,10 +224,7 @@ class EventPipeline:
 
                     self._turn_tracker.on_event(agent_event)
 
-                    # Project AgentEvent into pipeline Events via the dict-shape
-                    # path that previously fed sdk_message_to_events.
-                    projected = {"type": agent_event.kind, "message": agent_event.payload}
-                    for event in dict_message_to_events(projected):
+                    for event in agent_event_to_events(agent_event):
                         self._event_counter += 1
 
                         published = to_published_event(
@@ -241,18 +237,20 @@ class EventPipeline:
                         await self._enrich_edit_line_offset(published)
                         self._enrich_init_capabilities(published)
 
-                        # Track what event types we've seen in this response cycle
+                        # User echo is per-cycle; assistant emission is turn-scoped
+                        # (via TurnTracker) so a crash-restart's trailing result is
+                        # not mistaken for a result-only turn.
                         if published.type == "user" and published.is_human:
                             saw_user_event = True
                         elif published.type == "assistant":
-                            saw_assistant_event = True
+                            self._turn_tracker.mark_assistant_emitted(published.turn_id)
 
                         # Result-only turn: SDK returned a result without any
                         # assistant response (e.g., unknown slash command).
                         # Inject synthetic events so the turn is visible.
                         if (
                             published.type == "result"
-                            and not saw_assistant_event
+                            and not self._turn_tracker.has_assistant_emitted(published.turn_id)
                             and published.content
                         ):
                             await self._surface_result_only_turn(published, saw_user_event)
@@ -262,9 +260,9 @@ class EventPipeline:
 
                         await self._process_event(published)
                         self._async_task_manager.check_event(published)
-
             except Exception as exc:
                 self._logger.exception("Pipeline error")
+
                 # Unstick frontend compaction state before surfacing the error,
                 # so the next pending Turn renders the regular Working spinner
                 # rather than the Compacting indicator.
@@ -274,6 +272,7 @@ class EventPipeline:
                         subtype=EventSubtype.COMPACT_BOUNDARY,
                         message_data={"compact_metadata": {"status": "error"}},
                     )
+
                 await self.inject_event(
                     event_type=EventType.SYSTEM,
                     subtype=EventSubtype.ERROR,
@@ -294,8 +293,8 @@ class EventPipeline:
             return
 
         if agent_event is not None:
-            data = agent_event.payload.get("data") or {}
-            self._session_id = data.get("session_id")
+            assert isinstance(agent_event.payload, SystemInitPayload)
+            self._session_id = agent_event.payload.session_id
         else:
             self._session_id = session_id
 
@@ -315,6 +314,7 @@ class EventPipeline:
         # Now that we have session_id, persist events that arrived before init
         for event in self._buffer:
             await self._process_event(event)
+
         self._buffer.clear()
 
     async def _process_event(self, event: PublishedEvent) -> None:
@@ -322,6 +322,7 @@ class EventPipeline:
 
         if not self._initialized:
             self._buffer.append(event)
+
             return
 
         await self._event_log.append(event)  # ty: ignore[unresolved-attribute]
@@ -365,12 +366,14 @@ class EventPipeline:
             return
 
         inp = event.tool_input
+
         if not inp or not inp.get("file_path") or not inp.get("old_string"):
             return
 
         try:
             content = await asyncio.to_thread(Path(inp["file_path"]).read_text, encoding="utf-8")
             idx = content.find(inp["old_string"])
+
             if idx >= 0:
                 event.source_offset = content[:idx].count("\n") + 1
         except Exception:
@@ -415,6 +418,7 @@ class EventPipeline:
         """Stop task monitoring and close event log file handle."""
 
         self._async_task_manager.stop_all()
+
         if self._event_log:
             await self._event_log.close()
             self._event_log = None

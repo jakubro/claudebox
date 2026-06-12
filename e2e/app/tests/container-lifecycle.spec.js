@@ -251,7 +251,7 @@ test.describe('Container Status Indicators', () => {
     const dot = page.locator(
       '[data-testid="session-header-strip"] [data-testid="session-header-status-dot"]',
     )
-    // Some builds may not expose the test event hook — fall back to a soft
+    // Some builds may not expose the test event hook - fall back to a soft
     // pass if the data-status never flips (visible only in builds with the
     // hook). The dot-states class contract is verified by other tests.
     try {
@@ -309,7 +309,7 @@ test.describe('Container Status Indicators', () => {
   })
 
   // SPEC: container:stop-clears-uniformly
-  test('stopping a session clears every status dot together — no surface wedges', async ({
+  test('stopping a session clears every status dot together - no surface wedges', async ({
     page,
   }) => {
     const daemon = await createDaemonSSEController(page)
@@ -352,18 +352,18 @@ test.describe('Container Status Indicators', () => {
     await expect(headerDot).toHaveAttribute('data-status', 'running')
     await expect(panelDot).toHaveClass(/container-status-running/)
 
-    // Stop from the panel — both surfaces switch to stopping at once.
+    // Stop from the panel - both surfaces switch to stopping at once.
     await page.locator('[data-testid="session-kill-btn"]').first().click()
     await expect(headerDot).toHaveAttribute('data-status', 'stopping')
     await expect(panelDot).toHaveClass(/container-status-stopping/)
 
-    // Daemon broadcasts the terminal stopping → stopped transition, then the
+    // Daemon broadcasts the terminal stopping -> stopped transition, then the
     // sessions list refetches without the container.
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopping')
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopped')
     await daemon.sendEvent({ type: 'sessions_changed' })
 
-    // Every dot clears together — none wedged on stopping, none back to running.
+    // Every dot clears together - none wedged on stopping, none back to running.
     await expect(headerDot).toHaveAttribute('data-status', 'none')
     await expect(panelDot).toHaveClass(/container-status-none/)
     await expect(page.locator('.container-status-dot.container-status-stopping')).toHaveCount(0)
@@ -375,7 +375,7 @@ test.describe('Container Status Indicators', () => {
   }) => {
     // Mount a real dot for each documented state and read its computed
     // background color; verify the running/stopping/gray buckets resolve to
-    // distinct colors (anchors the class→color contract end-to-end).
+    // distinct colors (anchors the class->color contract end-to-end).
     await mockAPI(page)
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -475,7 +475,7 @@ test.describe('Session Creation Overlay', () => {
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
     await expect(page.locator('.chat-replay-progress-bar.indeterminate')).toBeVisible()
 
-    // Send daemon progress events — should appear as status text
+    // Send daemon progress events - should appear as status text
     await daemon.sendProgress('Creating container')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Creating container')
 
@@ -488,7 +488,7 @@ test.describe('Session Creation Overlay', () => {
     await input.fill('type-ahead message')
     await expect(input).toHaveValue('type-ahead message')
 
-    // Sending should be blocked while container is being created — pressing Enter
+    // Sending should be blocked while container is being created - pressing Enter
     // should NOT trigger a send API call
     let sendCalled = false
     await page.route('**/api/send', async route => {
@@ -582,7 +582,7 @@ test.describe('Session Resume Overlay', () => {
     // Status shows replay progress (Phase 2: replay)
     await expect(page.locator('.chat-replay-status-text')).toContainText('Replaying events')
 
-    // Textarea stays enabled per the always-enabled invariant — submit is a
+    // Textarea stays enabled per the always-enabled invariant - submit is a
     // no-op until replay completes (typed text is held locally).
     await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
   })
@@ -657,7 +657,7 @@ test.describe('Welcome State', () => {
     await expect(welcome.locator('.welcome-name')).toContainText(DEFAULT_WORKSPACE_ID)
     await expect(welcome.locator('.welcome-path')).toContainText('/home/user/project')
     // ChatInput is rendered as a sibling of the welcome content, hoisted in the
-    // chat panel so the same instance persists across welcome→chat transitions.
+    // chat panel so the same instance persists across welcome->chat transitions.
     await expect(
       page.locator('[data-testid="panel-chat"] [data-testid="chat-input"]'),
     ).toBeVisible()
@@ -670,18 +670,18 @@ test.describe('Welcome State', () => {
   })
 
   // SPEC: footer:welcome-defaults
-  test('footer shows session defaults from the workspace, not "—" placeholders', async ({
+  test('footer shows session defaults from the workspace, not "-" placeholders', async ({
     page,
   }) => {
     await mockAPI(page)
     await mockSSE(page)
 
-    // Navigate to workspace without a specific session — welcome state
+    // Navigate to workspace without a specific session - welcome state
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
     // Workspace, model, effort, permission pickers must reflect the
-    // session-defaults endpoint response — never "—".
+    // session-defaults endpoint response - never "-".
     await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
     await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 4.8')
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
@@ -720,22 +720,22 @@ test.describe('Welcome State', () => {
       await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
     })
 
-    // Welcome state — pickers should be ready before the user toggles them.
+    // Welcome state - pickers should be ready before the user toggles them.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
 
-    // Change effort to Max on welcome — buffers (no container yet).
+    // Change effort to Max on welcome - buffers (no container yet).
     await page.locator('[data-testid="footer-effort"]').click()
     await page.locator('[data-testid="effort-dropdown"]').getByText('Max').click()
 
-    // Optimistic update — picker shows Max immediately.
+    // Optimistic update - picker shows Max immediately.
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('Max')
 
     // Buffer must NOT call the effort-level endpoint while the welcome screen
     // has no active container.
     expect(setEffortBody).toBeNull()
 
-    // Submit a message — triggers new session creation, which attaches a session.
+    // Submit a message - triggers new session creation, which attaches a session.
     const input = page.locator('[data-testid="chat-input"]')
     await input.fill('Hello')
     await input.press('Enter')
@@ -797,10 +797,10 @@ test.describe('Daemon SSE Stream', () => {
   })
 })
 
-test.describe('Container Stop — Graceful Disconnect', () => {
+test.describe('Container Stop - Graceful Disconnect', () => {
   // SPEC: error:graceful-disconnect
   // When active container disappears from sessions list,
-  // ContainerStopEffect disconnects SSE gracefully — no error flash in footer
+  // ContainerStopEffect disconnects SSE gracefully - no error flash in footer
   test('footer shows clean state when container stops (no error flash)', async ({ page }) => {
     let includeContainer = true
 
@@ -829,7 +829,7 @@ test.describe('Container Stop — Graceful Disconnect', () => {
 
     // Send a daemon container_status event to trigger sessions refetch
     // (ContainerStopEffect reacts to sessions list changes)
-    // Force a sessions list refetch by navigating — or directly call via page.evaluate
+    // Force a sessions list refetch by navigating - or directly call via page.evaluate
     // Since we can't easily trigger DaemonStreamContext from outside, trigger a refetch
     // by clicking refresh in the sessions panel
     await openSessionsPanel(page)
@@ -837,7 +837,7 @@ test.describe('Container Stop — Graceful Disconnect', () => {
     await refreshBtn.click()
 
     // After refetch, ContainerStopEffect should detect container gone and disconnect gracefully.
-    // Footer should NOT show "Connection lost" error — it should show disconnected or ready.
+    // Footer should NOT show "Connection lost" error - it should show disconnected or ready.
     // The key assertion: error status should NOT appear.
     await expect(
       page.locator('[data-testid="footer-status"][data-status="error"]'),

@@ -85,7 +85,7 @@ describe('InputHistoryManager', () => {
         history: ['h1', 'h2'],
       })
 
-      // Navigate up: draft → history[0] → history[1]
+      // Navigate up: draft -> history[0] -> history[1]
       m.navigateUp(true)
       m.navigateUp(true)
       m.navigateUp(true)

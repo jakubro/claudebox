@@ -665,7 +665,7 @@ describe('useSessionActions', () => {
 
   it('setModel buffers when no container is active (welcome screen)', async () => {
     mockGetContainerId.mockReturnValue(null)
-    // No session yet — getSession returns workspace info only.
+    // No session yet - getSession returns workspace info only.
     mockGetSession.mockResolvedValue({ workspace: '/path' })
 
     const { result } = renderHook(() => useSessionActions(), { wrapper })
@@ -674,7 +674,7 @@ describe('useSessionActions', () => {
       result.current.setModel('claude-4')
     })
 
-    // Buffered — the effort/model API was NOT called yet.
+    // Buffered - the effort/model API was NOT called yet.
     expect(mockSetModel).not.toHaveBeenCalled()
   })
 
@@ -721,7 +721,7 @@ describe('useSessionActions', () => {
     expect(mockSetModel).toHaveBeenCalledWith('claude-opus')
   })
 
-  it('drains buffered config in strict order on session attach: model → permission → effort', async () => {
+  it('drains buffered config in strict order on session attach: model -> permission -> effort', async () => {
     const callOrder = []
     mockSetModel.mockImplementation(async value => {
       callOrder.push(['model', value])
@@ -748,7 +748,7 @@ describe('useSessionActions', () => {
     })
 
     // Session attach: getSession now returns a session_id. The drain effect
-    // keys on the null → set transition.
+    // keys on the null -> set transition.
     mockGetContainerId.mockReturnValue('test-container')
     mockGetSession.mockResolvedValue(SESSION_DATA)
     await act(async () => {

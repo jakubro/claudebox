@@ -6,7 +6,7 @@
  * and by callers that need to predict the post-scroll position without
  * actually scrolling (e.g. for an at-bottom predicate).
  *
- * Returns the raw computed destination — not clamped to scroll range. DOM
+ * Returns the raw computed destination - not clamped to scroll range. DOM
  * clamps scrollTop writes; callers that want the post-clamp position should
  * clamp against `[0, scrollHeight - clientHeight]` themselves.
  *
@@ -66,7 +66,7 @@ export function easeOutCubic(t) {
  *
  * Default class `jump-highlight` and 1500ms timeout match the three call sites
  * (BookmarksPanel, TasksPanel, ChatPanel). useMessageJump uses its own
- * highlight helper to coordinate cancellation across consecutive jumps —
+ * highlight helper to coordinate cancellation across consecutive jumps -
  * that hook is intentionally not collapsed here.
  *
  * @param {HTMLElement} scrollContainer

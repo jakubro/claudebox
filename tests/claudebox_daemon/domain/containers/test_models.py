@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.containers.models — container data models."""
+"""Tests for claudebox_daemon.domain.containers.models - container data models."""
 
 from claudebox import serialization
 from claudebox_daemon.domain.containers.models import Container

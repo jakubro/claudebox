@@ -78,7 +78,7 @@ test.describe('Connection', () => {
 
       // Panels driven by the chat SSE stream surface the replay state.
       // (MCP and Usage subscribe to separate streams and continue to render
-      // their own data during chat replay — they are not in scope here.)
+      // their own data during chat replay - they are not in scope here.)
       await page.locator('[data-testid="icon-logs"]').click()
       await expect(page.locator('[data-testid="panel-logs"]')).toContainText('Resuming...')
 
@@ -106,16 +106,16 @@ test.describe('Connection', () => {
       // Record timestamp before error
       const errorTime = Date.now()
 
-      // Trigger error on SSE — no user interaction after this
+      // Trigger error on SSE - no user interaction after this
       await controller.triggerError()
 
       // Auto-reconnect should happen automatically (RECONNECT_BASE_DELAY ~1000ms)
-      // Poll until reconnection count increases — no clicks or interactions
+      // Poll until reconnection count increases - no clicks or interactions
       await expect
         .poll(() => controller.getConnectionCount(), { timeout: 5000 })
         .toBeGreaterThan(initialCount)
 
-      // Verify reconnection took at least 1s (not instant — there's a delay)
+      // Verify reconnection took at least 1s (not instant - there's a delay)
       const elapsed = Date.now() - errorTime
       expect(elapsed).toBeGreaterThanOrEqual(1000)
     })

@@ -1,4 +1,4 @@
-"""Tests for claudebox.concurrency — sync/async bridging."""
+"""Tests for claudebox.concurrency - sync/async bridging."""
 
 import pytest
 

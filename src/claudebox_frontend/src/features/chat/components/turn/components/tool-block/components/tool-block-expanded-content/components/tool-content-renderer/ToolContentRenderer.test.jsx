@@ -64,7 +64,7 @@ describe('ToolContentRenderer', () => {
 
   describe('Read tool', () => {
     it('renders line with arrow separator showing line number and content', () => {
-      const details = '  10→const x = 1'
+      const details = '  10\u2192const x = 1'
       render(<ToolContentRenderer toolName="Read" details={details} />)
 
       // Line number and content should be visible
@@ -274,7 +274,7 @@ describe('ToolContentRenderer', () => {
 
   describe('markdown rendering', () => {
     it('routes Read tool with .md file to MarkdownPreview', () => {
-      const details = '   1→# Title\n   2→\n   3→Some **bold** text.'
+      const details = '   1\u2192# Title\n   2\u2192\n   3\u2192Some **bold** text.'
       const { container } = render(
         <ToolContentRenderer toolName="Read" details={details} filePath="/app/README.md" />,
       )
@@ -285,7 +285,7 @@ describe('ToolContentRenderer', () => {
     })
 
     it('routes Write tool with .mdx file to MarkdownPreview', () => {
-      const details = '   1→# Title'
+      const details = '   1\u2192# Title'
       const { container } = render(
         <ToolContentRenderer toolName="Write" details={details} filePath="/app/doc.mdx" />,
       )
@@ -329,7 +329,7 @@ describe('ToolContentRenderer', () => {
 
   describe('syntax highlighting', () => {
     it('uses SyntaxHighlighter for Read tool with known file extension', () => {
-      const details = '   1→const x = 1'
+      const details = '   1\u2192const x = 1'
       const { container } = render(
         <ToolContentRenderer toolName="Read" details={details} filePath="/app/test.js" />,
       )
@@ -343,7 +343,7 @@ describe('ToolContentRenderer', () => {
     })
 
     it('uses SyntaxHighlighter for Write tool with known file extension', () => {
-      const details = '   1→def hello():'
+      const details = '   1\u2192def hello():'
       const { container } = render(
         <ToolContentRenderer toolName="Write" details={details} filePath="/app/test.py" />,
       )
@@ -355,7 +355,7 @@ describe('ToolContentRenderer', () => {
     })
 
     it('falls back to CodeBlock rendering for unknown file extensions', () => {
-      const details = '   1→some content'
+      const details = '   1\u2192some content'
       const { container } = render(
         <ToolContentRenderer toolName="Read" details={details} filePath="/app/test.unknown" />,
       )
@@ -366,7 +366,7 @@ describe('ToolContentRenderer', () => {
     })
 
     it('falls back to CodeBlock rendering when no filePath provided', () => {
-      const details = '   1→const x = 1'
+      const details = '   1\u2192const x = 1'
       const { container } = render(<ToolContentRenderer toolName="Read" details={details} />)
 
       expect(container.querySelector('.code-block')).toBeInTheDocument()
@@ -374,7 +374,7 @@ describe('ToolContentRenderer', () => {
     })
 
     it('handles special filenames like Dockerfile', () => {
-      const details = '   1→FROM node:18'
+      const details = '   1\u2192FROM node:18'
       const { container } = render(
         <ToolContentRenderer toolName="Read" details={details} filePath="/app/Dockerfile" />,
       )
@@ -416,7 +416,7 @@ describe('ToolContentRenderer', () => {
         writable: true,
         configurable: true,
       })
-      const details = '   1→const x = 1\n   2→const y = 2'
+      const details = '   1\u2192const x = 1\n   2\u2192const y = 2'
       render(<ToolContentRenderer toolName="Read" details={details} />)
 
       await user.click(screen.getByTitle('Copy output'))
@@ -432,7 +432,7 @@ describe('ToolContentRenderer', () => {
         writable: true,
         configurable: true,
       })
-      const details = '   1→const x = 1'
+      const details = '   1\u2192const x = 1'
       render(<ToolContentRenderer toolName="Read" details={details} filePath="/app/test.js" />)
 
       await user.click(screen.getByTitle('Copy output'))

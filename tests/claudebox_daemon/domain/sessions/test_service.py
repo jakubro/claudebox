@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.sessions.service — session lifecycle."""
+"""Tests for claudebox_daemon.domain.sessions.service - session lifecycle."""
 
 import json
 from datetime import timedelta
@@ -24,8 +24,9 @@ from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 
 def _make_metadata(session_id: str, **overrides) -> SessionMetadata:
     """Create a SessionMetadata with sensible defaults."""
-    defaults = dict(session_id=session_id)
+    defaults = dict(session_id=session_id, fork_point_cost_usd=0.0)
     defaults.update(overrides)
+
     return SessionMetadata(**defaults)  # ty: ignore[invalid-argument-type]  # Dynamic kwargs from heterogeneous defaults dict; ty can't narrow per-field types here.
 
 
@@ -36,6 +37,7 @@ def _make_container(
     status: ContainerStatus = ContainerStatus.RUNNING,
 ) -> Container:
     """Create a Container with sensible defaults."""
+
     return Container(
         id=container_id,
         backend_id="backend-1",
@@ -55,9 +57,10 @@ def _make_service(tmp_path: Path) -> tuple[SessionService, MagicMock, MagicMock]
     containers = MagicMock()
     events = AsyncMock()
 
-    svc = SessionService(ws, containers, events)
+    svc = SessionService(ws, containers, events, agent="claude")
     # Replace the real repo with a mock to avoid disk I/O
     svc._repo = MagicMock()
+
     return svc, svc._repo, containers
 
 
@@ -276,7 +279,7 @@ class TestCreate:
 
 
 class TestResume:
-    """Test session resume — reuses existing container or spawns new."""
+    """Test session resume - reuses existing container or spawns new."""
 
     @pytest.mark.anyio
     async def test_returns_existing_container(self, tmp_path):
@@ -369,7 +372,7 @@ class TestWaitForHealth:
 
             await svc._wait_for_health("ctr-1")
 
-        # Only one GET call — succeeded immediately
+        # Only one GET call - succeeded immediately
         mock_client.get.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
 
     @pytest.mark.anyio
@@ -424,6 +427,7 @@ class TestCopySdkSessionDir:
     def _make_ws(self, tmp_path):
         ws = MagicMock()
         ws.sdk_project_dir = tmp_path
+
         return ws
 
     def test_copies_when_present(self, tmp_path):
@@ -497,6 +501,7 @@ class TestCopyClaudeboxSession:
                 "dest": dst_session,
             }[sid]
         )
+
         return ws, src_session, dst_session
 
     def test_copies_excluding_session_json(self, tmp_path):
@@ -551,6 +556,7 @@ class TestCopySdkTranscript:
     def _make_ws(self, tmp_path):
         ws = MagicMock()
         ws.sdk_project_dir = tmp_path
+
         return ws
 
     def test_copies_when_present(self, tmp_path):
@@ -576,6 +582,7 @@ class TestTruncateSdkTranscript:
     def _make_ws(self, tmp_path):
         ws = MagicMock()
         ws.sdk_project_dir = tmp_path
+
         return ws
 
     def test_truncates_at_turn(self, tmp_path):
@@ -610,7 +617,7 @@ class TestForkOwnershipTransfer:
 
         svc, repo, containers = _make_service(tmp_path)
         parent_id = "sess-parent"
-        # Provide real metadata for the seed dict — using MagicMock here causes
+        # Provide real metadata for the seed dict - using MagicMock here causes
         # JSONEncoder to recursively auto-vivify MagicMock fields (OOM).
         repo.get.return_value = _make_metadata(parent_id, name="Parent")
 
@@ -620,6 +627,7 @@ class TestForkOwnershipTransfer:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+
         with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -674,6 +682,7 @@ class TestForkOwnershipTransfer:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+
         with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -692,7 +701,7 @@ class TestForkOwnershipTransfer:
         )  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         assert create_call.kwargs.get("session_id") == result.session_id  # ty: ignore[unresolved-attribute]
         # No ownership-transfer update call (containers.update was never invoked
-        # for transfer purposes — the fresh-container path does not touch it).
+        # for transfer purposes - the fresh-container path does not touch it).
         containers.update.assert_not_called()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
 
 
@@ -708,6 +717,7 @@ def _seed_parent_session_json(tmp_path: Path, parent_id: str, payload: dict) -> 
     workspace = Workspace(tmp_path)
     parent_session = workspace.ensure_session(parent_id)
     write_json(parent_session.path / SESSION_METADATA_FILE, payload)
+
     return parent_session.path
 
 
@@ -715,6 +725,7 @@ def _read_fork_session_json(tmp_path: Path, fork_id: str) -> dict:
     """Read the new session's session.json from disk after fork()."""
     workspace = Workspace(tmp_path)
     fork_session = workspace.ensure_session(fork_id)
+
     return json.loads((fork_session.path / SESSION_METADATA_FILE).read_text())
 
 
@@ -729,7 +740,7 @@ class TestForkInheritsUserSettings:
         parent_id = "sess-parent"
         # Make repo.get raise: MagicMock return_value would auto-vivify into the
         # seed dict and OOM JSONEncoder. Post-fix code never calls repo.get from
-        # fork() — this guard only matters for the legacy overlay loop.
+        # fork() - this guard only matters for the legacy overlay loop.
         _repo.get.side_effect = SharedSessionNotFound(
             parent_id
         )  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
@@ -756,6 +767,7 @@ class TestForkInheritsUserSettings:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+
         with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -773,11 +785,20 @@ class TestForkInheritsUserSettings:
         assert fork_data["session_prompt"] == "Stay terse."
         assert fork_data["name"] == "Parent"
         assert fork_data["model"] == "claude-sonnet-4-6"
-        # Display-relevant counters and previews carry over too.
-        assert fork_data["num_turns"] == 7
-        assert fork_data["total_cost_usd"] == 0.42
+        # first_message is identity-stable across rewinds (truncation keeps the
+        # session prefix) so the parent's value carries over.
         assert fork_data["first_message"] == "Initial"
-        assert fork_data["last_message"] == "Latest"
+        # Accumulated counters and last-value snapshots are derived from the
+        # child's (possibly truncated) events.jsonl, not inherited from
+        # parent_data - empty events here yield zeros / None.
+        assert fork_data["num_turns"] == 0
+        assert fork_data["total_cost_usd"] == 0.0
+        assert fork_data["total_duration_ms"] == 0
+        assert fork_data["last_message"] is None
+        assert fork_data["last_context_tokens"] == 0
+        assert fork_data["todos"] is None
+        # Fork-point snapshot equals derived total at fork moment (zero here).
+        assert fork_data["fork_point_cost_usd"] == 0.0
         # SessionInfo result mirrors the inheritance for the fields it exposes.
         # session_prompt intentionally lives only on session.json (the
         # SessionInfo / SessionMetadata dataclasses don't surface it); the
@@ -785,6 +806,7 @@ class TestForkInheritsUserSettings:
         assert result.permission_mode == "bypassPermissions"
         assert result.effort_level == "max"
         assert result.name == "Parent"
+        assert result.fork_point_cost_usd == 0.0
 
     @pytest.mark.anyio
     async def test_overrides_identity_fields(self, tmp_path):
@@ -794,7 +816,7 @@ class TestForkInheritsUserSettings:
         parent_id = "sess-parent"
         # Make repo.get raise: MagicMock return_value would auto-vivify into the
         # seed dict and OOM JSONEncoder. Post-fix code never calls repo.get from
-        # fork() — this guard only matters for the legacy overlay loop.
+        # fork() - this guard only matters for the legacy overlay loop.
         _repo.get.side_effect = SharedSessionNotFound(
             parent_id
         )  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
@@ -818,6 +840,7 @@ class TestForkInheritsUserSettings:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+
         with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -848,7 +871,7 @@ class TestForkInheritsUserSettings:
         parent_id = "sess-parent"
         # Make repo.get raise: MagicMock return_value would auto-vivify into the
         # seed dict and OOM JSONEncoder. Post-fix code never calls repo.get from
-        # fork() — this guard only matters for the legacy overlay loop.
+        # fork() - this guard only matters for the legacy overlay loop.
         _repo.get.side_effect = SharedSessionNotFound(
             parent_id
         )  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
@@ -861,6 +884,7 @@ class TestForkInheritsUserSettings:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+
         with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -876,20 +900,20 @@ class TestForkInheritsUserSettings:
         assert fork_data["session_id"] == result.session_id
         assert fork_data["parent_session_id"] == parent_id
         assert fork_data["workspace"] == str(tmp_path)
-        # No KeyError when user-settings keys are absent — they are simply missing.
+        # No KeyError when user-settings keys are absent - they are simply missing.
         assert "permission_mode" not in fork_data
         assert "effort_level" not in fork_data
         assert "session_prompt" not in fork_data
 
     @pytest.mark.anyio
     async def test_corrupt_parent_session_json_falls_back_to_defaults(self, tmp_path):
-        """Unparseable parent session.json — fork seeds with identity only and logs."""
+        """Unparseable parent session.json - fork seeds with identity only and logs."""
 
         svc, _repo, containers = _make_service(tmp_path)
         parent_id = "sess-parent"
         # Make repo.get raise: MagicMock return_value would auto-vivify into the
         # seed dict and OOM JSONEncoder. Post-fix code never calls repo.get from
-        # fork() — this guard only matters for the legacy overlay loop.
+        # fork() - this guard only matters for the legacy overlay loop.
         _repo.get.side_effect = SharedSessionNotFound(
             parent_id
         )  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
@@ -902,6 +926,7 @@ class TestForkInheritsUserSettings:
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+
         with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -915,6 +940,282 @@ class TestForkInheritsUserSettings:
 
         assert fork_data["session_id"] == result.session_id
         assert fork_data["parent_session_id"] == parent_id
-        # Inherited fields are absent — corrupt source means safe-default fallback.
+        # Inherited fields are absent - corrupt source means safe-default fallback.
         assert "permission_mode" not in fork_data
         assert "effort_level" not in fork_data
+
+
+# --- _compute_derived_fields ---
+
+
+class TestComputeDerivedFields:
+    """Unit tests for the JSONL -> counters/snapshots helper used by fork()."""
+
+    def test_missing_file_yields_zeros(self, tmp_path):
+        result = SessionService._compute_derived_fields(tmp_path / "absent.jsonl")
+        assert result == {
+            "total_cost_usd": 0.0,
+            "total_duration_ms": 0,
+            "num_turns": 0,
+            "last_message": None,
+            "last_context_tokens": 0,
+            "todos": None,
+        }
+
+    def test_empty_file_yields_zeros(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        events.write_text("")
+        result = SessionService._compute_derived_fields(events)
+        assert result["total_cost_usd"] == 0.0
+        assert result["num_turns"] == 0
+
+    def test_sums_cost_and_duration_across_result_events(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        lines = [
+            {"type": "user", "is_human": True, "content": "hi"},
+            {"type": "result", "cost_usd": 0.10, "duration_ms": 1000},
+            {"type": "user", "is_human": True, "content": "more"},
+            {"type": "result", "cost_usd": 0.25, "duration_ms": 2500},
+        ]
+        events.write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+        result = SessionService._compute_derived_fields(events)
+
+        assert result["total_cost_usd"] == pytest.approx(0.35)
+        assert result["total_duration_ms"] == 3500
+        assert result["num_turns"] == 2
+
+    def test_last_message_is_last_human_content(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        lines = [
+            {"type": "user", "is_human": True, "content": "first"},
+            {"type": "assistant", "is_human": False, "content": "reply"},
+            {"type": "user", "is_human": True, "content": "last"},
+        ]
+        events.write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+        result = SessionService._compute_derived_fields(events)
+
+        assert result["last_message"] == "last"
+
+    def test_last_context_tokens_is_last_seen_value(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        lines = [
+            {"type": "result", "context_tokens": 5000},
+            {"type": "result", "context_tokens": 12000},
+            {"type": "user", "is_human": True, "content": "no tokens here"},
+        ]
+        events.write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+        result = SessionService._compute_derived_fields(events)
+
+        assert result["last_context_tokens"] == 12000
+
+    def test_todos_from_last_todowrite_tool_input(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        lines = [
+            {
+                "type": "assistant",
+                "tool_name": "TodoWrite",
+                "tool_input": {"todos": [{"content": "step 1", "status": "pending"}]},
+            },
+            {
+                "type": "assistant",
+                "tool_name": "TodoWrite",
+                "tool_input": {"todos": [{"content": "step 2", "status": "in_progress"}]},
+            },
+        ]
+        events.write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+        result = SessionService._compute_derived_fields(events)
+
+        assert result["todos"] == [{"content": "step 2", "status": "in_progress"}]
+
+    def test_skips_blank_lines(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        lines = ["", json.dumps({"type": "result", "cost_usd": 0.5}), "", ""]
+        events.write_text("\n".join(lines))
+
+        result = SessionService._compute_derived_fields(events)
+
+        assert result["total_cost_usd"] == 0.5
+
+
+# --- fork derives counters from events ---
+
+
+class TestForkDerivesCounters:
+    """Forking computes counters and snapshots from the child's events.jsonl,
+    not from parent_data - preventing the parent's full-transcript tail from
+    being attributed to the child."""
+
+    @staticmethod
+    def _write_parent_events(tmp_path: Path, parent_id: str, lines: list[dict]) -> Path:
+        parent = Workspace(tmp_path).ensure_session(parent_id)
+        (parent.path / "events.jsonl").write_text(
+            "".join(json.dumps(line) + "\n" for line in lines)
+        )
+
+        return parent.path
+
+    @pytest.mark.anyio
+    async def test_fork_without_truncation_carries_full_parent_cost(self, tmp_path):
+        """turn_id=None -> child events.jsonl is a full copy; derived totals match parent's."""
+
+        svc, _repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        _repo.get.side_effect = SharedSessionNotFound(parent_id)
+        _seed_parent_session_json(
+            tmp_path,
+            parent_id,
+            {
+                "session_id": parent_id,
+                # Parent_data carries inflated counters - proves they don't leak
+                # into the child via the seed spread.
+                "num_turns": 99,
+                "total_cost_usd": 99.99,
+                "permission_mode": "default",
+            },
+        )
+        self._write_parent_events(
+            tmp_path,
+            parent_id,
+            [
+                {"type": "user", "is_human": True, "content": "hi", "turn_id": "t1"},
+                {"type": "result", "cost_usd": 0.10, "duration_ms": 500, "turn_id": "t1"},
+                {"type": "user", "is_human": True, "content": "more", "turn_id": "t2"},
+                {"type": "result", "cost_usd": 0.30, "duration_ms": 1500, "turn_id": "t2"},
+            ],
+        )
+
+        existing = _make_container("ctr", session_id=parent_id)
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.fork(parent_id, reuse_container=True)
+
+        fork_data = _read_fork_session_json(tmp_path, result.session_id)
+
+        # Derived from the events, NOT from parent_data's inflated counters.
+        assert fork_data["total_cost_usd"] == pytest.approx(0.40)
+        assert fork_data["total_duration_ms"] == 2000
+        assert fork_data["num_turns"] == 2
+        assert fork_data["last_message"] == "more"
+        # fork_point snapshot equals total_cost_usd at fork moment, so the
+        # aggregation panel attributes zero new spend to the fresh fork.
+        assert fork_data["fork_point_cost_usd"] == pytest.approx(0.40)
+
+    @pytest.mark.anyio
+    async def test_fork_with_truncation_reflects_truncated_event_set(self, tmp_path):
+        """turn_id=t2 -> child keeps events before t2; counters reflect that prefix."""
+
+        svc, _repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        _repo.get.side_effect = SharedSessionNotFound(parent_id)
+        _seed_parent_session_json(
+            tmp_path,
+            parent_id,
+            {
+                "session_id": parent_id,
+                "num_turns": 99,
+                "total_cost_usd": 99.99,
+            },
+        )
+        self._write_parent_events(
+            tmp_path,
+            parent_id,
+            [
+                {"type": "user", "is_human": True, "content": "pre1", "turn_id": "t1"},
+                {"type": "result", "cost_usd": 0.10, "duration_ms": 500, "turn_id": "t1"},
+                # Truncation cuts here - everything from t2 onward is dropped.
+                {"type": "user", "is_human": True, "content": "pre2", "turn_id": "t2"},
+                {"type": "result", "cost_usd": 5.00, "duration_ms": 9999, "turn_id": "t2"},
+            ],
+        )
+
+        existing = _make_container("ctr", session_id=parent_id)
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.fork(parent_id, turn_id="t2", reuse_container=True)
+
+        fork_data = _read_fork_session_json(tmp_path, result.session_id)
+
+        # Only the pre-t2 events count toward the child.
+        assert fork_data["total_cost_usd"] == pytest.approx(0.10)
+        assert fork_data["total_duration_ms"] == 500
+        assert fork_data["num_turns"] == 1
+        assert fork_data["last_message"] == "pre1"
+        # fork_point snapshot tracks the truncated total so aggregation
+        # attributes only post-fork spend to the child.
+        assert fork_data["fork_point_cost_usd"] == pytest.approx(0.10)
+
+    @pytest.mark.anyio
+    async def test_inflated_parent_counters_do_not_leak(self, tmp_path):
+        """Even when parent_data has accumulated counters set, the seed ignores them."""
+
+        svc, _repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        _repo.get.side_effect = SharedSessionNotFound(parent_id)
+        _seed_parent_session_json(
+            tmp_path,
+            parent_id,
+            {
+                "session_id": parent_id,
+                # Every leakable field set to a sentinel the child should NOT see.
+                "num_turns": 9999,
+                "total_cost_usd": 9999.99,
+                "total_duration_ms": 9999999,
+                "last_message": "PARENT-TAIL",
+                "last_context_tokens": 999999,
+                "todos": [{"content": "PARENT-TODO", "status": "in_progress"}],
+            },
+        )
+        # No events on disk -> derived returns zeros/None.
+
+        existing = _make_container("ctr", session_id=parent_id)
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.fork(parent_id, reuse_container=True)
+
+        fork_data = _read_fork_session_json(tmp_path, result.session_id)
+
+        # None of the parent's accumulated-counter sentinels leak into the child.
+        assert fork_data["num_turns"] == 0
+        assert fork_data["total_cost_usd"] == 0.0
+        assert fork_data["total_duration_ms"] == 0
+        assert fork_data["last_message"] is None
+        assert fork_data["last_context_tokens"] == 0
+        assert fork_data["todos"] is None
+        assert fork_data["fork_point_cost_usd"] == 0.0

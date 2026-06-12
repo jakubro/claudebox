@@ -62,7 +62,7 @@ export async function retryFetch(url, options) {
     }
   }
 
-  // All retries exhausted with retryable HTTP status — return the last response
+  // All retries exhausted with retryable HTTP status - return the last response
   return lastResponse
 }
 

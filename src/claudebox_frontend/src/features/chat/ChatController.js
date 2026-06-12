@@ -37,7 +37,7 @@ export default class ChatController {
     // Scroll state
     this.isAutoScrollEnabled = true
     this.isProgrammaticScroll = false
-    // Latched once the user has expressed scroll intent (wheel/touch/key) —
+    // Latched once the user has expressed scroll intent (wheel/touch/key) -
     // cleared only on re-engagement (manual scroll back to bottom) or session
     // change. Decouples intent classification from height-equality heuristics
     // that race with streaming-driven content growth.
@@ -155,7 +155,7 @@ export default class ChatController {
   /**
    * Mark user intent (wheel/touch/keyboard scroll). Latched until manual
    * re-engagement at the bottom (handled in handleUserScroll). Direction-
-   * aware filtering lives in the listeners (see attachInputListeners) — by
+   * aware filtering lives in the listeners (see attachInputListeners) - by
    * the time a caller reaches this method the gesture is known to express
    * intent.
    */
@@ -168,9 +168,22 @@ export default class ChatController {
   }
 
   /**
+   * Mark a return to the bottom - clears latched intent and re-engages
+   * autoscroll. Mirror of markUserIntent for callers that land the viewport
+   * back at the bottom (jumpBottom, jumpNext's fall-through branch,
+   * manual-scroll re-engage in handleUserScroll). Idempotent when already
+   * engaged - the onAutoScrollChange callback still fires.
+   */
+  markReturnedToBottom() {
+    this.userIntentActive = false
+    this.isAutoScrollEnabled = true
+    this.options.onAutoScrollChange?.(true)
+  }
+
+  /**
    * Handle native onScroll event. Persists position; checks re-engagement
    * when the user has scrolled back to the bottom by hand. Does not classify
-   * intent itself — that lives in markUserIntent driven by input listeners.
+   * intent itself - that lives in markUserIntent driven by input listeners.
    */
   handleUserScroll() {
     const el = this.elements.messagesEl
@@ -186,9 +199,7 @@ export default class ChatController {
 
     // Re-engagement: user manually scrolled back to bottom while intent latched.
     if (this.userIntentActive && this.isAtBottom()) {
-      this.userIntentActive = false
-      this.isAutoScrollEnabled = true
-      this.options.onAutoScrollChange?.(true)
+      this.markReturnedToBottom()
     }
   }
 
@@ -202,7 +213,7 @@ export default class ChatController {
       return
     }
     const onWheel = e => {
-      // Pinch-zoom on macOS trackpad fires wheel with ctrlKey — does not scroll.
+      // Pinch-zoom on macOS trackpad fires wheel with ctrlKey - does not scroll.
       if (e.ctrlKey) {
         return
       }
@@ -221,7 +232,7 @@ export default class ChatController {
       }
       this.markUserIntent()
     }
-    // pointerdown/pointermove on touch share the same coarse gate — no deltas
+    // pointerdown/pointermove on touch share the same coarse gate - no deltas
     // to examine. Browsers hand the gesture to the innermost scrollable
     // ancestor, so any such ancestor implies the outer listener should defer.
     // Mouse pointers route through the wheel handler instead.
@@ -276,7 +287,7 @@ export default class ChatController {
    * Preserves scroll position when panels toggle or content reflows, but skips
    * width-only reflows where contentRect.height is unchanged. Tab-row layout
    * shifts triggered by panel.api.setTitle (e.g. session rename) fire the
-   * observer at the same height — without the bail-out, the rAF restoration
+   * observer at the same height - without the bail-out, the rAF restoration
    * writes a stale chatScrollPositionRef.current and the user's view jumps
    * to the wrong position. Routes through the same coalesced rAF as
    * event-driven autoscroll so multiple changes in one tick produce exactly

@@ -1,4 +1,4 @@
-/** Tests for SessionRoutingEffect — board route triggers workspace switch when URL workspace differs. */
+/** Tests for SessionRoutingEffect - board route triggers workspace switch when URL workspace differs. */
 
 import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -74,7 +74,7 @@ vi.mock('../../../api/sessions', () => ({ resumeSession: vi.fn() }))
 
 import SessionRoutingEffect from './SessionRoutingEffect'
 
-describe('SessionRoutingEffect — board route', () => {
+describe('SessionRoutingEffect - board route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockActiveSessionId = null
@@ -121,7 +121,7 @@ describe('SessionRoutingEffect — board route', () => {
 
     render()
 
-    // Discovery in flight — workspace switch deferred. WorkspaceContext
+    // Discovery in flight - workspace switch deferred. WorkspaceContext
     // discovery will auto-select the URL's workspace when it matches.
     expect(mockSelectWorkspace).not.toHaveBeenCalled()
   })

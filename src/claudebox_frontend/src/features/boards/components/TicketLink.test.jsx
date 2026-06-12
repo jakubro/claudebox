@@ -1,4 +1,4 @@
-/** Tests for TicketLink — terse-density inline ticket rendering. */
+/** Tests for TicketLink - terse-density inline ticket rendering. */
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

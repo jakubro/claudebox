@@ -48,7 +48,7 @@ export default function ToolBlockHeader({
     blockRelativeTime = null,
   } = toolStatus
 
-  // Determine bullet status — killed (from notification or TaskOutput result) takes precedence
+  // Determine bullet status - killed (from notification or TaskOutput result) takes precedence
   const isKilled = taskNotification?.status === NotificationStatus.KILLED || isTaskOutputKilled
   const bulletStatus = isKilled ? 'killed' : getToolStatus(isPending, isAwaitingAnswer, isError)
 

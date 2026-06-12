@@ -1,4 +1,4 @@
-"""Tests for claudebox.core.http — HTTP proxy client."""
+"""Tests for claudebox.core.http - HTTP proxy client."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -51,6 +51,7 @@ def _make_httpx_response(
 
     hdrs = headers or {}
     resp = httpx.Response(status_code=status_code, headers=hdrs, content=content)
+
     return resp
 
 
@@ -115,8 +116,10 @@ class TestProxyStreamingResponse:
         )
         resp = ProxyStreamingResponse(upstream)
         collected = []
+
         async for chunk in resp.body_iterator:
             collected.append(chunk)
+
         assert b"hello " in collected
         assert b"world" in collected
 
@@ -124,8 +127,10 @@ class TestProxyStreamingResponse:
     async def test_closes_upstream_after_streaming(self):
         upstream = _make_streaming_httpx_response(chunks=[b"data"])
         resp = ProxyStreamingResponse(upstream)
+
         async for _ in resp.body_iterator:
             pass
+
         upstream.aclose.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
 
     @pytest.mark.anyio
@@ -135,12 +140,14 @@ class TestProxyStreamingResponse:
 
         async def aiter_bytes():
             raise httpx.ConnectError("connection lost")
-            yield  # pragma: no cover — makes this an async generator
+            yield  # pragma: no cover - makes this an async generator
 
         upstream.aiter_bytes = aiter_bytes
         resp = ProxyStreamingResponse(upstream)
+
         async for _ in resp.body_iterator:
             pass
+
         upstream.aclose.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
 
     @pytest.mark.anyio
@@ -150,12 +157,14 @@ class TestProxyStreamingResponse:
 
         async def aiter_bytes():
             raise httpx.RemoteProtocolError("bad framing")
-            yield  # pragma: no cover — makes this an async generator
+            yield  # pragma: no cover - makes this an async generator
 
         upstream.aiter_bytes = aiter_bytes
         resp = ProxyStreamingResponse(upstream)
+
         async for _ in resp.body_iterator:
             pass
+
         upstream.aclose.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
 
 

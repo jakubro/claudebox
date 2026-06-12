@@ -32,7 +32,7 @@ export function computeFlatDropIndex(unfilteredColumn, targetSwimlane, overTicke
 }
 
 /**
- * Detect a self-drop no-op — dropping a ticket onto its own current path.
+ * Detect a self-drop no-op - dropping a ticket onto its own current path.
  *
  * @param {string} sourceTicketPath
  * @param {string} overTicketPath

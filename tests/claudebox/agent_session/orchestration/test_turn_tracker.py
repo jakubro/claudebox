@@ -1,6 +1,10 @@
-"""Tests for claudebox.agent_session.orchestration.turn_tracker — turn ID state machine."""
+"""Tests for claudebox.agent_session.orchestration.turn_tracker - turn ID state machine."""
 
-from claudebox.agent_session.events import AgentEvent
+from claudebox.agent_session.events import (
+    AgentEvent,
+    AssistantMessagePayload,
+    UserMessagePayload,
+)
 from claudebox.agent_session.orchestration.models import Event
 from claudebox.agent_session.orchestration.turn_tracker import TurnTracker
 
@@ -8,16 +12,22 @@ from claudebox.agent_session.orchestration.turn_tracker import TurnTracker
 # --- Helpers ---
 
 
-def _make_user_message(uuid: str = "user-turn-1") -> AgentEvent:
-    """Create an AgentEvent representing a user message with uuid."""
+def _make_user_message(uuid: str | None = "user-turn-1") -> AgentEvent:
+    """Create an AgentEvent representing a user message with the given uuid."""
 
-    return AgentEvent(kind="user", payload={"uuid": uuid})
+    return AgentEvent(
+        kind="user_message",
+        payload=UserMessagePayload(uuid=uuid, content=""),
+    )
 
 
 def _make_message() -> AgentEvent:
-    """Create a non-user AgentEvent (no uuid)."""
+    """Create a non-user AgentEvent (assistant kind, empty content)."""
 
-    return AgentEvent(kind="assistant", payload={})
+    return AgentEvent(
+        kind="assistant_message",
+        payload=AssistantMessagePayload(uuid=None, content=[]),
+    )
 
 
 def _make_event(subtype: str = "text") -> Event:
@@ -75,7 +85,7 @@ class TestOnMessage:
         assert tracker.current == "turn-1"
 
     def test_user_message_without_uuid_ignored(self):
-        msg = AgentEvent(kind="user", payload={"uuid": None})
+        msg = _make_user_message(None)
         tracker = TurnTracker()
         tracker.on_event(_make_user_message("turn-1"))
         tracker.on_event(msg)
@@ -160,3 +170,30 @@ class TestResolve:
         tracker = TurnTracker()
         event = _make_event(subtype="text")
         assert tracker.resolve(event) is None
+
+
+# --- assistant-emitted (turn-scoped duplicate guard) ---
+
+
+class TestAssistantEmitted:
+    """Turn-scoped assistant-emitted tracking - crash-restart duplicate guard."""
+
+    def test_mark_then_has(self):
+        tracker = TurnTracker()
+        assert tracker.has_assistant_emitted("t1") is False
+        tracker.mark_assistant_emitted("t1")
+        assert tracker.has_assistant_emitted("t1") is True
+
+    def test_is_per_turn(self):
+        tracker = TurnTracker()
+        tracker.mark_assistant_emitted("t1")
+        assert tracker.has_assistant_emitted("t2") is False
+
+    def test_mark_none_is_noop(self):
+        tracker = TurnTracker()
+        tracker.mark_assistant_emitted(None)
+        assert tracker.has_assistant_emitted(None) is False
+
+    def test_has_none_returns_false(self):
+        tracker = TurnTracker()
+        assert tracker.has_assistant_emitted(None) is False

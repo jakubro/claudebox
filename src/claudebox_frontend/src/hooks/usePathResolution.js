@@ -55,7 +55,7 @@ export default function usePathResolution(candidates) {
         setResolvedPaths(prev => ({ ...prev, ...resolvedMap }))
       })
       .catch(err => {
-        // Graceful degradation — paths just won't highlight
+        // Graceful degradation - paths just won't highlight
         console.warn('usePathResolution: enqueue failed', err)
       })
 

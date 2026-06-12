@@ -9,6 +9,7 @@ from pathlib import Path
 import structlog
 
 from . import serialization
+from .log_rendering import format_timestamp_iso
 from ..core.fs import touch_dir
 
 
@@ -78,6 +79,7 @@ def _configure_logging(console: bool, buffer: bool, debug: bool) -> None:
                 foreign_pre_chain=_shared_processors,
                 processors=[
                     structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                    format_timestamp_iso,
                     structlog.dev.ConsoleRenderer(
                         exception_formatter=structlog.dev.RichTracebackFormatter(
                             show_locals=False,
@@ -195,6 +197,7 @@ def _use_log_file(handler: logging.FileHandler) -> None:
     _root.addHandler(handler)  # ty: ignore[unresolved-attribute]
 
     memory: logging.handlers.MemoryHandler = _handlers.get("memory")  # type: ignore
+
     if memory:
         memory.setTarget(handler)
         _close_memory_buffer()

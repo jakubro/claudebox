@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.pipeline — result-only turn and echo suppression."""
+"""Tests for claudebox.agent_session.orchestration.pipeline - result-only turn and echo suppression."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -7,6 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from claude_agent_sdk import UserMessage
 
+from claudebox.agent_session.events import (
+    AgentEvent,
+    AssistantMessagePayload,
+    ResultPayload,
+    TextBlock,
+    UserMessagePayload,
+)
 from claudebox.agent_session.orchestration.models import PublishedEvent
 from claudebox.agent_session.orchestration.pipeline import EventPipeline
 
@@ -26,6 +33,7 @@ def _make_pipeline() -> EventPipeline:
     # Bypass initialization gate so injected events go through _process_event
     pipeline._initialized = True
     pipeline._event_log = MagicMock(open=AsyncMock(), append=AsyncMock(), close=AsyncMock())
+
     return pipeline
 
 
@@ -165,12 +173,14 @@ class TestEchoSuppressionInRun:
         async def _fake_receive():
             nonlocal call_count
             call_count += 1
+
             if call_count == 1:
                 for m in messages:
                     yield ClaudeRuntime._translate_sdk_message(m)
             else:
                 # Second iteration: stop the loop
                 pipeline._running = False
+
                 return
 
         pipeline._running = True
@@ -189,7 +199,7 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # The user message should have been suppressed — on_event never called
+        # The user message should have been suppressed - on_event never called
         pipeline._on_event.assert_not_called()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
 
     @pytest.mark.anyio
@@ -197,7 +207,7 @@ class TestEchoSuppressionInRun:
         """The flag is one-shot: after suppressing one message it resets to False."""
 
         pipeline = _make_pipeline()
-        user_msg = UserMessage("first — suppressed")
+        user_msg = UserMessage("first - suppressed")
         self._patch_pipeline_for_run(pipeline, [user_msg])
         pipeline.suppress_next_user_echo()
 
@@ -217,7 +227,7 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # msg1 suppressed, msg2 forwarded — on_event should have been called
+        # msg1 suppressed, msg2 forwarded - on_event should have been called
         assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         forwarded_types = [call.args[0].type for call in pipeline._on_event.call_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         assert "user" in forwarded_types
@@ -260,7 +270,7 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # tool_use_result messages bypass suppression — should be forwarded
+        # tool_use_result messages bypass suppression - should be forwarded
         assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         # Flag should still be True (not consumed by a tool result message)
         assert pipeline._suppress_user_echo is True
@@ -284,11 +294,14 @@ class TestPromptCleanupOnError:
         async def _error_then_stop():
             nonlocal call_count
             call_count += 1
+
             if call_count == 1:
                 raise RuntimeError("SDK error")
+
             pipeline._running = False
+
             raise RuntimeError("SDK error 2")
-            yield  # noqa: unreachable — makes this an async generator for async for
+            yield  # noqa: unreachable - makes this an async generator for async for
 
         pipeline._running = True
         pipeline._sdk_client.ready = asyncio.Event()
@@ -323,11 +336,14 @@ class TestCompactBoundaryFallbackOnError:
         async def _error_then_stop():
             nonlocal call_count
             call_count += 1
+
             if call_count == 1:
                 raise RuntimeError("mid-compaction failure")
+
             pipeline._running = False
+
             return
-            yield  # noqa: unreachable — keeps this an async generator
+            yield  # noqa: unreachable - keeps this an async generator
 
         pipeline._running = True
         pipeline._sdk_client.ready = asyncio.Event()
@@ -339,7 +355,7 @@ class TestCompactBoundaryFallbackOnError:
 
         await pipeline._run()
 
-        # Boundary emitted before the error event — order matters so the frontend
+        # Boundary emitted before the error event - order matters so the frontend
         # unsticks isCompacting before rendering the error.
         injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         assert injected[0]["subtype"] == "compact_boundary"
@@ -358,9 +374,12 @@ class TestCompactBoundaryFallbackOnError:
         async def _error_then_stop():
             nonlocal call_count
             call_count += 1
+
             if call_count == 1:
                 raise RuntimeError("post-turn failure")
+
             pipeline._running = False
+
             return
             yield  # noqa: unreachable
 
@@ -465,3 +484,102 @@ class TestEnrichEditLineOffset:
 
         await pipeline._enrich_edit_line_offset(event)
         assert event.source_offset is None
+
+
+# --- Mid-stream crash-restart duplicate guard ---
+
+
+class TestNoDuplicateOnMidStreamCrash:
+    """A mid-turn crash-restart must not re-surface the turn's final assistant message."""
+
+    @staticmethod
+    def _patch_crash_restart(pipeline):
+        """Yield user+assistant then raise mid-stream; yield the trailing result on restart."""
+
+        call_count = 0
+
+        async def _fake_receive():
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                yield AgentEvent(
+                    kind="user_message",
+                    payload=UserMessagePayload(uuid="t1", content="hi"),
+                )
+                yield AgentEvent(
+                    kind="assistant_message",
+                    payload=AssistantMessagePayload(uuid=None, content=[TextBlock(text="X")]),
+                )
+
+                raise ValueError("Unknown SDK message type: _StubMidStream")
+            elif call_count == 2:
+                yield AgentEvent(
+                    kind="result",
+                    payload=ResultPayload(subtype="success", result="X"),
+                )
+            else:
+                pipeline._running = False
+
+        pipeline._running = True
+        pipeline._sdk_client.ready = asyncio.Event()
+        pipeline._sdk_client.ready.set()
+        pipeline._sdk_client.receive_events = _fake_receive
+
+    @staticmethod
+    def _patch_result_only(pipeline, content):
+        """Yield a single result event with no assistant - a genuine result-only turn."""
+
+        call_count = 0
+
+        async def _fake_receive():
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                yield AgentEvent(
+                    kind="result",
+                    payload=ResultPayload(subtype="success", result=content),
+                )
+            else:
+                pipeline._running = False
+
+        pipeline._running = True
+        pipeline._sdk_client.ready = asyncio.Event()
+        pipeline._sdk_client.ready.set()
+        pipeline._sdk_client.receive_events = _fake_receive
+
+    @staticmethod
+    def _assistant_texts(pipeline, content):
+        calls = pipeline._on_event.call_args_list
+
+        return [
+            call.args[0]
+            for call in calls
+            if call.args[0].type == "assistant"
+            and call.args[0].subtype == "text"
+            and call.args[0].content == content
+        ]
+
+    @pytest.mark.anyio
+    async def test_trailing_result_does_not_duplicate_assistant(self):
+        """The turn already emitted 'X'; the post-crash result must not re-surface it."""
+
+        pipeline = _make_pipeline()
+        self._patch_crash_restart(pipeline)
+
+        await pipeline._run()
+
+        assert len(self._assistant_texts(pipeline, "X")) == 1
+
+    @pytest.mark.anyio
+    async def test_genuine_result_only_turn_still_surfaces(self):
+        """A turn with no assistant event still injects the synthetic assistant message."""
+
+        pipeline = _make_pipeline()
+        pipeline.set_prompt("/unknowncmd")
+        self._patch_result_only(pipeline, "Unknown command")
+
+        await pipeline._run()
+
+        assert len(self._assistant_texts(pipeline, "Unknown command")) == 1

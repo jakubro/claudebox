@@ -184,14 +184,14 @@ test.describe('Error Handling', () => {
       // so the assertion only sees the recovery-driven resume.
       const baselineResumeCount = resumeCount
 
-      // Simulate the container's chat SSE dying alongside the daemon — and
+      // Simulate the container's chat SSE dying alongside the daemon - and
       // staying dead until a fresh container_id arrives.
       await chat.kill()
 
       // Daemon drops and useSSE auto-reconnects; daemonReconnected increments
       // when the new connection opens, triggering DaemonReconnectEffect.
       // Chat remains killed so isConnected stays false and the recovery branch
-      // (containerId && isConnected → skip) is NOT taken.
+      // (containerId && isConnected -> skip) is NOT taken.
       await daemon.disconnect()
 
       // Resume must be called after the daemon reconnects.
@@ -354,7 +354,7 @@ test.describe('Error Handling', () => {
         el => getComputedStyle(el).borderLeftColor,
       )
 
-      // Yellow border — parse as RGB and verify high red+green, low blue
+      // Yellow border - parse as RGB and verify high red+green, low blue
       const match = borderLeftColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
       expect(match).toBeTruthy()
       const [, r, g, b] = match.map(Number)
@@ -375,7 +375,7 @@ test.describe('Error Handling', () => {
       await createSSEController(page)
       await page.goto(DEFAULT_SESSION_URL)
 
-      // After retries exhaust, SessionDataContext calls onError → footer shows error status
+      // After retries exhaust, SessionDataContext calls onError -> footer shows error status
       await expect(page.locator('[data-testid="footer-status"][data-status="error"]')).toBeVisible({
         timeout: 12000,
       })
@@ -446,7 +446,7 @@ test.describe('Error Handling', () => {
       })
       expect(injected, 'Malformed SSE data must be injected into active stream').toBe(true)
 
-      // App should survive — chat input still works
+      // App should survive - chat input still works
       const input = page.locator('[data-testid="chat-input"]')
       await expect(input).toBeEnabled()
 
@@ -521,7 +521,7 @@ test.describe('Error Handling', () => {
     })
 
     // SPEC: chat:interrupt-range
-    test('interrupt ack is suppressed — no Interrupted text indicator', async ({ page }) => {
+    test('interrupt ack is suppressed - no Interrupted text indicator', async ({ page }) => {
       await mockAPI(page)
       await mockSSE(page, 'events/interrupted-turn.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
@@ -529,7 +529,7 @@ test.describe('Error Handling', () => {
 
       await expect(page.getByText('Once upon a time').first()).toBeVisible()
 
-      // Interrupt indicator text no longer renders — yellow border is sufficient
+      // Interrupt indicator text no longer renders - yellow border is sufficient
       await expect(page.getByText('Interrupted')).not.toBeVisible()
     })
 
@@ -557,7 +557,7 @@ test.describe('Error Handling', () => {
       // Wait for second (non-interrupted) turn
       await expect(page.getByText('2 + 2 equals 4.').first()).toBeVisible()
 
-      // Count interrupted turns — should be exactly 1 (only the first turn)
+      // Count interrupted turns - should be exactly 1 (only the first turn)
       const interruptedTurns = page.locator('.turn-interrupted')
       await expect(interruptedTurns).toHaveCount(1)
     })

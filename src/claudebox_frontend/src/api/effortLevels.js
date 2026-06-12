@@ -1,4 +1,4 @@
-/** Effort levels API client — container-proxied endpoints. */
+/** Effort levels API client - container-proxied endpoints. */
 
 import { containerFetch } from './apiClient'
 

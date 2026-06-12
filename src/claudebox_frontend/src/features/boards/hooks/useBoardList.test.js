@@ -97,7 +97,7 @@ describe('useBoardList', () => {
     })
 
     expect(mockListBoards).not.toHaveBeenCalled()
-    // Loading stays true pre-workspace — no error surfaced
+    // Loading stays true pre-workspace - no error surfaced
     expect(result.current.loading).toBe(true)
     expect(result.current.error).toBeNull()
   })

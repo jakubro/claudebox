@@ -1,4 +1,4 @@
-/** Chat input wrapper — welcome vs. active gating + the status-working class flip. */
+/** Chat input wrapper - welcome vs. active gating + the status-working class flip. */
 
 import ChatInput from './chat-input'
 

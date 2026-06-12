@@ -1,4 +1,4 @@
-"""Chat handlers — prompt submission, SSE streaming, interrupts, model and effort selection."""
+"""Chat handlers - prompt submission, SSE streaming, interrupts, model and effort selection."""
 
 from fastapi import APIRouter
 
@@ -15,6 +15,7 @@ async def send(svc: SessionDep, body: SendRequest):
     """Queue a user prompt with optional attachments for processing by the assistant."""
 
     await svc.send(body.prompt, body.attachments)
+
     return None
 
 

@@ -1,4 +1,4 @@
-/** Provider-scoped logs SSE stream — persists across panel toggle. */
+/** Provider-scoped logs SSE stream - persists across panel toggle. */
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { getWorkspaceId } from '../api/apiClient'

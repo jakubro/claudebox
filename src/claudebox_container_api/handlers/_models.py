@@ -1,4 +1,4 @@
-"""Request models — Pydantic schemas for HTTP endpoints."""
+"""Request models - Pydantic schemas for HTTP endpoints."""
 
 from pydantic import BaseModel
 

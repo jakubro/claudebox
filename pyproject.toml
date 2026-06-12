@@ -1,14 +1,23 @@
 [project]
 name = "claudebox"
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.11"
 dependencies = [
   "aiofiles>=24.0",
   "claude-agent-sdk>=0.1.65",
+  "duckduckgo-search>=6.0",
   "fastapi>=0.115",
   "filelock>=3.0",
   "httpx>=0.27",
   "inflection>=0.5",
+  "langchain>=1.0,<2",
+  "langchain-core>=1.0,<2",
+  "langchain-mcp-adapters>=0.2,<1",
+  "langchain-ollama>=0.3,<1",
+  "langgraph>=1.0,<2",
+  "langgraph-checkpoint-sqlite>=2.0,<3",
+  "markdownify>=0.11",
+  "nbformat>=5.10",
   "pathspec>=0.12",
   "ruamel.yaml>=0.18",
   "rich>=13.0",
@@ -18,11 +27,45 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+web-search-tavily = [
+    "langchain-tavily>=0.1",
+]
+
+# Per-provider LangChain provider extras. init_chat_model lazy-imports the
+# matching langchain-<provider> package at first chat-model construction;
+# missing imports surface as ProviderPackageMissing with the corresponding
+# `pip install claudebox[<extra>]` hint (see _providers.PROVIDER_INSTALL_HINTS).
+# Version bounds intentionally loose: provider packages adopted the
+# langchain-core 1.x baseline at different cadences (e.g. langchain-aws only
+# moved to a langchain-core>=1 compatible release in its 1.x line; some Tier 3
+# packages remained on pre-v1 series). The lower bound only excludes archaic
+# pre-langchain-v1 releases; the resolver picks the newest version compatible
+# with the pinned `langchain-core>=1.0,<2` core dep.
+anthropic = ["langchain-anthropic"]
+openai = ["langchain-openai"]
+google = ["langchain-google-genai"]
+groq = ["langchain-groq"]
+mistral = ["langchain-mistralai"]
+bedrock = ["langchain-aws"]
+cohere = ["langchain-cohere"]
+fireworks = ["langchain-fireworks"]
+together = ["langchain-together"]
+deepseek = ["langchain-deepseek"]
+xai = ["langchain-xai"]
+perplexity = ["langchain-perplexity"]
+nvidia = ["langchain-nvidia-ai-endpoints"]
+huggingface = ["langchain-huggingface"]
+
+# Combined bundles.
+langgraph-cloud = ["claudebox[anthropic,openai,google,groq]"]
+langgraph-all = ["claudebox[anthropic,openai,google,groq,mistral,bedrock,cohere,fireworks,together,deepseek,xai,perplexity,nvidia,huggingface]"]
+
 dev = [
     "anyio[trio]>=4.0",
     "inline-snapshot",
     "pytest-anyio",
     "pytest-cov",
+    "pytest-httpserver>=1.0,<2",
     "pytest-socket>=0.7",
     "pytest>=8.0",
     "ruff>=0.15",

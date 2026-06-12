@@ -78,8 +78,8 @@ describe('getStalenessColor', () => {
     expect(getStalenessColor(15_000)).toBe('#3b82f6')
   })
 
-  it('reaches purple waypoint at midpoint of 15s–90s', () => {
-    const color = getStalenessColor(52_500) // midpoint of 15s–90s
+  it('reaches purple waypoint at midpoint of 15s-90s', () => {
+    const color = getStalenessColor(52_500) // midpoint of 15s-90s
     // Should be exactly the warm waypoint (purple)
     expect(color).toBe('#a855f7')
   })

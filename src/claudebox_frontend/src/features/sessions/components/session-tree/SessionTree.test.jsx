@@ -96,7 +96,7 @@ describe('SessionTree', () => {
         expandedSessions: new Set(['s1', 'c1']),
       })
 
-      // Only child → no passthrough lines (all empty spacers)
+      // Only child -> no passthrough lines (all empty spacers)
       const passthroughs = document.querySelectorAll('.sessions-tree-gutter-passthrough')
       expect(passthroughs).toHaveLength(0)
     })

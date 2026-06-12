@@ -4,10 +4,10 @@ import { DRAG_THRESHOLD_PX } from '../../../utils/pointer'
 
 /**
  * Restore focus to the chat textarea when a click resolves to an empty area of
- * the messages container — but only when it was a clean click, not a drag-select.
+ * the messages container - but only when it was a clean click, not a drag-select.
  *
  * Skipped when any of:
- *  - the pointer travelled ≥ {@link DRAG_THRESHOLD_PX} between down and up
+ *  - the pointer travelled >= {@link DRAG_THRESHOLD_PX} between down and up
  *    (the user was drag-selecting text);
  *  - a live text selection is in progress;
  *  - the click landed on a turn descendant or any interactive child

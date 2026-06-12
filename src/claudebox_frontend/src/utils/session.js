@@ -9,5 +9,5 @@
  * @returns {string}
  */
 export function formatSessionDirTooltip(sessionDir) {
-  return `Session directory — ${sessionDir || '—'}`
+  return `Session directory - ${sessionDir || '-'}`
 }

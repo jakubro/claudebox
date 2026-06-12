@@ -9,7 +9,7 @@ import useSessionDefaults from './useSessionDefaults'
  * Source order: in-session `sessionData` first, workspace-level
  * `session-defaults` fallback for the pre-session welcome screen.
  * Returns `{capabilities: null}` during the brief race before either
- * source has resolved — consumers default to show-all in that window.
+ * source has resolved - consumers default to show-all in that window.
  *
  * @returns {{capabilities: object|null, runtimeName: string|null}}
  */

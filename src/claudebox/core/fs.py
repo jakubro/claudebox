@@ -29,6 +29,7 @@ def touch_dir(path: str | Path) -> Path:
 
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
+
     return path
 
 
@@ -38,6 +39,7 @@ def touch_file(path: str | Path) -> Path:
     path = Path(path)
     touch_dir(path.parent)
     path.touch()
+
     return path
 
 

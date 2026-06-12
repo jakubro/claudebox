@@ -1,4 +1,4 @@
-"""Tests for container API logging — LogBroadcaster file-based replay."""
+"""Tests for container API logging - LogBroadcaster file-based replay."""
 
 import asyncio
 import json
@@ -21,8 +21,10 @@ def _drain_queue(queue):
     """Drain all items from an asyncio.Queue."""
 
     items = []
+
     while not queue.empty():
         items.append(queue.get_nowait())
+
     return items
 
 
@@ -84,7 +86,7 @@ class TestLogBroadcasterFileReplay:
 
     @pytest.mark.anyio
     async def test_replay_empty_when_file_missing(self, tmp_path):
-        """Missing log file replays nothing — empty queue, no synthetic events."""
+        """Missing log file replays nothing - empty queue, no synthetic events."""
 
         b = LogBroadcaster(tmp_path / "nonexistent.log")
         _, queue = await b.subscribe()
@@ -215,6 +217,45 @@ class TestLogBroadcasterFileReplay:
         assert len(items) == 1
         assert items[0]["message"] == "Int ts"
         assert items[0]["timestamp"] == 1713264000.0
+
+    @pytest.mark.anyio
+    async def test_source_stream_promoted_from_file(self, tmp_path):
+        """Records with source/stream fields in the file get them promoted to top-level."""
+
+        log_file = tmp_path / "container_api.log"
+        _write_log_lines(
+            log_file,
+            [
+                {
+                    "event": "Starting Claude session",
+                    "level": "info",
+                    "logger": "claudebox.agent_session.runtime_claude",
+                    "timestamp": 1780166824.318,
+                    "source": "agent",
+                    "stream": "stderr",
+                },
+                {
+                    "event": "Session initialised",
+                    "level": "info",
+                    "logger": "claudebox_container_api.session",
+                    "timestamp": 1780166824.319,
+                },
+            ],
+        )
+
+        b = LogBroadcaster(log_file)
+        _, queue = await b.subscribe()
+
+        items = _drain_queue(queue)
+        assert len(items) == 2
+
+        assert items[0]["source"] == "agent"
+        assert items[0]["stream"] == "stderr"
+        # source/stream are promoted; they do not leak into ``extra``.
+        assert items[0]["extra"] is None
+
+        assert items[1]["source"] == "api"
+        assert items[1]["stream"] is None
 
     @pytest.mark.anyio
     async def test_mixed_timestamp_formats(self, tmp_path):

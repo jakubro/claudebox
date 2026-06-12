@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.containers.service — container lifecycle."""
+"""Tests for claudebox_daemon.domain.containers.service - container lifecycle."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -34,6 +34,7 @@ def _make_service(tmp_path: Path) -> tuple[ContainerService, MagicMock]:
     svc = ContainerService(ws, events, config, proxy)
     # Mock the container runtime backend to prevent real subprocess calls
     svc._runtime._backend = MagicMock()
+
     return svc, events
 
 
@@ -202,7 +203,7 @@ class TestSyncState:
         )
         svc._runtime._backend.list_containers.side_effect = RuntimeError("backend down")
 
-        # Should not crash — graceful fallback
+        # Should not crash - graceful fallback
         await svc.sync_state()
 
         # Containers unchanged
@@ -313,6 +314,14 @@ class TestUpdate:
 
         assert c.failure_count == 5
         events.broadcast.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_unknown_field_raises_type_error(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        c = Container(id="c1", backend_id="b1", port=8080)
+
+        with pytest.raises(TypeError):
+            await svc.update(c, bogus_field=1)
 
 
 # --- remove ---

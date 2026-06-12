@@ -22,14 +22,14 @@ test.describe('Render perf', () => {
 
     // While the chat is paint-active (simple-chat.jsonl fixture flushed
     // through), type a known string and assert every character lands in
-    // the textarea — proves input is not dropped under streaming load.
+    // the textarea - proves input is not dropped under streaming load.
     const typed = 'smooth-during-response'
     await page.keyboard.type(typed, { delay: 0 })
     await page.waitForTimeout(100)
     await expect(input).toHaveValue(typed)
   })
 
-  // Behavioral perf check (no SPEC claim — guards against ChatInput render
+  // Behavioral perf check (no SPEC claim - guards against ChatInput render
   // regressions via the DEV-only window.__cb_test_hooks.chatInputRenderCount).
   test('typing 20 chars into ChatInput re-renders fewer than 30 times', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
@@ -64,8 +64,8 @@ test.describe('Wheel latency / autoscroll disengage', () => {
     await mockSSE(page, 'events/long-conversation.jsonl')
   })
 
-  // Behavioral perf check (no SPEC claim — guards against latency regression
-  // in the wheel→autoscroll-disengage path).
+  // Behavioral perf check (no SPEC claim - guards against latency regression
+  // in the wheel->autoscroll-disengage path).
   test('wheel event on .chat-messages disengages autoscroll within ~1 frame', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -88,7 +88,7 @@ test.describe('Wheel latency / autoscroll disengage', () => {
     await page.mouse.wheel(0, -100)
 
     // The wheel event must trigger a scroll/autoscroll-disengage soon after.
-    // We poll briefly (a few frames) — a regression where the wheel coalesces
+    // We poll briefly (a few frames) - a regression where the wheel coalesces
     // into a long task would push this out by hundreds of ms.
     await expect
       .poll(

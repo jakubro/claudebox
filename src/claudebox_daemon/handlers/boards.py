@@ -1,4 +1,4 @@
-"""Board CRUD — workspace-scoped HTTP adapters for board management."""
+"""Board CRUD - workspace-scoped HTTP adapters for board management."""
 
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
@@ -39,7 +39,7 @@ async def get_board(svc: WorkspaceDep, board_id: str):
 
 @router.patch("/boards/{board_id}")
 async def rename_board(svc: WorkspaceDep, board_id: str, body: RenameBoardRequest):
-    """Rename a board — set the name: field in its board.yaml."""
+    """Rename a board - set the name: field in its board.yaml."""
 
     return svc.board_service.rename(board_id, body.name)
 
@@ -53,6 +53,7 @@ async def get_ticket_content(svc: WorkspaceDep, board_id: str, ticket_path: str)
     """Return raw markdown content of a ticket file."""
 
     content = svc.board_service.read_ticket_content(board_id, ticket_path)
+
     return PlainTextResponse(content, media_type="text/markdown")
 
 
@@ -71,9 +72,10 @@ async def move_ticket(svc: WorkspaceDep, board_id: str, ticket_path: str, body: 
 
 @router.delete("/boards/{board_id}/tickets/{ticket_path:path}")
 async def archive_ticket(svc: WorkspaceDep, board_id: str, ticket_path: str):
-    """Archive a ticket — remove from YAML, file stays on disk."""
+    """Archive a ticket - remove from YAML, file stays on disk."""
 
     svc.board_service.archive(board_id, ticket_path)
+
     return {"status": "archived"}
 
 
@@ -86,6 +88,7 @@ async def assign_tickets(svc: WorkspaceDep, board_id: str, body: AssignTicketsRe
         body.tickets,
         parallel=body.parallel,
     )
+
     return {"sessions": sessions}
 
 
@@ -117,6 +120,7 @@ async def delete_swimlane(svc: WorkspaceDep, board_id: str, swimlane_id: str):
     """Delete a swimlane. Tickets in it become unsorted."""
 
     svc.board_service.remove_swimlane(board_id, swimlane_id)
+
     return {"status": "deleted"}
 
 

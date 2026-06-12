@@ -1,4 +1,4 @@
-"""Tests for claudebox.containers.backend — subprocess abstraction."""
+"""Tests for claudebox.containers.backend - subprocess abstraction."""
 
 import json
 import subprocess
@@ -96,6 +96,7 @@ class TestRunContainer:
         mock_run.side_effect = [proc, MagicMock(), MagicMock()]
 
         backend = ContainerBackend("podman")
+
         with pytest.raises(subprocess.CalledProcessError):
             backend.run_container("img", detach=True)
 
@@ -174,6 +175,7 @@ class TestGetHostPort:
         data = [{"NetworkSettings": {"Ports": {}}}]
         mock_run.return_value = MagicMock(stdout=json.dumps(data).encode())
         backend = ContainerBackend("podman")
+
         with pytest.raises(KeyError):
             backend.get_host_port("abc", 9999)
 

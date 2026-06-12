@@ -1,4 +1,4 @@
-/** Browser-feature mobile detection — extracted from useIsMobile.js, no React APIs. */
+/** Browser-feature mobile detection - extracted from useIsMobile.js, no React APIs. */
 
 export const TOUCH_PRIMARY_MEDIA_QUERY = '(pointer: coarse) and (hover: none)'
 const UA_RE = /Mobi|Android|iPhone/i

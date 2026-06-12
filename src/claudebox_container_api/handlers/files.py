@@ -1,4 +1,4 @@
-"""File endpoints — path resolution."""
+"""File endpoints - path resolution."""
 
 from fastapi import APIRouter
 
@@ -17,4 +17,5 @@ async def resolve_paths(files: FilesDep, svc: SessionDep, body: ResolvePathsRequ
     session = svc.base_session
     temp_dir = session.temp_dir if session else None
     resolved = await files.resolve_paths(body.candidates, temp_dir)
+
     return {"resolved": resolved}

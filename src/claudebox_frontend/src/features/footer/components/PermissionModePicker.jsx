@@ -54,7 +54,7 @@ export default function PermissionModePicker({ currentPermissionMode, defaultVal
   }
 
   const activePermissionMode = availablePermissionModes.find(m => m.id === effectiveMode)
-  const displayName = activePermissionMode?.name || effectiveMode || '—'
+  const displayName = activePermissionMode?.name || effectiveMode || '-'
   const displayDescription = activePermissionMode?.description || displayName
 
   return (
@@ -67,7 +67,7 @@ export default function PermissionModePicker({ currentPermissionMode, defaultVal
         className="footer-picker-btn footer-permission-mode-btn"
         disabled={disabled}
         onClick={handleToggle}
-        title={`Permission mode — ${displayDescription}`}
+        title={`Permission mode - ${displayDescription}`}
         data-testid="footer-permission-mode-picker"
         data-permission-mode={effectiveMode || ''}>
         {displayName}

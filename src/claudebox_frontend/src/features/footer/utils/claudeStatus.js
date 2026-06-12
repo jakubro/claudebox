@@ -1,4 +1,4 @@
-/** Pure transform of status.claude.com payload — extracted from useClaudeStatus.js. */
+/** Pure transform of status.claude.com payload - extracted from useClaudeStatus.js. */
 
 /**
  * Reduce the upstream status payload to the indicator + display description
@@ -15,7 +15,7 @@ export function formatClaudeStatusResponse(data) {
   if (indicator !== 'none' && data.incidents?.length > 0) {
     const incidentName = data.incidents[0].name
     if (incidentName) {
-      description = `${baseDescription} — ${incidentName}`
+      description = `${baseDescription} - ${incidentName}`
     }
   }
 

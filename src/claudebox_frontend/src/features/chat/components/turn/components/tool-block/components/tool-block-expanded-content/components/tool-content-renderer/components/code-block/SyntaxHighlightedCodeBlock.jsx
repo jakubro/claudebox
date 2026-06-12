@@ -47,7 +47,7 @@ function SyntaxHighlightedCodeBlock({ code, language, startingLineNumber = 1, cl
 // Memoize on (code, language, startingLineNumber, className): re-highlighting
 // is synchronous and expensive (react-syntax-highlighter), and during a
 // streaming turn the active Turn re-renders ~20×/sec. Code blocks whose
-// content has stopped changing must bail out — otherwise every flush
+// content has stopped changing must bail out - otherwise every flush
 // re-highlights every block in the response.
 export default memo(
   SyntaxHighlightedCodeBlock,

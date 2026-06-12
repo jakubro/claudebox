@@ -44,7 +44,7 @@ export default function SessionTree({ session, depth, isLastChild = true, contin
   const childContinuations = [...continuations, depth > 0 && !isLastChild]
 
   // Bind the row's session_id into each callback once. Memoized so memo'd
-  // SessionItem can bail out across parent re-renders — bare inline arrows
+  // SessionItem can bail out across parent re-renders - bare inline arrows
   // would defeat the bail-out by re-identifying every render.
   const handleToggleExpanded = useCallback(
     () => onToggleExpanded(sessionId),

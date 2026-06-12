@@ -7,10 +7,10 @@ const FAVICON_BG_LIGHTNESS = 0.36
 const FAVICON_BG_SATURATION_BOOST = 1.5
 
 // Staleness gradient anchors
-const COLOR_FRESH = '#3b82f6' // blue — active
-const COLOR_WARM = '#a855f7' // purple — waypoint to avoid gray zone in RGB space
-const COLOR_STALE = '#f59e0b' // amber — going quiet
-const COLOR_FADED = '#4b5563' // gray — dormant
+const COLOR_FRESH = '#3b82f6' // blue - active
+const COLOR_WARM = '#a855f7' // purple - waypoint to avoid gray zone in RGB space
+const COLOR_STALE = '#f59e0b' // amber - going quiet
+const COLOR_FADED = '#4b5563' // gray - dormant
 
 /** Parse hex color (#rrggbb) to [r, g, b]. */
 export function hexToRgb(hex) {
@@ -23,7 +23,7 @@ export function rgbToHex(r, g, b) {
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
 }
 
-/** Convert [r, g, b] (0-255) to HSL — h in degrees [0,360), s and l in [0,1]. */
+/** Convert [r, g, b] (0-255) to HSL - h in degrees [0,360), s and l in [0,1]. */
 export function rgbToHsl(r, g, b) {
   const rn = r / 255
   const gn = g / 255
@@ -94,7 +94,7 @@ export function deriveHoverColor(hex) {
  *
  * Preserves hue, sets lightness to a fixed target, and amplifies saturation
  * so the workspace identity reads at favicon scale where the muted source
- * loses its hue. Example: `#2a4a2a` (dark green) → `#368236` (saturated
+ * loses its hue. Example: `#2a4a2a` (dark green) -> `#368236` (saturated
  * green at moderate lightness).
  *
  * The picker palette and tab-bar gradient consume the raw accent. The
@@ -143,7 +143,7 @@ export function getContextBarColor(percent) {
 /**
  * Compute border color for a running task based on staleness.
  *
- * Gradient: blue (≤15s) → purple → amber (90s) → fading toward gray (90s+).
+ * Gradient: blue (<=15s) -> purple -> amber (90s) -> fading toward gray (90s+).
  * Routes through purple waypoint to follow warm hue path (avoids gray zone
  * that RGB lerp produces between complementary blue and amber).
  */
@@ -154,7 +154,7 @@ export function getStalenessColor(stalenessMs) {
   if (stalenessMs <= STALENESS_STALE_PEAK_MS) {
     const t =
       (stalenessMs - STALENESS_FRESH_PEAK_MS) / (STALENESS_STALE_PEAK_MS - STALENESS_FRESH_PEAK_MS)
-    // Two-segment lerp through warm waypoint: blue → purple → amber
+    // Two-segment lerp through warm waypoint: blue -> purple -> amber
     if (t <= 0.5) {
       return lerpColor(COLOR_FRESH, COLOR_WARM, t * 2)
     }

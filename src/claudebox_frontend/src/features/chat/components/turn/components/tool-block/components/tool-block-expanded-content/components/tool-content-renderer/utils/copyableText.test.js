@@ -10,7 +10,7 @@ import {
 describe('getCopyableText', () => {
   describe('Read tool', () => {
     it('strips line numbers from Read output', () => {
-      const details = '  1→const x = 1\n  2→const y = 2'
+      const details = '  1\u2192const x = 1\n  2\u2192const y = 2'
       const result = getCopyableText('Read', details)
       expect(result).toBe('const x = 1\nconst y = 2')
     })
@@ -30,7 +30,7 @@ describe('getCopyableText', () => {
 
   describe('Write tool', () => {
     it('strips line numbers from Write output', () => {
-      const details = '  1→export default {}\n  2→'
+      const details = '  1\u2192export default {}\n  2\u2192'
       const result = getCopyableText('Write', details)
       expect(result).toBe('export default {}\n')
     })
@@ -85,7 +85,7 @@ describe('getCopyableText', () => {
 
 describe('extractCodeFromReadOutput', () => {
   it('strips line numbers with arrow separator', () => {
-    const input = '  1→function foo() {\n  2→  return 42\n  3→}'
+    const input = '  1\u2192function foo() {\n  2\u2192  return 42\n  3\u2192}'
     const result = extractCodeFromReadOutput(input)
     expect(result).toBe('function foo() {\n  return 42\n}')
   })
@@ -103,7 +103,7 @@ describe('extractCodeFromReadOutput', () => {
   })
 
   it('handles multi-digit line numbers', () => {
-    const input = ' 99→line 99\n100→line 100\n101→line 101'
+    const input = ' 99\u2192line 99\n100\u2192line 100\n101\u2192line 101'
     const result = extractCodeFromReadOutput(input)
     expect(result).toBe('line 99\nline 100\nline 101')
   })
@@ -120,7 +120,7 @@ describe('extractCodeFromReadOutput', () => {
   })
 
   it('preserves indentation after line number', () => {
-    const input = '  1→  indented\n  2→    more indented'
+    const input = '  1\u2192  indented\n  2\u2192    more indented'
     const result = extractCodeFromReadOutput(input)
     expect(result).toBe('  indented\n    more indented')
   })
@@ -128,7 +128,7 @@ describe('extractCodeFromReadOutput', () => {
 
 describe('extractStartingLineNumber', () => {
   it('returns 1 for output starting at line 1', () => {
-    const input = '  1→const x = 1\n  2→const y = 2'
+    const input = '  1\u2192const x = 1\n  2\u2192const y = 2'
     expect(extractStartingLineNumber(input)).toBe(1)
   })
 
@@ -138,7 +138,7 @@ describe('extractStartingLineNumber', () => {
   })
 
   it('returns offset with arrow separator', () => {
-    const input = ' 99→line 99\n100→line 100'
+    const input = ' 99\u2192line 99\n100\u2192line 100'
     expect(extractStartingLineNumber(input)).toBe(99)
   })
 

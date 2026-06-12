@@ -1,4 +1,4 @@
-"""File cache — mtime-based invalidation."""
+"""File cache - mtime-based invalidation."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -25,6 +25,7 @@ class FileCache(Generic[T]):
             return value
         else:
             value = callback()
+
             return self._add(path, value)
 
     def _find(self, path: str) -> T:
@@ -34,6 +35,7 @@ class FileCache(Generic[T]):
 
         if path in self._store:
             mtime, value = self._store[path]
+
             if mtime == current_mtime:
                 return value
 
@@ -45,6 +47,7 @@ class FileCache(Generic[T]):
         mtime = self._get_mtime(path)
 
         self._store[path] = (mtime, value)
+
         return value
 
     @staticmethod

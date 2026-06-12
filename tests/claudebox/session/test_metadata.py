@@ -1,4 +1,4 @@
-"""Tests for claudebox.session.models — shared session metadata model."""
+"""Tests for claudebox.session.models - shared session metadata model."""
 
 import json
 from dataclasses import dataclass
@@ -14,6 +14,7 @@ class TestSessionMetadata:
     def test_fromdict_roundtrip(self):
         meta = SessionMetadata(
             session_id="sid",
+            fork_point_cost_usd=0.0,
             name="test",
             started_at=datetime.fromisoformat("2026-01-15T10:30:00"),
             num_turns=3,
@@ -31,6 +32,7 @@ class TestSessionMetadata:
     def test_fromdict_ignores_unknown_fields(self):
         data = {
             "session_id": "sid",
+            "fork_point_cost_usd": 0.0,
             "name": "test",
             "unknown_field": "should be ignored",
             "permission_mode": "auto",
@@ -48,7 +50,7 @@ class TestSessionMetadataInheritance:
         class ChildMeta(SessionMetadata):
             extra_field: str | None = None
 
-        child = ChildMeta(session_id="sid", extra_field="value")
+        child = ChildMeta(session_id="sid", fork_point_cost_usd=0.0, extra_field="value")
         assert child.session_id == "sid"
         assert child.extra_field == "value"
 
@@ -57,7 +59,12 @@ class TestSessionMetadataInheritance:
         class ChildMeta(SessionMetadata):
             extra_field: str | None = None
 
-        data = {"session_id": "sid", "name": "test", "extra_field": "val"}
+        data = {
+            "session_id": "sid",
+            "fork_point_cost_usd": 0.0,
+            "name": "test",
+            "extra_field": "val",
+        }
         child = ChildMeta.fromdict(data)
         assert child.session_id == "sid"
         assert child.name == "test"
@@ -68,7 +75,7 @@ class TestSessionMetadataInheritance:
         class ChildMeta(SessionMetadata):
             extra_field: str | None = None
 
-        child = ChildMeta(session_id="sid", name="test", extra_field="val")
+        child = ChildMeta(session_id="sid", fork_point_cost_usd=0.0, name="test", extra_field="val")
         d = child.asdict()
         assert d["session_id"] == "sid"
         assert d["name"] == "test"

@@ -1,4 +1,4 @@
-/** MCP server management API client — reconnect, toggle, status. */
+/** MCP server management API client - reconnect, toggle, status. */
 
 import { containerFetch } from './apiClient'
 

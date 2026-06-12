@@ -1,4 +1,4 @@
-/** Hash-based session routing — reads URL hash, exposes navigation functions. */
+/** Hash-based session routing - reads URL hash, exposes navigation functions. */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { buildTurnSegment, parseHash } from './utils/sessionRouting'
@@ -8,7 +8,7 @@ const SessionRoutingContext = createContext(null)
 /**
  * Provide hash-based session routing state and navigation.
  *
- * Pure context — reads hash, exposes state + navigation functions.
+ * Pure context - reads hash, exposes state + navigation functions.
  * Does NOT trigger any API calls or side effects (that's SessionRoutingEffect's job).
  *
  * @param {object} props
@@ -64,7 +64,7 @@ export function SessionRoutingProvider({ children }) {
   const clearActiveSession = useCallback(() => {
     const ws = routeState?.workspaceId
     if (!ws) {
-      // No workspace in URL — fall back to home.
+      // No workspace in URL - fall back to home.
       history.pushState(null, '', window.location.pathname + window.location.search)
       setRouteState(null)
       return
@@ -92,7 +92,7 @@ export function SessionRoutingProvider({ children }) {
 
   const replaceTurnInUrl = useCallback((turnId, messageType) => {
     // Reads current hash live so the callback identity stays stable across
-    // routeState changes — keeps the throttled scroll listener from rebinding.
+    // routeState changes - keeps the throttled scroll listener from rebinding.
     const parsed = parseHash(window.location.hash)
     if (!(parsed?.workspaceId && parsed?.sessionId)) {
       return

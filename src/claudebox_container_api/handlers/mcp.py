@@ -1,4 +1,4 @@
-"""MCP server management endpoints — reconnect, toggle, status."""
+"""MCP server management endpoints - reconnect, toggle, status."""
 
 from fastapi import APIRouter
 

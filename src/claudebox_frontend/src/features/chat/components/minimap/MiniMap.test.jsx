@@ -244,7 +244,7 @@ describe('MiniMap', () => {
       )
 
       const humanLine = screen.getByTestId('minimap-human-line')
-      // No inline height — CSS min-height handles it
+      // No inline height - CSS min-height handles it
       expect(humanLine.style.height).toBe('')
     })
   })
@@ -302,7 +302,7 @@ describe('MiniMap', () => {
   describe('deferred viewport update', () => {
     it('defers updateViewport via requestAnimationFrame on groups change', () => {
       const rAFSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(_cb => {
-        // Don't call _cb immediately — verify deferral
+        // Don't call _cb immediately - verify deferral
         return 42
       })
 
@@ -469,7 +469,7 @@ describe('MiniMap', () => {
       const pointerMoveHandler = addEventListenerCalls.pointermove?.[0]
       expect(pointerMoveHandler).toBeDefined()
 
-      // Wrap in act() — showMinimap calls setVisible (state update)
+      // Wrap in act() - showMinimap calls setVisible (state update)
       act(() => {
         pointerMoveHandler({ clientX: 470 }) // 30px from right edge (< 50)
       })
@@ -517,7 +517,7 @@ describe('MiniMap', () => {
 
       const minimap = screen.getByTestId('minimap')
 
-      // Show via proximity — wrap in act() for state update
+      // Show via proximity - wrap in act() for state update
       const pointerMoveHandler = addEventListenerCalls.pointermove?.[0]
       act(() => {
         pointerMoveHandler({ clientX: 470 })
@@ -566,7 +566,7 @@ describe('MiniMap', () => {
       const minimap = screen.getByTestId('minimap')
       expect(minimap).toHaveClass('visible')
 
-      // Fire pointer leave — should not trigger hide timer
+      // Fire pointer leave - should not trigger hide timer
       fireEvent.pointerLeave(minimap)
       act(() => {
         vi.advanceTimersByTime(1000)

@@ -545,7 +545,7 @@ describe('EventsContext', () => {
       sendAndFlush(es, { type: 'system', subtype: 'compact_start' })
       expect(result.current.isCompacting).toBe(true)
 
-      // Boundary never arrives — user sends new message; isCompacting must reset
+      // Boundary never arrives - user sends new message; isCompacting must reset
       sendAndFlush(es, { type: 'user', is_human: true, content: 'next prompt' })
       expect(result.current.isCompacting).toBe(false)
     })
@@ -676,7 +676,7 @@ describe('EventsContext', () => {
         result.current.reconnectSSE()
       })
 
-      // isCreating preserved — ChatPanel effect clears it when SSE connects
+      // isCreating preserved - ChatPanel effect clears it when SSE connects
       expect(result.current.isCreating).toBe(true)
     })
 

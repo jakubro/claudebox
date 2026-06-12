@@ -10,7 +10,7 @@ import useDropdown from '../../../hooks/useDropdown'
  * Render a footer dropdown for selecting the effort level.
  *
  * Available levels come from SessionDataContext (fetched once on connect).
- * All values shown on all models — the SDK handles compatibility.
+ * All values shown on all models - the SDK handles compatibility.
  *
  * Optimistically updates on selection; confirmed by next session refresh.
  * On welcome (no active session), `defaultValue` populates the display so
@@ -56,7 +56,7 @@ export default function EffortLevelPicker({ currentEffortLevel, defaultValue, di
   }
 
   const displayName =
-    availableEffortLevels.find(l => l.id === effectiveLevel)?.name || effectiveLevel || '—'
+    availableEffortLevels.find(l => l.id === effectiveLevel)?.name || effectiveLevel || '-'
 
   return (
     <span className="footer-picker" ref={containerRef} onKeyDown={handleKeyDown}>
@@ -65,7 +65,7 @@ export default function EffortLevelPicker({ currentEffortLevel, defaultValue, di
         className="footer-picker-btn"
         disabled={disabled}
         onClick={handleToggle}
-        title={`Effort — ${effectiveLevel || '—'}`}
+        title={`Effort - ${effectiveLevel || '-'}`}
         data-testid="footer-effort">
         {displayName}
         <ChevronDown size={10} />

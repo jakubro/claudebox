@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { FLOATING_PANEL_DISMISS_MS, FLOATING_PANEL_HOVER_INTENT_MS } from '../../../config/timing'
 
 /**
- * Manage floating panel state — tracks hovered panel, anchor element, dismiss timer, and hover-intent timer.
+ * Manage floating panel state - tracks hovered panel, anchor element, dismiss timer, and hover-intent timer.
  *
  * Both states fire the floating preview only after a shared hover-intent delay, so a brief cursor
  * graze across the strip doesn't pop previews. Maximized previews every icon; not maximized previews
@@ -30,7 +30,7 @@ export default function useFloatingPanel(isMaximized, activePanels) {
   }, [activePanels])
 
   // Mirror isMaximized in a ref for the same reason: the maximized state can
-  // toggle (un-maximize → maximize) inside the 350 ms window, and the fire-time
+  // toggle (un-maximize -> maximize) inside the 350 ms window, and the fire-time
   // re-check must read the current value, not the one captured at handler creation.
   const isMaximizedRef = useRef(isMaximized)
   useEffect(() => {
@@ -131,7 +131,7 @@ export default function useFloatingPanel(isMaximized, activePanels) {
     }
   }, [isMaximized, dismiss])
 
-  // Dismiss when the currently-previewed panel becomes active — covers the
+  // Dismiss when the currently-previewed panel becomes active - covers the
   // edge case where the timer fires and the preview renders before the panel
   // toggles active (defense-in-depth alongside the timer-fire re-check).
   // Gated on !isMaximized because the maximized branch deliberately shows

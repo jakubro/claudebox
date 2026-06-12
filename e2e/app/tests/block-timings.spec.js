@@ -21,12 +21,12 @@ test.describe('Block Timings', () => {
     const toolBlocks = page.locator('[data-testid="tool-block"]')
     await expect(toolBlocks.first()).toBeVisible()
 
-    // Read — result 68s after first assistant event (startTime)
+    // Read - result 68s after first assistant event (startTime)
     const firstTiming = toolBlocks.nth(0).locator('.block-timing')
     await expect(firstTiming).toBeVisible()
     await expect(firstTiming).toHaveText('@ +1m 8s')
 
-    // Grep — result 102s after first assistant event
+    // Grep - result 102s after first assistant event
     const secondTiming = toolBlocks.nth(1).locator('.block-timing')
     await expect(secondTiming).toBeVisible()
     await expect(secondTiming).toHaveText('@ +1m 42s')
@@ -61,7 +61,7 @@ test.describe('Block Timings', () => {
     const colorMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
     expect(colorMatch, 'Expected valid color value').toBeTruthy()
     const [, r, g, b] = colorMatch.map(Number)
-    // Muted means not fully bright — all channels should be below 200 (dimmed text)
+    // Muted means not fully bright - all channels should be below 200 (dimmed text)
     expect(Math.max(r, g, b), 'Expected muted (non-bright) color').toBeLessThan(200)
   })
 
@@ -84,7 +84,7 @@ test.describe('Block Timings', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Pending tool with old timestamp — elapsed well above 30s threshold
+    // Pending tool with old timestamp - elapsed well above 30s threshold
     const timing = page.locator('.block-timing')
     await expect(timing).toBeVisible()
 
@@ -146,7 +146,7 @@ test.describe('Block Timings', () => {
     await expect(taskBlock).toBeVisible()
     await taskBlock.locator('.tool-header-area').click()
 
-    // Second nested tool (Read) result at 36s after turn start — above 30s threshold
+    // Second nested tool (Read) result at 36s after turn start - above 30s threshold
     const nestedBlocks = taskBlock.locator('[data-testid="tool-block"].nested')
     const readBlock = nestedBlocks.nth(1)
     const nestedTiming = readBlock.locator('.block-timing')

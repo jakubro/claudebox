@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.session — dispose, projection resolution, state tracking."""
+"""Tests for claudebox.agent_session.orchestration.session - dispose, projection resolution, state tracking."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,6 +18,7 @@ def _make_session(tmp_workspace) -> SessionService:
     """Create a SessionService with minimal workspace, suitable for testing internal methods."""
 
     session = SessionService(workspace=tmp_workspace)
+
     return session
 
 
@@ -130,7 +131,7 @@ class TestResolveProjection:
 
 
 class TestOnCompactStart:
-    """Test compact start callback — typed CompactStartPayload signature."""
+    """Test compact start callback - typed CompactStartPayload signature."""
 
     @pytest.mark.anyio
     async def test_captures_session_prompt(self, tmp_workspace):
@@ -142,6 +143,7 @@ class TestOnCompactStart:
         mock_proj = MagicMock()
         mock_proj.value = SessionSummary(
             session_id="s1",
+            fork_point_cost_usd=0.0,
             session_prompt="Remember: you are a helpful assistant",
         )
         session._projection = mock_proj
@@ -270,7 +272,7 @@ class TestInterrupt:
 
         await session.interrupt()
 
-        # Exactly one event injected — interrupt_sent
+        # Exactly one event injected - interrupt_sent
         session._event_pipeline.inject_event.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         call_kwargs = (
             session._event_pipeline.inject_event.call_args.kwargs
@@ -322,7 +324,9 @@ class TestInterrupt:
         session._event_pipeline.inject_event = AsyncMock()
 
         mock_proj = MagicMock()
-        mock_proj.value = SessionSummary(session_id="s1", session_prompt=None)
+        mock_proj.value = SessionSummary(
+            session_id="s1", fork_point_cost_usd=0.0, session_prompt=None
+        )
         session._projection = mock_proj
 
         await session._on_compact_start(CompactStartPayload(trigger="manual"))
@@ -334,7 +338,7 @@ class TestInterrupt:
 
 
 class TestHandleEvent:
-    """Test event handler — broadcast + projection update + compact boundary prompt."""
+    """Test event handler - broadcast + projection update + compact boundary prompt."""
 
     @pytest.mark.anyio
     async def test_broadcasts_and_updates_projection(self, tmp_workspace):
@@ -397,7 +401,7 @@ class TestHandleEvent:
 class TestOnStateChangedCallbacks:
     """SessionService-side _on_*_changed callbacks emit pipeline events unconditionally.
 
-    Delta detection lives in the runtime — session.py fires only when the
+    Delta detection lives in the runtime - session.py fires only when the
     runtime has confirmed an actual change. These tests cover the
     pipeline-emission shape: previous_* field captured from session's local
     cache, current value passed through.
@@ -459,7 +463,7 @@ class TestOnStateChangedCallbacks:
 
     @pytest.mark.anyio
     async def test_on_model_changed_with_no_prior_baseline(self, tmp_workspace):
-        """Even with previous=None, emission proceeds — runtime owns the baseline check."""
+        """Even with previous=None, emission proceeds - runtime owns the baseline check."""
 
         session = _make_session(tmp_workspace)
         # _last_known_model defaults to None
@@ -484,7 +488,7 @@ class TestHandleInitProjectionReplay:
 
     @pytest.mark.anyio
     async def test_replays_events_when_no_session_json(self, tmp_workspace):
-        """Fork scenario: events.jsonl exists but no session.json — projection is rebuilt."""
+        """Fork scenario: events.jsonl exists but no session.json - projection is rebuilt."""
 
         session = _make_session(tmp_workspace)
         session._sdk_client = MagicMock()
@@ -500,7 +504,7 @@ class TestHandleInitProjectionReplay:
 
         mock_projection = MagicMock()
         mock_projection.loaded_from_disk = False
-        mock_projection.value = SessionSummary(session_id="fork-session")
+        mock_projection.value = SessionSummary(session_id="fork-session", fork_point_cost_usd=0.0)
 
         mock_pipeline = MagicMock()
         mock_pipeline.get_historical_events.return_value = events
@@ -527,7 +531,7 @@ class TestHandleInitProjectionReplay:
 
     @pytest.mark.anyio
     async def test_skips_replay_when_session_json_exists(self, tmp_workspace):
-        """Normal resume: session.json exists — no replay needed."""
+        """Normal resume: session.json exists - no replay needed."""
 
         session = _make_session(tmp_workspace)
         session._sdk_client = MagicMock()
@@ -537,7 +541,7 @@ class TestHandleInitProjectionReplay:
 
         mock_projection = MagicMock()
         mock_projection.loaded_from_disk = True
-        mock_projection.value = SessionSummary(session_id="resume-session")
+        mock_projection.value = SessionSummary(session_id="resume-session", fork_point_cost_usd=0.0)
 
         mock_pipeline = MagicMock()
         # Empty history keeps the container-restart emit a no-op; replay is what this test asserts on.
@@ -559,7 +563,7 @@ class TestHandleInitProjectionReplay:
 
     @pytest.mark.anyio
     async def test_no_save_when_events_empty(self, tmp_workspace):
-        """Fork with empty events.jsonl — no save triggered."""
+        """Fork with empty events.jsonl - no save triggered."""
 
         session = _make_session(tmp_workspace)
         session._sdk_client = MagicMock()
@@ -569,7 +573,7 @@ class TestHandleInitProjectionReplay:
 
         mock_projection = MagicMock()
         mock_projection.loaded_from_disk = False
-        mock_projection.value = SessionSummary(session_id="empty-fork")
+        mock_projection.value = SessionSummary(session_id="empty-fork", fork_point_cost_usd=0.0)
 
         mock_pipeline = MagicMock()
         mock_pipeline.get_historical_events.return_value = []
@@ -607,7 +611,7 @@ class TestContainerRestartedEmit:
 
     @pytest.mark.anyio
     async def test_pristine_session_emits_nothing(self, tmp_workspace):
-        """No historical events on disk → no container_restarted event."""
+        """No historical events on disk -> no container_restarted event."""
 
         session = _make_session(tmp_workspace)
         self._wire(session, historical=[], parent_session_id=None)
@@ -618,7 +622,7 @@ class TestContainerRestartedEmit:
 
     @pytest.mark.anyio
     async def test_restart_no_fork_emits_plain(self, tmp_workspace):
-        """Historical events present, no fork ancestry → emit with message_data=None."""
+        """Historical events present, no fork ancestry -> emit with message_data=None."""
 
         session = _make_session(tmp_workspace)
         self._wire(
@@ -636,7 +640,7 @@ class TestContainerRestartedEmit:
 
     @pytest.mark.anyio
     async def test_fork_first_boot_emits_with_parent(self, tmp_workspace):
-        """Historical events + parent_session_id set + no prior fork-tagged restart → emit with parent payload."""
+        """Historical events + parent_session_id set + no prior fork-tagged restart -> emit with parent payload."""
 
         session = _make_session(tmp_workspace)
         self._wire(
@@ -653,7 +657,7 @@ class TestContainerRestartedEmit:
 
     @pytest.mark.anyio
     async def test_fork_subsequent_restart_emits_plain(self, tmp_workspace):
-        """Historical events include a prior fork-tagged restart → next restart emits without payload."""
+        """Historical events include a prior fork-tagged restart -> next restart emits without payload."""
 
         session = _make_session(tmp_workspace)
         prior_fork_event = _make_event(
@@ -693,3 +697,18 @@ class TestContainerRestartedEmit:
 
         kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         assert kwargs["message_data"] == {"fork_parent_session_id": "parent-abc"}
+
+
+# --- Constructor kwarg discipline ---
+
+
+class TestConstructorRejectsUnknownKwargs:
+    """Dropping the **kwargs catch-all makes a misnamed callback / unknown kwarg fail loud."""
+
+    def test_misnamed_callback_kwarg_raises_type_error(self, tmp_workspace):
+        with pytest.raises(TypeError):
+            SessionService(workspace=tmp_workspace, on_session_start=lambda _s: None)  # ty: ignore[unknown-argument]  # intentional misuse - asserts the runtime TypeError.
+
+    def test_unknown_kwarg_raises_type_error(self, tmp_workspace):
+        with pytest.raises(TypeError):
+            SessionService(workspace=tmp_workspace, port=8080)  # ty: ignore[unknown-argument]  # intentional misuse - asserts the runtime TypeError.

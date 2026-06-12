@@ -9,7 +9,7 @@ vi.mock('../../../components/Markdown', () => ({
   default: ({ children }) => <div data-testid="markdown-rendered">{children}</div>,
 }))
 
-// Mock SyntaxHighlightedCodeBlock — source view uses the real code block component
+// Mock SyntaxHighlightedCodeBlock - source view uses the real code block component
 vi.mock(
   './turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/components/code-block',
   () => ({

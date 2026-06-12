@@ -1,4 +1,4 @@
-"""Generic API error hierarchy — typed exceptions with HTTP status codes."""
+"""Generic API error hierarchy - typed exceptions with HTTP status codes."""
 
 
 class ApiError(Exception):

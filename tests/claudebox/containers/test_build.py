@@ -1,4 +1,4 @@
-"""Tests for claudebox.containers.build — build argument generation."""
+"""Tests for claudebox.containers.build - build argument generation."""
 
 import pytest
 

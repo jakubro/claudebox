@@ -77,7 +77,7 @@ function forceMeasureChunk(elements, cacheRef) {
   for (const el of elements) {
     el.classList.add('force-measure')
   }
-  // offsetHeight forces synchronous layout — content-visibility:visible (via .force-measure)
+  // offsetHeight forces synchronous layout - content-visibility:visible (via .force-measure)
   // ensures the read returns real layout instead of the intrinsic-size estimate.
   const readings = []
   for (const el of elements) {

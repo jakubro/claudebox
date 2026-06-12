@@ -41,7 +41,7 @@ export function WorkspaceProvider({ children }) {
       }
       return list
     } catch {
-      // Daemon transient — leave existing state.
+      // Daemon transient - leave existing state.
       return null
     }
   }, [workspaceId, selectWorkspace])
@@ -68,7 +68,7 @@ export function WorkspaceProvider({ children }) {
           }
         }
       } catch {
-        // Daemon not available — expected in single-container mode
+        // Daemon not available - expected in single-container mode
       } finally {
         setLoading(false)
       }

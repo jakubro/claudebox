@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.serving — port calculation."""
+"""Tests for claudebox_daemon.serving - port calculation."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -23,6 +23,7 @@ class TestStartupBanner:
             "path": Path("/home/jakub/dev/share/lib/claudebox"),
             "python": "3.12.11",
         }
+
         with patch("claudebox_daemon.serving.get_install_info", return_value=info):
             banner = _startup_banner(DAEMON_PORT)
 

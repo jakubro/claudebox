@@ -42,7 +42,7 @@ describe('ModelPicker', () => {
 
   it('shows dash when currentModel is null', () => {
     render(<ModelPicker currentModel={null} disabled={false} />)
-    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('-')).toBeInTheDocument()
   })
 
   it('opens dropdown on click', async () => {

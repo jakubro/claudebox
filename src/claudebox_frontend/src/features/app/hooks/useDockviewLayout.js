@@ -1,4 +1,4 @@
-/** Manage dockview layout — refs, initialization, persistence, panel actions. */
+/** Manage dockview layout - refs, initialization, persistence, panel actions. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { patchSessionUiState } from '../../../api/uiState'
@@ -49,11 +49,11 @@ export default function useDockviewLayout() {
       initialRestoreRef.current = sidePanel.restoreFromServer(null).then(({ loaded }) => {
         if (loaded) {
           updateActivePanels()
-          // fromJSON restore creates groups via its own lifecycle — re-apply
+          // fromJSON restore creates groups via its own lifecycle - re-apply
           // the data-main-group marker so MainPanel.css hides the tab bar.
           applyMainGroupMarker(api)
         } else if (api.panels.length === 0) {
-          // fromJSON.clear() may have destroyed panels before the restore failed — rebuild
+          // fromJSON.clear() may have destroyed panels before the restore failed - rebuild
           buildDefaultLayout(api, sidePanel)
         }
       })
@@ -89,7 +89,7 @@ export default function useDockviewLayout() {
         }, LAYOUT_SAVE_DEBOUNCE_MS)
       })
 
-      // Maximize/minimize fires a separate event — not onDidLayoutChange
+      // Maximize/minimize fires a separate event - not onDidLayoutChange
       api.onDidMaximizedGroupChange(() => {
         setIsMaximized(api.hasMaximizedGroup())
       })
@@ -105,7 +105,7 @@ export default function useDockviewLayout() {
     sidePanelRef.current?.close(panelId)
   }, [])
 
-  // Guard flag shared with AppActionsContext — prevents scroll callbacks from
+  // Guard flag shared with AppActionsContext - prevents scroll callbacks from
   // clobbering saved position when setActive() triggers a browser scroll reset.
   const panelSwitchingRef = useRef(false)
 

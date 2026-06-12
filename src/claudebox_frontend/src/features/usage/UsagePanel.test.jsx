@@ -3,7 +3,7 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock SessionsContext — UsagePanel now consumes useSessionsList
+// Mock SessionsContext - UsagePanel now consumes useSessionsList
 let mockSessions = []
 vi.mock('../../context/SessionsContext', () => ({
   useSessionsList: () => ({ sessions: mockSessions }),
@@ -40,8 +40,16 @@ describe('UsagePanel', () => {
   it('aggregates cost for sessions within 24h interval', () => {
     const now = Date.now()
     mockSessions = [
-      { started_at: new Date(now - 1000).toISOString(), total_cost_usd: 1.5 },
-      { started_at: new Date(now - 2000).toISOString(), total_cost_usd: 2.5 },
+      {
+        started_at: new Date(now - 1000).toISOString(),
+        total_cost_usd: 1.5,
+        fork_point_cost_usd: 0,
+      },
+      {
+        started_at: new Date(now - 2000).toISOString(),
+        total_cost_usd: 2.5,
+        fork_point_cost_usd: 0,
+      },
     ]
 
     render(<UsagePanel />)
@@ -55,8 +63,16 @@ describe('UsagePanel', () => {
     const now = Date.now()
     const twoDaysAgo = now - 2 * 24 * 60 * 60 * 1000
     mockSessions = [
-      { started_at: new Date(now - 1000).toISOString(), total_cost_usd: 1.0 },
-      { started_at: new Date(twoDaysAgo).toISOString(), total_cost_usd: 3.0 },
+      {
+        started_at: new Date(now - 1000).toISOString(),
+        total_cost_usd: 1.0,
+        fork_point_cost_usd: 0,
+      },
+      {
+        started_at: new Date(twoDaysAgo).toISOString(),
+        total_cost_usd: 3.0,
+        fork_point_cost_usd: 0,
+      },
     ]
 
     render(<UsagePanel />)
@@ -72,8 +88,16 @@ describe('UsagePanel', () => {
     const now = Date.now()
     const tenDaysAgo = now - 10 * 24 * 60 * 60 * 1000
     mockSessions = [
-      { started_at: new Date(now - 1000).toISOString(), total_cost_usd: 1.0 },
-      { started_at: new Date(tenDaysAgo).toISOString(), total_cost_usd: 5.0 },
+      {
+        started_at: new Date(now - 1000).toISOString(),
+        total_cost_usd: 1.0,
+        fork_point_cost_usd: 0,
+      },
+      {
+        started_at: new Date(tenDaysAgo).toISOString(),
+        total_cost_usd: 5.0,
+        fork_point_cost_usd: 0,
+      },
     ]
 
     render(<UsagePanel />)
@@ -88,8 +112,13 @@ describe('UsagePanel', () => {
   it('treats sessions with no total_cost_usd as 0', () => {
     const now = Date.now()
     mockSessions = [
-      { started_at: new Date(now - 1000).toISOString(), total_cost_usd: 2.0 },
-      { started_at: new Date(now - 2000).toISOString() }, // no cost field
+      {
+        started_at: new Date(now - 1000).toISOString(),
+        total_cost_usd: 2.0,
+        fork_point_cost_usd: 0,
+      },
+      // Missing total_cost_usd; fork_point_cost_usd still required.
+      { started_at: new Date(now - 2000).toISOString(), fork_point_cost_usd: 0 },
     ]
 
     render(<UsagePanel />)

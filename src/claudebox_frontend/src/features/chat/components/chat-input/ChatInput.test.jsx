@@ -70,7 +70,7 @@ vi.mock('./hooks/useBlockCollapse', () => ({
   }),
 }))
 
-// Mock chat API (only interrupt — sendMessage flows through the `send` prop)
+// Mock chat API (only interrupt - sendMessage flows through the `send` prop)
 let mockInterrupt = vi.fn(() => Promise.resolve())
 
 vi.mock('../../../../api/chat', () => ({
@@ -278,7 +278,7 @@ describe('ChatInput', () => {
         expect(defaultProps.send).toHaveBeenCalledWith('first', [])
       })
 
-      // Send a second message — verifies `sending` was reset to false
+      // Send a second message - verifies `sending` was reset to false
       await user.click(textarea)
       await user.type(textarea, 'second')
       await user.keyboard('{Enter}')
@@ -508,7 +508,7 @@ describe('ChatInput', () => {
       Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
       document.dispatchEvent(mouseDownEvent)
 
-      // Simulate mouseup — rAF fires synchronously (mocked) and clears flag
+      // Simulate mouseup - rAF fires synchronously (mocked) and clears flag
       const mouseUpEvent = new MouseEvent('mouseup', { button: 1, bubbles: true })
       document.dispatchEvent(mouseUpEvent)
 
@@ -531,10 +531,10 @@ describe('ChatInput', () => {
       Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
       document.dispatchEvent(mouseDownEvent)
 
-      // Hold for 200ms — no mouseup yet, flag should persist
+      // Hold for 200ms - no mouseup yet, flag should persist
       vi.advanceTimersByTime(200)
 
-      // Paste fires while still holding — should be blocked
+      // Paste fires while still holding - should be blocked
       const pasteEvent = createPasteEvent()
       const preventDefaultSpy = vi.spyOn(pasteEvent, 'preventDefault')
       textarea.dispatchEvent(pasteEvent)

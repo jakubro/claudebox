@@ -1,4 +1,4 @@
-/** Tests for firstGrapheme — collapsed-column header label compression. */
+/** Tests for firstGrapheme - collapsed-column header label compression. */
 
 import { describe, expect, it } from 'vitest'
 import { firstGrapheme } from './grapheme'

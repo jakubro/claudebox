@@ -1,4 +1,4 @@
-/** Session header strip — chrome of the main panel slot, replacing the chat-group tab bar in-place. */
+/** Session header strip - chrome of the main panel slot, replacing the chat-group tab bar in-place. */
 
 import { Loader2, Square } from 'lucide-react'
 import { useCallback, useState } from 'react'
@@ -18,7 +18,7 @@ import BoardHeaderInfo from './BoardHeaderInfo'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 /**
- * Render the session header strip — status dot, session name + Stop button on the left;
+ * Render the session header strip - status dot, session name + Stop button on the left;
  * NewSessionSplitButton + WorkspaceSwitcher on the right. LEFT slot is empty in welcome
  * state. Reads most things from context.
  *
@@ -69,7 +69,7 @@ export default function SessionHeaderStrip({ panelApi }) {
     }
     addStoppingSession(effectiveSessionId)
     // Keep the containerMap mapping until the daemon's terminal `stopped` event
-    // clears it (ContainerStatusEffect) — dropping it here wedges "stopping".
+    // clears it (ContainerStatusEffect) - dropping it here wedges "stopping".
     // Synchronously null EventsContext.containerId, clear activeSessionId,
     // and clear stuck creating overlay so the `isWelcome` derivation flips
     // in one React batch. closeSSE + clearActiveSession run before the

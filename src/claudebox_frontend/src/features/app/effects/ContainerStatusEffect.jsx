@@ -9,11 +9,11 @@ import { resolveSessionIdFromContainer } from '../../../utils/containerLookup'
 /**
  * React to daemon container_status events to maintain the stopping sessions set.
  *
- * On "stopping": resolve containerId → sessionId, cache the mapping, and mark as stopping.
+ * On "stopping": resolve containerId -> sessionId, cache the mapping, and mark as stopping.
  * On "stopped": use cached mapping (avoids race with sessions refetch), remove from stopping
  * set and clean up container mapping.
  *
- * Renders nothing — exists solely for cross-tab stopping state coordination.
+ * Renders nothing - exists solely for cross-tab stopping state coordination.
  */
 export default function ContainerStatusEffect() {
   const { lastContainerEvent } = useDaemonStreamContext()
@@ -21,7 +21,7 @@ export default function ContainerStatusEffect() {
     useContainerMap()
   const { sessions } = useSessionsList()
 
-  // Cache containerId → sessionId from "stopping" events so "stopped" lookups
+  // Cache containerId -> sessionId from "stopping" events so "stopped" lookups
   // survive the sessions refetch race (backend clears container_id before broadcasting "stopped")
   const stoppingCacheRef = useRef(new Map())
 
@@ -33,7 +33,7 @@ export default function ContainerStatusEffect() {
     const { containerId, status } = lastContainerEvent
 
     if (status === 'stopping') {
-      // Resolve containerId → sessionId and cache for the subsequent "stopped" event
+      // Resolve containerId -> sessionId and cache for the subsequent "stopped" event
       const sessionId = resolveSessionIdFromContainer(containerId, containerMap, sessions)
 
       if (sessionId) {
@@ -41,7 +41,7 @@ export default function ContainerStatusEffect() {
         addStoppingSession(sessionId)
       }
     } else if (status === 'stopped') {
-      // Use cached mapping first — the live sources may already be stale
+      // Use cached mapping first - the live sources may already be stale
       const sessionId =
         stoppingCacheRef.current.get(containerId) ??
         resolveSessionIdFromContainer(containerId, containerMap, sessions)

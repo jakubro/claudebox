@@ -1,4 +1,4 @@
-/** Unified per-tool rendering configuration — single place to add new tools. */
+/** Unified per-tool rendering configuration - single place to add new tools. */
 
 import {
   extractCodeFromReadOutput,
@@ -34,7 +34,7 @@ import {
   formatWriteHeader,
   formatWriteResult,
 } from '../features/chat/components/turn/components/tool-block/utils/toolResultFormatters'
-import { ToolName } from './schema'
+import { normalizeToolName, ToolName } from './schema'
 
 /**
  * Per-tool rendering configuration.
@@ -229,7 +229,11 @@ const DEFAULT_TOOL_CONFIG = {
   copyableExtractor: null,
 }
 
-/** Look up tool config, falling back to defaults for unknown tools. */
+/**
+ * Look up tool config, falling back to defaults for unknown tools.
+ * Normalises the tool name first so LangGraph snake_case names (task_create, ...)
+ * resolve to the same registry entry as their Claude PascalCase equivalents.
+ */
 export function getToolConfig(toolName) {
-  return TOOL_REGISTRY[toolName] ?? DEFAULT_TOOL_CONFIG
+  return TOOL_REGISTRY[normalizeToolName(toolName)] ?? DEFAULT_TOOL_CONFIG
 }

@@ -33,7 +33,7 @@ test.describe('Workspace Discovery', () => {
     let workspacesFetched = false
     await mockAPI(page)
     await mockSSE(page)
-    // Override workspaces route AFTER mockAPI (LIFO — last registered wins)
+    // Override workspaces route AFTER mockAPI (LIFO - last registered wins)
     await page.route('**/api/workspaces', async route => {
       workspacesFetched = true
       await route.fulfill({
@@ -79,7 +79,7 @@ test.describe('Workspace Discovery', () => {
       localStorage.setItem('claudebox-workspace-id', 'project-b')
     })
 
-    // Navigate with default workspace in hash — hash should win over localStorage
+    // Navigate with default workspace in hash - hash should win over localStorage
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
     await waitForAppReady(page)
 
@@ -98,7 +98,7 @@ test.describe('Workspace Discovery', () => {
       localStorage.setItem('claudebox-workspace-id', wsId)
     }, DEFAULT_WORKSPACE_ID)
 
-    // Navigate without workspace hash — should pick from localStorage
+    // Navigate without workspace hash - should pick from localStorage
     await page.goto('/')
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
     await expect(page.locator('[data-testid="workspace-switcher"]')).toContainText(
@@ -185,7 +185,7 @@ test.describe('Workspace Switcher', () => {
     const switcher = page.locator('[data-testid="workspace-switcher"]')
     await expect(switcher).toBeVisible()
 
-    // Open dropdown — should show color palette but no workspace list
+    // Open dropdown - should show color palette but no workspace list
     await switcher.click()
     const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
     await expect(dropdown).toBeVisible()
@@ -245,7 +245,7 @@ test.describe('Workspace Switcher', () => {
       .catch(() => null)
     await option.click({ button: 'middle' })
     const newPage = await newPagePromise
-    // window.open may be blocked in test — verify dropdown closed (handler ran)
+    // window.open may be blocked in test - verify dropdown closed (handler ran)
     if (newPage) {
       await newPage.close()
     }
@@ -386,7 +386,7 @@ test.describe('URL Routing', () => {
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
     await waitForAppReady(page)
 
-    // Session loaded — footer shows session ID
+    // Session loaded - footer shows session ID
     await expect(page.locator('[data-testid="footer-session"]')).toContainText(DEFAULT_SESSION_ID)
   })
 

@@ -1,4 +1,4 @@
-/** Tests for LogsStreamContext — provider-scoped logs SSE. */
+/** Tests for LogsStreamContext - provider-scoped logs SSE. */
 
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'

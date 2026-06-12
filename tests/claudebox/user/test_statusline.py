@@ -1,4 +1,4 @@
-"""Tests for claudebox.statusline — statusline decorator and request type."""
+"""Tests for claudebox.statusline - statusline decorator and request type."""
 
 from datetime import timedelta
 
@@ -29,6 +29,7 @@ def _make_statusline_data(
         },
     }
     data.update(overrides)
+
     return data
 
 

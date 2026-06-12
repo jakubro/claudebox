@@ -8,7 +8,7 @@ import { parseGrepLine } from '../../../../../../../../../../../../../utils/pars
  */
 export function parseReadWriteLines(details) {
   return details.split('\n').map(line => {
-    const match = line.match(/^\s*(\d+)[→│\t](.*)$/)
+    const match = line.match(/^\s*(\d+)[\u2192\u2502\t](.*)$/)
     if (match) {
       return { type: 'normal', lineNum: parseInt(match[1], 10), content: match[2] }
     }
@@ -111,7 +111,7 @@ export function parseEditLines(details, startLine = 1) {
       result.push({ type: 'separator' })
       i++
     } else {
-      // Context line — strip 2-char indent prefix if present
+      // Context line - strip 2-char indent prefix if present
       result.push({
         type: 'diff-context',
         lineNum: lineNum++,

@@ -86,6 +86,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 3,
                   total_cost_usd: 0,
+                  fork_point_cost_usd: 0,
                   started_at: new Date().toISOString(),
                   updated_at: new Date().toISOString(),
                 },
@@ -122,6 +123,7 @@ test.describe('Usage Panel', () => {
                   workspace: '/home/user/project',
                   num_turns: 0,
                   total_cost_usd: 0,
+                  fork_point_cost_usd: 0,
                   started_at: new Date().toISOString(),
                   updated_at: new Date().toISOString(),
                 },
@@ -163,6 +165,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 1,
                   total_cost_usd: 0.1,
+                  fork_point_cost_usd: 0,
                   started_at: twoHoursAgo,
                   updated_at: twoHoursAgo,
                 },
@@ -172,6 +175,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 2,
                   total_cost_usd: 0.2,
+                  fork_point_cost_usd: 0,
                   started_at: threeDaysAgo,
                   updated_at: threeDaysAgo,
                 },
@@ -181,6 +185,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 3,
                   total_cost_usd: 0.5,
+                  fork_point_cost_usd: 0,
                   started_at: fifteenDaysAgo,
                   updated_at: fifteenDaysAgo,
                 },
@@ -238,6 +243,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 1,
                   total_cost_usd: 0.25,
+                  fork_point_cost_usd: 0,
                   started_at: oneHourAgo,
                   updated_at: oneHourAgo,
                 },
@@ -247,6 +253,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 5,
                   total_cost_usd: 1.5,
+                  fork_point_cost_usd: 0,
                   started_at: tenDaysAgo,
                   updated_at: tenDaysAgo,
                 },
@@ -287,6 +294,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 1,
                   total_cost_usd: 0.1,
+                  fork_point_cost_usd: 0,
                   started_at: oneHourAgo,
                   updated_at: oneHourAgo,
                 },
@@ -296,6 +304,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 2,
                   total_cost_usd: 0.3,
+                  fork_point_cost_usd: 0,
                   started_at: fourDaysAgo,
                   updated_at: fourDaysAgo,
                 },
@@ -305,6 +314,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 3,
                   total_cost_usd: 2.0,
+                  fork_point_cost_usd: 0,
                   started_at: fiftyDaysAgo,
                   updated_at: fiftyDaysAgo,
                 },
@@ -345,6 +355,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 1,
                   total_cost_usd: 0.15,
+                  fork_point_cost_usd: 0,
                   started_at: twoDaysAgo,
                   updated_at: twoDaysAgo,
                 },
@@ -354,6 +365,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 2,
                   total_cost_usd: 0.45,
+                  fork_point_cost_usd: 0,
                   started_at: twentyDaysAgo,
                   updated_at: twentyDaysAgo,
                 },
@@ -363,6 +375,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 4,
                   total_cost_usd: 3.0,
+                  fork_point_cost_usd: 0,
                   started_at: sixtyDaysAgo,
                   updated_at: sixtyDaysAgo,
                 },
@@ -402,6 +415,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 1,
                   total_cost_usd: 0.5,
+                  fork_point_cost_usd: 0,
                   started_at: oneHourAgo,
                   updated_at: oneHourAgo,
                 },
@@ -411,6 +425,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 10,
                   total_cost_usd: 4.5,
+                  fork_point_cost_usd: 0,
                   started_at: ninetyDaysAgo,
                   updated_at: ninetyDaysAgo,
                 },
@@ -433,8 +448,8 @@ test.describe('Usage Panel', () => {
 
   // SPEC: panel-usage:update
   test('usage values auto-update when session cost changes via SSE', async ({ page }) => {
-    // SSE refetch chain: send → SessionsContext.sessionsChanged → 2 s debounce →
-    // fetchSessions → UsagePanel re-render. Under full-suite concurrency the
+    // SSE refetch chain: send -> SessionsContext.sessionsChanged -> 2 s debounce ->
+    // fetchSessions -> UsagePanel re-render. Under full-suite concurrency the
     // total can exceed the default 5 s expect timeout; budget extra wall time.
     test.setTimeout(15000)
     const now = new Date()
@@ -457,6 +472,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: returnUpdatedCost ? 5 : 1,
                   total_cost_usd: cost,
+                  fork_point_cost_usd: 0,
                   started_at: oneHourAgo,
                   updated_at: new Date().toISOString(),
                 },
@@ -488,7 +504,7 @@ test.describe('Usage Panel', () => {
 
   // SPEC: panel-usage:update
   test('usage panel refetches on SSE sessions_changed event', async ({ page }) => {
-    // See "usage values auto-update…" above — same SSE → debounce → refetch
+    // See "usage values auto-update…" above - same SSE -> debounce -> refetch
     // chain that can exceed the default 5 s expect window under load.
     test.setTimeout(15000)
     const now = new Date()
@@ -510,6 +526,7 @@ test.describe('Usage Panel', () => {
                   model: 'claude-sonnet',
                   num_turns: 1,
                   total_cost_usd: 0.1,
+                  fork_point_cost_usd: 0,
                   started_at: oneHourAgo,
                   updated_at: oneHourAgo,
                 },
@@ -533,5 +550,60 @@ test.describe('Usage Panel', () => {
 
     // Verify sessions were refetched
     await expect.poll(() => fetchCount, { timeout: 10000 }).toBeGreaterThan(initialCount)
+  })
+
+  // SPEC: panel-usage:fork-dedup
+  test('forked sessions contribute only post-fork spend to totals', async ({ page }) => {
+    const now = new Date()
+    const recent = new Date(now - 60 * 1000).toISOString()
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => {
+          await route.fulfill({
+            json: {
+              sessions: [
+                // Parent ran to $1.00 total; no inherited prefix.
+                {
+                  session_id: 'parent-001',
+                  container_id: DEFAULT_CONTAINER_ID,
+                  workspace: '/home/user/project',
+                  model: 'claude-sonnet',
+                  num_turns: 10,
+                  total_cost_usd: 1.0,
+                  fork_point_cost_usd: 0,
+                  started_at: recent,
+                  updated_at: recent,
+                },
+                // Forked from parent at $0.30 boundary; added $0.10 of own spend.
+                // Reported total reflects everything visible in transcript ($0.40).
+                // Aggregation must subtract the snapshot so the panel attributes
+                // only the post-fork $0.10 to this session.
+                {
+                  session_id: 'fork-001',
+                  container_id: DEFAULT_CONTAINER_ID,
+                  workspace: '/home/user/project',
+                  model: 'claude-sonnet',
+                  num_turns: 4,
+                  total_cost_usd: 0.4,
+                  fork_point_cost_usd: 0.3,
+                  parent_session_id: 'parent-001',
+                  started_at: recent,
+                  updated_at: recent,
+                },
+              ],
+            },
+          })
+        },
+      },
+    })
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await openUsagePanel(page)
+
+    // Naive sum across siblings would be $1.40 (double-counts the shared $0.30
+    // prefix); with snapshot subtraction the total is $1.00 + $0.10 = $1.10.
+    const rowAll = page.locator('tr').filter({ hasText: 'All time' })
+    await expect(rowAll.locator('.usage-cost')).toContainText('$1.10')
   })
 })

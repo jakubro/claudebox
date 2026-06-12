@@ -15,7 +15,7 @@ const TS = '2026-05-17T12:00:00Z'
 let _eventCounter = 0
 const nextId = () => `cal-evt-${++_eventCounter}`
 
-/** Build one fixture (turn shape) → a record consumed by both the predictor and the event-stream builder. */
+/** Build one fixture (turn shape) -> a record consumed by both the predictor and the event-stream builder. */
 function fixture(name, { userMessage = 'query', assistantEvents = [], attachments = null }) {
   return { turnId: `cal-${name}`, userMessage, assistantEvents, attachments }
 }
@@ -95,7 +95,7 @@ function buildFixtures() {
     )
   }
 
-  // Mixed compositions — closest to real workloads
+  // Mixed compositions - closest to real workloads
   fxs.push(
     fixture('mixed-text-and-tool', {
       assistantEvents: [
@@ -219,7 +219,7 @@ const WIDTHS = [
 ]
 
 const DRIFT_BOUND = 0.3
-const DUMP_DIR = '/tmp/73.190'
+const DUMP_DIR = '/tmp/predictor-calibration'
 
 /** Convert a fixture's stored assistantEvents to predictor-shaped events (adds `type: 'assistant'`). */
 function turnFromFixture(f) {
@@ -251,7 +251,7 @@ test.describe('predictor accuracy regression', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Force real layout on every turn — content-visibility:auto would return
+      // Force real layout on every turn - content-visibility:auto would return
       // the 400px intrinsic for off-screen turns, masking real layout heights.
       await page.addStyleTag({
         content: '.turn-container { content-visibility: visible !important; }',

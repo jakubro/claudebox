@@ -55,7 +55,7 @@ describe('usePathResolution', () => {
 
     const { result } = renderHook(() => usePathResolution(['bad.py']))
 
-    // Should not throw — graceful degradation
+    // Should not throw - graceful degradation
     await waitFor(() => {
       expect(result.current).toEqual({})
     })

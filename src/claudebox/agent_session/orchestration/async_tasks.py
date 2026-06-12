@@ -1,8 +1,7 @@
-"""Async task manager — monitor lifecycle and event detection."""
+"""Async task manager - monitor lifecycle and event detection."""
 
 import asyncio
 import json
-import re
 from pathlib import Path
 from typing import Protocol
 
@@ -53,16 +52,14 @@ class AsyncTaskManager:
     def check_event(self, event: PublishedEvent) -> None:
         """Check event for async task launch or completion signals.
 
-        Inspects tool_result events for async task launches, task_notification
-        events for completions, and message content for legacy XML notifications.
+        Inspects tool_result events for async task launches and
+        task_notification events for completions.
         """
 
         if event.subtype == "tool_result":
             self._check_launch(event)
         elif event.subtype == "task_notification":
             self._check_notification(event)
-        elif event.subtype == "message" and event.content:
-            self._check_completion(event.content)
 
     def reattach(self, events: list[PublishedEvent]) -> None:
         """Scan historical events and reattach monitors for in-progress tasks.
@@ -73,6 +70,7 @@ class AsyncTaskManager:
         """
 
         in_progress = self._detect_in_progress(events)
+
         for agent_id, task_info in in_progress.items():
             offset = self._get_resume_offset(events, agent_id)
             self._start_monitor(
@@ -90,6 +88,7 @@ class AsyncTaskManager:
         """Check if tool_result indicates async task launch."""
 
         res = event.tool_use_result
+
         if not res:
             return
 
@@ -115,9 +114,12 @@ class AsyncTaskManager:
         """Stop monitor when task_notification system event arrives."""
 
         msg = event.message_data
+
         if not isinstance(msg, dict):
             return
+
         task_id = msg.get("task_id") or msg.get("agent_id")
+
         if task_id:
             self._stop_monitor(task_id)
 
@@ -132,28 +134,21 @@ class AsyncTaskManager:
         """
 
         msg = event.message_data
+
         if not isinstance(msg, dict):
             return
 
         task_id = msg.get("task_id")
         output_file = self._output_files.get(task_id) if task_id else None
+
         if not output_file:
             return
 
         text = self._extract_summary(Path(output_file))
+
         if text:
             msg["content"] = text
             msg["summary"] = text[:200]
-
-    def _check_completion(self, content: str) -> None:
-        """Check if message contains agent-notification and stop monitor (legacy)."""
-
-        if "<agent-notification>" not in content:
-            return
-
-        match = re.search(r"<agent-id>([^<]*)</agent-id>", content)
-        if match:
-            self._stop_monitor(match.group(1))
 
     # Monitor Lifecycle
     # ----------------------------------------------------------------------------------------------
@@ -188,14 +183,17 @@ class AsyncTaskManager:
         """Stop monitoring async task output file. Use force=True to cancel immediately."""
 
         entry = self._monitors.pop(agent_id, None)
+
         if not entry:
             return
 
         monitor, task = entry
+
         if force:
             task.cancel()
         else:
             monitor.stop()
+
         self._logger.info("Stopped async task monitor", agent_id=agent_id)
 
     # Resume Support
@@ -208,27 +206,36 @@ class AsyncTaskManager:
             return ""
 
         last_text = ""
+
         with open(output_path) as f:
             for line in f:
                 line = line.strip()
+
                 if not line:
                     continue
+
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
                     self._logger.warning("Invalid JSON in task notification", line=line[:100])
                     continue
+
                 if data.get("type") != "assistant":
                     continue
+
                 message = data.get("message", {})
                 blocks = message.get("content", [])
+
                 if not isinstance(blocks, list):
                     continue
+
                 for block in blocks:
                     if isinstance(block, dict) and block.get("type") == "text":
                         text = block.get("text", "").strip()
+
                         if text:
                             last_text = text
+
         return last_text
 
     @staticmethod
@@ -241,6 +248,7 @@ class AsyncTaskManager:
         for event in events:
             if event.subtype == "tool_result":
                 res = event.tool_use_result
+
                 if not res:
                     continue
 
@@ -261,18 +269,12 @@ class AsyncTaskManager:
             # task_notification system event (normalized by container API)
             if event.subtype == "task_notification":
                 msg = event.message_data
+
                 if isinstance(msg, dict):
                     tid = msg.get("task_id") or msg.get("agent_id")
+
                     if tid:
                         completed.add(tid)
-
-            # agent-notification XML in message (legacy format)
-            if event.subtype == "message" and event.content:
-                content = str(event.content)
-                if "<agent-notification>" in content:
-                    match = re.search(r"<agent-id>([^<]*)</agent-id>", content)
-                    if match:
-                        completed.add(match.group(1))
 
         return {k: v for k, v in async_tasks.items() if k not in completed}
 
@@ -281,8 +283,10 @@ class AsyncTaskManager:
         """Find highest source_offset for nested events from this agent."""
 
         max_offset = 0
+
         for event in events:
             if event.parent_tool_use_id and event.source_offset:
                 if agent_id in str(event.source_file or ""):
                     max_offset = max(max_offset, event.source_offset)
+
         return max_offset

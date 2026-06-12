@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react'
 import { registerWorkspace } from '../../../api/workspaces'
 
 /**
- * Register-workspace modal — daemon errors inline, auto-close on already_registered.
+ * Register-workspace modal - daemon errors inline, auto-close on already_registered.
  *
  * @param {object} props
  * @param {Function} props.onClose - Dismiss the modal (Cancel / Esc).

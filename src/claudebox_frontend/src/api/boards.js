@@ -1,4 +1,4 @@
-/** Board API client — workspace-scoped board CRUD operations. */
+/** Board API client - workspace-scoped board CRUD operations. */
 
 import { workspaceFetch } from './apiClient'
 
@@ -64,7 +64,7 @@ export async function moveTicket(boardId, ticketPath, { column, swimlane, index 
   return res.json()
 }
 
-/** Archive a ticket — remove from YAML, file stays on disk. */
+/** Archive a ticket - remove from YAML, file stays on disk. */
 export async function archiveTicket(boardId, ticketPath) {
   const res = await workspaceFetch(`/boards/${boardId}/tickets/${encodeURIComponent(ticketPath)}`, {
     method: 'DELETE',

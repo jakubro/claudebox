@@ -1,7 +1,8 @@
 /** TUI-style tool use and result block with expandable content. */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ToolName } from '../../../../../../config/schema'
+import { normalizeToolName, ToolName } from '../../../../../../config/schema'
+import useCapabilities from '../../../../../../hooks/useCapabilities'
 import { processNestedEvents } from '../../../../../../utils/eventProcessing'
 import { useTurn } from '../../hooks/useTurn'
 import InteractiveQuestions from './components/interactive-questions'
@@ -48,10 +49,18 @@ export default function ToolBlock({
   blockRelativeTime = null,
 }) {
   const { hasPendingMessages, onFormSubmit, now, isActiveTurn } = useTurn()
+  const { capabilities } = useCapabilities()
+  // Render unless the runtime explicitly opts out via supports_ask_user_question=false.
+  // Absent or undefined treated as "supported" for back-compat with fixtures and
+  // pre-init session-data races.
+  const askUserQuestionEnabled = capabilities?.supports_ask_user_question !== false
 
   const [showDetails, setShowDetails] = useState(null) // null = use default
 
-  const toolName = toolUse?.content || 'Tool'
+  // Normalise tool name so LangGraph's snake_case names (ask_user_question)
+  // resolve to the same canonical Claude form (AskUserQuestion) every
+  // downstream comparison reads. See schema.js::TOOL_NAME_ALIASES.
+  const toolName = normalizeToolName(toolUse?.content || 'Tool')
   const input = toolUse?.tool_input ?? {}
   const toolUseId = toolUse?.tool_use_id ?? null
   const filePath = input?.file_path || null
@@ -90,9 +99,13 @@ export default function ToolBlock({
     setLocalAnswerLabel,
   } = useInteractiveState(toolName, isPending, resultContent, plan)
 
-  // For AskUserQuestion awaiting response, extract questions from input
+  // For AskUserQuestion awaiting response, extract questions from input.
+  // Guard against truthy non-array payloads (e.g. a JSON-encoded string emitted
+  // by an upstream serialization bug) so the InteractiveQuestions consumer
+  // never receives a non-iterable.
   const askUserAwaiting = isAskUserAwaitingAnswer(toolName, isPending, resultContent, wasAnswered)
-  const pendingQuestions = askUserAwaiting ? input.questions : null
+  const pendingQuestions =
+    askUserAwaiting && Array.isArray(input.questions) ? input.questions : null
 
   // ExitPlanMode awaits response when plan is present and not yet answered
   const planAwaiting = isPlanAwaitingAnswer(toolName, plan, wasAnswered)
@@ -101,11 +114,11 @@ export default function ToolBlock({
   const nestedBlocks = useMemo(() => processNestedEvents(nestedEvents), [nestedEvents])
   const hasNested = nestedBlocks.length > 0
 
-  // tool_input for unhandled tools — null for handled tools (they render their own way)
+  // tool_input for unhandled tools - null for handled tools (they render their own way)
   const toolInput =
     !hasSpecializedFormatter(toolName) && Object.keys(input).length > 0 ? input : null
 
-  // Single-line result identical to summary — keep expandable but start collapsed
+  // Single-line result identical to summary - keep expandable but start collapsed
   const singleLineDuplicate = isSingleLineDuplicate(effectiveDetails, effectiveSummary)
 
   const hasExpandable = hasExpandableContent({
@@ -204,8 +217,10 @@ export default function ToolBlock({
         }}
       />
 
-      {/* Interactive questions for AskUserQuestion - hide during pending state after local submit (Q/A bubble shows instead) */}
+      {/* Interactive questions for AskUserQuestion - hide during pending state after local submit (Q/A bubble shows instead);
+          also gated on the runtime's supports_ask_user_question capability so non-supporting runtimes do not render the form. */}
       {toolName === ToolName.ASK_USER_QUESTION &&
+        askUserQuestionEnabled &&
         input.questions?.length > 0 &&
         effectiveShowDetails &&
         !(wasAnsweredLocally && hasPendingMessages) && (

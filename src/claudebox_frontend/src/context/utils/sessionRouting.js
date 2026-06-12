@@ -1,4 +1,4 @@
-/** Pure hash-routing parser — extracted utility for SessionRoutingContext.jsx, no React APIs. */
+/** Pure hash-routing parser - extracted utility for SessionRoutingContext.jsx, no React APIs. */
 
 /**
  * Parse hash into workspace and optional session/board IDs and per-viewer params.
@@ -48,7 +48,7 @@ export function parseHash(hash) {
 
 /**
  * Build the `/turns/<role>-<turnId>` segment for a URL. Returns empty string when
- * either input is missing — a bare session URL means "at bottom, autoscroll engaged".
+ * either input is missing - a bare session URL means "at bottom, autoscroll engaged".
  *
  * @param {string | null | undefined} turnId
  * @param {'user' | 'assistant' | null | undefined} messageType

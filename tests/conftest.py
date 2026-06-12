@@ -61,7 +61,7 @@ def pytest_configure(config):
 
 @pytest.fixture
 def anyio_backend():
-    """Force asyncio backend — prevent surprise trio testing if installed."""
+    """Force asyncio backend - prevent surprise trio testing if installed."""
 
     return "asyncio"
 

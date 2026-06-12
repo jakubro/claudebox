@@ -144,6 +144,7 @@ def get_container_run_args(
             yield f"{host_port}:{container_port}"
 
     effective_network = network or config.network_mode
+
     if effective_network:
         yield "--network"
         yield effective_network
@@ -173,6 +174,7 @@ def get_volumes(config: "Config") -> Iterable[tuple[str | Path, str | Path]]:
 
     # Add runtime overlay from claudebox library
     run_overlay_root = LIB_RUN_DIR / "fs"
+
     for src in run_overlay_root.glob("**/*"):
         if src.is_file():
             dst = Path("/") / src.relative_to(run_overlay_root)

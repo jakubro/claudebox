@@ -22,7 +22,7 @@ export default function useBookmarks(sessionId, workspaceId) {
   const [bookmarkedMessageIds, setBookmarkedMessageIds] = useState(new Set())
   const [allBookmarks, setAllBookmarks] = useState({})
   const [bookmarkMeta, setBookmarkMeta] = useState({})
-  // Sticky once first real fetch settles — prevents flips on refetch.
+  // Sticky once first real fetch settles - prevents flips on refetch.
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const mountedRef = useRef(true)
@@ -50,7 +50,7 @@ export default function useBookmarks(sessionId, workspaceId) {
       }
       setError(null)
     } catch (err) {
-      // Best-effort — bookmarks are non-critical; expose error for convention parity
+      // Best-effort - bookmarks are non-critical; expose error for convention parity
       // (useSessionsList / useBoardList both surface error). Panel does not render it.
       if (mountedRef.current) {
         setError(err?.message ?? 'Failed to load bookmarks')
@@ -106,7 +106,7 @@ export default function useBookmarks(sessionId, workspaceId) {
   )
 
   /**
-   * Toggle bookmark on a specific message — add or remove.
+   * Toggle bookmark on a specific message - add or remove.
    * @param {string} turnId - Turn identifier.
    * @param {'user'|'assistant'} messageType - Which message to bookmark.
    * @param {string} [preview=''] - Preview text for the bookmark entry.
@@ -175,7 +175,7 @@ export default function useBookmarks(sessionId, workspaceId) {
   )
 
   /**
-   * Remove a bookmark from any session — used by the "All sessions" tab.
+   * Remove a bookmark from any session - used by the "All sessions" tab.
    * @param {string} targetSessionId - Session to remove the bookmark from.
    * @param {string} turnId - Turn identifier.
    * @param {'user'|'assistant'} messageType - Which message to unbookmark.

@@ -31,6 +31,7 @@ def _make_monitor(
         on_event=cb,
         start_offset=start_offset,
     )
+
     return monitor, output_file, cb
 
 
@@ -85,12 +86,12 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
-# _process_line — JSON parsing and event dispatch
+# _process_line - JSON parsing and event dispatch
 # ---------------------------------------------------------------------------
 
 
 class TestProcessLine:
-    """Unit tests for _process_line — JSON parsing and event emission."""
+    """Unit tests for _process_line - JSON parsing and event emission."""
 
     @pytest.mark.anyio
     async def test_valid_json_emits_events(self, tmp_path):
@@ -125,6 +126,7 @@ class TestProcessLine:
     @pytest.mark.anyio
     async def test_malformed_json_logs_warning(self, tmp_path):
         monitor, _, cb = _make_monitor(tmp_path)
+
         with patch.object(monitor._logger, "warning") as mock_warn:
             await monitor._process_line("{bad json")
             mock_warn.assert_called_once()
@@ -144,7 +146,7 @@ class TestProcessLine:
 
 
 # ---------------------------------------------------------------------------
-# run() — file tailing integration
+# run() - file tailing integration
 # ---------------------------------------------------------------------------
 
 
@@ -174,6 +176,7 @@ class TestRun:
             nonlocal call_count
             call_count += 1
             await original_cb(event, path, offset)
+
             # line2 produces multiple events (text block); stop once we have some
             if call_count >= 2:
                 monitor.stop()
@@ -279,6 +282,7 @@ class TestRun:
 
         async def _tracking_cb(event, path, off):
             offsets_seen.append(off)
+
             if len(offsets_seen) >= 3:
                 monitor.stop()
 

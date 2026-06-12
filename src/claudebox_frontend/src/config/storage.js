@@ -1,4 +1,4 @@
-/** Storage keys — localStorage and API state paths. */
+/** Storage keys - localStorage and API state paths. */
 
 export const PINNED_PATH = 'pinnedSessions'
 export const BOOKMARKED_TURNS_PATH = 'bookmarkedTurns'

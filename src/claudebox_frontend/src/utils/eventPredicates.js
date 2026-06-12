@@ -30,7 +30,7 @@ export function isAsyncTask(toolUseResult) {
 /**
  * Test whether an AskUserQuestion is awaiting user response.
  *
- * Checks for SDK-emitted prompt text in the result content — fragile
+ * Checks for SDK-emitted prompt text in the result content - fragile
  * coupling to SDK output format, centralized here to limit blast radius.
  */
 export function isAwaitingAnswer(resultContent) {

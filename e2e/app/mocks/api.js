@@ -149,6 +149,8 @@ export async function mockAPI(page, options = {}) {
           runtime_name: 'Claude',
           capabilities: mockCapabilities(),
           available_models: [
+            { id: 'claude-fable-5', name: 'Fable 5', context_window: 1000000 },
+            { id: 'claude-mythos-5', name: 'Mythos 5', context_window: 1000000 },
             { id: 'claude-opus-4-8', name: 'Opus 4.8', context_window: 1000000 },
             { id: 'claude-opus-4-7', name: 'Opus 4.7', context_window: 200000 },
             { id: 'claude-opus-4-6', name: 'Opus 4.6', context_window: 200000 },

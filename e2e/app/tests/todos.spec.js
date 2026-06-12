@@ -150,7 +150,7 @@ test.describe('Todos Panel', () => {
       await waitForAppReady(page)
       await openTodosPanel(page)
 
-      // Fixture includes Task tool_result → subagent section already cleaned up
+      // Fixture includes Task tool_result -> subagent section already cleaned up
       // Only main section remains
       await expect(page.getByText('Main task')).toBeVisible()
       await expect(page.getByText('Subagent task')).not.toBeVisible()
@@ -198,7 +198,7 @@ test.describe('Todos Panel', () => {
     })
 
     // SPEC: panel-todo:row-minimal
-    test('row shows state icon + title only — no IDs, no inline subtitle, no badge', async ({
+    test('row shows state icon + title only - no IDs, no inline subtitle, no badge', async ({
       page,
     }) => {
       const row = page.locator('[data-testid="panel-todos"] [data-testid="todo-item"]').first()

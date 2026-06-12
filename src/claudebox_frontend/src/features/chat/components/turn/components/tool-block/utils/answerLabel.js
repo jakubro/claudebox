@@ -1,4 +1,4 @@
-/** Pure parser for ExitPlanMode answer labels — no React APIs. */
+/** Pure parser for ExitPlanMode answer labels - no React APIs. */
 
 /**
  * Map an `<answer>...</answer>`-wrapped XML response to a display label.

@@ -37,7 +37,7 @@ export function applyTabKey(ta, dedent) {
   }
 
   if (start !== end) {
-    // Single-line non-empty selection — replace with 2 spaces.
+    // Single-line non-empty selection - replace with 2 spaces.
     ta.value = `${value.slice(0, start)}  ${value.slice(end)}`
     ta.selectionStart = ta.selectionEnd = start + 2
     return true
@@ -49,7 +49,7 @@ export function applyTabKey(ta, dedent) {
     return true
   }
 
-  // Content-zone caret with no selection — insert 2 spaces at caret.
+  // Content-zone caret with no selection - insert 2 spaces at caret.
   ta.value = `${value.slice(0, start)}  ${value.slice(start)}`
   ta.selectionStart = ta.selectionEnd = start + 2
   return true

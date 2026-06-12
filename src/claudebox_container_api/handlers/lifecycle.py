@@ -18,6 +18,7 @@ async def container_health():
     """Return container health status for daemon polling."""
 
     session_id = None
+
     if session.current and session.current.base_session:
         session_id = session.current.base_session.id
 

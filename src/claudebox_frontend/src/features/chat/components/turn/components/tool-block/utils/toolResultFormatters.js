@@ -8,7 +8,7 @@ import { formatFilePath } from '../../../../../../../utils/formatters'
 import { parsePersistedOutput } from '../../../../../../../utils/parsers'
 
 // ####################################################################################################
-// Public API — consumed by ToolBlock, ToolBlockHeader, useToolResult, index barrel
+// Public API - consumed by ToolBlock, ToolBlockHeader, useToolResult, index barrel
 // ####################################################################################################
 
 /** Get tool status for bullet styling. */
@@ -192,13 +192,13 @@ export function generateJsonSummary(parsed) {
 }
 
 // ####################################################################################################
-// Result formatters — exported for toolRegistry.js
+// Result formatters - exported for toolRegistry.js
 // ####################################################################################################
 
 /** Extract Read tool result summary. */
 export function formatReadResult(input, content) {
-  // Count lines (format: "     1→content")
-  const lines = content.split('\n').filter(l => /^\s*\d+[→│\t]/.test(l))
+  // Count lines (format: "     1->content")
+  const lines = content.split('\n').filter(l => /^\s*\d+[\u2192\u2502\t]/.test(l))
   const lineCount = lines.length
 
   if (lineCount > 0) {
@@ -461,7 +461,7 @@ export function formatTaskOutputResult(_input, content) {
 }
 
 // ####################################################################################################
-// Header formatters — exported for toolRegistry.js (CSS handles overflow ellipsis)
+// Header formatters - exported for toolRegistry.js (CSS handles overflow ellipsis)
 // ####################################################################################################
 
 /** Format Read tool header with file path. */
@@ -549,7 +549,7 @@ export function formatTaskOutputHeader(name, input) {
   return `${name}(${taskId})`
 }
 
-/** Default header formatter — show first string arg. */
+/** Default header formatter - show first string arg. */
 export function defaultHeaderFormatter(name, input) {
   const keys = Object.keys(input || {})
   if (keys.length === 0) {
@@ -562,7 +562,7 @@ export function defaultHeaderFormatter(name, input) {
   return name
 }
 
-/** Default result formatter — parse JSON or show text preview. */
+/** Default result formatter - parse JSON or show text preview. */
 export function defaultFormatter(_input, content) {
   const trimmed = content.trim()
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
@@ -616,7 +616,7 @@ function formatWithLineNumbers(content) {
   return lines
     .map((line, i) => {
       const lineNum = String(i + 1).padStart(width, ' ')
-      return `${lineNum}→${line}`
+      return `${lineNum}\u2192${line}`
     })
     .join('\n')
 }

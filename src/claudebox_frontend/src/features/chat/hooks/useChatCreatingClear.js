@@ -6,7 +6,7 @@ import { CREATING_OVERLAY_TIMEOUT_MS } from '../../../config/timing'
 /**
  * Drive the auto-clear state machine for the creating overlay.
  *
- * Transitions: `idle → waiting-disconnect (if already connected) → waiting-connect → clear`.
+ * Transitions: `idle -> waiting-disconnect (if already connected) -> waiting-connect -> clear`.
  * Skips straight to `waiting-connect` when SSE was already disconnected when
  * creation started. Once `waiting-connect` observes a reconnect, the overlay
  * clears as soon as either (a) no first message is buffered, or

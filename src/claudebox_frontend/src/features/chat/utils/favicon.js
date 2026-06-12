@@ -13,7 +13,7 @@ export const NOTIFICATION_COLORS = ['#fbbf24', '#f97316', '#ea580c']
 // Normal state gradient colors (subtle gray tint at lower-left)
 export const NORMAL_COLORS = ['#ffffff', '#f3f4f6', '#9ca3af']
 
-// Solid white C-arc — used when a workspace color tints the favicon background.
+// Solid white C-arc - used when a workspace color tints the favicon background.
 export const WHITE_GRADIENT = ['#ffffff', '#ffffff', '#ffffff']
 
 const BREATH_MIN_INTENSITY = 0.5 // never fade below this (avoids looking like idle state)
@@ -28,7 +28,7 @@ const GRADIENT_SEGMENTS = 30
 export const NOTIFICATION_OFFSET = 0.25 // Shift notification gradient (reddish at upper-left)
 export const NORMAL_OFFSET = 0.35 // Shift normal gradient (gray at lower-left)
 
-// Workspace badge geometry — centered circle inscribed in the canvas with a
+// Workspace badge geometry - centered circle inscribed in the canvas with a
 // 2 px transparent margin on every side. C-arc renders on top.
 const BADGE_MARGIN = 2
 const BADGE_CENTER = FAVICON_SIZE / 2
@@ -36,7 +36,7 @@ const BADGE_RADIUS = FAVICON_SIZE / 2 - BADGE_MARGIN
 
 /** Workspace bg alpha during notification state (constant dim). */
 export const NOTIFICATION_BG_ALPHA = 0.5
-/** Workspace bg alpha at peak breath during processing — multiplied by the
+/** Workspace bg alpha at peak breath during processing - multiplied by the
  * breath intensity ∈ [0.5, 1.0] so the effective range is [0.25, 0.5]. */
 export const BREATHING_BG_PEAK_ALPHA = 0.5
 
@@ -53,7 +53,7 @@ export function getColorFromPalette(colors, progress) {
 /**
  * Draw C-shaped favicon with static gradient along the arc.
  *
- * Caller is responsible for clearing / preparing the canvas — this function
+ * Caller is responsible for clearing / preparing the canvas - this function
  * composes on top of whatever the canvas currently holds so a workspace-color
  * background can render underneath the arc.
  *

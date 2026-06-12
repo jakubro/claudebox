@@ -461,10 +461,10 @@ test.describe('Chat Flow', () => {
       // event before the programmatic position write.
       await messagesContainer.dispatchEvent('wheel', { deltaY: -100 })
       // Wait for the autoscroll button to flip to "disabled" (title changes
-      // from "Autoscroll enabled" → "Last message (Alt+End)"). Without this
+      // from "Autoscroll enabled" -> "Last message (Alt+End)"). Without this
       // explicit barrier, the test races the wheel listener: when autoscroll
       // is still ON, the next render snaps `scrollTop` back to the bottom
-      // and `beforeScroll` ≠ scrollHeight/2 — the textarea-shrink delta then
+      // and `beforeScroll` != scrollHeight/2 - the textarea-shrink delta then
       // dwarfs the 75px tolerance.
       await expect(page.locator('button[title="Last message (Alt+End)"]')).toBeVisible({
         timeout: 5000,
@@ -481,7 +481,7 @@ test.describe('Chat Flow', () => {
       await input.fill('')
 
       // Poll until scroll position is approximately preserved (allow up to 75px drift
-      // from textarea resize triggering layout reflow). 10 s budget — the
+      // from textarea resize triggering layout reflow). 10 s budget - the
       // ResizeObserver reflow can take ~2 s alone, and under full-suite
       // concurrency the polling round-trip stretches further.
       await expect
@@ -742,7 +742,7 @@ test.describe('Chat Flow', () => {
       // Track SSE connection count before click
       const connectionsBefore = await page.evaluate(() => window.__sseConnectionCount || 0)
 
-      // Click reload — should trigger page reload or SSE reconnect
+      // Click reload - should trigger page reload or SSE reconnect
       await reloadBtn.click()
       await waitForAppReady(page)
 
@@ -794,7 +794,7 @@ test.describe('Chat Flow', () => {
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
 
       // Scroll up via wheel events to reliably disable autoscroll
-      // (programmatic scrollTop doesn't always disable — scrollHeight guard race)
+      // (programmatic scrollTop doesn't always disable - scrollHeight guard race)
       const box = await messagesContainer.boundingBox()
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
       await page.mouse.wheel(0, -500)

@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.health — container health monitoring."""
+"""Tests for claudebox_daemon.domain.health - container health monitoring."""
 
 import asyncio
 from pathlib import Path
@@ -39,6 +39,7 @@ def _make_workspace_service(containers=None, path=None):
     svc.container_service = MagicMock()
     svc.container_service.list_all.return_value = containers or []
     svc.container_service.update = AsyncMock()
+
     return svc
 
 
@@ -49,6 +50,7 @@ def _make_monitor(workspace_services=None):
     daemon.list_workspaces = AsyncMock(return_value=workspace_services or [])
     daemon.proxy = MagicMock()
     daemon.proxy.send = AsyncMock()
+
     return HealthMonitor(daemon)
 
 
@@ -91,7 +93,7 @@ class TestProbeContainer:
 
     @pytest.mark.anyio
     async def test_max_failures_triggers_crashed(self, tmp_path):
-        container = _make_container(failure_count=2)  # One more → 3 = MAX_FAILURES
+        container = _make_container(failure_count=2)  # One more -> 3 = MAX_FAILURES
         ws_svc = _make_workspace_service([container], path=tmp_path)
         monitor = _make_monitor([ws_svc])
 
@@ -187,6 +189,7 @@ class TestHealthMonitorLifecycle:
 
         # Clean up the real task to prevent "task was destroyed" warning
         monitor._task.cancel()
+
         try:
             await monitor._task
         except asyncio.CancelledError:

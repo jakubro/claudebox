@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.session — content block building and internal commands."""
+"""Tests for claudebox.agent_session.orchestration.session - content block building and internal commands."""
 
 import base64
 

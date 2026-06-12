@@ -49,7 +49,7 @@ describe('PermissionModePicker', () => {
 
   it('shows dash when no currentPermissionMode prop', () => {
     render(<PermissionModePicker currentPermissionMode={null} disabled={false} />)
-    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('-')).toBeInTheDocument()
   })
 
   it('opens dropdown on click', async () => {

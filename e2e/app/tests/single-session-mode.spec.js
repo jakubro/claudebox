@@ -80,15 +80,15 @@ test.describe('Single-Session Mode', () => {
 
     const name = page.locator('[data-testid="session-header-session-name"]')
     if (await name.count()) {
-      // Tooltip is the unified "Session directory — ..." string
+      // Tooltip is the unified "Session directory - ..." string
       const tooltip = await name.getAttribute('title')
-      expect(tooltip).toMatch(/^Session directory — /)
+      expect(tooltip).toMatch(/^Session directory - /)
 
       await name.click()
       // Clipboard contains a non-empty session directory path
       const clip = await page.evaluate(() => navigator.clipboard.readText())
       expect(clip.length).toBeGreaterThan(0)
-      expect(clip).not.toBe('—')
+      expect(clip).not.toBe('-')
     }
   })
 
@@ -109,7 +109,7 @@ test.describe('Single-Session Mode', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Double-click a side-panel tab (Stash) to maximize — the main panel
+    // Double-click a side-panel tab (Stash) to maximize - the main panel
     // itself has no tab bar to double-click.
     const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' }).first()
     if (await stashTab.count()) {
@@ -197,7 +197,7 @@ test.describe('Single-Session Mode', () => {
   // SPEC: url:reload-restore
   // SPEC: url:cross-session-deep-link
   test('session URL accepts /turns/<role>-<turnId> deep links', async ({ page }) => {
-    // The route shape is verifiable without running scroll sync — the parser
+    // The route shape is verifiable without running scroll sync - the parser
     // accepts the segment and the routing context surfaces activeTurnId.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/test-session/turns/u-tid-1`)
     await waitForAppReady(page)

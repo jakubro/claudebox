@@ -1,4 +1,4 @@
-"""File service — path resolution."""
+"""File service - path resolution."""
 
 import contextlib
 from collections.abc import Callable

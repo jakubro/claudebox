@@ -37,7 +37,7 @@ test.describe('Capability-Aware Frontend', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Identity pill still renders — it does not depend on the flag.
+      // Identity pill still renders - it does not depend on the flag.
       await expect(page.locator('[data-testid="footer-runtime"]')).toBeVisible()
     })
   })

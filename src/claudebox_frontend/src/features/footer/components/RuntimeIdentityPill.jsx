@@ -19,7 +19,7 @@ export default function RuntimeIdentityPill() {
       <span className="footer-sep">|</span>
       <span
         className="footer-item footer-runtime-pill"
-        title={`Runtime — ${runtimeName}`}
+        title={`Runtime - ${runtimeName}`}
         data-testid="footer-runtime">
         {runtimeName}
       </span>

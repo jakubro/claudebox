@@ -27,7 +27,7 @@ export default function useChatController({ events, contextRefs }) {
     errorMessage,
   } = useInteraction()
 
-  // Reactive autoscroll-enabled state — drives aria-pressed bindings in
+  // Reactive autoscroll-enabled state - drives aria-pressed bindings in
   // ChatControlBar. Synced from controller via onAutoScrollChange callback.
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true)
 
@@ -53,7 +53,7 @@ export default function useChatController({ events, contextRefs }) {
         }
       },
     })
-    // Dev-only test hook — exposes the controller to repro/verify scripts that
+    // Dev-only test hook - exposes the controller to repro/verify scripts that
     // need to read isAutoScrollEnabled directly. Intentionally guarded by
     // import.meta.env.DEV so production bundles never expose it.
     if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -63,7 +63,7 @@ export default function useChatController({ events, contextRefs }) {
   const controller = controllerRef.current
 
   // Initialize controller with DOM elements and ResizeObserver. Re-runs when
-  // sessionId or isCreating changes — covers the welcome→chat transition where
+  // sessionId or isCreating changes - covers the welcome->chat transition where
   // .chat-messages mounts only after isWelcome flips to false (so messagesRef
   // is null on first effect run during welcome state).
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId/isCreating proxy the chat-messages mount transition
@@ -120,7 +120,7 @@ export default function useChatController({ events, contextRefs }) {
       sendFn: send,
     })
 
-  // Deferred send — holds the first message submitted during session creation.
+  // Deferred send - holds the first message submitted during session creation.
   // Auto-fires send() when isCreating clears (session ready).
   const [deferredSend, setDeferredSend] = useState(null)
 
@@ -130,7 +130,7 @@ export default function useChatController({ events, contextRefs }) {
   const deferSend = useCallback(
     (content, attachments) => {
       if (deferredSendRef.current) {
-        // Already have a deferred message — route subsequent to queue
+        // Already have a deferred message - route subsequent to queue
         enqueueMessage(content, attachments)
       } else {
         const msg = { content, attachments }
@@ -144,7 +144,7 @@ export default function useChatController({ events, contextRefs }) {
   // Auto-send deferred message when BOTH conditions are met:
   // 1. isCreating has cleared (session init complete)
   // 2. sessionId is available (can send)
-  // Preserves deferredSend through the null→realId sessionId transition.
+  // Preserves deferredSend through the null->realId sessionId transition.
   const prevIsCreatingRef = useRef(isCreating)
   useEffect(() => {
     prevIsCreatingRef.current = isCreating
@@ -159,7 +159,7 @@ export default function useChatController({ events, contextRefs }) {
   }, [isCreating, deferredSend, sessionId, send])
 
   // Clear deferred send on actual session switch (both old and new non-null),
-  // but not during creation — the provisional→real ID transition must preserve
+  // but not during creation - the provisional->real ID transition must preserve
   // the deferred message for auto-fire.
   const prevSessionIdForClearRef = useRef(sessionId)
   useEffect(() => {
@@ -171,7 +171,7 @@ export default function useChatController({ events, contextRefs }) {
     }
   }, [sessionId])
 
-  // Reset autoscroll on session change — new session always starts at bottom
+  // Reset autoscroll on session change - new session always starts at bottom
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is needed
   useEffect(() => {
     controller.isAutoScrollEnabled = true
@@ -182,7 +182,7 @@ export default function useChatController({ events, contextRefs }) {
     controller.scrollToBottom()
   }, [sessionId, contextRefs.chatAutoScrollEnabledRef, controller])
 
-  // Scroll handling — single authority via controller
+  // Scroll handling - single authority via controller
   const handleScroll = useCallback(() => {
     controller.handleUserScroll()
   }, [controller])
@@ -202,6 +202,13 @@ export default function useChatController({ events, contextRefs }) {
   // gate that input listeners apply before reaching the controller.
   const markUserIntent = useCallback(() => {
     controller.markUserIntent()
+  }, [controller])
+
+  // Symmetric helper for callers that land the viewport at the bottom
+  // (jumpBottom, jumpNext fall-through, future bookmark click that resolves
+  // at-bottom). Clears latched intent and re-engages autoscroll.
+  const markReturnedToBottom = useCallback(() => {
+    controller.markReturnedToBottom()
   }, [controller])
 
   // Coordinated event/pending/queue change handling
@@ -232,6 +239,7 @@ export default function useChatController({ events, contextRefs }) {
       scrollToBottom,
       markProgrammaticScroll,
       markUserIntent,
+      markReturnedToBottom,
     },
 
     // Pending messages

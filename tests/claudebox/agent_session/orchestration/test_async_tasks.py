@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.async_tasks — background task lifecycle."""
+"""Tests for claudebox.agent_session.orchestration.async_tasks - background task lifecycle."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -233,7 +233,7 @@ class TestEnrichNotification:
         )
         mgr.enrich_notification(event)
 
-        # No text extracted — summary unchanged
+        # No text extracted - summary unchanged
         assert event.message_data["summary"] == "Original"  # ty: ignore[not-subscriptable]
 
     def test_enrichment_handles_malformed_json(self, tmp_path):
@@ -297,29 +297,6 @@ class TestDetectInProgress:
                 type="system",
                 subtype="task_notification",
                 message_data={"task_id": "agent-1"},
-            ),
-        ]
-
-        result = mgr._detect_in_progress(events)
-        assert "agent-1" not in result
-
-    def test_excludes_legacy_xml_completion(self):
-        on_event = AsyncMock()
-        mgr = AsyncTaskManager(on_event=on_event)
-
-        events = [
-            _make_event(
-                subtype="tool_result",
-                tool_use_id="tu-1",
-                tool_use_result={
-                    "isAsync": True,
-                    "agentId": "agent-1",
-                    "outputFile": "/fake/out.jsonl",
-                },
-            ),
-            _make_event(
-                subtype="message",
-                content="<agent-notification><agent-id>agent-1</agent-id></agent-notification>",
             ),
         ]
 
@@ -392,51 +369,6 @@ class TestGetResumeOffset:
         ]
 
         assert mgr._get_resume_offset(events, "agent-1") == 0
-
-
-# --- _check_completion ---
-
-
-class TestCheckCompletion:
-    """Test legacy XML agent-notification completion detection."""
-
-    def test_stops_monitor_on_agent_notification(self):
-        on_event = AsyncMock()
-        mgr = AsyncTaskManager(on_event=on_event)
-
-        mock_monitor = MagicMock()
-        mock_task = MagicMock()
-        mgr._monitors["agent-1"] = (mock_monitor, mock_task)
-
-        event = _make_event(
-            subtype="message",
-            content="<agent-notification><agent-id>agent-1</agent-id><summary>Done</summary></agent-notification>",
-        )
-        mgr.check_event(event)
-
-        assert "agent-1" not in mgr._monitors
-        mock_monitor.stop.assert_called_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-
-    def test_ignores_non_notification_content(self):
-        on_event = AsyncMock()
-        mgr = AsyncTaskManager(on_event=on_event)
-
-        mock_monitor = MagicMock()
-        mock_task = MagicMock()
-        mgr._monitors["agent-1"] = (mock_monitor, mock_task)
-
-        event = _make_event(subtype="message", content="Hello world")
-        mgr.check_event(event)
-
-        assert "agent-1" in mgr._monitors
-
-    def test_ignores_none_content(self):
-        on_event = AsyncMock()
-        mgr = AsyncTaskManager(on_event=on_event)
-
-        event = _make_event(subtype="message", content=None)
-        # Should not raise
-        mgr.check_event(event)
 
 
 # --- reattach ---

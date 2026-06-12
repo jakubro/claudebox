@@ -1,6 +1,6 @@
 /** Tests for eventProcessing helper functions. */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   appendSubagentLabels,
   appendTaskNotifications,
@@ -30,11 +30,11 @@ describe('computeTimingOffsets', () => {
 
   it('shows offset only when delta >= 30s from last shown', () => {
     const timestamps = [
-      '2026-01-01T00:00:05Z', // +5s → skip (5 < 30)
-      '2026-01-01T00:00:20Z', // +20s → skip (20 < 30)
-      '2026-01-01T00:00:35Z', // +35s → show (35 >= 30)
-      '2026-01-01T00:00:40Z', // +40s → skip (40-35=5 < 30)
-      '2026-01-01T00:01:10Z', // +70s → show (70-35=35 >= 30)
+      '2026-01-01T00:00:05Z', // +5s -> skip (5 < 30)
+      '2026-01-01T00:00:20Z', // +20s -> skip (20 < 30)
+      '2026-01-01T00:00:35Z', // +35s -> show (35 >= 30)
+      '2026-01-01T00:00:40Z', // +40s -> skip (40-35=5 < 30)
+      '2026-01-01T00:01:10Z', // +70s -> show (70-35=35 >= 30)
     ]
     const result = computeTimingOffsets(timestamps, base)
     expect(result).toEqual([null, null, 35, null, 70])
@@ -363,7 +363,7 @@ describe('processEvents', () => {
   })
 
   it('attaches skill markdown when a tool_result intervenes between Skill tool_use and skill content', () => {
-    // Live SDK sequence: Skill tool_use → user/tool_result echo → user/text body
+    // Live SDK sequence: Skill tool_use -> user/tool_result echo -> user/text body
     // (the actual markdown). The intervening tool_result must NOT clear the
     // skill-tracking state, otherwise the markdown leaks as a standalone bubble
     // inside the assistant turn.
@@ -381,7 +381,7 @@ describe('processEvents', () => {
 
     const blocks = processEvents(events)
 
-    // Only the Skill tool block — the user/text body must be folded inside
+    // Only the Skill tool block - the user/text body must be folded inside
     // its skillContent, not produce a separate text block.
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('tool')
@@ -389,11 +389,11 @@ describe('processEvents', () => {
     expect(blocks[0].skillContent).toBe('# Skill markdown body')
   })
 
-  it('folds skill markdown across the full live turn slice (assistant text → tool_use → tool_result → user/text body → assistant text)', () => {
+  it('folds skill markdown across the full live turn slice (assistant text -> tool_use -> tool_result -> user/text body -> assistant text)', () => {
     // Mirrors the exact event ordering observed in the leak repro session:
     // ~/.claudebox/sessions/20260506-140144--de83121b/events.jsonl L636-L640.
     // The key invariants:
-    //   1. The leading assistant/text resets the skill tracker — but L637's
+    //   1. The leading assistant/text resets the skill tracker - but L637's
     //      tool_use sets it again immediately.
     //   2. The intervening user/tool_result must NOT reset the tracker.
     //   3. The trailing assistant/text after the user/text body is unaffected
@@ -621,7 +621,7 @@ describe('extractThinkingFromText', () => {
   })
 })
 
-describe('processEvents — embedded thinking extraction', () => {
+describe('processEvents - embedded thinking extraction', () => {
   it('extracts <thinking> from assistant text into thinking block + text block', () => {
     const events = [
       {
@@ -1119,7 +1119,7 @@ describe('isInterruptAck', () => {
   })
 })
 
-describe('processEvents — interrupt blocks', () => {
+describe('processEvents - interrupt blocks', () => {
   it('suppresses interrupt acknowledgment event entirely', () => {
     const events = [
       {
@@ -1152,7 +1152,7 @@ describe('processEvents — interrupt blocks', () => {
   })
 })
 
-describe('processEvents — model-set echo filtering', () => {
+describe('processEvents - model-set echo filtering', () => {
   it('filters model-set stdout echo from non-human user text', () => {
     const events = [
       {
@@ -1713,28 +1713,6 @@ describe('appendTaskNotifications', () => {
     })
   })
 
-  it('processes agent-notification XML tags', () => {
-    const existing = new Map()
-    const events = [
-      {
-        type: 'user',
-        subtype: 'text',
-        is_human: false,
-        content:
-          '<agent-notification task_id="xyz789" status="failed">Agent crashed</agent-notification>',
-      },
-    ]
-
-    const result = appendTaskNotifications(existing, events)
-
-    expect(result.size).toBe(1)
-    expect(result.get('xyz789')).toEqual({
-      status: 'failed',
-      summary: 'Agent crashed',
-      content: 'Agent crashed',
-    })
-  })
-
   it('preserves existing notifications when adding new ones', () => {
     const existing = new Map([
       ['task-old', { status: 'completed', summary: 'Old task', content: 'Old task' }],
@@ -1908,7 +1886,7 @@ describe('appendTodoDiffs', () => {
     expect(d1.get('tu_a1').added).toHaveLength(2)
     expect(p1.get('task_a')).toHaveLength(2)
 
-    // Subagent B writes different todos — should NOT diff against A's list
+    // Subagent B writes different todos - should NOT diff against A's list
     const batch2 = [
       {
         subtype: 'tool_use',
@@ -2012,7 +1990,7 @@ describe('appendTodoDiffs', () => {
 
     expect(p1.has('task_a')).toBe(true)
 
-    // Task completes — tool_result for task_a
+    // Task completes - tool_result for task_a
     const { previousTodosBySubagent: p2 } = appendTodoDiffs(new Map(), p1, new Map(), [
       { subtype: 'tool_result', tool_use_id: 'task_a', content: 'Done' },
     ])
@@ -2038,7 +2016,7 @@ describe('appendTodoDiffs', () => {
     ])
 
     expect(p2.has('main')).toBe(true)
-    expect(p2).toBe(p1) // same reference — no mutation
+    expect(p2).toBe(p1) // same reference - no mutation
   })
 
   it('preserves other subagent todos when one completes', () => {
@@ -2074,7 +2052,7 @@ describe('appendTodoDiffs', () => {
   })
 
   it('removes async subagent todos on system task_notification', () => {
-    // Batch 1: async launch — tool_result with isAsync before any TodoWrite
+    // Batch 1: async launch - tool_result with isAsync before any TodoWrite
     const { previousTodosBySubagent: p1, asyncTaskIdMap: a1 } = appendTodoDiffs(
       new Map(),
       new Map(),
@@ -2344,6 +2322,51 @@ describe('getAskUserFingerprint', () => {
 
     expect(getAskUserFingerprint(questions)).toBe('auth method')
   })
+
+  describe('malformed payloads', () => {
+    let warnSpy
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+    afterEach(() => {
+      warnSpy.mockRestore()
+    })
+
+    it('returns empty string for a JSON-encoded string (no crash)', () => {
+      // Canonical malformed shape: persisted as a string instead of an array.
+      const stringified = '[{"header":"Approach","question":"Which?"}]'
+
+      expect(getAskUserFingerprint(stringified)).toBe('')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns empty string for an empty stringified array', () => {
+      expect(getAskUserFingerprint('[]')).toBe('')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns empty string for a plain object', () => {
+      expect(getAskUserFingerprint({ header: 'x' })).toBe('')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns empty string for a number', () => {
+      expect(getAskUserFingerprint(42)).toBe('')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns empty string for true (boolean)', () => {
+      expect(getAskUserFingerprint(true)).toBe('')
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not warn on null/undefined/empty array', () => {
+      expect(getAskUserFingerprint(null)).toBe('')
+      expect(getAskUserFingerprint(undefined)).toBe('')
+      expect(getAskUserFingerprint([])).toBe('')
+      expect(warnSpy).not.toHaveBeenCalled()
+    })
+  })
 })
 
 describe('computeDuplicateAskUserIds', () => {
@@ -2443,5 +2466,46 @@ describe('computeDuplicateAskUserIds', () => {
 
   it('handles empty turns array', () => {
     expect(computeDuplicateAskUserIds([]).size).toBe(0)
+  })
+
+  describe('with malformed payloads', () => {
+    let warnSpy
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+    afterEach(() => {
+      warnSpy.mockRestore()
+    })
+
+    it('does not throw on a stringified questions payload', () => {
+      const stringified = '[{"header":"Approach","question":"Which?"}]'
+      const turns = [makeTurn([askEvent('tu-1', stringified)])]
+
+      expect(() => computeDuplicateAskUserIds(turns)).not.toThrow()
+    })
+
+    it('treats stringified questions like an empty fingerprint (groups with other empties)', () => {
+      const stringified = '[{"header":"Approach"}]'
+      // Two malformed events both fingerprint to '' and both errored - the
+      // first becomes a duplicate of the second.
+      const turns = [
+        makeTurn([askEvent('tu-1', stringified), errorResult('tu-1')]),
+        makeTurn([askEvent('tu-2', stringified)]),
+      ]
+
+      const ids = computeDuplicateAskUserIds(turns)
+
+      // Both share the empty fingerprint; tu-1 errored, tu-2 follows -> tu-1
+      // gets hidden as a duplicate (same as the well-formed case).
+      expect(ids.has('tu-1')).toBe(true)
+      expect(ids.has('tu-2')).toBe(false)
+    })
+
+    it('does not throw when the malformed event has no later sibling', () => {
+      const turns = [makeTurn([askEvent('tu-1', { not: 'array' }), errorResult('tu-1')])]
+
+      expect(() => computeDuplicateAskUserIds(turns)).not.toThrow()
+      expect(computeDuplicateAskUserIds(turns).size).toBe(0)
+    })
   })
 })

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MobileDrawer from './MobileDrawer'
 
-// Mock lucide-react — covers MobileDrawer's own icons and SessionItem's icons
+// Mock lucide-react - covers MobileDrawer's own icons and SessionItem's icons
 // (SessionItem renders as a child on mobile).
 vi.mock('lucide-react', () => ({
   Check: () => <span data-testid="icon-check">✓</span>,

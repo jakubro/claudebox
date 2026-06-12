@@ -142,6 +142,47 @@ describe('ChatController', () => {
       expect(controller.userIntentActive).toBe(true)
     })
 
+    it('markReturnedToBottom flips state and fires callback', () => {
+      const onChange = vi.fn()
+      const c2 = new ChatController({ onAutoScrollChange: onChange })
+      c2.initialize({ messagesEl: mockMessagesEl, panelEl: mockPanelEl })
+      c2.isAutoScrollEnabled = false
+      c2.userIntentActive = true
+
+      c2.markReturnedToBottom()
+
+      expect(c2.isAutoScrollEnabled).toBe(true)
+      expect(c2.userIntentActive).toBe(false)
+      expect(onChange).toHaveBeenCalledWith(true)
+    })
+
+    it('markReturnedToBottom is idempotent when already engaged (callback still fires)', () => {
+      const onChange = vi.fn()
+      const c2 = new ChatController({ onAutoScrollChange: onChange })
+      c2.initialize({ messagesEl: mockMessagesEl, panelEl: mockPanelEl })
+      c2.isAutoScrollEnabled = true
+      c2.userIntentActive = false
+
+      c2.markReturnedToBottom()
+
+      expect(c2.isAutoScrollEnabled).toBe(true)
+      expect(c2.userIntentActive).toBe(false)
+      expect(onChange).toHaveBeenCalledWith(true)
+    })
+
+    it('handleUserScroll re-engage path delegates to markReturnedToBottom', () => {
+      controller.isAutoScrollEnabled = false
+      controller.userIntentActive = true
+      mockMessagesEl.scrollTop = 500 // At bottom
+
+      const spy = vi.spyOn(controller, 'markReturnedToBottom')
+      controller.handleUserScroll()
+
+      expect(spy).toHaveBeenCalledOnce()
+      expect(controller.isAutoScrollEnabled).toBe(true)
+      expect(controller.userIntentActive).toBe(false)
+    })
+
     it('wheel listener: downward wheel at bottom does not latch intent', () => {
       // Within AUTOSCROLL_THRESHOLD (50px) of bottom + deltaY > 0: the view
       // cannot move; this is a no-op gesture, not intent. The listener must
@@ -170,8 +211,8 @@ describe('ChatController', () => {
     })
 
     it('wheel listener: upward wheel at bottom latches intent', () => {
-      // Upward wheel (deltaY < 0) at-bottom is genuine intent — view will
-      // move away from bottom — so the listener must NOT gate.
+      // Upward wheel (deltaY < 0) at-bottom is genuine intent - view will
+      // move away from bottom - so the listener must NOT gate.
       const listeners = {}
       const realEl = {
         scrollTop: 460, // at-bottom
@@ -223,7 +264,7 @@ describe('ChatController', () => {
 
     it('keydown listener: scroll-down keys at bottom do not latch intent', () => {
       // PageDown / End / ArrowDown / unshifted Space at-bottom: view cannot
-      // move — no intent. The listener must filter these.
+      // move - no intent. The listener must filter these.
       const listeners = {}
       const realEl = {
         scrollTop: 460, // at-bottom
@@ -250,7 +291,7 @@ describe('ChatController', () => {
     })
 
     it('keydown listener: scroll-up keys at bottom latch intent', () => {
-      // PageUp / Home / ArrowUp / Shift+Space at-bottom: view will move up —
+      // PageUp / Home / ArrowUp / Shift+Space at-bottom: view will move up -
       // genuine intent. The listener must pass these through.
       const listeners = {}
       const realEl = {
@@ -572,7 +613,7 @@ describe('ChatController', () => {
       controller.isAutoScrollEnabled = false
       controller.attachResizeObserver(mockContainerEl, contextRefs)
 
-      // Simulate content change — contentRect height grows alongside scrollHeight.
+      // Simulate content change - contentRect height grows alongside scrollHeight.
       mockContainerEl.scrollHeight = 1500
 
       resizeCallback([{ contentRect: { height: 600 } }])
@@ -586,7 +627,7 @@ describe('ChatController', () => {
       controller.isAutoScrollEnabled = true
       controller.attachResizeObserver(mockContainerEl, contextRefs)
 
-      // Simulate content change — contentRect height grows alongside scrollHeight.
+      // Simulate content change - contentRect height grows alongside scrollHeight.
       mockContainerEl.scrollHeight = 1500
 
       resizeCallback([{ contentRect: { height: 600 } }])
@@ -611,7 +652,7 @@ describe('ChatController', () => {
       controller.isAutoScrollEnabled = false
       controller.attachResizeObserver(mockContainerEl, contextRefs)
 
-      // First firing — height differs from sentinel; observer must restore.
+      // First firing - height differs from sentinel; observer must restore.
       mockContainerEl.scrollTop = 0
       resizeCallback([{ contentRect: { height: 500 } }])
       flushRAF()

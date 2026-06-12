@@ -1,4 +1,4 @@
-/** Shared daemon SSE stream — single connection for all consumers. */
+/** Shared daemon SSE stream - single connection for all consumers. */
 
 import { createContext, useContext, useMemo } from 'react'
 import useDaemonStream from '../hooks/useDaemonStream'

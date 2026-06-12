@@ -29,7 +29,7 @@ import useTextareaResize from './hooks/useTextareaResize'
  * @param {Object} props.refs.autoScrollEnabled - Ref tracking auto-scroll state.
  * @param {Object} props.refs.events - Ref to events array.
  * @param {boolean} props.hasEvents - Stable boolean signaling that the events
- *   array has at least one element; flips false→true on the first SSE event
+ *   array has at least one element; flips false->true on the first SSE event
  *   per session and stays stable thereafter (does not churn per token).
  * @param {Function} props.send - Shared send callback (from useSendMessage)
  * @param {Function} props.enqueueMessage - Queue a message for later sending
@@ -60,7 +60,7 @@ function ChatInput({
   const { item: editingQueueItem, clear: clearEditingQueueItem } = queueEdit || {}
 
   // Overlay-derived state. The textarea itself is never disabled (always-
-  // enabled invariant) — these flags gate the submit path only.
+  // enabled invariant) - these flags gate the submit path only.
   const isSendBlocked = overlayMode === 'resuming'
   const isCreating = overlayMode === 'creating'
 
@@ -127,10 +127,10 @@ function ChatInput({
 
   const { drafts, saveDrafts, userHasTypedRef } = useDrafts(sessionId, textareaRef, resizeTextarea)
 
-  // Live drafts ref — single source of truth for InputHistoryManager. The React
+  // Live drafts ref - single source of truth for InputHistoryManager. The React
   // `drafts` state lags behind keystrokes because persistDraftDirect bypasses
   // setValue (per-keystroke render budget). Sync the ref from React state ONLY
-  // when React-state identity changes (session load, explicit saveDrafts) —
+  // when React-state identity changes (session load, explicit saveDrafts) -
   // never blindly per render, which would clobber a fresher direct-write before
   // React has caught up. saveDraftsAndRef updates both in lockstep so
   // navigate-down push / submit / in-place edit stay coherent.
@@ -186,7 +186,7 @@ function ChatInput({
     handleDrop,
   } = useAttachments({ setError, textareaRef })
 
-  // Read and validate textarea content without clearing — used by handleSubmit for safe send
+  // Read and validate textarea content without clearing - used by handleSubmit for safe send
   const peekInput = useCallback(() => {
     if (isSendBlocked) {
       return null
@@ -205,7 +205,7 @@ function ChatInput({
     return { rawPrompt: rawPrompt || '', currentAttachments: [...attachments] }
   }, [isSendBlocked, sending, attachments, expandBeforeSubmit])
 
-  // Clear textarea and reset input state — called after successful send
+  // Clear textarea and reset input state - called after successful send
   const commitInput = useCallback(
     rawPrompt => {
       if (rawPrompt?.trim()) {
@@ -270,7 +270,7 @@ function ChatInput({
   // to avoid an unsolicited OS keyboard popup. Subsequent state transitions
   // are handled by the sessionId/overlayMode effect below and the dockview-
   // reparent safety net (MutationObserver). The disabled gate on the textarea
-  // is removed (always enabled) — submit-time guards live in `peekInput`.
+  // is removed (always enabled) - submit-time guards live in `peekInput`.
   useEffect(() => {
     if (!isMobile && textareaRef.current) {
       textareaRef.current.focus()
@@ -282,7 +282,7 @@ function ChatInput({
   // navigateToSession), which removes and re-adds the same textarea element,
   // destroying focus without triggering React unmount. With the always-focused
   // composer invariant and ChatInput hoisted out of the dockview subtree, this
-  // observer should not fire under normal operation — it remains as a last
+  // observer should not fire under normal operation - it remains as a last
   // line of defence for residual dockview reparent races. Keystrokes typed
   // during the debounce gap are buffered and replayed into the textarea.
   useEffect(() => {
@@ -361,7 +361,7 @@ function ChatInput({
     }
   }, [isConnected])
 
-  // Restore focus after session change or when the create overlay clears —
+  // Restore focus after session change or when the create overlay clears -
   // defer to second rAF so dockview's internal post-layout focus management
   // settles. Mobile skips refocus to avoid keyboard-popup hostility. The deps
   // are reactive triggers (the body itself does not read sessionId/overlayMode).
@@ -392,7 +392,7 @@ function ChatInput({
     }
   }, [pendingInsert, clearPendingInsert, addToHistory, saveDrafts, resetIndex, resizeTextarea])
 
-  // Handle editing a queued message — load content into textarea
+  // Handle editing a queued message - load content into textarea
   useEffect(() => {
     if (editingQueueItem && textareaRef.current) {
       textareaRef.current.value = editingQueueItem.content
@@ -410,7 +410,7 @@ function ChatInput({
   // directly to localStorage without re-rendering ChatInput.
   const persistDraftDirect = useCallback(
     value => {
-      // Sync ref first — useInputHistory's manager reads via draftsRef on each
+      // Sync ref first - useInputHistory's manager reads via draftsRef on each
       // navigation, so this must reflect the typed value before any Up/Down.
       draftsRef.current = value
       if (!sessionId) {

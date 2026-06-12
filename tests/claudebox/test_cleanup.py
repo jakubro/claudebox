@@ -1,4 +1,4 @@
-"""Tests for claudebox.cleanup — stale directory removal."""
+"""Tests for claudebox.cleanup - stale directory removal."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -19,6 +19,7 @@ def _make_session_dir(root: Path, timestamp: datetime) -> Path:
     name = timestamp.strftime(TIMESTAMP_FORMAT) + "--session-id"
     path = root / name
     path.mkdir(parents=True)
+
     return path
 
 

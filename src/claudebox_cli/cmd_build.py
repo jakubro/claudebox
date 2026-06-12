@@ -1,4 +1,4 @@
-"""Handler for the ``build`` verb — build the container image."""
+"""Handler for the ``build`` verb - build the container image."""
 
 import argparse
 
@@ -16,7 +16,7 @@ examples:
 """
 
 
-# argparse `--layer` value → existing ImageBuildMode mapping.
+# argparse `--layer` value -> existing ImageBuildMode mapping.
 _LAYER_MODES: dict[str | None, ImageBuildMode] = {
     None: ImageBuildMode.BUILD,
     "all": ImageBuildMode.REBUILD,

@@ -14,7 +14,7 @@ import { openWorkspaceInNewTab } from '../../../utils/navigation'
 import ConfirmDeregisterModal from './ConfirmDeregisterModal'
 import RegisterWorkspaceModal from './RegisterWorkspaceModal'
 
-/** Muted dark preset colors for the picker swatch + tab-bar gradient end-stop —
+/** Muted dark preset colors for the picker swatch + tab-bar gradient end-stop -
  * the favicon caller brightens them for visibility at favicon scale. */
 const ACCENT_PALETTE = [
   '#1e3a5f',
@@ -111,7 +111,7 @@ export default function WorkspaceSwitcher() {
   }, [refreshWorkspaces])
 
   const currentWs = workspaces.find(w => w.id === workspaceId)
-  const currentName = currentWs?.id || workspaceId || '—'
+  const currentName = currentWs?.id || workspaceId || '-'
   const currentPath = currentWs?.path || currentName
 
   return (
@@ -120,7 +120,7 @@ export default function WorkspaceSwitcher() {
         type="button"
         className="workspace-switcher-btn"
         onClick={handleToggle}
-        title={`Workspace — ${currentPath}`}
+        title={`Workspace - ${currentPath}`}
         data-testid="workspace-switcher">
         {workspaceColor && (
           <span className="workspace-switcher-dot" style={{ background: workspaceColor }} />

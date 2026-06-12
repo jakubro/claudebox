@@ -54,7 +54,7 @@ describe('TodosGroup', () => {
     expect(summary).not.toMatch(/✕/)
   })
 
-  it('opens expanded by default — row body visible without clicking', () => {
+  it('opens expanded by default - row body visible without clicking', () => {
     const diffs = new Map([
       [
         't1',
@@ -114,7 +114,7 @@ describe('TodosGroup', () => {
       expect(row.querySelectorAll(':scope > .todo-icon').length).toBe(1)
       expect(row.querySelectorAll(':scope > .todo-content').length).toBe(1)
       expect(row.querySelectorAll(':scope > .todo-description').length).toBe(1)
-      // Exactly 3 immediate children — no .todo-row flex wrapper, no .todo-subtitle div.
+      // Exactly 3 immediate children - no .todo-row flex wrapper, no .todo-subtitle div.
       expect(row.children.length).toBe(3)
     }
   })
@@ -141,7 +141,7 @@ describe('TodosGroup', () => {
     expect(cells[1].hasAttribute('title')).toBe(false)
   })
 
-  it('dedups across the run — latest item per _taskId wins', () => {
+  it('dedups across the run - latest item per _taskId wins', () => {
     const diffs = new Map([
       [
         'create',
@@ -172,7 +172,7 @@ describe('TodosGroup', () => {
     expect(rows[0].textContent).toContain('Task one')
   })
 
-  it('renders rows in bucket order: completed → in_progress → pending → removed', () => {
+  it('renders rows in bucket order: completed -> in_progress -> pending -> removed', () => {
     const diffs = new Map([
       [
         't1',
@@ -227,14 +227,33 @@ describe('TodosGroup', () => {
     expect(icon).toBe('○')
   })
 
-  it('renders chrome (but empty row body) for an empty run', () => {
+  it('renders nothing for an empty run (no taskBlocks, no diffs)', () => {
+    // Per claim:tool:todos-block-empty-suppressed: the chrome must not appear
+    // when there is nothing to show.
     render(<TodosGroup taskBlocks={[]} />, { wrapper: withDiffs(new Map()) })
 
-    expect(screen.getByTestId('todos-group')).toBeInTheDocument()
+    expect(screen.queryByTestId('todos-group')).not.toBeInTheDocument()
     expect(document.querySelectorAll('.todo-item').length).toBe(0)
-    expect(document.querySelector('.tool-name').textContent).toBe('Todos')
-    // Empty counts → empty summary string (no per-state icons).
-    expect(document.querySelector('.tool-summary').textContent).toBe('')
+  })
+
+  it('renders nothing during streaming race (taskBlocks present, todoDiffs not yet populated)', () => {
+    // The dominant production trigger: a TaskCreate tool_use lands in a run
+    // but its tool_result has not yet arrived, so todoDiffs.get(toolUseId)
+    // returns undefined. mergeRunItems returns [], bucketize returns
+    // {rowGroups: []}, and the chrome must stay suppressed until the diff
+    // arrives.
+    render(<TodosGroup taskBlocks={[{ toolUseId: 'pending-tool' }]} />, {
+      wrapper: withDiffs(new Map()),
+    })
+
+    expect(screen.queryByTestId('todos-group')).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when every diff bucket is empty (empty TaskCreate / all-removed TaskUpdate)', () => {
+    const diffs = new Map([['t1', { added: [], started: [], completed: [], removed: [] }]])
+    render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
+
+    expect(screen.queryByTestId('todos-group')).not.toBeInTheDocument()
   })
 
   it('falls back to content-equality merging for items lacking _taskId', () => {

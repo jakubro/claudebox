@@ -62,7 +62,7 @@ export default function MiniMap({
     return normalizeWidths(raw)
   }, [groups, turnHeights, userMessageHeights])
 
-  // Attach/detach DOM listeners — segments.length re-triggers when content appears/disappears
+  // Attach/detach DOM listeners - segments.length re-triggers when content appears/disappears
   // biome-ignore lint/correctness/useExhaustiveDependencies: segments.length ensures re-attach when mapRef transitions from null to DOM element
   useEffect(() => {
     const container = messagesRef?.current
@@ -76,7 +76,7 @@ export default function MiniMap({
     controller.setPersistent(persistent)
   }, [persistent, controller])
 
-  // Sync streaming state — forces visibility in non-persistent mode during active streaming
+  // Sync streaming state - forces visibility in non-persistent mode during active streaming
   useEffect(() => {
     controller.setStreaming(isStreaming)
   }, [isStreaming, controller])

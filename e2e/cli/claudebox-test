@@ -1,0 +1,17 @@
+#!/bin/bash
+# Hermetic test wrapper for the claudebox CLI.
+# Hard-fails when isolation env vars are unset so unsafe invocation is impossible.
+
+set -euo pipefail
+
+: "${CLAUDEBOX_TEST_HOME:?FATAL: CLAUDEBOX_TEST_HOME unset; this wrapper is test-private}"
+: "${CLAUDEBOX_TEST_PATH_PREFIX:?FATAL: CLAUDEBOX_TEST_PATH_PREFIX unset; this wrapper is test-private}"
+
+export HOME="$CLAUDEBOX_TEST_HOME"
+export UV_OFFLINE=1
+export PATH="$CLAUDEBOX_TEST_PATH_PREFIX:$PATH"
+
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
+LIB_ROOT=$(realpath "$SCRIPT_DIR/../..")
+
+exec "$LIB_ROOT/bin/claudebox_cli.sh" "$@"

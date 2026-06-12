@@ -1,4 +1,4 @@
-"""Tests for claudebox.env — runtime environment checks."""
+"""Tests for claudebox.env - runtime environment checks."""
 
 from claudebox.env import is_dev_mode, set_dev_mode
 

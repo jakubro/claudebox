@@ -17,7 +17,7 @@ function ConfirmDeregisterModal({ workspace, onConfirm, onCancel }) {
         data-testid="confirm-deregister-modal">
         <p className="confirm-deregister-title">Deregister workspace?</p>
         <p className="confirm-deregister-detail">
-          {workspace.id} ({workspace.path}) — the <code>.workspace</code> marker file on disk is
+          {workspace.id} ({workspace.path}) - the <code>.workspace</code> marker file on disk is
           preserved.
         </p>
         <div className="confirm-deregister-actions">

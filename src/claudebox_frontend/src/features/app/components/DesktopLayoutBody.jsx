@@ -1,4 +1,4 @@
-/** App-container body — rendered inside AppProviders so children can consume provider-scoped contexts. */
+/** App-container body - rendered inside AppProviders so children can consume provider-scoped contexts. */
 
 import { DockviewReact } from 'dockview-react'
 import { useCallback, useMemo } from 'react'
@@ -16,7 +16,7 @@ import HelpOverlay from './HelpOverlay'
 import StillRunningToastSlot from './StillRunningToastSlot'
 
 /**
- * App body inside AppProviders — owns dockview + icon strips + bottom panel.
+ * App body inside AppProviders - owns dockview + icon strips + bottom panel.
  *
  * @param {object} props
  * @param {Function} props.onReady - Dockview onReady callback.

@@ -1,10 +1,10 @@
-"""Session projection — aggregate events into session summaries."""
+"""Session projection - aggregate events into session summaries."""
 
 import asyncio
 from datetime import UTC, datetime
 
 from .models import PublishedEvent, SessionSummary
-from ..runtime_claude import ClaudeRuntime
+from ..protocol import AgentSession
 from ...constants import SESSION_METADATA_FILE
 from ...core import serialization
 from ...core.io import read_json, write_json
@@ -12,7 +12,7 @@ from ...core.logging import get_logger
 from ...workspace import Workspace
 
 
-# Claude Code built-in slash commands — excluded from custom command discovery.
+# Claude Code built-in slash commands - excluded from custom command discovery.
 BUILTIN_COMMANDS = frozenset(
     {
         "add-dir",
@@ -94,10 +94,23 @@ SAVE_DEBOUNCE_SECONDS = 0.5
 class Projection:
     """Running SessionSummary built from events; debounced save to session.json."""
 
-    def __init__(self, session_id: str, workspace: Workspace):
-        """Initialize projection, loading existing state or creating new summary."""
+    def __init__(
+        self,
+        session_id: str,
+        workspace: Workspace,
+        runtime: AgentSession | None = None,
+    ):
+        """Initialize projection, loading existing state or creating new summary.
+
+        `runtime` is the active AgentSession adapter when this projection backs
+        a live session - _categorize_commands sources its skill metadata from
+        the runtime's catalog so categorization stays runtime-agnostic. None is
+        only valid for throwaway projections built for the read-only get/list
+        paths, which never receive events and so never categorize.
+        """
 
         self._logger = get_logger(__name__)
+        self._runtime = runtime
 
         session = workspace.ensure_session(session_id)
         self._session_id = session.id
@@ -116,6 +129,7 @@ class Projection:
         else:
             self._value = SessionSummary(
                 session_id=self._session_id,
+                fork_point_cost_usd=0.0,
                 session_dir=self._session_dir,
                 workspace=self._workspace,
                 started_at=datetime.now(UTC),
@@ -129,7 +143,7 @@ class Projection:
             )
             self._loaded_from_disk = False
 
-    # Fields written externally by the daemon (rename, fork) — not tracked via events.
+    # Fields written externally by the daemon (rename, fork) - not tracked via events.
     _DAEMON_OWNED_FIELDS = ("name", "parent_session_id")
 
     # Properties
@@ -144,6 +158,7 @@ class Projection:
         """Return current projection, refreshing daemon-owned fields from disk."""
 
         self._refresh_daemon_fields()
+
         return self._value
 
     @property
@@ -162,9 +177,11 @@ class Projection:
 
         if event.is_human:
             self._value.num_turns = (self._value.num_turns or 0) + 1
+
             if event.content:
                 if not self._value.first_message:
                     self._value.first_message = event.content
+
                 self._value.last_message = event.content
 
         if event.model:
@@ -196,6 +213,7 @@ class Projection:
 
         if not self._value:
             self._logger.warning("update_fields called before projection initialized")
+
             return
 
         # Update only known attributes
@@ -211,7 +229,7 @@ class Projection:
     # ----------------------------------------------------------------------------------------------
 
     def schedule_save(self) -> None:
-        """Schedule a debounced save — coalesces rapid updates into a single write."""
+        """Schedule a debounced save - coalesces rapid updates into a single write."""
 
         self._dirty = True
 
@@ -222,7 +240,7 @@ class Projection:
         self._save_timer = loop.call_later(SAVE_DEBOUNCE_SECONDS, self._debounced_save)
 
     def _debounced_save(self) -> None:
-        """Timer callback — kicks off async save."""
+        """Timer callback - kicks off async save."""
 
         self._save_timer = None
         asyncio.ensure_future(self._async_save())
@@ -238,7 +256,7 @@ class Projection:
         await loop.run_in_executor(None, self._write)
 
     def _write(self) -> None:
-        """Synchronous disk write — called from executor thread."""
+        """Synchronous disk write - called from executor thread."""
 
         write_json(self._path, self._value)
 
@@ -273,21 +291,32 @@ class Projection:
             return
 
         data = read_json(self._path, default=None)
+
         if not data:
             return
 
         for field in self._DAEMON_OWNED_FIELDS:
             disk_value = data.get(field)
+
             if disk_value != getattr(self._value, field, None):
                 setattr(self._value, field, disk_value)
 
-    @classmethod
-    def _categorize_commands(cls, commands: list[str]) -> dict[str, list[dict[str, str]]]:
-        """Categorize slash commands into custom, mcp, and builtin groups."""
+    def _categorize_commands(self, commands: list[str]) -> dict[str, list[dict[str, str]]]:
+        """Categorize slash commands into custom, mcp, and builtin groups.
 
-        metadata = {s.name: s for s in ClaudeRuntime.get_skills()}
+        Skill metadata is sourced from the active runtime's get_skills(); when
+        the projection is throwaway (no runtime supplied), entries fall back to
+        name-only - _categorize_commands is normally only reached during live
+        update() flows where a runtime is always present.
+        """
 
-        rv = {
+        if self._runtime is not None:
+            metadata = {s.name: s for s in self._runtime.get_skills()}
+        else:
+            self._logger.warning("_categorize_commands called without a runtime; metadata empty")
+            metadata = {}
+
+        rv: dict[str, list[dict[str, str]]] = {
             "custom": [],
             "mcp": [],
             "builtin": [],

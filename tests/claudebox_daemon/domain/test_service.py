@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.service — daemon service orchestration."""
+"""Tests for claudebox_daemon.domain.service - daemon service orchestration."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -30,6 +30,7 @@ def _config_get_workspace(config):
         for ws in config.workspaces:
             if ws.id == workspace_id:
                 return ws
+
         raise WorkspaceNotRegistered(workspace_id=workspace_id)
 
     return _lookup
@@ -76,6 +77,7 @@ def _make_service(
     MockWS.return_value = ws_instance
 
     svc = DaemonService()
+
     return svc
 
 
@@ -147,7 +149,7 @@ class TestStart:
         MockWS = patched["WorkspaceService"]
         MockWS.side_effect = RuntimeError("config load failed")
 
-        # Should not raise — logs and continues
+        # Should not raise - logs and continues
         await svc.start()
 
         assert "broken" not in svc._workspaces
@@ -235,6 +237,7 @@ class TestGetWorkspace:
         def reload_with_new_ws():
             config.workspaces = [ws]
             config.get_workspace = MagicMock(side_effect=_config_get_workspace(config))  # ty: ignore[invalid-assignment]  # MagicMock structurally replaces real method for the test.
+
             return config
 
         original_load.side_effect = reload_with_new_ws

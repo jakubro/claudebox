@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.handlers.boards — HTTP adapter responses."""
+"""Tests for claudebox_daemon.handlers.boards - HTTP adapter responses."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -30,6 +30,7 @@ def _build_app(board_service):
         )
 
     app.add_exception_handler(TicketError, _handle_ticket_error)  # ty: ignore[invalid-argument-type]  # Starlette type narrows to BaseException-handler; our handler accepts the specific subclass.
+
     return app
 
 

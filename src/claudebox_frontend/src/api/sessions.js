@@ -1,4 +1,4 @@
-/** Sessions API client — workspace-scoped and container-scoped endpoints. */
+/** Sessions API client - workspace-scoped and container-scoped endpoints. */
 
 import { containerFetch, containerUrl, workspaceFetch } from './apiClient'
 

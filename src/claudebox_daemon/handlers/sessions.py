@@ -1,4 +1,4 @@
-"""Session CRUD — workspace-scoped HTTP adapters for session management."""
+"""Session CRUD - workspace-scoped HTTP adapters for session management."""
 
 from fastapi import APIRouter
 

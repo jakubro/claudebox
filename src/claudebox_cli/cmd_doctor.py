@@ -1,4 +1,4 @@
-"""Handler for the ``doctor`` verb — diagnose environment readiness."""
+"""Handler for the ``doctor`` verb - diagnose environment readiness."""
 
 import argparse
 import os
@@ -11,7 +11,13 @@ import httpx
 from rich.console import Console
 
 from claudebox import Config
-from claudebox.constants import DAEMON_PORT, WORKSPACE_MARKER, global_config_dir, profile_dir
+from claudebox.constants import (
+    DAEMON_PORT,
+    WORKSPACE_MARKER,
+    daemon_base_url,
+    global_config_dir,
+    profile_dir,
+)
 
 
 NAME = "doctor"
@@ -80,9 +86,11 @@ def handle(args: argparse.Namespace) -> int:
 
     if failures:
         _stdout.print(f"{failures} check{'s' if failures != 1 else ''} failed.")
+
         return 1
 
     _stdout.print("all checks passed.")
+
     return 0
 
 
@@ -94,28 +102,31 @@ def _print_result(result: _CheckResult, *, verbose: bool) -> None:
     _stdout.print(f"[{color}]{result.icon}[/{color}] {label}{result.detail}")
 
     if verbose:
-        _stdout.print(f"  [dim]→ {result.command}[/dim]")
+        _stdout.print(f"  [dim]-> {result.command}[/dim]")
 
 
 def _check_runtime_version(backend: str) -> _CheckResult:
-    """``<backend> --version`` — surface the version string or mark missing."""
+    """``<backend> --version`` - surface the version string or mark missing."""
 
     command = f"{backend} --version"
     output = _run_capture([backend, "--version"])
+
     if output is None:
         return _CheckResult("✗", "runtime", "(not found)", command)
 
     # Runtimes print "<backend> version X.Y.Z"; the trailing token is the version.
     parts = output.split()
     version = parts[-1] if parts else "(unknown)"
+
     return _CheckResult("✓", "runtime", f"{backend} {version}", command)
 
 
 def _check_runtime_info(backend: str) -> _CheckResult:
-    """``<backend> info`` — sanity-check daemon-less inspection works."""
+    """``<backend> info`` - sanity-check daemon-less inspection works."""
 
     command = f"{backend} info"
     output = _run_capture([backend, "info"])
+
     if output is None:
         return _CheckResult("✗", "runtime info", "failed", command)
 
@@ -123,23 +134,26 @@ def _check_runtime_info(backend: str) -> _CheckResult:
 
 
 def _check_uv() -> _CheckResult:
-    """``uv --version`` — required for Python dep management."""
+    """``uv --version`` - required for Python dep management."""
 
     command = "uv --version"
     output = _run_capture(["uv", "--version"])
+
     if output is None:
         return _CheckResult("✗", "uv", "(not found)", command)
 
     parts = output.split()
     version = parts[1] if len(parts) >= 2 else parts[-1]
+
     return _CheckResult("✓", "uv", version, command)
 
 
 def _check_daemon_http() -> _CheckResult:
-    """HTTPS ping to the daemon through Caddy (verify=False — self-signed)."""
+    """HTTPS ping to the daemon through Caddy (verify=False - self-signed)."""
 
-    url = f"https://localhost:{DAEMON_PORT}/api/workspaces"
+    url = f"{daemon_base_url()}/api/workspaces"
     command = f"GET {url}"
+
     try:
         response = httpx.get(url, verify=False, timeout=_HTTP_TIMEOUT_SECONDS)
         response.raise_for_status()
@@ -154,6 +168,7 @@ def _check_daemon_unit() -> _CheckResult:
 
     command = "systemctl --user is-enabled claudebox-daemon.service"
     output = _run_capture(["systemctl", "--user", "is-enabled", "claudebox-daemon.service"])
+
     if output is None or output.strip() != "enabled":
         return _CheckResult("✗", "daemon unit", "not enabled", command)
 
@@ -168,14 +183,15 @@ def _check_claudebox_lib() -> _CheckResult:
 
     if lib.is_symlink():
         target = lib.readlink()
+
         if lib.resolve().exists():
-            return _CheckResult("✓", "~/.claudebox/lib", f"symlink → {target}", command)
-        return _CheckResult("✗", "~/.claudebox/lib", f"broken symlink → {target}", command)
+            return _CheckResult("✓", "~/.claudebox/lib", f"symlink -> {target}", command)
 
-    if (lib / ".git").exists():
+        return _CheckResult("✗", "~/.claudebox/lib", f"broken symlink -> {target}", command)
+    elif (lib / ".git").exists():
         return _CheckResult("✓", "~/.claudebox/lib", "git repo", command)
-
-    return _CheckResult("✗", "~/.claudebox/lib", "missing or invalid", command)
+    else:
+        return _CheckResult("✗", "~/.claudebox/lib", "missing or invalid", command)
 
 
 def _check_profile() -> _CheckResult:
@@ -191,7 +207,7 @@ def _check_profile() -> _CheckResult:
 
 
 def _check_workspace_marker() -> _CheckResult:
-    """``.workspace`` walk-up from cwd — informational (○) when not found."""
+    """``.workspace`` walk-up from cwd - informational (○) when not found."""
 
     cwd = Path.cwd()
     command = f"walk-up {WORKSPACE_MARKER} from {cwd}"
@@ -223,7 +239,7 @@ def _check_permissions() -> _CheckResult:
 
 
 def _check_disk() -> _CheckResult:
-    """``/tmp`` free space ≥ 1 GiB."""
+    """``/tmp`` free space >= 1 GiB."""
 
     tmp = Path("/tmp")
     command = f"shutil.disk_usage({tmp})"
@@ -235,6 +251,7 @@ def _check_disk() -> _CheckResult:
 
     free_gb = usage.free / (1024**3)
     icon = "✓" if usage.free >= _DISK_MIN_BYTES else "✗"
+
     return _CheckResult(icon, "disk", f"{tmp} {free_gb:.1f} GB free", command)
 
 

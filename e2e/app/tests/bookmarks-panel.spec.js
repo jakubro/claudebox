@@ -28,7 +28,7 @@ test.describe('Bookmarks Panel', () => {
   })
 
   // SPEC: panel-bookmarks:loading
-  test('renders panel-level loading placeholder during cold load — no tabs, no false-empty', async ({
+  test('renders panel-level loading placeholder during cold load - no tabs, no false-empty', async ({
     page,
   }) => {
     // Hold the /ui-state response so the bookmarks loading state stays visible
@@ -51,7 +51,7 @@ test.describe('Bookmarks Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmarks panel is open by default — no toggle needed.
+    // Bookmarks panel is open by default - no toggle needed.
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     await expect(panel).toHaveClass(/bookmarks-loading/)
     await expect(panel).toContainText('Loading...')
@@ -69,7 +69,7 @@ test.describe('Bookmarks Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmarks panel is open by default — no toggle needed.
+    // Bookmarks panel is open by default - no toggle needed.
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     await expect(panel).toBeVisible()
     await expect(panel).toContainText('No bookmarks')
@@ -96,10 +96,10 @@ test.describe('Bookmarks Panel', () => {
     const sessionTab = panel.locator('button', { hasText: 'This session' })
     const allTab = panel.locator('button', { hasText: 'All sessions' })
 
-    // Session is active on initial load → "This session" active.
+    // Session is active on initial load -> "This session" active.
     await expect(sessionTab).toHaveClass(/active/)
 
-    // Navigate home (clear session) → auto-switch to "All sessions".
+    // Navigate home (clear session) -> auto-switch to "All sessions".
     await page.evaluate(() => {
       history.pushState(null, '', window.location.pathname + window.location.search)
       window.dispatchEvent(new HashChangeEvent('hashchange'))
@@ -107,14 +107,14 @@ test.describe('Bookmarks Panel', () => {
     await expect(allTab).toHaveClass(/active/, { timeout: 5000 })
     await expect(sessionTab).not.toHaveClass(/active/)
 
-    // Re-open session → auto-switch back to "This session".
+    // Re-open session -> auto-switch back to "This session".
     await page.evaluate(() => {
       window.location.hash = '#/workspaces/test-ws/sessions/test-session-001'
     })
     await expect(sessionTab).toHaveClass(/active/, { timeout: 5000 })
     await expect(allTab).not.toHaveClass(/active/)
 
-    // Manually click "All sessions" → tab stays even though session is active.
+    // Manually click "All sessions" -> tab stays even though session is active.
     await allTab.click()
     await expect(allTab).toHaveClass(/active/)
     await expect(sessionTab).not.toHaveClass(/active/)
@@ -122,7 +122,7 @@ test.describe('Bookmarks Panel', () => {
     await page.waitForTimeout(300)
     await expect(allTab).toHaveClass(/active/)
 
-    // Now change session presence — auto-switch should win again.
+    // Now change session presence - auto-switch should win again.
     // Navigate home, then back to session.
     await page.evaluate(() => {
       history.pushState(null, '', window.location.pathname + window.location.search)
@@ -139,7 +139,7 @@ test.describe('Bookmarks Panel', () => {
   // SPEC: panel-bookmarks:tab-auto-switch
   test('tabs render with count badges for this/all sessions', async ({ page }) => {
     // Seed bookmarks via the ui-state GET response so the badges have non-zero
-    // counts to render. 2 in current session + 1 elsewhere → This=2, All=3.
+    // counts to render. 2 in current session + 1 elsewhere -> This=2, All=3.
     await page.route(/\/ui-state(?:\?|$)/, async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
@@ -174,7 +174,7 @@ test.describe('Bookmarks Panel', () => {
     await expect(thisTab).toBeVisible()
     await expect(allTab).toBeVisible()
 
-    // Each tab must surface a numeric badge — the claim names "with count
+    // Each tab must surface a numeric badge - the claim names "with count
     // badges". Non-zero seeded state proves the badge actually renders.
     await expect(thisTab).toContainText('2')
     await expect(allTab).toContainText('3')
@@ -474,7 +474,7 @@ test.describe('Bookmarks Panel Interactions', () => {
     // Click remove
     await removeBtn.click()
 
-    // Bookmark should be gone — empty state shown
+    // Bookmark should be gone - empty state shown
     await expect(panel).toContainText('No bookmarks')
   })
 
@@ -497,7 +497,7 @@ test.describe('Bookmarks Panel Interactions', () => {
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(bookmarkItem.locator('.bookmark-type')).toHaveCount(0)
 
-    // Preview should be present — the remove button is the first child;
+    // Preview should be present - the remove button is the first child;
     // the preview lives inside .bookmark-row alongside the status dot.
     const preview = bookmarkItem.locator('.bookmark-preview')
     await expect(preview).toBeVisible()
@@ -569,7 +569,7 @@ test.describe('Bookmarks Panel Interactions', () => {
     // Click remove
     await removeBtn.click()
 
-    // Bookmark should be gone — empty state shown
+    // Bookmark should be gone - empty state shown
     await expect(panel).toContainText('No bookmarks')
   })
 
@@ -683,7 +683,7 @@ test.describe('Bookmarks Panel Interactions', () => {
     const item = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(item).toBeVisible()
 
-    // Capture window.open invocation — the page does it synchronously.
+    // Capture window.open invocation - the page does it synchronously.
     await page.evaluate(() => {
       window.__opened = []
       window.open = url => {

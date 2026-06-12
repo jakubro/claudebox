@@ -1,4 +1,4 @@
-/** Shared bookmark state — single instance consumed by ChatPanel and BookmarksPanel. */
+/** Shared bookmark state - single instance consumed by ChatPanel and BookmarksPanel. */
 
 import { createContext, useContext, useMemo } from 'react'
 import useBookmarks from '../hooks/useBookmarks'
@@ -10,7 +10,7 @@ const BookmarksContext = createContext(null)
 /**
  * Provide a single bookmark state instance shared by all consumers.
  *
- * Ensures ChatPanel and BookmarksPanel use the same state — toggling a bookmark
+ * Ensures ChatPanel and BookmarksPanel use the same state - toggling a bookmark
  * in the chat immediately reflects in the bookmarks panel and vice versa.
  *
  * @param {object} props

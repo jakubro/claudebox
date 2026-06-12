@@ -81,7 +81,7 @@ describe('BookmarksPanel', () => {
     mockSessions = []
   })
 
-  it('renders panel-level loading placeholder during cold load — no tabs, no false-empty', () => {
+  it('renders panel-level loading placeholder during cold load - no tabs, no false-empty', () => {
     mockLoading = true
 
     render(<BookmarksPanel />)
@@ -289,7 +289,7 @@ describe('BookmarksPanel', () => {
       const allTab = screen.getByText('All sessions').closest('button, [role="button"], div')
       expect(allTab.className).toMatch(/active/)
 
-      // Session changes — auto-switch wins, tab returns to "This session".
+      // Session changes - auto-switch wins, tab returns to "This session".
       mockSessionId = 'sess-B'
       rerender(<BookmarksPanel />)
 

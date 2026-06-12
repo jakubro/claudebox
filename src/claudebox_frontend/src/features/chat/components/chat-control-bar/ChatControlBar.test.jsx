@@ -453,7 +453,7 @@ describe('ChatControlBar', () => {
     })
 
     it('swaps to spinning Loader2 when forking is true', () => {
-      // The fork button must mirror the per-turn RewindSplitButton UX —
+      // The fork button must mirror the per-turn RewindSplitButton UX -
       // spinner visible while a control-bar fork is in flight.
       render(<ChatControlBar {...defaultProps} forking={true} />)
 

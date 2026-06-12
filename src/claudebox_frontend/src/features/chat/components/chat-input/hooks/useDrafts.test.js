@@ -102,7 +102,7 @@ describe('useDrafts', () => {
     result.current.userHasTypedRef.current = true
     textarea.value = ''
 
-    // Switch to session-2 — should NOT restore because session switch resets the flag
+    // Switch to session-2 - should NOT restore because session switch resets the flag
     rerender({ sessionId: 'session-2' })
 
     // Session switch resets userHasTypedRef, so draft IS restored
@@ -127,7 +127,7 @@ describe('useDrafts', () => {
     })
     rerender()
 
-    // Should NOT overwrite — user has typed
+    // Should NOT overwrite - user has typed
     expect(textarea.value).toBe('')
   })
 
@@ -145,7 +145,7 @@ describe('useDrafts', () => {
       { initialProps: { sessionId: 'session-1' } },
     )
 
-    // Switch to session-2 — old text cleared, new draft restored
+    // Switch to session-2 - old text cleared, new draft restored
     rerender({ sessionId: 'session-2' })
 
     expect(textarea.value).toBe('session 2 draft')

@@ -1,4 +1,4 @@
-/** Context bridge — renders StillRunningToast when StillRunningToastContext has one. */
+/** Context bridge - renders StillRunningToast when StillRunningToastContext has one. */
 
 import { useStillRunningToast } from '../../../context/StillRunningToastContext'
 import StillRunningToast from './StillRunningToast'

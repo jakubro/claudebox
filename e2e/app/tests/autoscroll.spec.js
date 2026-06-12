@@ -217,8 +217,8 @@ test.describe('Autoscroll', () => {
       await expect(messagesContainer).toBeVisible()
 
       // Observable autoscroll-state signal: the jump-to-bottom button's title.
-      // - "Autoscroll enabled" → autoscroll on (button is the disabled-pressed state)
-      // - "Last message (Alt+End)" → autoscroll off
+      // - "Autoscroll enabled" -> autoscroll on (button is the disabled-pressed state)
+      // - "Last message (Alt+End)" -> autoscroll off
       // (See ChatControlBar.jsx line 212.) Avoids depending on the dev-only
       // window.__chat_controller__ hook which is stripped from the prod build
       // the playwright webServer serves.
@@ -229,7 +229,7 @@ test.describe('Autoscroll', () => {
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
 
       // Inject a synthetic nested scrollable (an overflow:auto div with room
-      // to scroll) into the last visible turn — the predicate is purely
+      // to scroll) into the last visible turn - the predicate is purely
       // structural, so any inner overflow:auto ancestor consumes the wheel.
       await page.evaluate(() => {
         const turn = document.querySelector('.turn-text')
@@ -248,7 +248,7 @@ test.describe('Autoscroll', () => {
       })
 
       // Dispatch a real wheel on the nested scrollable via Playwright's
-      // Locator.dispatchEvent — this routes through the same CDP path the
+      // Locator.dispatchEvent - this routes through the same CDP path the
       // existing Content Growth test uses (line 295). page.evaluate +
       // new WheelEvent() bubbles inconsistently in chromium under playwright,
       // so use the framework path. Without the fix the outer .chat-messages
@@ -258,7 +258,7 @@ test.describe('Autoscroll', () => {
         .locator('#__test_nested_scrollable__')
         .dispatchEvent('wheel', { deltaY: -50, bubbles: true })
 
-      // Title must remain "Autoscroll enabled" — autoscroll engagement preserved.
+      // Title must remain "Autoscroll enabled" - autoscroll engagement preserved.
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
     })
   })
@@ -275,7 +275,7 @@ test.describe('Autoscroll', () => {
       // cadence rather than per dispatch), so cumulative ~600 ms of
       // sendEvents + render + settle leaves no slack.
       test.setTimeout(30000)
-      // Pre-seed the bookmark via ui-state — the first user message of a long
+      // Pre-seed the bookmark via ui-state - the first user message of a long
       // conversation sits far above the bottom, so clicking the bookmark
       // expresses intent to leave the live tail.
       await mockAPI(page, {
@@ -370,7 +370,7 @@ test.describe('Autoscroll', () => {
       await bookmarkItem.click()
 
       // After the click the bookmarked turn is at viewport top (far from
-      // bottom) → autoscroll must have disengaged.
+      // bottom) -> autoscroll must have disengaged.
       await expect(jumpBtn).toHaveAttribute('title', 'Last message (Alt+End)')
     })
 
@@ -379,8 +379,8 @@ test.describe('Autoscroll', () => {
       page,
     }) => {
       // Default session has a single turn ("Hello" / "Hi") whose user message
-      // is within AUTOSCROLL_THRESHOLD of bottom → willBeAtBottom predicate
-      // true → autoscroll engagement unchanged.
+      // is within AUTOSCROLL_THRESHOLD of bottom -> willBeAtBottom predicate
+      // true -> autoscroll engagement unchanged.
       await mockAPI(page, {
         handlers: {
           getUIState: async route => {
@@ -421,7 +421,7 @@ test.describe('Autoscroll', () => {
       await expect(bookmarkItem).toBeVisible()
       await bookmarkItem.click()
 
-      // Engagement state unchanged — still on.
+      // Engagement state unchanged - still on.
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
     })
   })
@@ -455,7 +455,7 @@ test.describe('Autoscroll', () => {
       // CONTRACT: ChatController classifies user-scroll intent from
       // input events (wheel/touch/keyboard), not from height-equality
       // heuristics. A bare programmatic `el.scrollTop = ...` write therefore
-      // no longer disengages auto-scroll — only a real wheel/touch/key event
+      // no longer disengages auto-scroll - only a real wheel/touch/key event
       // does. This test dispatches a wheel event before positioning so the
       // assertion-under-test (scroll position holds while content streams)
       // exercises the disengaged state.

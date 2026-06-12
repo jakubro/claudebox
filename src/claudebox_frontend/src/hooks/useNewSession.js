@@ -76,7 +76,7 @@ export default function useNewSession() {
       const data = await newSession({ signal: abortController.signal })
 
       if (data?.session_id) {
-        // Seed the full SessionInfo response — populates the footer
+        // Seed the full SessionInfo response - populates the footer
         // immediately (workspace, session_dir, effort_level, zeros).
         seedSessionData(data)
       }
@@ -97,7 +97,7 @@ export default function useNewSession() {
           })
         }
       }
-      // Don't clearCreating() here — ChatPanel effect clears when SSE connects
+      // Don't clearCreating() here - ChatPanel effect clears when SSE connects
       focusChatTab()
       return true
     } catch (err) {
@@ -138,7 +138,7 @@ export default function useNewSession() {
   const [isCreatingInNewTab, setIsCreatingInNewTab] = useState(false)
 
   // Opening a session in a new browser tab must not toggle the originating
-  // tab's global EventsContext lifecycle flags — the new tab manages its own
+  // tab's global EventsContext lifecycle flags - the new tab manages its own
   // creating/resuming state when it loads. Local `isCreatingInNewTab` is
   // sufficient to drive the trigger button's spinner.
   const executeNewSessionInNewTab = useCallback(async () => {

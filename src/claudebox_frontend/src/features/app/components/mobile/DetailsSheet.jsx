@@ -26,7 +26,7 @@ export default function DetailsSheet({ onClose }) {
 
   const connected = connectionStatus === 'connected'
   const { percent: contextPercent } = computeContextBar(lastContextTokens, contextWindow)
-  const workspaceName = getWorkspaceName(workspace) || '—'
+  const workspaceName = getWorkspaceName(workspace) || '-'
 
   return (
     <div className="details-sheet-overlay" onClick={onClose}>
@@ -55,14 +55,14 @@ export default function DetailsSheet({ onClose }) {
         </div>
         <div className="details-sheet-row">
           <span className="details-sheet-label">Model</span>
-          <span>{model || '—'}</span>
+          <span>{model || '-'}</span>
           <span className="details-sheet-sep">&middot;</span>
           <span className="details-sheet-label">Effort</span>
-          <span>{effortLevel || '—'}</span>
+          <span>{effortLevel || '-'}</span>
         </div>
         <div className="details-sheet-row">
           <span className="details-sheet-label">Permission</span>
-          <span>{permissionMode || '—'}</span>
+          <span>{permissionMode || '-'}</span>
         </div>
       </div>
     </div>

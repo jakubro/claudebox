@@ -1,4 +1,4 @@
-/** Command detail block — usage, description, and metadata for a single slash command. */
+/** Command detail block - usage, description, and metadata for a single slash command. */
 
 /**
  * Render the description / usage / metadata section for a slash command.

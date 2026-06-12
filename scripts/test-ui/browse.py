@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless browser helper for in-container UI debugging — observe and interact."""
+"""Headless browser helper for in-container UI debugging - observe and interact."""
 
 import argparse
 import json
@@ -24,9 +24,11 @@ def cmd_screenshot(page, args) -> None:
 
     if args.selector:
         el = page.query_selector(args.selector)
+
         if not el:
             print(f"Selector not found: {args.selector}", file=sys.stderr)
             sys.exit(1)
+
         path = args.output / "element.png"
         el.screenshot(path=str(path))
     else:
@@ -101,6 +103,7 @@ def cmd_eval(page, args) -> None:
     """Evaluate JavaScript in page context."""
 
     result = page.evaluate(args.expression)
+
     if isinstance(result, (dict, list)):
         print(json.dumps(result, indent=2))
     else:

@@ -3,7 +3,7 @@
 import { BlockType, ToolName } from '../../../../../config/schema'
 
 // Task-list tool families that participate in the grouped Todos run. TaskOutput
-// + legacy Task break the run (they render as ordinary blocks).
+// + the bare `Task` tool break the run (they render as ordinary blocks).
 const TASK_LIST_TOOLS = new Set([
   ToolName.TASK_CREATE,
   ToolName.TASK_UPDATE,
@@ -40,7 +40,7 @@ export function groupBlocks(blocks) {
         run.entries.push({ block, index: i })
         continue
       }
-      // New run — flush any prior run before starting.
+      // New run - flush any prior run before starting.
       if (run) {
         flushRun(run, segments)
       }

@@ -53,7 +53,7 @@ test.describe('MCP Panel', () => {
     page,
   }) => {
     // Four documented status states. Mount one server in each and verify the
-    // dot's class anchors the contract for that state — CSS owns the colors.
+    // dot's class anchors the contract for that state - CSS owns the colors.
     await mockSSE(page, 'events/with-mcp-servers.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -61,12 +61,12 @@ test.describe('MCP Panel', () => {
     await page.keyboard.press('Alt+8')
     const panel = page.locator('[data-testid="panel-mcp"]')
 
-    // Connected (green) — the standard fixture has connected jina.
+    // Connected (green) - the standard fixture has connected jina.
     await expect(
       panel.locator('.mcp-server-item', { hasText: 'jina' }).locator('.mcp-status-dot.connected'),
     ).toBeVisible()
 
-    // Disconnected (gray/muted) — octocode in the fixture.
+    // Disconnected (gray/muted) - octocode in the fixture.
     const octocode = panel.locator('.mcp-server-item', { hasText: 'octocode' })
     await expect(octocode.locator('.mcp-server-status')).toContainText('disconnected')
 
@@ -377,7 +377,7 @@ test.describe('MCP Panel', () => {
       const panel = page.locator('.mcp-panel')
       await expect(panel).toContainText('err-server', { timeout: 5000 })
 
-      // Click reconnect — will fail
+      // Click reconnect - will fail
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'err-server' })
       await serverItem.locator('button[title="Reconnect"]').click()
 
@@ -450,7 +450,7 @@ test.describe('MCP Panel', () => {
       await expect(badge).toHaveText('2')
       await expect(badge).toHaveClass(/icon-badge-danger/)
 
-      // Send another init clearing failures → badge hides.
+      // Send another init clearing failures -> badge hides.
       await controller.sendEvent({
         type: 'system',
         subtype: 'init',

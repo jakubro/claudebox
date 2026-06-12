@@ -39,7 +39,7 @@ export default function useSSE({
   // Create/recreate manager when URL changes, connect when URL is non-null
   useEffect(() => {
     if (!url) {
-      // No URL — permanently close any existing manager
+      // No URL - permanently close any existing manager
       if (managerRef.current) {
         managerRef.current.close()
         managerRef.current = null

@@ -19,7 +19,7 @@ export function getCopyableText(toolName, details) {
 
 /** Extract the first line number from Read/Write output for gutter offset. */
 export function extractStartingLineNumber(details) {
-  const match = details.match(/^\s*(\d+)[→│\t]/)
+  const match = details.match(/^\s*(\d+)[\u2192\u2502\t]/)
   return match ? parseInt(match[1], 10) : 1
 }
 
@@ -28,7 +28,7 @@ export function extractCodeFromReadOutput(details) {
   const lines = details.split('\n')
   return lines
     .map(line => {
-      const match = line.match(/^\s*\d+[→│\t](.*)$/)
+      const match = line.match(/^\s*\d+[\u2192\u2502\t](.*)$/)
       return match ? match[1] : line
     })
     .join('\n')

@@ -36,7 +36,7 @@ describe('deriveBlockedFlag_run', () => {
     ['blocker completed', { blockedBy: ['1'] }, [{ _taskId: '1', status: 'completed' }], false],
     ['blocker removed', { blockedBy: ['1'] }, [{ _taskId: '1', status: 'removed' }], false],
     [
-      'multiple blockers — any non-terminal triggers',
+      'multiple blockers - any non-terminal triggers',
       { blockedBy: ['1', '2'] },
       [
         { _taskId: '1', status: 'completed' },
@@ -45,7 +45,7 @@ describe('deriveBlockedFlag_run', () => {
       true,
     ],
     [
-      'multiple blockers — all terminal',
+      'multiple blockers - all terminal',
       { blockedBy: ['1', '2'] },
       [
         { _taskId: '1', status: 'completed' },
@@ -74,7 +74,7 @@ describe('deriveBlockedFlag_run', () => {
 })
 
 describe('deriveBlockedFlag_live', () => {
-  // Live path delegates to the same logic — confirm parity rather than re-tabling.
+  // Live path delegates to the same logic - confirm parity rather than re-tabling.
   it('delegates to deriveBlockedFlag_run semantics', () => {
     const item = { blockedBy: ['1'] }
     const partition = [{ _taskId: '1', status: 'in_progress' }]

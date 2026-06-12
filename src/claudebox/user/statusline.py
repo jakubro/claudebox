@@ -62,6 +62,7 @@ def statusline(__fn, /) -> Callable:
     @functools.wraps(__fn)
     def wrapper(data: dict | None = None):
         request = None
+
         try:
             data = data or serialization.load(sys.stdin)
             request = StatuslineRequest(data)
@@ -76,6 +77,7 @@ def statusline(__fn, /) -> Callable:
         except Exception:
             if request:
                 request.logger.exception("Unhandled exception in statusline")
+
             raise
 
     return wrapper

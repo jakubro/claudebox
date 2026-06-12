@@ -1,4 +1,4 @@
-/** Hook for fetching the workspace's session defaults — model / permission / effort / workspace path. */
+/** Hook for fetching the workspace's session defaults - model / permission / effort / workspace path. */
 
 import { useContext, useEffect, useState } from 'react'
 import { getSessionDefaults } from '../api/workspaces'
@@ -11,10 +11,10 @@ import { WorkspaceContext } from '../context/WorkspaceContext'
  *
  * Used by the footer to populate picker display values on the welcome screen
  * (before any session attaches), so the user sees what a `+`-clicked session
- * will actually use rather than `—` placeholders.
+ * will actually use rather than `-` placeholders.
  *
  * Best-effort: a fetch error leaves the result null and the pickers fall
- * through to their existing `—` rendering. Also tolerates running outside
+ * through to their existing `-` rendering. Also tolerates running outside
  * a WorkspaceProvider (returns null) so existing isolated component tests
  * that don't mount the workspace tree continue to render the footer.
  *
@@ -38,7 +38,7 @@ export default function useSessionDefaults() {
         }
       })
       .catch(err => {
-        // Best-effort — pickers fall through to their existing `—` display
+        // Best-effort - pickers fall through to their existing `-` display
         console.warn('useSessionDefaults: getSessionDefaults failed', err)
       })
 

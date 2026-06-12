@@ -1,4 +1,4 @@
-/** Pure swimlane filter — extracted from SwimlaneBand.jsx, no React APIs. */
+/** Pure swimlane filter - extracted from SwimlaneBand.jsx, no React APIs. */
 
 /**
  * Collect all tickets in a swimlane across every column.

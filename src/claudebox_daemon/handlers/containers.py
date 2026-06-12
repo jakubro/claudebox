@@ -32,6 +32,7 @@ async def stop_container(svc: WorkspaceDep, container_id: str, body: StopContain
     """Send SIGTERM with grace; container ends STOPPED, stays in the registry."""
 
     await svc.container_service.stop_container(container_id, **body.model_dump())
+
     return {"id": container_id, "status": "stopped"}
 
 
@@ -40,6 +41,7 @@ async def kill_container(svc: WorkspaceDep, container_id: str):
     """Send SIGKILL; container ends STOPPED, stays in the registry."""
 
     await svc.container_service.kill_container(container_id)
+
     return {"id": container_id, "status": "stopped"}
 
 
@@ -49,6 +51,7 @@ async def delete_container(svc: WorkspaceDep, container_id: str):
 
     await svc.container_service.stop_container(container_id)
     await svc.container_service.remove(container_id)
+
     return {"id": container_id, "status": "deleted"}
 
 

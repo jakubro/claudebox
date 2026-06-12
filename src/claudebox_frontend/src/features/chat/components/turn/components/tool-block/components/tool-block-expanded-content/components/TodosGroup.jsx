@@ -1,4 +1,4 @@
-/** Grouped Todos block — collapses a run of Task* tool_uses into a single ToolBlock-chrome view. */
+/** Grouped Todos block - collapses a run of Task* tool_uses into a single ToolBlock-chrome view. */
 
 import { useContext, useMemo, useState } from 'react'
 import {
@@ -25,7 +25,7 @@ const STATUS_CLASSES = {
   removed: 'todo-removed',
 }
 
-// Inert tool-status payload — the grouped block is a synthetic chrome host, not
+// Inert tool-status payload - the grouped block is a synthetic chrome host, not
 // a real tool with pending / awaiting / error states.
 const INERT_STATUS = {
   isPending: false,
@@ -39,7 +39,7 @@ const INERT_STATUS = {
  * TaskCreate / TaskUpdate / TaskGet / TaskList tool_uses (within one subagent
  * partition) into a single panel mounted inside the standard ToolBlock chrome.
  * Default-expanded; clicking the chrome header collapses the row body. Row
- * identity is by `_taskId` — the latest item per id across the run wins;
+ * identity is by `_taskId` - the latest item per id across the run wins;
  * intermediate transitions collapse. Frozen-snapshot semantics: content does
  * not update as the agent does later work outside the run.
  *
@@ -55,6 +55,17 @@ export default function TodosGroup({ taskBlocks }) {
   const mergedItems = useMemo(() => mergeRunItems(taskBlocks, todoDiffs), [taskBlocks, todoDiffs])
   const { counts, rowGroups } = useMemo(() => bucketize(mergedItems), [mergedItems])
   const summary = formatCounts(counts, STATUS_ICONS)
+
+  // Suppress the chrome entirely when there is nothing to show. Empty rowGroups
+  // is the convergence point of three upstream paths: streaming race (mutation
+  // tool_use emitted but matching tool_result not yet in todoDiffs), empty-items
+  // mutation (TaskCreate with no items / TaskUpdate that removes the last item),
+  // and any future bucketize edge case that yields no rows. Returning null here
+  // produces no DOM; once todoDiffs populates and reconciliation re-runs, the
+  // chrome appears with its rows.
+  if (rowGroups.length === 0) {
+    return null
+  }
 
   return (
     <div className="tool-block" data-testid="todos-group">

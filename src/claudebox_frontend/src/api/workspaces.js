@@ -1,4 +1,4 @@
-/** Workspace API client — workspace-level metadata endpoints. */
+/** Workspace API client - workspace-level metadata endpoints. */
 
 import { workspaceFetch } from './apiClient'
 
@@ -13,7 +13,7 @@ export async function getSessionDefaults() {
 
 /** Fetch the workspace's filesystem-discovered slash commands.
  *
- * Result shape mirrors the in-session `commands` field — `{custom, mcp, builtin}` —
+ * Result shape mirrors the in-session `commands` field - `{custom, mcp, builtin}` -
  * so SessionDataContext consumers do not branch on origin.
  */
 export async function getCommandCatalog() {
@@ -26,7 +26,7 @@ export async function getCommandCatalog() {
 
 /** Register a workspace at the given absolute path.
  *
- * Idempotent — re-registering an already-known path returns the existing entry with 200.
+ * Idempotent - re-registering an already-known path returns the existing entry with 200.
  */
 export async function registerWorkspace(path) {
   const res = await fetch('/api/workspaces', {
@@ -44,7 +44,7 @@ export async function registerWorkspace(path) {
 /** Deregister a workspace by id.
  *
  * Returns 404 with `error_key: "workspace_not_registered"` if the workspace was
- * never registered. The `.workspace` marker file on disk is preserved — only the
+ * never registered. The `.workspace` marker file on disk is preserved - only the
  * daemon-side registry entry is removed.
  */
 export async function deregisterWorkspace(id) {

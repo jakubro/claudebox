@@ -1,4 +1,4 @@
-/** URL constants — API endpoints, external service URLs. */
+/** URL constants - API endpoints, external service URLs. */
 
 export const SSE_URL = '/api/stream'
 export const DAEMON_STREAM_URL = '/api/daemon/stream'

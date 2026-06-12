@@ -289,7 +289,7 @@ test.describe('Demo Video', () => {
     await page.keyboard.press('Enter')
     await wait(800)
 
-    // Inject user message event (transitions pending → actual with turn_id)
+    // Inject user message event (transitions pending -> actual with turn_id)
     await sendAndScroll(
       controller,
       page,
@@ -317,7 +317,7 @@ test.describe('Demo Video', () => {
       800,
     )
 
-    // Write tool — create weather.py
+    // Write tool - create weather.py
     await sendAndScroll(
       controller,
       page,
@@ -335,7 +335,7 @@ test.describe('Demo Video', () => {
       600,
     )
 
-    // Bash tool — install deps
+    // Bash tool - install deps
     await sendAndScroll(
       controller,
       page,
@@ -394,7 +394,7 @@ test.describe('Demo Video', () => {
       800,
     )
 
-    // Edit tool — modify weather.py
+    // Edit tool - modify weather.py
     await sendAndScroll(
       controller,
       page,

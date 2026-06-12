@@ -1,4 +1,4 @@
-"""Tests for claudebox_container_api.files.file_service — orchestrator facade."""
+"""Tests for claudebox_container_api.files.file_service - orchestrator facade."""
 
 import pytest
 

@@ -6,7 +6,7 @@ import { COPY_FEEDBACK_MS } from '../config/timing'
 /**
  * Manage a transient copy-confirmation flag and a copy-to-clipboard handler.
  *
- * Returns `[copied, copy]` — render `copied ? 'Copied!' : ...` and call
+ * Returns `[copied, copy]` - render `copied ? 'Copied!' : ...` and call
  * `copy(text)` when the user triggers the action. The flag flips back to false
  * after `COPY_FEEDBACK_MS` (or `durationMs` when supplied).
  *

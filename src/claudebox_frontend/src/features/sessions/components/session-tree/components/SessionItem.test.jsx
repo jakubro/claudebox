@@ -173,7 +173,7 @@ describe('SessionItem', () => {
     const idSpan = document.querySelector('.sessions-id')
     expect(idSpan).toHaveAttribute(
       'title',
-      'Session directory — /tmp/sessions/abc12345-6789-0def-ghij-klmnopqrstuv',
+      'Session directory - /tmp/sessions/abc12345-6789-0def-ghij-klmnopqrstuv',
     )
   })
 

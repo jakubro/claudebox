@@ -1,0 +1,45 @@
+#!/bin/bash
+# Fake systemctl for hermetic CLI e2e tests. Records args; returns canned output.
+# Per-test toggles via CLAUDEBOX_TEST_SYSTEMCTL_* env vars.
+
+set -euo pipefail
+
+echo "$@" >> "${CLAUDEBOX_TEST_RECORD_DIR:?CLAUDEBOX_TEST_RECORD_DIR unset}/systemctl.log"
+
+# Walk past flags (--user, -p, etc.) to find the verb.
+verb=""
+for arg in "$@"; do
+    case "$arg" in
+        --*|-*) continue ;;
+        *) verb="$arg"; break ;;
+    esac
+done
+
+case "$verb" in
+    is-active)
+        if [[ "${CLAUDEBOX_TEST_SYSTEMCTL_ACTIVE:-0}" == "1" ]]; then
+            echo "active"; exit 0
+        fi
+        echo "inactive"; exit 3
+        ;;
+    is-enabled)
+        if [[ "${CLAUDEBOX_TEST_SYSTEMCTL_ENABLED:-0}" == "1" ]]; then
+            echo "enabled"; exit 0
+        fi
+        echo "disabled"; exit 1
+        ;;
+    show)
+        if [[ "${CLAUDEBOX_TEST_SYSTEMCTL_ACTIVE:-0}" == "1" ]]; then
+            echo "MainPID=12345"
+            echo "ActiveEnterTimestamp=Mon 2026-01-01 00:00:00 UTC"
+            exit 0
+        fi
+        echo "MainPID=0"
+        echo "ActiveEnterTimestamp="
+        exit 0
+        ;;
+    start|stop|restart|enable|disable)
+        exit 0
+        ;;
+    *) exit 0 ;;
+esac

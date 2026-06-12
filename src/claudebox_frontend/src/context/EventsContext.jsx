@@ -38,7 +38,7 @@ export function EventsProvider({ children }) {
   const batchTimeoutRef = useRef(null)
   const isReplayingRef = useRef(false) // Sync ref for event handler
 
-  // SSE message handler — parses events, manages replay boundaries, batches updates
+  // SSE message handler - parses events, manages replay boundaries, batches updates
   const onMessage = useCallback(e => {
     try {
       const event = JSON.parse(e.data)
@@ -74,7 +74,7 @@ export function EventsProvider({ children }) {
       }
 
       // Streaming path. Two-phase update per event:
-      //   1. STREAMING_FLAGS — applies isResponding / respondingSince /
+      //   1. STREAMING_FLAGS - applies isResponding / respondingSince /
       //      compaction state synchronously, so the "Working" spinner and
       //      silence detector track the SDK stream without waiting for a
       //      flush.
@@ -105,7 +105,7 @@ export function EventsProvider({ children }) {
     setContainerIdState(getContainerId())
   }, [])
 
-  // Compute SSE URL — null when no container (SSE stays disconnected)
+  // Compute SSE URL - null when no container (SSE stays disconnected)
   const sseUrl = useMemo(() => {
     if (!containerId) {
       return null
@@ -117,13 +117,13 @@ export function EventsProvider({ children }) {
     return `/api/workspaces/${wsId}/containers/${containerId}/api/stream`
   }, [containerId])
 
-  // Signal container SSE reconnection exhausted — consumed by ContainerRecoveryEffect
+  // Signal container SSE reconnection exhausted - consumed by ContainerRecoveryEffect
   const [containerRecoveryNeeded, setContainerRecoveryNeeded] = useState(0)
   const handleReconnectExhausted = useCallback(() => {
     setContainerRecoveryNeeded(n => n + 1)
   }, [])
 
-  // SSE connection lifecycle — delegated to SSEConnectionManager via useSSE
+  // SSE connection lifecycle - delegated to SSEConnectionManager via useSSE
   const {
     connectionStatus,
     connectionError,
@@ -218,7 +218,7 @@ export function EventsProvider({ children }) {
     [rawReconnect],
   )
 
-  // Permanent close — clears events, kills connection with no reconnect possible
+  // Permanent close - clears events, kills connection with no reconnect possible
   const closeSSE = useCallback(() => {
     dispatch({ type: 'CLEAR_EVENTS' })
     isReplayingRef.current = false

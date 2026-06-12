@@ -1,4 +1,4 @@
-"""Tests for claudebox.config — configuration loading and merging."""
+"""Tests for claudebox.config - configuration loading and merging."""
 
 import pytest
 
@@ -153,3 +153,107 @@ class TestConfigLoadErrors:
         """Config.load() should accept workspace_path as a string."""
         config = Config.load(workspace_path=str(tmp_workspace))
         assert config.work_dir == tmp_workspace
+
+
+class TestConfigLangGraphProviderKwargs:
+    """Test [langgraph.<provider>] -> langgraph_provider_kwargs parsing."""
+
+    def test_no_langgraph_section_yields_empty_dicts(self, tmp_workspace):
+        config = Config.load(workspace_path=tmp_workspace)
+
+        assert config.langgraph_provider_kwargs == {}
+        assert config.langgraph_cost_overrides == {}
+
+    def test_anthropic_subtable_becomes_provider_kwargs(self, tmp_workspace):
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            "[langgraph]\n"
+            'model = "anthropic:claude-sonnet-4-5"\n'
+            "[langgraph.anthropic]\n"
+            "temperature = 0.5\n"
+        )
+
+        config = Config.load(workspace_path=tmp_workspace)
+
+        assert config.langgraph_model == "anthropic:claude-sonnet-4-5"
+        assert config.langgraph_provider_kwargs == {"anthropic": {"temperature": 0.5}}
+
+    def test_multiple_provider_subtables_captured_per_name(self, tmp_workspace):
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            "[langgraph]\n"
+            'model = "openai:gpt-4o"\n'
+            "[langgraph.openai]\n"
+            'base_url = "http://x:8000/v1"\n'
+            "[langgraph.ollama]\n"
+            'base_url = "http://host.containers.internal:11434"\n'
+        )
+
+        config = Config.load(workspace_path=tmp_workspace)
+
+        assert config.langgraph_provider_kwargs == {
+            "openai": {"base_url": "http://x:8000/v1"},
+            "ollama": {"base_url": "http://host.containers.internal:11434"},
+        }
+
+    def test_reserved_subtables_excluded_from_provider_kwargs(self, tmp_workspace):
+        """[langgraph.web_search], [langgraph.mcp.*], [langgraph.cost] map to typed fields, not provider_kwargs."""
+
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            "[langgraph]\n"
+            'model = "ollama:llama3.2:3b"\n'
+            "[langgraph.web_search]\n"
+            'provider = "tavily"\n'
+            "[langgraph.mcp.context7]\n"
+            'transport = "stdio"\n'
+            "[langgraph.cost]\n"
+            '"my-model" = { input = 1.0, output = 5.0 }\n'
+            "[langgraph.ollama]\n"
+            'base_url = "http://x:11434"\n'
+        )
+
+        config = Config.load(workspace_path=tmp_workspace)
+
+        # Reserved sub-tables routed to typed fields:
+        assert config.langgraph_web_search_provider == "tavily"
+        assert config.langgraph_mcp_servers == {"context7": {"transport": "stdio"}}
+        assert config.langgraph_cost_overrides == {"my-model": {"input": 1.0, "output": 5.0}}
+
+        # Only `ollama` lands in provider_kwargs - web_search/mcp/cost are excluded.
+        assert config.langgraph_provider_kwargs == {"ollama": {"base_url": "http://x:11434"}}
+
+    def test_scalar_langgraph_keys_not_treated_as_provider_subtables(self, tmp_workspace):
+        """Top-level `model`, `max_tokens_override` are scalars, not sub-tables."""
+
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            '[langgraph]\nmodel = "ollama:llama3.2:3b"\nmax_tokens_override = 65536\n'
+        )
+
+        config = Config.load(workspace_path=tmp_workspace)
+
+        assert config.langgraph_model == "ollama:llama3.2:3b"
+        assert config.langgraph_max_tokens_override == 65536
+        # No provider sub-tables - provider_kwargs stays empty.
+        assert config.langgraph_provider_kwargs == {}
+
+    def test_cost_overrides_parsed_into_cost_overrides_field(self, tmp_workspace):
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            "[langgraph.cost]\n"
+            '"claude-sonnet-4-5" = { input = 3.0, output = 15.0 }\n'
+            '"my-custom-model:7b" = { input = 0.5, output = 1.5 }\n'
+        )
+
+        config = Config.load(workspace_path=tmp_workspace)
+
+        assert config.langgraph_cost_overrides == {
+            "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+            "my-custom-model:7b": {"input": 0.5, "output": 1.5},
+        }

@@ -1,4 +1,4 @@
-"""Claudebox daemon — host-side multi-container orchestrator."""
+"""Claudebox daemon - host-side multi-container orchestrator."""
 
 from .app import run_daemon
 from .domain import DaemonConfig

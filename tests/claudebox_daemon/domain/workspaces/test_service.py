@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.workspaces.service — workspace management."""
+"""Tests for claudebox_daemon.domain.workspaces.service - workspace management."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -39,10 +39,11 @@ def _make_service(
         svc = WorkspaceService(ws, events, proxy)
 
     # Replace sub-services with async mocks so start/stop can be awaited.
-    # Touch the private fields directly — the public properties raise on access
+    # Touch the private fields directly - the public properties raise on access
     # for unavailable workspaces.
     if svc._container_service is not None:
         svc._container_service = AsyncMock()
+
     if svc._session_service is not None:
         svc._session_service = AsyncMock()
 

@@ -1,4 +1,4 @@
-"""Server wiring — Caddy reverse proxy for H2/TLS in production, uvicorn in dev."""
+"""Server wiring - Caddy reverse proxy for H2/TLS in production, uvicorn in dev."""
 
 import atexit
 import logging
@@ -36,7 +36,7 @@ from .constants import SERVER_PROCESS_TERMINATION_TIMEOUT
 
 
 def backend_server(factory, *, port: int) -> None:
-    """Run the daemon server — Caddy H2/TLS proxy in production, uvicorn with reload in dev."""
+    """Run the daemon server - Caddy H2/TLS proxy in production, uvicorn with reload in dev."""
 
     logger = get_logger(__name__)
     dev_mode = is_dev_mode()
@@ -165,6 +165,7 @@ def _drain_subprocess_output(proc: subprocess.Popen, name: str) -> None:
     def drain() -> None:
         if proc.stdout is None:
             return
+
         for line in proc.stdout:
             try:
                 line = line.decode("utf-8", errors="replace").rstrip()
@@ -218,9 +219,10 @@ def _frontend_port(port: int) -> int:
 
 
 def _frontend_url(port: int) -> str:
-    """Build the user-facing URL — HTTPS in production (Caddy TLS), HTTP in dev."""
+    """Build the user-facing URL - HTTPS in production (Caddy TLS), HTTP in dev."""
 
     scheme = "http" if is_dev_mode() else "https"
+
     return f"{scheme}://localhost:{_frontend_port(port)}"
 
 

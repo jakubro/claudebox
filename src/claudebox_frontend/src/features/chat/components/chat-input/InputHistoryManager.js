@@ -41,7 +41,7 @@ export default class InputHistoryManager {
     this._recentAdditions.push(content)
   }
 
-  /** Sync recent additions — remove items that are now in actual history. */
+  /** Sync recent additions - remove items that are now in actual history. */
   syncRecentAdditions() {
     if (this._recentAdditions.length > 0 && this._history.length > 0) {
       const historySet = new Set(this._history)

@@ -1,9 +1,8 @@
-"""Handler for the ``logs`` verb — tail daemon log (default) or multiplex daemon + containers (``all``)."""
+"""Handler for the ``logs`` verb - tail daemon log (default) or multiplex daemon + containers (``all``)."""
 
 import argparse
 import asyncio
 import json
-import re
 import subprocess
 import sys
 import time
@@ -12,8 +11,8 @@ from pathlib import Path
 
 import httpx
 
-from claudebox import console
-from claudebox.constants import DAEMON_PORT, daemon_config_path, daemon_log_dir
+from claudebox import console, render_event
+from claudebox.constants import DAEMON_PORT, daemon_base_url, daemon_config_path, daemon_log_dir
 
 
 NAME = "logs"
@@ -37,8 +36,9 @@ running, the backfill prints and the command exits (no live follow).
 When the log file is missing entirely, the command prints
 ``no daemon logs available`` and exits 0.
 
-colorization: ERROR red, WARNING yellow, INFO default, DEBUG dim. Color is
-suppressed under ``NO_COLOR`` or when stdout is not a TTY (Rich defaults).
+each record is rendered on one line with an ISO8601 date+time, the level,
+the logger name, and any extra fields. Errors appear red, warnings yellow,
+regular lines default (suppressed under ``NO_COLOR`` or non-TTY).
 """
 
 
@@ -65,15 +65,6 @@ def register(parser: argparse.ArgumentParser) -> None:
     )
 
 
-_LOG_LEVEL_RE = re.compile(r"\b(ERROR|WARNING|WARN|INFO|DEBUG)\b")
-_LEVEL_COLORS = {
-    "ERROR": "red",
-    "WARNING": "yellow",
-    "WARN": "yellow",
-    "INFO": "default",
-    "DEBUG": "dim",
-}
-_DAEMON_BASE_URL = f"https://localhost:{DAEMON_PORT}"
 _HTTP_TIMEOUT = httpx.Timeout(5.0, read=None)
 _FOLLOW_POLL_SECONDS = 0.2
 _PREFIX_DAEMON = "[cyan][daemon][/cyan]"
@@ -83,23 +74,56 @@ def handle(args: argparse.Namespace) -> int:
     """Dispatch on ``target``; ``all`` multiplexes daemon log + container SSE streams."""
 
     target = getattr(args, "target", None) or "daemon"
+
     if target == "all":
         return asyncio.run(_run_all(args))
 
     return _tail_daemon(args)
 
 
-def colorize_log_line(line: str) -> str:
-    """Wrap matched log-level tokens in Rich color tags (returns the styled line)."""
+def _render_line(line: str) -> str:
+    """Parse a JSON log line and render it; pass through unchanged when not JSON."""
 
-    def _wrap(match: re.Match[str]) -> str:
-        level = match.group(0)
-        color = _LEVEL_COLORS.get(level, "default")
-        if color == "default":
-            return level
-        return f"[{color}]{level}[/{color}]"
+    line = line.rstrip("\n")
 
-    return _LOG_LEVEL_RE.sub(_wrap, line)
+    try:
+        record = json.loads(line)
+    except (json.JSONDecodeError, TypeError):
+        return line
+
+    if not isinstance(record, dict):
+        return line
+
+    return render_event(record).rstrip("\n")
+
+
+def _stream_end_message(container: dict, exc: BaseException | None) -> str:
+    """Render a cause-bearing message when a container log stream ends.
+
+    Clean EOF reads as a dim notice; httpx exceptions surface the class name +
+    underlying message; HTTP errors include status + reason from the body's
+    first line. The default ``warning: container <id> stream ended`` line is
+    never emitted - every stream-end line carries its cause.
+    """
+
+    short_id = (container.get("id") or "?")[:12]
+
+    if exc is None:
+        return f"[dim]container {short_id} stream ended[/dim]"
+    elif isinstance(exc, httpx.HTTPStatusError):
+        body_first = ""
+
+        if exc.response is not None:
+            try:
+                body_first = (exc.response.text or "").splitlines()[0][:120]
+            except Exception:
+                body_first = ""
+
+        suffix = f" {body_first}" if body_first else ""
+
+        return f"[red]container {short_id}: HTTP {exc.response.status_code}{suffix}[/red]"
+    else:
+        return f"[red]container {short_id}: {type(exc).__name__}: {exc}[/red]"
 
 
 def _tail_daemon(args: argparse.Namespace) -> int:
@@ -112,8 +136,11 @@ def _tail_daemon(args: argparse.Namespace) -> int:
     if not log_path.exists():
         if not daemon_config_path().exists():
             console.print("no daemon logs available")
+
             return 0
+
         console.print("no daemon logs available")
+
         return 0
 
     daemon_running = _daemon_is_running()
@@ -121,21 +148,21 @@ def _tail_daemon(args: argparse.Namespace) -> int:
 
     if not follow:
         return 0
-    if not daemon_running:
+    elif not daemon_running:
         return 0
-
-    return _follow(log_path)
+    else:
+        return _follow(log_path)
 
 
 def _print_tail(log_path: Path, n: int) -> None:
-    """Print the last ``n`` lines of ``log_path``, colorized by log level."""
+    """Print the last ``n`` lines of ``log_path``, parsed and rendered through ConsoleRenderer."""
 
     if n <= 0:
         return
 
     with log_path.open("r", errors="replace") as fp:
         for line in deque(fp, maxlen=n):
-            console.print(colorize_log_line(line.rstrip("\n")))
+            console.print(_render_line(line), highlight=False)
 
 
 def _follow(log_path: Path) -> int:
@@ -144,10 +171,12 @@ def _follow(log_path: Path) -> int:
     try:
         with log_path.open("r", errors="replace") as fp:
             fp.seek(0, 2)
+
             while True:
                 line = fp.readline()
+
                 if line:
-                    console.print(colorize_log_line(line.rstrip("\n")))
+                    console.print(_render_line(line), highlight=False)
                 else:
                     sys.stdout.flush()
                     time.sleep(_FOLLOW_POLL_SECONDS)
@@ -187,8 +216,9 @@ async def _run_all(args: argparse.Namespace) -> int:
 
     async with httpx.AsyncClient(verify=False, timeout=_HTTP_TIMEOUT) as client:
         containers, warnings = await _fetch_containers(client)
+
         if containers is None:
-            # Daemon unreachable — surface the error and exit non-zero.
+            # Daemon unreachable - surface the error and exit non-zero.
             return 1
 
         for warning in warnings:
@@ -196,6 +226,7 @@ async def _run_all(args: argparse.Namespace) -> int:
 
         # Print the daemon-log backfill first (deterministic ordering with --no-follow).
         log_path = _daemon_log_path()
+
         if log_path.exists():
             _print_tail_prefixed(log_path, args.tail, _PREFIX_DAEMON)
 
@@ -208,6 +239,7 @@ async def _run_all(args: argparse.Namespace) -> int:
 
         # Follow mode: gather over daemon-log async tail + per-container SSE streams.
         tasks: list[asyncio.Task] = [asyncio.create_task(_follow_daemon_async(log_path))]
+
         for container in containers:
             tasks.append(asyncio.create_task(_follow_container_async(client, container)))
 
@@ -216,6 +248,7 @@ async def _run_all(args: argparse.Namespace) -> int:
         except (KeyboardInterrupt, asyncio.CancelledError):
             for task in tasks:
                 task.cancel()
+
             return 0
 
     return 0
@@ -227,37 +260,45 @@ async def _fetch_containers(
     """Return (containers, warnings); containers=None when the daemon is unreachable."""
 
     workspace_ids = _list_registered_workspace_ids()
+
     if not workspace_ids:
         try:
-            await client.get(f"{_DAEMON_BASE_URL}/api/workspaces")
+            await client.get(f"{daemon_base_url()}/api/workspaces")
         except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             console.print(f"[red]error: daemon not reachable: {exc}[/red]")
+
             return None, []
+
         return [], []
 
     async def _fetch_one(ws_id: str) -> tuple[str, list[dict] | None]:
         try:
-            resp = await client.get(f"{_DAEMON_BASE_URL}/api/workspaces/{ws_id}/containers")
+            resp = await client.get(f"{daemon_base_url()}/api/workspaces/{ws_id}/containers")
             resp.raise_for_status()
         except (httpx.RequestError, httpx.HTTPStatusError):
             return ws_id, None
+
         return ws_id, resp.json().get("containers", [])
 
     results = await asyncio.gather(*(_fetch_one(ws) for ws in workspace_ids))
 
     if all(c is None for _, c in results):
         console.print("[red]error: daemon not reachable[/red]")
+
         return None, []
 
     containers: list[dict] = []
     warnings: list[str] = []
+
     for ws_id, ws_containers in results:
         if ws_containers is None:
             warnings.append(f"workspace {ws_id} unreachable")
             continue
+
         for c in ws_containers:
             c["workspace_id"] = ws_id
             containers.append(c)
+
     return containers, warnings
 
 
@@ -265,12 +306,15 @@ def _list_registered_workspace_ids() -> list[str]:
     """Return all registered workspace IDs from ``~/.claudebox/daemon.json``."""
 
     config_path = daemon_config_path()
+
     if not config_path.exists():
         return []
+
     try:
         data = json.loads(config_path.read_text())
     except (OSError, json.JSONDecodeError):
         return []
+
     return [entry["id"] for entry in data.get("workspaces", []) if entry.get("id")]
 
 
@@ -282,13 +326,14 @@ def _print_tail_prefixed(log_path: Path, n: int, prefix: str) -> None:
 
     with log_path.open("r", errors="replace") as fp:
         for line in deque(fp, maxlen=n):
-            console.print(f"{prefix} {colorize_log_line(line.rstrip(chr(10)))}")
+            console.print(f"{prefix} {_render_line(line)}", highlight=False)
 
 
 def _container_prefix(container: dict) -> str:
     """Render ``[container <12-char-id>]`` in magenta for log prefixing."""
 
     short_id = (container.get("id") or "?")[:12]
+
     return f"[magenta][container {short_id}][/magenta]"
 
 
@@ -300,19 +345,23 @@ async def _print_container_backfill(
     """Fetch a one-shot log snapshot from a container and print last ``n`` lines."""
 
     url = _container_logs_url(container)
+
     if url is None:
         return
 
     try:
         response = await client.get(url, params={"tail": n})
         response.raise_for_status()
-    except (httpx.RequestError, httpx.HTTPStatusError):
-        # Per-container failure is non-fatal under the partial-failure contract.
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        # Partial-failure contract: surface the cause but do not abort the batch.
+        console.print(_stream_end_message(container, exc))
+
         return
 
     prefix = _container_prefix(container)
+
     for line in deque(response.text.splitlines(), maxlen=n):
-        console.print(f"{prefix} {colorize_log_line(line)}")
+        console.print(f"{prefix} {_render_line(line)}", highlight=False)
 
 
 async def _follow_daemon_async(log_path: Path) -> None:
@@ -322,12 +371,15 @@ async def _follow_daemon_async(log_path: Path) -> None:
         return
 
     loop = asyncio.get_running_loop()
+
     with log_path.open("r", errors="replace") as fp:
         fp.seek(0, 2)
+
         while True:
             line = await loop.run_in_executor(None, fp.readline)
+
             if line:
-                console.print(f"{_PREFIX_DAEMON} {colorize_log_line(line.rstrip(chr(10)))}")
+                console.print(f"{_PREFIX_DAEMON} {_render_line(line)}", highlight=False)
             else:
                 await asyncio.sleep(_FOLLOW_POLL_SECONDS)
 
@@ -339,21 +391,25 @@ async def _follow_container_async(
     """Stream the container's ``/logs`` SSE endpoint through the daemon proxy."""
 
     url = _container_logs_url(container)
+
     if url is None:
         return
 
     prefix = _container_prefix(container)
+
     try:
         async with client.stream("GET", url, params={"follow": "true"}) as response:
             response.raise_for_status()
+
             async for line in response.aiter_lines():
                 if line:
-                    console.print(f"{prefix} {colorize_log_line(line)}")
-    except (httpx.RequestError, httpx.HTTPStatusError):
-        # Partial failure: log to stderr, continue with remaining streams.
-        console.print(
-            f"[yellow]warning: container {container.get('id', '?')[:12]} stream ended[/yellow]"
-        )
+                    console.print(f"{prefix} {_render_line(line)}", highlight=False)
+    except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+        console.print(_stream_end_message(container, exc))
+
+        return
+
+    console.print(_stream_end_message(container, None))
 
 
 def _container_logs_url(container: dict) -> str | None:
@@ -361,6 +417,8 @@ def _container_logs_url(container: dict) -> str | None:
 
     workspace_id = container.get("workspace_id")
     container_id = container.get("id")
+
     if not workspace_id or not container_id:
         return None
-    return f"{_DAEMON_BASE_URL}/api/workspaces/{workspace_id}/containers/{container_id}/logs"
+
+    return f"{daemon_base_url()}/api/workspaces/{workspace_id}/containers/{container_id}/logs"

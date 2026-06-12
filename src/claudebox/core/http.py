@@ -1,4 +1,4 @@
-"""HTTP utilities — uvicorn server launcher and SSE streaming from broadcasters."""
+"""HTTP utilities - uvicorn server launcher and SSE streaming from broadcasters."""
 
 import asyncio
 import os

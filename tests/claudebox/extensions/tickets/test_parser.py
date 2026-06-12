@@ -67,6 +67,7 @@ _STATES_YAML = (
 
 def _minimal_board_yaml() -> str:
     """Return minimal valid board.yaml content."""
+
     return (
         _STATES_YAML + "backlog:\n"
         "  - path: tickets/backlog/t1.md\n"
@@ -80,6 +81,7 @@ def _minimal_board_yaml() -> str:
 
 def _full_board_yaml() -> str:
     """Return a board.yaml with swimlanes and multiple tickets."""
+
     return (
         _STATES_YAML + "prompt:\n"
         "  system: Do the thing\n"
@@ -109,11 +111,13 @@ def _write_board(tmp_path: Path, content: str) -> Path:
     board_dir.mkdir(parents=True)
     yaml_path = board_dir / "board.yaml"
     yaml_path.write_text(content)
+
     return yaml_path
 
 
 def _read_yaml(path: Path) -> dict:
     """Read YAML from path and return as dict."""
+
     return _yaml.load(path)
 
 
@@ -205,20 +209,24 @@ class TestParseBoard:
     def test_missing_file(self, tmp_path: Path) -> None:
         """Raise BoardParseError when board.yaml does not exist."""
         yaml_path = tmp_path / "nonexistent" / "board.yaml"
+
         with pytest.raises(BoardParseError):
             parse_board(yaml_path, tmp_path)
 
     def test_invalid_yaml(self, tmp_path: Path) -> None:
         """Raise BoardParseError when YAML is malformed."""
         yaml_path = _write_board(tmp_path, ":\n  :\n  - [invalid{yaml")
+
         with pytest.raises(BoardParseError):
             parse_board(yaml_path, tmp_path)
 
     def test_non_mapping_root(self, tmp_path: Path) -> None:
         """Raise BoardParseError when root is not a mapping."""
         yaml_path = _write_board(tmp_path, "- item1\n- item2\n")
+
         with pytest.raises(BoardParseError) as exc_info:
             parse_board(yaml_path, tmp_path)
+
         assert "Expected YAML mapping" in str(exc_info.value.context)
 
     def test_empty_columns(self, tmp_path: Path) -> None:
@@ -240,6 +248,7 @@ class TestParseBoard:
         )
         yaml_path = _write_board(tmp_path, content)
         board = parse_board(yaml_path, tmp_path)
+
         for col_tickets in board.columns.values():
             assert col_tickets == []
 
@@ -253,6 +262,7 @@ class TestParseBoard:
     def test_missing_states_raises(self, tmp_path: Path) -> None:
         """Raise BoardParseError when states: section is missing."""
         yaml_path = _write_board(tmp_path, "backlog: []\n")
+
         with pytest.raises(BoardParseError):
             parse_board(yaml_path, tmp_path)
 
@@ -330,14 +340,15 @@ class TestMoveTicket:
     def test_ticket_not_found(self, tmp_path: Path) -> None:
         """Raise TicketNotFound when ticket path is not in any column."""
         yaml_path = _write_board(tmp_path, _minimal_board_yaml())
+
         with pytest.raises(TicketNotFound):
             move_ticket(yaml_path, "tickets/backlog/missing.md", column="done")
 
     def test_index_none_appends(self, tmp_path: Path) -> None:
         """Default behavior (index=None) appends to the target column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        # backlog: t1 (frontend), t2 (backend) → move t1 within backlog with no index
-        # should land at the end (append). Source pop + append → [t2, t1].
+        # backlog: t1 (frontend), t2 (backend) -> move t1 within backlog with no index
+        # should land at the end (append). Source pop + append -> [t2, t1].
         move_ticket(yaml_path, "tickets/backlog/t1.md")
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
@@ -346,7 +357,7 @@ class TestMoveTicket:
     def test_index_zero_inserts_at_top(self, tmp_path: Path) -> None:
         """index=0 inserts at the start of the target column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        # backlog: [t1, t2] → move t2 to index 0 → [t2, t1]
+        # backlog: [t1, t2] -> move t2 to index 0 -> [t2, t1]
         move_ticket(yaml_path, "tickets/backlog/t2.md", index=0)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
@@ -356,7 +367,7 @@ class TestMoveTicket:
         """index value lands between existing entries."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         # Source list: backlog has [t1, t2]; target list: in-progress has [t3].
-        # Move t1 to in-progress at index 1 → in-progress becomes [t3, t1].
+        # Move t1 to in-progress at index 1 -> in-progress becomes [t3, t1].
         ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# T1\n")
@@ -368,7 +379,7 @@ class TestMoveTicket:
     def test_index_intra_column_reorder(self, tmp_path: Path) -> None:
         """index moves a ticket within its current column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        # backlog: [t1, t2] → move t2 to index 0 (intra-column) → [t2, t1]
+        # backlog: [t1, t2] -> move t2 to index 0 (intra-column) -> [t2, t1]
         move_ticket(yaml_path, "tickets/backlog/t2.md", index=0)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
@@ -377,7 +388,7 @@ class TestMoveTicket:
     def test_index_clamps_above_length(self, tmp_path: Path) -> None:
         """index larger than list length clamps to len(target_list)."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        # After popping t1 backlog has 1 entry [t2]; index=999 clamps to 1 → append.
+        # After popping t1 backlog has 1 entry [t2]; index=999 clamps to 1 -> append.
         move_ticket(yaml_path, "tickets/backlog/t1.md", index=999)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
@@ -392,7 +403,7 @@ class TestMoveTicket:
         assert paths == ["tickets/backlog/t2.md", "tickets/backlog/t1.md"]
 
     def test_index_with_column_and_swimlane_change(self, tmp_path: Path) -> None:
-        """Combining column, swimlane, and index — entry mutation occurs before insert."""
+        """Combining column, swimlane, and index - entry mutation occurs before insert."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
@@ -440,6 +451,7 @@ class TestArchiveTicket:
     def test_ticket_not_found(self, tmp_path: Path) -> None:
         """Raise TicketNotFound when ticket path is not in any column."""
         yaml_path = _write_board(tmp_path, _minimal_board_yaml())
+
         with pytest.raises(TicketNotFound):
             archive_ticket(yaml_path, "tickets/backlog/missing.md")
 
@@ -491,6 +503,7 @@ class TestRenameSwimlane:
     def test_not_found(self, tmp_path: Path) -> None:
         """Raise SwimlaneNotFound for unknown swimlane ID."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
+
         with pytest.raises(SwimlaneNotFound):
             rename_swimlane(yaml_path, "nonexistent", "New Name")
 
@@ -499,7 +512,7 @@ class TestRenameSwimlane:
 
 
 class TestRenameState:
-    """Tests for rename_state — display label rename, folder/id immutable."""
+    """Tests for rename_state - display label rename, folder/id immutable."""
 
     def test_renames_label(self, tmp_path: Path) -> None:
         """Update the display label and persist to YAML."""
@@ -518,7 +531,7 @@ class TestRenameState:
         assert str(in_progress["label"]) == "Working On"
 
     def test_folder_and_id_unchanged(self, tmp_path: Path) -> None:
-        """Folder and id stay intact — only the display label changes."""
+        """Folder and id stay intact - only the display label changes."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         rename_state(yaml_path, "backlog", "To Do")
 
@@ -539,12 +552,14 @@ class TestRenameState:
     def test_empty_label_raises(self, tmp_path: Path) -> None:
         """Reject empty/whitespace labels with InvalidLabel."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
+
         with pytest.raises(InvalidLabel):
             rename_state(yaml_path, "backlog", "   ")
 
     def test_unknown_state_raises(self, tmp_path: Path) -> None:
         """Raise StateNotFound for unknown state ID."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
+
         with pytest.raises(StateNotFound):
             rename_state(yaml_path, "nonexistent", "New")
 
@@ -572,6 +587,7 @@ class TestDeleteSwimlane:
     def test_not_found(self, tmp_path: Path) -> None:
         """Raise SwimlaneNotFound for unknown swimlane ID."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
+
         with pytest.raises(SwimlaneNotFound):
             delete_swimlane(yaml_path, "nonexistent")
 
@@ -663,6 +679,7 @@ class TestAssignTicket:
     def test_ticket_not_found(self, tmp_path: Path) -> None:
         """Raise TicketNotFound when ticket path is not in any column."""
         yaml_path = _write_board(tmp_path, _minimal_board_yaml())
+
         with pytest.raises(TicketNotFound):
             assign_ticket(yaml_path, "tickets/backlog/missing.md", "sess-1")
 
@@ -737,6 +754,7 @@ class TestParseStates:
             "backlog: []\n"
         )
         yaml_path = _write_board(tmp_path, content)
+
         with pytest.raises(BoardParseError):
             parse_board(yaml_path, tmp_path / "project")
 

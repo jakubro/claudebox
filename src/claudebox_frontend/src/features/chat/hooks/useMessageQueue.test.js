@@ -361,14 +361,14 @@ describe('useMessageQueue', () => {
         initialProps: defaultProps({ sessionId: null }),
       })
 
-      // Enqueue while sessionId is null (orphan — can't persist)
+      // Enqueue while sessionId is null (orphan - can't persist)
       act(() => {
         result.current.enqueueMessage('orphan msg')
       })
 
       expect(result.current.queueItems).toHaveLength(1)
 
-      // Session init: null → value
+      // Session init: null -> value
       rerender(defaultProps({ sessionId: 'new-session' }))
 
       // Orphan survives the transition
@@ -376,7 +376,7 @@ describe('useMessageQueue', () => {
       expect(result.current.queueItems[0].content).toBe('orphan msg')
     })
 
-    it('clears queue on explicit session switch (value → null → value)', () => {
+    it('clears queue on explicit session switch (value -> null -> value)', () => {
       const { result, rerender } = renderHook(props => useMessageQueue(props), {
         initialProps: defaultProps({ sessionId: 'session-1' }),
       })
@@ -385,15 +385,15 @@ describe('useMessageQueue', () => {
         result.current.enqueueMessage('session-1 msg')
       })
 
-      // Explicit switch: value → null (clearSessionData)
+      // Explicit switch: value -> null (clearSessionData)
       rerender(defaultProps({ sessionId: null }))
 
       expect(result.current.queueItems).toHaveLength(0)
 
-      // Then null → value (new session connects)
+      // Then null -> value (new session connects)
       rerender(defaultProps({ sessionId: 'session-2' }))
 
-      // No items carried over — queue was cleared at value→null step
+      // No items carried over - queue was cleared at value->null step
       expect(result.current.queueItems).toHaveLength(0)
     })
   })

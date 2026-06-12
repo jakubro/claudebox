@@ -15,7 +15,7 @@ const createStashItem = text => ({
   timestamp: Date.now(),
 })
 
-/** Default mock for useEvents — overrides merge over a sane empty baseline. */
+/** Default mock for useEvents - overrides merge over a sane empty baseline. */
 const eventsMock = (overrides = {}) => ({
   events: [],
   todosBySubagent: new Map(),
@@ -177,7 +177,7 @@ describe('useBadgeCounts', () => {
 
     const { result } = renderHook(() => useBadgeCounts())
 
-    // Only `failed` counts — `disconnected` and `disabled` are not "failed
+    // Only `failed` counts - `disconnected` and `disabled` are not "failed
     // to connect" in the strict sense; the danger badge represents a
     // server that the user must take action on.
     expect(result.current.mcpFailedCount).toBe(2)

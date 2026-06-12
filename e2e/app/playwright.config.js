@@ -6,7 +6,7 @@ export default defineConfig({
   testDir: './tests',
   testIgnore: ['**/demo-video*'],
 
-  workers: process.env.CLAUDEBOX_AGENT ? '25%' : '50%',
+  workers: process.env.CLAUDEBOX_AGENT ? '20%' : '20%',
   fullyParallel: true,
 
   reporter: [['html', { open: 'never' }]],

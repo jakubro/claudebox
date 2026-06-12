@@ -51,14 +51,14 @@ test.describe('Chat Display', () => {
 
       // Browser opts the turn into off-screen paint skipping via the
       // content-visibility property. Verify the computed style is 'auto'
-      // (the contract — without it, large sessions stall on initial paint).
+      // (the contract - without it, large sessions stall on initial paint).
       const cv = await turn.evaluate(el => getComputedStyle(el).contentVisibility)
       expect(cv).toBe('auto')
 
       // contain-intrinsic-size reserves a placeholder height so the
       // scrollbar doesn't jump as off-screen turns materialize. Assert
       // the height token is present (value tracked in CSS, not asserted
-      // pixel-exact here — pure presence is the contract).
+      // pixel-exact here - pure presence is the contract).
       const intrinsic = await turn.evaluate(el => getComputedStyle(el).containIntrinsicSize)
       expect(intrinsic).toMatch(/\d+px/)
     })
@@ -72,7 +72,7 @@ test.describe('Chat Display', () => {
       // The whole point of content-visibility:auto (vs display:none /
       // virtualization) is that off-screen content stays addressable.
       // Verify the assistant text is findable via DOM query regardless
-      // of viewport position — same surface Cmd-F uses.
+      // of viewport position - same surface Cmd-F uses.
       const text = await page
         .locator('.turn-container')
         .first()
@@ -139,7 +139,7 @@ test.describe('Chat Display', () => {
         },
       ])
 
-      // Wait for the assistant block to render — confirms responding state.
+      // Wait for the assistant block to render - confirms responding state.
       await expect(page.getByText('Once upon a time...').first()).toBeVisible()
 
       const badge = page.locator('.turn-duration').first()
@@ -159,7 +159,7 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // 5200ms → "5s"
+      // 5200ms -> "5s"
       const durationText = await page.locator('.turn-duration').first().textContent()
       expect(durationText).toMatch(/^\d+s$/)
     })
@@ -170,7 +170,7 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // 83000ms → "1m 23s"
+      // 83000ms -> "1m 23s"
       const durationText = await page.locator('.turn-duration').first().textContent()
       expect(durationText).toBe('1m 23s')
     })
@@ -181,7 +181,7 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // 3912000ms → "1h 5m 12s"
+      // 3912000ms -> "1h 5m 12s"
       const durationText = await page.locator('.turn-duration').first().textContent()
       expect(durationText).toBe('1h 5m 12s')
     })
@@ -686,7 +686,7 @@ test.describe('Chat Display', () => {
       const controlBar = page.locator('.panel-control-bar')
       await controlBar.locator('.chat-control-fork-split .panel-control-btn').first().click()
 
-      // No modal — fork executes directly
+      // No modal - fork executes directly
       await expect(page.locator('.rewind-modal')).not.toBeVisible()
       await expect.poll(() => forkPayload !== null).toBe(true)
       expect(forkPayload).not.toHaveProperty('turn_id')
@@ -1138,7 +1138,7 @@ test.describe('Chat Display', () => {
         { type: 'result', subtype: 'success', timestamp: Date.now() + 200 },
       ])
 
-      // Container restart event (no fork payload → plain "Restarted")
+      // Container restart event (no fork payload -> plain "Restarted")
       await controller.sendEvent({
         type: 'system',
         subtype: 'container_restarted',

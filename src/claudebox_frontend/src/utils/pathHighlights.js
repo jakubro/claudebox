@@ -1,4 +1,4 @@
-/** Pure path-highlight resolver — extracted from PathHighlighter.jsx, no React APIs. */
+/** Pure path-highlight resolver - extracted from PathHighlighter.jsx, no React APIs. */
 
 import { extractPathCandidates, resolvePathCandidate } from './pathCandidates'
 
@@ -7,7 +7,7 @@ import { extractPathCandidates, resolvePathCandidate } from './pathCandidates'
  *
  * @param {string} text
  * @param {string | null} sessionDir
- * @param {Object<string, string>} resolvedPaths - Candidate → absolute host path.
+ * @param {Object<string, string>} resolvedPaths - Candidate -> absolute host path.
  * @returns {Array<{start: number, end: number, candidate: string, resolved: string}>}
  */
 export function computeHighlights(text, sessionDir, resolvedPaths) {

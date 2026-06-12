@@ -1,4 +1,4 @@
-"""Tests for claudebox.time — timestamp generation and parsing."""
+"""Tests for claudebox.time - timestamp generation and parsing."""
 
 import re
 from datetime import datetime

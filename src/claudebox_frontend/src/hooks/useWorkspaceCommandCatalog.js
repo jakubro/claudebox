@@ -7,7 +7,7 @@ import { WorkspaceContext } from '../context/WorkspaceContext'
 /**
  * Fetch the workspace's filesystem-discovered slash commands so the welcome
  * screen's slash-command picker can populate before any container session
- * attaches. Result is the response from GET /api/workspaces/{id}/commands —
+ * attaches. Result is the response from GET /api/workspaces/{id}/commands -
  * shape `{custom, mcp, builtin}` mirrors the in-session `commands` field, so
  * SessionDataContext consumers do not branch on origin. Returns null until
  * the fetch resolves.
@@ -36,7 +36,7 @@ export default function useWorkspaceCommandCatalog() {
         }
       })
       .catch(err => {
-        // Best-effort — autocomplete falls through to empty list silently
+        // Best-effort - autocomplete falls through to empty list silently
         console.warn('useWorkspaceCommandCatalog: getCommandCatalog failed', err)
       })
 

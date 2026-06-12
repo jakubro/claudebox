@@ -1,4 +1,4 @@
-/** Pure textarea position primitives — line offsets and leading-whitespace counts. */
+/** Pure textarea position primitives - line offsets and leading-whitespace counts. */
 
 /** Index of the line start at or before pos. Returns 0 when no preceding newline. */
 export function lineStartOffset(value, pos) {

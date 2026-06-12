@@ -10,7 +10,7 @@ export default function usePendingMessages(events, sessionId) {
   const [pendingMessages, setPendingMessages] = useState([])
 
   // Clear pending messages only on genuine session switches (both old and new are
-  // non-null and different). During resume, sessionId transitions old → null → old;
+  // non-null and different). During resume, sessionId transitions old -> null -> old;
   // clearing on null would wipe a message submitted before the resume flow started.
   const prevSessionIdRef = useRef(sessionId)
   useEffect(() => {

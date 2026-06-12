@@ -27,7 +27,7 @@ import {
 const OPTS = { maxDiffPixelRatio: 0.01 }
 const OPTS_ANIM = { maxDiffPixelRatio: 0.02 }
 
-// Mobile device descriptor with `defaultBrowserType` stripped — Playwright disallows
+// Mobile device descriptor with `defaultBrowserType` stripped - Playwright disallows
 // changing the browser type inside a describe-scoped `test.use()`.
 const { defaultBrowserType: _ignored, ...PIXEL_5 } = devices['Pixel 5']
 
@@ -45,7 +45,7 @@ async function waitForToolBlock(page) {
 // Layout & Golden States
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Layout', () => {
+test.describe('Visual Regression - Layout', () => {
   test('default layout with all panels', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
@@ -55,7 +55,7 @@ test.describe('Visual Regression — Layout', () => {
     await expect(page).toHaveScreenshot('layout-default.png', OPTS)
   })
 
-  test('all panels closed — chat fills viewport', async ({ page }) => {
+  test('all panels closed - chat fills viewport', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -98,7 +98,7 @@ test.describe('Visual Regression — Layout', () => {
 // Turn States
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Turns', () => {
+test.describe('Visual Regression - Turns', () => {
   test('empty chat state', async ({ page }) => {
     await mockSSE(page, 'events/empty.jsonl')
     await mockAPI(page)
@@ -198,10 +198,10 @@ test.describe('Visual Regression — Turns', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Core File Tools
+// Tool Blocks - Core File Tools
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — File Tools', () => {
+test.describe('Visual Regression - File Tools', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -279,7 +279,7 @@ test.describe('Visual Regression — File Tools', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Read is collapsed by default — click to expand
+    // Read is collapsed by default - click to expand
     const block = await waitForToolBlock(page)
     await block.locator('.tool-header').click()
     await expect(block.locator('.markdown-preview-container')).toBeVisible()
@@ -298,10 +298,10 @@ test.describe('Visual Regression — File Tools', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Bash
+// Tool Blocks - Bash
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Bash Tool', () => {
+test.describe('Visual Regression - Bash Tool', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -353,10 +353,10 @@ test.describe('Visual Regression — Bash Tool', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Grep
+// Tool Blocks - Grep
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Grep Tool', () => {
+test.describe('Visual Regression - Grep Tool', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -396,10 +396,10 @@ test.describe('Visual Regression — Grep Tool', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Interactive (AskUser, ExitPlan)
+// Tool Blocks - Interactive (AskUser, ExitPlan)
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Interactive Tools', () => {
+test.describe('Visual Regression - Interactive Tools', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -443,10 +443,10 @@ test.describe('Visual Regression — Interactive Tools', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Tasks & Background
+// Tool Blocks - Tasks & Background
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Task Tools', () => {
+test.describe('Visual Regression - Task Tools', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -537,10 +537,10 @@ test.describe('Visual Regression — Task Tools', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Web & MCP Tools
+// Tool Blocks - Web & MCP Tools
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Web & MCP Tools', () => {
+test.describe('Visual Regression - Web & MCP Tools', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -592,10 +592,10 @@ test.describe('Visual Regression — Web & MCP Tools', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Special Rendering
+// Tool Blocks - Special Rendering
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Special Blocks', () => {
+test.describe('Visual Regression - Special Blocks', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -681,10 +681,10 @@ test.describe('Visual Regression — Special Blocks', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tool Blocks — Pending State
+// Tool Blocks - Pending State
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Pending States', () => {
+test.describe('Visual Regression - Pending States', () => {
   test('pending tool with spinner', async ({ page }) => {
     await mockAPI(page)
     await mockSSE(page, 'events/tool-pending.jsonl')
@@ -703,7 +703,7 @@ test.describe('Visual Regression — Pending States', () => {
 // User Message Variants
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — User Messages', () => {
+test.describe('Visual Regression - User Messages', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
   })
@@ -773,7 +773,7 @@ test.describe('Visual Regression — User Messages', () => {
 // Side Panels with Content
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Side Panels', () => {
+test.describe('Visual Regression - Side Panels', () => {
   test('todos panel with subagent sections', async ({ page }) => {
     await mockSSE(page, 'events/todos-subagent.jsonl')
     await mockAPI(page)
@@ -875,7 +875,7 @@ test.describe('Visual Regression — Side Panels', () => {
 // Overlays
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Overlays', () => {
+test.describe('Visual Regression - Overlays', () => {
   test('resume replay overlay', async ({ page }) => {
     await mockSSE(page, 'events/resuming.jsonl')
     await mockAPI(page)
@@ -939,7 +939,7 @@ test.describe('Visual Regression — Overlays', () => {
 // Header & Tab Bar
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Header & Tab Bar', () => {
+test.describe('Visual Regression - Header & Tab Bar', () => {
   test('header bar default state', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
@@ -952,7 +952,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
     )
   })
 
-  test('session header strip — active session with running container', async ({ page }) => {
+  test('session header strip - active session with running container', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -964,7 +964,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
     await expect(strip).toHaveScreenshot('session-header-strip-active.png', OPTS)
   })
 
-  test('session header strip — welcome state', async ({ page }) => {
+  test('session header strip - welcome state', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
@@ -977,7 +977,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
     await expect(strip).toHaveScreenshot('session-header-strip-welcome.png', OPTS)
   })
 
-  test('session header strip — creating spinner', async ({ page }) => {
+  test('session header strip - creating spinner', async ({ page }) => {
     let resolveNewSession
     const newSessionPromise = new Promise(resolve => {
       resolveNewSession = resolve
@@ -1024,7 +1024,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
     await expect(strip).toHaveScreenshot('header-new-session-menu-open.png', OPTS)
   })
 
-  test('confirm stop modal — stop variant', async ({ page }) => {
+  test('confirm stop modal - stop variant', async ({ page }) => {
     await mockSSE(page, 'events/responding.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1043,7 +1043,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
     }
   })
 
-  test('confirm stop modal — reload variant', async ({ page }) => {
+  test('confirm stop modal - reload variant', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1072,7 +1072,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
 
   test('rewind split-button chevron menu shows two options', async ({ page }) => {
     // Regression guard: the chevron lists "Rewind here" and "Rewind in new
-    // browser tab" — no third option.
+    // browser tab" - no third option.
     await mockSSE(page, 'events/rewind-point.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1088,7 +1088,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
 
   test('chat-control-bar fork chevron menu shows two options', async ({ page }) => {
     // Regression guard: chat-control-bar fork dropdown lists "Fork here" and
-    // "Fork in new browser tab" — no third option.
+    // "Fork in new browser tab" - no third option.
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1154,7 +1154,7 @@ test.describe('Visual Regression — Header & Tab Bar', () => {
 // Input Area States
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Input Area', () => {
+test.describe('Visual Regression - Input Area', () => {
   test('input area empty', async ({ page }) => {
     await createSSEController(page)
     await mockAPI(page)
@@ -1222,7 +1222,7 @@ test.describe('Visual Regression — Input Area', () => {
 // Panel Coverage Gaps
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Additional Panels', () => {
+test.describe('Visual Regression - Additional Panels', () => {
   test('bookmarks panel empty', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
@@ -1356,7 +1356,7 @@ test.describe('Visual Regression — Additional Panels', () => {
 // Minimap & Effort Picker
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Minimap & Controls', () => {
+test.describe('Visual Regression - Minimap & Controls', () => {
   test('minimap with long conversation', async ({ page }) => {
     await mockSSE(page, 'events/long-conversation.jsonl')
     await mockAPI(page)
@@ -1498,7 +1498,7 @@ test.describe('Visual Regression — Minimap & Controls', () => {
 // Special States
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Special States', () => {
+test.describe('Visual Regression - Special States', () => {
   test('permission plan mode divider', async ({ page }) => {
     await mockSSE(page, 'events/permission-plan-mode.jsonl')
     await mockAPI(page)
@@ -1539,7 +1539,7 @@ test.describe('Visual Regression — Special States', () => {
     )
   })
 
-  test('setting change dividers — model + effort + bypass', async ({ page }) => {
+  test('setting change dividers - model + effort + bypass', async ({ page }) => {
     // Combined fixture exercises three divider variants in one snapshot:
     // model_changed, effort_level_changed, permission_mode_changed (bypass).
     // Existing 'permission plan mode divider' covers Plan; this fills the rest.
@@ -1599,7 +1599,7 @@ const BOARD_DETAIL = {
   },
 }
 
-/** Inline board API mock for visual regression — kept self-contained. */
+/** Inline board API mock for visual regression - kept self-contained. */
 async function mockBoardsForVisuals(page) {
   await page.route(`**${BOARDS_WS_PREFIX}/boards`, async route => {
     if (route.request().method() === 'GET') {
@@ -1627,7 +1627,7 @@ async function mockBoardsForVisuals(page) {
 }
 
 /**
- * Lighter-weight ready check for board routes — the boards URL has no active
+ * Lighter-weight ready check for board routes - the boards URL has no active
  * session so waitForAppReady's chat-input enabled wait stalls. This waits
  * for footer + workspace label + fonts only.
  */
@@ -1637,8 +1637,8 @@ async function waitForBoardReady(page) {
   await page.evaluate(() => document.fonts.ready)
 }
 
-test.describe('Visual Regression — Boards', () => {
-  test('board view — kanban with swimlanes', async ({ page }) => {
+test.describe('Visual Regression - Boards', () => {
+  test('board view - kanban with swimlanes', async ({ page }) => {
     await mockSSE(page)
     await mockAPI(page)
     await mockBoardsForVisuals(page)
@@ -1649,7 +1649,7 @@ test.describe('Visual Regression — Boards', () => {
     await expect(page.locator('.board-board')).toHaveScreenshot('board-view-default.png', OPTS)
   })
 
-  test('board view — terse density', async ({ page }) => {
+  test('board view - terse density', async ({ page }) => {
     await mockSSE(page)
     await mockAPI(page)
     await mockBoardsForVisuals(page)
@@ -1660,7 +1660,7 @@ test.describe('Visual Regression — Boards', () => {
     await expect(page.locator('.board-board')).toHaveScreenshot('board-view-terse.png', OPTS)
   })
 
-  test('board view — ticket detail overlay open', async ({ page }) => {
+  test('board view - ticket detail overlay open', async ({ page }) => {
     await mockSSE(page)
     await mockAPI(page)
     await mockBoardsForVisuals(page)
@@ -1678,10 +1678,10 @@ test.describe('Visual Regression — Boards', () => {
 // Mobile
 // ---------------------------------------------------------------------------
 
-test.describe('Visual Regression — Mobile', () => {
+test.describe('Visual Regression - Mobile', () => {
   test.use({ ...PIXEL_5, hasTouch: true })
 
-  test('mobile layout — default', async ({ page }) => {
+  test('mobile layout - default', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1708,7 +1708,7 @@ test.describe('Visual Regression — Mobile', () => {
     await expect(page.locator('.status-strip')).toHaveScreenshot('mobile-status-strip.png', OPTS)
   })
 
-  test('mobile input area — empty', async ({ page }) => {
+  test('mobile input area - empty', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1717,7 +1717,7 @@ test.describe('Visual Regression — Mobile', () => {
     await expect(page.locator('.chat-input-row')).toHaveScreenshot('mobile-input-empty.png', OPTS)
   })
 
-  test('mobile input area — with text', async ({ page }) => {
+  test('mobile input area - with text', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1730,7 +1730,7 @@ test.describe('Visual Regression — Mobile', () => {
     )
   })
 
-  test('mobile drawer — open', async ({ page }) => {
+  test('mobile drawer - open', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1743,7 +1743,7 @@ test.describe('Visual Regression — Mobile', () => {
     await expect(page).toHaveScreenshot('mobile-drawer-open.png', OPTS)
   })
 
-  test('mobile drawer — multiple sessions', async ({ page }) => {
+  test('mobile drawer - multiple sessions', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
     await page.goto(DEFAULT_SESSION_URL)
@@ -1756,7 +1756,7 @@ test.describe('Visual Regression — Mobile', () => {
     await expect(page).toHaveScreenshot('mobile-drawer-sessions.png', OPTS)
   })
 
-  test('details sheet — open', async ({ page }) => {
+  test('details sheet - open', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1769,7 +1769,7 @@ test.describe('Visual Regression — Mobile', () => {
     await expect(page).toHaveScreenshot('mobile-details-sheet.png', OPTS)
   })
 
-  test('mobile — active response', async ({ page }) => {
+  test('mobile - active response', async ({ page }) => {
     await mockSSE(page, 'events/responding.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1778,7 +1778,7 @@ test.describe('Visual Regression — Mobile', () => {
     await expect(page).toHaveScreenshot('mobile-active-response.png', OPTS_ANIM)
   })
 
-  test('mobile — empty chat', async ({ page }) => {
+  test('mobile - empty chat', async ({ page }) => {
     await mockSSE(page, 'events/empty.jsonl')
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)

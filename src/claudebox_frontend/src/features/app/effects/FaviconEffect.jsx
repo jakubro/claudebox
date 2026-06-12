@@ -1,4 +1,4 @@
-/** App-level favicon dispatcher — workspace badge persists across every route. */
+/** App-level favicon dispatcher - workspace badge persists across every route. */
 
 import { useEvents } from '../../../context/EventsContext'
 import { useInteraction } from '../../../context/InteractionContext'

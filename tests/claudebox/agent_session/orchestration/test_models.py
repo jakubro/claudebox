@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.models — event and session data models."""
+"""Tests for claudebox.agent_session.orchestration.models - event and session data models."""
 
 from datetime import datetime
 from pathlib import Path
@@ -36,7 +36,7 @@ class TestPublishedEvent:
             is_human=False,
             raw={},
             id="e1",
-            ts="2026-03-06T12:00:00",  # ty: ignore[invalid-argument-type]  # Test verifies string→datetime coercion in PublishedEvent.__post_init__.
+            ts="2026-03-06T12:00:00",  # ty: ignore[invalid-argument-type]  # Test verifies string->datetime coercion in PublishedEvent.__post_init__.
             turn_id="t1",
         )
         assert isinstance(pub.ts, datetime)
@@ -64,8 +64,9 @@ class TestSessionSummary:
     def test_string_path_coercion(self):
         summary = SessionSummary(
             session_id="s1",
-            session_dir="/fake/sessions/abc",  # ty: ignore[invalid-argument-type]  # Test verifies string→Path coercion in SessionSummary.__post_init__.
-            workspace="/fake/project",  # ty: ignore[invalid-argument-type]  # Test verifies string→Path coercion in SessionSummary.__post_init__.
+            fork_point_cost_usd=0.0,
+            session_dir="/fake/sessions/abc",  # ty: ignore[invalid-argument-type]  # Test verifies string->Path coercion in SessionSummary.__post_init__.
+            workspace="/fake/project",  # ty: ignore[invalid-argument-type]  # Test verifies string->Path coercion in SessionSummary.__post_init__.
         )
         assert isinstance(summary.session_dir, Path)
         assert isinstance(summary.workspace, Path)
@@ -73,8 +74,9 @@ class TestSessionSummary:
     def test_string_timestamp_coercion(self):
         summary = SessionSummary(
             session_id="s1",
-            started_at="2026-03-06T12:00:00",  # ty: ignore[invalid-argument-type]  # Test verifies string→datetime coercion in SessionSummary.__post_init__.
-            updated_at="2026-03-06T13:00:00",  # ty: ignore[invalid-argument-type]  # Test verifies string→datetime coercion in SessionSummary.__post_init__.
+            fork_point_cost_usd=0.0,
+            started_at="2026-03-06T12:00:00",  # ty: ignore[invalid-argument-type]  # Test verifies string->datetime coercion in SessionSummary.__post_init__.
+            updated_at="2026-03-06T13:00:00",  # ty: ignore[invalid-argument-type]  # Test verifies string->datetime coercion in SessionSummary.__post_init__.
         )
         assert isinstance(summary.started_at, datetime)
         assert isinstance(summary.updated_at, datetime)

@@ -77,7 +77,7 @@ describe('WelcomeContent', () => {
 
     render(<WelcomeContent />)
 
-    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('-')).toBeInTheDocument()
   })
 
   it('does not render path when workspace not found', () => {

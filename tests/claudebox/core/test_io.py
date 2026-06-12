@@ -1,4 +1,4 @@
-"""Tests for claudebox.io — file I/O utilities."""
+"""Tests for claudebox.io - file I/O utilities."""
 
 import json
 import tomllib
@@ -166,6 +166,7 @@ class TestReadJson:
 
     def test_missing_file_without_default_raises(self, tmp_path):
         path = tmp_path / "missing.json"
+
         with pytest.raises(FileNotFoundError):
             read_json(path)
 
@@ -233,12 +234,14 @@ class TestReadToml:
 
     def test_missing_file_without_default_raises(self, tmp_path):
         path = tmp_path / "missing.toml"
+
         with pytest.raises(FileNotFoundError):
             read_toml(path)
 
     def test_invalid_toml_raises(self, tmp_path):
         path = tmp_path / "bad.toml"
         path.write_text("[broken\nno closing bracket")
+
         with pytest.raises(tomllib.TOMLDecodeError):
             read_toml(path)
 
@@ -252,6 +255,7 @@ class TestReadJsonCorrupt:
     def test_corrupt_json_raises(self, tmp_path):
         path = tmp_path / "bad.json"
         path.write_text("{not valid json")
+
         with pytest.raises(json.JSONDecodeError):
             read_json(path)
 
@@ -261,5 +265,6 @@ class TestCalculateHashMissing:
 
     def test_missing_file_raises(self, tmp_path):
         path = tmp_path / "nonexistent.txt"
+
         with pytest.raises(FileNotFoundError):
             calculate_hash(path)

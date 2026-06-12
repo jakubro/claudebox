@@ -1,15 +1,15 @@
-/** SSE connection lifecycle — connect, disconnect, reconnect scheduling, state tracking. */
+/** SSE connection lifecycle - connect, disconnect, reconnect scheduling, state tracking. */
 
 import { RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY } from '../config/timing'
 import { SSE_URL } from '../config/urls'
 
 /**
  * Connection states:
- *   'disconnected'  — initial / after explicit disconnect
- *   'connecting'    — EventSource created, waiting for open
- *   'connected'     — EventSource open, receiving events
- *   'reconnecting'  — connection lost, reconnect scheduled with backoff
- *   'error'         — permanent error (unused currently, reserved)
+ *   'disconnected'  - initial / after explicit disconnect
+ *   'connecting'    - EventSource created, waiting for open
+ *   'connected'     - EventSource open, receiving events
+ *   'reconnecting'  - connection lost, reconnect scheduled with backoff
+ *   'error'         - permanent error (unused currently, reserved)
  */
 const VALID_STATUSES = new Set(['disconnected', 'connecting', 'connected', 'reconnecting', 'error'])
 
@@ -136,7 +136,7 @@ export default class SSEConnectionManager {
       return
     }
     if (this._maxAttempts != null && this._attempt >= this._maxAttempts) {
-      this._setStatus('error', 'Connection lost — container may be unavailable')
+      this._setStatus('error', 'Connection lost - container may be unavailable')
       this._onReconnectExhausted?.()
       return
     }

@@ -1,4 +1,4 @@
-/** Chat API client functions — container-proxied endpoints. */
+/** Chat API client functions - container-proxied endpoints. */
 
 import { containerFetch } from './apiClient'
 

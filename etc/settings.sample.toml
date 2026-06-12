@@ -1,6 +1,6 @@
-##############################################################################
-## Claudebox Configuration                                                   #
-##############################################################################
+###############################################################################
+## Claudebox Configuration                                                    #
+###############################################################################
 
 ## Stop hierarchical config search at this level
 root = true
@@ -29,3 +29,47 @@ root = true
 ## Environment variables passed to container
 [env]
 #CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1
+
+###############################################################################
+## LangGraph runtime (alternative to the default Claude Agent SDK)            #
+## Set `agent = "langgraph"` above, then configure the model + provider here. #
+###############################################################################
+
+[langgraph]
+## Model in LangChain's "provider:model-id" form (init_chat_model convention)
+#model = "anthropic:claude-sonnet-4-5"
+## Pin the context window for models outside the curated table
+#max_tokens_override = 65536
+
+## Per-provider knobs land under [langgraph.<provider>] and are forwarded
+## verbatim to the underlying Chat<provider> constructor.
+
+[langgraph.ollama]
+#base_url = "http://host.containers.internal:11434"   # Ollama on the host
+
+[langgraph.openai]
+## Local OpenAI-compatible server (vLLM / LM Studio / llama.cpp)
+#base_url = "http://127.0.0.1:8000/v1"
+#probe_on_connect = true   # opt-in /v1/models pre-flight at session start
+
+## Per-model cost override (USD per million tokens) for models the curated
+## price table does not carry.
+[langgraph.cost]
+#"my-custom-model:7b" = { input = 0.5, output = 1.5 }
+
+## Web-search backend for the web_search tool
+[langgraph.web_search]
+#provider = "duckduckgo"          # default; no API key required
+#provider = "tavily"              # opt-in; needs the web-search-tavily extra
+#api_key_env = "TAVILY_API_KEY"   # env var holding the key
+
+## MCP servers: one [langgraph.mcp.<name>] block per server connection.
+## A failing server does not poison the others - surviving tools still bind.
+#[langgraph.mcp.context7]
+#transport = "stdio"
+#command = "npx"
+#args = ["-y", "@upstash/context7-mcp"]
+#
+#[langgraph.mcp.web]
+#transport = "sse"
+#url = "http://127.0.0.1:8765/sse"

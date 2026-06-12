@@ -180,4 +180,30 @@ describe('useKeyboardShortcuts', () => {
       expect(handleTogglePanel).not.toHaveBeenCalled()
     })
   })
+
+  describe('Alt+jump key routing (engagement-state transitions live on the jump callbacks)', () => {
+    it('Alt+Up invokes jumpPrevRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowUp', { altKey: true })
+      expect(jumpPrevRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('Alt+Down invokes jumpNextRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowDown', { altKey: true })
+      expect(jumpNextRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('Alt+Home invokes jumpTopRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('Home', { altKey: true })
+      expect(jumpTopRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('Alt+End invokes jumpBottomRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('End', { altKey: true })
+      expect(jumpBottomRef.current).toHaveBeenCalledOnce()
+    })
+  })
 })

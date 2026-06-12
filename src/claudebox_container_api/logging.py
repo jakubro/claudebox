@@ -1,4 +1,4 @@
-"""Container API logging — SSE broadcasting and per-session file logs."""
+"""Container API logging - SSE broadcasting and per-session file logs."""
 
 import asyncio
 import logging
@@ -12,10 +12,10 @@ from claudebox import Broadcaster, parse_timestamp, read_jsonl, use_log_file
 
 
 class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
-    """SSE log broadcaster — accepts LogRecord, emits SSE-shaped dicts, replays from log file."""
+    """SSE log broadcaster - accepts LogRecord, emits SSE-shaped dicts, replays from log file."""
 
     # Fields in the log file JSON that map directly to SSE dict keys.
-    _LOG_FILE_KNOWN_FIELDS = {"event", "level", "logger", "timestamp"}
+    _LOG_FILE_KNOWN_FIELDS = {"event", "level", "logger", "timestamp", "source", "stream"}
 
     def __init__(self, log_file_path: str | Path) -> None:
         """Pin the log file used as the replay source."""
@@ -36,12 +36,13 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
             await self.replay_to(queue, events)
         except Exception:
             await self.unsubscribe(subscriber_id)
+
             raise
 
         return subscriber_id, queue
 
     async def unsubscribe(self, subscriber_id: str) -> None:  # ty: ignore[invalid-method-override]
-        """Async wrapper around the base sync unsubscribe — satisfies AsyncBroadcastEventSource."""
+        """Async wrapper around the base sync unsubscribe - satisfies AsyncBroadcastEventSource."""
 
         super().unsubscribe(subscriber_id)
 
@@ -56,6 +57,7 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
         for record in read_jsonl(self._log_file_path):
             try:
                 raw_ts = record["timestamp"]
+
                 if isinstance(raw_ts, (float, int)):
                     ts = float(raw_ts)
                 elif isinstance(raw_ts, str):  # todo: why do we have to do this?!
@@ -75,6 +77,8 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
                 "level": record.get("level", "INFO").upper(),
                 "logger": record.get("logger", ""),
                 "message": record.get("event", ""),
+                "source": record.get("source", "api"),
+                "stream": record.get("stream"),
                 "extra": extra,
             }
 
@@ -83,6 +87,8 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
 
         if isinstance(event.msg, dict):
             message = event.msg.get("event", str(event.msg))
+            source = event.msg.get("source", "api")
+            stream = event.msg.get("stream")
             # Mirror the file-replay path's extra-rebuild so SSE frames carry
             # the same structured payload (exception, session.id, etc.).
             extra = {
@@ -90,6 +96,8 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
             } or None
         else:
             message = event.getMessage()
+            source = "api"
+            stream = None
             extra = getattr(event, "_context", None)
 
         return {
@@ -97,6 +105,8 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
             "level": event.levelname,
             "logger": event.name,
             "message": message,
+            "source": source,
+            "stream": stream,
             "extra": extra,
         }
 

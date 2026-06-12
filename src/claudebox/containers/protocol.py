@@ -1,4 +1,4 @@
-"""Container runtime protocol — interface for runtime implementations."""
+"""Container runtime protocol - interface for runtime implementations."""
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Protocol

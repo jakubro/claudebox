@@ -31,7 +31,7 @@ describe('easeOutCubic', () => {
 describe('computeScrollDestination', () => {
   it('aligns target top with container top (default edge)', () => {
     const container = createMockContainer({ scrollTop: 0 })
-    // Target's top is 200 below container's top, scrollTop=0 → destination=200
+    // Target's top is 200 below container's top, scrollTop=0 -> destination=200
     const target = createMockTarget({ top: 200, height: 80 })
 
     expect(computeScrollDestination(container, target)).toBe(200)
@@ -39,7 +39,7 @@ describe('computeScrollDestination', () => {
 
   it('aligns target top with container top when container already scrolled', () => {
     const container = createMockContainer({ scrollTop: 150 })
-    // Target's visual top is 200, container scrolled 150 → destination=350
+    // Target's visual top is 200, container scrolled 150 -> destination=350
     const target = createMockTarget({ top: 200, height: 80 })
 
     expect(computeScrollDestination(container, target, 'top')).toBe(350)

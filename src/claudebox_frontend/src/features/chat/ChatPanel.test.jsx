@@ -205,7 +205,7 @@ vi.mock('../../context/DaemonStreamContext', () => ({
   useDaemonStreamContext: () => mockDaemonStreamData,
 }))
 
-// Real Turn, real processEvents — filtering/grouping now in EventsContext
+// Real Turn, real processEvents - filtering/grouping now in EventsContext
 
 import {
   appendTurns,
@@ -404,7 +404,7 @@ describe('ChatPanel', () => {
 
       const turns = screen.getAllByTestId('turn-container')
       expect(turns).toHaveLength(1)
-      // Orphan turn has no user message — verify no message-user div
+      // Orphan turn has no user message - verify no message-user div
       expect(screen.queryByTestId('message-user')).not.toBeInTheDocument()
     })
   })
@@ -676,7 +676,7 @@ describe('ChatPanel', () => {
       // immediately to spawn a session.
       expect(screen.getByTestId('mock-chat-input')).toBeInTheDocument()
       // The chat-control-bar (model picker, fork, etc.) only renders for an
-      // active session — it must stay hidden on the welcome screen.
+      // active session - it must stay hidden on the welcome screen.
       expect(screen.queryByTestId('mock-chat-control-bar')).not.toBeInTheDocument()
     })
 

@@ -1,4 +1,4 @@
-/** Memoized fenced code block for Markdown — bails out on stable (code, language). */
+/** Memoized fenced code block for Markdown - bails out on stable (code, language). */
 
 import { memo } from 'react'
 import SyntaxHighlighter from 'react-syntax-highlighter'

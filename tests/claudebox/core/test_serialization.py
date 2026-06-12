@@ -1,4 +1,4 @@
-"""Tests for claudebox.serialization — JSON encoding and deserialization."""
+"""Tests for claudebox.serialization - JSON encoding and deserialization."""
 
 import dataclasses
 import json
@@ -79,7 +79,7 @@ class TestJSONEncoder:
     def test_asdict_takes_priority_over_dataclass(self):
         """Objects with .asdict() use that method, not dataclasses.asdict()."""
         person = Person(name="Test", age=1)
-        # Person is a dataclass but doesn't have custom asdict — uses dataclasses.asdict
+        # Person is a dataclass but doesn't have custom asdict - uses dataclasses.asdict
         result = json.loads(dumps(person))
         assert result["name"] == "Test"
 
@@ -186,18 +186,24 @@ class TestDumpLoad:
     def test_dump_and_load(self, tmp_path):
         path = tmp_path / "data.json"
         data = {"key": "value", "num": 42}
+
         with open(path, "w") as f:
             dump(data, f)
+
         with open(path) as f:
             result = load(f)
+
         assert result == data
 
     def test_dump_extended_types(self, tmp_path):
         path = tmp_path / "data.json"
+
         with open(path, "w") as f:
             dump({"path": Path("/fake"), "dt": datetime(2026, 1, 1)}, f)
+
         with open(path) as f:
             result = load(f)
+
         assert result["path"] == "/fake"
         assert result["dt"] == "2026-01-01T00:00:00"
 

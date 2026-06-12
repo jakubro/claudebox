@@ -1,4 +1,4 @@
-"""Session orchestration domain exceptions — typed errors with HTTP status codes."""
+"""Session orchestration domain exceptions - typed errors with HTTP status codes."""
 
 from ...errors import ApiError
 

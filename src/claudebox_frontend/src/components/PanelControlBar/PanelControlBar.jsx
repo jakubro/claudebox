@@ -1,4 +1,4 @@
-/** Shared 24px control bar — outer chrome for chat, board, and other panels. */
+/** Shared 24px control bar - outer chrome for chat, board, and other panels. */
 
 /**
  * Render a horizontal control bar with shared 24px chrome.

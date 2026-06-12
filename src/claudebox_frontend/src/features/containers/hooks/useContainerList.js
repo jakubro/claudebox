@@ -39,7 +39,7 @@ export default function useContainerList() {
 
   // Patch row status when a container_status event arrives. The daemon stream
   // shape is `{containerId, status}` (camelCase per useDaemonStream); the
-  // aggregator response uses snake-case `id` matching containerId — they refer
+  // aggregator response uses snake-case `id` matching containerId - they refer
   // to the same UUID.
   useEffect(() => {
     if (!lastContainerEvent) {

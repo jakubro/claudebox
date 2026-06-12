@@ -1,4 +1,4 @@
-/** Tests for MainPanel — URL-driven content selection (welcome | chat | board). */
+/** Tests for MainPanel - URL-driven content selection (welcome | chat | board). */
 
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'

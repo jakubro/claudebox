@@ -1,4 +1,4 @@
-"""Container lifecycle orchestration — spawn, stop, list."""
+"""Container lifecycle orchestration - spawn, stop, list."""
 
 import asyncio
 import functools
@@ -119,6 +119,7 @@ class ContainerService:
                 exc_info=True,
                 **self._log_context,
             )
+
             return
 
         seen_ids = set()
@@ -126,11 +127,13 @@ class ContainerService:
         for container in containers:
             labels = container.get("Labels") or {}
             container_id = labels.get(LABEL_ID)
+
             if not container_id:
                 continue
 
             # Filter by workspace label
             container_workspace = labels.get(LABEL_WORKSPACE)
+
             if container_workspace != self._workspace.id:
                 continue
 
@@ -152,6 +155,7 @@ class ContainerService:
                 )
 
             container_entry = self._containers[container_id]
+
             if container_entry.port == 0:
                 await self._refresh_port(container_entry)
 
@@ -217,14 +221,18 @@ class ContainerService:
         await self.save()
 
         await self._broadcast_status(container)
+
         return container
 
-    async def update(self, container: Container, **kwargs) -> None:
+    async def update(self, container: Container, **fields) -> None:
         """Apply field updates to a container and broadcast if status changed."""
 
         previous_status = container.status
 
-        for key, val in kwargs.items():
+        for key, val in fields.items():
+            if not hasattr(container, key):
+                raise TypeError(f"Container has no field {key!r}")
+
             setattr(container, key, val)
 
         await self.save()
@@ -263,13 +271,14 @@ class ContainerService:
         *,
         failure_message: str,
     ) -> None:
-        """Drive container through STOPPING → STOPPED via ``runtime_call(backend_id)``."""
+        """Drive container through STOPPING -> STOPPED via ``runtime_call(backend_id)``."""
 
         container = self.get(container_id)
         container.status = ContainerStatus.STOPPING
         await self._broadcast_status(container)
 
         loop = asyncio.get_running_loop()
+
         try:
             await loop.run_in_executor(None, runtime_call, container.backend_id)
         except Exception:
@@ -292,6 +301,7 @@ class ContainerService:
         container = self.get(container_id)
 
         loop = asyncio.get_running_loop()
+
         try:
             await loop.run_in_executor(
                 None,
@@ -322,6 +332,7 @@ class ContainerService:
             )
         except ContainerUnavailable:
             await self._refresh_port(container)
+
             return await self._proxy.send(
                 payload=payload,
                 container=container,
@@ -398,6 +409,7 @@ class ContainerService:
         )
 
         port = 0
+
         try:
             port = await loop.run_in_executor(
                 None,
@@ -443,6 +455,7 @@ class ContainerService:
             return
 
         loop = asyncio.get_running_loop()
+
         try:
             port = await loop.run_in_executor(
                 None,
@@ -452,6 +465,7 @@ class ContainerService:
                     WEB_CONTAINER_PORT,
                 ),
             )
+
             if port and port != container.port:
                 self._logger.info(
                     "Refreshed container port",

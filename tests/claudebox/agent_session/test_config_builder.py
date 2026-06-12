@@ -1,4 +1,4 @@
-"""Tests for ClaudeRuntime._build_sdk_options — config → SDK options round-trip."""
+"""Tests for ClaudeRuntime._build_sdk_options - config -> SDK options round-trip."""
 
 from pathlib import Path
 
@@ -24,6 +24,7 @@ def _config(**overrides) -> ClaudeAgentSessionConfig:
         "system_prompt": "do the thing",
     }
     defaults.update(overrides)
+
     return ClaudeAgentSessionConfig(**defaults)
 
 
@@ -117,6 +118,7 @@ class TestCapabilitiesAndRuntimeName:
 
         caps = runtime.capabilities
         assert isinstance(caps, RuntimeCapabilities)
+
         for field_name in RuntimeCapabilities.__dataclass_fields__:
             assert getattr(caps, field_name) is True, f"{field_name} should be True"
 

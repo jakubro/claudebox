@@ -1,4 +1,4 @@
-"""Tests for claudebox.workspace — workspace context and session access."""
+"""Tests for claudebox.workspace - workspace context and session access."""
 
 from claudebox.workspace import Workspace
 

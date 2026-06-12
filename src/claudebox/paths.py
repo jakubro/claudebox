@@ -23,6 +23,7 @@ def get_claudebox_root(start_dir: str | Path | None = None) -> Path:
     """Return workspace root or user home directory as fallback."""
 
     root = get_workspace_root(start_dir)
+
     return root or Path.home()
 
 
@@ -31,6 +32,7 @@ def get_sessions_root(start_dir: str | Path | None = None) -> Path:
 
     root = get_claudebox_root(start_dir) / CONFIG_DIR_NAME / SESSIONS_DIR_NAME
     touch_dir(root)
+
     return root
 
 
@@ -56,6 +58,7 @@ def get_session_dir(start_dir: str | Path, session_id: str) -> Path:
 
     path = get_sessions_root(start_dir) / make_session_dir_name(session_id)
     touch_dir(path)
+
     return path
 
 
@@ -65,6 +68,7 @@ def parse_session_dir_name(path: str | Path) -> tuple[datetime, str] | tuple[Non
     try:
         timestamp, session_id = Path(path).name.split("--", maxsplit=1)
         timestamp = parse_timestamp(timestamp).replace(tzinfo=UTC)
+
         return timestamp, session_id
     except (IndexError, ValueError):
         return None, None
@@ -74,6 +78,7 @@ def make_session_dir_name(session_id: str) -> str:
     """Generate {YYYYMMDD-HHMMSS}--{session_id} using current UTC time."""
 
     timestamp = get_timestamp()
+
     return f"{timestamp}--{session_id}"
 
 
@@ -82,6 +87,7 @@ def parse_timestamped_dir_name(path: str | Path) -> datetime | None:
 
     try:
         timestamp = Path(path).name.split("--", maxsplit=1)[0]
+
         return parse_timestamp(timestamp)
     except (IndexError, ValueError):
         return None

@@ -12,12 +12,12 @@ import { firstGrapheme } from '../utils/grapheme'
  * Render a column header that can be dragged to reorder, accept ticket drops, and renamed via double-click.
  *
  * Three roles on the same node:
- * - useSortable (id `col-header:${col}`) — column reorder; activated only via
+ * - useSortable (id `col-header:${col}`) - column reorder; activated only via
  *   the grip handle which is the sole element wired with sortable listeners.
- * - useDroppable (id `col:${col}`) — ticket drop target; `BoardTab.handleDragEnd`
+ * - useDroppable (id `col:${col}`) - ticket drop target; `BoardTab.handleDragEnd`
  *   recognizes the `col:` and `col-header:` prefixes as column-only moves
  *   that preserve each ticket's origin swimlane.
- * - Double-click — opens an inline rename input that PATCHes the column's
+ * - Double-click - opens an inline rename input that PATCHes the column's
  *   display label (folder and ID stay unchanged). Mirrors SwimlaneBand's
  *   rename pattern.
  *

@@ -10,7 +10,7 @@ import { getSettingChangeInfo, isSettingInitEvent } from '../utils/settingLabels
  * @param {Object} props.event - Divider event (model_changed, permission_mode_changed, effort_level_changed, or container_restarted)
  */
 export default function SettingChangeDivider({ event }) {
-  // Initialization events (no previous value) are not user-initiated — skip rendering
+  // Initialization events (no previous value) are not user-initiated - skip rendering
   const isInit = isSettingInitEvent(event)
   const { availableModels, availablePermissionModes, availableEffortLevels } = useSessionData()
   const { sessions } = useSessionsList()

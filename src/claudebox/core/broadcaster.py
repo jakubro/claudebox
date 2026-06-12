@@ -23,6 +23,7 @@ class Broadcaster(Generic[TSource, TTarget]):
         queue = asyncio.Queue()
 
         self._subscribers[subscriber_id] = queue
+
         return subscriber_id, queue
 
     def unsubscribe(self, subscriber_id: str) -> None:
@@ -67,6 +68,7 @@ class Broadcaster(Generic[TSource, TTarget]):
         events = list(events)
 
         started = self._on_replay_started(len(events))
+
         if started is not None:
             await queue.put(started)
 
@@ -75,6 +77,7 @@ class Broadcaster(Generic[TSource, TTarget]):
                 await queue.put(event)
 
         ended = self._on_replay_ended()
+
         if ended is not None:
             await queue.put(ended)
 

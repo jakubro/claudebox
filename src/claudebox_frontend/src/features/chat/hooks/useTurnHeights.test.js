@@ -1,4 +1,4 @@
-/** Tests for useTurnHeights hook — cache state machine + idle-warmup integration. */
+/** Tests for useTurnHeights hook - cache state machine + idle-warmup integration. */
 
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -111,7 +111,7 @@ function markIntersecting(elements, isIntersecting) {
   })
 }
 
-describe('useTurnHeights — initial mount', () => {
+describe('useTurnHeights - initial mount', () => {
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -153,7 +153,7 @@ describe('useTurnHeights — initial mount', () => {
   })
 
   it('caches prediction for off-screen turns instead of intrinsic-size measurement', () => {
-    // Off-screen turn with no events → prediction at the MIN floor (100).
+    // Off-screen turn with no events -> prediction at the MIN floor (100).
     // offsetHeight = 400 simulates the content-visibility:auto intrinsic placeholder
     // that the cache must NOT trust.
     const { messagesRef, turns } = createMockContainer([
@@ -162,7 +162,7 @@ describe('useTurnHeights — initial mount', () => {
 
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
 
-    // No IntersectionObserver fire → off-screen → predicted (MIN floor).
+    // No IntersectionObserver fire -> off-screen -> predicted (MIN floor).
     expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
     expect(result.current.turnHeights[0]).not.toBe(400) // not the misleading placeholder
     expect(result.current.userMessageHeights[0]).toBe(0)
@@ -208,7 +208,7 @@ describe('useTurnHeights — initial mount', () => {
   })
 })
 
-describe('useTurnHeights — sticky cache under content-visibility:auto', () => {
+describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -230,7 +230,7 @@ describe('useTurnHeights — sticky cache under content-visibility:auto', () => 
     })
     expect(result.current.turnHeights).toEqual({ 0: 500 })
 
-    // Simulate collapse — height shrinks; on-screen still, so cache refreshes.
+    // Simulate collapse - height shrinks; on-screen still, so cache refreshes.
     turnElements[0].offsetHeight = 60
     act(() => {
       resizeCallback?.()
@@ -245,7 +245,7 @@ describe('useTurnHeights — sticky cache under content-visibility:auto', () => 
     ])
 
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
-    // First mark on-screen → cache stores 800 real
+    // First mark on-screen -> cache stores 800 real
     markIntersecting(turnElements, true)
     act(() => {
       resizeCallback?.()
@@ -260,7 +260,7 @@ describe('useTurnHeights — sticky cache under content-visibility:auto', () => 
       resizeCallback?.()
       vi.runAllTimers()
     })
-    // Cached 800 wins — off-screen fire ignored.
+    // Cached 800 wins - off-screen fire ignored.
     expect(result.current.turnHeights).toEqual({ 0: 800 })
   })
 
@@ -291,7 +291,7 @@ describe('useTurnHeights — sticky cache under content-visibility:auto', () => 
     ])
 
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
-    // First observation off-screen → prediction (min floor since no events).
+    // First observation off-screen -> prediction (min floor since no events).
     expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
 
     // Turn scrolls into view; next ResizeObserver fire upgrades cache to 800.
@@ -334,7 +334,7 @@ describe('useTurnHeights — sticky cache under content-visibility:auto', () => 
       { totalHeight: 300, turnId: 'turn-coalesce' },
     ])
     renderHook(() => useTurnHeights(messagesRef, turns))
-    // Drain the idle warmup loop first — its onCacheUpdate also calls
+    // Drain the idle warmup loop first - its onCacheUpdate also calls
     // querySelectorAll and would inflate the steady-state count.
     act(() => vi.runAllTimers())
     container.querySelectorAll.mockClear()
@@ -346,12 +346,12 @@ describe('useTurnHeights — sticky cache under content-visibility:auto', () => 
     })
     act(() => vi.runAllTimers())
 
-    // Coalesced into ≤2 scans (one for updateHeights, optionally one for observeTurns from mutation).
+    // Coalesced into <=2 scans (one for updateHeights, optionally one for observeTurns from mutation).
     expect(container.querySelectorAll.mock.calls.length).toBeLessThanOrEqual(2)
   })
 })
 
-describe('useTurnHeights — idle warmup', () => {
+describe('useTurnHeights - idle warmup', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     // Force setTimeout fallback (jsdom lacks requestIdleCallback anyway).
@@ -370,7 +370,7 @@ describe('useTurnHeights — idle warmup', () => {
     ])
 
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
-    // Off-screen first observation → predicted (MIN floor).
+    // Off-screen first observation -> predicted (MIN floor).
     expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
 
     // Idle scheduler queued via setTimeout(0); advance to fire warmup.
@@ -400,7 +400,7 @@ describe('useTurnHeights — idle warmup', () => {
       { totalHeight: 600, turnId: 'turn-already-real' },
     ])
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
-    // First mark on-screen → cache stores real
+    // First mark on-screen -> cache stores real
     markIntersecting(turnElements, true)
     act(() => {
       resizeCallback?.()
@@ -425,13 +425,13 @@ describe('useTurnHeights — idle warmup', () => {
     })
 
     // runOnlyPendingTimers fires the currently-queued warmup tick once.
-    // Streaming guard → reschedules. New timer is NOT executed this pass,
+    // Streaming guard -> reschedules. New timer is NOT executed this pass,
     // so we avoid the infinite-reschedule loop that runAllTimers would trip.
     act(() => vi.runOnlyPendingTimers())
     expect(turnElements[0].classList.add).not.toHaveBeenCalled()
     expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
 
-    // Streaming ends → run the previously-rescheduled timer, warmup proceeds.
+    // Streaming ends -> run the previously-rescheduled timer, warmup proceeds.
     rerender({ s: false })
     act(() => vi.runOnlyPendingTimers())
     expect(turnElements[0].classList.add).toHaveBeenCalledWith('force-measure')
@@ -447,7 +447,7 @@ describe('useTurnHeights — idle warmup', () => {
     expect(result.current.turnHeights[0]).toBe(500)
     turnElements[0].classList.add.mockClear()
 
-    // Another idle pass should be a no-op — cache already has real measurement.
+    // Another idle pass should be a no-op - cache already has real measurement.
     act(() => vi.runAllTimers())
     expect(turnElements[0].classList.add).not.toHaveBeenCalled()
   })

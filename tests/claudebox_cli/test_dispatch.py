@@ -116,11 +116,12 @@ class TestBuildLayer:
     def test_layer_invalid_exits_2(self) -> None:
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["build", "--layer", "foo"])
+
         assert exc.value.code == 2
 
 
 class TestDaemonActions:
-    """``daemon`` accepts start/stop/restart/status sub-actions; bare → action=None."""
+    """``daemon`` accepts start/stop/restart/status sub-actions; bare -> action=None."""
 
     @pytest.mark.parametrize("action", ["start", "stop", "restart", "status"])
     def test_action_parses(self, action: str) -> None:
@@ -136,4 +137,5 @@ class TestDaemonActions:
     def test_unknown_action_exits_2(self) -> None:
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["daemon", "bogus"])
+
         assert exc.value.code == 2

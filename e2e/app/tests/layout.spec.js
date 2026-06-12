@@ -46,7 +46,7 @@ test.describe('Layout', () => {
     })
 
     // SPEC: layout:right-strip
-    test('right strip lists todos→stash→tasks→usage→mcp→commands→help top-to-bottom', async ({
+    test('right strip lists todos->stash->tasks->usage->mcp->commands->help top-to-bottom', async ({
       page,
     }) => {
       await page.goto(DEFAULT_SESSION_URL)
@@ -66,7 +66,7 @@ test.describe('Layout', () => {
       }
 
       // Each icon's vertical position must be strictly below the previous one
-      // — covers the "top to bottom" ordering portion of the claim.
+      // - covers the "top to bottom" ordering portion of the claim.
       let prevY = -Infinity
       for (const id of order) {
         const { y } = await page.locator(`[data-testid="${id}"]`).boundingBox()
@@ -80,7 +80,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Claim says "tooltip shows panel name and shortcut" — validate every icon,
+      // Claim says "tooltip shows panel name and shortcut" - validate every icon,
       // not just sessions, since the claim implies the full set.
       const expected = {
         'icon-sessions': 'Sessions (Alt+1)',
@@ -129,7 +129,7 @@ test.describe('Layout', () => {
       const panel = page.locator('[data-testid="panel-sessions"]')
       await expect(panel).toBeVisible()
 
-      // Capture the panel's current width — the claim says "saves width" on close,
+      // Capture the panel's current width - the claim says "saves width" on close,
       // so reopening must restore it (within reasonable tolerance for layout settle).
       const widthBefore = await panel.evaluate(el => {
         const group = el.closest('.dv-view')
@@ -141,7 +141,7 @@ test.describe('Layout', () => {
       await page.locator('[data-testid="icon-sessions"]').click()
       await expect(panel).not.toBeVisible()
 
-      // Toggle on — saved width must be restored
+      // Toggle on - saved width must be restored
       await page.locator('[data-testid="icon-sessions"]').click()
       await expect(panel).toBeVisible()
       const widthAfter = await panel.evaluate(el => {
@@ -272,7 +272,7 @@ test.describe('Layout', () => {
       await waitForAppReady(page)
 
       const modelEl = page.locator('[data-testid="footer-model"]')
-      // Model should show from fixture (claude-sonnet-4-6 → "Sonnet")
+      // Model should show from fixture (claude-sonnet-4-6 -> "Sonnet")
       await expect(modelEl).toContainText('Sonnet')
       // Should have a chevron indicator for clickability
       await expect(modelEl.locator('.chevron, svg, [data-icon]').first()).toBeVisible()
@@ -308,8 +308,8 @@ test.describe('Layout', () => {
               },
             })
           },
-          // Force the workspace default to null too — only then does the
-          // picker have nothing to display and falls through to "—".
+          // Force the workspace default to null too - only then does the
+          // picker have nothing to display and falls through to "-".
           getSessionDefaults: async route => {
             await route.fulfill({
               json: {
@@ -329,9 +329,9 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // With null session model AND null workspace default, footer shows "—"
+      // With null session model AND null workspace default, footer shows "-"
       const modelEl = page.locator('[data-testid="footer-model"]')
-      await expect(modelEl).toContainText('—')
+      await expect(modelEl).toContainText('-')
     })
 
     // SPEC: footer:model
@@ -592,7 +592,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The saved layout includes sessions panel in left.order — verify it's visible
+      // The saved layout includes sessions panel in left.order - verify it's visible
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
     })
 
@@ -807,7 +807,7 @@ test.describe('Layout', () => {
       await waitForAppReady(page)
 
       // Use the header-prefixed chevron testid to scope to the session-header-strip's
-      // split-button — the SessionsPanel hosts its own NewSessionSplitButton.
+      // split-button - the SessionsPanel hosts its own NewSessionSplitButton.
       const chevron = page.locator('[data-testid="header-new-session-chevron"]')
       await expect(chevron).toBeVisible()
       await expect(chevron).toHaveAttribute('title', 'More start options')
@@ -1336,7 +1336,7 @@ test.describe('Layout', () => {
       // Press Alt+1 (toggle sessions) while maximized
       await page.keyboard.press('Alt+1')
 
-      // Layout should unmaximize — sessions panel should be visible again
+      // Layout should unmaximize - sessions panel should be visible again
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
       await expect.poll(getSessionsWidth).toBeGreaterThan(50)
     })
@@ -1392,7 +1392,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // MCP is hidden by default (SPEC §1.6) — choose it for the closed-panel case.
+      // MCP is hidden by default (SPEC §1.6) - choose it for the closed-panel case.
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
 
       // Hovering the MCP icon (closed panel) eventually shows the floating
@@ -1411,7 +1411,7 @@ test.describe('Layout', () => {
       await waitForAppReady(page)
 
       // Maximize so the floating preview can render on hover. Use side-panel
-      // collapse as the maximize signal — dockview's `dv-groupview-maximized`
+      // collapse as the maximize signal - dockview's `dv-groupview-maximized`
       // class isn't always set in mocked env.
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
@@ -1432,7 +1432,7 @@ test.describe('Layout', () => {
       // At the default Desktop Chrome viewport (1280×720) the ratio
       // 0.6 × 1280 = 768 falls below the 800px floor, so the post-fix formula
       // resolves to 800px. The pre-fix formula resolves to
-      // max(300, 1280 × 0.4) = 512px — distinct enough to differentiate.
+      // max(300, 1280 × 0.4) = 512px - distinct enough to differentiate.
       await page.locator('.icon-strip-right [data-testid="icon-logs"]').hover()
       await expect(page.locator('.floating-panel')).toBeVisible()
       const actual = await page.evaluate(() =>
@@ -1473,10 +1473,10 @@ test.describe('Layout', () => {
         })
         .toBeLessThan(5)
 
-      // Press Alt+0 (toggle logs) while maximized — same handler the icon click hits.
+      // Press Alt+0 (toggle logs) while maximized - same handler the icon click hits.
       await page.keyboard.press('Alt+0')
 
-      // Layout unmaximizes first — dockview's maximized class drops.
+      // Layout unmaximizes first - dockview's maximized class drops.
       await expect
         .poll(() => page.evaluate(() => !!document.querySelector('.dv-groupview-maximized')))
         .toBe(false)
@@ -1561,7 +1561,7 @@ test.describe('Layout', () => {
     })
 
     test('hover tint variable clears when no workspace color is set', async ({ page }) => {
-      // Default ui-state has no workspaceColor — outer beforeEach is sufficient.
+      // Default ui-state has no workspaceColor - outer beforeEach is sufficient.
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
@@ -1603,7 +1603,7 @@ test.describe('Layout', () => {
       const overlay = page.locator('.chat-replay-overlay')
       await expect(overlay).not.toBeVisible()
 
-      // Alt+click the header `+` button — should route to new-browser-tab path.
+      // Alt+click the header `+` button - should route to new-browser-tab path.
       const newBtn = page.locator('[data-testid="header-new-session-btn"]')
       await expect(newBtn).toBeVisible()
       await newBtn.click({ modifiers: ['Alt'] })

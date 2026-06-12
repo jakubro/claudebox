@@ -1,12 +1,12 @@
 # Claudebox
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-actively_developed-green.svg)](#)
 
-Containerized isolation, customizable agent profiles, and a visual web UI — all for Claude Code.
+Containerized isolation, customizable agent profiles, and a visual web UI — for AI coding agents.
 
-Claudebox runs Claude Code in disposable containers — one per session, full agent capabilities, controlled host exposure. Profiles layer in system prompts, hooks, commands, skills, agents, and custom tools — install and customize what each project needs. The web interface renders the full conversation — markdown, code, diffs, and diagrams — while dockable panels let you manage sessions, track tasks, browse and edit files, queue follow-up messages, switch between sessions, and fork at any point in history: a multi-panel workspace the terminal can't replicate.
+Claudebox runs AI coding agents in disposable containers — one per session, full agent capabilities, controlled host exposure. Claude Code via the Claude Agent SDK by default, or any LangChain provider (Ollama, OpenAI, Gemini, and more) via LangGraph. Profiles layer in system prompts, hooks, commands, skills, agents, and custom tools — install and customize what each project needs. The web interface renders the full conversation — markdown, code, diffs, and diagrams — while dockable panels let you manage sessions, track tasks, browse and edit files, queue follow-up messages, switch between sessions, and fork at any point in history: a multi-panel workspace the terminal can't replicate.
 
 ## Prerequisites
 
@@ -127,7 +127,7 @@ With a marker in place, claudebox stores everything under `{workspace}/.claudebo
 
 | Path | Contents |
 |------|----------|
-| `.claudebox/settings.toml` | Per-workspace config |
+| `.claudebox/settings.toml` | Settings — overrides the global `~/.claudebox/settings.toml` |
 | `.claudebox/sessions/YYYYMMDD-HHMMSS--{session_id}/` | Per-session data, events, logs |
 | `.claudebox/fs/root/.claude.json` | Claude Code auth/config file (mounted into the container) |
 | `.claudebox/fs/root/.claude/` | Claude Code config directory (settings, commands, skills) |
@@ -303,6 +303,44 @@ The model, effort level, and permission mode indicators are interactive dropdown
 - Favicon animation while Claude is working
 - Tab title indicator (`*`) for unread responses
 
+## Multi-runtime support
+
+By default Claudebox runs Claude via the Claude Agent SDK. Set `agent = "langgraph"` to run on **LangGraph** instead, which talks to any LangChain-supported provider — Ollama, Anthropic, OpenAI, Google Gemini, Groq, Mistral, AWS Bedrock, and more. All provider packages ship preinstalled, so switching is config-only: set the model and credentials, then relaunch.
+
+### Configuration
+
+Add a `[langgraph]` block to `settings.toml` (global `~/.claudebox/settings.toml` or per-workspace — they deep-merge):
+
+```toml
+agent = "langgraph"
+
+[langgraph]
+model = "anthropic:claude-sonnet-4-5"   # "provider:model-id" form
+
+[langgraph.ollama]
+base_url = "http://host.containers.internal:11434"   # Ollama on the host
+```
+
+The model id follows LangChain's `init_chat_model` convention. Common providers:
+
+| Provider | Env var | `model =` |
+|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | `"anthropic:claude-sonnet-4-5"` |
+| OpenAI | `OPENAI_API_KEY` | `"openai:gpt-4o"` |
+| Google Gemini | `GOOGLE_API_KEY` | `"google_genai:gemini-2.5-pro"` |
+| Groq | `GROQ_API_KEY` | `"groq:llama-3.3-70b-versatile"` |
+| Mistral | `MISTRAL_API_KEY` | `"mistralai:mistral-large-latest"` |
+| Ollama | none | `"ollama:llama3.2:3b"` |
+| Local OpenAI server (vLLM, LM Studio, llama.cpp) | none | `"openai:<model>"` + `[langgraph.openai] base_url` |
+
+Anthropic, OpenAI, and Ollama are tested in CI; the other providers ship in the image and are user-supported. LangGraph workspaces also support MCP servers via `[langgraph.mcp.<name>]` blocks and a configurable `web_search` backend — see [`etc/settings.sample.toml`](etc/settings.sample.toml) for every knob.
+
+### What's different under LangGraph
+
+LangGraph binds the same core tools (filesystem, search, shell, web, MCP), but some Claude-only UI surfaces are hidden because the runtime doesn't support them: the effort picker, permission-mode picker, mid-session model picker, skills autocomplete, manual `/compact` button, and MCP control panel.
+
+> Model calls, `web_fetch`/`web_search`, and `[langgraph.mcp.*]` servers all make outbound requests from the container. The container's network policy is the real boundary — review your configured providers before adopting in privacy-sensitive workspaces.
+
 ## Advanced
 
 ### CLI Reference
@@ -406,7 +444,7 @@ Claudebox is organized into five packages:
 | `claudebox` | Core framework — workspace discovery, config loading, hook system, container abstraction. Shared by all other packages. |
 | `claudebox_cli` | Host-side CLI entry point. Parses arguments, builds container images, launches TUI containers. Registers workspaces via `workspaces register`. |
 | `claudebox_daemon` | Host-side daemon (FastAPI). Orchestrates multiple workspaces and containers, proxies requests to container APIs, manages session lifecycle (create, resume, fork). Serves the frontend in production over HTTPS via a Caddy reverse proxy. |
-| `claudebox_container_api` | In-container API server (FastAPI). Bridges the Claude Agent SDK and the frontend via HTTP and SSE. One instance per container. |
+| `claudebox_container_api` | In-container API server (FastAPI). Bridges the agent runtime (Claude Agent SDK or LangGraph) and the frontend via HTTP and SSE. One instance per container. |
 | `claudebox_frontend` | Vite-built React 19 SPA. Communicates with the daemon and container APIs. Dockview-based panel layout. |
 
 ```mermaid
@@ -419,7 +457,7 @@ flowchart LR
   CLI["claudebox<br/>(host CLI)"]
   subgraph Container
     API["claudebox_container_api"]
-    Claude["Claude Code / Claude Agent SDK"]
+    Runtime["Agent runtime<br/>(Claude Agent SDK / LangGraph)"]
   end
 
   Frontend -- "HTTPS :41820" --> Caddy
@@ -427,7 +465,7 @@ flowchart LR
   Daemon -- "serves SPA bundle" --> Frontend
   CLI -- "build / run" --> Container
   Daemon -- "lifecycle + proxy" --> API
-  API --> Claude
+  API --> Runtime
 ```
 
 ## Troubleshooting
@@ -501,7 +539,7 @@ podman image prune -f --filter label=app=claudebox
 
 ## Acknowledgements
 
-Built on [Claude Code](https://github.com/anthropics/claude-code) and the [Claude Agent SDK](https://docs.anthropic.com/claude/docs/agent-sdk). Uses [FastAPI](https://fastapi.tiangolo.com/), [Vite](https://vite.dev/), [React](https://react.dev/), [Dockview](https://dockview.dev/), [Playwright](https://playwright.dev/), [Caddy](https://caddyserver.com/), [uv](https://docs.astral.sh/uv/), [nvm](https://github.com/nvm-sh/nvm), [Podman](https://podman.io/), and [Docker](https://www.docker.com/).
+Built on [Claude Code](https://github.com/anthropics/claude-code) and the [Claude Agent SDK](https://docs.anthropic.com/claude/docs/agent-sdk). Uses [LangGraph](https://langchain-ai.github.io/langgraph/) and [LangChain](https://www.langchain.com/) for multi-provider runtime support, plus [FastAPI](https://fastapi.tiangolo.com/), [Vite](https://vite.dev/), [React](https://react.dev/), [Dockview](https://dockview.dev/), [Playwright](https://playwright.dev/), [Caddy](https://caddyserver.com/), [uv](https://docs.astral.sh/uv/), [nvm](https://github.com/nvm-sh/nvm), [Podman](https://podman.io/), and [Docker](https://www.docker.com/).
 
 ## License
 

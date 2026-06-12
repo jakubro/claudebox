@@ -1,4 +1,4 @@
-"""Sentinel — pytest-socket deny-by-default policy is active."""
+"""Sentinel - pytest-socket deny-by-default policy is active."""
 
 import socket
 

@@ -1,4 +1,4 @@
-/** Permission modes API client — container-proxied endpoints. */
+/** Permission modes API client - container-proxied endpoints. */
 
 import { containerFetch } from './apiClient'
 

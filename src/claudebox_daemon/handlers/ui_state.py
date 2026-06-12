@@ -1,4 +1,4 @@
-"""UI state persistence — workspace-scoped HTTP adapters."""
+"""UI state persistence - workspace-scoped HTTP adapters."""
 
 from fastapi import APIRouter
 

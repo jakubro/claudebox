@@ -1,6 +1,6 @@
 /** Pure helpers for the todoDiff shape produced by appendTodoDiffs / appendTaskDiffs. */
 
-/** Terminal task statuses — a blocker in one of these no longer blocks. */
+/** Terminal task statuses - a blocker in one of these no longer blocks. */
 const TERMINAL_STATUSES = new Set(['completed', 'removed'])
 
 /** Bucket order for grouped rendering rows (header bucket order is caller-defined). */
@@ -28,7 +28,7 @@ export function hasDiffItems(diff) {
  *      with a non-terminal status.
  *
  * Cross-run blockers (taskIds not present in `runItems`) are treated as
- * resolved — keeps the in-chat group self-contained as a frozen snapshot.
+ * resolved - keeps the in-chat group self-contained as a frozen snapshot.
  *
  * @param {object} item - Task item with optional blockedBy + _taskId fields.
  * @param {Array<object>} runItems - The set of items the renderer dedup'd by _taskId for this run.
@@ -70,12 +70,12 @@ export function deriveBlockedFlag_live(item, partitionItems) {
 
 /**
  * Walk a run's task blocks in order, collect items from each block's diff
- * buckets, and produce a deduped list — latest item per `_taskId` wins.
+ * buckets, and produce a deduped list - latest item per `_taskId` wins.
  * Items without `_taskId` (TaskCreate diffs emitted before tool_result, or
  * replay races) fall back to content-equality merging.
  *
  * @param {Array<{toolUseId: string}>} taskBlocks - The run's task-list tool blocks, in order.
- * @param {Map<string, object>} todoDiffs - todoDiffs map (toolUseId → diff).
+ * @param {Map<string, object>} todoDiffs - todoDiffs map (toolUseId -> diff).
  * @returns {Array<object>} Deduped items in first-seen order.
  */
 export function mergeRunItems(taskBlocks, todoDiffs) {
@@ -92,7 +92,7 @@ export function mergeRunItems(taskBlocks, todoDiffs) {
     if (!diff) {
       continue
     }
-    // Apply the bucket-implied status before merging — completed/started come
+    // Apply the bucket-implied status before merging - completed/started come
     // through the diff classifier (see appendTaskDiffs in eventProcessing.js).
     const buckets = [
       { items: diff.completed, status: 'completed' },

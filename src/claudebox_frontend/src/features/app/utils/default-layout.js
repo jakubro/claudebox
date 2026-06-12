@@ -23,7 +23,7 @@ export function buildDefaultLayout(api, manager) {
   const main = api.addPanel({
     id: 'main',
     component: 'main',
-    // Title never displayed — the main panel has no tab bar.
+    // Title never displayed - the main panel has no tab bar.
     title: 'Main',
   })
 
@@ -38,7 +38,7 @@ export function buildDefaultLayout(api, manager) {
   addPanelColumn(api, manager, 'left', ['sessions'])
 
   // Right side: Todos, Stash, Tasks, Bookmarks, Boards open by default in
-  // canonical order. Usage and MCP remain hidden — users can toggle them
+  // canonical order. Usage and MCP remain hidden - users can toggle them
   // on via the icon strip. Bookmarks/Boards seed here (not on the left)
   // because PANEL_SIDES routes them to the right strip.
   addPanelColumn(api, manager, 'right', ['todos', 'stash', 'tasks', 'bookmarks', 'boards'])

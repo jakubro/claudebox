@@ -26,7 +26,7 @@ function createMockContainer(options = {}) {
     height: containerHeight,
   })
 
-  // jsdom doesn't compute layout — override read-only geometry
+  // jsdom doesn't compute layout - override read-only geometry
   Object.defineProperty(container, 'scrollHeight', { get: () => scrollHeight })
   Object.defineProperty(container, 'clientHeight', { get: () => containerHeight })
 
@@ -323,6 +323,148 @@ describe('useMessageJump', () => {
           result.current.jumpBottom()
         })
       }).not.toThrow()
+    })
+  })
+
+  describe('autoscroll engagement transitions', () => {
+    // Order-capturing factory so each test asserts the temporal ordering of
+    // intent/returned/programmatic relative to the scroll write itself - not
+    // just "was called".
+    function withOrder() {
+      const order = []
+      const tag = name =>
+        vi.fn(() => {
+          order.push(name)
+        })
+      return {
+        order,
+        markUserIntent: tag('intent'),
+        markReturnedToBottom: tag('returned'),
+        markProgrammaticScroll: tag('programmatic'),
+      }
+    }
+
+    function attachScrollSpy(container, order) {
+      let scrollTopBacking = container.scrollTop
+      Object.defineProperty(container, 'scrollTop', {
+        configurable: true,
+        get: () => scrollTopBacking,
+        set: v => {
+          scrollTopBacking = v
+          order.push('scroll')
+        },
+      })
+    }
+
+    it('jumpPrev calls markUserIntent + markProgrammaticScroll before scroll', () => {
+      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
+      const { messagesRef, container } = createMockContainer({
+        containerTop: 200,
+        containerHeight: 500,
+        messages: [{ top: 50 }, { top: 300 }],
+      })
+      attachScrollSpy(container, order)
+
+      const { result } = renderHook(() =>
+        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
+      )
+
+      act(() => {
+        result.current.jumpPrev()
+      })
+
+      expect(markUserIntent).toHaveBeenCalledOnce()
+      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
+      expect(markReturnedToBottom).not.toHaveBeenCalled()
+      expect(order.indexOf('intent')).toBeLessThan(order.indexOf('programmatic'))
+      // scrollToEdge uses rAF so no scroll write occurs synchronously here -
+      // the ordering invariant is intent < programmatic, both before any later
+      // rAF callback runs.
+    })
+
+    it('jumpTop calls markUserIntent + markProgrammaticScroll before scroll', () => {
+      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
+      const { messagesRef, container } = createMockContainer({ scrollTop: 500 })
+      attachScrollSpy(container, order)
+
+      const { result } = renderHook(() =>
+        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
+      )
+
+      act(() => {
+        result.current.jumpTop()
+      })
+
+      expect(markUserIntent).toHaveBeenCalledOnce()
+      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
+      expect(markReturnedToBottom).not.toHaveBeenCalled()
+      expect(order).toEqual(['intent', 'programmatic', 'scroll'])
+    })
+
+    it('jumpBottom calls markReturnedToBottom + markProgrammaticScroll before scroll', () => {
+      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
+      const { messagesRef, container } = createMockContainer({ scrollTop: 0, scrollHeight: 2000 })
+      attachScrollSpy(container, order)
+
+      const { result } = renderHook(() =>
+        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
+      )
+
+      act(() => {
+        result.current.jumpBottom()
+      })
+
+      expect(markReturnedToBottom).toHaveBeenCalledOnce()
+      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
+      expect(markUserIntent).not.toHaveBeenCalled()
+      expect(order).toEqual(['returned', 'programmatic', 'scroll'])
+    })
+
+    it('jumpNext mid-list (target inside viewport-below) calls markUserIntent + markProgrammaticScroll', () => {
+      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
+      const { messagesRef, container } = createMockContainer({
+        containerTop: 0,
+        containerHeight: 500,
+        messages: [{ top: 100 }, { top: 600 }],
+      })
+      attachScrollSpy(container, order)
+
+      const { result } = renderHook(() =>
+        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
+      )
+
+      act(() => {
+        result.current.jumpNext()
+      })
+
+      expect(markUserIntent).toHaveBeenCalledOnce()
+      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
+      expect(markReturnedToBottom).not.toHaveBeenCalled()
+      expect(order.indexOf('intent')).toBeLessThan(order.indexOf('programmatic'))
+    })
+
+    it('jumpNext fall-through (no message below viewport) calls markReturnedToBottom + markProgrammaticScroll', () => {
+      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
+      const { messagesRef, container } = createMockContainer({
+        containerTop: 0,
+        containerHeight: 500,
+        scrollHeight: 2000,
+        messages: [{ top: 100 }, { top: 300 }],
+      })
+      attachScrollSpy(container, order)
+
+      const { result } = renderHook(() =>
+        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
+      )
+
+      act(() => {
+        result.current.jumpNext()
+      })
+
+      expect(markReturnedToBottom).toHaveBeenCalledOnce()
+      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
+      expect(markUserIntent).not.toHaveBeenCalled()
+      expect(order).toEqual(['returned', 'programmatic', 'scroll'])
     })
   })
 })

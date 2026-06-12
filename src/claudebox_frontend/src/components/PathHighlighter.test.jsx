@@ -8,7 +8,7 @@ import PathHighlighter from './PathHighlighter'
 const SESSION_DIR = '/home/user/.claudebox/sessions/abc123'
 
 describe('PathHighlighter', () => {
-  describe('/tmp path highlighting (backward compat)', () => {
+  describe('/tmp path highlighting', () => {
     it('highlights /tmp/ path with dotted underline', () => {
       render(<PathHighlighter sessionDir={SESSION_DIR}>File saved to /tmp/foo.log</PathHighlighter>)
 

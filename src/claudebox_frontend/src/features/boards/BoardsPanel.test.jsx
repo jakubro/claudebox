@@ -63,7 +63,7 @@ describe('BoardsPanel', () => {
 
     expect(screen.getByTestId('boards-refresh-meta')).toBeInTheDocument()
     expect(screen.getByTestId('refresh-icon')).toBeInTheDocument()
-    // No dedicated header strip — meta-item replaces the header refresh button.
+    // No dedicated header strip - meta-item replaces the header refresh button.
     expect(document.querySelector('.boards-panel-header')).not.toBeInTheDocument()
   })
 
@@ -100,7 +100,7 @@ describe('BoardsPanel', () => {
   })
 
   it('error state for missing workspace surfaces the same generic copy', () => {
-    // Mirrors the daemon-level "Workspace ID not set" invariant — the
+    // Mirrors the daemon-level "Workspace ID not set" invariant - the
     // BoardsPanel must render the centered + italic error treatment regardless
     // of the underlying error message. The harness only ships one workspace,
     // so the missing-workspace state is exercised here at the unit level.

@@ -24,7 +24,7 @@ class TestModels:
         assert ClaudeRuntime.get_default_model() in ids
 
     def test_get_model_context_window_known(self):
-        # claude-opus-4-7 — standard 200K window per AVAILABLE_MODELS
+        # claude-opus-4-7 - standard 200K window per AVAILABLE_MODELS
         assert ClaudeRuntime.get_model_context_window("claude-opus-4-7") == 200_000
 
     def test_get_model_context_window_unknown_falls_back_to_default(self):
@@ -40,6 +40,12 @@ class TestModels:
         ids = [m.id for m in ClaudeRuntime.get_models()]
         assert "claude-opus-4-8" in ids
         assert ClaudeRuntime.get_default_model() == "claude-opus-4-8"
+
+    def test_fable_5_and_mythos_5_present(self):
+        ids = {m.id for m in ClaudeRuntime.get_models()}
+        assert {"claude-fable-5", "claude-mythos-5"} <= ids
+        assert ClaudeRuntime.get_model_context_window("claude-fable-5") == 1_000_000
+        assert ClaudeRuntime.get_model_context_window("claude-mythos-5") == 1_000_000
 
     def test_no_explicit_1m_variant_ids(self):
         ids = [m.id for m in ClaudeRuntime.get_models()]
@@ -75,54 +81,12 @@ class TestPermissionAndEffortCatalogs:
 
 
 class TestSkillParser:
-    """Skill frontmatter parsing via ClaudeRuntime._parse_frontmatter + get_skills."""
+    """Skill frontmatter parsing via the public ClaudeRuntime.get_skills surface.
 
-    def test_parse_minimal_frontmatter(self):
-        content = textwrap.dedent("""\
-            ---
-            name: my-skill
-            description: example skill
-            ---
-            body
-            """)
-        skill = ClaudeRuntime._parse_frontmatter(content, fallback_name=None)
-        assert skill is not None
-        assert skill.name == "my-skill"
-        assert skill.description == "example skill"
-        assert skill.usage == "/my-skill"
-
-    def test_parse_with_argument_hint_builds_usage(self):
-        content = textwrap.dedent("""\
-            ---
-            name: refine
-            argument-hint: <ticket>
-            ---
-            """)
-        skill = ClaudeRuntime._parse_frontmatter(content, fallback_name=None)
-        assert skill is not None
-        assert skill.usage == "/refine <ticket>"
-        assert skill.argument_hint == "<ticket>"
-
-    def test_parse_fallback_name(self):
-        content = "---\ndescription: no-name\n---\nbody"
-        skill = ClaudeRuntime._parse_frontmatter(content, fallback_name="dir-name")
-        assert skill is not None
-        assert skill.name == "dir-name"
-
-    def test_parse_no_frontmatter_returns_none(self):
-        assert ClaudeRuntime._parse_frontmatter("no frontmatter here", fallback_name=None) is None
-
-    def test_parse_unclosed_frontmatter_returns_none(self):
-        assert ClaudeRuntime._parse_frontmatter("---\nname: x", fallback_name=None) is None
-
-    def test_parse_list_csv(self):
-        assert ClaudeRuntime._parse_list("a,b,c") == ["a", "b", "c"]
-
-    def test_parse_list_yaml(self):
-        assert ClaudeRuntime._parse_list(["a", "b"]) == ["a", "b"]
-
-    def test_parse_list_none(self):
-        assert ClaudeRuntime._parse_list(None) is None
+    Direct walker / parser tests live in test_skills.py against the shared
+    `agent_session/_skills.py` helper; these cases keep ClaudeRuntime's
+    externally-observable contract anchored.
+    """
 
     def test_get_skills_returns_skill_instances(self, tmp_path):
         skill_dir = tmp_path / "skills" / "alpha"
@@ -146,7 +110,7 @@ class TestSkillParser:
         assert "alpha" in names
 
     def test_get_skills_handles_missing_dirs(self, tmp_path):
-        # Neither dir exists — get_skills returns empty list, not error
+        # Neither dir exists - get_skills returns empty list, not error
         skills = ClaudeRuntime.get_skills(
             commands_dir=tmp_path / "missing-cmds",
             skills_dir=tmp_path / "missing-skills",

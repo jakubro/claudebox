@@ -1,4 +1,4 @@
-"""Daemon service — top-level object owning all daemon dependencies."""
+"""Daemon service - top-level object owning all daemon dependencies."""
 
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from .workspaces import RegisteredWorkspace, WorkspaceService
 
 
 class DaemonService:
-    """Top-level daemon service — owns the lifecycle of every sub-service."""
+    """Top-level daemon service - owns the lifecycle of every sub-service."""
 
     def __init__(self) -> None:
 
@@ -64,6 +64,7 @@ class DaemonService:
             return self._workspaces[workspace_id]
         except KeyError:
             self._reload_config()
+
             return await self._load_workspace(workspace_id)
 
     async def list_workspaces(self, sync: bool = True) -> list[WorkspaceService]:
@@ -75,13 +76,14 @@ class DaemonService:
         return list(self._workspaces.values())
 
     async def register_workspace(self, path: str | Path) -> RegisteredWorkspace:
-        """Register a workspace; idempotent — re-register returns the existing entry.
+        """Register a workspace; idempotent - re-register returns the existing entry.
 
         Newly-registered workspaces are eagerly loaded into the in-memory map so they
         are reachable via `get_workspace` without a subsequent sync.
         """
 
         workspace = self._daemon_config.register_workspace(path)
+
         if workspace.id not in self._workspaces:
             try:
                 await self._load_workspace(workspace.id)
@@ -90,6 +92,7 @@ class DaemonService:
                     "Failed to load newly registered workspace",
                     workspace={"id": workspace.id, "path": workspace.path},
                 )
+
         return workspace
 
     async def deregister_workspace(self, workspace_id: str) -> None:
@@ -102,6 +105,7 @@ class DaemonService:
             raise WorkspaceNotRegistered(workspace_id=workspace_id)
 
         svc = self._workspaces.pop(workspace_id, None)
+
         if svc is not None:
             try:
                 await svc.stop()
@@ -120,15 +124,18 @@ class DaemonService:
         workspaces = await self.list_workspaces(sync=True)
 
         entries: list[dict] = []
+
         for ws in workspaces:
             running = 0
             stopped = 0
+
             if ws.workspace.available and ws.container_service is not None:
                 for container in ws.container_service.list_all():
                     if container.status == ContainerStatus.RUNNING:
                         running += 1
                     else:
                         stopped += 1
+
             entries.append(
                 {
                     "id": ws.workspace.id,
@@ -174,4 +181,5 @@ class DaemonService:
         await svc.start()
 
         self._workspaces[workspace_id] = svc
+
         return svc

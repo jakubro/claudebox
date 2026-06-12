@@ -451,14 +451,9 @@ describe('stripTaskNotifications', () => {
     expect(stripTaskNotifications(msg)).toBe('Hello World')
   })
 
-  it('removes agent-notification tags and content', () => {
-    const msg = 'Start<agent-notification agent-id="a1">update</agent-notification> End'
-    expect(stripTaskNotifications(msg)).toBe('Start End')
-  })
-
-  it('removes multiple notification tags', () => {
+  it('removes multiple task-notification tags', () => {
     const msg =
-      '<task-notification task-id="1">x</task-notification>Content<agent-notification agent-id="2">y</agent-notification>'
+      '<task-notification task-id="1">x</task-notification>Content<task-notification task-id="2">y</task-notification>'
     expect(stripTaskNotifications(msg)).toBe('Content')
   })
 

@@ -1,4 +1,4 @@
-"""Background session mutation observer — detect in-session content changes."""
+"""Background session mutation observer - detect in-session content changes."""
 
 from typing import TYPE_CHECKING
 
@@ -43,6 +43,7 @@ class SessionMutationObserver(AsyncPoller):
                 continue
 
             changed_ids = []
+
             for container in svc.container_service.list_all():
                 if await self._check_container(container):
                     changed_ids.append(container.id)
@@ -76,12 +77,15 @@ class SessionMutationObserver(AsyncPoller):
             return False
 
         updated_at = data.get("updated_at")
+
         if not updated_at:
             return False
 
         cached = self._session_cache.get(container.id)
+
         if cached == updated_at:
             return False
 
         self._session_cache[container.id] = updated_at
+
         return cached is not None  # First observation is baseline, not a change

@@ -1,4 +1,4 @@
-/** Split-button for creating new sessions — main button + chevron dropdown. */
+/** Split-button for creating new sessions - main button + chevron dropdown. */
 
 import { ChevronDown, Loader2, Plus } from 'lucide-react'
 import { useCallback, useRef } from 'react'
@@ -10,9 +10,9 @@ import useNewSession from '../hooks/useNewSession'
 /**
  * Render a Plus + chevron split-button that creates new sessions.
  *
- * Click → new session in current browser tab.
- * Alt-click / middle-click on the main button → new session in new browser tab.
- * Chevron → dropdown with "New session" / "New session in new browser tab".
+ * Click -> new session in current browser tab.
+ * Alt-click / middle-click on the main button -> new session in new browser tab.
+ * Chevron -> dropdown with "New session" / "New session in new browser tab".
  *
  * @param {Object} props
  * @param {'inline'|'portal'} [props.dropdownPlacement='inline'] - Where to render the dropdown.

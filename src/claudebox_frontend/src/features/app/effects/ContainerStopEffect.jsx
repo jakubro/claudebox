@@ -21,7 +21,7 @@ import { resolveSessionIdFromContainer } from '../../../utils/containerLookup'
  * in it for seconds (daemon doesn't emit sessions_changed for container-level
  * session creation). containerMap closes that gap.
  *
- * Renders nothing — exists solely to coordinate context transitions.
+ * Renders nothing - exists solely to coordinate context transitions.
  */
 export default function ContainerStopEffect() {
   const { sessions } = useSessionsList()
@@ -30,23 +30,23 @@ export default function ContainerStopEffect() {
   const { clearSessionData } = useSessionActions()
 
   useEffect(() => {
-    // No active container — nothing to disconnect
+    // No active container - nothing to disconnect
     if (!(containerId && isConnected)) {
       return
     }
 
-    // Sessions list is stale during creation/resume — skip container-alive check
+    // Sessions list is stale during creation/resume - skip container-alive check
     if (isCreating || isResuming) {
       return
     }
 
-    // Sessions not yet loaded — skip until first real fetch completes
+    // Sessions not yet loaded - skip until first real fetch completes
     if (sessions.length === 0) {
       return
     }
 
     // Active container is alive if either source resolves it to a session.
-    // containerMap is populated eagerly by useNewSession — reliable for
+    // containerMap is populated eagerly by useNewSession - reliable for
     // recently-created containers that haven't appeared in sessions yet.
     if (!resolveSessionIdFromContainer(containerId, containerMap, sessions)) {
       disconnectSSE()

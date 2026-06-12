@@ -1,4 +1,4 @@
-"""Tool output — file retrieval from SDK storage."""
+"""Tool output - file retrieval from SDK storage."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,4 +80,5 @@ class ToolOutput:
         """Resolve path to tool output file without checking existence."""
 
         session = self._workspace.ensure_session(session_id)
+
         return session.sdk_tool_output_path(tool_use_id)

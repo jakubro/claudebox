@@ -268,7 +268,7 @@ describe('SidePanelManager', () => {
     })
 
     it('serializes and restores bottom state, filtering stray logs entries', () => {
-      // 'logs' is rendered in the full-width strip, never in the bottom slot —
+      // 'logs' is rendered in the full-width strip, never in the bottom slot -
       // any 'logs' id surfacing in bottom.order is stripped on restore (mirrors
       // the 'files' filter).
       manager.state.bottom = { height: 250, order: ['logs'] }
@@ -277,7 +277,7 @@ describe('SidePanelManager', () => {
 
       expect(json.bottom).toEqual({ height: 250, order: ['logs'] })
 
-      // Reset and restore — filter strips 'logs' from the order.
+      // Reset and restore - filter strips 'logs' from the order.
       manager.state.bottom = { height: null, order: [] }
       manager.fromJSON(json)
 
@@ -388,10 +388,10 @@ describe('SidePanelManager', () => {
 
       expect(groupApi.exitMaximized).toHaveBeenCalledOnce()
       expect(manager.preMaximizeLayout).toBeNull()
-      // No destructive fromJSON — exitMaximized preserves panels
+      // No destructive fromJSON - exitMaximized preserves panels
       expect(mockApi.fromJSON).not.toHaveBeenCalled()
 
-      // Flush rAF — dimensions restored from snapshot
+      // Flush rAF - dimensions restored from snapshot
       const rafCb = vi.mocked(globalThis.requestAnimationFrame).mock.calls[0][0]
       rafCb()
 
@@ -617,7 +617,7 @@ describe('SidePanelManager', () => {
       manager.state.bottom.order = ['logs']
       manager.state.bottom.height = 300
 
-      // Open a right panel — should restore bottom height too
+      // Open a right panel - should restore bottom height too
       manager.toggle('todos')
 
       const rafCallback = vi.mocked(globalThis.requestAnimationFrame).mock.calls[0][0]

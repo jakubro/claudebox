@@ -22,7 +22,7 @@ export default function McpPanel() {
   const servers = statusOverride || eventServers
 
   // Clear status override when new events arrive (e.g., after compaction/resume)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — only react to eventServers changes, not statusOverride
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional - only react to eventServers changes, not statusOverride
   useEffect(() => {
     if (statusOverride && eventServers.length > 0) {
       setStatusOverride(null)

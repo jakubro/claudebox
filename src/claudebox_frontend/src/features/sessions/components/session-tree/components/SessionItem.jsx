@@ -27,7 +27,7 @@ import ResumeSplitButton from './ResumeSplitButton'
  * @param {function} [props.onKillContainer] - Kill container callback (desktop only).
  * @param {function} [props.onOpenInNewTab] - Open in new browser tab callback (desktop only).
  * @param {function} [props.onClose] - Close drawer callback (mobile only, fired on current-session tap).
- * @param {boolean} [props.isMobile=false] - Mobile flag — hides pin/kill/resume-split, makes whole card the resume tap target.
+ * @param {boolean} [props.isMobile=false] - Mobile flag - hides pin/kill/resume-split, makes whole card the resume tap target.
  */
 function SessionItem({
   session,
@@ -61,7 +61,7 @@ function SessionItem({
 
   const startedTime = formatRelativeTime(session.started_at)
   const updatedTime = session.updated_at ? formatRelativeTime(session.updated_at) : null
-  // Memoize the two tooltip-only `toLocaleString` calls — formatters are
+  // Memoize the two tooltip-only `toLocaleString` calls - formatters are
   // sub-millisecond but cumulative across rows × flush rate.
   const startedAbsolute = useMemo(
     () => formatAbsoluteTime(session.started_at),
@@ -90,7 +90,7 @@ function SessionItem({
     setEditName('')
   }
 
-  // Mobile: whole card is the tap target. Non-current → resume; current → close
+  // Mobile: whole card is the tap target. Non-current -> resume; current -> close
   // the drawer (no resume call). Edit-mode swallows clicks via the edit-row's
   // own inputs; pencil click in display mode adds its own stopPropagation.
   const handleCardClick =
@@ -187,22 +187,22 @@ function SessionItem({
       <div className="sessions-row sessions-meta-row">
         <div className="sessions-meta-left">
           <span className="sessions-timestamp">
-            <span title={`Started — ${startedAbsolute}`}>{startedTime}</span>
+            <span title={`Started - ${startedAbsolute}`}>{startedTime}</span>
             {updatedTime && updatedTime !== startedTime && (
               <>
-                {' → '}
-                <span title={`Last active — ${updatedAbsolute}`}>{updatedTime}</span>
+                {' -> '}
+                <span title={`Last active - ${updatedAbsolute}`}>{updatedTime}</span>
               </>
             )}
           </span>
           {(session.num_turns != null || session.total_cost_usd != null) && (
             <span className="sessions-meta-extra">
               {' · '}
-              <span title={`Turns — ${session.num_turns ?? 0}`}>
+              <span title={`Turns - ${session.num_turns ?? 0}`}>
                 {formatTurns(session.num_turns)}
               </span>
               {' · '}
-              <span title={`API cost this session — $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
+              <span title={`API cost this session - $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
                 {formatCost(session.total_cost_usd)}
               </span>
             </span>
@@ -245,11 +245,11 @@ function SessionItem({
       <div className="sessions-row sessions-meta-overflow">
         {session.num_turns != null || session.total_cost_usd != null ? (
           <>
-            <span title={`Turns — ${session.num_turns ?? 0}`}>
+            <span title={`Turns - ${session.num_turns ?? 0}`}>
               {formatTurns(session.num_turns)}
             </span>
             {' · '}
-            <span title={`API cost this session — $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
+            <span title={`API cost this session - $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
               {formatCost(session.total_cost_usd)}
             </span>
           </>

@@ -1,4 +1,4 @@
-/** Tests for useDockviewLayout — focused on maximize snapshot and cleanup. */
+/** Tests for useDockviewLayout - focused on maximize snapshot and cleanup. */
 
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -99,7 +99,7 @@ describe('useDockviewLayout', () => {
         result.current.handleMaximizeToggle(groupApi)
       })
 
-      // Hook delegates to manager — maximize is NOT called directly by the hook
+      // Hook delegates to manager - maximize is NOT called directly by the hook
       expect(groupApi.maximize).not.toHaveBeenCalled()
     })
 

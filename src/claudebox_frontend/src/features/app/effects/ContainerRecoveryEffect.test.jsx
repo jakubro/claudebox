@@ -1,4 +1,4 @@
-/** Tests for ContainerRecoveryEffect — container SSE reconnect recovery. */
+/** Tests for ContainerRecoveryEffect - container SSE reconnect recovery. */
 
 import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,7 +24,7 @@ vi.mock('../../../context/EventsContext', () => ({
   useEvents: () => mockEvents,
 }))
 
-const mockContainerMap = { setSessionContainer: vi.fn() }
+const mockContainerMap = { setSessionContainer: vi.fn(), stoppingSessions: new Set() }
 vi.mock('../../../context/ContainerMapContext', () => ({
   useContainerMap: () => mockContainerMap,
 }))
@@ -55,6 +55,7 @@ describe('ContainerRecoveryEffect', () => {
     vi.clearAllMocks()
     mockRouting.activeSessionId = 'sess-1'
     mockEvents.containerRecoveryNeeded = 0
+    mockContainerMap.stoppingSessions = new Set()
   })
 
   afterEach(() => {
@@ -99,6 +100,16 @@ describe('ContainerRecoveryEffect', () => {
     expect(mockEvents.reconnectSSE).toHaveBeenCalled()
   })
 
+  it('does not resurrect a session the user stopped (stopped-intent guard)', () => {
+    // The session is mid-stop; container recovery must NOT spawn a fresh container.
+    mockContainerMap.stoppingSessions = new Set(['sess-1'])
+
+    renderAndExhaust()
+
+    expect(mockResumeSession).not.toHaveBeenCalled()
+    expect(mockEvents.startResume).not.toHaveBeenCalled()
+  })
+
   it('disconnects SSE and shows error on resume failure', async () => {
     mockResumeSession.mockRejectedValue(new Error('network error'))
 
@@ -106,7 +117,7 @@ describe('ContainerRecoveryEffect', () => {
 
     await vi.waitFor(() => {
       expect(mockInteraction.setError).toHaveBeenCalledWith(
-        'Container reconnect failed — waiting for daemon',
+        'Container reconnect failed - waiting for daemon',
       )
     })
 

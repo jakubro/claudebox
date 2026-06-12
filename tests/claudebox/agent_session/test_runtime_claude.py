@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.runtime_claude — ClaudeRuntime composition adapter."""
+"""Tests for claudebox.agent_session.runtime_claude - ClaudeRuntime composition adapter."""
 
 import asyncio
 import json
@@ -33,6 +33,7 @@ def _make_config(**overrides) -> ClaudeAgentSessionConfig:
         "hooks": HookCallbacks(),
     }
     defaults.update(overrides)
+
     return ClaudeAgentSessionConfig(**defaults)
 
 
@@ -40,6 +41,7 @@ def _make_runtime(**config_overrides) -> ClaudeRuntime:
     """Build a ClaudeRuntime with mocked SDK to avoid real connection."""
 
     config = _make_config(**config_overrides)
+
     with patch(
         "claudebox.agent_session.runtime_claude.BaseClaudeSDKClient",
         autospec=True,
@@ -79,6 +81,7 @@ class TestInit:
 
         def _capture(options):
             captured["stderr"] = options.stderr
+
             return MagicMock()
 
         with patch(
@@ -96,7 +99,7 @@ class TestInit:
 
 
 class TestComposition:
-    """ClaudeRuntime wraps BaseClaudeSDKClient via composition — never subclasses."""
+    """ClaudeRuntime wraps BaseClaudeSDKClient via composition - never subclasses."""
 
     def test_holds_sdk_via_composition(self):
         """_sdk attribute exists and is the SDK client instance, not self."""
@@ -106,7 +109,7 @@ class TestComposition:
         assert runtime._sdk is not runtime
 
     def test_is_not_a_subclass_of_sdk(self):
-        """Composition over inheritance — runtime is not a BaseClaudeSDKClient."""
+        """Composition over inheritance - runtime is not a BaseClaudeSDKClient."""
 
         from claude_agent_sdk import ClaudeSDKClient as BaseClaudeSDKClient
 
@@ -132,6 +135,7 @@ class TestCapabilitiesAndIdentity:
 
         caps = _make_runtime().capabilities
         assert isinstance(caps, RuntimeCapabilities)
+
         for field_name in RuntimeCapabilities.__dataclass_fields__:
             assert getattr(caps, field_name) is True, f"{field_name} should be True"
 
@@ -203,7 +207,7 @@ class TestQuery:
 
 
 class TestInterrupt:
-    """Interrupt behavior — clears buffer pre-ready, forwards post-ready."""
+    """Interrupt behavior - clears buffer pre-ready, forwards post-ready."""
 
     @pytest.mark.anyio
     async def test_clears_buffer_when_not_ready(self):
@@ -340,7 +344,7 @@ class TestGetContextUsage:
 
     @pytest.mark.anyio
     async def test_returns_none_on_empty_sdk_response(self):
-        """SDK returns {} → get_context_usage returns None (no data signal)."""
+        """SDK returns {} -> get_context_usage returns None (no data signal)."""
 
         runtime = _make_runtime()
         runtime.ready.set()
@@ -353,7 +357,7 @@ class TestGetContextUsage:
 
     @pytest.mark.anyio
     async def test_returns_none_when_keys_missing(self):
-        """SDK returns partial dict → None (treat as no data; no fabricated 0s)."""
+        """SDK returns partial dict -> None (treat as no data; no fabricated 0s)."""
 
         from claudebox.agent_session.catalogs import ContextUsage
 
@@ -363,16 +367,18 @@ class TestGetContextUsage:
         with patch.object(runtime._sdk, "get_context_usage", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"totalTokens": 100}  # maxTokens missing
             result = await runtime.get_context_usage()
+
         assert result is None
 
         with patch.object(runtime._sdk, "get_context_usage", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"maxTokens": 200}  # totalTokens missing
             result = await runtime.get_context_usage()
+
         assert result is None
 
     @pytest.mark.anyio
     async def test_maps_sdk_dict_to_context_usage(self):
-        """SDK {totalTokens, maxTokens} → ContextUsage(used_tokens, max_tokens)."""
+        """SDK {totalTokens, maxTokens} -> ContextUsage(used_tokens, max_tokens)."""
 
         from claudebox.agent_session.catalogs import ContextUsage
 
@@ -389,7 +395,7 @@ class TestGetContextUsage:
 
 
 class TestConnect:
-    """Connection lifecycle — ready event + flush task."""
+    """Connection lifecycle - ready event + flush task."""
 
     @pytest.mark.anyio
     async def test_sets_ready_event(self):
@@ -426,6 +432,7 @@ class TestConnect:
         runtime = _make_runtime()
 
         order: list[str] = []
+
         with (
             patch.object(
                 runtime._sdk,
@@ -445,7 +452,7 @@ class TestConnect:
 
 
 class TestDisconnect:
-    """Disconnect cleanup — clears state, cancels flush task."""
+    """Disconnect cleanup - clears state, cancels flush task."""
 
     @pytest.mark.anyio
     async def test_clears_ready_event(self):
@@ -716,6 +723,30 @@ class TestStderr:
         logger.log.assert_called_once()
         assert logger.log.call_args[0][0] == logging.INFO
 
+    def test_parsed_line_tagged_with_agent_source_and_stderr_stream(self):
+        """Parsed SDK log lines carry source='agent' / stream='stderr' kvs for downstream multiplex."""
+
+        runtime = _make_runtime()
+        logger = MagicMock()
+        runtime._logger = logger
+
+        runtime._stderr("2024-01-01T00:00:00Z [warning] careful")
+        kwargs = logger.log.call_args.kwargs
+        assert kwargs.get("source") == "agent"
+        assert kwargs.get("stream") == "stderr"
+
+    def test_unparseable_line_tagged_with_agent_source_and_stderr_stream(self):
+        """Unparseable lines also carry source/stream kvs (via logger.info)."""
+
+        runtime = _make_runtime()
+        logger = MagicMock()
+        runtime._logger = logger
+
+        runtime._stderr("no-spaces-here")
+        kwargs = logger.info.call_args.kwargs
+        assert kwargs.get("source") == "agent"
+        assert kwargs.get("stream") == "stderr"
+
 
 # _content_blocks_stream
 # --------------------------------------------------------------------------------------------------
@@ -730,6 +761,7 @@ class TestContentBlocksStream:
 
         blocks = [{"type": "text", "text": "hello"}]
         messages = []
+
         async for msg in ClaudeRuntime._content_blocks_stream(blocks):
             messages.append(msg)
 
@@ -745,6 +777,7 @@ class TestContentBlocksStream:
         """Content blocks in the yielded message are the exact input list."""
 
         blocks = [{"type": "image", "url": "http://x"}, {"type": "text", "text": "y"}]
+
         async for msg in ClaudeRuntime._content_blocks_stream(blocks):
             assert msg["message"]["content"] is blocks
 
@@ -760,6 +793,7 @@ class TestWriteEffortToSettings:
         """Creates settings.json with effortLevel when file doesn't exist."""
 
         settings_path = tmp_path / ".claude" / "settings.json"
+
         with patch(
             "claudebox.agent_session.runtime_claude.claude_settings_file",
             lambda: settings_path,
@@ -817,6 +851,7 @@ class TestIsolateSettingsFile:
         home = Path.home()
         claude_dir = home / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
+
         return claude_dir, claude_dir / "settings.json"
 
     @staticmethod
@@ -824,10 +859,11 @@ class TestIsolateSettingsFile:
         """Build ClaudeRuntime with session_dir set; SDK construction mocked."""
 
         session_dir.mkdir(parents=True, exist_ok=True)
+
         return _make_runtime(session_dir=session_dir)
 
     def test_first_start_seeds_from_profile_settings(self, tmp_workspace):
-        """settings.json present as regular file → copied to claude.json + symlinked."""
+        """settings.json present as regular file -> copied to claude.json + symlinked."""
 
         _, settings_path = self._settings_paths(tmp_workspace)
         settings_path.write_text('{"effort": "high"}')
@@ -855,6 +891,7 @@ class TestIsolateSettingsFile:
         # Container restart: container-start.sh overwrites settings.json with profile.
         if settings_path.is_symlink():
             settings_path.unlink()
+
         settings_path.write_text('{"effort": "stale-from-profile"}')
 
         # Second isolate (resume): runtime change must be preserved.
@@ -864,9 +901,10 @@ class TestIsolateSettingsFile:
         assert target.read_text() == '{"effort": "max"}'
 
     def test_no_source_settings_creates_empty_claude_json(self, tmp_workspace):
-        """No settings.json present → empty claude.json + symlink (SDK uses defaults)."""
+        """No settings.json present -> empty claude.json + symlink (SDK uses defaults)."""
 
         _, settings_path = self._settings_paths(tmp_workspace)
+
         if settings_path.exists() or settings_path.is_symlink():
             settings_path.unlink()
 
@@ -888,7 +926,7 @@ class TestIsolateSettingsFile:
         runtime_a._isolate_settings_file()
         target_a = settings_path.resolve()
 
-        # Second runtime in same container — stale symlink points at session-1's file.
+        # Second runtime in same container - stale symlink points at session-1's file.
         runtime_b = self._runtime_for_session_dir(tmp_workspace / "sessions" / "session-2")
         runtime_b._isolate_settings_file()
         target_b = settings_path.resolve()
@@ -912,6 +950,7 @@ class TestIsolateSettingsFile:
         # container-start.sh seed) before session B's isolation runs.
         if settings_path.is_symlink():
             settings_path.unlink()
+
         settings_path.write_text('{"effort": "high"}')
 
         runtime_b = self._runtime_for_session_dir(tmp_workspace / "sessions" / "session-b")
@@ -921,11 +960,11 @@ class TestIsolateSettingsFile:
         # Sessions A and B point at different per-session files.
         assert target_a != target_b
 
-        # Session A's runtime state survives — config flips do not bleed.
+        # Session A's runtime state survives - config flips do not bleed.
         assert target_a.read_text() == '{"effort": "max"}'
 
     def test_fork_inherits_parent_runtime_config(self, tmp_workspace):
-        """Fork in same container → seeds from parent's symlinked target → inherits parent runtime config."""
+        """Fork in same container -> seeds from parent's symlinked target -> inherits parent runtime config."""
 
         _, settings_path = self._settings_paths(tmp_workspace)
         settings_path.write_text('{"effort": "high"}')

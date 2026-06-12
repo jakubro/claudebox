@@ -1,4 +1,4 @@
-/** Static layout configuration — panel registry, sides, and canonical ordering. */
+/** Static layout configuration - panel registry, sides, and canonical ordering. */
 
 import IconTab from '../features/app/components/IconTab'
 import MainPanel from '../features/app/components/MainPanel'
@@ -38,7 +38,7 @@ export const tabComponents = {
   icon: IconTab,
 }
 
-// Track which side each panel belongs to. Logs is intentionally absent —
+// Track which side each panel belongs to. Logs is intentionally absent -
 // it lives in the full-viewport-width strip below the main row, not in any
 // dockview side group.
 export const PANEL_SIDES = {
@@ -73,7 +73,7 @@ export const SIDE_PANEL_CONFIG = {
   canonicalOrder: {
     left: CANONICAL_LEFT_ORDER,
     right: CANONICAL_RIGHT_ORDER,
-    // Empty — bottom-side machinery preserved for future bottom panels.
+    // Empty - bottom-side machinery preserved for future bottom panels.
     bottom: [],
   },
   defaultWidth: DEFAULT_PANEL_WIDTH,

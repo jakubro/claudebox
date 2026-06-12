@@ -1,4 +1,4 @@
-/** Single container row — status dot + identifiers + state/kind + resume control. */
+/** Single container row - status dot + identifiers + state/kind + resume control. */
 
 import { Square } from 'lucide-react'
 import { useCallback } from 'react'
@@ -22,7 +22,7 @@ const STATUS_COLORS = {
 }
 
 /**
- * One container row — status dot, container id, session id, session name, state,
+ * One container row - status dot, container id, session id, session name, state,
  * kind, age, action cluster. Stop button (composite delete) shows on running/
  * starting rows; ResumeControl shows whenever the container carries a session id
  * and that session is not the currently-active one. Container id and session id
@@ -84,7 +84,7 @@ function ContainerRow({ container }) {
       />
       <span
         className={`containers-id${displayId ? ' containers-id-clickable' : ''}`}
-        title={displayId ? `Container — ${displayId}` : undefined}
+        title={displayId ? `Container - ${displayId}` : undefined}
         onClick={displayId ? () => copyBackend(displayId) : undefined}
         style={{ cursor: displayId ? 'pointer' : undefined }}>
         <span style={{ visibility: backendCopied ? 'hidden' : 'visible' }}>
@@ -108,7 +108,7 @@ function ContainerRow({ container }) {
       <span className={`containers-state containers-state-${status}`}>{capitalize(status)}</span>
       <span className="containers-kind">{capitalize(kind)}</span>
       <span className="containers-age">
-        {container.created_at ? formatRelativeTime(container.created_at) : '—'}
+        {container.created_at ? formatRelativeTime(container.created_at) : '-'}
       </span>
       <div className="containers-actions">
         {isRunning && (

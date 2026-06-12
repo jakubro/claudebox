@@ -1,4 +1,4 @@
-/** Mobile app shell — wraps AppProviders with no-op dockview callbacks around MobileLayout. */
+/** Mobile app shell - wraps AppProviders with no-op dockview callbacks around MobileLayout. */
 
 import { useRef } from 'react'
 import { noop } from '../../../../utils/noop'

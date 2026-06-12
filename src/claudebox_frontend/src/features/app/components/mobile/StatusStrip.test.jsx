@@ -16,7 +16,7 @@ vi.mock('../../../../context/SessionDataContext', () => ({
 }))
 
 // Mock the color utility but keep a handle on the real implementation for the
-// real-progression test below — verifies actual color shifts, not just that the
+// real-progression test below - verifies actual color shifts, not just that the
 // component pipes a mocked return value through.
 const mockGetContextBarColor = vi.fn(() => '#22c55e')
 vi.mock('../../../../utils/color', () => ({

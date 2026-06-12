@@ -1,4 +1,4 @@
-/** Models API client — container-proxied endpoints. */
+/** Models API client - container-proxied endpoints. */
 
 import { containerFetch } from './apiClient'
 

@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.session — send and stop lifecycle."""
+"""Tests for claudebox.agent_session.orchestration.session - send and stop lifecycle."""
 
 import base64
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,6 +15,7 @@ def _make_session(tmp_workspace) -> SessionService:
     """Create a SessionService with minimal workspace, suitable for testing internal methods."""
 
     session = SessionService(workspace=tmp_workspace)
+
     return session
 
 
@@ -110,7 +111,7 @@ class TestSendWithAttachments:
 
     @pytest.mark.anyio
     async def test_attachments_do_not_call_set_prompt(self, tmp_workspace):
-        """Attachment path returns early — set_prompt must not be called."""
+        """Attachment path returns early - set_prompt must not be called."""
 
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
@@ -156,7 +157,7 @@ class TestSendWithoutAttachments:
 
     @pytest.mark.anyio
     async def test_empty_attachments_treated_as_no_attachments(self, tmp_workspace):
-        """An empty list is falsy — should follow the plain text path."""
+        """An empty list is falsy - should follow the plain text path."""
 
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
@@ -168,7 +169,7 @@ class TestSendWithoutAttachments:
 
     @pytest.mark.anyio
     async def test_none_attachments_treated_as_no_attachments(self, tmp_workspace):
-        """Explicit None is the default — should follow the plain text path."""
+        """Explicit None is the default - should follow the plain text path."""
 
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
@@ -291,7 +292,7 @@ class TestSendBeforeInit:
 
     @pytest.mark.anyio
     async def test_attachment_send_still_asserts_before_init(self, tmp_workspace):
-        """Attachment path retains its _base_session guard — the only branch that needs it."""
+        """Attachment path retains its _base_session guard - the only branch that needs it."""
 
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace, with_base_session=False)
@@ -332,6 +333,7 @@ class TestStopDisposalOrdering:
 
         async def pipeline_task_await():
             call_order.append("pipeline_task.await")
+
             raise StopIteration  # will be caught as generic Exception
 
         mock_pipeline_task.__class__ = type("FakeTask", (), {})
@@ -340,6 +342,7 @@ class TestStopDisposalOrdering:
 
         real_task = asyncio.ensure_future(asyncio.sleep(0))
         real_task.cancel()
+
         try:
             await real_task
         except asyncio.CancelledError:
@@ -406,7 +409,7 @@ class TestStopIdempotent:
 
     @pytest.mark.anyio
     async def test_stop_twice_does_not_raise(self, tmp_workspace):
-        """Second stop() is a no-op — all members already None after first stop."""
+        """Second stop() is a no-op - all members already None after first stop."""
 
         session = _make_session(tmp_workspace)
 
@@ -422,7 +425,7 @@ class TestStopIdempotent:
         session._summary_cache = MagicMock()
 
         await session.stop()
-        # Second call — everything is already None
+        # Second call - everything is already None
         await session.stop()
 
     @pytest.mark.anyio
@@ -442,7 +445,7 @@ class TestUnsubscribeAfterStop:
 
     @pytest.mark.anyio
     async def test_unsubscribe_after_stop_is_noop(self, tmp_workspace):
-        """After stop() clears _broadcaster, unsubscribe(id) returns silently — no AttributeError."""
+        """After stop() clears _broadcaster, unsubscribe(id) returns silently - no AttributeError."""
 
         session = _make_session(tmp_workspace)
 
@@ -464,7 +467,7 @@ class TestUnsubscribeAfterStop:
 
     @pytest.mark.anyio
     async def test_unsubscribe_on_fresh_session_is_noop(self, tmp_workspace):
-        """unsubscribe() on a freshly constructed session is safe — _broadcaster is None from __init__."""
+        """unsubscribe() on a freshly constructed session is safe - _broadcaster is None from __init__."""
 
         session = _make_session(tmp_workspace)
 

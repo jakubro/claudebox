@@ -2,7 +2,7 @@
   "name": "claudebox",
   "private": true,
   "type": "module",
-  "description": "Containerized isolation, customizable agent profiles, and a visual web UI — all for Claude Code.",
+  "description": "Containerized isolation, customizable agent profiles, and a visual web UI — for AI coding agents.",
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
     "jscpd": "^4.0.5",

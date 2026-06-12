@@ -17,7 +17,7 @@ vi.mock('../../../utils/navigation', () => ({
   openWorkspaceInNewTab: vi.fn(),
 }))
 
-// Mock api/workspaces — WorkspaceSwitcher imports deregisterWorkspace.
+// Mock api/workspaces - WorkspaceSwitcher imports deregisterWorkspace.
 // Also a no-op for registerWorkspace via RegisterWorkspaceModal.
 const mockDeregisterWorkspace = vi.fn(() => Promise.resolve({ id: 'project-a' }))
 const mockRegisterWorkspace = vi.fn(() => Promise.resolve({ id: 'project-c', path: '/x' }))
@@ -268,7 +268,7 @@ describe('WorkspaceSwitcher', () => {
       const dropdown = screen.getByTestId('workspace-switcher-dropdown')
       // The workspace list section is hidden when only one workspace exists.
       expect(dropdown.querySelector('.workspace-switcher-option')).not.toBeInTheDocument()
-      // The register-footer divider is still rendered — it separates the color
+      // The register-footer divider is still rendered - it separates the color
       // palette from the "+ Register workspace…" item and is independent of the
       // workspace-list visibility.
       expect(dropdown.querySelectorAll('.workspace-switcher-divider')).toHaveLength(1)

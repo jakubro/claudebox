@@ -33,7 +33,7 @@ export default function SessionPromptEditor({ disabled }) {
     }
   }, [isOpen, sessionPrompt])
 
-  // Save on close (transition from open → closed).
+  // Save on close (transition from open -> closed).
   // Textarea is already unmounted at this point, so read from draftRef.
   useEffect(() => {
     if (wasOpenRef.current && !isOpen) {

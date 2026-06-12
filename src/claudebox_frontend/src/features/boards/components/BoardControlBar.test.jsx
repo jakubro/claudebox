@@ -1,16 +1,16 @@
-/** Tests for BoardControlBar — density toggle backed by SessionRoutingContext. */
+/** Tests for BoardControlBar - density toggle backed by SessionRoutingContext. */
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BoardControlBar from './BoardControlBar.jsx'
 
-// Mock lucide-react icons — match the pattern used in ChatControlBar.test.jsx
+// Mock lucide-react icons - match the pattern used in ChatControlBar.test.jsx
 vi.mock('lucide-react', () => ({
   List: () => <span data-testid="icon-list">List</span>,
   Rows3: () => <span data-testid="icon-rows3">Rows3</span>,
 }))
 
-// Mock SessionRoutingContext — only density + setDensity are consumed
+// Mock SessionRoutingContext - only density + setDensity are consumed
 let mockDensity = 'comfortable'
 let mockSetDensity = vi.fn()
 vi.mock('../../../context/SessionRoutingContext', () => ({

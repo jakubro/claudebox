@@ -19,7 +19,7 @@ export default function CommandAutocomplete({ items, selectedIndex, onSelect }) 
   const listRef = useRef(null)
 
   // Scroll selected item into view
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — scroll on prop change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional - scroll on prop change
   useEffect(() => {
     if (!listRef.current) {
       return

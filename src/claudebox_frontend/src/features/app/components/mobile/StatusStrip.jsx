@@ -1,4 +1,4 @@
-/** Non-interactive status strip — connection dot and context usage bar. */
+/** Non-interactive status strip - connection dot and context usage bar. */
 
 import { useEvents } from '../../../../context/EventsContext'
 import { useSessionData } from '../../../../context/SessionDataContext'

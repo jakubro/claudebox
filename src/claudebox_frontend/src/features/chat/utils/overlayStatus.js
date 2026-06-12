@@ -1,4 +1,4 @@
-/** Pure overlay-status text builder — extracted from ChatPanel.jsx, no React APIs. */
+/** Pure overlay-status text builder - extracted from ChatPanel.jsx, no React APIs. */
 
 /**
  * Resolve the status line shown below the chat overlay's progress bar.

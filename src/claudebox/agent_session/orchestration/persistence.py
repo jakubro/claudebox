@@ -1,4 +1,4 @@
-"""Event persistence — JSONL append-only session log."""
+"""Event persistence - JSONL append-only session log."""
 
 from collections.abc import Iterable
 

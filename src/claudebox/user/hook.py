@@ -57,6 +57,7 @@ class HookResponse:
         """Export environment variable via CLAUDE_ENV_FILE."""
 
         env_file = os.environ["CLAUDE_ENV_FILE"]
+
         with open(env_file, "a") as f:
             f.write(f"export {name}={value}\n")
 
@@ -128,6 +129,7 @@ def hook(__fn, /) -> Callable:
     @functools.wraps(__fn)
     def wrapper(data: dict | None = None):
         request = None
+
         try:
             data = data or serialization.load(sys.stdin)
             request = HookRequest(data)
@@ -159,6 +161,7 @@ def hook(__fn, /) -> Callable:
         except Exception:
             if request:
                 request.logger.exception("Unhandled exception in %s hook", request.hook_event_name)
+
             raise
 
     return wrapper

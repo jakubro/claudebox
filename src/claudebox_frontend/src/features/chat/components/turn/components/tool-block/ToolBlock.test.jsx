@@ -6,8 +6,22 @@ import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { TurnProvider } from '../../TurnContext'
 
-vi.mock('../../../../../../utils/eventProcessing', () => ({
-  processNestedEvents: events => events || [],
+vi.mock('../../../../../../utils/eventProcessing', async importOriginal => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    processNestedEvents: events => events || [],
+  }
+})
+
+// useCapabilities depends on SessionData + workspace-defaults contexts; tests
+// stub it to return a permissive capability matrix so render paths gated on
+// runtime capabilities (e.g. supports_ask_user_question) light up by default.
+vi.mock('../../../../../../hooks/useCapabilities', () => ({
+  default: () => ({
+    capabilities: { supports_ask_user_question: true },
+    runtimeName: 'Claude',
+  }),
 }))
 
 // Mock child components as simple divs with data-testid
@@ -115,7 +129,7 @@ describe('ToolBlock', () => {
   }
 
   const readResult = {
-    content: '     1→const x = 1\n     2→const y = 2',
+    content: '     1\u2192const x = 1\n     2\u2192const y = 2',
   }
 
   // Bash tool: does NOT collapse by default, multi-line output produces details
@@ -260,7 +274,7 @@ describe('ToolBlock', () => {
         toolResult: { content: 'result' },
       })
 
-      // Single-line result matching summary collapses — no expanded section rendered
+      // Single-line result matching summary collapses - no expanded section rendered
       expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
     })
   })

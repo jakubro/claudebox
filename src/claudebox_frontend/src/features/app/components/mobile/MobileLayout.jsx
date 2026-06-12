@@ -1,4 +1,4 @@
-/** Mobile layout shell — single-column chat with top bar, status strip, drawer, and details sheet. */
+/** Mobile layout shell - single-column chat with top bar, status strip, drawer, and details sheet. */
 
 import { useCallback, useMemo, useState } from 'react'
 import ChatPanel from '../../../chat'

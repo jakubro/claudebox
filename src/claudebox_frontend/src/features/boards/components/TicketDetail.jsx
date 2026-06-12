@@ -89,7 +89,7 @@ export default function TicketDetail({ ticket, states = [], swimlanes = [], onCl
             <span className="ticket-meta-value">
               {ticket.session
                 ? `${ticket.session.slice(0, 8)} (${ticket.status || 'unknown'})`
-                : '—'}
+                : '-'}
             </span>
           </div>
         </div>

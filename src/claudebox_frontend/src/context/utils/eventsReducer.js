@@ -1,4 +1,4 @@
-/** Pure events reducer + initial state — extracted from EventsContext.jsx, no React APIs. */
+/** Pure events reducer + initial state - extracted from EventsContext.jsx, no React APIs. */
 
 import { EventSubtype } from '../../config/schema'
 import { isDoneRespondingEvent, isHumanEvent, isRespondingEvent } from '../../utils/eventPredicates'
@@ -29,7 +29,7 @@ export const initialState = {
   isForking: false, // True while a fork is in flight
   isOpeningBoard: false, // True while a board open transition paints
   isOpeningWorkspace: false, // True while a workspace new-tab open paints
-  // Derived state — maintained incrementally in FLUSH_BATCH
+  // Derived state - maintained incrementally in FLUSH_BATCH
   visibleEvents: [],
   turns: [],
   turnResults: {},
@@ -41,7 +41,7 @@ export const initialState = {
   _turnGroupingState: INITIAL_TURN_GROUPING_STATE,
   _previousTodosBySubagent: new Map(),
   _asyncTaskIdMap: new Map(),
-  // TaskCreate/TaskUpdate — mutually exclusive at the session level with
+  // TaskCreate/TaskUpdate - mutually exclusive at the session level with
   // TodoWrite; both pipelines coexist additively.
   _taskIdMap: new Map(),
   _pendingTaskCreatesMap: new Map(),
@@ -53,7 +53,7 @@ export const initialState = {
 export function eventsReducer(state, action) {
   switch (action.type) {
     case 'EVENT_RECEIVED': {
-      // Replay path — accumulates into state.pendingBatch for a single big
+      // Replay path - accumulates into state.pendingBatch for a single big
       // flush at REPLAY_ENDED, and updates synchronous flags so
       // replay-progress / status indicators tick per event. Use the event's
       // arrival timestamp (set in onMessage) so the silence detector sees
@@ -67,7 +67,7 @@ export function eventsReducer(state, action) {
       }
     }
     case 'STREAMING_FLAGS': {
-      // Streaming path — applies per-event flag changes (isResponding,
+      // Streaming path - applies per-event flag changes (isResponding,
       // respondingSince, compaction state) without touching pendingBatch
       // or lastEventTimestamp. The events themselves are buffered in a
       // provider-level ref and flushed into events / derived state /
@@ -75,11 +75,11 @@ export function eventsReducer(state, action) {
       //
       // Why this still tracks the "Working" spinner correctly: the flags
       // that drive status indicators (isResponding, respondingSince,
-      // isCompacting) only change at SDK turn boundaries — most streaming
+      // isCompacting) only change at SDK turn boundaries - most streaming
       // events leave them untouched, so the reducer returns the same flag
       // primitives, memoized value identity stays stable, and consumers
       // do not re-render. lastEventTimestamp, on the other hand, would
-      // change on every event and bypass the batching entirely — kept on
+      // change on every event and bypass the batching entirely - kept on
       // the flush path so provider identity churns at flush rate (~20/s)
       // rather than at SDK event rate.
       return {
@@ -88,7 +88,7 @@ export function eventsReducer(state, action) {
       }
     }
     case 'FLUSH_BATCH': {
-      // Streaming flush — events arrive pre-buffered in `action.batchEvents`
+      // Streaming flush - events arrive pre-buffered in `action.batchEvents`
       // and have already had their flag changes applied per event via
       // STREAMING_FLAGS. This case only incorporates them into the heavy
       // derived state (events, turns, todoDiffs, etc.).
@@ -133,8 +133,8 @@ export function eventsReducer(state, action) {
     case 'CLEAR_EVENTS':
       return {
         ...initialState,
-        isCreating: state.isCreating, // preserve — cleared by ChatPanel effect on connect
-        isResuming: state.isResuming, // preserve — cleared by REPLAY_ENDED or timeout
+        isCreating: state.isCreating, // preserve - cleared by ChatPanel effect on connect
+        isResuming: state.isResuming, // preserve - cleared by REPLAY_ENDED or timeout
       }
     default:
       return state
@@ -182,7 +182,7 @@ function applyEventFlags(state, event) {
  * Drain a batch of events into events/derived state. `batch` is either the
  * provider's ref-buffered streaming events (FLUSH_BATCH path) or the reducer's
  * replay accumulator (REPLAY_ENDED path). Flag fields are NOT re-walked here
- * — they have already been applied per event via STREAMING_FLAGS (streaming)
+ * - they have already been applied per event via STREAMING_FLAGS (streaming)
  * or EVENT_RECEIVED (replay).
  */
 function flushBatch(state, batch) {
@@ -200,7 +200,7 @@ function flushBatch(state, batch) {
   )
   const taskNotifications = appendTaskNotifications(state.taskNotifications, visibleBatch)
   // Mutually exclusive at the session level, but both pipelines run on every
-  // batch — at most one produces non-empty output. Task pipeline reads the
+  // batch - at most one produces non-empty output. Task pipeline reads the
   // result of the Todo pipeline so the merged maps converge.
   const {
     diffs: todoDiffs,
@@ -215,10 +215,10 @@ function flushBatch(state, batch) {
   } = appendTaskDiffs(todoDiffs, afterTodo, state._taskIdMap, state._pendingTaskCreatesMap, batch)
   const subagentLabels = appendSubagentLabels(state.subagentLabels, batch)
 
-  // Anchor to the arrival timestamp of the LATEST event in the batch — set in
+  // Anchor to the arrival timestamp of the LATEST event in the batch - set in
   // `onMessage` as `event.timestamp = Date.now()` at SSE arrival. Falls back to
   // `Date.now()` only when an event is missing that field. Using arrival-time
-  // instead of flush-time means batched events don't appear "fresh" on flush —
+  // instead of flush-time means batched events don't appear "fresh" on flush -
   // critical for silence detection, which would otherwise reset to "now"
   // every NORMAL_BATCH_INTERVAL and never trip during streaming pauses.
   const last = batch[batch.length - 1]

@@ -9,11 +9,11 @@ parser = app.parser
 
 
 class TestContainersAction:
-    """Action parses to args.action; bare → action=None."""
+    """Action parses to args.action; bare -> action=None."""
 
     @pytest.mark.parametrize("action", ["list", "stop", "kill"])
     def test_each_action_recognized(self, action: str) -> None:
-        # stop/kill require a target — pass a placeholder.
+        # stop/kill require a target - pass a placeholder.
         argv = ["containers", action] + (["dummy"] if action in ("stop", "kill") else [])
         args = parser.parse_args(argv)
         assert args.action == action
@@ -25,6 +25,7 @@ class TestContainersAction:
     def test_unknown_action_exits_2(self) -> None:
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["containers", "bogus"])
+
         assert exc.value.code == 2
 
 
@@ -35,6 +36,7 @@ class TestContainersTarget:
     def test_target_required(self, action: str) -> None:
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["containers", action])
+
         assert exc.value.code == 2
 
     @pytest.mark.parametrize("action", ["stop", "kill"])
@@ -48,7 +50,9 @@ class TestContainersTarget:
         # list parses cleanly with no target.
         args = parser.parse_args(["containers", "list"])
         assert args.action == "list"
+
         # Extra positional after list is rejected.
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["containers", "list", "extra"])
+
         assert exc.value.code == 2

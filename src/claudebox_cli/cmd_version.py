@@ -1,4 +1,4 @@
-"""Handler for the ``version`` verb — print version and install metadata."""
+"""Handler for the ``version`` verb - print version and install metadata."""
 
 import argparse
 

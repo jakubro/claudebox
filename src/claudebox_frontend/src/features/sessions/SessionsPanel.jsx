@@ -98,8 +98,8 @@ export default function SessionsPanel() {
         console.debug('SessionsPanel: deleteContainer failed', err),
       )
       // Keep the containerMap mapping until the daemon's terminal `stopped`
-      // event clears it (ContainerStatusEffect) — dropping it here breaks the
-      // containerId→sessionId resolution and wedges the stopping indicator.
+      // event clears it (ContainerStatusEffect) - dropping it here breaks the
+      // containerId->sessionId resolution and wedges the stopping indicator.
       refresh()
     },
     [containerMap, sessions, addStoppingSession, refresh],

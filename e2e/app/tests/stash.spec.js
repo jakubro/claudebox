@@ -116,7 +116,7 @@ test.describe('Stash', () => {
       await input.press('Control+s')
       await expect(page.locator('[data-testid="stash-item"]').first()).toBeVisible()
 
-      // Click copy button (CopyButton — clipboard copy, not textarea insertion)
+      // Click copy button (CopyButton - clipboard copy, not textarea insertion)
       const copyButton = page
         .locator('[data-testid="stash-item"]')
         .first()
@@ -283,7 +283,7 @@ test.describe('Stash', () => {
       await expect(page.locator('[data-testid="stash-item"]').first()).toBeVisible()
 
       // Multiple PATCH calls fire in rapid succession (layout, panelGroups,
-      // stash). Find the one carrying the stash key — checking only the LAST
+      // stash). Find the one carrying the stash key - checking only the LAST
       // patch race-conditions with the layout PATCH that frequently wins it.
       let stashPatch
       await expect

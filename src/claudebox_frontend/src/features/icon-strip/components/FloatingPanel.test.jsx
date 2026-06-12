@@ -109,10 +109,10 @@ describe('FloatingPanel', () => {
 
   describe('wide-panel sizing', () => {
     // Wide panels use min(innerWidth, max(800, innerWidth * 0.6)). At
-    // innerWidth=1600 → min(1600, max(800, 960)) = 960. At innerWidth=1024 →
-    // min(1024, max(800, 614)) = 800. Both ≥ 800px floor.
+    // innerWidth=1600 -> min(1600, max(800, 960)) = 960. At innerWidth=1024 ->
+    // min(1024, max(800, 614)) = 800. Both >= 800px floor.
 
-    it('logs panel uses wide sizing (width ≥ 800px)', () => {
+    it('logs panel uses wide sizing (width >= 800px)', () => {
       Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true })
 
       const { container } = render(<FloatingPanel {...defaultProps} panelId="logs" />)
@@ -122,7 +122,7 @@ describe('FloatingPanel', () => {
       expect(width).toBeGreaterThanOrEqual(800)
     })
 
-    it('containers panel uses wide sizing (width ≥ 800px)', () => {
+    it('containers panel uses wide sizing (width >= 800px)', () => {
       Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true })
 
       const { container } = render(<FloatingPanel {...defaultProps} panelId="containers" />)

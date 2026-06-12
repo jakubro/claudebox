@@ -1,4 +1,4 @@
-/** Tests for dropIndex helper — visual-slot to flat-list index translation. */
+/** Tests for dropIndex helper - visual-slot to flat-list index translation. */
 
 import { describe, expect, it } from 'vitest'
 import { computeFlatDropIndex, isSelfDrop } from './dropIndex'
@@ -9,7 +9,7 @@ describe('computeFlatDropIndex', () => {
     expect(computeFlatDropIndex(col, 'frontend', 'missing')).toBeNull()
   })
 
-  it('single-swimlane cell — flat index equals visual slot', () => {
+  it('single-swimlane cell - flat index equals visual slot', () => {
     const col = [
       { path: 'a', swimlane: 'frontend' },
       { path: 'b', swimlane: 'frontend' },
@@ -20,7 +20,7 @@ describe('computeFlatDropIndex', () => {
     expect(computeFlatDropIndex(col, 'frontend', 'c')).toBe(2)
   })
 
-  it('mixed swimlanes — walks past out-of-lane entries', () => {
+  it('mixed swimlanes - walks past out-of-lane entries', () => {
     const col = [
       { path: 'fe1', swimlane: 'frontend' },
       { path: 'be1', swimlane: 'backend' },
@@ -28,15 +28,15 @@ describe('computeFlatDropIndex', () => {
       { path: 'be2', swimlane: 'backend' },
       { path: 'fe3', swimlane: 'frontend' },
     ]
-    // dropping onto fe2 (visual slot 1 in frontend lane) → flat index 2 (its absolute position)
+    // dropping onto fe2 (visual slot 1 in frontend lane) -> flat index 2 (its absolute position)
     expect(computeFlatDropIndex(col, 'frontend', 'fe2')).toBe(2)
-    // dropping onto be2 (visual slot 1 in backend lane) → flat index 3
+    // dropping onto be2 (visual slot 1 in backend lane) -> flat index 3
     expect(computeFlatDropIndex(col, 'backend', 'be2')).toBe(3)
-    // dropping onto fe3 (visual slot 2 in frontend lane) → flat index 4
+    // dropping onto fe3 (visual slot 2 in frontend lane) -> flat index 4
     expect(computeFlatDropIndex(col, 'frontend', 'fe3')).toBe(4)
   })
 
-  it('drop on first ticket of cell → first lane match position', () => {
+  it('drop on first ticket of cell -> first lane match position', () => {
     const col = [
       { path: 'be1', swimlane: 'backend' },
       { path: 'fe1', swimlane: 'frontend' },
@@ -55,9 +55,9 @@ describe('computeFlatDropIndex', () => {
     expect(computeFlatDropIndex(col, '__unsorted__', 'b')).toBe(2)
   })
 
-  it('over-ticket lane mismatch → returns null', () => {
+  it('over-ticket lane mismatch -> returns null', () => {
     // Asking for a flat index against the wrong lane (the over-ticket isn't
-    // in that lane's filtered view). findIndex returns -1 → null.
+    // in that lane's filtered view). findIndex returns -1 -> null.
     const col = [{ path: 'fe', swimlane: 'frontend' }]
     expect(computeFlatDropIndex(col, 'backend', 'fe')).toBeNull()
   })

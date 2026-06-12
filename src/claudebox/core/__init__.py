@@ -1,1 +1,1 @@
-"""General-purpose utilities — zero claudebox domain knowledge."""
+"""General-purpose utilities - zero claudebox domain knowledge."""

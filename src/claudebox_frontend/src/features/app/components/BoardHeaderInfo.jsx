@@ -6,9 +6,9 @@ import useCopyFlash from '../../../hooks/useCopyFlash'
 import useBoardData from '../../boards/hooks/useBoardData'
 
 /**
- * Render the board info — board icon plus board name, click-to-copy the board's filesystem path.
+ * Render the board info - board icon plus board name, click-to-copy the board's filesystem path.
  *
- * Renders as siblings of the surrounding `.session-header-strip-left` flex container —
+ * Renders as siblings of the surrounding `.session-header-strip-left` flex container -
  * no wrapper div, no pill chrome.
  *
  * @param {object} props
@@ -34,7 +34,7 @@ export default function BoardHeaderInfo({ boardId }) {
         type="button"
         className="session-header-strip-name"
         onClick={handleClick}
-        title={board?.path ? `Board path — ${board.path}` : label}
+        title={board?.path ? `Board path - ${board.path}` : label}
         data-testid="board-header"
         data-board-id={boardId}>
         <span style={{ visibility: copied ? 'hidden' : 'visible' }}>{label}</span>

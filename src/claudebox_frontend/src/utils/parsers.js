@@ -10,10 +10,8 @@ export function stripTaskNotifications(message) {
   if (!message) {
     return message
   }
-  // Remove <task-notification> and <agent-notification> tags and their content
-  const stripped = message
-    .replace(/<task-notification\s+[^>]*>[\s\S]*?<\/task-notification>/g, '')
-    .replace(/<agent-notification\s+[^>]*>[\s\S]*?<\/agent-notification>/g, '')
+  // Remove <task-notification> tags and their content.
+  const stripped = message.replace(/<task-notification\s+[^>]*>[\s\S]*?<\/task-notification>/g, '')
   // Only strip newlines if we removed something (preserve leading/trailing spaces)
   return stripped === message ? message : stripped.replace(/^\n+|\n+$/g, '')
 }

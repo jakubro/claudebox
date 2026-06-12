@@ -1,1 +1,1 @@
-"""User-facing integration — hook decorator, request context, and statusline."""
+"""User-facing integration - hook decorator, request context, and statusline."""

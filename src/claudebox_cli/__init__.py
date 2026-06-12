@@ -1,4 +1,4 @@
-"""Claudebox CLI — verb-mode subparser dispatch + per-verb handlers."""
+"""Claudebox CLI - verb-mode subparser dispatch + per-verb handlers."""
 
 from . import (
     cmd_build,

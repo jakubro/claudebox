@@ -92,7 +92,7 @@ export default function ToolBlockExpandedContent({
         />
       )}
 
-      {/* Tool input for unhandled tools — shown above output */}
+      {/* Tool input for unhandled tools - shown above output */}
       {toolInput && (
         <CollapsibleSection label="Input" defaultExpanded className="tool-input-section">
           <div className="tool-json">

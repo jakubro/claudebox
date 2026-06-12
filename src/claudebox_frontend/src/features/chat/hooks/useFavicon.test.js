@@ -206,7 +206,7 @@ describe('useFavicon', () => {
 
     // Workspace bg circle: arc at center (16,16) radius 14.
     expect(mockCtx.arc).toHaveBeenCalledWith(16, 16, 14, 0, Math.PI * 2)
-    // Dev badge: arc at (size-7, size-7, 7, 0, 2π) — 32-7 = 25.
+    // Dev badge: arc at (size-7, size-7, 7, 0, 2π) - 32-7 = 25.
     expect(mockCtx.arc).toHaveBeenCalledWith(25, 25, 7, 0, Math.PI * 2)
   })
 
@@ -243,7 +243,7 @@ describe('useFavicon', () => {
     // Advance through multiple breath frames so the sine sweeps a range.
     vi.advanceTimersByTime(2000)
 
-    // BREATHING_BG_PEAK_ALPHA = 0.5, breath intensity ∈ [0.5, 1.0] → alpha ∈ [0.25, 0.5].
+    // BREATHING_BG_PEAK_ALPHA = 0.5, breath intensity ∈ [0.5, 1.0] -> alpha ∈ [0.25, 0.5].
     const observed = alphaValues.filter(v => v < 1)
     expect(observed.length).toBeGreaterThan(0)
     expect(Math.min(...observed)).toBeGreaterThanOrEqual(0.24)

@@ -136,7 +136,7 @@ describe('PathResolutionManager cache', () => {
   it('stores null for non-existent candidates', () => {
     manager.store(['a.py', 'b.js'], { 'a.py': '/abs/a.py' })
 
-    // b.js stored as null — should not appear in resolved or unresolved
+    // b.js stored as null - should not appear in resolved or unresolved
     const result = manager.lookup(['b.js'])
     expect(result.resolved).toEqual({})
     expect(result.unresolved).toEqual([])

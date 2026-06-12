@@ -1,4 +1,4 @@
-"""Session broadcaster — event serialization and replay boundaries."""
+"""Session broadcaster - event serialization and replay boundaries."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -22,6 +22,7 @@ class Broadcaster(BaseBroadcaster[PublishedEvent, dict]):
         subscriber_id, queue = super().subscribe()
 
         self._logger.debug("Subscriber subscribed", subscriber_id=subscriber_id)
+
         return subscriber_id, queue
 
     def unsubscribe(self, subscriber_id: str) -> None:
@@ -37,12 +38,14 @@ class Broadcaster(BaseBroadcaster[PublishedEvent, dict]):
         """Create serialized replay_started boundary event."""
 
         event = self._make_boundary(EventSubtype.REPLAY_STARTED, length)
+
         return serialize_event(event)
 
     def _on_replay_ended(self) -> dict:
         """Create serialized replay_ended boundary event."""
 
         event = self._make_boundary(EventSubtype.REPLAY_ENDED, 0)
+
         return serialize_event(event)
 
     @classmethod

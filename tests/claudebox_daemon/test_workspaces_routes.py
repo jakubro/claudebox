@@ -30,6 +30,7 @@ def _workspace_stub(workspace_id: str, path: Path, *, containers=(), available=T
     container_service.list_all.return_value = list(containers)
 
     workspace = SimpleNamespace(id=workspace_id, path=path, available=available)
+
     return SimpleNamespace(workspace=workspace, container_service=container_service)
 
 
@@ -51,6 +52,7 @@ def _build_app(daemon: MagicMock):
         )
 
     app.add_exception_handler(DaemonError, _handle_daemon_error)  # ty: ignore[invalid-argument-type]  # Starlette type narrows to BaseException-handler; our handler accepts the specific subclass.
+
     return app
 
 
@@ -71,6 +73,7 @@ def _make_daemon(workspaces=(), *, register_returns=None, register_raises=None):
         daemon.register_workspace = AsyncMock(return_value=register_returns)
 
     daemon.deregister_workspace = AsyncMock()
+
     return daemon
 
 
@@ -132,7 +135,7 @@ class TestListWorkspaces:
 
 
 class TestRegisterWorkspace:
-    """POST registers a workspace; idempotent — re-register surfaces existing entry."""
+    """POST registers a workspace; idempotent - re-register surfaces existing entry."""
 
     def test_registers_new(self, tmp_path):
         new = RegisteredWorkspace(id="myproj", path=tmp_path / "myproj")
@@ -160,7 +163,7 @@ class TestRegisterWorkspace:
         assert first.json() == second.json()
 
     def test_basename_collision_disambiguates_id(self, tmp_path):
-        """Two paths sharing basename get distinct ids — handler surfaces the daemon's choice."""
+        """Two paths sharing basename get distinct ids - handler surfaces the daemon's choice."""
 
         disambiguated = RegisteredWorkspace(id="myapp-a1b2c3d4", path=tmp_path / "other/myapp")
         daemon = _make_daemon(register_returns=disambiguated)
@@ -224,7 +227,9 @@ class TestWorkspaceScopedRoutesPreserved:
         async def _fake_get_workspace(workspace_id: str):
             workspace = MagicMock()
             workspace.path = tmp_path / workspace_id
-            return SimpleNamespace(workspace=workspace)
+            config = SimpleNamespace(agent="claude")
+
+            return SimpleNamespace(workspace=workspace, config=config)
 
         app.dependency_overrides[get_workspace] = _fake_get_workspace
 
@@ -250,6 +255,7 @@ class TestWorkspaceScopedRoutesPreserved:
                 "mcp": [],
                 "builtin": [],
             }
+
             return workspace_service
 
         app.dependency_overrides[get_workspace] = _fake_get_workspace

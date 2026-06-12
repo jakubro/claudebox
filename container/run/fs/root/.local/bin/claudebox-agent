@@ -40,11 +40,12 @@ execute-claude() {
   if [[ ${CLAUDEBOX_WEB:-0} == 1 ]] && [[ ${__CLAUDEBOX_AGENT_NONINTERACTIVE__:-0} == 0 ]]; then
     agent=~/.claudebox/lib/src/container_api_server.py
 
-    # Dev mode: sync dependencies before launch
+    # Dev mode: sync dependencies before launch (keep langgraph provider extras
+    # so a hot-reload sync does not prune the preinstalled provider packages).
     if [[ ${CLAUDEBOX_DEV:-0} == 1 ]]; then
       (
         export UV_PROJECT_ENVIRONMENT=/opt/claudebox/.venv
-        uv sync --directory ~/.claudebox/lib
+        uv sync --directory ~/.claudebox/lib --extra langgraph-all
       )
     fi
   else

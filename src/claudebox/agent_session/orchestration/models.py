@@ -1,17 +1,16 @@
-"""Session models — event and summary data structures."""
+"""Session models - event and summary data structures."""
 
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from ..runtime_claude import ClaudeRuntime
 from ...core.structures import DataClass
 from ...session.models import SessionMetadata
 
 
 class EventType(StrEnum):
-    """Top-level event category — mirrors frontend `EventType` in schema.js."""
+    """Top-level event category - mirrors frontend `EventType` in schema.js."""
 
     ASSISTANT = "assistant"
     USER = "user"
@@ -20,7 +19,7 @@ class EventType(StrEnum):
 
 
 class EventSubtype(StrEnum):
-    """Content/system subtype — mirrors frontend `EventSubtype` in schema.js.
+    """Content/system subtype - mirrors frontend `EventSubtype` in schema.js.
 
     Adds three Python-only system values not enumerated on the frontend:
     `message`, `unknown`, `error`. Frontend tolerates unknown subtypes via fallback.
@@ -39,6 +38,7 @@ class EventSubtype(StrEnum):
     EFFORT_LEVEL_CHANGED = "effort_level_changed"
     CONTAINER_RESTARTED = "container_restarted"
     TASK_NOTIFICATION = "task_notification"
+    RATE_LIMIT = "rate_limit"
     HOOK_RESPONSE = "hook_response"
     INIT = "init"
     COMPACT_START = "compact_start"
@@ -54,7 +54,7 @@ class Event(DataClass):
     `type` and `subtype` stay `str` because the wire carries permissive
     vocabularies (e.g. SDK `result.subtype` is open-set: "success",
     "error_max_turns", etc.). The `EventType` / `EventSubtype` StrEnums above
-    provide constants for the well-known values — use them at construction
+    provide constants for the well-known values - use them at construction
     sites for readability and to catch typos.
     """
 
@@ -131,7 +131,7 @@ class PublishedEvent(Event):
     # Attachment display metadata (for user messages with files)
     attachments: list[dict] | None = None
 
-    # Capability surface — populated only on system/init events for race-free initial render
+    # Capability surface - populated only on system/init events for race-free initial render
     capabilities: dict | None = None
     runtime_name: str | None = None
 
@@ -168,7 +168,9 @@ class SessionSummary(SessionMetadata):
     todos: list[dict] | None = None
     total_duration_ms: int | None = None
     last_context_tokens: int = 0
-    context_window: int = ClaudeRuntime.DEFAULT_CONTEXT_WINDOW
+    # Sentinel default - the active runtime overwrites via Projection._refresh_context_usage()
+    # once a session is alive; the class-default value is never user-visible.
+    context_window: int = 0
     commands: dict[str, list[dict]] | None = None
     session_prompt: str | None = None
     effort_level: str | None = None

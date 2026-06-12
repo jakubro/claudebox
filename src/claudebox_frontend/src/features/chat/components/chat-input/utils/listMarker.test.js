@@ -1,9 +1,9 @@
-/** Tests for listMarker utility — markdown list-line parsing. */
+/** Tests for listMarker utility - markdown list-line parsing. */
 
 import { describe, expect, it } from 'vitest'
 import { nextMarker, parseListLine } from './listMarker'
 
-describe('parseListLine — bullets', () => {
+describe('parseListLine - bullets', () => {
   it('parses dash bullet', () => {
     expect(parseListLine('- foo')).toEqual({
       leadingWhitespace: '',
@@ -23,7 +23,7 @@ describe('parseListLine — bullets', () => {
     expect(parseListLine('+ foo')).toMatchObject({ marker: '+ ', bulletChar: '+' })
   })
 
-  it('parses indented bullet — leading whitespace captured', () => {
+  it('parses indented bullet - leading whitespace captured', () => {
     expect(parseListLine('  - sub')).toMatchObject({
       leadingWhitespace: '  ',
       marker: '- ',
@@ -40,7 +40,7 @@ describe('parseListLine — bullets', () => {
   })
 })
 
-describe('parseListLine — numbered', () => {
+describe('parseListLine - numbered', () => {
   it('parses numbered with dot', () => {
     expect(parseListLine('1. foo')).toEqual({
       leadingWhitespace: '',
@@ -77,7 +77,7 @@ describe('parseListLine — numbered', () => {
   })
 })
 
-describe('parseListLine — task lists', () => {
+describe('parseListLine - task lists', () => {
   it('parses unchecked task', () => {
     expect(parseListLine('- [ ] foo')).toEqual({
       leadingWhitespace: '',
@@ -117,7 +117,7 @@ describe('parseListLine — task lists', () => {
   })
 })
 
-describe('parseListLine — negatives', () => {
+describe('parseListLine - negatives', () => {
   it('returns null for empty string', () => {
     expect(parseListLine('')).toBeNull()
   })

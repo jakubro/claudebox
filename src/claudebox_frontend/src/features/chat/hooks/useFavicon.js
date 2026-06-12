@@ -58,7 +58,7 @@ export default function useFavicon({ isResponding }) {
       animationRef.current = null
     }
 
-    // Render order in every branch: tinted bg (if applicable) → C-arc → dev dot.
+    // Render order in every branch: tinted bg (if applicable) -> C-arc -> dev dot.
     // Workspace bg paints first so the C-arc and dev dot compose on top of it.
     // The DEV dot and workspace bg coexist on the canvas.
     const renderWorkspaceBg = ({ alpha = 1 } = {}) => {

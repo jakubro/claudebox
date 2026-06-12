@@ -7,7 +7,7 @@ export function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
-      // result is "data:<mime>;base64,<data>" — extract just the base64 part
+      // result is "data:<mime>;base64,<data>" - extract just the base64 part
       const base64 = reader.result.split(',')[1]
       resolve(base64)
     }

@@ -74,7 +74,7 @@ export default function Footer() {
   // back to the workspace path from session-defaults so the footer shows the
   // workspace a `+`-clicked session would attach to.
   const effectiveWorkspace = workspace || sessionDefaults?.workspace
-  const workspaceName = getWorkspaceName(effectiveWorkspace) || '—'
+  const workspaceName = getWorkspaceName(effectiveWorkspace) || '-'
 
   const copySessionPath = () => copy(sessionDir)
 
@@ -107,25 +107,25 @@ export default function Footer() {
       <span className="footer-spacer" />
       <span
         className="footer-item"
-        title={`Workspace — ${effectiveWorkspace || '—'}`}
+        title={`Workspace - ${effectiveWorkspace || '-'}`}
         data-testid="footer-workspace">
         {workspaceName}
       </span>
       <span className="footer-sep">|</span>
-      <span className="footer-item" title={`Turns — ${numTurns}`} data-testid="footer-turns">
+      <span className="footer-item" title={`Turns - ${numTurns}`} data-testid="footer-turns">
         {numTurns} turns
       </span>
       <span className="footer-sep">|</span>
       <span
         className="footer-item"
-        title={`API cost this session — $${totalCostUsd.toFixed(2)}`}
+        title={`API cost this session - $${totalCostUsd.toFixed(2)}`}
         data-testid="footer-cost">
         ${totalCostUsd.toFixed(2)}
       </span>
       <span className="footer-sep">|</span>
       <span
         className="footer-item"
-        title={`Time Claude spent responding — ${formatDurationClock(totalDurationMs)}`}>
+        title={`Time Claude spent responding - ${formatDurationClock(totalDurationMs)}`}>
         {formatDurationClock(totalDurationMs)}
       </span>
       {showContextUsage && (
@@ -133,7 +133,7 @@ export default function Footer() {
           <span className="footer-sep">|</span>
           <span
             className="footer-item footer-context"
-            title={`Context — ${lastContextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens`}
+            title={`Context - ${lastContextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens`}
             data-testid="footer-context">
             <span className="context-bar">
               <span
@@ -171,18 +171,18 @@ export default function Footer() {
         data-testid="footer-session"
         onClick={copySessionPath}
         style={{ cursor: sessionDir ? 'pointer' : undefined }}>
-        <span style={{ visibility: copied ? 'hidden' : 'visible' }}>{sessionId || '—'}</span>
+        <span style={{ visibility: copied ? 'hidden' : 'visible' }}>{sessionId || '-'}</span>
         {copied && <span className="footer-session-copied-text">Copied!</span>}
       </span>
       <span className="footer-sep">|</span>
       <span
         className="footer-item footer-backend-id"
-        title={backendId ? `Container — ${backendId}` : 'No container'}
+        title={backendId ? `Container - ${backendId}` : 'No container'}
         data-testid="footer-backend-id"
         onClick={backendId ? () => copyBackend(backendId) : undefined}
         style={{ cursor: backendId ? 'pointer' : undefined }}>
         <span style={{ visibility: backendCopied ? 'hidden' : 'visible' }}>
-          {backendId ? backendId.slice(0, 12) : '—'}
+          {backendId ? backendId.slice(0, 12) : '-'}
         </span>
         {backendCopied && <span className="footer-backend-id-copied-text">Copied!</span>}
       </span>
@@ -191,7 +191,7 @@ export default function Footer() {
         type="button"
         className={`footer-copy-btn footer-notifications-toggle${notificationsEnabled ? ' enabled' : ''}`}
         onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-        title={`Notifications — ${notificationsEnabled ? 'enabled' : 'disabled'}`}
+        title={`Notifications - ${notificationsEnabled ? 'enabled' : 'disabled'}`}
         data-testid="footer-notifications-toggle">
         <svg
           width="10"
@@ -214,7 +214,7 @@ export default function Footer() {
         type="button"
         className="footer-copy-btn footer-claude-status"
         onClick={() => window.open(STATUS_PAGE_URL, '_blank')}
-        title={`Claude Status — ${claudeStatus.description}`}
+        title={`Claude Status - ${claudeStatus.description}`}
         data-testid="footer-claude-status">
         <span
           className={`status-dot status-claude-${claudeStatus.error ? 'error' : claudeStatus.indicator}`}

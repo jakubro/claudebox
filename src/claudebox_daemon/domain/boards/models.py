@@ -1,4 +1,4 @@
-"""Board domain models — daemon-specific events and re-exported from extension."""
+"""Board domain models - daemon-specific events and re-exported from extension."""
 
 from dataclasses import dataclass
 

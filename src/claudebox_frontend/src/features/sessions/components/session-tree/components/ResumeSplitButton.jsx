@@ -1,4 +1,4 @@
-/** Resume button + chevron dropdown — extracted so its hooks don't run for mobile/current rows. */
+/** Resume button + chevron dropdown - extracted so its hooks don't run for mobile/current rows. */
 
 import { ChevronDown, Loader2, Play } from 'lucide-react'
 import { useRef } from 'react'
@@ -7,10 +7,10 @@ import useDropdown from '../../../../../hooks/useDropdown'
 import useDropdownPosition from '../../../../../hooks/useDropdownPosition'
 
 /**
- * Render the desktop-only "Resume session" split button — primary action +
+ * Render the desktop-only "Resume session" split button - primary action +
  * chevron menu. Extracted from SessionItem so the useDropdown and
  * useDropdownPosition hooks (state, refs, effects) do not allocate for
- * sessions that can never open this dropdown — mobile rows and the active
+ * sessions that can never open this dropdown - mobile rows and the active
  * (current) session.
  *
  * @param {object} props

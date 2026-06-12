@@ -103,7 +103,7 @@ test.describe('Logs Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open via icon click — strip is closed by default.
+    // Open via icon click - strip is closed by default.
     await page.locator('[data-testid="icon-logs"]').click()
 
     const strip = page.locator('[data-testid="bottom-panel-container"]')

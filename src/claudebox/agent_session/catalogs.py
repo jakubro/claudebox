@@ -1,4 +1,4 @@
-"""Runtime-neutral metadata catalogs — Model / PermissionMode / EffortLevel / Skill / ContextUsage.
+"""Runtime-neutral metadata catalogs - Model / PermissionMode / EffortLevel / Skill / ContextUsage.
 
 Shapes only; concrete values + filesystem-walked skill loader live on the
 adapter (e.g. `ClaudeRuntime.AVAILABLE_MODELS` and `ClaudeRuntime.get_skills`).
@@ -58,7 +58,7 @@ class Skill:
 
 @dataclass(frozen=True)
 class ContextUsage:
-    """Context-window usage telemetry — used / max tokens."""
+    """Context-window usage telemetry - used / max tokens."""
 
     used_tokens: int
     max_tokens: int

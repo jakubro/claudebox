@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.tool_output — file retrieval."""
+"""Tests for claudebox.agent_session.orchestration.tool_output - file retrieval."""
 
 import pytest
 

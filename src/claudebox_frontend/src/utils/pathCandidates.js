@@ -86,7 +86,7 @@ export function extractPathCandidates(text) {
       continue
     }
 
-    // Skip colon-containing strings — not paths (e.g. "qdr:h/d/w/m/y")
+    // Skip colon-containing strings - not paths (e.g. "qdr:h/d/w/m/y")
     if (word.includes(':')) {
       continue
     }
@@ -124,10 +124,10 @@ export function uniqueCandidates(extractions) {
 
 /**
  * Resolve a path candidate to an absolute host path.
- * Handles /tmp → sessionDir mapping and explicit resolved path lookup.
+ * Handles /tmp -> sessionDir mapping and explicit resolved path lookup.
  * @param {string} candidate - Path candidate string.
  * @param {string|null} sessionDir - Host session directory for /tmp resolution.
- * @param {Object<string, string>} resolvedPaths - Map of candidate → resolved path.
+ * @param {Object<string, string>} resolvedPaths - Map of candidate -> resolved path.
  * @returns {string|null} Resolved absolute path, or null if unresolvable.
  */
 export function resolvePathCandidate(candidate, sessionDir, resolvedPaths) {

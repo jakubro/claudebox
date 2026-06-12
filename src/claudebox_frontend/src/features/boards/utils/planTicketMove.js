@@ -1,4 +1,4 @@
-/** Decision logic for bulk ticket moves — pure, no React APIs. */
+/** Decision logic for bulk ticket moves - pure, no React APIs. */
 
 /**
  * Decide what move-API body to send for a single ticket within a bulk move.

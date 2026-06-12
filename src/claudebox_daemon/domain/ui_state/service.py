@@ -30,6 +30,7 @@ class UIStateService:
         """Get UI state for global and session-specific data."""
 
         _, virtual = self._load(session_id)
+
         return UIState(global_state=virtual["global"], session_state=virtual["session"])
 
     def patch(self, session_id: str | None, **data) -> UIState:
@@ -52,6 +53,7 @@ class UIStateService:
             physical["sessions"] = self._prune_old_sessions(physical["sessions"])
 
             write_json(self._state_path, physical)
+
             return UIState(global_state=virtual["global"], session_state=virtual["session"])
 
     # State Management
@@ -122,23 +124,21 @@ class UIStateService:
 
             if op == "set":
                 parent[key] = value
-
             elif op == "unset":
                 parent.pop(key, None)
-
             elif op == "add":
                 # Set semantics: add to list if not present
                 if key not in parent or not isinstance(parent[key], list):
                     parent[key] = []
+
                 if value not in parent[key]:
                     parent[key].append(value)
-
             elif op == "append":
                 # Array semantics: always append (allows duplicates)
                 if key not in parent or not isinstance(parent[key], list):
                     parent[key] = []
-                parent[key].append(value)
 
+                parent[key].append(value)
             elif op == "remove":
                 # Remove first occurrence from list
                 if key in parent and isinstance(parent[key], list):
@@ -148,6 +148,7 @@ class UIStateService:
                         pass
 
         state["updated_at"] = datetime.now(UTC).isoformat()
+
         return state
 
     @classmethod

@@ -1,4 +1,4 @@
-"""Tests for container lifecycle — service stop/kill/remove + DELETE composite + POST routes."""
+"""Tests for container lifecycle - service stop/kill/remove + DELETE composite + POST routes."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,6 +39,7 @@ def _make_service(tmp_path: Path) -> tuple[ContainerService, MagicMock]:
     proxy = MagicMock()
     svc = ContainerService(ws, events, config, proxy)
     svc._runtime._backend = MagicMock()
+
     return svc, events
 
 
@@ -52,6 +53,7 @@ def _build_app(container_service):
         return SimpleNamespace(container_service=container_service)
 
     app.dependency_overrides[get_workspace] = _fake_get_workspace
+
     return app
 
 
@@ -60,7 +62,7 @@ def _build_app(container_service):
 
 
 class TestServiceStop:
-    """`ContainerService.stop_container()` — SIGTERM with grace via runtime; ends STOPPED."""
+    """`ContainerService.stop_container()` - SIGTERM with grace via runtime; ends STOPPED."""
 
     @pytest.mark.anyio
     async def test_default_grace_transitions_to_stopped(self, tmp_path):
@@ -120,7 +122,7 @@ class TestServiceStop:
 
 
 class TestServiceKill:
-    """`ContainerService.kill_container()` — SIGKILL immediate via runtime; ends STOPPED."""
+    """`ContainerService.kill_container()` - SIGKILL immediate via runtime; ends STOPPED."""
 
     @pytest.mark.anyio
     async def test_transitions_to_stopped(self, tmp_path):
@@ -167,7 +169,7 @@ class TestServiceKill:
 
 
 class TestServiceRemove:
-    """`ContainerService.remove()` — force-remove backend, pop registry."""
+    """`ContainerService.remove()` - force-remove backend, pop registry."""
 
     @pytest.mark.anyio
     async def test_calls_backend_and_pops(self, tmp_path):
@@ -214,7 +216,7 @@ class TestServiceRemove:
 
 
 class TestDeleteRouteComposite:
-    """DELETE keeps composite stop → remove for the web-UI tab-close path."""
+    """DELETE keeps composite stop -> remove for the web-UI tab-close path."""
 
     def test_invokes_stop_then_remove(self):
         container_service = MagicMock()

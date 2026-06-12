@@ -1,4 +1,4 @@
-/** Timing constants — intervals, delays, debounce values, thresholds in milliseconds. */
+/** Timing constants - intervals, delays, debounce values, thresholds in milliseconds. */
 
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500
 export const SILENCE_THRESHOLD = 5000

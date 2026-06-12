@@ -95,7 +95,7 @@ describe('createPropsComparator', () => {
         b: (a, b) => a == null && b == null,
       })
 
-      // b is undefined on both sides — the key is only in neither object's own keys
+      // b is undefined on both sides - the key is only in neither object's own keys
       // but if one side has it, the union picks it up
       expect(compare({ a: 1, b: 5 }, { a: 1 })).toBe(false)
     })

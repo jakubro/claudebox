@@ -9,7 +9,7 @@ def make_published_event(**overrides) -> PublishedEvent:
     """Create a minimal PublishedEvent with sensible defaults.
 
     Override any field via keyword arguments. Default type is "assistant"
-    with subtype "text" — pass type="system" for system events.
+    with subtype "text" - pass type="system" for system events.
     """
 
     defaults = {
@@ -24,4 +24,5 @@ def make_published_event(**overrides) -> PublishedEvent:
         "turn_id": None,
     }
     defaults.update(overrides)
+
     return PublishedEvent(**defaults)  # ty: ignore[invalid-argument-type]  # Dynamic kwargs from heterogeneous defaults dict; ty can't narrow per-field types here.

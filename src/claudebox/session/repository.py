@@ -1,4 +1,4 @@
-"""Shared session repository — disk I/O for session.json files."""
+"""Shared session repository - disk I/O for session.json files."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -40,6 +40,7 @@ class SessionRepository:
                 continue
 
             data.setdefault("session_id", session.id)
+            data.setdefault("fork_point_cost_usd", 0.0)
             sessions.append(SessionMetadata.fromdict(data))
 
         return sorted(
@@ -55,6 +56,7 @@ class SessionRepository:
         """
 
         session = self._workspace.find_session(session_id)
+
         if session is None:
             raise SessionNotFound(session_id)
 
@@ -64,10 +66,13 @@ class SessionRepository:
             raise SessionNotFound(session_id)
 
         data = read_json(path, default=None)
+
         if not data:
             raise SessionNotFound(session_id)
 
         data.setdefault("session_id", session_id)
+        data.setdefault("fork_point_cost_usd", 0.0)
+
         return SessionMetadata.fromdict(data)
 
     def update(self, session_id: str, **fields: Any) -> SessionMetadata:
@@ -79,6 +84,7 @@ class SessionRepository:
         """
 
         session = self._workspace.find_session(session_id)
+
         if session is None:
             raise SessionNotFound(session_id)
 
@@ -92,4 +98,6 @@ class SessionRepository:
         write_json(path, data)
 
         data.setdefault("session_id", session_id)
+        data.setdefault("fork_point_cost_usd", 0.0)
+
         return SessionMetadata.fromdict(data)

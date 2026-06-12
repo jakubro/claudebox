@@ -1,4 +1,4 @@
-"""Ticket domain data models — board, ticket, and swimlane representations."""
+"""Ticket domain data models - board, ticket, and swimlane representations."""
 
 from dataclasses import dataclass, field
 

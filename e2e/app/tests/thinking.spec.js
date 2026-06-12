@@ -66,7 +66,7 @@ test.describe('Thinking Blocks', () => {
       (lineClamp && lineClamp !== 'none' && lineClamp !== '')
     expect(looksTruncated, `preview text "${previewText}" must show truncation`).toBe(true)
 
-    // Claim says "no quotes" — the rendered preview must not be wrapped in
+    // Claim says "no quotes" - the rendered preview must not be wrapped in
     // matching surrounding quotes.
     expect(previewText.startsWith('"') && previewText.endsWith('"')).toBe(false)
     expect(previewText.startsWith("'") && previewText.endsWith("'")).toBe(false)
@@ -95,7 +95,7 @@ test.describe('Thinking Blocks', () => {
     await expect(inline).toContainText('First, I should consider')
     await expect(inline).toContainText('The key concepts are')
 
-    // Claim says "rendered as formatted Markdown" — verify the expanded body
+    // Claim says "rendered as formatted Markdown" - verify the expanded body
     // contains at least one rendered Markdown construct (paragraph, list,
     // strong/em, or code element) rather than a single plain-text node.
     const renderedNodes = await inline.evaluate(el => {
@@ -131,7 +131,7 @@ test.describe('Thinking Blocks', () => {
     expect(inlineBox.x).toBeGreaterThanOrEqual(boxBefore.x)
     expect(inlineBox.x).toBeLessThanOrEqual(boxBefore.x + boxBefore.width)
 
-    // Preview line should be gone — replaced, not just hidden alongside
+    // Preview line should be gone - replaced, not just hidden alongside
     await expect(thinkingBlock.locator('.thinking-summary')).not.toBeVisible()
   })
 
@@ -216,7 +216,7 @@ test.describe('Thinking Blocks', () => {
     const inlineContent = thinkingBlock.locator('.thinking-content-inline')
     await expect(inlineContent).toBeVisible()
 
-    // Content should be rendered as Markdown — verify HTML elements from Markdown rendering
+    // Content should be rendered as Markdown - verify HTML elements from Markdown rendering
     const markdownElements = await inlineContent.locator('strong, em, p, ol, li').count()
     expect(markdownElements).toBeGreaterThan(0)
   })

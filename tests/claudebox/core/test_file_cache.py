@@ -1,4 +1,4 @@
-"""Tests for claudebox.core.file_cache — mtime-based file cache."""
+"""Tests for claudebox.core.file_cache - mtime-based file cache."""
 
 import os
 
@@ -17,6 +17,7 @@ class TestFileCache:
 
         def loader():
             calls.append(1)
+
             return "loaded"
 
         result = cache.get(path, loader)
@@ -32,6 +33,7 @@ class TestFileCache:
 
         def loader():
             calls.append(1)
+
             return "loaded"
 
         cache.get(path, loader)

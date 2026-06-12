@@ -1,4 +1,4 @@
-/** Single board hook — fetch board state with SSE-driven updates. */
+/** Single board hook - fetch board state with SSE-driven updates. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getBoard } from '../../../api/boards'

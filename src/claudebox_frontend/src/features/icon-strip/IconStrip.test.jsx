@@ -35,7 +35,7 @@ vi.mock('./hooks/useBadgeCounts', () => ({
   default: () => mockBadgeCounts,
 }))
 
-// Mock BottomPanelsContext — IconStrip registers bottomPanels with the
+// Mock BottomPanelsContext - IconStrip registers bottomPanels with the
 // context on mount.
 vi.mock('../../context/BottomPanelsContext', () => ({
   useBottomPanels: () => ({

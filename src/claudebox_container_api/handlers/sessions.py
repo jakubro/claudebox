@@ -1,4 +1,4 @@
-"""Session handlers — CRUD, restart, attachments."""
+"""Session handlers - CRUD, restart, attachments."""
 
 import dataclasses
 
@@ -21,6 +21,7 @@ async def create_session(svc: SessionDep):
     """Create a new session and return its pre-generated session ID."""
 
     session_id = await svc.restart()
+
     return {"session_id": session_id}
 
 
@@ -98,6 +99,7 @@ async def get_attachment(svc: SessionDep, filename: str):
     assert session_id is not None, "no active session"
 
     info = svc.get_attachment(session_id, filename)
+
     return FileResponse(path=info.path, media_type=info.media_type)
 
 
@@ -109,6 +111,7 @@ async def get_tool_output(svc: SessionDep, tool_use_id: str):
     assert session_id is not None, "no active session"
 
     result = svc.get_tool_output(session_id, tool_use_id)
+
     return {
         "content": result.content,
         "truncated": result.truncated,
@@ -124,4 +127,5 @@ async def download_tool_output(svc: SessionDep, tool_use_id: str):
     assert session_id is not None, "no active session"
 
     path = svc.get_tool_output_path(session_id, tool_use_id)
+
     return FileResponse(path=path, filename=path.name, media_type="text/plain")

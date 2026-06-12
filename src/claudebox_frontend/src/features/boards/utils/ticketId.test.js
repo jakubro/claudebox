@@ -1,4 +1,4 @@
-/** Tests for extractTicketId — display-ready ID extraction from ticket paths. */
+/** Tests for extractTicketId - display-ready ID extraction from ticket paths. */
 
 import { describe, expect, it } from 'vitest'
 import { extractTicketId } from './ticketId'

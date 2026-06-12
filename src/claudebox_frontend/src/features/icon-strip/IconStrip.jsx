@@ -6,7 +6,7 @@ import IconButton from './components/IconButton'
 import useBadgeCounts from './hooks/useBadgeCounts'
 
 /**
- * Vertical icon strip — top section + optional bottom section.
+ * Vertical icon strip - top section + optional bottom section.
  *
  * @param {object} props
  * @param {'left'|'right'} [props.position='right'] - Strip position.

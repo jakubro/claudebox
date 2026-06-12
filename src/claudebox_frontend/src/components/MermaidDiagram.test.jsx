@@ -25,7 +25,7 @@ vi.mock('./CopyButton', () => ({
   ),
 }))
 
-// Mock mermaid loader — avoids dynamic import issues in jsdom
+// Mock mermaid loader - avoids dynamic import issues in jsdom
 const mockRenderMermaidChart = vi.fn()
 
 vi.mock('../utils/mermaidLoader', () => ({

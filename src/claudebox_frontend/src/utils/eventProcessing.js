@@ -5,6 +5,7 @@ import {
   EventSubtype,
   EventType,
   NotificationStatus,
+  normalizeToolName,
   SdkProtocol,
   TaskStatus,
   TodoStatus,
@@ -32,12 +33,11 @@ const SETTING_CHANGE_SUBTYPES = new Set([
 const THINKING_XML_PATTERN = /<thinking>[\s\S]*?<\/thinking>/
 
 /** Pattern to extract task_id attributes from notification XML tags. */
-const NOTIFICATION_TASK_ID_PATTERN =
-  /<(?:task-notification|agent-notification)\s+task_id="([^"]+)"/g
+const NOTIFICATION_TASK_ID_PATTERN = /<task-notification\s+task_id="([^"]+)"/g
 
 /**
  * Compute threshold-filtered timing offsets for a list of event timestamps.
- * Returns an array of (offset in seconds | null) — null when delta from last shown is below threshold.
+ * Returns an array of (offset in seconds | null) - null when delta from last shown is below threshold.
  */
 export function computeTimingOffsets(eventTimestamps, turnStartTime, threshold = 30) {
   if (!turnStartTime) {
@@ -182,8 +182,8 @@ export function processEvents(events) {
         const isCompactionContent = [...compactionSummary.values()].some(arr =>
           arr.includes(event.content),
         )
-        // Skip task/agent notification XML (used for correlation, not display)
-        const isNotificationXml = /<(task-notification|agent-notification)[\s>]/.test(event.content)
+        // Skip task notification XML (used for correlation, not display)
+        const isNotificationXml = /<task-notification[\s>]/.test(event.content)
         // Skip redundant model-set and effort-set echoes (shown via changed events)
         const isModelSetEcho = SdkProtocol.MODEL_SET_PATTERN.test(event.content?.trim())
         const isEffortSetEcho = SdkProtocol.EFFORT_SET_PATTERN.test(event.content?.trim())
@@ -196,7 +196,7 @@ export function processEvents(events) {
         ) {
           continue
         }
-        // Interrupt acknowledgment — skip entirely, the interrupted turn border is sufficient
+        // Interrupt acknowledgment - skip entirely, the interrupted turn border is sufficient
         if (isInterruptAck(event)) {
           continue
         }
@@ -322,7 +322,7 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
   let { currentTurnIndex, compactionStartTurnIndex } = prevState
   const cloned = new Set()
 
-  // Buffered compaction events — flushed into the new assistant turn
+  // Buffered compaction events - flushed into the new assistant turn
   let pendingCompactionEvents = prevState.pendingCompactionEvents
     ? [...prevState.pendingCompactionEvents]
     : []
@@ -361,7 +361,7 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
       turns.push(createTurn(event.turn_id, event.content, [], event.attachments || null))
       cloned.add(currentTurnIndex)
     } else if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.INTERRUPT_SENT) {
-      // Skip if this turn already completed successfully — the interrupt arrived after
+      // Skip if this turn already completed successfully - the interrupt arrived after
       // the result and shouldn't mark the finished turn as interrupted
       const alreadyCompleted = event.turn_id && turnResults[event.turn_id] === 'success'
       if (!alreadyCompleted && currentTurnIndex != null) {
@@ -382,7 +382,7 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
       (event.type === EventType.USER && !event.is_human)
     ) {
       if (event.subtype === EventSubtype.COMPACT_START) {
-        // Buffer compact_start — don't place yet, the new turn hasn't been created
+        // Buffer compact_start - don't place yet, the new turn hasn't been created
         compactionStartTurnIndex = currentTurnIndex
         pendingCompactionEvents.push(event)
       } else if (event.subtype === EventSubtype.COMPACT_BOUNDARY) {
@@ -393,10 +393,10 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
         !event.is_human &&
         compactionStartTurnIndex != null
       ) {
-        // Post-compaction context (non-human user text) — buffer with compaction events
+        // Post-compaction context (non-human user text) - buffer with compaction events
         pendingCompactionEvents.push(event)
       } else {
-        // Non-compaction event — flush any buffered compaction events first
+        // Non-compaction event - flush any buffered compaction events first
         if (pendingCompactionEvents.length > 0 && currentTurnIndex != null) {
           flushCompaction(currentTurnIndex)
         }
@@ -406,14 +406,14 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
         } else {
           turns.push(createTurn(event.turn_id, null, [event]))
           cloned.add(turns.length - 1)
-          // Don't update currentTurnIndex — orphan turns match groupIntoTurns behavior
+          // Don't update currentTurnIndex - orphan turns match groupIntoTurns behavior
         }
       }
     }
   }
 
   // Flush remaining compaction events so in-progress compaction blocks render.
-  // The events stay in the turn for the next batch — when compact_boundary arrives,
+  // The events stay in the turn for the next batch - when compact_boundary arrives,
   // eventsToBlocks suppresses the compact_start block and shows the completed one.
   if (pendingCompactionEvents.length > 0 && currentTurnIndex != null) {
     flushCompaction(currentTurnIndex)
@@ -480,7 +480,6 @@ export function appendTaskNotifications(existing, newVisibleEvents) {
         notifications = new Map(existing)
       }
       _parseNotificationTags(event.content, 'task-notification', notifications)
-      _parseNotificationTags(event.content, 'agent-notification', notifications)
     }
   }
 
@@ -491,9 +490,9 @@ export function appendTaskNotifications(existing, newVisibleEvents) {
  * Append todo diffs from new events to existing diffs map.
  * Tracks per-subagent previous state so each subagent's diff is computed against its own history.
  * Handles cleanup for both sync tasks (tool_result) and async tasks (task_notification).
- * @param {Map} existing - Existing todoDiffs map (toolUseId → diff).
- * @param {Map} previousTodosBySubagent - Map of subagentKey → previous todos array.
- * @param {Map} asyncTaskIdMap - Map of asyncTaskId (agentId) → tool_use_id for async correlation.
+ * @param {Map} existing - Existing todoDiffs map (toolUseId -> diff).
+ * @param {Map} previousTodosBySubagent - Map of subagentKey -> previous todos array.
+ * @param {Map} asyncTaskIdMap - Map of asyncTaskId (agentId) -> tool_use_id for async correlation.
  * @param {Array} newEvents - New events to process.
  * @returns {{ diffs: Map, previousTodosBySubagent: Map, asyncTaskIdMap: Map }}
  */
@@ -530,7 +529,7 @@ export function appendTodoDiffs(existing, previousTodosBySubagent, asyncTaskIdMa
         }
         prevMap.delete(event.tool_use_id)
       }
-      // Record agentId → tool_use_id for later async notification correlation
+      // Record agentId -> tool_use_id for later async notification correlation
       const tur = event.tool_use_result
       if (tur?.isAsync && tur.agentId) {
         if (asyncMap === asyncTaskIdMap) {
@@ -566,11 +565,11 @@ export function appendTodoDiffs(existing, previousTodosBySubagent, asyncTaskIdMa
  * same todoDiffs + todosBySubagent stores so the panel and in-chat block stay
  * source-agnostic.
  *
- * @param {Map} existing - Existing todoDiffs map (toolUseId → diff).
- * @param {Map} previousTodosBySubagent - Map of subagentKey → current todos array.
- * @param {Map} taskIdMap - Map of taskId → { subagentKey, index } binding for
+ * @param {Map} existing - Existing todoDiffs map (toolUseId -> diff).
+ * @param {Map} previousTodosBySubagent - Map of subagentKey -> current todos array.
+ * @param {Map} taskIdMap - Map of taskId -> { subagentKey, index } binding for
  *   updates. Populated from TaskCreate tool_result.
- * @param {Map} pendingCreatesMap - Map of tool_use_id → pending TaskCreate
+ * @param {Map} pendingCreatesMap - Map of tool_use_id -> pending TaskCreate
  *   metadata, used to bind the taskId returned by the tool_result back to a
  *   subagent + list-position.
  * @param {Array} newEvents - New events to process.
@@ -595,9 +594,10 @@ export function appendTaskDiffs(
   }
 
   for (const event of newEvents) {
-    if (event.subtype === EventSubtype.TOOL_USE && event.content === ToolName.TASK_CREATE) {
+    const canonicalName = normalizeToolName(event.content)
+    if (event.subtype === EventSubtype.TOOL_USE && canonicalName === ToolName.TASK_CREATE) {
       _applyTaskCreate(ctx, event)
-    } else if (event.subtype === EventSubtype.TOOL_USE && event.content === ToolName.TASK_UPDATE) {
+    } else if (event.subtype === EventSubtype.TOOL_USE && canonicalName === ToolName.TASK_UPDATE) {
       _applyTaskUpdate(ctx, event)
     } else if (event.subtype === EventSubtype.TOOL_RESULT) {
       _applyTaskResult(ctx, event)
@@ -716,7 +716,7 @@ function _classifyTaskUpdateDiff(updated, newStatus, addBlockedBy) {
   } else if (newStatus === 'completed') {
     diff.completed.push(updated)
   } else if (addBlockedBy && addBlockedBy.length > 0) {
-    // Pure blocked-by update — surface via added bucket so TodoList shows
+    // Pure blocked-by update - surface via added bucket so TodoList shows
     // the chip without misclassifying the transition.
     diff.added.push(updated)
   }
@@ -746,7 +746,7 @@ function _ensurePendingMap(ctx) {
 
 /**
  * Append subagent labels from Task tool_use events.
- * Maps parent_tool_use_id → Task description for panel section headers.
+ * Maps parent_tool_use_id -> Task description for panel section headers.
  */
 export function appendSubagentLabels(existing, newEvents) {
   let labels = null
@@ -843,9 +843,21 @@ export function extractTasks(events, taskNotifications) {
 /**
  * Generate a fingerprint for AskUserQuestion matching across turns.
  * Uses question headers (stable short labels) for fuzzy matching that survives SDK text reformatting.
+ * Truthy non-array inputs (e.g. a JSON-encoded string persisted by an upstream
+ * serialization bug) skip the fingerprint and emit a single warn so the
+ * malformed payload is visible without crashing the chat render.
  */
 export function getAskUserFingerprint(questions) {
-  if (!questions || questions.length === 0) {
+  if (questions == null) {
+    return ''
+  }
+  if (!Array.isArray(questions)) {
+    console.warn('eventProcessing: expected AskUserQuestion questions to be an array', {
+      type: typeof questions,
+    })
+    return ''
+  }
+  if (questions.length === 0) {
     return ''
   }
   return questions
@@ -1025,7 +1037,7 @@ function _resolveAsyncTaskIds(event, asyncMap) {
   return []
 }
 
-/** Build map of parent_tool_use_id → max event timestamp for staleness tracking. */
+/** Build map of parent_tool_use_id -> max event timestamp for staleness tracking. */
 function buildLastEventTimeMap(events) {
   const map = new Map()
   for (const event of events) {

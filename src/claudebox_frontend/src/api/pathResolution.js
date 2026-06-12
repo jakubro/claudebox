@@ -1,4 +1,4 @@
-/** Path resolution API client — resolve candidates to absolute host paths. */
+/** Path resolution API client - resolve candidates to absolute host paths. */
 
 import { containerFetch } from './apiClient'
 

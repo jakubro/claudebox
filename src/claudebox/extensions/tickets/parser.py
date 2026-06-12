@@ -1,4 +1,4 @@
-"""Board YAML parser — read/write board.yaml with comment preservation."""
+"""Board YAML parser - read/write board.yaml with comment preservation."""
 
 import re
 import shutil
@@ -25,10 +25,11 @@ _yaml.default_flow_style = False
 def board_id_from_path(yaml_path: Path, workspace_root: Path) -> str:
     """Derive board ID from board.yaml path relative to workspace root.
 
-    Slugifies the relative directory path: ``docs/tickets/board.yaml`` → ``docs-tickets``.
+    Slugifies the relative directory path: ``docs/tickets/board.yaml`` -> ``docs-tickets``.
     """
 
     rel = yaml_path.parent.relative_to(workspace_root)
+
     return str(rel).replace("/", "-") if str(rel) != "." else "root"
 
 
@@ -61,8 +62,10 @@ def parse_board(yaml_path: Path, workspace_root: Path) -> Board:
     swimlanes = [_swimlane_from_entry(entry) for entry in data.get("swimlanes") or []]
 
     columns: dict[str, list[BoardTicket]] = {}
+
     for state in states:
         tickets = []
+
         for entry in data.get(state.id) or []:
             path = str(entry["path"])
             title = _resolve_title(yaml_path.parent / path)
@@ -74,6 +77,7 @@ def parse_board(yaml_path: Path, workspace_root: Path) -> Board:
                     title=title,
                 )
             )
+
         columns[state.id] = tickets
 
     return Board(
@@ -91,6 +95,7 @@ def board_summary(yaml_path: Path, workspace_root: Path) -> BoardSummary:
     """Create a lightweight board summary without parsing ticket contents."""
 
     name = _read_name_field(yaml_path) or board_name_from_path(yaml_path)
+
     return BoardSummary(
         id=board_id_from_path(yaml_path, workspace_root),
         name=name,
@@ -115,6 +120,7 @@ def move_ticket(
 
     board_dir = yaml_path.parent
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
         col_keys = _column_keys(data)
@@ -123,13 +129,16 @@ def move_ticket(
         # Find and remove ticket from current column
         source_col = None
         entry = None
+
         for col_key in col_keys:
             items = data.get(col_key) or []
+
             for i, item in enumerate(items):
                 if str(item["path"]) == ticket_path:
                     source_col = col_key
                     entry = items.pop(i)
                     break
+
             if entry is not None:
                 break
 
@@ -145,6 +154,7 @@ def move_ticket(
         # Move file if column changed
         if column and source_col and column != source_col:
             old_abs = board_dir / ticket_path
+
             if old_abs.exists():
                 # Compute new path: replace the directory segment
                 new_dir_name = folders[column]
@@ -160,11 +170,13 @@ def move_ticket(
         # Insert into target column at the requested position (or append)
         if data.get(target_col) is None:
             data[target_col] = []
+
         target_list = data[target_col]
+
         if index is None:
             target_list.append(entry)
         else:
-            # Clamp explicitly — list.insert(-1, ...) would land before the last
+            # Clamp explicitly - list.insert(-1, ...) would land before the last
             # element rather than at the end, so negative indexes are not relayed.
             clamped = max(0, min(int(index), len(target_list)))
             target_list.insert(clamped, entry)
@@ -178,15 +190,18 @@ def archive_ticket(yaml_path: Path, ticket_path: str) -> None:
     """Remove a ticket entry from board.yaml. File stays on disk."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
         for col_key in _column_keys(data):
             items = data.get(col_key) or []
+
             for i, item in enumerate(items):
                 if str(item["path"]) == ticket_path:
                     items.pop(i)
                     _write_yaml(yaml_path, data)
+
                     return
 
         raise TicketNotFound(ticket_path=ticket_path)
@@ -196,15 +211,18 @@ def assign_ticket(yaml_path: Path, ticket_path: str, session_id: str) -> None:
     """Set the session ID on a ticket entry in board.yaml."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
         for col_key in _column_keys(data):
             items = data.get(col_key) or []
+
             for item in items:
                 if str(item["path"]) == ticket_path:
                     item["session"] = session_id
                     _write_yaml(yaml_path, data)
+
                     return
 
         raise TicketNotFound(ticket_path=ticket_path)
@@ -216,6 +234,7 @@ def add_swimlane(yaml_path: Path, name: str) -> Swimlane:
     sid = _slugify(name)
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
@@ -232,6 +251,7 @@ def rename_swimlane(yaml_path: Path, swimlane_id: str, name: str) -> Swimlane:
     """Rename a swimlane in board.yaml."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
@@ -239,6 +259,7 @@ def rename_swimlane(yaml_path: Path, swimlane_id: str, name: str) -> Swimlane:
             if str(entry["id"]) == swimlane_id:
                 entry["name"] = name
                 _write_yaml(yaml_path, data)
+
                 return Swimlane(id=swimlane_id, name=name)
 
         raise SwimlaneNotFound(swimlane_id=swimlane_id)
@@ -248,10 +269,12 @@ def rename_state(yaml_path: Path, state_id: str, label: str) -> BoardState:
     """Rename a state's display label in board.yaml. Folder name unchanged."""
 
     label = label.strip()
+
     if not label:
         raise InvalidLabel(state_id=state_id)
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
@@ -261,6 +284,7 @@ def rename_state(yaml_path: Path, state_id: str, label: str) -> BoardState:
                 # the folder as state key, so renaming would force a file-system migration.
                 entry["label"] = label
                 _write_yaml(yaml_path, data)
+
                 return _state_from_entry(entry)
 
         raise StateNotFound(state_id=state_id)
@@ -270,11 +294,13 @@ def delete_swimlane(yaml_path: Path, swimlane_id: str) -> None:
     """Delete a swimlane from board.yaml. Tickets in it become unsorted."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
         lanes = data.get("swimlanes") or []
         found = False
+
         for i, entry in enumerate(lanes):
             if str(entry["id"]) == swimlane_id:
                 lanes.pop(i)
@@ -297,10 +323,12 @@ def rename_board(yaml_path: Path, name: str) -> str:
     """Set the top-level ``name:`` field in board.yaml. Returns the new name."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
         data["name"] = name
         _write_yaml(yaml_path, data)
+
     return name
 
 
@@ -308,6 +336,7 @@ def reorder_states(yaml_path: Path, keys: list[str]) -> list[BoardState]:
     """Reorder states in board.yaml to match the given key order."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
@@ -315,6 +344,7 @@ def reorder_states(yaml_path: Path, keys: list[str]) -> list[BoardState]:
         by_id = {str(entry["id"]): entry for entry in raw}
 
         reordered = []
+
         for key in keys:
             if key in by_id:
                 reordered.append(by_id[key])
@@ -329,6 +359,7 @@ def reorder_swimlanes(yaml_path: Path, ids: list[str]) -> list[Swimlane]:
     """Reorder swimlanes in board.yaml to match the given ID order."""
 
     lock = FileLock(str(yaml_path) + ".lock")
+
     with lock:
         data = _yaml.load(yaml_path)
 
@@ -336,6 +367,7 @@ def reorder_swimlanes(yaml_path: Path, ids: list[str]) -> list[Swimlane]:
         by_id = {str(entry["id"]): entry for entry in lanes}
 
         reordered = []
+
         for sid in ids:
             if sid in by_id:
                 reordered.append(by_id[sid])
@@ -354,8 +386,10 @@ def _parse_states(data: dict, yaml_path: Path | None = None) -> list[BoardState]
     """Parse states: section from raw YAML data."""
 
     raw = data.get("states")
+
     if not raw or not isinstance(raw, list):
         path_info = f" in {yaml_path}" if yaml_path else ""
+
         raise BoardParseError(
             path=str(yaml_path or ""),
             reason=f"Missing or invalid 'states:' list{path_info}",
@@ -363,15 +397,19 @@ def _parse_states(data: dict, yaml_path: Path | None = None) -> list[BoardState]
 
     seen_ids: set[str] = set()
     states = []
+
     for entry in raw:
         sid = str(entry["id"])
+
         if sid in seen_ids:
             raise BoardParseError(
                 path=str(yaml_path or ""),
                 reason=f"Duplicate state id: {sid}",
             )
+
         seen_ids.add(sid)
         states.append(_state_from_entry(entry))
+
     return states
 
 
@@ -414,10 +452,12 @@ def _read_name_field(yaml_path: Path) -> str | None:
 
     try:
         data = _yaml.load(yaml_path)
+
         if isinstance(data, dict) and data.get("name"):
             return str(data["name"])
     except Exception:
         pass
+
     return None
 
 
@@ -441,6 +481,7 @@ def _resolve_title(ticket_path: Path) -> str | None:
         with open(ticket_path) as f:
             for line in f:
                 match = re.match(r"^#\s+(.+)", line.strip())
+
                 if match:
                     return match.group(1)
     except OSError:
@@ -448,6 +489,7 @@ def _resolve_title(ticket_path: Path) -> str | None:
 
     # Fallback: deslugify filename
     stem = ticket_path.stem
+
     return stem.replace("-", " ").replace("_", " ")
 
 
@@ -456,4 +498,5 @@ def _slugify(name: str) -> str:
 
     slug = name.lower().strip()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
+
     return slug.strip("-")

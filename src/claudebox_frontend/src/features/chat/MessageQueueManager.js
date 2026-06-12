@@ -131,17 +131,17 @@ export default class MessageQueueManager {
     return this.items.some(i => i.status === QueueStatus.QUEUED)
   }
 
-  /** Handle response cycle end — dequeue next item for sending. */
+  /** Handle response cycle end - dequeue next item for sending. */
   handleResponseCycleEnd() {
     return this.dequeue()
   }
 
-  /** Handle interrupt — pause all queued items. */
+  /** Handle interrupt - pause all queued items. */
   handleInterrupt() {
     this.pauseAll()
   }
 
-  /** Handle error — pause all queued items. */
+  /** Handle error - pause all queued items. */
   handleError() {
     this.pauseAll()
   }

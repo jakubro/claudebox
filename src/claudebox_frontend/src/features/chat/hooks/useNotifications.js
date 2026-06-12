@@ -68,7 +68,7 @@ export default function useNotifications({
   }, [])
 
   // Mark initial load complete after first real-time responding state.
-  // Replay-driven responding=true does not count — those events reflect
+  // Replay-driven responding=true does not count - those events reflect
   // historical activity, not the current user-facing turn.
   useEffect(() => {
     if (isResponding && !isReplaying) {
@@ -83,7 +83,7 @@ export default function useNotifications({
 
     // Check for completion transition
     if (wasResponding && !isResponding) {
-      // Skip both indicator and notification on session resume — the responding
+      // Skip both indicator and notification on session resume - the responding
       // transition during SSE replay is not an actual user-facing completion.
       // Replay-time transitions are also caught by isReplaying since the
       // result event arrives before replay_ended fires.

@@ -1,4 +1,4 @@
-/** Board control bar — density toggle and other per-viewer board controls. */
+/** Board control bar - density toggle and other per-viewer board controls. */
 
 import { List, Rows3 } from 'lucide-react'
 import PanelControlBar from '../../../components/PanelControlBar/PanelControlBar'

@@ -1,4 +1,4 @@
-"""Tests for claudebox.broadcaster — async pub-sub with replay support."""
+"""Tests for claudebox.broadcaster - async pub-sub with replay support."""
 
 import asyncio
 
@@ -11,7 +11,7 @@ from claudebox.core.broadcaster import Broadcaster
 
 
 class PassthroughBroadcaster(Broadcaster):
-    """Subclass that broadcasts events unchanged — for testing core mechanics."""
+    """Subclass that broadcasts events unchanged - for testing core mechanics."""
 
     def _on_event(self, event):
         return event
@@ -142,7 +142,7 @@ class TestScheduleBroadcast:
         b = PassthroughBroadcaster()
         _, q = b.subscribe()
 
-        # No running loop — should not raise
+        # No running loop - should not raise
         b.schedule_broadcast("orphan")
         assert q.empty()
 
@@ -161,8 +161,10 @@ class TestReplay:
         await b.replay_to(q, ["a", "b", "c"])
 
         items = []
+
         while not q.empty():
             items.append(q.get_nowait())
+
         assert items == ["a", "b", "c"]
 
     @pytest.mark.anyio
@@ -173,8 +175,10 @@ class TestReplay:
         await b.replay_to(q, ["a", None, "b"])
 
         items = []
+
         while not q.empty():
             items.append(q.get_nowait())
+
         assert items == ["a", "b"]
 
     @pytest.mark.anyio
@@ -187,6 +191,7 @@ class TestReplay:
         await b.replay_to(q, [1, 2, 3])
 
         items = []
+
         while not q.empty():
             items.append(q.get_nowait())
 

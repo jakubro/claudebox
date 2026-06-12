@@ -1,4 +1,4 @@
-"""Capability transport — Session.get_capabilities, REST endpoint, session-info envelope, SSE init enrichment."""
+"""Capability transport - Session.get_capabilities, REST endpoint, session-info envelope, SSE init enrichment."""
 
 import dataclasses
 from unittest.mock import MagicMock
@@ -41,6 +41,7 @@ def _runtime_double(*, capabilities: RuntimeCapabilities | None = None):
         PermissionMode(id="default", name="Default", description="standard"),
     ]
     runtime.get_skills.return_value = [Skill(name="example-skill")]
+
     return runtime
 
 
@@ -49,6 +50,7 @@ def _session_with_runtime(tmp_workspace, runtime) -> SessionService:
 
     session = SessionService(workspace=tmp_workspace)
     session._sdk_client = runtime
+
     return session
 
 
@@ -58,6 +60,7 @@ def _build_client(session: SessionService) -> TestClient:
     app = FastAPI(default_response_class=JSONResponse)
     app.include_router(router)
     app.dependency_overrides[get_session] = lambda: session
+
     return TestClient(app)
 
 
@@ -96,16 +99,16 @@ class TestSessionAccessors:
 
 
 class TestCapabilitiesEndpoint:
-    """The combined capabilities endpoint exposes the 15-flag matrix + runtime_name + per-flag catalogs."""
+    """The combined capabilities endpoint exposes the 16-flag matrix + runtime_name + per-flag catalogs."""
 
-    def test_returns_fifteen_flag_matrix(self, tmp_workspace):
+    def test_returns_sixteen_flag_matrix(self, tmp_workspace):
         runtime = _runtime_double()
         session = _session_with_runtime(tmp_workspace, runtime)
         client = _build_client(session)
 
         body = client.get("/api/sessions/current/capabilities").json()
 
-        assert len(body["capabilities"]) == 15
+        assert len(body["capabilities"]) == 16
         assert all(isinstance(v, bool) for v in body["capabilities"].values())
         assert body["runtime_name"] == "Claude"
 
@@ -141,7 +144,7 @@ class TestCapabilitiesEndpoint:
         assert body["skills"] is None
 
 
-# --- GET /api/sessions/current — envelope additions ---
+# --- GET /api/sessions/current - envelope additions ---
 
 
 class TestSessionInfoEnvelope:
@@ -153,6 +156,7 @@ class TestSessionInfoEnvelope:
 
         summary = SessionSummary(
             session_id="sess-abc",
+            fork_point_cost_usd=0.0,
             model="claude-opus-4-7",
             permission_mode="default",
             num_turns=0,
@@ -164,7 +168,7 @@ class TestSessionInfoEnvelope:
 
         assert body["session_id"] == "sess-abc"
         assert body["runtime_name"] == "Claude"
-        assert len(body["capabilities"]) == 15
+        assert len(body["capabilities"]) == 16
         assert body["capabilities"]["supports_models"] is True
 
     def test_envelope_empty_when_no_session(self, tmp_workspace, monkeypatch):
@@ -205,7 +209,7 @@ class TestSystemInitEnrichment:
         assert event.runtime_name == "Claude"
         assert event.capabilities is not None
         assert event.capabilities["supports_models"] is True
-        assert len(event.capabilities) == 15
+        assert len(event.capabilities) == 16
 
     def test_non_init_event_unchanged(self):
         runtime = _runtime_double()

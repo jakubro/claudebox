@@ -1,4 +1,4 @@
-/** Context for the still-running toast — emit / dismiss / read current toast. */
+/** Context for the still-running toast - emit / dismiss / read current toast. */
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 

@@ -1,4 +1,4 @@
-"""Async task monitor — tail output files and emit events."""
+"""Async task monitor - tail output files and emit events."""
 
 import asyncio
 import json
@@ -76,6 +76,7 @@ class AsyncTaskMonitor:
 
             while self._running:
                 line = await f.readline()
+
                 if line:
                     self._offset = await f.tell()
                     await self._process_line(line.strip())
@@ -97,6 +98,7 @@ class AsyncTaskMonitor:
             data = json.loads(line)
         except json.JSONDecodeError:
             self._logger.warning("Invalid JSON in async task output", line=line[:100])
+
             return
 
         for event in dict_message_to_events(data):

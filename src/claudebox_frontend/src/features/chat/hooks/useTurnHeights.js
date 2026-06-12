@@ -1,4 +1,4 @@
-/** Per-turn height tracker for minimap proportionality — sticky cache + content predictor + idle warmup. */
+/** Per-turn height tracker for minimap proportionality - sticky cache + content predictor + idle warmup. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { INTRINSIC_TURN_HEIGHT_PX, TURN_HORIZONTAL_PADDING_PX } from '../../../config/dimensions'
@@ -17,18 +17,18 @@ const EMPTY_HEIGHTS = {}
  * placeholder. Subsequent off-screen fires never overwrite the cache;
  * subsequent on-screen fires refresh (turns grow while streaming; predictions
  * upgrade to reality on first visit). Pending turns lack a `data-turn-id` and
- * are reported live — they sit at the bottom and are always on-screen.
+ * are reported live - they sit at the bottom and are always on-screen.
  *
  * Idle-time warmup walks predicted off-screen turn chunks, applies a
  * `.force-measure` opt-out class, reads `offsetHeight` (forces real layout
- * under `content-visibility: visible`), then removes the class — replacing
+ * under `content-visibility: visible`), then removes the class - replacing
  * predictions with measurements without paint cost. Defers during streaming
  * via `isStreamingRef`.
  *
  * `getLogicalScrollHeight` returns a stable scroll-axis total derived from
  * the cache. Consumed by MinimapController for thumb-size jitter resistance
  * (position uses native `containerEl.scrollHeight`). The result is memoized
- * on a cache-version counter — repeated calls between cache mutations are
+ * on a cache-version counter - repeated calls between cache mutations are
  * O(1) instead of a fresh querySelectorAll + per-turn iteration.
  */
 export default function useTurnHeights(messagesRef, turns, isStreaming = false) {
@@ -37,10 +37,10 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
   const resizeObserverRef = useRef(null)
   const intersectionObserverRef = useRef(null)
   const elementsRef = useRef(new Map())
-  // turnEl → user-message child element. Cached on first observation so the
+  // turnEl -> user-message child element. Cached on first observation so the
   // per-update `querySelector` in updateHeights becomes a Map lookup.
   const userElementsRef = useRef(new Map())
-  // turnId → {height, userHeight, predicted}: sticky cache of last trusted measurement
+  // turnId -> {height, userHeight, predicted}: sticky cache of last trusted measurement
   const cacheRef = useRef(new Map())
   // turnIds currently intersecting the chat viewport
   const onScreenRef = useRef(new Set())
@@ -49,7 +49,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
   turnsRef.current = turns
   const isStreamingRef = useRef(isStreaming)
   isStreamingRef.current = isStreaming
-  // Warmup loop sentinels — single active loop; effect cleanup signals stop
+  // Warmup loop sentinels - single active loop; effect cleanup signals stop
   const warmupActiveRef = useRef(false)
   const warmupShouldStopRef = useRef(false)
   // Memo plumbing for getLogicalScrollHeight: bump cacheVersionRef whenever
@@ -113,7 +113,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
         const turn = turnsRef.current?.find(t => t.turn_id === turnId)
         total += turn ? predictTurnHeight(turn, effectiveWidth) : INTRINSIC_TURN_HEIGHT_PX
       } else {
-        // Pending turn (no turnId) — always on-screen at bottom, trust live measure.
+        // Pending turn (no turnId) - always on-screen at bottom, trust live measure.
         total += el.offsetHeight
       }
     }
@@ -123,7 +123,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
   }, [messagesRef, readTurnId, effectiveWidthFor])
 
   // Update heights from observed elements, applying sticky cache.
-  // `fastPath`: skip the O(N) sweep and re-measure only the bottom turn —
+  // `fastPath`: skip the O(N) sweep and re-measure only the bottom turn -
   // used during streaming where only the active turn grows. Other turns
   // can't resize without firing their own ResizeObserver (which would
   // schedule its own update), so the cache for non-active turns remains
@@ -203,14 +203,14 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
           const isOnScreen = onScreenRef.current.has(turnId)
           if (!cached) {
             if (isOnScreen) {
-              // On-screen first observation — measurement is the real layout.
+              // On-screen first observation - measurement is the real layout.
               cacheRef.current.set(turnId, {
                 height: measuredHeight,
                 userHeight: measuredUserHeight,
                 predicted: false,
               })
             } else {
-              // Off-screen first observation — offsetHeight may be the 400px
+              // Off-screen first observation - offsetHeight may be the 400px
               // intrinsic-size placeholder. Cache the prediction instead so
               // the minimap reflects content shape from frame 1; idle warmup
               // upgrades to real measurement later.
@@ -241,7 +241,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
           newHeights[index] = entry.height
           newUserHeights[index] = entry.userHeight
         } else {
-          // Pending turn — skip cache, report live measurement.
+          // Pending turn - skip cache, report live measurement.
           newHeights[index] = measuredHeight
           newUserHeights[index] = measuredUserHeight
         }
@@ -285,7 +285,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
     [messagesRef, readTurnId, effectiveWidthFor, findUserEl],
   )
 
-  // Setup observers — re-runs when containerEl changes.
+  // Setup observers - re-runs when containerEl changes.
   useEffect(() => {
     if (!containerEl) {
       return
@@ -320,10 +320,10 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
       })
     }
 
-    // Structural change → run full pass on next frame; re-observe new turns.
-    // ResizeObserver-triggered update during streaming → trailing-edge throttle
+    // Structural change -> run full pass on next frame; re-observe new turns.
+    // ResizeObserver-triggered update during streaming -> trailing-edge throttle
     // to STREAMING_THROTTLE_MS so the active turn's continuous growth doesn't
-    // drive a layout pass on every flush. Idle ResizeObserver → next-frame
+    // drive a layout pass on every flush. Idle ResizeObserver -> next-frame
     // coalescing as before.
     const scheduleUpdate = needsObserve => {
       if (needsObserve) {

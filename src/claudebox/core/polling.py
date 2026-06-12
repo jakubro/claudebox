@@ -1,4 +1,4 @@
-"""Async polling primitives — start/stop lifecycle with cancellation handling."""
+"""Async polling primitives - start/stop lifecycle with cancellation handling."""
 
 import asyncio
 from abc import ABC, abstractmethod
@@ -41,10 +41,12 @@ class AsyncPoller(ABC):
 
         if self._task:
             self._task.cancel()
+
             try:
                 await self._task
             except asyncio.CancelledError:
                 pass
+
             self._task = None
 
         self._logger.info("%s stopped", self._name)
@@ -73,7 +75,7 @@ class MtimeWatcher(AsyncPoller):
 
     Attributes:
         _debounce: Seconds to wait after detecting a change before notifying.
-        _watched: Map of file path string → last known mtime.
+        _watched: Map of file path string -> last known mtime.
     """
 
     def __init__(self, *, interval: float, debounce: float, name: str) -> None:
@@ -98,6 +100,7 @@ class MtimeWatcher(AsyncPoller):
         """Replace watched set with the given paths."""
 
         new_watched = {}
+
         for path in paths:
             key = str(path)
             new_watched[key] = self._watched.get(key, self._get_mtime(path))

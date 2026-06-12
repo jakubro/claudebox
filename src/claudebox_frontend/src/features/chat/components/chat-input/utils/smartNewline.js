@@ -1,4 +1,4 @@
-/** Shift+Enter smart newline — indent inheritance + markdown list-marker continuation. */
+/** Shift+Enter smart newline - indent inheritance + markdown list-marker continuation. */
 
 import { nextMarker, parseListLine } from './listMarker'
 import { leadingWhitespaceLen, lineEndOffset, lineStartOffset } from './textareaPosition'
@@ -19,7 +19,7 @@ export function applyShiftEnter(ta) {
   const parsed = parseListLine(lineText)
 
   if (parsed && parsed.content.length === 0) {
-    // Empty marker — exit the list. Replace marker with empty (keep indent),
+    // Empty marker - exit the list. Replace marker with empty (keep indent),
     // insert '\n', new line preserves indent.
     const indent = parsed.leadingWhitespace
     ta.value = `${value.slice(0, lineStart)}${indent}\n${indent}${value.slice(lineEnd)}`

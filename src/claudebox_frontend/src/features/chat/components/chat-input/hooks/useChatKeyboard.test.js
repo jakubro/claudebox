@@ -1,4 +1,4 @@
-/** Tests for useChatKeyboard hook — keyboard shortcut dispatch. */
+/** Tests for useChatKeyboard hook - keyboard shortcut dispatch. */
 
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -81,7 +81,7 @@ function readState(textarea) {
   }
 }
 
-describe('useChatKeyboard — Tab/Shift+Tab', () => {
+describe('useChatKeyboard - Tab/Shift+Tab', () => {
   it('Tab inserts 2 spaces at caret in content zone (no selection)', () => {
     const { textarea, params, resizeTextarea, cleanup } = setup()
     const { result } = renderHook(() => useChatKeyboard(params))
@@ -240,7 +240,7 @@ describe('useChatKeyboard — Tab/Shift+Tab', () => {
     setTextarea(textarea, '  a\n    b\nc', 0, 11)
     result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }))
 
-    // Line 0: 2→0 (-2). Line 1: 4→2 (-2). Line 2: 0 (no-op).
+    // Line 0: 2->0 (-2). Line 1: 4->2 (-2). Line 2: 0 (no-op).
     expect(readState(textarea)).toMatchObject({
       value: 'a\n  b\nc',
       start: 0,
@@ -257,7 +257,7 @@ describe('useChatKeyboard — Tab/Shift+Tab', () => {
     setTextarea(textarea, '  hello', 4, 7) // selects "llo"
     result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }))
 
-    // Line dedents 2→0; selection shifts left by 2 chars.
+    // Line dedents 2->0; selection shifts left by 2 chars.
     expect(readState(textarea)).toMatchObject({ value: 'hello', start: 2, end: 5 })
     cleanup()
   })
@@ -276,7 +276,7 @@ describe('useChatKeyboard — Tab/Shift+Tab', () => {
   })
 })
 
-describe('useChatKeyboard — Shift+Enter smart newline', () => {
+describe('useChatKeyboard - Shift+Enter smart newline', () => {
   // Layer 1: indent inheritance on prose lines.
 
   it('Shift+Enter on plain prose with no indent inserts plain newline', () => {
@@ -403,7 +403,7 @@ describe('useChatKeyboard — Shift+Enter smart newline', () => {
     setTextarea(textarea, '- [x] foo', 9)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
 
-    // [x] becomes [ ] on the new item — always-unchecked rule.
+    // [x] becomes [ ] on the new item - always-unchecked rule.
     expect(readState(textarea).value).toBe('- [x] foo\n- [ ] ')
     cleanup()
   })
@@ -477,7 +477,7 @@ describe('useChatKeyboard — Shift+Enter smart newline', () => {
     cleanup()
   })
 
-  // Key contract preservation — plain Enter still submits, doesn't continue list.
+  // Key contract preservation - plain Enter still submits, doesn't continue list.
 
   it('plain Enter on list line falls through to submit branch (no list continuation)', () => {
     const { textarea, params, cleanup } = setup()
@@ -492,7 +492,7 @@ describe('useChatKeyboard — Shift+Enter smart newline', () => {
     cleanup()
   })
 
-  // Input event firing — drafts/autocomplete observers must refresh.
+  // Input event firing - drafts/autocomplete observers must refresh.
 
   it('Shift+Enter dispatches input event', () => {
     const { textarea, params, cleanup } = setup()

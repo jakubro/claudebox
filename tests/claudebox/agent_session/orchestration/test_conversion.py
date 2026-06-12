@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.conversion — message-to-event pipeline."""
+"""Tests for claudebox.agent_session.orchestration.conversion - message-to-event pipeline."""
 
 from datetime import datetime
 
@@ -29,6 +29,7 @@ def _first(data: dict) -> Event:
 
     events = _events(data)
     assert len(events) >= 1, f"Expected at least 1 event, got {len(events)}"
+
     return events[0]
 
 
@@ -97,14 +98,6 @@ class TestDictMessageToEventsUser:
         data = event.raw["message"]["data"]
         assert data["task_id"] == "abc123"
         assert data["summary"] == "Working"
-
-    def test_agent_notification_xml(self):
-        content = "<agent-notification><agent-id>xyz</agent-id><summary>Done</summary></agent-notification>"
-        event = _first({"type": "user", "message": {"content": content}})
-        assert event.type == "system"
-        assert event.subtype == "task_notification"
-        # agent_id normalized to task_id
-        assert event.raw["message"]["data"]["task_id"] == "xyz"
 
     def test_non_notification_synthetic(self):
         content = "<local-command-stdout>some output</local-command-stdout>"
@@ -225,6 +218,7 @@ class TestToPublishedEvent:
             "raw": {"message": {}, "block": {}},
         }
         defaults.update(overrides)
+
         return Event(**defaults)
 
     def test_tool_use_promotion(self):
@@ -378,7 +372,6 @@ class TestIsSyntheticUserMessage:
             "<local-command-stdout>output</local-command-stdout>",
             "<local-command-stderr>error</local-command-stderr>",
             "<task-notification><task-id>x</task-id></task-notification>",
-            "<agent-notification><agent-id>y</agent-id></agent-notification>",
             "<system-reminder>reminder</system-reminder>",
         ],
     )
@@ -411,13 +404,6 @@ class TestParseNotificationXml:
         xml = "<task-notification><task-id>abc</task-id><summary>Working</summary></task-notification>"
         result = _parse_notification_xml(xml)
         assert result == {"task_id": "abc", "summary": "Working"}
-
-    def test_agent_notification_normalizes_id(self):
-        xml = "<agent-notification><agent-id>xyz</agent-id><summary>Done</summary></agent-notification>"
-        result = _parse_notification_xml(xml)
-        assert result is not None
-        assert "agent_id" not in result
-        assert result["task_id"] == "xyz"
 
     def test_non_matching_returns_none(self):
         assert _parse_notification_xml("not xml at all") is None

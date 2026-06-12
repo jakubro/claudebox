@@ -2,6 +2,7 @@
 
 import contextlib
 from collections.abc import Callable
+from pathlib import Path
 
 from claudebox import SessionNotReady, SessionService
 from .constants import CONTAINER_API_LOG_FILENAME
@@ -20,13 +21,19 @@ def get_session() -> SessionService:
     return current
 
 
-def managed(**kwargs) -> Callable:
+def managed(
+    workspace: str,
+    system_prompt: str | None = None,
+    permission_mode: str | None = None,
+    **_server_args,
+) -> Callable:
     """Build an async context manager owning the session singleton.
 
-    Construction does not auto-start the session — the daemon triggers start()
-    via POST /api/sessions/new or POST /api/sessions/{id}/resume. Per-session
-    log routing wires through on_session_start/on_session_stop so the file path
-    is known only when the session resolves its own session_dir.
+    Construction does not auto-start the session - the daemon triggers start()
+    via POST /api/sessions/new or POST /api/sessions/{id}/resume. Per-session log
+    routing wires through on_start/on_stop so the file path is known only when the
+    session resolves its own session_dir. `_server_args` (e.g. `port`) are
+    HTTP-server CLI args the lifespan forwards but the session does not accept.
     """
 
     @contextlib.asynccontextmanager
@@ -34,11 +41,13 @@ def managed(**kwargs) -> Callable:
         global current
 
         current = SessionService(
-            **kwargs,
-            on_session_start=lambda session: start_logging(
+            workspace=Path(workspace),
+            system_prompt=system_prompt,
+            permission_mode=permission_mode,
+            on_start=lambda session: start_logging(
                 session.path / CONTAINER_API_LOG_FILENAME,
             ),
-            on_session_stop=stop_logging,
+            on_stop=stop_logging,
         )
 
         try:

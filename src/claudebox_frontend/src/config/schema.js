@@ -1,4 +1,4 @@
-/** Claude Code event protocol vocabulary — single source of truth for all event schema constants. */
+/** Claude Code event protocol vocabulary - single source of truth for all event schema constants. */
 
 // --- Event types (event.type) ---
 export const EventType = Object.freeze({
@@ -50,6 +50,44 @@ export const ToolName = Object.freeze({
   WEB_FETCH: 'WebFetch',
   MCP_SEARCH: 'MCPSearch',
 })
+
+// --- LangGraph tool-name aliases ---
+//
+// The LangGraph runtime emits tool_use names in snake_case per Python
+// convention (task_create, task_update, ...). All frontend rendering,
+// registry lookup, and event-pipeline gating is keyed on Claude's
+// PascalCase canonical names (ToolName.TASK_CREATE === 'TaskCreate', ...).
+// `normalizeToolName` is the single normalisation point - call it before
+// any registry lookup or gate comparison; downstream code reads the
+// canonical name and stays runtime-agnostic.
+export const TOOL_NAME_ALIASES = Object.freeze({
+  read_file: ToolName.READ,
+  write_file: ToolName.WRITE,
+  edit_file: ToolName.EDIT,
+  glob: ToolName.GLOB,
+  grep: ToolName.GREP,
+  bash: ToolName.BASH,
+  task: ToolName.TASK,
+  skill: ToolName.SKILL,
+  ask_user_question: ToolName.ASK_USER_QUESTION,
+  web_search: ToolName.WEB_SEARCH,
+  web_fetch: ToolName.WEB_FETCH,
+  task_create: ToolName.TASK_CREATE,
+  task_update: ToolName.TASK_UPDATE,
+  task_get: ToolName.TASK_GET,
+  task_list: ToolName.TASK_LIST,
+  task_output: ToolName.TASK_OUTPUT,
+})
+
+/**
+ * Normalise a tool name to its Claude PascalCase canonical form.
+ * Returns the input unchanged when no alias applies.
+ * @param {string} name - The raw tool name from `event.content`.
+ * @returns {string}
+ */
+export function normalizeToolName(name) {
+  return TOOL_NAME_ALIASES[name] ?? name
+}
 
 // --- Block types (produced by processEvents, consumed by TurnBlockList) ---
 export const BlockType = Object.freeze({

@@ -1,4 +1,4 @@
-"""Ticket/board domain — pure parsing, models, and error types."""
+"""Ticket/board domain - pure parsing, models, and error types."""
 
 from .errors import (
     BoardParseError,

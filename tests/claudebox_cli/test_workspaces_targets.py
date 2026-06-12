@@ -9,7 +9,7 @@ parser = app.parser
 
 
 class TestWorkspacesAction:
-    """Action choices: list / register / deregister. Bare → action=None."""
+    """Action choices: list / register / deregister. Bare -> action=None."""
 
     @pytest.mark.parametrize(
         ("action", "extra"),
@@ -31,11 +31,12 @@ class TestWorkspacesAction:
     def test_unknown_action_exits_2(self) -> None:
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["workspaces", "bogus"])
+
         assert exc.value.code == 2
 
 
 class TestWorkspacesRegisterArg:
-    """register accepts an optional path argument (defaults to None → cwd in handler)."""
+    """register accepts an optional path argument (defaults to None -> cwd in handler)."""
 
     def test_register_with_no_path(self) -> None:
         args = parser.parse_args(["workspaces", "register"])
@@ -54,6 +55,7 @@ class TestWorkspacesDeregisterArg:
     def test_deregister_requires_id(self) -> None:
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["workspaces", "deregister"])
+
         assert exc.value.code == 2
 
     def test_deregister_with_id(self) -> None:

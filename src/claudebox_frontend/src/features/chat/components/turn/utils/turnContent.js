@@ -1,4 +1,4 @@
-/** Pure derivations for Turn — extracted from Turn.jsx, no React APIs. */
+/** Pure derivations for Turn - extracted from Turn.jsx, no React APIs. */
 
 import { formatDuration, stripMarkdown } from '../../../../../utils/formatters'
 import { extractSystemReminders } from '../components/tool-block/utils/toolResultFormatters'

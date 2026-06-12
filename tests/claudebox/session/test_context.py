@@ -1,4 +1,4 @@
-"""Tests for claudebox.session — session context and path derivation."""
+"""Tests for claudebox.session - session context and path derivation."""
 
 from claudebox.session.session import Session
 from claudebox.workspace import Workspace

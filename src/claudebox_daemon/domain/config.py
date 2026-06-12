@@ -1,4 +1,4 @@
-"""Global daemon configuration — registered workspaces, port, settings."""
+"""Global daemon configuration - registered workspaces, port, settings."""
 
 import hashlib
 from dataclasses import dataclass, field
@@ -51,7 +51,7 @@ class DaemonConfig(DataClass):
             if existing.path == workspace_path:
                 return existing
 
-            # Basename collision — disambiguate with path hash
+            # Basename collision - disambiguate with path hash
             path_hash = hashlib.sha256(str(workspace_path).encode()).hexdigest()[:8]
             workspace_id = f"{workspace_id}-{path_hash}"
 
@@ -60,6 +60,7 @@ class DaemonConfig(DataClass):
         except WorkspaceNotRegistered:
             workspace = RegisteredWorkspace(path=workspace_path, id=workspace_id)
             self._add(workspace)
+
             return workspace
 
     def deregister_workspace(self, workspace_id: str) -> bool:
@@ -71,6 +72,7 @@ class DaemonConfig(DataClass):
             return False
         else:
             self._remove(workspace)
+
             return True
 
     # Persistence

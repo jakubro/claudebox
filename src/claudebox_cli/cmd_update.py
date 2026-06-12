@@ -1,4 +1,4 @@
-"""Handler for the ``update`` verb — refresh Claudebox itself via install.sh."""
+"""Handler for the ``update`` verb - refresh Claudebox itself via install.sh."""
 
 import argparse
 import subprocess
@@ -18,7 +18,7 @@ examples:
 
 update spawns ~/.claudebox/lib/bin/install.sh, surfaces its stdout/stderr
 live, and propagates its exit code. Concurrent invocations are blocked by
-install.sh's flock — the second invocation exits non-zero immediately.
+install.sh's flock - the second invocation exits non-zero immediately.
 
 build vs update:
   build  rebuilds the container image (the agent layer inside it).
@@ -33,6 +33,7 @@ def handle(args: argparse.Namespace) -> int:
 
     if not install_sh.exists():
         console.print(f"[red]error: install.sh not found at {install_sh}[/red]")
+
         return 1
 
     extra_args = ["--verbose"] if args.verbose else []
@@ -41,8 +42,10 @@ def handle(args: argparse.Namespace) -> int:
         result = subprocess.run([str(install_sh), *extra_args], check=False)
     except OSError as exc:
         console.print(f"[red]error: failed to execute install.sh: {exc}[/red]")
+
         return 1
 
     sys.stdout.flush()
     sys.stderr.flush()
+
     return result.returncode

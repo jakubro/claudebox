@@ -1,4 +1,4 @@
-"""Handler for the ``shell`` verb — open bash shell in a fresh container."""
+"""Handler for the ``shell`` verb - open bash shell in a fresh container."""
 
 import argparse
 

@@ -1,4 +1,4 @@
-/** Numeric thresholds — size limits, buffer caps. */
+/** Numeric thresholds - size limits, buffer caps. */
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 export const MAX_LOGS = 1000

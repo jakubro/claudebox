@@ -1,4 +1,4 @@
-/** Predicates for ToolBlock display state — extracted from ToolBlock.jsx, no React APIs. */
+/** Predicates for ToolBlock display state - extracted from ToolBlock.jsx, no React APIs. */
 
 import { SdkProtocol, ToolName } from '../../../../../../../config/schema'
 import { shouldCollapseByDefault } from './toolResultFormatters'
@@ -23,7 +23,7 @@ export function isPlanAwaitingAnswer(toolName, plan, wasAnswered) {
 }
 
 /**
- * Single-line result identical to the summary — keep expandable but start collapsed.
+ * Single-line result identical to the summary - keep expandable but start collapsed.
  */
 export function isSingleLineDuplicate(effectiveDetails, effectiveSummary) {
   return (

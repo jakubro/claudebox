@@ -1,7 +1,7 @@
-"""Turn tracker — turn_id assignment for conversation events."""
+"""Turn tracker - turn_id assignment for conversation events."""
 
 from .models import Event
-from ..events import AgentEvent
+from ..events import AgentEvent, UserMessagePayload
 
 
 class TurnTracker:
@@ -19,6 +19,7 @@ class TurnTracker:
     def __init__(self):
         self._current: str | None = None
         self._compacting: str | None = None
+        self._assistant_emitted: dict[str, bool] = {}
 
     @property
     def current(self) -> str | None:
@@ -35,10 +36,11 @@ class TurnTracker:
     def on_event(self, agent_event: AgentEvent) -> None:
         """Update turn tracking from a runtime AgentEvent."""
 
-        if agent_event.kind != "user":
+        if not isinstance(agent_event.payload, UserMessagePayload):
             return
 
-        uuid = agent_event.payload.get("uuid")
+        uuid = agent_event.payload.uuid
+
         if uuid:
             self._current = uuid
 
@@ -53,7 +55,6 @@ class TurnTracker:
 
             turn_id = str(_uuid.uuid4())
             self._current = turn_id
-
         elif turn_id is None:
             turn_id = self._current
 
@@ -64,6 +65,21 @@ class TurnTracker:
 
         if event.subtype == "compact_boundary" and self._compacting:
             self._compacting = None
+
             return self._current
 
         return self._current
+
+    def mark_assistant_emitted(self, turn_id: str | None) -> None:
+        """Record that this turn emitted an assistant event (turn-scoped, survives crash-restart)."""
+
+        if turn_id is not None:
+            self._assistant_emitted[turn_id] = True
+
+    def has_assistant_emitted(self, turn_id: str | None) -> bool:
+        """Return whether this turn already emitted an assistant event; None -> False."""
+
+        if turn_id is None:
+            return False
+
+        return self._assistant_emitted.get(turn_id, False)

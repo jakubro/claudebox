@@ -59,6 +59,7 @@ def calculate_hash(path: str | Path) -> str:
     """Calculate SHA256 hash of file contents."""
 
     content = Path(path).read_bytes()
+
     return hashlib.sha256(content).hexdigest()
 
 

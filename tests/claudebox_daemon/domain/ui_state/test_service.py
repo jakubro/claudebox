@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.ui_state.service — persistent UI state store."""
+"""Tests for claudebox_daemon.domain.ui_state.service - persistent UI state store."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,6 +18,7 @@ def _make_service(tmp_path: Path) -> UIStateService:
 
     ws = RegisteredWorkspace(id="test-ws", path=tmp_path)
     (tmp_path / ".claudebox").mkdir(parents=True, exist_ok=True)
+
     return UIStateService(ws)
 
 
@@ -188,7 +189,7 @@ class TestLoad:
 
         physical, virtual = svc._load(None)
         assert physical["version"] == UIStateService.VERSION
-        assert physical["global"] == {}  # migrated — old data cleared
+        assert physical["global"] == {}  # migrated - old data cleared
 
     def test_loads_existing_session(self, tmp_path):
         svc = _make_service(tmp_path)
@@ -246,6 +247,7 @@ class TestGetPatch:
 
     def test_patch_session_without_id_raises(self, tmp_path):
         svc = _make_service(tmp_path)
+
         with pytest.raises(ValueError, match="session_id required"):
             svc.patch(None, **{"session": [{"op": "set", "path": "x", "value": 1}]})
 

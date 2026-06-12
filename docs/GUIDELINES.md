@@ -45,6 +45,12 @@ just test-py         # pytest tests/
 just test-py-cov     # pytest tests/ with coverage
 ```
 
+`just install-py` installs the core dev surface. The Tier 1 Anthropic integration test (`tests/claudebox/agent_session/test_runtime_langgraph_providers.py::TestTier1AnthropicIntegration`) needs the `langchain-anthropic` provider package, which lives behind the `[anthropic]` extra. Install it explicitly when running that test locally — without the extra the test skips via `pytest.importorskip`:
+
+```bash
+UV_PROJECT_ENVIRONMENT='<agent-venv>' VIRTUAL_ENV= uv pip install langchain-anthropic
+```
+
 ### Shared JS (biome + jscpd + knip)
 
 ```bash
@@ -93,12 +99,37 @@ just test-ui-run             # run arbitrary Playwright script against test UI
 
 ### SDK Containment
 
-`claude_agent_sdk` imports are restricted to `lib/src/claudebox/agent_session/runtime_claude.py`. Any other source file importing the SDK fails `just check`. The boundary is enforced two ways:
+External runtime SDK / library imports are restricted to their respective adapter files. Any other source file importing them fails `just check`:
 
-1. **Structurally** — the `AgentSession` Protocol (ARCHITECTURE.md §1.4) is the only legitimate dependency target for any module needing a runtime. Consumers depend on the Protocol, not on `claude_agent_sdk` directly.
-2. **Statically** — `ruff`'s `flake8-tidy-imports` `banned-api` rule (configured in `lib/ruff.toml` `[lint.flake8-tidy-imports.banned-api]`) forbids `claude_agent_sdk` imports outside `runtime_claude.py`. Test files are exempt by per-file-ignore — they exercise the SDK→AgentEvent boundary directly with SDK-typed fixtures.
+- `claude_agent_sdk` — only in `lib/src/claudebox/agent_session/runtime_claude.py`
+- `langchain*` / `langgraph*` (full prefix families) — only in `lib/src/claudebox/agent_session/runtime_langgraph.py` and `lib/src/claudebox/agent_session/langgraph_tools/`
 
-When adding a new runtime (`runtime_goose.py`, etc.), update the ruff config's `per-file-ignores` to grant SDK access to the new adapter file.
+The boundary is enforced two ways:
+
+1. **Structurally** — the `AgentSession` Protocol (ARCHITECTURE.md §1.4) is the only legitimate dependency target for any module needing a runtime. Consumers depend on the Protocol, not on the SDK directly.
+2. **Statically** — the `SdkContainmentAudit` class in `lib/scripts/python-guidelines-audit.py` (an AST import walk over `src/` and `tests/`) flags forbidden imports outside their adapter file. Each rule carries the package regex, an allowlist (the adapter file plus the test files that legitimately exercise the SDK→AgentEvent boundary with SDK-typed fixtures), and the containment message. The audit runs as `just lint`.
+
+Prefix-pattern enforcement matters because the LangChain ecosystem ships new provider packages monthly (e.g. `langchain_anthropic`, `langchain_groq`, `langchain_xyz_future_provider`). A regex-bounded match (`^(langchain|langgraph)($|_|\.)`) auto-bans every future package without per-package list maintenance — the previous ruff `banned-api` table required enumerating each one and would have decayed into a treadmill.
+
+When adding a new runtime (`runtime_<name>.py`), add a `_ContainmentRule` to `SdkContainmentAudit.RULES` in `lib/scripts/python-guidelines-audit.py` carrying the package regex, the adapter file (plus any test files that legitimately exercise the SDK boundary) in the `allowlist`, and the containment message. No other config changes needed.
+
+### Runtime Resolution
+
+Daemon-side code that needs a workspace's runtime — capability matrix, catalog defaults, classmethod-callable helpers — resolves through `claudebox.agent_session._registry.resolve_runtime_class(agent)` rather than importing a specific runtime directly. This keeps the workspace's `agent` TOML key authoritative: a LangGraph workspace's daemon endpoints return LangGraph's capability matrix and defaults, not the inverse-of-the-default.
+
+```python
+from claudebox.agent_session._registry import UnknownRuntime, resolve_runtime_class
+
+cls = resolve_runtime_class(workspace_config.agent)
+defaults = {
+    "model": cls.get_default_model() if cls.CAPABILITIES.supports_models else None,
+    "available_models": cls.AVAILABLE_MODELS if cls.CAPABILITIES.supports_models else None,
+}
+```
+
+The resolver lazy-imports each runtime, so a Claude-only deployment never pays the langgraph dep cost (and vice versa). Unknown agent strings raise `UnknownRuntime`; handlers map to HTTP 422.
+
+Adding a new runtime means: (a) implement the adapter file per §SDK Containment, (b) add the `@classmethod` form of `get_default_model / get_default_effort_level / get_default_permission_mode / get_skills` so the resolver-driven daemon path sees a uniform call shape, (c) add class-level `AVAILABLE_MODELS / AVAILABLE_EFFORT_LEVELS / AVAILABLE_PERMISSION_MODES` constants matching the runtime's actual catalog (empty lists are fine when the catalog is dynamic), (d) extend `resolve_runtime_class` with a branch.
 
 ### Orchestration Boundary
 
@@ -663,6 +694,23 @@ just test-e2e-fe
 
 Tests run on the host machine inside a [bubblewrap](https://github.com/containers/bubblewrap) sandbox (`conftest.py` re-execs pytest under `bwrap`). The sandbox makes the entire filesystem read-only except `/tmp`, blocks network access, and masks the container runtime socket (`/run`). Inside containers, bwrap is skipped (namespace creation unavailable; container already provides isolation) — `pytest-socket` provides the network-block fallback in-container via `addopts = "--disable-socket --allow-unix-socket"` in `pyproject.toml`. All socket calls fail loudly unless the test opts in via `@pytest.mark.enable_socket` or `@pytest.mark.allow_hosts(['<host>'])`.
 
+**CLI e2e — three concentric isolation layers:**
+
+The `e2e/cli/` suite runs the real `claudebox` binary via subprocess. Three layers prevent it from mutating real host state (daemon, `~/.claudebox/`, podman, systemctl):
+
+1. **Sandbox** — bwrap on host (`lib/tests/conftest.py:19-59`) / the container in-container. Same isolation contract either way: read-only root, `tmpfs /tmp` and `/run`, network namespace (loopback brought up automatically). Kernel-level guarantee against escape.
+2. **`lib/e2e/cli/claudebox-test` wrapper** — hard-fails if `CLAUDEBOX_TEST_HOME` or `CLAUDEBOX_TEST_PATH_PREFIX` are unset; sets `HOME`, `UV_OFFLINE=1`, and prepends `$PATH` with `lib/e2e/cli/fake_bins/`; execs `lib/bin/claudebox_cli.sh`. Test-author-error guard: impossible to invoke the wrapper unsafely even outside pytest.
+3. **Fakes + fake daemon** — `lib/e2e/cli/fake_bins/{podman,systemctl,git}` record invocations to `$CLAUDEBOX_TEST_RECORD_DIR` and return canned output; `pytest-httpserver` binds the fake daemon to `127.0.0.1:<random>` (CLI honors `CLAUDEBOX_DAEMON_URL`). Tests verify *what* the CLI did, not just *that* it didn't escape.
+
+Test modules using these fixtures must declare `pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])` at module level (the mark does not propagate from `conftest.py`).
+
+**Subject routing for CLI tests:**
+
+- **Parser-level tests** — dispatch, help snapshots, parser errors, unknown verbs — live in `lib/tests/claudebox_cli/`. Fast in-process unit tests via `host_cli.app.parser`. SPEC markers are forbidden here (see §8 — e2e-only).
+- **End-to-end binary-behavior tests** — real `subprocess.run` exec paths, raw `print()` output, Rich/structlog rendering, filesystem side-effects, `Traceback`-absence at the process boundary, `importlib.metadata` resolution from the installed binary — live in `lib/e2e/cli/`. SPEC markers go here.
+
+Add new CLI tests by the surface they prove.
+
 - ✅ **Always** use `tmp_path` for any filesystem writes — it targets `/tmp` which is writable in the sandbox
 - ✅ **Always** mock `touch_file`/`touch_dir` when testing code paths that create host files (e.g., `get_container_args` → `map_volume`)
 - ✅ **Always** mock subprocess/container-backend calls — the sandbox blocks the runtime socket but mocking prevents the call entirely
@@ -851,6 +899,12 @@ log_broadcaster = LogBroadcaster()
 """Global log broadcaster for SSE streaming."""
 ```
 
+### Keyword-Argument Discipline
+
+- 🚫 **Never** put a `**kwargs` catch-all on a constructor/factory that also declares named callback parameters (`on_*`, `*_callback`, `*_cb`). A caller wiring a misnamed callback (`on_session_start` vs `on_start`) gets it silently swallowed instead of failing loud. Declare the callbacks explicitly and drop the catch-all so an unknown kwarg raises `TypeError`. Enforced by `CallbackCatchAllAudit` in `lib/scripts/python-guidelines-audit.py` (runs under `just lint`).
+- ✅ Underscore-prefixed catch-alls (`**_server_args`) are intentional "ignore the rest" markers and exempt; genuine pass-through wrappers (forwarding to a framework constructor that validates its own kwargs) are fine.
+- 🚫 Methods that apply caller-supplied fields to a model (`update` / `patch` style) should reject unknown fields (`hasattr` guard + raise) rather than blindly `setattr` them, so a typo'd field name fails loud instead of creating a dead attribute.
+
 ### Type Hints
 
 - ✅ **Always** return type on all functions, including `-> None` (exception: `__init__` may omit `-> None` when the class is trivial or the return type is obvious)
@@ -877,6 +931,32 @@ from .models import Event, PublishedEvent
 
 - Absolute imports for cross-package, relative for intra-package
 - Blank lines between import groups (PEP 8 style)
+
+### Whitespace & Control Flow
+
+Separate logical phases with blank lines; keep cohesive runs tight. The acid test: each blank line sets off one logical step — a branch, a loop, a context, or the function's conclusion; lines forming a single thought stay together.
+
+- ✅ **Always** a blank line before every control block (`if` / `for` / `while` / `with` / `try`) and every `return` / `raise` that is not the first statement in its block
+- ✅ **Always** a blank line after a block before the next statement at the outer level
+- ✅ **Always** `if` / `elif` / `else` for mutually-exclusive return dispatch — not a sequence of bare `if cond: return` ending in a fallthrough `return`
+- 🚫 **Never** pad cohesive runs — dataclass fields, dict/list literals, comprehensions, runs of related simple assignments, and `elif` / `else` / `except` / `finally` chains stay tight
+- 🚫 **Never** hand-tune `def` / `class` blank-line spacing — `ruff format` owns it
+
+```python
+# ✅ Phases separated; mutually-exclusive dispatch is if/elif/else
+def serialize(obj: Any) -> Any:
+    asdict = getattr(obj, "asdict", None)
+
+    if callable(asdict):
+        obj = asdict()
+
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    else:
+        return obj
+```
 
 ### Data Structures
 

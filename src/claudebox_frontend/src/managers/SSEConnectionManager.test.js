@@ -449,13 +449,13 @@ describe('SSEConnectionManager', () => {
       vi.advanceTimersByTime(2000)
       expect(MockEventSource.instances).toHaveLength(3)
 
-      // Attempt 2 — exhausted, no new EventSource
+      // Attempt 2 - exhausted, no new EventSource
       latestES().simulateError()
       vi.advanceTimersByTime(10000)
       expect(MockEventSource.instances).toHaveLength(3)
 
       expect(limited.status).toBe('error')
-      expect(limited.error).toBe('Connection lost — container may be unavailable')
+      expect(limited.error).toBe('Connection lost - container may be unavailable')
       expect(onExhausted).toHaveBeenCalledOnce()
 
       limited.disconnect()
@@ -474,7 +474,7 @@ describe('SSEConnectionManager', () => {
       unlimited.connect()
       latestES().simulateOpen()
 
-      // 5 consecutive failures — should keep reconnecting
+      // 5 consecutive failures - should keep reconnecting
       for (let i = 0; i < 5; i++) {
         latestES().simulateError()
         vi.advanceTimersByTime(200)
@@ -504,7 +504,7 @@ describe('SSEConnectionManager', () => {
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
 
-      // Reconnect succeeds — counter resets
+      // Reconnect succeeds - counter resets
       latestES().simulateOpen()
 
       // 2 more failures should be allowed again

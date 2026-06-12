@@ -364,7 +364,7 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Caret at col 0 of an unindented line — Tab snaps leading from 0 to 2.
+      // Caret at col 0 of an unindented line - Tab snaps leading from 0 to 2.
       // Atomic value+selection set so Playwright's parallel-worker timing
       // can't interleave the fill and the selection range under load.
       await input.evaluate(ta => {
@@ -377,7 +377,7 @@ test.describe('Keyboard Shortcuts', () => {
       expect(await input.inputValue()).toBe('  hello')
       expect(await input.evaluate(ta => ta.selectionStart)).toBe(2)
 
-      // Caret in content zone — Tab inserts 2 spaces at the caret position.
+      // Caret in content zone - Tab inserts 2 spaces at the caret position.
       await input.evaluate(ta => {
         ta.focus()
         ta.value = 'hello world'
@@ -401,7 +401,7 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // 4 leading spaces — Shift+Tab snaps to 2. Atomic value+selection set
+      // 4 leading spaces - Shift+Tab snaps to 2. Atomic value+selection set
       // for parallel-worker timing stability.
       await input.evaluate(ta => {
         ta.focus()
@@ -412,7 +412,7 @@ test.describe('Keyboard Shortcuts', () => {
       await input.press('Shift+Tab')
       expect(await input.inputValue()).toBe('  hello')
 
-      // No leading whitespace — Shift+Tab is a no-op; focus stays on the textarea
+      // No leading whitespace - Shift+Tab is a no-op; focus stays on the textarea
       // (browser default Shift+Tab moves focus backward).
       await input.evaluate(ta => {
         ta.focus()
@@ -457,7 +457,7 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for the post-replay auto-focus on chat-input to settle —
+      // Wait for the post-replay auto-focus on chat-input to settle -
       // ChatInput's overlayMode-clear effect re-focuses chat-input via 2-rAF
       // after replay_ended. Without this wait the next sessionsIcon.focus()
       // races the auto-focus and flakes ~13% of the time.
@@ -467,7 +467,7 @@ test.describe('Keyboard Shortcuts', () => {
         )
         .toBe('chat-input')
 
-      // Move focus AWAY from the chat input first — establishing the
+      // Move focus AWAY from the chat input first - establishing the
       // precondition that Alt+C must observably change something.
       const sessionsIcon = page.locator('[data-testid="icon-sessions"]')
       await sessionsIcon.focus()
@@ -477,7 +477,7 @@ test.describe('Keyboard Shortcuts', () => {
         )
         .toBe('icon-sessions')
 
-      // Press Alt+C — focus must land inside the chat input.
+      // Press Alt+C - focus must land inside the chat input.
       await page.keyboard.press('Alt+c')
 
       await expect
@@ -695,7 +695,7 @@ test.describe('Keyboard Shortcuts', () => {
       await page.keyboard.press('Escape')
       await expect(overlay).not.toBeVisible()
 
-      // Reopen and verify backdrop click also closes — claim says
+      // Reopen and verify backdrop click also closes - claim says
       // "Escape OR clicking backdrop closes it".
       await page.keyboard.press('Alt+?')
       await expect(overlay).toBeVisible()
@@ -721,7 +721,7 @@ test.describe('Keyboard Shortcuts', () => {
         el.setSelectionRange(5, 9)
       })
 
-      // Type opening quote — should wrap selection
+      // Type opening quote - should wrap selection
       await page.keyboard.press("'")
 
       await expect(input).toHaveValue("wrap 'this' text")
@@ -858,7 +858,7 @@ test.describe('Keyboard Shortcuts', () => {
       await page.keyboard.press("Control+'")
       await expect(input).toHaveValue('<div...1>')
 
-      // Submit — should send full content
+      // Submit - should send full content
       await input.press('Enter')
 
       await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
@@ -965,7 +965,7 @@ test.describe('Keyboard Shortcuts', () => {
       // Alt+Down should still navigate chat (global shortcut)
       await page.keyboard.press('Alt+ArrowDown')
 
-      // Should not throw — chat navigation should work regardless of focus
+      // Should not throw - chat navigation should work regardless of focus
       // Verify viewport moved by checking a human message is near top
       const humanMessages = page.locator('.chat-message-user')
       await expect(humanMessages.first()).toBeVisible()

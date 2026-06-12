@@ -1,35 +1,36 @@
 """End-to-end behavioral tests for ``claudebox logs``.
 
-Exercises the SPEC ``cli:logs`` and ``cli:logs-colorization`` claims through
-the real binary via subprocess. Daemon-running follow mode is not exercised
-here (would hang indefinitely); ``--no-follow`` mode is.
+Real-binary surfaces: missing-file path, seeded-backfill rendering, Rich
+colorization with FORCE_COLOR, and ``logs all`` daemon-unreachable error.
 """
 
+import json
+from pathlib import Path
 
-# SPEC: cli:logs
-class TestLogsHelp:
-    """``claudebox logs --help`` documents target + tail + no-follow."""
+import pytest
 
-    def test_help_exits_zero(self, run_claudebox) -> None:
-        result = run_claudebox(["logs", "--help"])
-        assert result.returncode == 0
 
-    def test_help_mentions_tail_no_follow(self, run_claudebox) -> None:
-        result = run_claudebox(["logs", "--help"])
-        for token in ("--tail", "--no-follow", "daemon"):
-            assert token in result.stdout
+pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])
+
+
+_DEAD_DAEMON_URL = "http://127.0.0.1:1"
+
+
+def _seed_log(home: Path, records: list[dict]) -> None:
+    """Write a daemon-port log file under the hermetic home."""
+
+    log_dir = home / ".claudebox" / "logs"
+    log_dir.mkdir(parents=True)
+    log_file = log_dir / "daemon-41820.log"
+    log_file.write_text("\n".join(json.dumps(r) for r in records) + "\n")
 
 
 # SPEC: cli:logs
 class TestLogsMissingFile:
-    """When the daemon log file is absent, logs prints a clear notice and exits 0."""
+    """Absent daemon log → clear notice + exit 0."""
 
-    def test_missing_log_file_exits_zero(self, tmp_path, run_claudebox) -> None:
-        result = run_claudebox(
-            ["logs", "--no-follow"],
-            env={"HOME": str(tmp_path)},
-            timeout=15,
-        )
+    def test_missing_log_file_exits_zero(self, run_claudebox, hermetic_home) -> None:
+        result = run_claudebox(["logs", "--no-follow"], timeout=15)
         assert result.returncode == 0
         combined = result.stdout + result.stderr
         assert "no daemon logs available" in combined
@@ -37,62 +38,64 @@ class TestLogsMissingFile:
 
 # SPEC: cli:logs
 class TestLogsNoFollowBackfill:
-    """``--no-follow`` reads existing log content and exits (no streaming wait)."""
+    """``--no-follow`` reads existing log content and exits."""
 
-    def test_seeded_log_backfilled(self, tmp_path, run_claudebox) -> None:
-        log_dir = tmp_path / ".claudebox" / "logs"
-        log_dir.mkdir(parents=True)
-        log_file = log_dir / "daemon-41820.log"
-        log_file.write_text(
-            "2026-05-14 INFO first\n2026-05-14 WARNING middle\n2026-05-14 ERROR last\n"
+    def test_seeded_log_backfilled(self, run_claudebox, hermetic_home) -> None:
+        _seed_log(
+            hermetic_home,
+            [
+                {"timestamp": 1747222800.0, "level": "info", "logger": "x", "event": "first"},
+                {"timestamp": 1747222801.0, "level": "warning", "logger": "x", "event": "middle"},
+                {"timestamp": 1747222802.0, "level": "error", "logger": "x", "event": "last"},
+            ],
         )
-
         result = run_claudebox(
             ["logs", "--tail", "3", "--no-follow"],
-            env={"HOME": str(tmp_path), "NO_COLOR": "1"},
+            env={"NO_COLOR": "1"},
             timeout=15,
         )
         assert result.returncode == 0
         combined = result.stdout + result.stderr
+
         for token in ("first", "middle", "last"):
             assert token in combined
 
 
 # SPEC: cli:logs-colorization
+# SPEC: cli:logs:rendering
 class TestLogsColorization:
-    """Color tags are emitted for ERROR / WARNING (and absent for INFO)."""
+    """warning/error rows emit ANSI escapes under FORCE_COLOR=1."""
 
-    def test_warn_error_emit_color_tokens(self, tmp_path, run_claudebox) -> None:
-        log_dir = tmp_path / ".claudebox" / "logs"
-        log_dir.mkdir(parents=True)
-        log_file = log_dir / "daemon-41820.log"
-        log_file.write_text("2026-05-14 ERROR boom\n2026-05-14 WARNING soft\n2026-05-14 INFO ok\n")
-
+    def test_warn_error_emit_color_tokens(self, run_claudebox, hermetic_home) -> None:
+        _seed_log(
+            hermetic_home,
+            [
+                {"timestamp": 1747222800.0, "level": "error", "logger": "x", "event": "boom"},
+                {"timestamp": 1747222801.0, "level": "warning", "logger": "x", "event": "soft"},
+                {"timestamp": 1747222802.0, "level": "info", "logger": "x", "event": "ok"},
+            ],
+        )
         result = run_claudebox(
             ["logs", "--tail", "3", "--no-follow"],
-            env={"HOME": str(tmp_path), "FORCE_COLOR": "1"},
+            env={"FORCE_COLOR": "1"},
             timeout=15,
         )
         combined = result.stdout + result.stderr
-        # ANSI red ESC sequence for ERROR; yellow for WARNING. Rich emits these
-        # under FORCE_COLOR=1 even on non-TTY.
         assert "\x1b[" in combined
+        assert "2025" in combined
+        assert "1747222800" not in combined
 
 
 # SPEC: cli:logs-all
+# SPEC: cli:logs:multiplex
+# SPEC: cli:logs:eof-cause
 class TestLogsAll:
-    """``logs all`` multiplexes daemon + container output through the daemon HTTP surface."""
+    """``logs all`` against an unreachable daemon: clean error + non-zero exit."""
 
-    def test_all_help_mentions_prefixes(self, run_claudebox) -> None:
-        result = run_claudebox(["logs", "--help"])
-        for token in ("[daemon]", "[container", "multiplex"):
-            assert token in result.stdout
-
-    def test_all_daemon_unreachable_exits_non_zero(self, tmp_path, run_claudebox) -> None:
-        # No daemon running in the sandbox → httpx fails → graceful error + non-zero.
+    def test_all_daemon_unreachable_exits_non_zero(self, run_claudebox) -> None:
         result = run_claudebox(
             ["logs", "all", "--no-follow"],
-            env={"HOME": str(tmp_path)},
+            env={"CLAUDEBOX_DAEMON_URL": _DEAD_DAEMON_URL},
             timeout=15,
         )
         assert result.returncode != 0

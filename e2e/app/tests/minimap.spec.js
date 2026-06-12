@@ -80,11 +80,11 @@ test.describe('Mini-map', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Minimap is pinned by default — stays visible throughout
+    // Minimap is pinned by default - stays visible throughout
     const thumb = page.locator('.minimap-thumb')
     const messages = page.locator('.chat-messages').first()
 
-    // Use wheel events to scroll — programmatic scrollTop doesn't reliably
+    // Use wheel events to scroll - programmatic scrollTop doesn't reliably
     // disable autoscroll because handleUserScroll guards against scrollHeight
     // changes during content load.
     const box = await messages.boundingBox()
@@ -106,7 +106,7 @@ test.describe('Mini-map', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Minimap is pinned by default — stays visible throughout
+    // Minimap is pinned by default - stays visible throughout
     const minimap = page.locator('.minimap-overlay')
     await expect(minimap).toHaveClass(/visible/)
 
@@ -131,7 +131,7 @@ test.describe('Mini-map', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Wait for SSE replay to populate sub-bars — waitForAppReady returns before
+    // Wait for SSE replay to populate sub-bars - waitForAppReady returns before
     // turns finish hydrating, so a synchronous count() race-flakes under load.
     const bars = page.locator('.minimap-subbar')
     await expect.poll(() => bars.count(), { timeout: 5000 }).toBeGreaterThan(0)
@@ -165,7 +165,7 @@ test.describe('Mini-map', () => {
 
       const segment = page.locator('[data-testid="minimap-segment"]').first()
       const subBars = segment.locator('[data-testid="minimap-subbar"]')
-      // Poll — SSE replay populates sub-bars after waitForAppReady returns.
+      // Poll - SSE replay populates sub-bars after waitForAppReady returns.
       await expect.poll(() => subBars.count(), { timeout: 5000 }).toBeGreaterThan(0)
     })
 
@@ -174,7 +174,7 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Long conversation has multiple human messages — poll until they hydrate
+      // Long conversation has multiple human messages - poll until they hydrate
       // (waitForAppReady returns before SSE replay completes).
       const humanLines = page.locator('[data-testid="minimap-human-line"]')
       await expect.poll(() => humanLines.count(), { timeout: 5000 }).toBeGreaterThan(0)
@@ -280,7 +280,7 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Minimap is pinned by default — unpin so auto-hide kicks in
+      // Minimap is pinned by default - unpin so auto-hide kicks in
       const controlBar = page.locator('.panel-control-bar')
       await controlBar.locator('button[title="Hide minimap"]').click()
 
@@ -301,7 +301,7 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Minimap is pinned by default — stays visible throughout
+      // Minimap is pinned by default - stays visible throughout
       const minimap = page.locator('.minimap-overlay')
       await expect(minimap).toHaveClass(/visible/)
 
@@ -344,7 +344,7 @@ test.describe('Mini-map', () => {
       await waitForAppReady(page)
 
       const controlBar = page.locator('.panel-control-bar')
-      // Default is pinned — button shows "Hide minimap"
+      // Default is pinned - button shows "Hide minimap"
       const toggleBtn = controlBar.locator('button[title="Hide minimap"]')
       await expect(toggleBtn).toBeVisible()
     })
@@ -355,7 +355,7 @@ test.describe('Mini-map', () => {
       await waitForAppReady(page)
 
       const controlBar = page.locator('.panel-control-bar')
-      // Default is pinned — button should be pressed
+      // Default is pinned - button should be pressed
       const pinnedBtn = controlBar.locator('button[title="Hide minimap"]')
       await expect(pinnedBtn).toBeVisible()
       await expect(pinnedBtn).toHaveClass(/pressed/)
@@ -373,7 +373,7 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Default is pinned — minimap should already be visible
+      // Default is pinned - minimap should already be visible
       const minimap = page.locator('.minimap-overlay')
       await expect(minimap).toHaveClass(/visible/)
 
@@ -400,12 +400,12 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Default is pinned — click to unpin (triggers PATCH with false)
+      // Default is pinned - click to unpin (triggers PATCH with false)
       const controlBar = page.locator('.panel-control-bar')
       const pinnedBtn = controlBar.locator('button[title="Hide minimap"]')
       await pinnedBtn.click()
 
-      // Verify PATCH was sent with minimapPinned: false (poll — PATCH is async)
+      // Verify PATCH was sent with minimapPinned: false (poll - PATCH is async)
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
       const resolved = resolveOpsPayload(patchCalls[patchCalls.length - 1])
       expect(resolved.session?.minimapPinned).toBe(false)
@@ -419,7 +419,7 @@ test.describe('Mini-map', () => {
       const controlBar = page.locator('.panel-control-bar')
       const minimap = page.locator('.minimap-overlay')
 
-      // Default is pinned — minimap visible
+      // Default is pinned - minimap visible
       await expect(minimap).toHaveClass(/visible/)
 
       // Unpin
@@ -442,7 +442,7 @@ async function scrollToShowMinimap(page) {
   const chatPanel = page.locator('.chat-messages, .chat-panel, [data-testid="chat-panel"]').first()
 
   // Scroll up to disable autoscroll and trigger minimap.
-  // Use wheel events — programmatic scrollTop doesn't reliably disable autoscroll
+  // Use wheel events - programmatic scrollTop doesn't reliably disable autoscroll
   // because useAutoScroll guards against scrollHeight changes during content load.
   const box = await chatPanel.boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)

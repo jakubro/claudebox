@@ -102,7 +102,7 @@ test.describe('Optional Features', () => {
       const helpPanel = page.locator('[data-testid="panel-help"]')
       await expect(helpPanel.getByText('Send message')).toBeVisible()
 
-      // SPEC says "tables" (plural) — verify more than one table exists
+      // SPEC says "tables" (plural) - verify more than one table exists
       const tables = helpPanel.locator('table')
       const tableCount = await tables.count()
       expect(tableCount).toBeGreaterThan(1)

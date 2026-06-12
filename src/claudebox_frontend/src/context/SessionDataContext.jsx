@@ -42,11 +42,11 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   const [availableModels, setAvailableModels] = useState([])
   const [availablePermissionModes, setAvailablePermissionModes] = useState([])
   const [availableEffortLevels, setAvailableEffortLevels] = useState([])
-  // Pre-session workspace from session-defaults — sole source for browser tab
+  // Pre-session workspace from session-defaults - sole source for browser tab
   // title before getSession() resolves on connect (SPEC §1.7 pre-init form).
   const [defaultsWorkspace, setDefaultsWorkspace] = useState(null)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(false)
-  // Welcome-screen slash-command catalog — populated from the daemon endpoint
+  // Welcome-screen slash-command catalog - populated from the daemon endpoint
   // pre-session so the picker is non-empty before any container attaches.
   // Falls through to `sessionData.commands` once a session is alive.
   const workspaceCommandCatalog = useWorkspaceCommandCatalog()
@@ -55,9 +55,9 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   const isConnectedRef = useRef(isConnected)
   isConnectedRef.current = isConnected
 
-  // Pre-session config buffer — picker changes made before any session
+  // Pre-session config buffer - picker changes made before any session
   // attaches (welcome screen) are stored here, then drained in strict order
-  // (model → permission → effort) once the session is ready. Latest-wins:
+  // (model -> permission -> effort) once the session is ready. Latest-wins:
   // repeated picker changes overwrite the buffered value before drain.
   const [deferredModel, setDeferredModel] = useState(null)
   const [deferredPermissionMode, setDeferredPermissionMode] = useState(null)
@@ -68,7 +68,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   // Defensive merge: when the create-response seeded sessionData with
   // synthesized defaults (e.g. effort_level="xhigh") and a subsequent partial
   // getSession() returns null for those fields, retain the seeded non-null
-  // values so the footer doesn't regress to "—".
+  // values so the footer doesn't regress to "-".
   const refreshSession = useCallback(async () => {
     try {
       const data = await getSession()
@@ -88,13 +88,13 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
         })
         return
       }
-      // No session_id yet — store partial data (e.g. workspace) and retry
+      // No session_id yet - store partial data (e.g. workspace) and retry
       if (data && Object.keys(data).length > 0) {
         setSessionData(prev => (prev ? { ...prev, ...data } : data))
       }
       setTimeout(refreshSession, SESSION_RETRY_DELAY_MS)
     } catch (e) {
-      // Don't retry when SSE is disconnected — container is gone
+      // Don't retry when SSE is disconnected - container is gone
       if (!isConnectedRef.current) {
         return
       }
@@ -157,7 +157,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   )
 
   // Set model via API then refresh to confirm from projection.
-  // No active container (welcome screen) → buffer; drain on session attach.
+  // No active container (welcome screen) -> buffer; drain on session attach.
   const setModel = useCallback(
     newModel => {
       if (!getContainerId()) {
@@ -172,7 +172,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   )
 
   // Set permission mode via API then refresh to confirm from projection.
-  // No active container (welcome screen) → buffer; drain on session attach.
+  // No active container (welcome screen) -> buffer; drain on session attach.
   const setPermissionMode = useCallback(
     newPermissionMode => {
       if (!getContainerId()) {
@@ -187,7 +187,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   )
 
   // Set effort level via API then refresh to confirm from projection.
-  // No active container (welcome screen) → buffer; drain on session attach.
+  // No active container (welcome screen) -> buffer; drain on session attach.
   const setEffortLevel = useCallback(
     newLevel => {
       if (!getContainerId()) {
@@ -210,8 +210,8 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     }
   }, [sessionData?.session_id])
 
-  // Drain pre-session config buffer when a session attaches (welcome → chat).
-  // Strict order: model → permission → effort. Each await ensures the SDK
+  // Drain pre-session config buffer when a session attaches (welcome -> chat).
+  // Strict order: model -> permission -> effort. Each await ensures the SDK
   // applied the change before the next call. A failed call surfaces via
   // onError and the remaining successful changes still apply; the deferred
   // message in useChatController fires only after this drain completes
@@ -269,7 +269,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
 
   // Populate available models / permission modes / effort levels from the
   // workspace-scoped session-defaults endpoint whenever workspaceId is set.
-  // This is the single source of truth for picker dropdowns — the daemon
+  // This is the single source of truth for picker dropdowns - the daemon
   // serves the same module-level constants the container would.
   useEffect(() => {
     if (!workspaceId) {
@@ -295,7 +295,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
         }
       })
       .catch(err => {
-        // Best-effort — pickers fall through to their existing `—` display
+        // Best-effort - pickers fall through to their existing `-` display
         console.warn('SessionDataContext: getSessionDefaults failed', err)
       })
     return () => {

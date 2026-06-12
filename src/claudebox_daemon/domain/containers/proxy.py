@@ -44,6 +44,7 @@ class ContainerProxyClient(ProxyClient):
                 return response
 
             response.raise_for_status()
+
             return response.json()
 
         return await self._handle_request(handler, container, endpoint)
@@ -76,6 +77,7 @@ class ContainerProxyClient(ProxyClient):
                 container={"id": container.id, "port": container.port, "status": container.status},
                 error={"type": type(exc).__name__, "message": str(exc)},
             )
+
             raise ContainerUnavailable(container_id=container.id)
         except httpx.TimeoutException as exc:
             self._logger.warning(
@@ -84,4 +86,5 @@ class ContainerProxyClient(ProxyClient):
                 container={"id": container.id, "port": container.port, "status": container.status},
                 error={"type": type(exc).__name__, "message": str(exc)},
             )
+
             raise ContainerTimeout(container_id=container.id)

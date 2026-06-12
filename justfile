@@ -30,11 +30,8 @@ build: build-fe
 # Full pre-commit check
 check: lint test
 
-# Run all tests. CLI e2e (test-e2e-cli) is intentionally excluded — those tests
-# shell out to the installed claudebox binary, which can mutate real host state
-# (daemon, registries, container backend). Invoke `just test-e2e-cli` directly
-# when you want them.
-test: test-py test-fe test-e2e-app
+# Run all tests
+test: test-py test-fe test-e2e-cli test-e2e-app
 
 # Run all tests with coverage
 coverage: test-py-cov test-fe-cov test-e2e-app test-e2e-cov
@@ -95,7 +92,8 @@ test-fe-cov:
 [group('e2e/app')]
 [working-directory('e2e/app')]
 install-e2e-app:
-    npm ci 2>&1 | tee /tmp/claudebox--install-e2e-app.log
+    rm -f /tmp/claudebox--install-e2e-app.log
+    npm ci 2>&1 | tee -a /tmp/claudebox--install-e2e-app.log
     npx playwright install chromium 2>&1 | tee -a /tmp/claudebox--install-e2e-app.log
 
 # Run frontend E2E tests
@@ -107,7 +105,7 @@ test-e2e-app *ARGS:
 # Run CLI E2E tests
 [group('e2e/cli')]
 test-e2e-cli *ARGS:
-    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run python -m pytest e2e/cli/ {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-e2e-cli.log
+    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run python -m pytest e2e/cli/ {{ ARGS }} 2>&1 | tee -a /tmp/claudebox--test-e2e-cli.log
 
 # Run E2E spec coverage
 [group('e2e')]
@@ -146,8 +144,9 @@ test-ui-run SCRIPT *ARGS:
 
 # Lint all code
 lint:
-    {{ UV_RUN }} ruff check 2>&1 | tee /tmp/claudebox--lint.log
+    rm -f /tmp/claudebox--lint.log
     {{ UV_RUN }} ruff format --check 2>&1 | tee -a /tmp/claudebox--lint.log
+    {{ UV_RUN }} ruff check 2>&1 | tee -a /tmp/claudebox--lint.log
     PYTHONPATH= {{ UV_RUN }} ty check 2>&1 | tee -a /tmp/claudebox--lint.log
     {{ UV_RUN }} python scripts/python-guidelines-audit.py 2>&1 | tee -a /tmp/claudebox--lint.log
     npx biome check 2>&1 | tee -a /tmp/claudebox--lint.log
@@ -159,7 +158,8 @@ lint:
 
 # Auto-fix all code
 fix:
-    {{ UV_RUN }} ruff check --fix 2>&1 | tee /tmp/claudebox--fix.log
+    rm -f /tmp/claudebox--fix.log
+    {{ UV_RUN }} ruff check --fix 2>&1 | tee -a /tmp/claudebox--fix.log
     {{ UV_RUN }} ruff format 2>&1 | tee -a /tmp/claudebox--fix.log
     PYTHONPATH= {{ UV_RUN }} ty check --fix 2>&1 | tee -a /tmp/claudebox--fix.log
     npx biome check --fix 2>&1 | tee -a /tmp/claudebox--fix.log

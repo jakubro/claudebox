@@ -333,7 +333,7 @@ describe('useInteraction', () => {
         isResponding: false,
       }
 
-      // POST resolves — submitSucceeded sets isAwaitingResponse=true
+      // POST resolves - submitSucceeded sets isAwaitingResponse=true
       vi.setSystemTime(new Date(2000))
       act(() => {
         result.current.submitSucceeded()

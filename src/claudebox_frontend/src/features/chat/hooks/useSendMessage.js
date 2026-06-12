@@ -40,7 +40,7 @@ export default function useSendMessage({
           if (content) {
             sessionStorage.setItem('_cb_preserved_input', content)
           }
-          setError('Connection lost — retrying. Your message is preserved.')
+          setError('Connection lost - retrying. Your message is preserved.')
           onContainerGone?.()
         } else {
           setError('Send failed')

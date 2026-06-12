@@ -1,4 +1,4 @@
-"""Path resolver — resolve file path candidates against workspace index."""
+"""Path resolver - resolve file path candidates against workspace index."""
 
 import os
 import time
@@ -45,16 +45,19 @@ class PathResolver:
         Refreshes file index first so stale resolve cache entries are cleared.
         """
 
-        # Ensure file index is fresh — clears resolve cache on rebuild.
+        # Ensure file index is fresh - clears resolve cache on rebuild.
         self._get_file_index()
 
         resolved = {}
+
         for candidate in candidates:
             candidate = candidate.strip()
+
             if not candidate:
                 continue
 
             result = self._resolve_candidate(candidate, temp_dir)
+
             if result:
                 resolved[candidate] = result
 
@@ -66,17 +69,20 @@ class PathResolver:
     def _resolve_candidate(self, candidate: str, temp_dir: Path | None) -> str | None:
         """Resolve a single path candidate to an absolute host path, with caching."""
 
-        # /tmp paths: mechanical join — no cache needed, always instant.
+        # /tmp paths: mechanical join - no cache needed, always instant.
         if temp_dir and (candidate == "/tmp" or candidate.startswith("/tmp/")):
             remainder = candidate[4:]  # strip "/tmp" prefix
+
             return str(temp_dir) + remainder
 
         cache_key = (candidate, str(self._workspace_path))
+
         if cache_key in self._resolve_cache:
             return self._resolve_cache[cache_key]
 
         result = self._resolve_candidate_uncached(candidate)
         self._resolve_cache[cache_key] = result
+
         return result
 
     def _resolve_candidate_uncached(self, candidate: str) -> str | None:
@@ -85,8 +91,10 @@ class PathResolver:
         # Absolute paths: existence check.
         if candidate.startswith("/"):
             path = Path(candidate)
+
             if path.exists():
                 return candidate
+
             return None
 
         # Relative paths: look up in pre-built file index.
@@ -102,6 +110,7 @@ class PathResolver:
 
         if len(entries) == 1:
             return str(self._workspace_path / entries[0])
+
         return None  # Ambiguous or not found
 
     # Index
@@ -110,7 +119,7 @@ class PathResolver:
     def _get_file_index(self) -> dict[str, list[str]]:
         """Return cached file index, rebuilding if TTL expired.
 
-        Clears _resolve_cache on rebuild — new/deleted files invalidate
+        Clears _resolve_cache on rebuild - new/deleted files invalidate
         previously resolved paths.
         """
 
@@ -118,13 +127,15 @@ class PathResolver:
 
         if self._index_cache is not None:
             cached_time, cached_index = self._index_cache
+
             if now - cached_time < FILE_INDEX_CACHE_TTL.total_seconds():
                 return cached_index
 
-        # TTL expired — rebuild index and clear resolve cache.
+        # TTL expired - rebuild index and clear resolve cache.
         self._resolve_cache.clear()
         index = self._build_index()
         self._index_cache = (now, index)
+
         return index
 
     def _build_index(self) -> dict[str, list[str]]:
@@ -147,8 +158,10 @@ class PathResolver:
 
             for filename in filenames:
                 rel_path = os.path.join(rel_dir, filename) if rel_dir != "." else filename
+
                 if self._ignore_spec.match_file(rel_path):
                     continue
+
                 index.setdefault(filename, []).append(rel_path)
 
         return index

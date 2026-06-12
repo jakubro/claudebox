@@ -121,7 +121,7 @@ describe('useNewSession', () => {
 
     expect(ok).toBe(true)
     expect(mockStartCreating).toHaveBeenCalledTimes(1)
-    // clearCreating NOT called on success — ChatPanel effect clears when SSE connects
+    // clearCreating NOT called on success - ChatPanel effect clears when SSE connects
     expect(mockClearCreating).not.toHaveBeenCalled()
     // Pre-call clears stale data; post-call seeds with the full SessionInfo response.
     expect(mockClearSessionData).toHaveBeenCalledTimes(1)
@@ -137,7 +137,7 @@ describe('useNewSession', () => {
     expect(mockReconnectSSE).toHaveBeenCalledTimes(1)
     expect(mockSetSessionContainer).toHaveBeenCalledWith('s1', 'c1')
     expect(mockNavigateToSession).toHaveBeenCalledWith('my-workspace', 's1')
-    // focusChatTab fires twice — once before the API call, once after success.
+    // focusChatTab fires twice - once before the API call, once after success.
     expect(mockFocusChatTab).toHaveBeenCalledTimes(2)
   })
 
@@ -185,7 +185,7 @@ describe('useNewSession', () => {
 
   describe('executeNewSessionInNewTab', () => {
     it('does not toggle global isCreating on the originating tab', async () => {
-      // Originating tab must remain a passive bystander — the new browser
+      // Originating tab must remain a passive bystander - the new browser
       // tab manages its own EventsContext flags when it loads. Toggling
       // startCreating here would render the chat overlay on the
       // originating tab while the new tab opens.

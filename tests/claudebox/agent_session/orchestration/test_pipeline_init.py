@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.pipeline — initialization and event processing."""
+"""Tests for claudebox.agent_session.orchestration.pipeline - initialization and event processing."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,14 +37,14 @@ class TestInitialize:
 
     @pytest.mark.anyio
     async def test_sets_session_id_from_message(self, tmp_workspace):
-        from claudebox.agent_session.events import AgentEvent
+        from claudebox.agent_session.events import AgentEvent, SystemInitPayload
 
         on_init = AsyncMock()
         pipeline = _make_pipeline(tmp_workspace, on_init=on_init)
 
         agent_event = AgentEvent(
-            kind="system",
-            payload={"subtype": "init", "data": {"session_id": "sess-abc"}},
+            kind="system_init",
+            payload=SystemInitPayload(subtype="init", session_id="sess-abc"),
         )
 
         with patch("claudebox.agent_session.orchestration.pipeline.EventLog") as MockEventLog:
@@ -123,7 +123,7 @@ class TestInitialize:
 
         assert on_init.await_count == 1
 
-        # Second call with different session_id — should be a no-op
+        # Second call with different session_id - should be a no-op
         await pipeline._initialize(session_id="sess-different")
 
         assert pipeline._session_id == "sess-abc"

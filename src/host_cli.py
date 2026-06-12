@@ -42,7 +42,7 @@ class Cli:
             "--verbose",
             action="store_true",
             default=False,
-            help="Increase output verbosity (verb-dependent — see per-verb help)",
+            help="Increase output verbosity (verb-dependent - see per-verb help)",
         )
 
         self._subparsers = self._parser.add_subparsers(
@@ -51,7 +51,7 @@ class Cli:
         )
 
         # Bare `claudebox` (no command) flows through the normal args.handler
-        # dispatch (claudebox.core.cli.cli) and prints full help + exits 2 —
+        # dispatch (claudebox.core.cli.cli) and prints full help + exits 2 -
         # mirroring the noun-groups' sub-help-on-no-verb convention rather than
         # argparse's terse required-arg error.
         self._parser.set_defaults(handler=self._print_help_and_exit)
@@ -69,6 +69,7 @@ class Cli:
         """Print top-level help for a bare invocation (no command) and yield exit 2."""
 
         self._parser.print_help()
+
         return 2
 
     def _register_modules(self) -> None:
@@ -121,15 +122,16 @@ class Cli:
             "--verbose",
             action="store_true",
             default=argparse.SUPPRESS,
-            help="Increase output verbosity (verb-dependent — see per-verb help)",
+            help="Increase output verbosity (verb-dependent - see per-verb help)",
         )
         sub.set_defaults(handler=handler)
+
         return sub
 
 
 app = Cli(
     prog="claudebox",
-    description="Run Claude Code in a containerized dev environment.",
+    description="Run AI coding agents in a containerized dev environment.",
     epilog=f"""\
 run "claudebox <command> --help" for command-specific help
 

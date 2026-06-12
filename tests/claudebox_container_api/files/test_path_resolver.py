@@ -1,7 +1,7 @@
-"""Tests for claudebox_container_api.files.path_resolver — path resolution and file indexing.
+"""Tests for claudebox_container_api.files.path_resolver - path resolution and file indexing.
 
 NOTE: path_resolver uses os.walk which follows symlinks by default. This is safe
-because the container API runs inside a container with a limited filesystem view —
+because the container API runs inside a container with a limited filesystem view -
 symlink traversal cannot escape the container boundary. If the resolver is ever
 used outside the container, symlink-following should be restricted.
 """
@@ -164,7 +164,7 @@ class TestPathResolverCaching:
 
         resolver = PathResolver(tmp_path, _ignore_spec())
 
-        # First resolve — caches "new.py" as not found.
+        # First resolve - caches "new.py" as not found.
         result1 = resolver.resolve(["new.py"], temp_dir=None)
         assert "new.py" not in result1
 
@@ -176,7 +176,7 @@ class TestPathResolverCaching:
             lambda: original + FILE_INDEX_CACHE_TTL.total_seconds() + 1,
         )
 
-        # Create the file — should now be found after index rebuild.
+        # Create the file - should now be found after index rebuild.
         (tmp_path / "new.py").write_text("")
         result2 = resolver.resolve(["new.py"], temp_dir=None)
         assert "new.py" in result2
@@ -187,7 +187,7 @@ class TestPathResolverCaching:
         resolver = PathResolver(tmp_path, _ignore_spec())
         resolver.resolve(["existing.py"], temp_dir=None)
 
-        # Add file within TTL — should NOT be found.
+        # Add file within TTL - should NOT be found.
         (tmp_path / "invisible.py").write_text("")
         result = resolver.resolve(["invisible.py"], temp_dir=None)
         assert "invisible.py" not in result

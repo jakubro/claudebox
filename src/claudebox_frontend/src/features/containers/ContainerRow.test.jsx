@@ -16,7 +16,7 @@ const mockWorkspace = { workspaceId: 'ws-1' }
 vi.mock('../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => mockRouting,
 }))
-// useSessionsList returns the SessionsContext value object — consumers
+// useSessionsList returns the SessionsContext value object - consumers
 // destructure `{ sessions }` from it.
 vi.mock('../../context/SessionsContext', () => ({
   useSessionsList: () => ({ sessions: mockSessions }),
@@ -139,7 +139,7 @@ describe('ContainerRow', () => {
 
     const cell = document.querySelector('.containers-id')
     expect(cell).toHaveClass('containers-id-clickable')
-    expect(cell.getAttribute('title')).toBe('Container — bk1111111111-aaaa')
+    expect(cell.getAttribute('title')).toBe('Container - bk1111111111-aaaa')
     expect(cell.style.cursor).toBe('pointer')
   })
 
@@ -198,7 +198,7 @@ describe('ContainerRow', () => {
     const cell = document.querySelector('.containers-session-id')
     expect(cell).toHaveClass('containers-session-id-clickable')
     expect(cell.getAttribute('title')).toBe(
-      'Session directory — /home/u/.claudebox/sessions/s-foo-1',
+      'Session directory - /home/u/.claudebox/sessions/s-foo-1',
     )
     expect(cell.style.cursor).toBe('pointer')
 

@@ -33,4 +33,5 @@ class UIState(DataClass):
         """Deserialize from API-compatible keys."""
 
         mapped = {_KEY_TO_FIELD.get(k, k): v for k, v in data.items()}
+
         return super().fromdict(mapped)

@@ -16,7 +16,7 @@ export default function NewSessionBridge({ refs }) {
   if (refs?.newSessionInNewTab) {
     refs.newSessionInNewTab.current = executeNewSessionInNewTab
   }
-  // cancelCreation is wired inside executeNewSession itself — the closure captures
+  // cancelCreation is wired inside executeNewSession itself - the closure captures
   // the calling instance's refs, so cancel always operates on the correct state
   // even when Dockview remounts the calling component (e.g., HeaderActions).
 

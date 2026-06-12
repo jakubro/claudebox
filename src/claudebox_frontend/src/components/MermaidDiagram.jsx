@@ -57,7 +57,7 @@ export default function MermaidDiagram({ chart }) {
   const handleZoomOpen = useCallback(() => setZoomed(true), [])
   const handleZoomClose = useCallback(() => setZoomed(false), [])
 
-  // Document-level Escape listener — div onKeyDown requires focus which overlay doesn't have
+  // Document-level Escape listener - div onKeyDown requires focus which overlay doesn't have
   useEffect(() => {
     if (!zoomed) {
       return
@@ -80,7 +80,7 @@ export default function MermaidDiagram({ chart }) {
     [handleZoomClose],
   )
 
-  // Error fallback — render as syntax-highlighted code silently
+  // Error fallback - render as syntax-highlighted code silently
   if (error) {
     return (
       <div className="code-block-wrapper">

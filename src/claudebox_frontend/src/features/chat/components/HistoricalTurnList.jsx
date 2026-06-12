@@ -83,7 +83,7 @@ function HistoricalTurnList({
   })
 }
 
-// Historical turns are complete — their objects keep stable references across
+// Historical turns are complete - their objects keep stable references across
 // streaming flushes (appendTurns only clones the active turn). Bail unless the
 // rendered set or the shared data actually changed, so the streaming active
 // turn's per-flush growth never reconciles this subtree.

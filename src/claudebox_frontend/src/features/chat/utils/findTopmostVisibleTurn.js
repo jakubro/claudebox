@@ -1,8 +1,8 @@
 /** Locate the topmost on-screen turn inside a scroll container and choose its role. */
 
 /**
- * Find the first turn whose bottom edge crosses the container's top edge —
- * that's the visually-topmost turn the user is "paused at" — and pick the
+ * Find the first turn whose bottom edge crosses the container's top edge -
+ * that's the visually-topmost turn the user is "paused at" - and pick the
  * role half (user message vs assistant message) to anchor the URL segment to.
  *
  * Role choice: prefer `'user'` if the turn's user-message child is itself

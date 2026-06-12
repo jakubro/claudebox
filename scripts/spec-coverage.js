@@ -4,7 +4,7 @@
  *
  * Coverage source: E2E tests under `lib/e2e/app/tests/*.spec.js` (Playwright)
  * and `lib/e2e/cli/test_*.py` (pytest). Per GUIDELINES.md § 8, unit tests
- * (`*.test.js` / `*.test.jsx` / `*_test.py`) MUST NOT carry SPEC markers —
+ * (`*.test.js` / `*.test.jsx` / `*_test.py`) MUST NOT carry SPEC markers -
  * this script reports any such occurrences as violations and exits non-zero
  * so they're caught at lint time.
  *
@@ -233,7 +233,7 @@ if (unitViolations.length > 0) {
   console.log('The following unit-test markers must be moved to E2E or removed:')
   for (const { file, claimId, lineNum } of unitViolations) {
     const rel = file.replace(`${ROOT}/`, '')
-    console.log(`  - ${rel}:${lineNum} → ${claimId}`)
+    console.log(`  - ${rel}:${lineNum} -> ${claimId}`)
   }
   console.log('\n')
 }

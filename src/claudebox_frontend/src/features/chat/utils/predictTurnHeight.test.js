@@ -35,7 +35,7 @@ describe('predictTurnHeight', () => {
     }
     const wide = predictTurnHeight(turn, EFFECTIVE_WIDTH)
     const narrow = predictTurnHeight(turn, EFFECTIVE_WIDTH / 2)
-    // Narrower column → more wrap lines → larger predicted height.
+    // Narrower column -> more wrap lines -> larger predicted height.
     expect(narrow).toBeGreaterThan(wide)
     expect(wide).toBe(TURN_BASE_HEIGHT_PX + 5 * LINE_HEIGHT_PX)
   })
@@ -65,7 +65,7 @@ describe('predictTurnHeight', () => {
       userMessage: '',
       attachments: null,
     }
-    // thinking subtype = 1, embedded tag = 1 → 2 thinking blocks
+    // thinking subtype = 1, embedded tag = 1 -> 2 thinking blocks
     const expected =
       TURN_BASE_HEIGHT_PX +
       Math.ceil(
@@ -111,7 +111,7 @@ describe('predictTurnHeight', () => {
       userMessage: '',
       attachments: null,
     }
-    // effectiveWidth 0 → charsPerLine clamped to 20 → 200/20 = 10 lines.
+    // effectiveWidth 0 -> charsPerLine clamped to 20 -> 200/20 = 10 lines.
     expect(predictTurnHeight(turn, 0)).toBe(TURN_BASE_HEIGHT_PX + 10 * LINE_HEIGHT_PX)
   })
 })

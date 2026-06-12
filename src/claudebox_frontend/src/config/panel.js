@@ -32,5 +32,5 @@ const PANEL_CONFIGS = {
 
 export default PANEL_CONFIGS
 
-/** Panel IDs that open at wide-floating-preview dimensions (≥800px / 60% vw). */
+/** Panel IDs that open at wide-floating-preview dimensions (>=800px / 60% vw). */
 export const WIDE_FLOATING_PANELS = new Set(['logs', 'containers'])

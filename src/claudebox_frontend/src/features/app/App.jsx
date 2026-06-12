@@ -1,4 +1,4 @@
-/** Root application component — routes between mobile and desktop layouts. */
+/** Root application component - routes between mobile and desktop layouts. */
 
 import useIsMobile from '../../hooks/useIsMobile'
 import DesktopLayout from './components/DesktopLayout'

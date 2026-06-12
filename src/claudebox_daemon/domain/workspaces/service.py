@@ -1,8 +1,8 @@
-"""Per-workspace service — isolated container and session orchestration."""
+"""Per-workspace service - isolated container and session orchestration."""
 
 from typing import TYPE_CHECKING
 
-from claudebox import Broadcaster, ClaudeRuntime, Config, get_logger, serialization
+from claudebox import Broadcaster, Config, get_logger, resolve_runtime_class, serialization
 from .models import RegisteredWorkspace
 
 
@@ -41,6 +41,7 @@ class WorkspaceService:
 
         if not self.workspace.available:
             self._logger.warning("Workspace directory unavailable", **self._log_context)
+
             return
 
         self._ui_state = UIStateService(workspace)
@@ -56,6 +57,7 @@ class WorkspaceService:
             workspace=workspace,
             containers=self._container_service,
             events=events,
+            agent=self._config.agent,
         )
 
         self._board_service = BoardService(
@@ -72,24 +74,28 @@ class WorkspaceService:
     def ui_state(self) -> "UIStateService":
         self._require_available("ui_state")
         assert self._ui_state is not None
+
         return self._ui_state
 
     @property
     def container_service(self) -> "ContainerService":
         self._require_available("container_service")
         assert self._container_service is not None
+
         return self._container_service
 
     @property
     def session_service(self) -> "SessionService":
         self._require_available("session_service")
         assert self._session_service is not None
+
         return self._session_service
 
     @property
     def board_service(self) -> "BoardService":
         self._require_available("board_service")
         assert self._board_service is not None
+
         return self._board_service
 
     def _require_available(self, accessor: str) -> None:
@@ -131,16 +137,25 @@ class WorkspaceService:
     def list_workspace_commands(self) -> dict | None:
         """Return filesystem-discovered slash commands and skills, or None when the runtime lacks skills support."""
 
-        if not ClaudeRuntime.CAPABILITIES.supports_skills:
+        cls = resolve_runtime_class(self._config.agent)
+
+        if not cls.CAPABILITIES.supports_skills:
             return None
 
         profile = self._config.profile
-        skills = ClaudeRuntime.get_skills(
+        skills = cls.get_skills(
             commands_dir=(profile / "commands") if profile else None,
             skills_dir=(profile / "skills") if profile else None,
         )
         custom = [serialization.serialize(skill) for skill in skills]
+
         return {"custom": custom, "mcp": [], "builtin": []}
+
+    @property
+    def config(self) -> Config:
+        """Public read-only access to the workspace's parsed configuration."""
+
+        return self._config
 
     # Misc
     # ----------------------------------------------------------------------------------------------

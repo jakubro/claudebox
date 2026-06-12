@@ -123,7 +123,7 @@ describe('useSessionRouting', () => {
 
     expect(result.current.activeSessionId).toBeNull()
     expect(result.current.activeWorkspaceId).toBeNull()
-    // pushState removes hash — no bare '#'
+    // pushState removes hash - no bare '#'
     expect(window.location.hash).toBe('')
   })
 

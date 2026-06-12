@@ -1,4 +1,4 @@
-"""File service — orchestrates path resolution."""
+"""File service - orchestrates path resolution."""
 
 import asyncio
 from pathlib import Path

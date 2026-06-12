@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.persistence — event log I/O."""
+"""Tests for claudebox.agent_session.orchestration.persistence - event log I/O."""
 
 import pytest
 
@@ -25,6 +25,7 @@ class TestEventLog:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
         log = EventLog("test-session", ws)
+
         try:
             await log.open()
             event = _make_event()
@@ -41,6 +42,7 @@ class TestEventLog:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
         log = EventLog("test-session", ws)
+
         try:
             await log.open()
             await log.append(_make_event("e1", "first"))

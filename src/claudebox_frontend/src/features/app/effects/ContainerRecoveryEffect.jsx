@@ -16,7 +16,7 @@ import { resumeAndReconnect } from '../utils/sessionResume'
  * (handled by DaemonReconnectEffect), this handles container-level disconnection
  * by calling resumeSession() to get a fresh container ID before giving up.
  *
- * Renders nothing — exists solely for container-level recovery.
+ * Renders nothing - exists solely for container-level recovery.
  */
 export default function ContainerRecoveryEffect() {
   const { activeSessionId } = useSessionRouting()
@@ -29,7 +29,7 @@ export default function ContainerRecoveryEffect() {
     clearResume,
     notifyContainerChanged,
   } = useEvents()
-  const { setSessionContainer } = useContainerMap()
+  const { setSessionContainer, stoppingSessions } = useContainerMap()
   const { clearSessionData } = useSessionActions()
   const { setError } = useInteraction()
 
@@ -48,6 +48,11 @@ export default function ContainerRecoveryEffect() {
       return
     }
 
+    // User-initiated stop is terminal - never auto-resurrect a stopped session
+    if (stoppingSessions.has(activeSessionId)) {
+      return
+    }
+
     // Attempt resume to get a fresh container ID
     resumeAndReconnect({
       activeSessionId,
@@ -59,12 +64,13 @@ export default function ContainerRecoveryEffect() {
       onError: () => {
         clearResume()
         disconnectSSE()
-        setError('Container reconnect failed — waiting for daemon')
+        setError('Container reconnect failed - waiting for daemon')
       },
     })
   }, [
     containerRecoveryNeeded,
     activeSessionId,
+    stoppingSessions,
     disconnectSSE,
     closeSSE,
     startResume,

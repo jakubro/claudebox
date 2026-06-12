@@ -48,9 +48,11 @@ def _capture_help(verb: str | None, capsys: pytest.CaptureFixture[str]) -> str:
 
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(args)
+
     assert exc.value.code == 0
 
     captured = capsys.readouterr()
+
     return _INSTALL_FOOTER.sub("install:\n  <branch> (<commit>) @ <path>", captured.out)
 
 
@@ -58,6 +60,7 @@ def test_top_level_help(capsys: pytest.CaptureFixture[str]) -> None:
     """Top-level --help enumerates every verb."""
 
     output = _capture_help(None, capsys)
+
     for verb in _VERBS:
         assert verb in output
 
@@ -101,7 +104,7 @@ class TestSnapshots:
         assert _capture_help(None, capsys) == snapshot("""\
 usage: claudebox [-h] [-v] <command> ...
 
-Run Claude Code in a containerized dev environment.
+Run AI coding agents in a containerized dev environment.
 
 positional arguments:
   <command>
@@ -120,7 +123,7 @@ positional arguments:
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help) (default: False)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help) (default: False)
 
 run "claudebox <command> --help" for command-specific help
 
@@ -142,7 +145,7 @@ positional arguments:
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox run                  launch interactive agent session
@@ -166,7 +169,7 @@ Build container image
 
 options:
   -h, --help           show this help message and exit
-  -v, --verbose        Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose        Increase output verbosity (verb-dependent - see per-verb help)
   --layer {all,agent}  Which image layer to rebuild (default: cached build) (default: None)
 
 examples:
@@ -183,7 +186,7 @@ Open bash shell in fresh container
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox shell                open a shell in a fresh container
@@ -197,7 +200,7 @@ Remove stopped containers, dangling images, stale dirs
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox prune                summary count only
@@ -220,7 +223,7 @@ Print version
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox version              print version, branch, commit, install path, python
@@ -234,7 +237,7 @@ Diagnose environment
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox doctor               run all environment checks
@@ -258,7 +261,7 @@ Update Claudebox itself (re-runs install.sh)
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox update               refresh Claudebox itself
@@ -266,7 +269,7 @@ examples:
 
 update spawns ~/.claudebox/lib/bin/install.sh, surfaces its stdout/stderr
 live, and propagates its exit code. Concurrent invocations are blocked by
-install.sh's flock — the second invocation exits non-zero immediately.
+install.sh's flock - the second invocation exits non-zero immediately.
 
 build vs update:
   build  rebuilds the container image (the agent layer inside it).
@@ -284,7 +287,7 @@ positional arguments:
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
   --tail TAIL    Number of trailing lines to backfill before following (default: 100) (default: 100)
   --no-follow    Print the backfilled lines and exit instead of following (default: False)
 
@@ -305,8 +308,9 @@ running, the backfill prints and the command exits (no live follow).
 When the log file is missing entirely, the command prints
 ``no daemon logs available`` and exits 0.
 
-colorization: ERROR red, WARNING yellow, INFO default, DEBUG dim. Color is
-suppressed under ``NO_COLOR`` or when stdout is not a TTY (Rich defaults).
+each record is rendered on one line with an ISO8601 date+time, the level,
+the logger name, and any extra fields. Errors appear red, warnings yellow,
+regular lines default (suppressed under ``NO_COLOR`` or non-TTY).
 """)
 
     def test_workspaces_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -323,7 +327,7 @@ positional arguments:
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox workspaces list                  table of all registered workspaces
@@ -332,13 +336,13 @@ examples:
   claudebox workspaces deregister foo        remove from the daemon's registry
 
 register creates the .workspace marker file if absent, then POSTs to the daemon.
-Re-registering an already-registered path is idempotent — surfaced as
+Re-registering an already-registered path is idempotent - surfaced as
   ``○ already registered: <path> (id: <id>)``
 and exits 0. Basename collisions are disambiguated by the daemon via an
 8-char path-hash suffix on the id.
 
 deregister removes the workspace from the daemon's registry. The .workspace
-marker file on disk is PRESERVED — only the daemon-side registration is
+marker file on disk is PRESERVED - only the daemon-side registration is
 removed.
 
 bare ``claudebox workspaces`` prints this list and exits non-zero.
@@ -353,12 +357,12 @@ Manage containers (list|stop|kill)
 positional arguments:
   <action>
     list         Enumerate all containers across all workspaces
-    stop         SIGTERM a container (10s grace) — accepts <id>, prefix, or all
-    kill         SIGKILL a container immediately — accepts <id>, prefix, or all
+    stop         SIGTERM a container (10s grace) - accepts <id>, prefix, or all
+    kill         SIGKILL a container immediately - accepts <id>, prefix, or all
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox containers list                  table across all workspaces
@@ -382,7 +386,7 @@ Show daemon + containers + workspace state
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox status               three rows: DAEMON, CONTAINERS, WORKSPACE
@@ -394,7 +398,7 @@ WORKSPACE  resolved workspace for cwd (walks up for .workspace) plus
 
 degraded mode: when the daemon is not running, CONTAINERS falls back to
 direct runtime queries and WORKSPACE reads ~/.claudebox/daemon.json
-directly. Exit code is always 0 — status is a query.
+directly. Exit code is always 0 - status is a query.
 """)
 
     def test_daemon_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -412,7 +416,7 @@ positional arguments:
 
 options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent — see per-verb help)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox daemon start         start the host daemon

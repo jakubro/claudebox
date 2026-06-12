@@ -1,4 +1,4 @@
-"""Tests for claudebox.containers.run — container CLI argument generation."""
+"""Tests for claudebox.containers.run - container CLI argument generation."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -26,7 +26,8 @@ def _make_config(tmp_path, **overrides):
         "env": None,
     }
     defaults.update(overrides)
-    return Config(**defaults)
+
+    return Config(**defaults)  # ty: ignore[invalid-argument-type]
 
 
 # --- get_run_args ---
@@ -54,6 +55,7 @@ class TestGetContainerArgs:
         args = list(get_container_run_args(config))
 
         label_args = [args[i + 1] for i, a in enumerate(args) if a == "--label"]
+
         for key, val in DEFAULT_LABELS.items():
             assert f"{key}={val}" in label_args
 
@@ -173,6 +175,7 @@ class TestGetContainerArgs:
         image_idx = args.index(CONTAINER_IMAGE_NAME)
         vol_args = [args[i + 1] for i, a in enumerate(args) if a == "--volume"]
         assert f"{host_dir.resolve()}:/container/path:ro" in vol_args
+
         # All --volume flags should be before image
         for i, a in enumerate(args):
             if a == "--volume":
@@ -257,6 +260,7 @@ def _label_args(call_args) -> list[str]:
     """Extract values immediately following --label flags in a backend call."""
 
     backend_args = list(call_args.args)
+
     return [backend_args[i + 1] for i, a in enumerate(backend_args) if a == "--label"]
 
 

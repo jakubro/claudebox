@@ -64,7 +64,7 @@ test.describe('Conversation Rewind', () => {
   test.describe('Rewind Modal (agent responding)', () => {
     test.beforeEach(async ({ page }) => {
       await mockAPI(page)
-      // Use responding fixture so isResponding=true — modal appears for fork-here
+      // Use responding fixture so isResponding=true - modal appears for fork-here
       await mockSSE(page, 'events/responding.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
@@ -160,7 +160,7 @@ test.describe('Conversation Rewind', () => {
       const modal = page.locator('.rewind-modal')
       await expect(modal).toBeVisible()
 
-      // Click confirm — spinner should appear
+      // Click confirm - spinner should appear
       await modal.locator('.rewind-modal-confirm').click()
 
       // Confirm button should be disabled with spinner
@@ -253,7 +253,7 @@ test.describe('Conversation Rewind', () => {
     // SPEC: chat:rewind-split
     // SPEC: chat:fork-variants
     test('chevron opens dropdown with fork variants', async ({ page }) => {
-      // The dropdown lists fork-here and fork-browser-tab — no third option.
+      // The dropdown lists fork-here and fork-browser-tab - no third option.
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await userMessage.hover()
 
@@ -330,7 +330,7 @@ test.describe('Conversation Rewind', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Click rewind on second turn (turn_002) — agent idle, executes directly
+      // Click rewind on second turn (turn_002) - agent idle, executes directly
       const userMessages = page.locator('[data-testid="message-user"]')
       await expect(userMessages).toHaveCount(3)
 

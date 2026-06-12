@@ -67,6 +67,7 @@ class Workspace:
         from .session.session import Session
 
         session_dir = find_session_dir(self.path, session_id)
+
         if session_dir is None:
             return None
 
@@ -96,6 +97,7 @@ class Workspace:
         """Build PathSpec from the workspace .ignore file."""
 
         patterns = self.collect_ignore_patterns()
+
         return PathSpec.from_lines("gitignore", patterns)
 
     # SDK Paths

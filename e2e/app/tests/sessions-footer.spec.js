@@ -30,7 +30,7 @@ test.describe('Footer', () => {
       await expect(status).toBeVisible()
 
       // Connection dot must be present and carry the running/connected class
-      // — CSS owns the green color, so the class is the contract.
+      // - CSS owns the green color, so the class is the contract.
       const dot = page.locator('.footer-status-dot, [data-testid="footer-status"] .status-dot')
       const dotCount = await dot.count()
       if (dotCount > 0) {
@@ -74,7 +74,7 @@ test.describe('Footer', () => {
       await expect(runtime).toContainText(DEFAULT_BACKEND_ID.slice(0, 12))
       await expect(runtime).toHaveAttribute(
         'title',
-        new RegExp(`Container — ${DEFAULT_BACKEND_ID}`),
+        new RegExp(`Container - ${DEFAULT_BACKEND_ID}`),
       )
     })
 
@@ -98,12 +98,12 @@ test.describe('Footer', () => {
       page,
     }) => {
       // Workspace, session id, model, effort level should be present from
-      // the very first frame after the new-session API resolves — no blank
+      // the very first frame after the new-session API resolves - no blank
       // window while the SDK init event arrives later.
       await page.click('[data-testid="header-new-session-btn"]')
-      await expect(page.locator('[data-testid="footer-workspace"]')).not.toContainText('—')
+      await expect(page.locator('[data-testid="footer-workspace"]')).not.toContainText('-')
       await expect(page.locator('[data-testid="footer-session"]')).not.toBeEmpty()
-      await expect(page.locator('[data-testid="footer-model"]')).not.toContainText('—')
+      await expect(page.locator('[data-testid="footer-model"]')).not.toContainText('-')
     })
   })
 
@@ -450,7 +450,7 @@ test.describe('Footer', () => {
     test('falls back to backend default effort level when session has none', async ({ page }) => {
       // session-defaults mock returns "xhigh" (matches DEFAULT_EFFORT_LEVEL).
       // When the session projection has no effort_level, the picker shows the
-      // backend default — not a hardcoded fallback.
+      // backend default - not a hardcoded fallback.
       await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
     })
 
@@ -472,13 +472,13 @@ test.describe('Footer', () => {
       const dropdown = page.locator('[data-testid="effort-dropdown"]')
       await dropdown.getByText('High', { exact: true }).click()
 
-      // After refresh, footer should show exactly "High" — not "XHigh".
+      // After refresh, footer should show exactly "High" - not "XHigh".
       await expect(page.locator('[data-testid="footer-effort"]')).toHaveText(/^High/)
     })
 
     // SPEC: footer:effort-picker-all-models
     test('max option visible for all models', async ({ page }) => {
-      // Default fixture uses claude-sonnet-4-6 — Max should still be available
+      // Default fixture uses claude-sonnet-4-6 - Max should still be available
       await page.locator('[data-testid="footer-effort"]').click()
       const dropdown = page.locator('[data-testid="effort-dropdown"]')
       await expect(dropdown).toBeVisible()
@@ -627,7 +627,7 @@ test.describe('Footer', () => {
       await expect(page.locator('.footer-status-text')).toContainText('Waiting')
       await expect(page.locator('.footer-status-text.status-silent')).toBeVisible()
 
-      // SPEC: footer:silence-dim — muted gray color
+      // SPEC: footer:silence-dim - muted gray color
       const silentText = page.locator('.footer-status-text.status-silent')
       const color = await silentText.evaluate(el => getComputedStyle(el).color)
       const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
@@ -667,7 +667,7 @@ test.describe('Footer', () => {
     })
 
     // SPEC: chat:control-reload
-    // Reload button lives in ChatControlBar, not Footer — tested in chat-controls.spec.js
+    // Reload button lives in ChatControlBar, not Footer - tested in chat-controls.spec.js
   })
 
   test.describe('Footer Extras', () => {
@@ -697,14 +697,14 @@ test.describe('Footer', () => {
 
       // Initially disabled
       await expect(notificationsToggle).not.toHaveClass(/enabled/)
-      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications — disabled')
+      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - disabled')
 
       // Click to enable
       await notificationsToggle.click()
 
       // Toggle should now show enabled state (covers both sound + desktop)
       await expect(notificationsToggle).toHaveClass(/enabled/)
-      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications — enabled')
+      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - enabled')
 
       // Bell icon aria-label should reflect enabled state
       const bellIcon = notificationsToggle.locator('svg')
@@ -715,7 +715,7 @@ test.describe('Footer', () => {
 
       // Toggle should revert to disabled state
       await expect(notificationsToggle).not.toHaveClass(/enabled/)
-      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications — disabled')
+      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - disabled')
     })
   })
 
@@ -1191,8 +1191,8 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Should show time range with arrow: "2h ago → 1h ago"
-      await expect(page.getByText(/→/).first()).toBeVisible()
+      // Should show time range with arrow: "2h ago -> 1h ago"
+      await expect(page.getByText(/->/).first()).toBeVisible()
     })
 
     // SPEC: panel-session:cost-format
@@ -1288,7 +1288,7 @@ test.describe('Sessions Panel', () => {
     })
   })
 
-  // Session Search tests removed — feature not implemented in SessionsPanel
+  // Session Search tests removed - feature not implemented in SessionsPanel
 
   test.describe('Pinned Sessions', () => {
     // SPEC: panel-session:pin-button
@@ -1641,10 +1641,10 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Null cost should display as em dash (—)
+      // Null cost should display as em dash (-)
       const sessionItem = page.locator('[data-testid="session-item"]').first()
       await expect(sessionItem).toBeVisible()
-      await expect(sessionItem).toContainText('—')
+      await expect(sessionItem).toContainText('-')
     })
   })
 
@@ -1763,22 +1763,22 @@ test.describe('Sessions Panel Meta Tooltips', () => {
   }) => {
     // Meta-extra (turns/cost) can be hidden behind overflow when the panel is
     // narrow; assert via attribute presence, not visibility.
-    const turnsSpan = page.locator('.sessions-meta-extra span[title^="Turns —"]').first()
+    const turnsSpan = page.locator('.sessions-meta-extra span[title^="Turns -"]').first()
     await expect(turnsSpan).toHaveCount(1)
     const turnsTitle = await turnsSpan.getAttribute('title')
-    expect(turnsTitle).toMatch(/^Turns — \d+$/)
+    expect(turnsTitle).toMatch(/^Turns - \d+$/)
 
     const costSpan = page
       .locator('.sessions-meta-extra span[title^="API cost this session"]')
       .first()
     await expect(costSpan).toHaveCount(1)
     const costTitle = await costSpan.getAttribute('title')
-    expect(costTitle).toMatch(/^API cost this session — \$\d+\.\d{2}$/)
+    expect(costTitle).toMatch(/^API cost this session - \$\d+\.\d{2}$/)
 
-    const startedSpan = page.locator('.sessions-timestamp span[title^="Started —"]').first()
+    const startedSpan = page.locator('.sessions-timestamp span[title^="Started -"]').first()
     await expect(startedSpan).toHaveCount(1)
     const startedTitle = await startedSpan.getAttribute('title')
-    expect(startedTitle).toMatch(/^Started — /)
+    expect(startedTitle).toMatch(/^Started - /)
   })
 })
 
@@ -1790,7 +1790,7 @@ test.describe('Sessions Panel Resume Spinner', () => {
     await page.goto(DEFAULT_SESSION_URL)
 
     // Stub window.open and requestAnimationFrame so the Alt+click branch
-    // (which routes through onOpenInNewTab → window.open) doesn't navigate,
+    // (which routes through onOpenInNewTab -> window.open) doesn't navigate,
     // and the double-rAF that would clear the spinner never fires.
     await page.evaluate(() => {
       window.requestAnimationFrame = () => 0
@@ -1803,8 +1803,8 @@ test.describe('Sessions Panel Resume Spinner', () => {
     const resumeBtn = page.locator('[data-testid="session-resume-btn"]').first()
     await expect(resumeBtn).toBeVisible()
 
-    // Alt+click routes through handleResumeWithSpinner → onOpenInNewTab,
-    // which is a sync window.open — no navigation, so the SessionItem
+    // Alt+click routes through handleResumeWithSpinner -> onOpenInNewTab,
+    // which is a sync window.open - no navigation, so the SessionItem
     // stays mounted long enough to observe the spinner state.
     await resumeBtn.click({ modifiers: ['Alt'] })
 

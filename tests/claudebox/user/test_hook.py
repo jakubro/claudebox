@@ -1,4 +1,4 @@
-"""Tests for claudebox.hook — hook decorator and request/response types."""
+"""Tests for claudebox.hook - hook decorator and request/response types."""
 
 import json
 
@@ -23,6 +23,7 @@ def _make_hook_data(
         "transcript_path": "/fake/transcript.jsonl",
         **extra,
     }
+
     return data
 
 
@@ -66,6 +67,7 @@ class TestHookResponse:
 
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         req = HookRequest(_make_hook_data(hook_event_name="PreToolUse"))
+
         return HookResponse(req)
 
     def test_empty_response_has_hook_output(self, response):
@@ -212,6 +214,7 @@ class TestHookRequestMalformed:
             "session_id": "test-session",
             "transcript_path": "/fake/transcript.jsonl",
         }
+
         with pytest.raises(KeyError):
             HookRequest(data)
 
@@ -219,6 +222,7 @@ class TestHookRequestMalformed:
         """Completely empty payload should raise KeyError."""
 
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+
         with pytest.raises(KeyError):
             HookRequest({})
 
@@ -228,5 +232,6 @@ class TestAddToEnvMissing:
 
     def test_missing_env_file_raises(self, monkeypatch):
         monkeypatch.delenv("CLAUDE_ENV_FILE", raising=False)
+
         with pytest.raises(KeyError):
             HookResponse.add_to_env("VAR", "val")

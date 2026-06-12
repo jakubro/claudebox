@@ -1,4 +1,4 @@
-/** E2E tests for the mobile layout — top bar, status strip, drawer, details sheet. */
+/** E2E tests for the mobile layout - top bar, status strip, drawer, details sheet. */
 
 import { expect, test } from '@playwright/test'
 import { waitForMobileReady } from '../helpers.js'
@@ -81,7 +81,7 @@ test.describe('Mobile Layout', () => {
     const drawer = page.locator('.mobile-drawer')
     await expect(drawer).toBeVisible()
 
-    // Drawer fills the viewport — width and height equal viewport dimensions
+    // Drawer fills the viewport - width and height equal viewport dimensions
     // (allowing a 1px rounding tolerance).
     const viewport = page.viewportSize()
     const box = await drawer.boundingBox()
@@ -137,7 +137,7 @@ test.describe('Mobile Layout', () => {
   })
 
   // SPEC: mobile:send-button-stop
-  test('top bar has no stop button — the chat send button is the stop control', async ({
+  test('top bar has no stop button - the chat send button is the stop control', async ({
     page,
   }) => {
     await page.goto(DEFAULT_SESSION_URL)
@@ -161,7 +161,7 @@ test.describe('Mobile Layout', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForMobileReady(page)
 
-    // Idle state — send button rendered, no stop button.
+    // Idle state - send button rendered, no stop button.
     await expect(page.locator('[data-testid="mobile-send-btn"]')).toHaveCount(1)
     await expect(page.locator('[data-testid="chat-input-stop-btn"]')).toHaveCount(0)
 
@@ -201,7 +201,7 @@ test.describe('Mobile Layout', () => {
   })
 
   // SPEC: mobile:chat-fullwidth
-  test('chat occupies the full content width — no minimap', async ({ page }) => {
+  test('chat occupies the full content width - no minimap', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForMobileReady(page)
 
@@ -210,7 +210,7 @@ test.describe('Mobile Layout', () => {
 
   // SPEC: mobile:welcome-touch
   test('welcome screen leads with a touch-suited usage prompt', async ({ page }) => {
-    // Welcome state — go to workspace root without a session.
+    // Welcome state - go to workspace root without a session.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await waitForMobileReady(page)
 
@@ -332,7 +332,7 @@ test.describe('Mobile Layout', () => {
   // SPEC: mobile:status-context-color
   test('status fill color shifts as context fills up', async ({ page }) => {
     // Two-phase: low context produces one color, high context produces a different
-    // color via getContextBarColor — assert distinctness rather than exact codes.
+    // color via getContextBarColor - assert distinctness rather than exact codes.
     await mockAPI(page, {
       handlers: {
         getSessionStatus: async route => {
@@ -368,7 +368,7 @@ test.describe('Mobile Layout', () => {
     const lowColor = await fill.evaluate(el => el.style.background)
     expect(lowColor).toBeTruthy()
 
-    // Now load a session with much higher tokens — re-fetch by reload with new mock.
+    // Now load a session with much higher tokens - re-fetch by reload with new mock.
     await page.unroute(/\/sessions\/[^/]+\/status/).catch(() => {})
     await mockAPI(page, {
       handlers: {
@@ -425,10 +425,10 @@ test.describe('Mobile Layout', () => {
     await expect(items).toHaveCount(3)
 
     // Rich content: status dot on every row; sessions-id contains the 8-char prefix
-    // for each (positional ordered match — first 2 rows render 'test-ses').
+    // for each (positional ordered match - first 2 rows render 'test-ses').
     await expect(items.locator('.container-status-dot')).toHaveCount(3)
     await expect(items.locator('.sessions-id')).toContainText(['test-ses', 'test-ses'])
-    // Only test-session-002 has a name → exactly one .sessions-name node exists.
+    // Only test-session-002 has a name -> exactly one .sessions-name node exists.
     await expect(items.locator('.sessions-name')).toContainText(['Feature Implementation'])
 
     // Timestamps row present on every row (started time appears verbatim).
@@ -525,7 +525,7 @@ test.describe('Mobile Layout', () => {
     await waitForMobileReady(page)
 
     await page.locator('.mobile-top-bar button[title="Menu"]').click()
-    // session_id is "test-session-001" → first 8 chars: "test-ses".
+    // session_id is "test-session-001" -> first 8 chars: "test-ses".
     await expect(page.locator('.mobile-drawer-sessions .sessions-item .sessions-id')).toContainText(
       'test-ses',
     )
@@ -544,7 +544,7 @@ test.describe('Mobile Layout', () => {
   // SPEC: mobile:drawer-workspaces-multi
   test('workspace switcher renders the list when multiple workspaces exist', async ({ page }) => {
     // Override the workspaces endpoint to return two workspaces. Outer beforeEach
-    // already registered the default — the latest matching route handler wins.
+    // already registered the default - the latest matching route handler wins.
     await page.route('**/api/workspaces', async route => {
       await route.fulfill({
         json: {

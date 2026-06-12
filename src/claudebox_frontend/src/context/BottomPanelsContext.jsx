@@ -14,7 +14,7 @@ import { useSessionId } from './SessionDataContext'
 const BottomPanelsContext = createContext(null)
 
 /**
- * Bottom-panel slot state per session — open set + shared strip height; hydrated/persisted via /ui-state.
+ * Bottom-panel slot state per session - open set + shared strip height; hydrated/persisted via /ui-state.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
@@ -32,7 +32,7 @@ export function BottomPanelsProvider({ children }) {
   // the dockview layout PATCH).
   const userInteractedRef = useRef(false)
 
-  // Reset the user-interaction flag whenever the active session changes —
+  // Reset the user-interaction flag whenever the active session changes -
   // the new session needs its own interactions to trigger persistence.
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is the change trigger; body only writes a ref
   useEffect(() => {

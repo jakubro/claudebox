@@ -1,4 +1,4 @@
-/** Autocomplete state management for /commands — replaces Tribute.js. */
+/** Autocomplete state management for /commands - replaces Tribute.js. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useCapabilities from '../../../../../hooks/useCapabilities'
@@ -42,7 +42,7 @@ export default function useAutocomplete(textareaRef, commands) {
   }, [allItems, filter])
 
   // Reset selection when filter changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on filter change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional - reset on filter change
   useEffect(() => {
     setSelectedIndex(0)
   }, [filter])
@@ -64,10 +64,10 @@ export default function useAutocomplete(textareaRef, commands) {
       const lc = leadingCommand(value)
       if (lc) {
         // Replacement boundary: if the picked command starts with the typed
-        // leading token, the user was mid-typing the command — consume the
+        // leading token, the user was mid-typing the command - consume the
         // whole token (lc.end). Otherwise the token contains user text past
         // the caret (e.g. `/refinefoo bar baz` typed in front of existing
-        // text) — preserve everything from the caret onward.
+        // text) - preserve everything from the caret onward.
         const typed = value.slice(1, lc.end)
         const userWasTypingCommand = item.name.toLowerCase().startsWith(typed.toLowerCase())
         const boundary = userWasTypingCommand ? lc.end : caret
@@ -162,7 +162,7 @@ export default function useAutocomplete(textareaRef, commands) {
       const value = textarea.value
       const cursorPos = textarea.selectionStart
 
-      // Suppress if doubled '/' at start — user is editing in front of an
+      // Suppress if doubled '/' at start - user is editing in front of an
       // existing leading slash command, not invoking a fresh autocomplete.
       if (value.startsWith('//')) {
         setVisible(false)
@@ -173,7 +173,7 @@ export default function useAutocomplete(textareaRef, commands) {
       // Auto-trigger: textarea starts with a leading '/cmd' token and the
       // cursor sits inside it. Trailing whitespace + arguments are tolerated
       // (typing '/' at position 0 of a non-empty textarea must still open
-      // the picker — see Behavior table).
+      // the picker - see Behavior table).
       const lc = leadingCommand(value)
       if (lc?.token && cursorPos >= 1 && cursorPos <= lc.end) {
         setFilter(value.slice(1, cursorPos))

@@ -24,6 +24,7 @@ def _make_service(tmp_path: Path) -> tuple[BoardService, MagicMock]:
     svc = BoardService(ws, sessions, containers, events)
     # Replace watcher with a no-op to avoid filesystem watching in tests.
     svc._watcher = MagicMock()
+
     return svc, containers
 
 
@@ -32,13 +33,13 @@ class TestSendPromptSequence:
 
     @pytest.mark.anyio
     async def test_uses_prompt_field_matching_send_request_schema(self, tmp_path):
-        """Payload must use the `prompt` key — `SendRequest` ignores other keys
+        """Payload must use the `prompt` key - `SendRequest` ignores other keys
         and defaults `prompt` to empty string, so any other key sends a blank
         message to the session.
         """
 
         svc, containers = _make_service(tmp_path)
-        result = SessionInfo(session_id="sess-1", container_id="ctr-1")
+        result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
 
         await svc._send_prompt_sequence(
             result,
@@ -46,7 +47,7 @@ class TestSendPromptSequence:
             ["tickets/active/foo.md"],
         )
 
-        # Two send calls — one per prompt template.
+        # Two send calls - one per prompt template.
         assert containers.send.await_count == 2
 
         first_payload = containers.send.await_args_list[0].kwargs["payload"]
@@ -58,7 +59,7 @@ class TestSendPromptSequence:
     @pytest.mark.anyio
     async def test_substitutes_single_ticket_placeholder(self, tmp_path):
         svc, containers = _make_service(tmp_path)
-        result = SessionInfo(session_id="sess-1", container_id="ctr-1")
+        result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
 
         await svc._send_prompt_sequence(
             result,
@@ -71,10 +72,10 @@ class TestSendPromptSequence:
 
     @pytest.mark.anyio
     async def test_substitutes_multi_ticket_placeholder_as_newline_list(self, tmp_path):
-        """Multiple tickets render as ``\\n<p1>\\n<p2>`` — first path on its own line."""
+        """Multiple tickets render as ``\\n<p1>\\n<p2>`` - first path on its own line."""
 
         svc, containers = _make_service(tmp_path)
-        result = SessionInfo(session_id="sess-1", container_id="ctr-1")
+        result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
 
         await svc._send_prompt_sequence(
             result,
@@ -93,7 +94,7 @@ class TestSendPromptSequence:
 
         svc, containers = _make_service(tmp_path)
         containers.send = AsyncMock(side_effect=[RuntimeError("boom"), {}])
-        result = SessionInfo(session_id="sess-1", container_id="ctr-1")
+        result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
 
         await svc._send_prompt_sequence(result, ["a", "b"], ["t.md"])
 
@@ -112,6 +113,7 @@ class TestReadTicketContent:
         (board_dir / "board.yaml").write_text("name: test\nbacklog: []\n")
         # Trigger discovery so the board is registered.
         svc._discover()
+
         # board_id is the slugified relative dir path: "docs"
         return svc, "docs"
 

@@ -64,7 +64,7 @@ function BoardsPanel({ containerApi: _containerApi }) {
           await renameBoard(boardId, trimmed)
           refresh()
         } catch {
-          // Silently fail — board list will show stale name until next refresh
+          // Silently fail - board list will show stale name until next refresh
         }
       }
       setEditingBoardId(null)

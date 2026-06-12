@@ -1,4 +1,4 @@
-/** Desktop layout — dockview panels, icon strips, footer, keyboard shortcuts, floating panels. */
+/** Desktop layout - dockview panels, icon strips, footer, keyboard shortcuts, floating panels. */
 
 import { useState } from 'react'
 import AppProviders from '../AppProviders'

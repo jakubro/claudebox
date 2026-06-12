@@ -618,7 +618,7 @@ test.describe('AskUser Form Details', () => {
     await textarea.press('Shift+Enter')
     await textarea.type('Line five')
 
-    // Measure height after multi-line input — should be taller
+    // Measure height after multi-line input - should be taller
     const expandedHeight = await textarea.evaluate(el => el.offsetHeight)
 
     expect(expandedHeight).toBeGreaterThan(initialHeight)
@@ -674,7 +674,7 @@ test.describe('AskUser Form Details', () => {
     await submitBtn.click()
 
     // Immediately after submit (before server responds), the tool block should
-    // reflect the answered state — either by showing "Answered" summary or
+    // reflect the answered state - either by showing "Answered" summary or
     // by collapsing with answered status
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toHaveAttribute('data-tool-status', 'completed')
@@ -710,7 +710,7 @@ test.describe('AskUser Form Details', () => {
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toHaveAttribute('data-tool-status', 'completed')
 
-    // After submit the chosen option's label must be visible on the page —
+    // After submit the chosen option's label must be visible on the page -
     // either inside the (expanded) tool block as the highlighted answer, or as
     // an optimistic user message bubble containing the answer text.
     await expect(page.getByText(labelText, { exact: false }).first()).toBeVisible()

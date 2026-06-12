@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.config — DaemonConfig persistence and workspace management."""
+"""Tests for claudebox_daemon.domain.config - DaemonConfig persistence and workspace management."""
 
 import json
 from pathlib import Path
@@ -33,30 +33,37 @@ class TestDaemonConfigWorkspaces:
 
     def test_get_workspace_not_registered(self, tmp_path):
         config = _make_config(tmp_path)
+
         with pytest.raises(WorkspaceNotRegistered):
             config.get_workspace("nonexistent")
 
     def test_register_workspace_new(self, tmp_path):
         config = _make_config(tmp_path)
+
         with patch.object(config, "save"):
             ws = config.register_workspace(tmp_path / "my-project")
+
         assert ws.id == "my-project"
         assert ws.path == (tmp_path / "my-project").resolve()
         assert len(config.workspaces) == 1
 
     def test_register_workspace_idempotent(self, tmp_path):
         config = _make_config(tmp_path)
+
         with patch.object(config, "save"):
             ws1 = config.register_workspace(tmp_path / "my-project")
+
         ws2 = config.register_workspace(tmp_path / "my-project")
         assert ws1 is ws2
         assert len(config.workspaces) == 1
 
     def test_deregister_workspace_found(self, tmp_path):
         config = _make_config(tmp_path)
+
         with patch.object(config, "save"):
             config.register_workspace(tmp_path / "my-project")
             result = config.deregister_workspace("my-project")
+
         assert result is True
         assert len(config.workspaces) == 0
 

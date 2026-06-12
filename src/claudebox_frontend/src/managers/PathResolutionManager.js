@@ -68,7 +68,7 @@ export default class PathResolutionManager {
         if (val !== null) {
           resolved[c] = val
         }
-        // null means confirmed non-existent — skip (don't re-request)
+        // null means confirmed non-existent - skip (don't re-request)
       } else {
         unresolved.push(c)
       }

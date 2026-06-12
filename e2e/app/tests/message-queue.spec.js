@@ -254,7 +254,7 @@ test.describe('Message Queue', () => {
       await input.fill('will pause on error')
       await input.press('Alt+Enter')
 
-      // Override send to return error (triggers setError → pauseAll)
+      // Override send to return error (triggers setError -> pauseAll)
       await page.route('**/api/send', route =>
         route.fulfill({ status: 500, json: { error: 'Server error' } }),
       )
@@ -400,7 +400,7 @@ test.describe('Message Queue', () => {
       await input.press('Alt+Enter')
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
 
-      // Create new session (triggers session switch → clearAll)
+      // Create new session (triggers session switch -> clearAll)
       await page.locator('[data-testid="header-new-session-btn"]').click()
 
       await expect(page.locator('[data-testid="queued-message-bubble"]')).not.toBeVisible()

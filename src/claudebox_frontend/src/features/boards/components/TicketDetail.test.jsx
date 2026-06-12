@@ -151,7 +151,7 @@ describe('TicketDetail', () => {
       />,
     )
 
-    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('-')).toBeInTheDocument()
   })
 
   it('calls onClose on close button click', async () => {

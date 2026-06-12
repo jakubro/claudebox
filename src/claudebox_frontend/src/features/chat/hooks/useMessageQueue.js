@@ -1,4 +1,4 @@
-/** Thin React wrapper for MessageQueueManager — state mirror, persistence, and lifecycle effects. */
+/** Thin React wrapper for MessageQueueManager - state mirror, persistence, and lifecycle effects. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MESSAGE_QUEUE_STORAGE_PREFIX as STORAGE_PREFIX } from '../../../config/storage'
@@ -24,7 +24,7 @@ export default function useMessageQueue({
 }) {
   const [queueItems, setQueueItems] = useState([])
 
-  // Ref tracks current storage key — avoids stale closures in onChange
+  // Ref tracks current storage key - avoids stale closures in onChange
   const storageKeyRef = useRef(null)
   storageKeyRef.current = sessionId ? `${STORAGE_PREFIX}${sessionId}` : null
 
@@ -50,7 +50,7 @@ export default function useMessageQueue({
   const manager = managerRef.current
 
   // Drain on response cycle completion. resultCount increments inside the EventsContext
-  // reducer (not in a React effect), so it catches isResponding true→false transitions
+  // reducer (not in a React effect), so it catches isResponding true->false transitions
   // even when 50ms event batching collapses them into a single render.
   const prevResultCountRef = useRef(resultCount)
   useEffect(() => {
@@ -90,7 +90,7 @@ export default function useMessageQueue({
   }, [errorMessage, manager])
 
   // Restore from localStorage on session change (or clear if nothing stored).
-  // On fresh-session init (null→value), merge stored items with in-memory orphans
+  // On fresh-session init (null->value), merge stored items with in-memory orphans
   // that were enqueued before sessionId was available for persistence.
   const prevSessionIdRef = useRef(sessionId)
   useEffect(() => {

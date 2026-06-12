@@ -1,4 +1,4 @@
-/** Board list hook — discover and refresh workspace boards. */
+/** Board list hook - discover and refresh workspace boards. */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listBoards } from '../../../api/boards'

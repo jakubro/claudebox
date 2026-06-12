@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.projection — session summary accumulator."""
+"""Tests for claudebox.agent_session.orchestration.projection - session summary accumulator."""
 
 import asyncio
 
@@ -14,40 +14,54 @@ from ._helpers import make_published_event as _make_event
 
 
 class TestCategorizeCommands:
-    """Test slash command classification."""
+    """Test slash command classification.
 
-    @pytest.fixture(autouse=True)
-    def _isolate_home(self, tmp_path, monkeypatch):
-        """Redirect Path.home() so ClaudeRuntime.get_skills() can't reach host ~/.claude."""
+    _categorize_commands is an instance method that sources skill metadata
+    from the active runtime. These bucket-classification tests construct a
+    runtime-less Projection - categorization still works with name-only
+    fallback entries.
+    """
 
-        monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: tmp_path))
+    @staticmethod
+    def _projection(tmp_workspace, monkeypatch) -> Projection:
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
 
-    def test_builtin_command(self):
-        result = Projection._categorize_commands(["help"])
+        return Projection(
+            session_id="sess-categorize", workspace=Workspace(start_dir=tmp_workspace)
+        )
+
+    def test_builtin_command(self, tmp_workspace, monkeypatch):
+        result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(["help"])
         assert result["builtin"] == [{"name": "help"}]
         assert result["custom"] == []
         assert result["mcp"] == []
 
-    def test_mcp_command(self):
-        result = Projection._categorize_commands(["mcp__slack__send"])
+    def test_mcp_command(self, tmp_workspace, monkeypatch):
+        result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(
+            ["mcp__slack__send"]
+        )
         assert result["mcp"] == [{"name": "mcp__slack__send"}]
 
-    def test_custom_command(self):
-        result = Projection._categorize_commands(["my-tool"])
+    def test_custom_command(self, tmp_workspace, monkeypatch):
+        result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(["my-tool"])
         assert result["custom"] == [{"name": "my-tool"}]
 
-    def test_mixed_commands(self):
-        result = Projection._categorize_commands(["help", "mcp__jira__create", "deploy"])
+    def test_mixed_commands(self, tmp_workspace, monkeypatch):
+        result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(
+            ["help", "mcp__jira__create", "deploy"]
+        )
         assert result["builtin"] == [{"name": "help"}]
         assert result["mcp"] == [{"name": "mcp__jira__create"}]
         assert result["custom"] == [{"name": "deploy"}]
 
-    def test_empty_list(self):
-        result = Projection._categorize_commands([])
+    def test_empty_list(self, tmp_workspace, monkeypatch):
+        result = self._projection(tmp_workspace, monkeypatch)._categorize_commands([])
         assert result == {"custom": [], "mcp": [], "builtin": []}
 
-    def test_all_builtin_commands_recognized(self):
-        result = Projection._categorize_commands(list(BUILTIN_COMMANDS))
+    def test_all_builtin_commands_recognized(self, tmp_workspace, monkeypatch):
+        result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(
+            list(BUILTIN_COMMANDS)
+        )
         assert len(result["builtin"]) == len(BUILTIN_COMMANDS)
         assert result["custom"] == []
         assert result["mcp"] == []
@@ -65,6 +79,7 @@ class TestProjectionUpdate:
 
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
+
         return Projection("test-session", ws)
 
     def test_human_event_increments_turns(self, tmp_workspace, monkeypatch):
@@ -152,6 +167,7 @@ class TestProjectionUpdate:
             proj._path,
             {
                 "session_id": "null-acc-session",
+                "fork_point_cost_usd": 0.0,
                 "num_turns": None,
                 "total_cost_usd": None,
                 "total_duration_ms": None,
@@ -206,6 +222,7 @@ class TestRefreshDaemonFields:
 
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
+
         return Projection("test-session", ws)
 
     def test_name_updated_from_disk(self, tmp_workspace, monkeypatch):
@@ -275,6 +292,7 @@ class TestProjectionUpdateFields:
 
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
+
         return Projection("test-session", ws)
 
     def test_sets_known_field(self, tmp_workspace, monkeypatch):
@@ -313,6 +331,7 @@ class TestProjectionEffortLevel:
     def _make_projection(tmp_workspace, monkeypatch) -> Projection:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
+
         return Projection("test-session", ws)
 
     def test_effort_level_updated(self, tmp_workspace, monkeypatch):
@@ -333,6 +352,7 @@ class TestProjectionSaveLifecycle:
     def _make_projection(tmp_workspace, monkeypatch) -> Projection:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
+
         return Projection("test-session", ws)
 
     @pytest.mark.anyio

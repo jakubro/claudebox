@@ -1,4 +1,4 @@
-/** Pure badge-count aggregation — extracted from useBadgeCounts.js, no React APIs. */
+/** Pure badge-count aggregation - extracted from useBadgeCounts.js, no React APIs. */
 
 import { TaskStatus, TodoStatus } from '../../../config/schema'
 import { extractTasks, getMcpServers } from '../../../utils/eventProcessing'

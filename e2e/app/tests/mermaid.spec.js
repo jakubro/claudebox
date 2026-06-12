@@ -44,7 +44,7 @@ test.describe('Mermaid Diagrams', () => {
         }
         return getComputedStyle(el).backgroundColor
       })
-      // Dark theme means the color is not white/light — expect a non-trivially-light value
+      // Dark theme means the color is not white/light - expect a non-trivially-light value
       expect(bgColor).toBeTruthy()
       expect(bgColor).not.toBe('rgb(255, 255, 255)')
       expect(bgColor).not.toBe('#ffffff')

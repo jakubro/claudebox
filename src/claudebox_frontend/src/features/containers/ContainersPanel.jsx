@@ -1,10 +1,10 @@
-/** Cross-workspace container list — bottom-left slot panel. */
+/** Cross-workspace container list - bottom-left slot panel. */
 
 import { useMemo } from 'react'
 import ContainerRow from './ContainerRow'
 import useContainerList from './hooks/useContainerList'
 
-/** State group sort order — running first, dead-but-tracked last. */
+/** State group sort order - running first, dead-but-tracked last. */
 const STATE_ORDER = {
   running: 0,
   starting: 1,

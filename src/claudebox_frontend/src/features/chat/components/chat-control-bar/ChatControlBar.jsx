@@ -220,6 +220,7 @@ export default function ChatControlBar({
           onClick={handleJumpToBottom}
           disabled={isAutoScrollEnabled}
           aria-pressed={isAutoScrollEnabled}
+          data-testid="autoscroll-indicator"
           title={isAutoScrollEnabled ? 'Autoscroll enabled' : 'Last message (Alt+End)'}>
           <ArrowDownToLine size={12} />
         </button>

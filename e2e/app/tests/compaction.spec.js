@@ -156,7 +156,7 @@ test.describe('Compaction In Progress', () => {
       message_data: { compact_metadata: { trigger: 'context_limit' } },
     })
 
-    // Boundary deliberately omitted — simulates lost-boundary state.
+    // Boundary deliberately omitted - simulates lost-boundary state.
     await sse.sendEvent({
       type: 'user',
       subtype: 'message',
@@ -167,8 +167,8 @@ test.describe('Compaction In Progress', () => {
       ts: '2025-01-18T12:00:02Z',
     })
 
-    // The reducer's isCompacting flag — exposed via __isCompacting test hook on
-    // the chat panel — must be false after the human turn arrives.
+    // The reducer's isCompacting flag - exposed via __isCompacting test hook on
+    // the chat panel - must be false after the human turn arrives.
     await expect
       .poll(async () => {
         return await page.evaluate(() => {

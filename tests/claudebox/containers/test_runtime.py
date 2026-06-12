@@ -1,4 +1,4 @@
-"""Tests for claudebox.containers.runtime — facade behavior over backend."""
+"""Tests for claudebox.containers.runtime - facade behavior over backend."""
 
 from unittest.mock import MagicMock, patch
 
@@ -48,6 +48,7 @@ class TestRunReturnsExitCode:
 
 def _label_args(call_args) -> list[str]:
     backend_args = list(call_args.args)
+
     return [backend_args[i + 1] for i, a in enumerate(backend_args) if a == "--label"]
 
 

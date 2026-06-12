@@ -1,0 +1,4 @@
+{"type":"user","subtype":"text","is_human":true,"content":"List the MCP resources available.","ts":"2026-06-08T11:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"list_mcp_resources","ts":"2026-06-08T11:00:01Z","tool_use_id":"tool_001","tool_name":"list_mcp_resources","tool_input":{},"id":"evt_002","primary":false,"is_human":false}
+{"type":"user","subtype":"tool_result","ts":"2026-06-08T11:00:02Z","tool_use_id":"tool_001","content":"[{\"server\":\"context7\",\"uri\":\"docs://intro\",\"name\":\"Intro\",\"description\":\"Getting started\",\"mimetype\":\"text/markdown\"}]","id":"evt_003","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-06-08T11:00:03Z","id":"evt_004","primary":false,"is_human":false}

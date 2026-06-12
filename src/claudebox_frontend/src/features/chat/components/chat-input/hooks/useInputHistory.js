@@ -16,13 +16,13 @@ const DEFAULT_HISTORY = [] // audit-ignore: misplaced-constant
  *
  * @param {string|null} sessionId - Current session ID
  * @param {RefObject} eventsRef - Ref to SSE events array (for fallback init without subscribing)
- * @param {boolean} hasEvents - Stable boolean reactive trigger: flips false→true
+ * @param {boolean} hasEvents - Stable boolean reactive trigger: flips false->true
  *   when events first arrive per session; allows the bootstrap effect to fire
  *   exactly once without subscribing to per-token events.length churn.
  * @param {RefObject<{current: string, stack: string[]}>} draftsRef - Live ref to
  *   drafts. Mirrors React state on render AND is updated synchronously by the
  *   ChatInput keystroke handler (which bypasses React state for perf). Must be
- *   read via .current on demand — never closed over by value.
+ *   read via .current on demand - never closed over by value.
  * @param {function} saveDrafts - Function to save drafts
  * @param {RefObject} textareaRef - Ref to textarea element
  * @param {function} resizeTextarea - Function to resize textarea
@@ -55,7 +55,7 @@ export default function useInputHistory(
 
   // Keep manager in sync with current data. Drafts are read live via ref (not from
   // a render-time snapshot) because ChatInput's persistDraftDirect bypasses React
-  // state — the React `drafts` value would lag behind the typed text.
+  // state - the React `drafts` value would lag behind the typed text.
   manager.setHistory(inputHistory)
   manager.setDrafts(draftsRef.current)
 
@@ -74,7 +74,7 @@ export default function useInputHistory(
   }, [sessionId, setInputHistory, manager])
 
   // Bootstrap from events when localStorage has no history. Re-fires when
-  // hasEvents flips false→true (once per session); reads the lazy eventsRef
+  // hasEvents flips false->true (once per session); reads the lazy eventsRef
   // for the actual content so we don't subscribe to per-token churn.
   useEffect(() => {
     if (!sessionId || inputHistory.length > 0 || !hasEvents) {
@@ -189,7 +189,7 @@ export default function useInputHistory(
 
   const prepareSubmit = useCallback(
     content => {
-      // Refresh draft snapshot — prepareSubmit reads stack to compute newStack.
+      // Refresh draft snapshot - prepareSubmit reads stack to compute newStack.
       manager.setDrafts(draftsRef.current)
       const result = manager.prepareSubmit(content)
       saveDrafts({ current: '', stack: result.newStack })

@@ -1,6 +1,7 @@
-"""Claudebox runtime library — shared utilities for hooks, sessions, and I/O."""
+"""Claudebox runtime library - shared utilities for hooks, sessions, and I/O."""
 
 from . import constants
+from .agent_session._registry import resolve_runtime_class
 from .agent_session.catalogs import (
     ContextUsage,
     EffortLevel,
@@ -61,6 +62,7 @@ from .core.io import (
     write_json,
     write_text,
 )
+from .core.log_rendering import render_event
 from .core.logging import (
     close_log_file,
     configure_logging,

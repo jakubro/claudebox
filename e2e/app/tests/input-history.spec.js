@@ -365,7 +365,7 @@ test.describe('Input History', () => {
       await input.press('ArrowDown')
       await expect(input).toHaveValue('')
 
-      // Navigate back up — edit should be preserved
+      // Navigate back up - edit should be preserved
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Edited message')
@@ -408,7 +408,7 @@ test.describe('Input History', () => {
           await input.press('Home')
           await input.press('ArrowUp')
           const value = await input.inputValue()
-          // Reset if not yet loaded — press Down to return to draft
+          // Reset if not yet loaded - press Down to return to draft
           if (value !== 'Persisted message') {
             await input.press('End')
             await input.press('ArrowDown')

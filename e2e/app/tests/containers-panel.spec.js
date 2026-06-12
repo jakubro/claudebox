@@ -211,7 +211,7 @@ test.describe('Containers Panel', () => {
 
   // SPEC: panel-containers:id-tooltip-format
   // SPEC: panel-containers:id-copy-on-click
-  test('container id cell exposes Container — <full id> tooltip and copies the full id on click', async ({
+  test('container id cell exposes Container - <full id> tooltip and copies the full id on click', async ({
     page,
     context,
   }) => {
@@ -223,7 +223,7 @@ test.describe('Containers Panel', () => {
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     const firstId = page.locator('[data-testid="panel-containers"] .containers-id').first()
-    await expect(firstId).toHaveAttribute('title', 'Container — bk1111111111-aaaa')
+    await expect(firstId).toHaveAttribute('title', 'Container - bk1111111111-aaaa')
 
     await firstId.click()
     const copied = await page.evaluate(() => navigator.clipboard.readText())
@@ -235,7 +235,7 @@ test.describe('Containers Panel', () => {
 
   // SPEC: panel-containers:session-id-tooltip-format
   // SPEC: panel-containers:session-id-copy-on-click
-  test('session id cell exposes Session directory — <full path> tooltip and copies the path on click', async ({
+  test('session id cell exposes Session directory - <full path> tooltip and copies the path on click', async ({
     page,
     context,
   }) => {
@@ -251,7 +251,7 @@ test.describe('Containers Panel', () => {
       .first()
     await expect(firstSessionId).toHaveAttribute(
       'title',
-      'Session directory — /home/u/.claudebox/sessions/s-foo-1',
+      'Session directory - /home/u/.claudebox/sessions/s-foo-1',
     )
 
     await firstSessionId.click()
@@ -291,7 +291,7 @@ test.describe('Containers Panel', () => {
     // measurably different widths (`18h ago`, `23h ago`, `1d ago`, `2d ago`).
     // created_at is computed relative to Date.now() so the strings stay stable
     // across the test window. One container's session id matches the fixture's
-    // s-foo-1 so URL navigation marks its row as current (no Resume control) —
+    // s-foo-1 so URL navigation marks its row as current (no Resume control) -
     // exercises the actions-column reservation case.
     const now = Date.now()
     const hours = h => new Date(now - h * 3600 * 1000).toISOString()
@@ -432,8 +432,8 @@ test.describe('Containers Panel', () => {
       probe.max_delta_age = maxDelta(probe.x_age)
       probe.max_delta_actions = maxDelta(probe.x_actions)
       probe.stop_x_delta = Math.abs(probe.x_stop_current - probe.x_stop_noncurrent)
-      fs.writeFileSync(`${dir}/73.198-probe.json`, JSON.stringify(probe, null, 2))
-      await page.screenshot({ path: `${dir}/73.198.png`, fullPage: false })
+      fs.writeFileSync(`${dir}/containers-panel-probe.json`, JSON.stringify(probe, null, 2))
+      await page.screenshot({ path: `${dir}/containers-panel.png`, fullPage: false })
     }
   })
 

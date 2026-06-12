@@ -1,4 +1,4 @@
-/** UI layout constants — dimensions, sizes, visual thresholds. */
+/** UI layout constants - dimensions, sizes, visual thresholds. */
 
 export const DEFAULT_PANEL_WIDTH = 0.15
 export const DEFAULT_PANEL_HEIGHT = 0.25
@@ -10,7 +10,7 @@ export const MINIMAP_MOUSE_LEAVE_DELAY = 500
 export const MINIMAP_MIN_THUMB_HEIGHT = 16
 export const MINIMAP_PROXIMITY_THRESHOLD = 50
 export const FLOATING_PANEL_WIDTH = 300
-/** Per-turn intrinsic height estimate — must match Turn.css contain-intrinsic-size. */
+/** Per-turn intrinsic height estimate - must match Turn.css contain-intrinsic-size. */
 export const INTRINSIC_TURN_HEIGHT_PX = 400
 
 export const TURN_BASE_HEIGHT_PX = 80

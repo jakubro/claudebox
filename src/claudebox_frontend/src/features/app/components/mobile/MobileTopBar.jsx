@@ -1,4 +1,4 @@
-/** Mobile top bar — hamburger, session name, details toggle. */
+/** Mobile top bar - hamburger, session name, details toggle. */
 
 import { Menu, MoreHorizontal } from 'lucide-react'
 import { useSessionData } from '../../../../context/SessionDataContext'

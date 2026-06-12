@@ -1,31 +1,8 @@
 /** Pure helpers for layout serialization and persistence operations. */
 
-const FILE_COMPONENTS = new Set(['files', 'fileEditor'])
-
-/** Strip `session:` panels — sessionStorage-only, not server-persisted. */
+/** Strip `session:` panels - sessionStorage-only, not server-persisted. */
 export function stripSessionPanels(layout) {
   return stripPanels(layout, key => key.startsWith('session:'))
-}
-
-/** Strip file panels from a persisted layout (legacy persisted IDs). */
-export function stripFilePanels(layout) {
-  if (!(layout?.panels && layout?.grid?.root)) {
-    return layout
-  }
-  return stripPanels(layout, key => {
-    if (FILE_COMPONENTS.has(layout.panels[key]?.view?.content?.component)) {
-      return true
-    }
-    if (key.startsWith('file:')) {
-      return true
-    }
-    return key === 'files'
-  })
-}
-
-/** Strip legacy bottom-slot panels (currently just `logs`) from a persisted layout. */
-export function stripBottomPanels(layout) {
-  return stripPanels(layout, key => key === 'logs')
 }
 
 export function buildSaveOps(api, manager, preMaximizeLayout) {

@@ -1,4 +1,4 @@
-"""File domain exceptions — typed errors with HTTP status codes."""
+"""File domain exceptions - typed errors with HTTP status codes."""
 
 from claudebox import ApiError
 

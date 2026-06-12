@@ -16,7 +16,7 @@ import PathHighlighter from './PathHighlighter'
  * Render markdown content with GFM, math, syntax-highlighted code blocks, mermaid, and path highlighting.
  *
  * Path highlighting and session-dir resolution gracefully degrade when used outside
- * SessionDataContext — `useSessionDir` returns null and `usePathResolution` returns an empty map.
+ * SessionDataContext - `useSessionDir` returns null and `usePathResolution` returns an empty map.
  *
  * @param {Object} props
  * @param {string} props.children - Markdown text to render.
@@ -77,12 +77,12 @@ function Markdown({ children, className }) {
             language
           const code = String(children).replace(/\n$/, '')
 
-          // Mermaid diagrams — render as visual SVG
+          // Mermaid diagrams - render as visual SVG
           if (language === 'mermaid') {
             return <MermaidDiagram chart={code} />
           }
 
-          // Block code — delegated to memoized child so finalized fences
+          // Block code - delegated to memoized child so finalized fences
           // bail out of re-render during streaming flushes.
           if (isBlock) {
             return <MarkdownCodeFence code={code} language={language} />

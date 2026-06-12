@@ -1,4 +1,4 @@
-"""Tests for claudebox.structures — DataClass mixin and deep merge."""
+"""Tests for claudebox.structures - DataClass mixin and deep merge."""
 
 import dataclasses
 

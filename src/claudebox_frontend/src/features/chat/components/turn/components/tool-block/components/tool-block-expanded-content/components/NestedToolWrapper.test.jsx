@@ -5,8 +5,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { TurnProvider } from '../../../../../TurnContext'
 import NestedToolWrapper from './NestedToolWrapper'
 
-vi.mock('../../../../../../../../../utils/eventProcessing', () => ({
-  processNestedEvents: events => events || [],
+vi.mock('../../../../../../../../../utils/eventProcessing', async importOriginal => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    processNestedEvents: events => events || [],
+  }
+})
+
+// useCapabilities depends on SessionData context which isn't provided here;
+// stub it so ToolBlock renders without requiring the full provider tree.
+vi.mock('../../../../../../../../../hooks/useCapabilities', () => ({
+  default: () => ({
+    capabilities: { supports_ask_user_question: true },
+    runtimeName: 'Claude',
+  }),
 }))
 
 // Mock heavy children of ToolBlock to avoid CodeMirror/Markdown/JsonView imports
@@ -50,7 +63,7 @@ describe('NestedToolWrapper', () => {
   }
 
   const readResult = {
-    content: '     1→const x = 1\n     2→const y = 2',
+    content: '     1\u2192const x = 1\n     2\u2192const y = 2',
   }
 
   it('renders ToolBlock with nested styling', () => {

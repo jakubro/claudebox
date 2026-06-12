@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.domain.mutation_observer — session mutation detection."""
+"""Tests for claudebox_daemon.domain.mutation_observer - session mutation detection."""
 
 import asyncio
 from pathlib import Path
@@ -38,6 +38,7 @@ def _make_workspace_service(containers=None, path=None):
     svc.container_service.list_all.return_value = containers or []
     svc.session_service = MagicMock()
     svc.session_service._broadcast_sessions_changed = AsyncMock()
+
     return svc
 
 
@@ -48,6 +49,7 @@ def _make_observer(workspace_services=None):
     daemon.list_workspaces = AsyncMock(return_value=workspace_services or [])
     daemon.proxy = MagicMock()
     daemon.proxy.send = AsyncMock()
+
     return SessionMutationObserver(daemon)
 
 
@@ -168,6 +170,7 @@ class TestSessionMutationObserverLifecycle:
 
         # Clean up the real task to prevent "task was destroyed" warning
         observer._task.cancel()
+
         try:
             await observer._task
         except asyncio.CancelledError:

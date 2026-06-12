@@ -37,7 +37,7 @@ export default function BookmarksPanel() {
   const { deriveSessionStatus } = useContainerMap()
   const { markUserIntentRef, markProgrammaticScrollRef } = useAppActions()
 
-  // Brief visual flash on the originating item before window.open paints —
+  // Brief visual flash on the originating item before window.open paints -
   // confirms the click registered even though openSessionInNewTab is sync.
   const [openingKey, setOpeningKey] = useState(null)
 
@@ -106,7 +106,7 @@ export default function BookmarksPanel() {
       if (scrollContainer) {
         // Mirror the direction-aware gate ChatController applies to wheel/key
         // gestures: if the post-scroll viewport will not be at-bottom, the
-        // click expresses user intent to leave the live tail — disengage
+        // click expresses user intent to leave the live tail - disengage
         // autoscroll synchronously so the next streaming tick won't yank the
         // view back. markProgrammaticScroll always brackets the smooth-scroll
         // writes so intermediate scroll events don't spuriously re-engage.

@@ -87,7 +87,7 @@ export default function ChatPanel() {
     focusChatTab,
   } = useAppActions()
 
-  // Rewind / fork orchestration — extracted to keep ChatPanel below the
+  // Rewind / fork orchestration - extracted to keep ChatPanel below the
   // cognitive-complexity gate. Wraps the 4 handlers and their associated
   // state (rewindTurnId, rewindMode, forkingTurnId, controlBarForking).
   const {
@@ -115,7 +115,7 @@ export default function ChatPanel() {
   // runs exactly once per ChatPanel mount, not per render. Inner refs are
   // identity-stable (AppActionsContext useRef). Without this, every ChatPanel
   // render disposes and re-attaches ResizeObserver + wheel/touch/keydown
-  // listeners — wasteful churn under streaming.
+  // listeners - wasteful churn under streaming.
   const contextRefs = useMemo(
     () => ({ chatScrollPositionRef, chatAutoScrollEnabledRef }),
     [chatScrollPositionRef, chatAutoScrollEnabledRef],
@@ -128,6 +128,7 @@ export default function ChatPanel() {
       handleScroll,
       markProgrammaticScroll,
       markUserIntent,
+      markReturnedToBottom,
       isAutoScrollEnabled: controllerAutoScrollEnabled,
     },
     pending: { showPendingMessages },
@@ -146,7 +147,7 @@ export default function ChatPanel() {
     contextRefs,
   })
 
-  // Bridge deferred→pending visual continuity: hold the last deferred content
+  // Bridge deferred->pending visual continuity: hold the last deferred content
   // for one render cycle after deferredSend clears, until showPendingMessages
   // populates.
   const [deferredHold, setDeferredHold] = useState(null)
@@ -166,10 +167,13 @@ export default function ChatPanel() {
   // New-session workflow (welcome page deferred-send relies on this)
   const { executeNewSession } = useNewSession()
 
-  // Message jump navigation (Alt+Up/Down, Alt+Home/End, control bar buttons)
+  // Message jump navigation (Alt+Up/Down, Alt+Home/End, control bar buttons).
+  // Off-bottom jumps disengage autoscroll; at-bottom jumps re-engage it.
   const { jumpPrev, jumpNext, jumpTop, jumpBottom } = useMessageJump(
     messagesRef,
     markProgrammaticScroll,
+    markUserIntent,
+    markReturnedToBottom,
   )
 
   // Register jump callbacks so App-level shortcuts can reach them
@@ -260,7 +264,7 @@ export default function ChatPanel() {
     })
   }, [isReplaying, activeTurnId, activeMessageType, chatAutoScrollEnabledRef, messagesRef])
 
-  // Autoscroll indicator state — driven by useChatController which forwards
+  // Autoscroll indicator state - driven by useChatController which forwards
   // controller.onAutoScrollChange transitions into reactive state.
   const isAutoScrollEnabled = controllerAutoScrollEnabled
   const [minimapPinned, setMinimapPinned] = useState(true)
@@ -306,7 +310,7 @@ export default function ChatPanel() {
     [],
   )
 
-  // Throttled URL-segment sync — writes `/turns/<role>-<id>` while paused at a
+  // Throttled URL-segment sync - writes `/turns/<role>-<id>` while paused at a
   // turn, clears the segment when autoscroll re-engages at bottom. Suppressed
   // while replay is in flight so the URL doesn't churn during initial load.
   const turnUrlThrottleRef = useRef(null)
@@ -340,7 +344,7 @@ export default function ChatPanel() {
     }
   }, [])
 
-  // Scroll handler — controller persists position and re-engages autoscroll
+  // Scroll handler - controller persists position and re-engages autoscroll
   // when the user manually scrolls back to the bottom; no React state writes
   // per scroll event (indicator state is updated only on transitions via the
   // onAutoScrollChange callback below, polled when the ref changes).
@@ -374,10 +378,10 @@ export default function ChatPanel() {
   // Cross-turn dedup: hide errored AskUserQuestion retries (same question headers)
   const duplicateAskUserIds = useMemo(() => computeDuplicateAskUserIds(turns), [turns])
 
-  // Active/historical split (73.192): the last turn carries the live streaming
+  // Active/historical split: the last turn carries the live streaming
   // events and is rendered directly below; earlier turns are complete and render
   // through the memoized HistoricalTurnList so they don't reconcile on each
-  // streaming flush. The hand-off is the slice boundary moving as turns grow —
+  // streaming flush. The hand-off is the slice boundary moving as turns grow -
   // keys (turn_id) are preserved, so the completing turn does not remount.
   const lastTurnIndex = turns.length - 1
   const activeTurn = turns.length > 0 ? turns[lastTurnIndex] : null
@@ -425,7 +429,7 @@ export default function ChatPanel() {
     [send],
   )
 
-  // Edit a queued message — remove from queue, pass to ChatInput via state
+  // Edit a queued message - remove from queue, pass to ChatInput via state
   const [editingQueueItem, setEditingQueueItem] = useState(null)
 
   const handleEditQueued = useCallback(
@@ -456,13 +460,13 @@ export default function ChatPanel() {
     [editingQueueItem, clearEditingQueueItem],
   )
 
-  // Boolean derivative of events.length — flips once per session (false→true on
+  // Boolean derivative of events.length - flips once per session (false->true on
   // first event arrival) and stays stable thereafter, so it doesn't churn
   // ChatInput's memo() across per-token re-renders.
   const hasEvents = events.length > 0
 
   // Bundle ChatInputArea's flag-style props into a single object so the call
-  // site stays under the props-per-component limit. Recomputed every render —
+  // site stays under the props-per-component limit. Recomputed every render -
   // ChatInputArea itself isn't memoized.
   const inputState = {
     isConnected,
@@ -498,7 +502,7 @@ export default function ChatPanel() {
   // Welcome state: no container, not creating, no active session.
   // Welcome and chat states share the same outer panel structure so the
   // composer (.chat-input wrapper) is rendered in identical DOM position
-  // and the same ChatInput React instance persists across the welcome→chat
+  // and the same ChatInput React instance persists across the welcome->chat
   // transition (required for the always-focused composer invariant).
   const isWelcome = !(containerId || isCreating || activeSessionId)
 
@@ -517,8 +521,8 @@ export default function ChatPanel() {
     [executeNewSession, deferSend],
   )
 
-  // ChatInputArea's action bundle — mirrors inputState above. onWelcomeDeferSend
-  // is the welcome→active bridge; the rest forward unchanged.
+  // ChatInputArea's action bundle - mirrors inputState above. onWelcomeDeferSend
+  // is the welcome->active bridge; the rest forward unchanged.
   const inputActions = {
     send,
     enqueueMessage,

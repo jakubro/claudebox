@@ -1,4 +1,4 @@
-"""Daemon domain exceptions — typed errors with HTTP status codes."""
+"""Daemon domain exceptions - typed errors with HTTP status codes."""
 
 
 class DaemonError(Exception):

@@ -1,4 +1,4 @@
-/** Single row in the syntax-highlighted code block — gutter + content cells. */
+/** Single row in the syntax-highlighted code block - gutter + content cells. */
 
 /**
  * Render one row of a syntax-highlighted code block.

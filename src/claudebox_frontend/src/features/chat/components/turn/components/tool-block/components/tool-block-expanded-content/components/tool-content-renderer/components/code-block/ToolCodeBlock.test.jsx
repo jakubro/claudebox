@@ -19,7 +19,7 @@ describe('ToolCodeBlock', () => {
 
   describe('Read tool', () => {
     it('renders Read output with line numbers in gutter', () => {
-      const details = '     1→# Heading\n     2→\n     3→Body text'
+      const details = '     1\u2192# Heading\n     2\u2192\n     3\u2192Body text'
       const { container } = render(<ToolCodeBlock toolName="Read" details={details} />)
 
       const lineNums = container.querySelectorAll('.code-block-linenum')
@@ -32,7 +32,7 @@ describe('ToolCodeBlock', () => {
 
   describe('Write tool', () => {
     it('renders Write output with line numbers in gutter', () => {
-      const details = ' 1→const x = 1\n 2→const y = 2'
+      const details = ' 1\u2192const x = 1\n 2\u2192const y = 2'
       const { container } = render(<ToolCodeBlock toolName="Write" details={details} />)
 
       const lineNums = container.querySelectorAll('.code-block-linenum')

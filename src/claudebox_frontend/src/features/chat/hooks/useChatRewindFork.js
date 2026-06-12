@@ -1,4 +1,4 @@
-/** Rewind / fork orchestration for ChatPanel — extracted to keep the panel below the complexity gate. */
+/** Rewind / fork orchestration for ChatPanel - extracted to keep the panel below the complexity gate. */
 
 import { useCallback, useState } from 'react'
 import { forkSession } from '../../../api/sessions'
@@ -58,7 +58,7 @@ export default function useChatRewindFork({
             }
           }
         } else {
-          // fork-here (default) — reuse the live container, replace current view.
+          // fork-here (default) - reuse the live container, replace current view.
           const data = await forkSession(sessionId, turnId, { reuse_container: true })
           if (data?.session_id) {
             seedSession(data)
@@ -87,7 +87,7 @@ export default function useChatRewindFork({
     ],
   )
 
-  /** Handle rewind request from a turn — show modal only when fork-here while agent is working. */
+  /** Handle rewind request from a turn - show modal only when fork-here while agent is working. */
   const handleRewindRequest = useCallback(
     (turnId, mode = 'fork-here') => {
       if (mode === 'fork-here' && isResponding) {
@@ -100,7 +100,7 @@ export default function useChatRewindFork({
     [isResponding, executeFork],
   )
 
-  /** Handle fork request from control bar — show modal only when fork-here while agent is working. */
+  /** Handle fork request from control bar - show modal only when fork-here while agent is working. */
   const handleForkRequest = useCallback(
     async (mode = 'fork-here') => {
       const turnId = null

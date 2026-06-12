@@ -1,4 +1,4 @@
-"""Board domain exceptions — daemon-specific and re-exported from extension."""
+"""Board domain exceptions - daemon-specific and re-exported from extension."""
 
 from claudebox.extensions.tickets import (  # noqa: F401
     BoardParseError,

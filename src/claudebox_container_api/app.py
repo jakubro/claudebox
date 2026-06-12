@@ -1,4 +1,4 @@
-"""FastAPI app factory — container API entry point."""
+"""FastAPI app factory - container API entry point."""
 
 import contextlib
 import os

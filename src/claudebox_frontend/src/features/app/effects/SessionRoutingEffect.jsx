@@ -95,19 +95,19 @@ export default function SessionRoutingEffect() {
     const seq = ++sequenceRef.current
 
     if (!activeSessionId) {
-      // Navigated home — clear everything, disconnect without reconnect
+      // Navigated home - clear everything, disconnect without reconnect
       clearSessionData()
       clearStash()
       disconnectSSE()
       return
     }
 
-    // Deep link to different workspace — switch workspace first
+    // Deep link to different workspace - switch workspace first
     if (activeWorkspaceId && activeWorkspaceId !== workspaceId) {
       selectWorkspace(activeWorkspaceId)
     }
 
-    // Skip resume for just-created sessions — useNewSession already set up the container
+    // Skip resume for just-created sessions - useNewSession already set up the container
     // and SSE will connect naturally via the container ID change.
     if (!isCreating) {
       handleResume(activeSessionId, seq)

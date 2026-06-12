@@ -11,7 +11,7 @@ import {
 import CodeBlock from './CodeBlock'
 import { parseEditLines, parseGrepLines, parseReadWriteLines } from './utils/outputLineParsers'
 
-/** Code parser lookup — maps registry codeParser keys to parse functions. */
+/** Code parser lookup - maps registry codeParser keys to parse functions. */
 const CODE_PARSERS = {
   readWrite: details => ({ lines: parseReadWriteLines(details), hasClickableFiles: false }),
   grep: (details, outputMode, showFullPaths) => {
@@ -53,7 +53,7 @@ export default function ToolCodeBlock({ toolName, details, outputMode = null, li
       return parser(details, outputMode, showFullPaths, lineOffset)
     }
 
-    // Unknown tool — render as plain lines
+    // Unknown tool - render as plain lines
     return {
       lines: details.split('\n').map(line => ({ type: 'normal', content: line })),
       hasClickableFiles: false,

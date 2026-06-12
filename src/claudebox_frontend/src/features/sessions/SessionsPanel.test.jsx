@@ -271,7 +271,7 @@ describe('SessionsPanel', () => {
 
     const items = screen.getAllByTestId('session-item')
     expect(items).toHaveLength(3)
-    // Pinned session sorted first — shows first 8 chars of session_id
+    // Pinned session sorted first - shows first 8 chars of session_id
     expect(items[0]).toHaveTextContent('pinned-1')
   })
 
@@ -294,7 +294,7 @@ describe('SessionsPanel', () => {
 
     const btn = screen.getByTestId('session-new-session-btn')
     expect(btn).toBeDisabled()
-    // Loader2 gets className="spin" — verify spinner is present
+    // Loader2 gets className="spin" - verify spinner is present
     expect(btn.querySelector('.spin')).toBeInTheDocument()
   })
 
@@ -350,7 +350,7 @@ describe('SessionsPanel handleRename', () => {
 
     render(<SessionsPanel />)
 
-    // Real SessionItem: click pencil → type name → click save
+    // Real SessionItem: click pencil -> type name -> click save
     await user.click(screen.getByTitle('Rename session'))
     const input = screen.getByPlaceholderText('Session name...')
     await user.type(input, 'new-name')
@@ -511,7 +511,7 @@ describe('SessionsPanel auto-expand ancestors', () => {
 
     render(<SessionsPanel />)
 
-    // Child visible (ancestor expanded) — both items rendered
+    // Child visible (ancestor expanded) - both items rendered
     const items = screen.getAllByTestId('session-item')
     expect(items).toHaveLength(2)
     // Collapse button visible (expanded state)

@@ -1,4 +1,4 @@
-"""Daemon-specific constants — health polling, shutdown, registry filenames."""
+"""Daemon-specific constants - health polling, shutdown, registry filenames."""
 
 from datetime import timedelta
 
@@ -10,16 +10,16 @@ DAEMON_STATE_FILE = "daemon-state.json"  # per-workspace container registry
 UI_STATE_FILE = "ui-state.json"  # per-workspace UI state
 
 
-# Container health — ongoing monitoring
+# Container health - ongoing monitoring
 CONTAINER_HEALTH_MONITOR_INTERVAL = timedelta(seconds=5)
 CONTAINER_HEALTH_MONITOR_TIMEOUT = httpx.Timeout(10.0)
-CONTAINER_HEALTH_MAX_FAILURES = 3  # consecutive failures → crashed
+CONTAINER_HEALTH_MAX_FAILURES = 3  # consecutive failures -> crashed
 
-# Session mutation polling — detecting in-session content changes
+# Session mutation polling - detecting in-session content changes
 SESSION_MUTATION_POLL_INTERVAL = timedelta(seconds=5)
 SESSION_MUTATION_POLL_TIMEOUT = httpx.Timeout(10.0)
 
-# Container health — startup
+# Container health - startup
 CONTAINER_HEALTH_STARTUP_MAX_RETRIES = 30  # max poll attempts
 CONTAINER_HEALTH_STARTUP_INTERVAL = timedelta(seconds=1)
 CONTAINER_HEALTH_STARTUP_TIMEOUT = timedelta(seconds=3)  # per-attempt HTTP timeout

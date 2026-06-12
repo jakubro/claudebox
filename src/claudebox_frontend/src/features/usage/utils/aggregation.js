@@ -9,10 +9,15 @@ export const INTERVALS = [
 
 /**
  * Aggregate cost from sessions within a time interval.
+ *
+ * Each session contributes only its post-fork delta: its full reported cost
+ * minus the fork-point snapshot. Root sessions have a zero snapshot so they
+ * contribute their full cost; forks contribute only what they accrued past
+ * the inherited transcript, avoiding double-counting against the ancestor.
  */
 export function aggregateCost(sessions, intervalMs) {
   const cutoff = intervalMs === Infinity ? 0 : Date.now() - intervalMs
   return sessions
     .filter(s => new Date(s.started_at).getTime() >= cutoff)
-    .reduce((sum, s) => sum + (s.total_cost_usd || 0), 0)
+    .reduce((sum, s) => sum + (s.total_cost_usd || 0) - s.fork_point_cost_usd, 0)
 }

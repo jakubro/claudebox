@@ -34,7 +34,7 @@ export default function WelcomeContent() {
   const isMobile = useIsMobile()
 
   const workspace = workspaces.find(w => w.id === workspaceId)
-  const name = workspaceId || '—'
+  const name = workspaceId || '-'
   const path = workspace?.path || ''
 
   const nameStyle = workspaceColor ? { color: workspaceColor } : undefined

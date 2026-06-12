@@ -17,7 +17,7 @@ export default function useAttachments({ setError, textareaRef }) {
 
   // Block paste when middle-click originates outside textarea (X11 behavior)
   // Note: Must use mousedown with capture phase - IconTab stops propagation, and X11 injects paste on button DOWN
-  // Flag cleared on mouseup+rAF instead of setTimeout — handles held middle-click (>100ms hold)
+  // Flag cleared on mouseup+rAF instead of setTimeout - handles held middle-click (>100ms hold)
   useEffect(() => {
     const handleMouseDown = e => {
       if (e.button === 1 && textareaRef.current && e.target !== textareaRef.current) {
@@ -74,7 +74,7 @@ export default function useAttachments({ setError, textareaRef }) {
     setAttachments(prev => prev.filter(a => a.id !== id))
   }, [])
 
-  // Handle paste — block X11 middle-click paste, detect files/images
+  // Handle paste - block X11 middle-click paste, detect files/images
   const handlePaste = useCallback(
     e => {
       if (middleClickOutsideRef.current) {

@@ -72,6 +72,7 @@ def serialize(obj: Any, *, _seen: set | None = None) -> Any:
     _seen = _seen | {id(obj)}
 
     asdict = getattr(obj, "asdict", None)
+
     if callable(asdict):
         try:
             obj = asdict()
@@ -84,23 +85,18 @@ def serialize(obj: Any, *, _seen: set | None = None) -> Any:
 
     if isinstance(obj, datetime | date | time):
         return obj.isoformat()
-
-    if isinstance(obj, Decimal):
+    elif isinstance(obj, Decimal):
         return float(obj)
-
-    if isinstance(obj, Path):
+    elif isinstance(obj, Path):
         return str(obj)
-
-    if isinstance(obj, Enum):
+    elif isinstance(obj, Enum):
         return obj.value
-
-    if isinstance(obj, dict):
+    elif isinstance(obj, dict):
         return {serialize(k, _seen=_seen): serialize(v, _seen=_seen) for k, v in obj.items()}
-
-    if isinstance(obj, list | set | frozenset | tuple):
+    elif isinstance(obj, list | set | frozenset | tuple):
         return [serialize(item, _seen=_seen) for item in obj]
-
-    return obj
+    else:
+        return obj
 
 
 def deserialize(node: Any, cls: type | types.UnionType | None) -> Any:
@@ -118,29 +114,27 @@ def deserialize(node: Any, cls: type | types.UnionType | None) -> Any:
 
     if cls is not None and not args and isinstance(node, cls):
         return node
-
-    if origin in (typing.Union, types.UnionType):
+    elif origin in (typing.Union, types.UnionType):
         non_none = [a for a in args if a is not type(None)]
+
         return deserialize(node, non_none[0]) if len(non_none) == 1 else node
-
-    if origin in (list, set, frozenset, tuple) and isinstance(node, list):
+    elif origin in (list, set, frozenset, tuple) and isinstance(node, list):
         args = args or (None,)
+
         return origin(deserialize(item, args[0]) for item in node)
-
-    if origin is dict and isinstance(node, dict):
+    elif origin is dict and isinstance(node, dict):
         args = args or (None, None)
-        return {deserialize(k, args[0]): deserialize(v, args[1]) for k, v in node.items()}
 
-    if dataclasses.is_dataclass(origin) and isinstance(node, dict):
+        return {deserialize(k, args[0]): deserialize(v, args[1]) for k, v in node.items()}
+    elif dataclasses.is_dataclass(origin) and isinstance(node, dict):
         hints = typing.get_type_hints(origin)
         fields = {f.name for f in dataclasses.fields(origin)}
         kwargs = {k: deserialize(v, hints.get(k)) for k, v in node.items() if k in fields}
+
         return origin(**kwargs)
-
-    if origin in (datetime, date, time) and isinstance(node, str):
+    elif origin in (datetime, date, time) and isinstance(node, str):
         return origin.fromisoformat(node)  # ty: ignore[unresolved-attribute]
-
-    if not callable(origin):
+    elif not callable(origin):
         return node
-
-    return origin(node)
+    else:
+        return origin(node)

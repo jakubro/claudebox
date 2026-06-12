@@ -2,7 +2,7 @@
 
 import { getWorkspaceId } from '../api/apiClient'
 import { getUiState } from '../api/uiState'
-import { stripBottomPanels, stripFilePanels, stripSessionPanels } from '../utils/layoutPersistence'
+import { stripSessionPanels } from '../utils/layoutPersistence'
 
 // Panel titles that need special casing (acronyms, etc.)
 const PANEL_TITLES = {
@@ -47,7 +47,7 @@ export default class SidePanelManager {
       return
     }
 
-    // When maximized and panel already open, just unmaximize — no toggle
+    // When maximized and panel already open, just unmaximize - no toggle
     if (this.api.hasMaximizedGroup() && this.state[side].order.includes(panelId)) {
       this.exitMaximize()
       return
@@ -215,7 +215,7 @@ export default class SidePanelManager {
       }
 
       // When inheriting from latest session (no sessionId), strip session-specific state.
-      // The frontend owns this cleanup — server returns unfiltered inherited state.
+      // The frontend owns this cleanup - server returns unfiltered inherited state.
       if (!sessionId) {
         delete session.stash
         delete session.notificationsEnabled
@@ -223,17 +223,14 @@ export default class SidePanelManager {
         delete session.preMaximizeLayout
       }
 
-      // Strip session/file/logs view IDs before restoring — only `main` is a center panel.
-      this.api.fromJSON(stripBottomPanels(stripFilePanels(stripSessionPanels(session.layout))))
+      // Strip session view IDs before restoring - only `main` is a center panel.
+      this.api.fromJSON(stripSessionPanels(session.layout))
 
       // Restore manager state
       this.fromJSON(session.panelGroups)
 
-      // Restore maximize snapshot if present (strip file and logs panels from snapshot too)
-      const preMax = session.preMaximizeLayout || null
-      this.preMaximizeLayout = preMax
-        ? { ...preMax, layout: stripBottomPanels(stripFilePanels(preMax.layout)) }
-        : null
+      // Restore maximize snapshot if present.
+      this.preMaximizeLayout = session.preMaximizeLayout || null
 
       return { loaded: true }
     } catch (e) {

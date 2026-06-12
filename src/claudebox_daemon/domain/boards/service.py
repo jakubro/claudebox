@@ -1,4 +1,4 @@
-"""Board service — board CRUD, ticket move, assign, archive."""
+"""Board service - board CRUD, ticket move, assign, archive."""
 
 import re
 from pathlib import Path
@@ -43,7 +43,7 @@ class BoardService:
         _events: Broadcaster for publishing board events.
         _sessions: Session service for creating sessions during assignment.
         _watcher: File watcher for board.yaml changes.
-        _boards: Cached map of board_id → yaml_path for discovered boards.
+        _boards: Cached map of board_id -> yaml_path for discovered boards.
     """
 
     def __init__(
@@ -121,6 +121,7 @@ class BoardService:
         yaml_path = self._resolve(board_id)
         rename_board(yaml_path, name)
         root = Path(self._workspace.path)
+
         return board_summary(yaml_path, root)
 
     def read_ticket_content(self, board_id: str, ticket_path: str) -> str:
@@ -157,7 +158,7 @@ class BoardService:
         return move_ticket(yaml_path, ticket_path, column=column, swimlane=swimlane, index=index)
 
     def archive(self, board_id: str, ticket_path: str) -> None:
-        """Archive a ticket — remove from YAML, file stays on disk."""
+        """Archive a ticket - remove from YAML, file stays on disk."""
 
         yaml_path = self._resolve(board_id)
         archive_ticket(yaml_path, ticket_path)
@@ -210,6 +211,7 @@ class BoardService:
                 results.append({"ticket_path": ticket_path, "session_id": result.session_id})
 
         await self._broadcast_update(board_id)
+
         return results
 
     # Swimlane Operations
@@ -219,12 +221,14 @@ class BoardService:
         """Create a new swimlane."""
 
         yaml_path = self._resolve(board_id)
+
         return add_swimlane(yaml_path, name)
 
     def update_swimlane(self, board_id: str, swimlane_id: str, name: str) -> Swimlane:
         """Rename an existing swimlane."""
 
         yaml_path = self._resolve(board_id)
+
         return rename_swimlane(yaml_path, swimlane_id, name)
 
     def remove_swimlane(self, board_id: str, swimlane_id: str) -> None:
@@ -237,12 +241,14 @@ class BoardService:
         """Reorder swimlanes to match the given ID list."""
 
         yaml_path = self._resolve(board_id)
+
         return reorder_swimlanes(yaml_path, ids)
 
     def reorder_columns(self, board_id: str, keys: list[str]) -> list[BoardState]:
         """Reorder columns/states to match the given key list."""
 
         yaml_path = self._resolve(board_id)
+
         return reorder_states(yaml_path, keys)
 
     async def rename_state(self, board_id: str, state_id: str, label: str) -> BoardState:
@@ -251,6 +257,7 @@ class BoardService:
         yaml_path = self._resolve(board_id)
         state = rename_state(yaml_path, state_id, label)
         await self._broadcast_update(board_id)
+
         return state
 
     # Internal

@@ -1,0 +1,24 @@
+#!/bin/bash
+# Fake git for hermetic CLI e2e tests. Records args; returns canned output.
+# Only covers the surface claudebox invokes (branch, rev-parse).
+
+set -euo pipefail
+
+echo "$@" >> "${CLAUDEBOX_TEST_RECORD_DIR:?CLAUDEBOX_TEST_RECORD_DIR unset}/git.log"
+
+case "${1:-}" in
+    branch)
+        case "${2:-}" in
+            --show-current) echo "${CLAUDEBOX_TEST_GIT_BRANCH:-main}"; exit 0 ;;
+        esac
+        exit 0
+        ;;
+    rev-parse)
+        case "${2:-}" in
+            --short) echo "${CLAUDEBOX_TEST_GIT_COMMIT:-abc1234}"; exit 0 ;;
+            HEAD)    echo "${CLAUDEBOX_TEST_GIT_COMMIT_FULL:-abc1234567890abcdef1234567890abcdef12345}"; exit 0 ;;
+        esac
+        exit 0
+        ;;
+    *) exit 0 ;;
+esac

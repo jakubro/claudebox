@@ -1,4 +1,4 @@
-"""Handler for the ``prune`` verb — remove stopped containers, dangling images, stale dirs."""
+"""Handler for the ``prune`` verb - remove stopped containers, dangling images, stale dirs."""
 
 import argparse
 import subprocess
@@ -33,7 +33,7 @@ _PRUNE_OPS: list[tuple[str, list[str]]] = [
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run prune, reporting per-category counts. Partial failure → exit 1."""
+    """Run prune, reporting per-category counts. Partial failure -> exit 1."""
 
     verbose: bool = args.verbose
     config = Config.load()
@@ -58,6 +58,7 @@ def _prune_stale_dirs(config: Config, verbose: bool, failures: list[str]) -> int
     except OSError as exc:
         failures.append("stale dirs")
         print_fail(f"stale dirs: {exc}")
+
         return 0
 
     if verbose:
@@ -87,6 +88,7 @@ def _prune_backend(
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         failures.append(label)
         print_fail(f"{label}: {exc}")
+
         return 0
 
     removed_lines = _parse_prune_output(result.stdout)
@@ -119,6 +121,7 @@ def _print_summary(verbose: bool, container_count: int, image_count: int, dir_co
             f"{image_count} dangling images, "
             f"{dir_count} stale dirs"
         )
+
         return
 
     console.print(f"removed {container_count} stopped containers")

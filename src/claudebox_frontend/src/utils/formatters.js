@@ -128,7 +128,7 @@ export function formatAbsoluteTime(date) {
  */
 export function formatCost(cost) {
   if (cost == null) {
-    return '—'
+    return '-'
   }
   if (cost >= 1_000_000_000) {
     return `$${(cost / 1_000_000_000).toFixed(2)}B`
@@ -145,7 +145,7 @@ export function formatCost(cost) {
 /** Format turn count as "N turns" string. */
 export function formatTurns(turns) {
   if (turns == null) {
-    return '—'
+    return '-'
   }
   return `${turns} turns`
 }

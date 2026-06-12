@@ -15,6 +15,9 @@ class SessionMetadata(DataClass):
 
     Attributes:
         session_id: Unique session identifier.
+        fork_point_cost_usd: Cost inherited from the ancestor at the fork point; 0 for
+            root sessions. Rollup consumers subtract this when summing across sibling
+            sessions to avoid double-counting the shared pre-fork transcript.
         name: User-assigned session name.
         model: Model used for the session.
         started_at: Session start timestamp.
@@ -28,6 +31,7 @@ class SessionMetadata(DataClass):
     """
 
     session_id: str
+    fork_point_cost_usd: float
     name: str | None = None
     model: str | None = None
     started_at: datetime | None = None

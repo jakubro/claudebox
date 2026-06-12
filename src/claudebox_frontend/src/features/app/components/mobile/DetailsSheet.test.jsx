@@ -141,6 +141,6 @@ describe('DetailsSheet', () => {
 
     const labels = screen.getAllByText('Workspace')
     const row = labels[0].closest('.details-sheet-row')
-    expect(row.textContent).toContain('—')
+    expect(row.textContent).toContain('-')
   })
 })

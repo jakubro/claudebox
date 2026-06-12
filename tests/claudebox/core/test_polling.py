@@ -1,4 +1,4 @@
-"""Tests for async polling primitives — AsyncPoller and MtimeWatcher."""
+"""Tests for async polling primitives - AsyncPoller and MtimeWatcher."""
 
 import asyncio
 from pathlib import Path
@@ -21,6 +21,7 @@ class _StubPoller(AsyncPoller):
 
     async def _poll(self) -> None:
         self.poll_count += 1
+
         if self._fail_at is not None and self.poll_count == self._fail_at:
             raise RuntimeError("deliberate failure")
 
@@ -49,7 +50,7 @@ class TestAsyncPoller:
 
     @pytest.mark.anyio
     async def test_poll_error_isolated(self) -> None:
-        """Errors in _poll don't kill the loop — polling continues."""
+        """Errors in _poll don't kill the loop - polling continues."""
 
         poller = _StubPoller(interval=0.01, fail_at=1)
         await poller.start()

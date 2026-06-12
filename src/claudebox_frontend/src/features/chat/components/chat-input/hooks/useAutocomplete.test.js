@@ -1,4 +1,4 @@
-/** Tests for useAutocomplete hook — custom React autocomplete state. */
+/** Tests for useAutocomplete hook - custom React autocomplete state. */
 
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -230,7 +230,7 @@ describe('useAutocomplete', () => {
 
   it('select preserves trailing text when command is typed in front without separating space', () => {
     // Reported regression: user types `/deploy` at position 0 of `foo bar baz`
-    // → value becomes `/deployfoo bar baz`, caret at 7. Pressing Tab must
+    // -> value becomes `/deployfoo bar baz`, caret at 7. Pressing Tab must
     // accept `/deploy` and preserve `foo bar baz` as the argument.
     const ref = createTextareaRef()
     const textareaRef = { current: ref.current }

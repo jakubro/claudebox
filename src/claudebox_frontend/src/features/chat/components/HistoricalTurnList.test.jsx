@@ -1,4 +1,4 @@
-/** Tests for HistoricalTurnList — the isolation invariant: historical turns do
+/** Tests for HistoricalTurnList - the isolation invariant: historical turns do
  *  not reconcile while only the active streaming turn updates. */
 
 import { render } from '@testing-library/react'
@@ -27,7 +27,7 @@ const mkTurn = (id, events = []) => ({
   settingChanges: [],
 })
 
-// Referentially-stable shared props — only `turns` varies between rerenders,
+// Referentially-stable shared props - only `turns` varies between rerenders,
 // mirroring ChatPanel where callbacks/maps are stable and only the turn list
 // identity changes per flush.
 const noop = () => {}
@@ -61,7 +61,7 @@ describe('HistoricalTurnList', () => {
 
     // A streaming flush: ChatPanel re-renders and hands down a NEW array that
     // still holds the SAME historical turn refs (the active turn grew, but it
-    // lives outside this list). The memo must bail — zero historical renders.
+    // lives outside this list). The memo must bail - zero historical renders.
     rerender(<HistoricalTurnList turns={[t1, t2]} {...STABLE} />)
     expect(turnRenderSpy).not.toHaveBeenCalled()
   })

@@ -20,7 +20,7 @@ describe('getColorFromPalette', () => {
   it('interpolates between colors', () => {
     const colors = ['#000000', '#ffffff']
     const result = getColorFromPalette(colors, 0.25)
-    // 0.25 * 2 colors = 0.5 progress within segment 0→1
+    // 0.25 * 2 colors = 0.5 progress within segment 0->1
     expect(result).toBe('#808080')
   })
 
@@ -74,7 +74,7 @@ describe('drawWorkspaceBadge', () => {
     drawWorkspaceBadge(ctx, '#1e3a5f')
 
     expect(ctx.arc).toHaveBeenCalledTimes(1)
-    // 32px canvas, 2px margin → center (16,16), radius 14.
+    // 32px canvas, 2px margin -> center (16,16), radius 14.
     expect(ctx.arc).toHaveBeenCalledWith(16, 16, 14, 0, Math.PI * 2)
     expect(ctx.fill).toHaveBeenCalledTimes(1)
     expect(ctx.stroke).not.toHaveBeenCalled()

@@ -120,7 +120,7 @@ describe('TodoList', () => {
     )
 
     const icons = document.querySelectorAll('.todo-icon')
-    // Order: completed → started → added; blocker first (◐), then blocked (⊘ not ○).
+    // Order: completed -> started -> added; blocker first (◐), then blocked (⊘ not ○).
     expect(icons[0].textContent).toBe('◐')
     expect(icons[1].textContent).toBe('⊘')
   })
@@ -137,7 +137,7 @@ describe('TodoList', () => {
 
     const icons = document.querySelectorAll('.todo-icon')
     expect(icons[0].textContent).toBe('●')
-    // Blocker is in terminal state → pending row renders with ○, not ⊘.
+    // Blocker is in terminal state -> pending row renders with ○, not ⊘.
     expect(icons[1].textContent).toBe('○')
   })
 

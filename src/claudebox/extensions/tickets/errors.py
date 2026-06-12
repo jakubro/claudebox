@@ -1,4 +1,4 @@
-"""Ticket domain exceptions — typed errors with status codes for HTTP mapping."""
+"""Ticket domain exceptions - typed errors with status codes for HTTP mapping."""
 
 
 class TicketError(Exception):
@@ -50,7 +50,7 @@ class StateNotFound(TicketError):
 
 
 class InvalidLabel(TicketError):
-    """Label value rejected — empty/whitespace-only after trimming."""
+    """Label value rejected - empty/whitespace-only after trimming."""
 
     status_code = 422
     error_key = "invalid_label"

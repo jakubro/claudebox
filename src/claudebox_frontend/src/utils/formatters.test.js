@@ -182,8 +182,8 @@ describe('formatCost', () => {
   })
 
   it('returns dash for null/undefined', () => {
-    expect(formatCost(null)).toBe('—')
-    expect(formatCost(undefined)).toBe('—')
+    expect(formatCost(null)).toBe('-')
+    expect(formatCost(undefined)).toBe('-')
   })
 
   it('handles zero', () => {
@@ -199,8 +199,8 @@ describe('formatTurns', () => {
   })
 
   it('returns dash for null/undefined', () => {
-    expect(formatTurns(null)).toBe('—')
-    expect(formatTurns(undefined)).toBe('—')
+    expect(formatTurns(null)).toBe('-')
+    expect(formatTurns(undefined)).toBe('-')
   })
 
   it('handles zero', () => {

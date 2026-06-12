@@ -2,11 +2,11 @@
 
 Covers two concerns:
 
-1. SDK hook adapters — `_adapt_session_start` / `_adapt_pre_compact` /
-   `_adapt_post_tool_use` — translate SDK HookInput shapes into the
+1. SDK hook adapters - `_adapt_session_start` / `_adapt_pre_compact` /
+   `_adapt_post_tool_use` - translate SDK HookInput shapes into the
    typed HookCallbacks surface.
 
-2. Delta detection — `_fire_*_changed` helpers + setter wiring. First
+2. Delta detection - `_fire_*_changed` helpers + setter wiring. First
    call after construction silently establishes the baseline; only
    subsequent actual changes fire the callback. PostToolUse-as-detector
    converges on `_fire_permission_mode_changed` so setter-driven and
@@ -19,7 +19,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from claudebox.agent_session.config import ClaudeAgentSessionConfig
-from claudebox.agent_session.hooks import CompactStartPayload, HookCallbacks
+from claudebox.agent_session.hooks import (
+    CompactStartPayload,
+    HookCallbacks,
+    PostToolUsePayload,
+    PreToolUsePayload,
+)
 from claudebox.agent_session.runtime_claude import ClaudeRuntime
 
 
@@ -40,6 +45,7 @@ def _make_runtime(callbacks: HookCallbacks | None = None) -> ClaudeRuntime:
         session_dir=Path("/tmp"),
         hooks=callbacks or HookCallbacks(),
     )
+
     with patch("claudebox.agent_session.runtime_claude.BaseClaudeSDKClient"):
         return ClaudeRuntime(config)
 
@@ -71,7 +77,7 @@ class TestAdaptPreCompact:
 
     @pytest.mark.anyio
     async def test_unknown_trigger_defaults_to_manual(self):
-        """Unknown SDK trigger values fall back to manual — narrow union enforces typed payload."""
+        """Unknown SDK trigger values fall back to manual - narrow union enforces typed payload."""
 
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_pre_compact=cb))
@@ -188,7 +194,7 @@ class TestModelDeltaDetection:
 
 
 class TestPermissionModeDeltaDetection:
-    """Symmetric to model delta detection — same baseline + fire semantics."""
+    """Symmetric to model delta detection - same baseline + fire semantics."""
 
     @pytest.mark.anyio
     async def test_first_call_silently_establishes_baseline(self):
@@ -265,7 +271,7 @@ class TestPostToolUseConvergence:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_permission_mode_changed=cb))
 
-        # First PostToolUse establishes baseline silently — no callback.
+        # First PostToolUse establishes baseline silently - no callback.
         await runtime._adapt_post_tool_use({"permission_mode": "default"}, None, {})
         cb.assert_not_awaited()
 
@@ -285,13 +291,14 @@ class TestPostToolUseConvergence:
             mp.setattr(runtime._sdk, "set_permission_mode", AsyncMock())
             # Setter establishes baseline (no callback).
             await runtime.set_permission_mode("default")
+
         cb.assert_not_awaited()
 
-        # PostToolUse with same value — still no callback (delta filter).
+        # PostToolUse with same value - still no callback (delta filter).
         await runtime._adapt_post_tool_use({"permission_mode": "default"}, None, {})
         cb.assert_not_awaited()
 
-        # PostToolUse with different value — callback fires once.
+        # PostToolUse with different value - callback fires once.
         await runtime._adapt_post_tool_use({"permission_mode": "plan"}, None, {})
         cb.assert_awaited_once_with("plan")
 
@@ -317,7 +324,7 @@ class TestBuildSdkHooks:
     def test_no_callbacks_empty_dict(self):
         runtime = _make_runtime(HookCallbacks())
         hooks = ClaudeRuntime._build_sdk_hooks(runtime)
-        # No callbacks registered → no hooks wired.
+        # No callbacks registered -> no hooks wired.
         assert hooks == {}
 
     def test_pre_compact_only(self):
@@ -355,3 +362,238 @@ class TestBuildSdkHooks:
         hooks = ClaudeRuntime._build_sdk_hooks(runtime)
         session_start = hooks["SessionStart"][0]
         assert len(session_start.hooks) == 2  # both adapters wired
+
+
+# Adapter: _adapt_pre_tool_use
+# --------------------------------------------------------------------------------------------------
+
+
+class TestAdaptPreToolUse:
+    """PreToolUse adapter records start time and fires on_pre_tool_use."""
+
+    @pytest.mark.anyio
+    async def test_fires_typed_payload_when_callback_registered(self):
+        cb = AsyncMock()
+        runtime = _make_runtime(HookCallbacks(on_pre_tool_use=cb))
+
+        await runtime._adapt_pre_tool_use(
+            {
+                "tool_use_id": "tool_001",
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+            },
+            None,
+            {},
+        )
+
+        cb.assert_awaited_once_with(
+            PreToolUsePayload(
+                tool_use_id="tool_001",
+                tool_name="Bash",
+                tool_input={"command": "ls"},
+            )
+        )
+
+    @pytest.mark.anyio
+    async def test_records_start_time_even_without_callback(self):
+        """Start-time bookkeeping runs unconditionally so PostToolUse can compute duration."""
+
+        runtime = _make_runtime(HookCallbacks(on_pre_tool_use=None))
+
+        await runtime._adapt_pre_tool_use(
+            {"tool_use_id": "tool_001", "tool_name": "Bash", "tool_input": {}},
+            None,
+            {},
+        )
+
+        assert "tool_001" in runtime._tool_started_at
+
+    @pytest.mark.anyio
+    async def test_no_callback_no_payload(self):
+        runtime = _make_runtime(HookCallbacks(on_pre_tool_use=None))
+        result = await runtime._adapt_pre_tool_use(
+            {"tool_use_id": "x", "tool_name": "Bash", "tool_input": {}},
+            None,
+            {},
+        )
+
+        assert result == {}
+
+    @pytest.mark.anyio
+    async def test_non_dict_input_is_ignored(self):
+        cb = AsyncMock()
+        runtime = _make_runtime(HookCallbacks(on_pre_tool_use=cb))
+
+        await runtime._adapt_pre_tool_use("not-a-dict", None, {})
+
+        cb.assert_not_awaited()
+
+
+# Adapter: _adapt_post_tool_use (typed callback extension)
+# --------------------------------------------------------------------------------------------------
+
+
+class TestAdaptPostToolUseTypedCallback:
+    """PostToolUse adapter, in addition to permission-mode-drift detection,
+    projects SDK input into the typed on_post_tool_use callback."""
+
+    @pytest.mark.anyio
+    async def test_fires_post_callback_with_duration(self):
+        post_cb = AsyncMock()
+        runtime = _make_runtime(HookCallbacks(on_post_tool_use=post_cb))
+        # Seed the pre-side start so duration_ms > 0.
+        runtime._tool_started_at["tool_001"] = 0.0
+
+        await runtime._adapt_post_tool_use(
+            {
+                "tool_use_id": "tool_001",
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "tool_response": "file1\nfile2",
+            },
+            None,
+            {},
+        )
+
+        post_cb.assert_awaited_once()
+        assert post_cb.await_args is not None
+        payload = post_cb.await_args.args[0]
+        assert payload.tool_use_id == "tool_001"
+        assert payload.tool_name == "Bash"
+        assert payload.tool_input == {"command": "ls"}
+        assert payload.tool_use_result == "file1\nfile2"
+        assert payload.is_error is False
+        assert payload.duration_ms > 0
+
+    @pytest.mark.anyio
+    async def test_missing_pre_falls_back_to_zero_duration(self):
+        """duration_ms falls back to 0 when no Pre-side start time recorded."""
+
+        post_cb = AsyncMock()
+        runtime = _make_runtime(HookCallbacks(on_post_tool_use=post_cb))
+
+        await runtime._adapt_post_tool_use(
+            {
+                "tool_use_id": "absent",
+                "tool_name": "Bash",
+                "tool_input": {},
+                "tool_response": "ok",
+            },
+            None,
+            {},
+        )
+
+        assert post_cb.await_args is not None
+        assert post_cb.await_args.args[0].duration_ms == 0
+
+    @pytest.mark.anyio
+    async def test_permission_mode_drift_still_fires(self):
+        """Existing permission-mode-drift detection is unaffected."""
+
+        mode_cb = AsyncMock()
+        post_cb = AsyncMock()
+        runtime = _make_runtime(
+            HookCallbacks(
+                on_permission_mode_changed=mode_cb,
+                on_post_tool_use=post_cb,
+            )
+        )
+        # Baseline so the first call fires.
+        runtime._last_known_permission_mode = "default"
+
+        await runtime._adapt_post_tool_use(
+            {
+                "tool_use_id": "tool_001",
+                "tool_name": "Bash",
+                "tool_input": {},
+                "tool_response": "ok",
+                "permission_mode": "acceptEdits",
+            },
+            None,
+            {},
+        )
+
+        mode_cb.assert_awaited_once_with("acceptEdits")
+        post_cb.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_no_post_callback_no_payload(self):
+        runtime = _make_runtime(HookCallbacks(on_post_tool_use=None))
+        result = await runtime._adapt_post_tool_use(
+            {"tool_use_id": "x", "tool_name": "Bash", "tool_input": {}, "tool_response": "ok"},
+            None,
+            {},
+        )
+        assert result == {}
+
+
+# Adapter: _adapt_post_tool_use_failure
+# --------------------------------------------------------------------------------------------------
+
+
+class TestAdaptPostToolUseFailure:
+    """PostToolUseFailure adapter fires on_post_tool_use with is_error=True."""
+
+    @pytest.mark.anyio
+    async def test_fires_with_is_error_true(self):
+        cb = AsyncMock()
+        runtime = _make_runtime(HookCallbacks(on_post_tool_use=cb))
+
+        await runtime._adapt_post_tool_use_failure(
+            {
+                "tool_use_id": "tool_001",
+                "tool_name": "Bash",
+                "tool_input": {"command": "false"},
+                "tool_response": "exit 1",
+            },
+            None,
+            {},
+        )
+
+        cb.assert_awaited_once()
+        assert cb.await_args is not None
+        payload = cb.await_args.args[0]
+        assert payload.is_error is True
+        assert payload.tool_name == "Bash"
+
+    @pytest.mark.anyio
+    async def test_no_callback_no_payload(self):
+        runtime = _make_runtime(HookCallbacks(on_post_tool_use=None))
+        result = await runtime._adapt_post_tool_use_failure(
+            {"tool_use_id": "x", "tool_name": "Bash", "tool_input": {}, "tool_response": "err"},
+            None,
+            {},
+        )
+        assert result == {}
+
+
+# _build_sdk_hooks - PreToolUse + PostToolUseFailure registration
+# --------------------------------------------------------------------------------------------------
+
+
+class TestBuildSdkHooksToolUse:
+    def test_on_pre_tool_use_registers_pretooluse_matcher(self):
+        async def cb(_p):
+            pass
+
+        runtime = _make_runtime(HookCallbacks(on_pre_tool_use=cb))
+        hooks = ClaudeRuntime._build_sdk_hooks(runtime)
+
+        assert "PreToolUse" in hooks
+
+    def test_on_post_tool_use_registers_both_post_matchers(self):
+        async def cb(_p):
+            pass
+
+        runtime = _make_runtime(HookCallbacks(on_post_tool_use=cb))
+        hooks = ClaudeRuntime._build_sdk_hooks(runtime)
+
+        assert "PostToolUse" in hooks
+        assert "PostToolUseFailure" in hooks
+
+    def test_no_tool_callbacks_omits_matchers(self):
+        runtime = _make_runtime(HookCallbacks())
+        hooks = ClaudeRuntime._build_sdk_hooks(runtime)
+
+        assert "PreToolUse" not in hooks
+        assert "PostToolUseFailure" not in hooks

@@ -50,6 +50,7 @@ class HealthMonitor(AsyncPoller):
                 continue
 
             await svc.container_service.sync_state()
+
             for container in svc.container_service.list_all():
                 await self._probe_container(svc, container)
 
@@ -63,6 +64,7 @@ class HealthMonitor(AsyncPoller):
             return
 
         response: Response | None = None
+
         try:
             response = await self._service.proxy.send(
                 payload=None,
@@ -92,6 +94,7 @@ class HealthMonitor(AsyncPoller):
             update_kwargs = {"status": ContainerStatus.RUNNING}
 
             data = response.json()
+
             if session_id := data.get("session_id"):
                 update_kwargs["session_id"] = session_id
 

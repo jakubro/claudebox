@@ -1,4 +1,4 @@
-/** Test helper — produces a RuntimeCapabilities object with overrides. */
+/** Test helper - produces a RuntimeCapabilities object with overrides. */
 
 /**
  * Build a 15-flag RuntimeCapabilities dict, all True by default.

@@ -179,7 +179,7 @@ describe('Turn', () => {
   })
 
   it('wraps content in .turn-container so the content-visibility CSS rule applies', () => {
-    // The lazy-paint claim is enforced in CSS on .turn-container — verify
+    // The lazy-paint claim is enforced in CSS on .turn-container - verify
     // the wrapper class is on the rendered output so the stylesheet hits.
     render(<Turn userMessage="hi" events={[]} />)
     expect(document.querySelector('.turn-container')).toBeInTheDocument()
@@ -258,7 +258,7 @@ describe('Turn', () => {
 
   describe('interrupt indicator', () => {
     it('suppresses interrupt ack events without rendering content', () => {
-      // Interrupt ack events are SDK internal noise — suppressed entirely
+      // Interrupt ack events are SDK internal noise - suppressed entirely
       const events = [
         {
           type: 'user',

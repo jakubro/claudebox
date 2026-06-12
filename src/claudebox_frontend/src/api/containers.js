@@ -1,4 +1,4 @@
-/** Containers API client — workspace-scoped endpoints only. */
+/** Containers API client - workspace-scoped endpoints only. */
 
 import { workspaceFetch } from './apiClient'
 

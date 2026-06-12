@@ -503,7 +503,7 @@ BANNER
 
   print_banner \
     "CLAUDEBOX" \
-    "Containerized isolation, customizable agent profiles, and a visual web UI — all for Claude Code" \
+    "Containerized isolation, customizable agent profiles, and a visual web UI — for AI coding agents" \
     "$license"
   echo ""
 

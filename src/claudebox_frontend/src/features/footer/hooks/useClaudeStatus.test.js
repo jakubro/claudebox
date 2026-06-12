@@ -127,7 +127,7 @@ describe('useClaudeStatus', () => {
 
     expect(result.current.indicator).toBe('minor')
     expect(result.current.description).toBe(
-      'Partially Degraded Service — Elevated errors on Claude Opus 4.5',
+      'Partially Degraded Service - Elevated errors on Claude Opus 4.5',
     )
   })
 

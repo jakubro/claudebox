@@ -60,7 +60,7 @@ export function SessionsProvider({ children }) {
     return () => clearTimeout(debounceRef.current)
   }, [sessionsChanged, containerStatus, fetchSessions])
 
-  // Set workspace accent color with optimistic update — fire-and-forget
+  // Set workspace accent color with optimistic update - fire-and-forget
   const setWorkspaceColor = useCallback(color => {
     setWorkspaceColorState(color)
     if (color) {
@@ -70,7 +70,7 @@ export function SessionsProvider({ children }) {
     }
   }, [])
 
-  // Optimistic insert/update — used by fork to populate the panel before the
+  // Optimistic insert/update - used by fork to populate the panel before the
   // sessions_changed SSE refresh lands. Replaces by session_id if present.
   const seedSession = useCallback(info => {
     if (!info?.session_id) {
@@ -87,7 +87,7 @@ export function SessionsProvider({ children }) {
     })
   }, [])
 
-  // Toggle pin with optimistic update — fire-and-forget, no read needed
+  // Toggle pin with optimistic update - fire-and-forget, no read needed
   const togglePin = useCallback(sessionId => {
     setPinnedSessions(prev => {
       const isPinned = prev.includes(sessionId)

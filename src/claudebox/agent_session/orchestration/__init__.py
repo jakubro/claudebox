@@ -1,1 +1,1 @@
-"""Session orchestration — lifecycle, event pipeline, conversion, persistence, projection."""
+"""Session orchestration - lifecycle, event pipeline, conversion, persistence, projection."""

@@ -44,14 +44,14 @@ describe('ThinkingBlock', () => {
 
     const header = screen.getByText('Thinking', { exact: true })
 
-    // Initially collapsed — shows preview
+    // Initially collapsed - shows preview
     expect(screen.getByText('Thinking content')).toBeInTheDocument()
 
     // Click to expand
     await user.click(header)
     expect(screen.getByText('Thinking content')).toBeInTheDocument()
 
-    // Click to collapse — still shows preview
+    // Click to collapse - still shows preview
     await user.click(header)
     expect(screen.getByText('Thinking content')).toBeInTheDocument()
   })
@@ -75,7 +75,7 @@ describe('ThinkingBlock', () => {
 
     await user.click(screen.getByText('Thinking'))
 
-    // Content rendered as Markdown — bold/italic produce HTML elements
+    // Content rendered as Markdown - bold/italic produce HTML elements
     expect(screen.getByText('Bold')).toBeInTheDocument()
     expect(screen.getByText('Bold').tagName).toBe('STRONG')
   })

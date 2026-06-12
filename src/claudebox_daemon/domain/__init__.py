@@ -1,4 +1,4 @@
-"""Daemon domain facade — re-exports service, lifecycle, and singleton."""
+"""Daemon domain facade - re-exports service, lifecycle, and singleton."""
 
 import contextlib
 

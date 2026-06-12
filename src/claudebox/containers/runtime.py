@@ -1,4 +1,4 @@
-"""Container runtime facade — build, run, and backend delegation."""
+"""Container runtime facade - build, run, and backend delegation."""
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
@@ -71,6 +71,7 @@ class ContainerRuntime:
             run_args=run_args,
             cmd_args=cmd_args,
         )
+
         return self._backend.run_container(*args, detach=detach)  # ty: ignore[invalid-return-type]
 
     def get_host_port(self, backend_id: str, container_port: int) -> int:

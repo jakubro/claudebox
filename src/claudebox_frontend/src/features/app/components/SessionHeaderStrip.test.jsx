@@ -1,4 +1,4 @@
-/** Tests for SessionHeaderStrip — header chrome above chat with status dot, name, Stop, +, switcher. */
+/** Tests for SessionHeaderStrip - header chrome above chat with status dot, name, Stop, +, switcher. */
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -185,7 +185,7 @@ describe('SessionHeaderStrip', () => {
   })
 
   it('falls back to the session trio when board view applies to a different workspace', () => {
-    // Mismatched workspace — board info should not yet render (waits for workspace catch-up).
+    // Mismatched workspace - board info should not yet render (waits for workspace catch-up).
     mockActiveBoardId = 'board-1'
     mockActiveWorkspaceId = 'ws-2'
     mockWorkspaceId = 'ws-1'
@@ -227,7 +227,7 @@ describe('SessionHeaderStrip', () => {
     expect(screen.queryByTestId('session-header-stop-btn')).not.toBeInTheDocument()
   })
 
-  it('Stop button — idle stops silently, no modal', async () => {
+  it('Stop button - idle stops silently, no modal', async () => {
     const user = userEvent.setup()
     mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
     mockActiveSessionId = 'sess-1'
@@ -242,7 +242,7 @@ describe('SessionHeaderStrip', () => {
     expect(mockDeleteContainer).toHaveBeenCalledWith('container-1')
   })
 
-  it('Stop button — responding shows confirm modal; Cancel keeps response running', async () => {
+  it('Stop button - responding shows confirm modal; Cancel keeps response running', async () => {
     const user = userEvent.setup()
     mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
     mockActiveSessionId = 'sess-1'
@@ -262,7 +262,7 @@ describe('SessionHeaderStrip', () => {
     expect(screen.queryByTestId('confirm-stop-modal')).not.toBeInTheDocument()
   })
 
-  it('Stop button — responding + Continue stops the container', async () => {
+  it('Stop button - responding + Continue stops the container', async () => {
     const user = userEvent.setup()
     mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
     mockActiveSessionId = 'sess-1'
@@ -302,7 +302,7 @@ describe('SessionHeaderStrip', () => {
 
     expect(screen.getByTestId('session-header-session-name')).toHaveAttribute(
       'title',
-      'Session directory — /tmp/sessions/abc',
+      'Session directory - /tmp/sessions/abc',
     )
   })
 

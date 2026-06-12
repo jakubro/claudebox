@@ -1,4 +1,4 @@
-"""AgentSession — Protocol every runtime adapter satisfies."""
+"""AgentSession - Protocol every runtime adapter satisfies."""
 
 import asyncio
 from collections.abc import AsyncIterator

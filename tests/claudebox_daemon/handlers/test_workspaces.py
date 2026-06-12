@@ -1,4 +1,4 @@
-"""Tests for claudebox_daemon.handlers.workspaces — HTTP adapter responses."""
+"""Tests for claudebox_daemon.handlers.workspaces - HTTP adapter responses."""
 
 import dataclasses
 from types import SimpleNamespace
@@ -12,7 +12,7 @@ from claudebox_daemon.domain import get_workspace
 from claudebox_daemon.handlers.workspaces import router
 
 
-def _build_app(workspace_path: str):
+def _build_app(workspace_path: str, *, agent: str = "claude"):
     """Build a minimal FastAPI app with the workspaces router and a workspace stub."""
 
     app = FastAPI()
@@ -21,9 +21,12 @@ def _build_app(workspace_path: str):
     async def _fake_get_workspace(workspace_id: str):
         workspace = MagicMock()
         workspace.path = workspace_path
-        return SimpleNamespace(workspace=workspace)
+        config = SimpleNamespace(agent=agent)
+
+        return SimpleNamespace(workspace=workspace, config=config)
 
     app.dependency_overrides[get_workspace] = _fake_get_workspace
+
     return app
 
 
@@ -39,7 +42,7 @@ def test_session_defaults_returns_framework_constants():
     body = response.json()
     assert body["workspace"] == "/path/to/my-project"
     assert body["runtime_name"] == "Claude"
-    assert len(body["capabilities"]) == 15
+    assert len(body["capabilities"]) == 16
     assert body["capabilities"]["supports_models"] is True
     assert body["model"] == ClaudeRuntime.DEFAULT_MODEL
     assert body["permission_mode"] == ClaudeRuntime.DEFAULT_PERMISSION_MODE

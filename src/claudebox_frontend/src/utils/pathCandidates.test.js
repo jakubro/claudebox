@@ -73,7 +73,7 @@ describe('extractPathCandidates', () => {
   })
 
   it('rejects false positive "Node.js"', () => {
-    // "Node.js" ends with .js which IS a recognized extension — it would match
+    // "Node.js" ends with .js which IS a recognized extension - it would match
     const results = extractPathCandidates('Use Node.js for this')
     expect(results).toHaveLength(1)
     expect(results[0].candidate).toBe('Node.js')

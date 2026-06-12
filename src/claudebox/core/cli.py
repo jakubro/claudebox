@@ -35,8 +35,8 @@ def cli(run_app: RunApp | None, parser: argparse.ArgumentParser) -> None:
     Flat-parser mode (``run_app`` given): ``parse_known_args`` delivers
     ``(args, extra)`` and ``run_app(*extra, **vars(args))`` is invoked.
 
-    Both modes share ``CalledProcessError → sys.exit(exc.returncode)`` and
-    ``KeyboardInterrupt → 130`` wrapping.
+    Both modes share ``CalledProcessError -> sys.exit(exc.returncode)`` and
+    ``KeyboardInterrupt -> 130`` wrapping.
     """
 
     try:

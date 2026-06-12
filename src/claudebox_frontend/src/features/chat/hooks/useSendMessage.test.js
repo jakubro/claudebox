@@ -96,7 +96,7 @@ describe('useSendMessage', () => {
 
     expect(deps.onContainerGone).toHaveBeenCalledOnce()
     expect(deps.setError).toHaveBeenCalledWith(
-      'Connection lost — retrying. Your message is preserved.',
+      'Connection lost - retrying. Your message is preserved.',
     )
     expect(deps.submitFailed).toHaveBeenCalledOnce()
   })

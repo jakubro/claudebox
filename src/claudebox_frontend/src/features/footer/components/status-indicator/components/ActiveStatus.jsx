@@ -20,13 +20,13 @@ export default function ActiveStatus({ label, status, respondingSince, lastEvent
   const [isSilent, setIsSilent] = useState(false)
 
   useEffect(() => {
-    // Elapsed timer ticks every second — runs continuously while mounted.
+    // Elapsed timer ticks every second - runs continuously while mounted.
     const elapsedInterval = setInterval(() => {
       setElapsed(Math.floor((Date.now() - anchorTimestamp) / 1000))
     }, 1000)
 
-    // Silence detection — event-driven, not polled. Recompute immediately
-    // whenever lastEventTimestamp changes so recovery from "Waiting" → label
+    // Silence detection - event-driven, not polled. Recompute immediately
+    // whenever lastEventTimestamp changes so recovery from "Waiting" -> label
     // happens the moment a new event arrives (no up-to-one-second polling
     // lag). When still within the threshold, schedule a one-shot trip timer
     // for the exact moment silence begins.

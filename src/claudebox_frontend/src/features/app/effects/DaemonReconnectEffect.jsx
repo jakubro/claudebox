@@ -17,7 +17,7 @@ import { resumeAndReconnect } from '../utils/sessionResume'
  * calls the resume endpoint to get a fresh container ID and reconnects the
  * container SSE. Skips if the container SSE survived the daemon restart.
  *
- * Renders nothing — exists solely for daemon reconnection recovery.
+ * Renders nothing - exists solely for daemon reconnection recovery.
  */
 export default function DaemonReconnectEffect() {
   const { daemonReconnected } = useDaemonStreamContext()
@@ -30,7 +30,7 @@ export default function DaemonReconnectEffect() {
     containerId,
     isConnected,
   } = useEvents()
-  const { setSessionContainer } = useContainerMap()
+  const { setSessionContainer, stoppingSessions } = useContainerMap()
   const { clearSessionData } = useSessionActions()
   const { setError } = useInteraction()
 
@@ -48,7 +48,12 @@ export default function DaemonReconnectEffect() {
       return
     }
 
-    // Container SSE survived the daemon restart — skip redundant resume
+    // User-initiated stop is terminal - never auto-resurrect a stopped session
+    if (stoppingSessions.has(activeSessionId)) {
+      return
+    }
+
+    // Container SSE survived the daemon restart - skip redundant resume
     if (containerId && isConnected) {
       return
     }
@@ -70,6 +75,7 @@ export default function DaemonReconnectEffect() {
   }, [
     daemonReconnected,
     activeSessionId,
+    stoppingSessions,
     containerId,
     isConnected,
     clearResume,

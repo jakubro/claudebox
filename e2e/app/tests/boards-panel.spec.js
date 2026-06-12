@@ -199,7 +199,7 @@ test.describe('Boards Panel', () => {
 
     const panel = page.locator('[data-testid="panel-boards"]')
     // Pre-workspace state must not surface raw API invariants like
-    // "Workspace ID not set" — the panel renders neutral loading content
+    // "Workspace ID not set" - the panel renders neutral loading content
     // until workspaceId is populated.
     await expect(panel).not.toContainText('Workspace ID not set')
   })
@@ -243,7 +243,7 @@ test.describe('Boards Panel', () => {
     const panel = page.locator('[data-testid="panel-boards"]')
     await expect(panel.locator('.boards-item')).toHaveCount(2)
 
-    // No dedicated header row anymore — refresh moved to a meta-item at end of list.
+    // No dedicated header row anymore - refresh moved to a meta-item at end of list.
     await expect(panel.locator('.boards-panel-header')).toHaveCount(0)
 
     const meta = panel.locator('[data-testid="boards-refresh-meta"]')
@@ -305,7 +305,7 @@ test.describe('Board Tab', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Check column headers — non-terminal columns show the full label;
+    // Check column headers - non-terminal columns show the full label;
     // terminal columns (Done, Rejected, Def. Rejected) are collapsed by
     // default and show only the first grapheme of their state label
     // (D, R, D).
@@ -477,8 +477,8 @@ test.describe('Board Tab', () => {
     await expect(dot).toBeVisible()
     await expect(polishCard.locator('.ticket-session-id')).toBeVisible()
 
-    // Dot must carry one of the documented state classes — running or
-    // stopped — which CSS owns the green/gray mapping for. Class names
+    // Dot must carry one of the documented state classes - running or
+    // stopped - which CSS owns the green/gray mapping for. Class names
     // anchor the color contract; visual regression covers the pixels.
     const cls = await dot.getAttribute('class')
     expect(cls).toMatch(/\b(running|stopped|stopping|no-container)\b/)
@@ -512,7 +512,7 @@ test.describe('Board Tab', () => {
     // Title
     await expect(overlay.locator('.ticket-detail-title')).toContainText('Setup infra')
 
-    // Metadata — claim enumerates three rows, each with named labels and values.
+    // Metadata - claim enumerates three rows, each with named labels and values.
     await expect(overlay.locator('.ticket-detail-meta')).toBeVisible()
     const rows = overlay.locator('.ticket-meta-row')
     await expect(rows).toHaveCount(3)
@@ -628,7 +628,7 @@ test.describe('Board Tab', () => {
 
     const board = page.locator('.board-board')
 
-    // Ctrl+click first ticket — should add selected class
+    // Ctrl+click first ticket - should add selected class
     await board.getByText('Setup infra').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(1)
 
@@ -717,7 +717,7 @@ test.describe('Board Tab', () => {
     await expect(frontendHeader).toContainText('Frontend')
     await frontendHeader.dblclick()
 
-    // Inline input should appear (hasText filter won't match after span→input swap)
+    // Inline input should appear (hasText filter won't match after span->input swap)
     const input = page.locator('.swimlane-name-input').first()
     await expect(input).toBeVisible()
     await expect(input).toHaveValue('Frontend')
@@ -743,7 +743,7 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click Frontend header → Delete
+    // Right-click Frontend header -> Delete
     const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
     await frontendHeader.click({ button: 'right' })
     await page.locator('.swimlane-context-menu').getByText('Delete').click()
@@ -773,7 +773,7 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click Frontend → Move down
+    // Right-click Frontend -> Move down
     const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
     await frontendHeader.click({ button: 'right' })
     await page.locator('.swimlane-context-menu').getByText('Move down').click()
@@ -868,7 +868,7 @@ test.describe('Board States', () => {
     await page.route(
       new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
       async route => {
-        // Return null/empty — no board data
+        // Return null/empty - no board data
         await route.fulfill({ json: null })
       },
     )
@@ -880,7 +880,7 @@ test.describe('Board States', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // No board, no error, no loading — should render nothing
+    // No board, no error, no loading - should render nothing
     await expect(page.locator('.board-board')).not.toBeVisible()
     await expect(page.locator('.board-error')).not.toBeVisible()
   })
@@ -901,7 +901,7 @@ test.describe('Board States', () => {
 
     await openBoardsPanel(page)
 
-    // Panel-level placeholder visible — no spinner element.
+    // Panel-level placeholder visible - no spinner element.
     const panel = page.locator('[data-testid="panel-boards"]')
     await expect(panel).toHaveClass(/boards-loading/)
     await expect(panel).toHaveText('Loading...')
@@ -1161,7 +1161,7 @@ test.describe('Board SSE Updates', () => {
     await page.waitForTimeout(50)
     await page.mouse.up()
 
-    // Either path should result in a move call with an explicit index field —
+    // Either path should result in a move call with an explicit index field -
     // proving that drop-on-ticket forwards a position rather than always
     // appending. (Index value depends on which ticket received the drop;
     // here we assert only that the field was forwarded as a number.)
@@ -1196,7 +1196,7 @@ test.describe('Board SSE Updates', () => {
     await expect(page.locator('.ticket-link').first()).toBeVisible()
     await expect(page.locator('.ticket-card')).toHaveCount(0)
 
-    // Click a terse ticket link → opens detail overlay (same as card click).
+    // Click a terse ticket link -> opens detail overlay (same as card click).
     await page.locator('.ticket-link').first().click()
     await expect(page.locator('.ticket-detail-panel')).toBeVisible()
   })
@@ -1241,7 +1241,7 @@ test.describe('Board SSE Updates', () => {
   })
 })
 
-test.describe('Boards Panel — board item interactions', () => {
+test.describe('Boards Panel - board item interactions', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
     await mockBoardsAPI(page)
@@ -1369,7 +1369,7 @@ test.describe('Board cell context menu', () => {
   })
 
   /**
-   * Dispatch a contextmenu event directly on a cell DOM node — avoids the
+   * Dispatch a contextmenu event directly on a cell DOM node - avoids the
    * TicketCard child whose own contextmenu handler stops propagation.
    *
    * @param {import('@playwright/test').Page} page
@@ -1408,7 +1408,7 @@ test.describe('Board cell context menu', () => {
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
     await expect(page.locator('.board-board')).toBeVisible()
 
-    // Frontend swimlane (band 0), backlog column (cell 0) — has 'Setup infra'.
+    // Frontend swimlane (band 0), backlog column (cell 0) - has 'Setup infra'.
     await rightClickCell(page, 0, 0)
 
     const menuButton = page.locator('.swimlane-context-menu button')
@@ -1430,7 +1430,7 @@ test.describe('Board cell context menu', () => {
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
     await expect(page.locator('.board-board')).toBeVisible()
 
-    // Frontend swimlane × Review column (index 2) — empty in the fixture.
+    // Frontend swimlane × Review column (index 2) - empty in the fixture.
     await rightClickCell(page, 0, 2)
 
     const menuButton = page.locator('.swimlane-context-menu button')
@@ -1452,7 +1452,7 @@ test.describe('Board cell context menu', () => {
     await rightClickCell(page, 0, 0)
     await expect(page.locator('.swimlane-context-menu')).toBeVisible()
 
-    // Click backdrop's corner — center may overlap the menu the backdrop covers.
+    // Click backdrop's corner - center may overlap the menu the backdrop covers.
     await page.locator('.swimlane-context-backdrop').click({ position: { x: 5, y: 5 } })
     await expect(page.locator('.swimlane-context-menu')).toHaveCount(0)
   })
@@ -1587,7 +1587,7 @@ test.describe('Board bulk-aware drag', () => {
     await board.getByText('T3').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(3)
 
-    // Drag T4 — NOT in selection — should move only T4.
+    // Drag T4 - NOT in selection - should move only T4.
     const t4 = page.locator('.ticket-card', { hasText: 'T4' })
     cardBox = await t4.boundingBox()
     cellBox = await inProgressCell.boundingBox()
@@ -1696,7 +1696,7 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
     await expect.poll(() => moves.length, { timeout: 5000 }).toBe(2)
 
     // Both tickets must land in in-progress with their ORIGIN swimlane
-    // intact: no `swimlane` field set on the move call (undefined → preserved).
+    // intact: no `swimlane` field set on the move call (undefined -> preserved).
     const byPath = Object.fromEntries(moves.map(m => [m.ticketPath, m.body]))
     expect(byPath['docs/tickets/active/t1.md']).toEqual({ column: 'in-progress' })
     expect(byPath['docs/tickets/active/t3.md']).toEqual({ column: 'in-progress' })
@@ -1917,7 +1917,7 @@ test.describe('Board prompt sequence', () => {
   test('move into active column triggers assign with prompt sequence config in board', async ({
     page,
   }) => {
-    // Board has prompt.sequence configured — backend uses it to build first
+    // Board has prompt.sequence configured - backend uses it to build first
     // user messages with {ticket} substitution. From the FE side, the verifiable
     // signal is the assign call carrying the right tickets so the backend can
     // use the sequence; we keep the prompt on the board fixture.
@@ -1985,7 +1985,7 @@ test.describe('Board prompt sequence', () => {
     await page.mouse.up()
 
     // Assign call sent with the ticket path; backend will expand prompt.sequence
-    // server-side using {ticket} → ticket path.
+    // server-side using {ticket} -> ticket path.
     await expect.poll(() => assignBody, { timeout: 5000 }).toBeTruthy()
     expect(assignBody.tickets).toEqual(['docs/tickets/active/setup.md'])
   })
@@ -2005,7 +2005,7 @@ test.describe('Boards Deep Link', () => {
     // Direct deep-link navigation to a board route (no prior session selection).
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
 
-    // Footer renders → app initialized with the workspace context selected.
+    // Footer renders -> app initialized with the workspace context selected.
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
     // Workspace was auto-selected from URL; verify via WorkspaceContext state.
@@ -2014,7 +2014,7 @@ test.describe('Boards Deep Link', () => {
         page.evaluate(() => {
           // Workspace selection is reflected in title attr of footer-workspace
           // and in the boards panel's workspaceId-bound renders. The most direct
-          // signal is the board tab opening — which only happens once
+          // signal is the board tab opening - which only happens once
           // workspaceId === activeWorkspaceId.
           return document.querySelector('.board-tab') !== null
         }),
@@ -2124,7 +2124,7 @@ test.describe('Board column reorder + context menu', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Right-click In Progress → Move left swaps it with Backlog.
+    // Right-click In Progress -> Move left swaps it with Backlog.
     const inProgressHeader = board.locator('.board-col-header').filter({ hasText: 'In Progress' })
     await inProgressHeader.click({ button: 'right' })
     await page.locator('.swimlane-context-menu').getByText('Move left').click()

@@ -1,4 +1,4 @@
-/** Tests for groupBlocks — task-list run partitioning + inspection-only demote. */
+/** Tests for groupBlocks - task-list run partitioning + inspection-only demote. */
 
 import { describe, expect, it } from 'vitest'
 import { BlockType, ToolName } from '../../../../../config/schema'
@@ -88,7 +88,7 @@ describe('groupBlocks', () => {
     expect(segments[0].blocks).toHaveLength(3)
   })
 
-  it('breaks a run on a non-task block — group, single, group', () => {
+  it('breaks a run on a non-task block - group, single, group', () => {
     const segments = groupBlocks([
       toolBlock(ToolName.TASK_CREATE, 'tc-1'),
       textBlock('intermission'),

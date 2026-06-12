@@ -7,6 +7,7 @@
       "model": "claude-sonnet-4-20250514",
       "num_turns": 5,
       "total_cost_usd": 0.12,
+      "fork_point_cost_usd": 0,
       "total_duration_ms": 15000,
       "last_context_tokens": 5000,
       "started_at": "2025-01-18T12:00:00Z",

@@ -1,7 +1,7 @@
 /** Tests for layout persistence utilities. */
 
 import { describe, expect, it, vi } from 'vitest'
-import { buildSaveOps, stripBottomPanels, stripSessionPanels } from './layoutPersistence'
+import { buildSaveOps, stripSessionPanels } from './layoutPersistence'
 
 describe('stripSessionPanels', () => {
   it('returns layout unchanged when no session panels', () => {
@@ -167,47 +167,6 @@ describe('stripSessionPanels', () => {
 
     expect(result.grid.root.data.views).toEqual([])
     expect(result.grid.root.data.activeView).toBeUndefined()
-  })
-})
-
-describe('stripBottomPanels', () => {
-  it('removes logs from panels and grid leaf views', () => {
-    const layout = {
-      panels: { chat: { id: 'chat' }, logs: { id: 'logs' } },
-      grid: {
-        root: {
-          type: 'branch',
-          data: [
-            { type: 'leaf', data: { id: 'g1', views: ['chat'], activeView: 'chat' } },
-            { type: 'leaf', data: { id: 'g2', views: ['logs'], activeView: 'logs' } },
-          ],
-        },
-      },
-    }
-
-    const result = stripBottomPanels(layout)
-
-    expect(Object.keys(result.panels)).toEqual(['chat'])
-    expect(result.grid.root.data[0].data.views).toEqual(['chat'])
-    expect(result.grid.root.data[1].data.views).toEqual([])
-    expect(result.grid.root.data[1].data.activeView).toBeUndefined()
-  })
-
-  it('returns layout unchanged when no logs panel present', () => {
-    const layout = {
-      panels: { chat: { id: 'chat' } },
-      grid: { root: { type: 'leaf', data: { id: 'g1', views: ['chat'], activeView: 'chat' } } },
-    }
-
-    const result = stripBottomPanels(layout)
-
-    expect(result.panels).toEqual({ chat: { id: 'chat' } })
-    expect(result.grid.root.data.views).toEqual(['chat'])
-  })
-
-  it('returns layout unchanged for null/undefined input', () => {
-    expect(stripBottomPanels(null)).toBeNull()
-    expect(stripBottomPanels(undefined)).toBeUndefined()
   })
 })
 

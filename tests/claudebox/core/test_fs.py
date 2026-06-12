@@ -1,4 +1,4 @@
-"""Tests for claudebox.fs — filesystem utilities."""
+"""Tests for claudebox.fs - filesystem utilities."""
 
 from pathlib import Path
 
@@ -109,10 +109,12 @@ class TestMakeTempDir:
     def test_creates_and_cleans_up(self, tmp_path):
         with make_temp_dir() as temp:
             assert temp.is_dir()
+
         assert not temp.exists()
 
     def test_creates_parent_when_dir_specified(self, tmp_path):
         parent = tmp_path / "build" / "staging"
+
         with make_temp_dir(dir=parent) as temp:
             assert parent.is_dir()
             assert temp.is_dir()
@@ -121,6 +123,7 @@ class TestMakeTempDir:
         """Temp directory is created under the specified parent."""
 
         parent = tmp_path / "my-parent"
+
         with make_temp_dir(dir=parent) as temp:
             assert temp.parent == parent
 
@@ -140,6 +143,7 @@ def _setup_tree(tmp_path):
     (tmp_path / "src" / "web" / "package.json").write_text("{}")
     (tmp_path / "src" / "web" / "node_modules").mkdir()
     (tmp_path / "src" / "web" / "node_modules" / "package.json").write_text("{}")
+
     return tmp_path
 
 
@@ -243,7 +247,7 @@ class TestFindFiles:
 
     def test_finds_multiple_matches(self, tmp_path):
         _setup_tree(tmp_path)
-        # No gitignore — finds both pyproject.toml files
+        # No gitignore - finds both pyproject.toml files
         results = list(find_files(tmp_path, "pyproject.toml"))
         assert len(results) == 2
 

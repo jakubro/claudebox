@@ -1,4 +1,4 @@
-"""Handler for the ``daemon`` noun-group — wrap systemctl --user lifecycle commands."""
+"""Handler for the ``daemon`` noun-group - wrap systemctl --user lifecycle commands."""
 
 import argparse
 import subprocess
@@ -34,6 +34,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     """Add start/stop/restart/status nested actions."""
 
     actions = parser.add_subparsers(dest="action", metavar="<action>")
+
     for action_name, action_help in _ACTIONS:
         actions.add_parser(action_name, help=action_help)
 
@@ -43,12 +44,13 @@ _SUBPROCESS_TIMEOUT_SECONDS = 10
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Dispatch to start / stop / restart / status; bare invocation → sub-help + exit 2."""
+    """Dispatch to start / stop / restart / status; bare invocation -> sub-help + exit 2."""
 
     action = getattr(args, "action", None)
 
     if action is None:
         _print_subhelp()
+
         return 2
 
     dispatch = {
@@ -57,6 +59,7 @@ def handle(args: argparse.Namespace) -> int:
         "restart": _restart,
         "status": _status,
     }
+
     return dispatch[action]()
 
 
@@ -77,7 +80,9 @@ def _start() -> int:
 
     if not _systemctl("start"):
         return 1
+
     print_ok("daemon started")
+
     return 0
 
 
@@ -86,7 +91,9 @@ def _stop() -> int:
 
     if not _systemctl("stop"):
         return 1
+
     print_ok("daemon stopped")
+
     return 0
 
 
@@ -95,7 +102,9 @@ def _restart() -> int:
 
     if not _systemctl("restart"):
         return 1
+
     print_ok("daemon restarted")
+
     return 0
 
 
@@ -103,13 +112,16 @@ def _status() -> int:
     """Render the one-line status from ``systemctl show`` output."""
 
     main_pid, active_enter = _systemctl_show()
+
     if main_pid is None or main_pid == 0:
         console.print("claudebox-daemon: not running")
+
         return 0
 
     uptime = _format_uptime(active_enter)
     suffix = f", uptime {uptime}" if uptime else ""
     console.print(f"claudebox-daemon: running (pid {main_pid}{suffix})")
+
     return 0
 
 
@@ -124,6 +136,7 @@ def _systemctl(action: str) -> bool:
         )
     except (subprocess.SubprocessError, FileNotFoundError) as exc:
         console.print(f"[red]error: systemctl {action} failed: {exc}[/red]")
+
         return False
 
     return True
@@ -149,6 +162,7 @@ def _systemctl_show() -> tuple[int | None, datetime | None]:
     for line in result.stdout.splitlines():
         key, _, value = line.partition("=")
         value = value.strip()
+
         if key == "MainPID":
             try:
                 main_pid = int(value)
@@ -161,14 +175,16 @@ def _systemctl_show() -> tuple[int | None, datetime | None]:
 
 
 def _parse_systemctl_timestamp(value: str) -> datetime | None:
-    """Parse ``Mon 2026-05-14 18:00:00 UTC`` → tz-aware datetime, or None on failure."""
+    """Parse ``Mon 2026-05-14 18:00:00 UTC`` -> tz-aware datetime, or None on failure."""
 
     # Strip the day-of-week prefix; what remains is "YYYY-MM-DD HH:MM:SS <TZ>".
     tokens = value.split(maxsplit=1)
+
     if len(tokens) != 2:
         return None
 
     remainder = tokens[1]
+
     try:
         # systemctl prints UTC by default; honour explicit TZ tokens later if needed.
         return datetime.strptime(remainder, "%Y-%m-%d %H:%M:%S %Z").replace(tzinfo=UTC)
@@ -177,12 +193,13 @@ def _parse_systemctl_timestamp(value: str) -> datetime | None:
 
 
 def _format_uptime(active_enter: datetime | None) -> str | None:
-    """Render uptime as ``Xh Ym`` (or ``Ym`` / ``Ws Xd``) — returns None if unknown."""
+    """Render uptime as ``Xh Ym`` (or ``Ym`` / ``Ws Xd``) - returns None if unknown."""
 
     if active_enter is None:
         return None
 
     elapsed = datetime.now(UTC) - active_enter
+
     if elapsed < timedelta(0):
         return None
 
@@ -192,6 +209,7 @@ def _format_uptime(active_enter: datetime | None) -> str | None:
 
     if days:
         return f"{days}d {hours}h"
-    if hours:
+    elif hours:
         return f"{hours}h {minutes}m"
-    return f"{minutes}m"
+    else:
+        return f"{minutes}m"

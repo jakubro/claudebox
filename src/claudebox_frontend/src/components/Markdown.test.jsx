@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import Markdown from './Markdown'
 
-// Real react-markdown — lightweight, pure rendering, no side effects
+// Real react-markdown - lightweight, pure rendering, no side effects
 
 // Mock syntax highlighter (heavy, uses DOM APIs not available in jsdom)
 vi.mock('react-syntax-highlighter', () => ({

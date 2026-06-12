@@ -1,4 +1,4 @@
-"""Tests for claudebox.agent_session.orchestration.pipeline — event injection and buffering."""
+"""Tests for claudebox.agent_session.orchestration.pipeline - event injection and buffering."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 

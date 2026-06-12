@@ -1,4 +1,4 @@
-"""Board file watcher — mtime polling with debounce for board.yaml changes."""
+"""Board file watcher - mtime polling with debounce for board.yaml changes."""
 
 from pathlib import Path
 

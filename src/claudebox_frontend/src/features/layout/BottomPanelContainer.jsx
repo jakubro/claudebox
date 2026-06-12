@@ -1,4 +1,4 @@
-/** Bottom-panel container — renders 1-or-2 horizontal slots above the footer. */
+/** Bottom-panel container - renders 1-or-2 horizontal slots above the footer. */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { LOGS_STRIP_MAX_HEIGHT_RATIO, LOGS_STRIP_MIN_HEIGHT } from '../../config/dimensions'
@@ -7,7 +7,7 @@ import { useAppActions } from '../../context/AppActionsContext'
 import { useBottomPanels } from '../../context/BottomPanelsContext'
 import { isPrimaryPointer } from '../../utils/pointer'
 
-/** Bottom-panel strip — 1 slot full-width, 2 slots split 50/50; single shared height. */
+/** Bottom-panel strip - 1 slot full-width, 2 slots split 50/50; single shared height. */
 export default function BottomPanelContainer() {
   const { openSet, height, panelSideMap, setHeight } = useBottomPanels()
   const { isMaximized } = useAppActions()

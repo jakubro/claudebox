@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Footer from './Footer'
 
-// Real formatDurationClock — pure function, no side effects
+// Real formatDurationClock - pure function, no side effects
 
 // Default data factories for each context
 function defaultEventsData(overrides = {}) {
@@ -73,7 +73,7 @@ vi.mock('../../context/InteractionContext', () => ({
 // Footer's useCurrentBackendId hook touches WorkspaceContext and
 // DaemonStreamContext. Mock both so Footer can mount.
 // WorkspaceContext export is also consumed directly by useSessionDefaults
-// via useContext(WorkspaceContext) — re-export the createContext object so
+// via useContext(WorkspaceContext) - re-export the createContext object so
 // the import resolves.
 vi.mock('../../context/WorkspaceContext', async () => {
   const { createContext } = await import('react')
@@ -89,7 +89,7 @@ vi.mock('../../context/DaemonStreamContext', () => ({
 vi.mock('./components/ModelPicker', () => ({
   default: ({ currentModel, disabled }) => (
     <span data-testid="footer-model" data-disabled={disabled}>
-      {currentModel || '—'}
+      {currentModel || '-'}
     </span>
   ),
 }))
@@ -97,7 +97,7 @@ vi.mock('./components/ModelPicker', () => ({
 vi.mock('./components/PermissionModePicker', () => ({
   default: ({ currentPermissionMode, disabled }) => (
     <span data-testid="footer-permission-mode-picker" data-disabled={disabled}>
-      {currentPermissionMode || '—'}
+      {currentPermissionMode || '-'}
     </span>
   ),
 }))
@@ -105,7 +105,7 @@ vi.mock('./components/PermissionModePicker', () => ({
 vi.mock('./components/EffortLevelPicker', () => ({
   default: ({ currentEffortLevel, disabled }) => (
     <span data-testid="footer-effort" data-disabled={disabled}>
-      {currentEffortLevel || '—'}
+      {currentEffortLevel || '-'}
     </span>
   ),
 }))
@@ -236,7 +236,7 @@ describe('Footer', () => {
     render(<Footer />)
     const toggle = screen.getByTestId('footer-notifications-toggle')
     // Disabled: title says "disabled"
-    expect(toggle).toHaveAttribute('title', 'Notifications — disabled')
+    expect(toggle).toHaveAttribute('title', 'Notifications - disabled')
 
     await user.click(toggle)
     expect(mockSetNotificationsEnabled).toHaveBeenCalledWith(true)
@@ -246,7 +246,7 @@ describe('Footer', () => {
     mockSessionDataCtx = defaultSessionDataCtx({ notificationsEnabled: true })
     render(<Footer />)
     const toggle = screen.getByTestId('footer-notifications-toggle')
-    expect(toggle).toHaveAttribute('title', 'Notifications — enabled')
+    expect(toggle).toHaveAttribute('title', 'Notifications - enabled')
     expect(screen.getByLabelText('Notifications enabled')).toBeInTheDocument()
   })
 

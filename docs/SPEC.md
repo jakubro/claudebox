@@ -4,7 +4,7 @@
 
 ## Overview
 
-Claudebox is a containerized development environment for Claude AI. The web UI provides:
+Claudebox is a containerized development environment for AI coding agents. The web UI provides:
 
 - Real-time streaming chat
 - Dockable panel layout with persistence
@@ -335,8 +335,8 @@ The center area of the workspace shows a single **main panel** whose content is 
 | State                        | Behavior                   |
 |------------------------------|----------------------------|
 | User near bottom             | View follows new content as it streams in | <!-- claim:chat:autoscroll-bottom -->
-| User scrolls               | View stops following immediately and stays where the user left it, even while new content arrives | <!-- claim:chat:autoscroll-disable -->
-| User scrolls back to bottom | View resumes following new content; no jump-to-bottom button or other affordance | <!-- claim:chat:autoscroll-reenable -->
+| User moves the view off the bottom (scrolling, wheel, touch, Alt+Up/Down/Home/End, or a control-bar jump button) | View stops following immediately and stays where the user left it, even while new content arrives | <!-- claim:chat:autoscroll-disable -->
+| View returns to the bottom (scrolling back, Alt+End, Alt+Down past the last message, or the control-bar jump-to-bottom button) | View resumes following new content; no jump-to-bottom button or other affordance | <!-- claim:chat:autoscroll-reenable -->
 | Scroll within code block / nested scrollable | View keeps following; only scrolling the conversation itself stops it | <!-- claim:chat:auto-scroll-ignores-nested-scroll -->
 | Click bookmark for active session | Stops following when the resulting position will not be at the bottom; if the target keeps the chat scrolled to the bottom, the view keeps following | <!-- claim:chat:bookmark-click-respects-autoscroll -->
 | Tab switch                   | Preserve scroll position   | <!-- claim:chat:autoscroll-tab-switch -->
@@ -758,6 +758,7 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 - When a task has a description, the description appears in a third column on the same row as the title, truncating with an ellipsis when it overflows; hovering the description surfaces the full text <!-- claim:tool:todos-block-item-subtitle -->
 - Rows in the "Todos" panel align across the group: the state-icon column, the title column, and the description column have the same width on every row <!-- claim:tool:todos-block-grid-columns -->
 - The "Todos" panel opens with its row body visible; collapsing it folds the rows away <!-- claim:tool:todos-block-default-expanded -->
+- When the "Todos" panel would have nothing to show, the panel does not appear in the chat at all <!-- claim:tool:todos-block-empty-suppressed -->
 
 - Task prompt expanded by default for running tasks; auto-collapses when task completes; past completed tasks show collapsed with truncated first-line preview <!-- claim:tool:task-prompt-collapsed -->
 - Click prompt header to reveal full multi-line prompt text <!-- claim:tool:task-prompt-content -->
@@ -1469,6 +1470,7 @@ Aggregated cost display over time intervals: <!-- claim:panel-usage:content -->
 - Cost formatted as `$X.XX` <!-- claim:panel-usage:format -->
 - Zero cost shows `$0.00` <!-- claim:panel-usage:zero -->
 - Refreshes when sessions change <!-- claim:panel-usage:update -->
+- Forked sessions contribute only their post-fork spend to the totals; pre-fork spend is attributed once to the ancestor session it originated in <!-- claim:panel-usage:fork-dedup -->
 
 ---
 
@@ -1730,6 +1732,9 @@ Running `claudebox logs` tails the daemon log:
 - Running `logs` shows the most recent daemon output and continues following it <!-- claim:cli:logs -->
 - Errors appear red, warnings yellow, regular lines default <!-- claim:cli:logs-colorization -->
 - Running `logs all` interleaves daemon and container output; every line is prefixed with its source <!-- claim:cli:logs-all -->
+- `logs` shows each record on one line with a date and time, the log level, the logger name, and any extra fields; the on-disk log file is unchanged <!-- claim:cli:logs:rendering -->
+- `logs all` shows what the agent and the container API write, interleaved in time order with each line marked `agent` or `api` <!-- claim:cli:logs:multiplex -->
+- When a container log stream ends, the message says why — exit, connection error, or server error — instead of a bare "stream ended" notice <!-- claim:cli:logs:eof-cause -->
 
 ### 21.10 Status
 
@@ -1757,3 +1762,20 @@ Running `claudebox workspaces list`, `register`, or `deregister` manages the dae
 - Registering an already-registered workspace succeeds and reports it was already registered <!-- claim:cli:workspaces-register-idempotent -->
 - Two paths sharing a basename get distinct workspace IDs <!-- claim:cli:workspaces-register-collision -->
 - Running `workspaces deregister <id>` removes the workspace from the registry; the `.workspace` marker file is preserved <!-- claim:cli:workspaces-deregister -->
+
+---
+
+## 22. Multi-Runtime Support
+
+Workspaces choose their agent runtime via the `agent` field in `.claudebox/settings.toml`. The active runtime appears in the footer identity pill (§9). Each runtime declares its capability surface, and the frontend shows or hides controls accordingly.
+
+### 22.1 LangGraph Workspaces
+
+- LangGraph workspaces have file-system, shell, search, web, and notebook tools available; the model invokes them and their results appear as tool-use blocks identically to Claude workspaces <!-- claim:langgraph:file-tools -->
+- LangGraph workspaces can spawn sub-agents for focused tasks; the sub-agent runs to completion and its final report appears as a tool result in the parent's chat <!-- claim:langgraph:subagent -->
+- LangGraph workspaces have agentic task-list tools (create / get / list / output / stop / update); task state appears in the tasks panel and as in-chat task blocks identically to Claude workspaces <!-- claim:langgraph:task-management -->
+- LangGraph workspaces can ask the user structured questions through the interactive Q&A form; the user's selections return to the model as the next message identically to Claude workspaces <!-- claim:langgraph:ask-user-question -->
+- LangGraph workspaces discover workspace skills and invoke them by name; the skill body appears as turn-level instructions identically to Claude workspaces, and the slash-command autocomplete plus skills panel surface them on the welcome screen <!-- claim:langgraph:skill -->
+- LangGraph workspaces have a tool-search meta-tool the model invokes for self-discovery; matching tools appear in the tool result with their name and a short description <!-- claim:langgraph:tool-search -->
+- LangGraph workspaces connect to MCP servers declared per-workspace; the model can list and read their resources and invoke their tools identically to Claude workspaces, and one misbehaving server does not prevent the others from working <!-- claim:langgraph:mcp -->
+- LangGraph workspaces talk to the model provider declared in their `[langgraph] model = "provider:model"` workspace setting; the runtime identity pill displays "LangGraph" and the assistant turn appears identically regardless of which provider answers <!-- claim:langgraph:universal-provider-support -->
