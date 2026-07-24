@@ -9,6 +9,7 @@ from rich.table import Table
 
 from claudebox import console
 from claudebox.constants import WORKSPACE_MARKER, daemon_base_url, global_config_dir
+from ._completers import complete_workspace_id
 from ._term import print_fail, print_info, print_ok
 
 
@@ -55,7 +56,8 @@ def register(parser: argparse.ArgumentParser) -> None:
         "deregister",
         help="Remove a workspace from the daemon's registry (.workspace marker preserved)",
     )
-    deregister_action.add_argument("id", help="Workspace id to deregister")
+    deregister_id = deregister_action.add_argument("id", help="Workspace id to deregister")
+    setattr(deregister_id, "completer", complete_workspace_id)
 
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0)

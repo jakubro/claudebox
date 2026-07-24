@@ -386,8 +386,10 @@ test.describe('URL Routing', () => {
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
     await waitForAppReady(page)
 
-    // Session loaded - footer shows session ID
-    await expect(page.locator('[data-testid="footer-session"]')).toContainText(DEFAULT_SESSION_ID)
+    // Session loaded - footer shows the session id's first fragment
+    await expect(page.locator('[data-testid="footer-session"]')).toContainText(
+      DEFAULT_SESSION_ID.split('-')[0],
+    )
   })
 
   // SPEC: workspace:url-cross-workspace

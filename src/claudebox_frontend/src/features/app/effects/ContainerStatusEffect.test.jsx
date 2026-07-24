@@ -10,6 +10,7 @@ vi.mock('../../../context/DaemonStreamContext', () => ({
 
 const mockContainerMap = {
   containerMap: {},
+  stoppingSessions: new Set(),
   addStoppingSession: vi.fn(),
   removeStoppingSession: vi.fn(),
   removeSessionContainer: vi.fn(),
@@ -30,6 +31,7 @@ describe('ContainerStatusEffect', () => {
     vi.clearAllMocks()
     mockDaemonCtx.lastContainerEvent = null
     mockContainerMap.containerMap = {}
+    mockContainerMap.stoppingSessions = new Set()
     mockSessionsList.sessions = []
   })
 
@@ -108,5 +110,37 @@ describe('ContainerStatusEffect', () => {
     render(<ContainerStatusEffect />)
 
     expect(mockContainerMap.removeStoppingSession).not.toHaveBeenCalled()
+  })
+
+  describe('self-heal from sessions list', () => {
+    it('drops a stopping session absent from the refreshed list', () => {
+      mockContainerMap.stoppingSessions = new Set(['session-gone'])
+      mockSessionsList.sessions = [{ session_id: 'other', container_id: 'ctr-x' }]
+
+      render(<ContainerStatusEffect />)
+
+      expect(mockContainerMap.removeStoppingSession).toHaveBeenCalledWith('session-gone')
+      expect(mockContainerMap.removeSessionContainer).toHaveBeenCalledWith('session-gone')
+    })
+
+    it('drops a stopping session whose list entry has no container_id', () => {
+      mockContainerMap.stoppingSessions = new Set(['session-1'])
+      mockSessionsList.sessions = [{ session_id: 'session-1', container_id: null }]
+
+      render(<ContainerStatusEffect />)
+
+      expect(mockContainerMap.removeStoppingSession).toHaveBeenCalledWith('session-1')
+      expect(mockContainerMap.removeSessionContainer).toHaveBeenCalledWith('session-1')
+    })
+
+    it('keeps a stopping session whose container is still present in the list', () => {
+      mockContainerMap.stoppingSessions = new Set(['session-1'])
+      mockSessionsList.sessions = [{ session_id: 'session-1', container_id: 'ctr-1' }]
+
+      render(<ContainerStatusEffect />)
+
+      expect(mockContainerMap.removeStoppingSession).not.toHaveBeenCalled()
+      expect(mockContainerMap.removeSessionContainer).not.toHaveBeenCalled()
+    })
   })
 })

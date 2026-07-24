@@ -348,6 +348,30 @@ class TestRemove:
         with pytest.raises(ContainerNotFound):
             await svc.remove("nonexistent")
 
+    @pytest.mark.anyio
+    async def test_remove_broadcasts_sessions_changed_when_session_bound(self, tmp_path):
+        from claudebox_daemon.domain.sessions.models import SessionsChangedEvent
+
+        svc, events = _make_service(tmp_path)
+        svc._containers["c1"] = Container(id="c1", backend_id="b1", port=8080, session_id="sess-1")
+
+        await svc.remove("c1")
+
+        events.broadcast.assert_awaited_once()
+        event = events.broadcast.await_args.args[0]
+        assert isinstance(event, SessionsChangedEvent)
+        assert event.container_id == "c1"
+        assert event.workspace_id == "test-ws"
+
+    @pytest.mark.anyio
+    async def test_remove_no_broadcast_when_no_session(self, tmp_path):
+        svc, events = _make_service(tmp_path)
+        svc._containers["c1"] = Container(id="c1", backend_id="b1", port=8080)
+
+        await svc.remove("c1")
+
+        events.broadcast.assert_not_awaited()
+
 
 # --- start / stop lifecycle ---
 
@@ -456,3 +480,43 @@ class TestFindBySession:
         with patch.object(svc, "sync_state", new_callable=AsyncMock) as mock_sync:
             await svc.find_by_session("sess-1", sync=True)
             mock_sync.assert_awaited_once()
+
+
+# --- config reload at container-create (staleness regression) ---
+
+
+def _created_volumes(backend: MagicMock) -> list[str]:
+    """Volume mount args from the most recent backend run_container call."""
+
+    args = list(backend.run_container.call_args.args)
+
+    return [args[i + 1] for i, a in enumerate(args) if a == "--volume"]
+
+
+def _write_settings(tmp_path: Path, body: str) -> None:
+    settings = tmp_path / ".claudebox" / "settings.toml"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(body)
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+class TestConfigReloadOnCreate:
+    """A settings.toml mount edit reaches the next created container without a daemon restart."""
+
+    @pytest.mark.anyio
+    async def test_new_mount_applies_to_next_create(self, _touch_file, _touch_dir, tmp_path):
+        _write_settings(tmp_path, "root = true\n")
+        svc, _ = _make_service(tmp_path)
+        svc._runtime._backend.run_container.return_value = "backend-1"
+        svc._runtime._backend.get_host_port.return_value = 8080
+
+        await svc.create()
+        assert not any("extra_mount_src" in v for v in _created_volumes(svc._runtime._backend))
+
+        mount_src = tmp_path / "extra_mount_src"
+        mount_dst = tmp_path / "extra_mount_dst"
+        _write_settings(tmp_path, f'root = true\n\n[mounts]\n"{mount_src}" = "{mount_dst}"\n')
+
+        await svc.create()
+        assert any("extra_mount_src" in v for v in _created_volumes(svc._runtime._backend))

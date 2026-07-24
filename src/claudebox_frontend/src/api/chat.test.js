@@ -33,7 +33,7 @@ describe('sendMessage', () => {
       { name: 'file.txt', type: 'text/plain', data: 'base64data', extra: 'ignored' },
     ]
 
-    await sendMessage('with file', attachments)
+    await sendMessage('with file', { attachments })
 
     const call = containerFetch.mock.calls[0]
     const body = JSON.parse(call[1].body)
@@ -44,11 +44,32 @@ describe('sendMessage', () => {
   it('omits attachments key when array is empty', async () => {
     containerFetch.mockResolvedValue({ ok: true })
 
-    await sendMessage('no attachments', [])
+    await sendMessage('no attachments', { attachments: [] })
 
     const call = containerFetch.mock.calls[0]
     const body = JSON.parse(call[1].body)
     expect(body.attachments).toBeUndefined()
+  })
+
+  it('includes inline_replies when provided', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+    const inlineReplies = [{ quote: 'q', from: 'assistant', response: 'r' }]
+
+    await sendMessage('with replies', { inlineReplies })
+
+    const call = containerFetch.mock.calls[0]
+    const body = JSON.parse(call[1].body)
+    expect(body.inline_replies).toEqual(inlineReplies)
+  })
+
+  it('omits inline_replies key when empty', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await sendMessage('none', { inlineReplies: [] })
+
+    const call = containerFetch.mock.calls[0]
+    const body = JSON.parse(call[1].body)
+    expect(body.inline_replies).toBeUndefined()
   })
 
   it('throws when response is not ok', async () => {

@@ -82,6 +82,12 @@ just test-e2e-cov            # same as lint-e2e
 just update-e2e-fe-snapshots # regenerate visual regression snapshots
 ```
 
+### Shell completion (argcomplete)
+
+Bash tab-completion is wired via [argcomplete](https://github.com/kislyuk/argcomplete): `host_cli.py` carries the `# PYTHON_ARGCOMPLETE_OK` marker and calls `argcomplete.autocomplete(parser)` before argparse parses. Entity completers (workspace ids, container ids) live in `claudebox_cli/_completers.py`, attached to their argparse actions; `install.sh` generates the shell snippet via `register-python-argcomplete claudebox`.
+
+`e2e/cli/test_completion.py` exercises it by driving argcomplete's completion protocol against the CLI subprocess (`_ARGCOMPLETE=1`, `COMP_LINE`, `COMP_POINT`; completions read from fd 8), reusing the hermetic harness (bwrap + fake bins + fake daemon).
+
 ### Test UI (in-container harness)
 
 See [TEST-UI.md](TEST-UI.md) for the full reference.
@@ -481,6 +487,7 @@ Three tiers for API calls:
 - Component prefix convention: `.chat-panel`, `.tool-block`, `.session-item`
 - State modifiers via chaining: `.turn-container.pending`
 - CSS variables for theme values (defined in `features/app/App.css`)
+- Continuous **decorative** animations (shimmers, glows, spinners) must animate compositor-accelerated properties (`transform` / `opacity`) — never animate custom properties that feed `background`/`box-shadow`/gradient repaints, which run on the main thread and stutter under load (e.g. while streaming). Rotate a transform-driven layer and reveal it through a border/mask instead
 - `src/main.css` is the top-level cascade orchestrator — imports feature and cross-feature `index.css` files in deterministic order
 - App foundation (variables, resets, layout, theme) in `features/app/` — imported first by orchestrator
 - ✅ **Always** co-locate CSS with its component — `{Component}.css` next to `{Component}.jsx` (same filename)

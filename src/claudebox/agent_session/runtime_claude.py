@@ -56,12 +56,14 @@ from .config import ClaudeAgentSessionConfig, RuntimeCapabilities
 from .events import (
     AgentEvent,
     AssistantMessagePayload,
+    CompactBoundaryPayload,
     ContentBlock,
     McpServerInit,
     RateLimitPayload,
     ResultPayload,
     SystemInitData,
     SystemInitPayload,
+    TaskNotificationPayload,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -87,13 +89,18 @@ LOG_LEVELS = logging.getLevelNamesMapping()
 _logger = get_logger(__name__)
 
 
-# SDK init data keys recognised at the pinned version. Unknown keys raise; a new
-# SDK release adding fields requires an explicit ticket to extend SystemInitData
-# and update this set - the fail-loud signal is by design.
+# SDK init data keys claudebox recognises at the pinned version. Keys outside this
+# set are not errors - they are captured verbatim into SystemInitData.extra and
+# logged once (see _translate_sdk_message), so additive SDK releases stay
+# non-breaking. Extend this set (and SystemInitData) only when a consumer needs to
+# read a new field. `extra` is claudebox's own passthrough bucket, not a wire key.
 KNOWN_INIT_FIELDS: frozenset[str] = frozenset(
-    {f.name for f in dataclasses.fields(SystemInitData)}
+    {f.name for f in dataclasses.fields(SystemInitData) if f.name != "extra"}
     | {"type", "subtype", "session_id", "model"}
 )
+
+# Unknown init keys already warned about - dedups the warning to once per process.
+_SEEN_UNKNOWN_INIT_KEYS: set[str] = set()
 
 
 class ToolInputValidator(Protocol):
@@ -190,6 +197,10 @@ class ClaudeRuntime:
 
     # PreCompact SDK trigger -> claudebox compact_metadata.trigger.
     SDK_COMPACT_TRIGGER_MAP = {"auto": "context_limit", "manual": "manual"}
+
+    # SDK task_notification status -> claudebox NotificationStatus vocabulary.
+    # "stopped" maps to "killed" so the Tasks panel's killed-shown-as-failed path fires.
+    SDK_TASK_STATUS_MAP = {"completed": "completed", "failed": "failed", "stopped": "killed"}
 
     DEFAULT_MODEL = "claude-opus-4-8"
     DEFAULT_CONTEXT_WINDOW = 1_000_000
@@ -426,27 +437,73 @@ class ClaudeRuntime:
         """Yield SDK-free AgentEvents projected from the live SDK response stream."""
 
         async for msg in self._sdk.receive_response():
-            yield self._translate_sdk_message(msg)
+            event = self._translate_sdk_message(msg)
+
+            if event is not None:
+                yield event
 
     @classmethod
-    def _translate_sdk_message(cls, message) -> AgentEvent:
+    def _translate_sdk_message(cls, message) -> AgentEvent | None:
         """Project an SDK message into a runtime-neutral AgentEvent with a typed payload.
 
         Dispatches by ``isinstance`` against the SDK message classes so the
         type-checker narrows ``message`` to the concrete class on each branch.
-        Unknown classes raise - loud failure is the right signal for an SDK
-        contract change.
+        Translates ``compact_boundary`` and ``task_notification`` system messages
+        to typed events; returns ``None`` for other non-init system messages
+        (retry/mirror/progress notifications, dropped silently) and for unknown
+        message classes (dropped with a warning) so the caller ignores them -
+        additive SDK message types stay non-breaking, never raised.
         """
 
         if isinstance(message, SdkSystemMessage):
+            subtype = getattr(message, "subtype", "")
+
+            if subtype == "compact_boundary":
+                data = getattr(message, "data", {}) or {}
+                meta = data.get("compact_metadata") or {}
+                sdk_trigger = meta.get("trigger")
+                trigger = (
+                    cls.SDK_COMPACT_TRIGGER_MAP.get(sdk_trigger, sdk_trigger)
+                    if isinstance(sdk_trigger, str)
+                    else "unknown"
+                )
+
+                return AgentEvent(
+                    kind="compact_boundary",
+                    payload=CompactBoundaryPayload(
+                        trigger=trigger,
+                        pre_tokens=meta.get("pre_tokens"),
+                        post_tokens=meta.get("post_tokens"),
+                        duration_ms=meta.get("duration_ms"),
+                    ),
+                )
+
+            if subtype == "task_notification":
+                data = getattr(message, "data", {}) or {}
+                sdk_status = data.get("status")
+                status = (
+                    cls.SDK_TASK_STATUS_MAP.get(sdk_status, sdk_status)
+                    if isinstance(sdk_status, str)
+                    else "completed"
+                )
+
+                return AgentEvent(
+                    kind="task_notification",
+                    payload=TaskNotificationPayload(
+                        task_id=str(data.get("task_id") or ""),
+                        status=status,
+                        summary=data.get("summary"),
+                    ),
+                )
+
+            if subtype != "init":
+                return None
+
             data = getattr(message, "data", {}) or {}
             unknown_keys = set(data.keys()) - KNOWN_INIT_FIELDS
 
             if unknown_keys:
-                raise ValueError(
-                    f"Unknown SDK init data fields: {sorted(unknown_keys)}. "
-                    f"Extend SystemInitData + KNOWN_INIT_FIELDS to consume."
-                )
+                cls._warn_unknown_init_keys(unknown_keys)
 
             init_data = SystemInitData(
                 agents=data.get("agents") or [],
@@ -469,12 +526,13 @@ class ClaudeRuntime:
                 slash_commands=data.get("slash_commands") or [],
                 tools=data.get("tools") or [],
                 uuid=data.get("uuid"),
+                extra={k: data[k] for k in sorted(unknown_keys)},
             )
 
             return AgentEvent(
                 kind="system_init",
                 payload=SystemInitPayload(
-                    subtype=getattr(message, "subtype", ""),
+                    subtype=subtype,
                     session_id=data.get("session_id", ""),
                     model=data.get("model"),
                     data=init_data,
@@ -535,7 +593,25 @@ class ClaudeRuntime:
                 ),
             )
 
-        raise ValueError(f"Unknown SDK message type: {type(message).__name__}")
+        _logger.warning("unknown_sdk_message_type", class_name=type(message).__name__)
+
+        return None
+
+    @classmethod
+    def _warn_unknown_init_keys(cls, keys: set[str]) -> None:
+        """Log SDK init keys claudebox does not consume - once per key per process.
+
+        Additive SDK fields are captured into SystemInitData.extra, not raised on;
+        this warning keeps them discoverable so a consumer can promote them later.
+        """
+
+        fresh = sorted(keys - _SEEN_UNKNOWN_INIT_KEYS)
+
+        if not fresh:
+            return
+
+        _SEEN_UNKNOWN_INIT_KEYS.update(fresh)
+        _logger.warning("unknown_sdk_init_fields", fields=fresh)
 
     @classmethod
     def _translate_content(cls, content) -> str | list[ContentBlock]:

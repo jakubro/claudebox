@@ -15,6 +15,7 @@ from ..core.logging import get_logger
 
 if TYPE_CHECKING:
     from .models import ImageBuildMode
+    from ..config import Config
 
 
 @dataclass
@@ -61,9 +62,11 @@ class LocalRuntime:
         run_args: Iterable = (),
         cmd_args: Iterable = (),
         detach: bool = False,
+        config: "Config | None" = None,
     ) -> str | None:
         """Spawn container_api_server.py as a subprocess on a free port."""
 
+        # config accepted for ContainerRuntimeProtocol conformance; local runtime builds no run args.
         port = self._find_free_port()
         backend_id = str(uuid.uuid4())
 

@@ -90,13 +90,24 @@ describe('deriveSessionStatus', () => {
     expect(result.current.deriveSessionStatus('s1', [], 'ctr-1')).toBe('running')
   })
 
-  it('returns "stopping" with precedence over a present container', () => {
+  it('returns "stopping" only while a container is still present', () => {
     const { result } = renderHook(() => useContainerMap(), { wrapper })
     act(() => {
       result.current.setSessionContainer('s1', 'ctr-1')
       result.current.addStoppingSession('s1')
     })
     expect(result.current.deriveSessionStatus('s1')).toBe('stopping')
+  })
+
+  it('yields "none" when stopping but no container resolves (list-authoritative self-heal)', () => {
+    const { result } = renderHook(() => useContainerMap(), { wrapper })
+    // Stopping hint lingers but no container is known anywhere (missed/unmappable
+    // "stopped" event). The list is authoritative: status settles to gray, not wedged.
+    act(() => result.current.addStoppingSession('s1'))
+    expect(result.current.deriveSessionStatus('s1')).toBe('none')
+    expect(
+      result.current.deriveSessionStatus('s1', [{ session_id: 's1', container_id: null }]),
+    ).toBe('none')
   })
 
   it('clears out of "stopping" once the stopping flag and mapping are removed', () => {

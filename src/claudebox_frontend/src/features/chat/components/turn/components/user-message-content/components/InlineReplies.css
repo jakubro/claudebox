@@ -1,0 +1,64 @@
+/* Inline-replies transcript placeholder (collapsed summary + expandable quote/reply pairs) */
+
+.inline-replies-placeholder {
+  margin-top: 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+.inline-replies-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.inline-replies-summary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.inline-replies-label {
+  font-weight: 600;
+}
+
+.inline-replies-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.inline-reply-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inline-reply-quote {
+  border-left: 2px solid var(--text-muted);
+  padding-left: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inline-reply-from {
+  margin-right: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.inline-reply-response {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -492,6 +492,36 @@ describe('processEvents', () => {
     expect(blocks[0].isCompacting).toBe(false)
   })
 
+  it('folds summary into one completed compaction block for [compact_start, compact_boundary, summary]', () => {
+    const events = [
+      { subtype: 'compact_start' },
+      {
+        id: 'cb_1',
+        type: 'system',
+        subtype: 'compact_boundary',
+        message_data: { compact_metadata: { trigger: 'context_limit', pre_tokens: 128000 } },
+      },
+      {
+        type: 'user',
+        subtype: 'text',
+        is_human: false,
+        content: 'This session is being continued from a previous conversation...',
+      },
+    ]
+
+    const blocks = processEvents(events)
+
+    // Exactly one block: the completed compaction block; the compact_start spinner is suppressed.
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].type).toBe('compaction')
+    expect(blocks[0].isCompacting).toBe(false)
+    expect(blocks[0].summary).toEqual([
+      'This session is being continued from a previous conversation...',
+    ])
+    // Summary is folded into the block, never a standalone text bubble.
+    expect(blocks.filter(b => b.type === 'text')).toHaveLength(0)
+  })
+
   it('skips empty text events', () => {
     const events = [{ subtype: 'text', content: '   ' }]
 
@@ -1214,6 +1244,29 @@ describe('isVisibleEvent', () => {
     expect(isVisibleEvent({ type: 'system', subtype: 'task_notification' })).toBe(true)
   })
 
+  it('hides the task-notification user echo stored as a human message', () => {
+    expect(
+      isVisibleEvent({
+        type: 'user',
+        subtype: 'message',
+        is_human: true,
+        content:
+          '<task-notification>\n<task-id>agent_abc</task-id>\n<status>completed</status>\n</task-notification>',
+      }),
+    ).toBe(false)
+  })
+
+  it('hides the task-notification user echo reclassified as non-human text', () => {
+    expect(
+      isVisibleEvent({
+        type: 'user',
+        subtype: 'text',
+        is_human: false,
+        content: '<task-notification>\n<task-id>agent_abc</task-id>\n</task-notification>',
+      }),
+    ).toBe(false)
+  })
+
   it('passes through system model_changed events', () => {
     expect(
       isVisibleEvent({ type: 'system', subtype: 'model_changed', model: 'claude-opus-4-6' }),
@@ -1691,28 +1744,6 @@ describe('appendTaskNotifications', () => {
     })
   })
 
-  it('processes XML notification tags from non-human user text', () => {
-    const existing = new Map()
-    const events = [
-      {
-        type: 'user',
-        subtype: 'text',
-        is_human: false,
-        content:
-          '<task-notification task_id="abc123" status="completed">Agent finished</task-notification>',
-      },
-    ]
-
-    const result = appendTaskNotifications(existing, events)
-
-    expect(result.size).toBe(1)
-    expect(result.get('abc123')).toEqual({
-      status: 'completed',
-      summary: 'Agent finished',
-      content: 'Agent finished',
-    })
-  })
-
   it('preserves existing notifications when adding new ones', () => {
     const existing = new Map([
       ['task-old', { status: 'completed', summary: 'Old task', content: 'Old task' }],
@@ -2092,45 +2123,6 @@ describe('appendTodoDiffs', () => {
     ])
 
     expect(p3.has('task_a')).toBe(false)
-  })
-
-  it('removes async subagent todos on XML user message notification', () => {
-    // Setup: async launch + subagent writes todos
-    const { previousTodosBySubagent: p1, asyncTaskIdMap: a1 } = appendTodoDiffs(
-      new Map(),
-      new Map(),
-      new Map(),
-      [
-        {
-          subtype: 'tool_result',
-          tool_use_id: 'task_b',
-          content: 'Async agent launched',
-          tool_use_result: { isAsync: true, agentId: 'agent_abc' },
-        },
-        {
-          subtype: 'tool_use',
-          content: 'TodoWrite',
-          tool_use_id: 'tu_sub',
-          parent_tool_use_id: 'task_b',
-          tool_input: { todos: [{ content: 'Work item', status: 'in_progress' }] },
-        },
-      ],
-    )
-
-    expect(p1.has('task_b')).toBe(true)
-
-    // Completion via XML in user message
-    const { previousTodosBySubagent: p2 } = appendTodoDiffs(new Map(), p1, a1, [
-      {
-        type: 'user',
-        is_human: false,
-        subtype: 'text',
-        content:
-          '<task-notification task_id="agent_abc" status="completed">Done</task-notification>',
-      },
-    ])
-
-    expect(p2.has('task_b')).toBe(false)
   })
 
   it('cleans up multiple async tasks independently', () => {

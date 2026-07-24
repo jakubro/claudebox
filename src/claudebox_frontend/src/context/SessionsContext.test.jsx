@@ -1,8 +1,10 @@
 /** Tests for SessionsContext. */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PINS_CHANGE_SIGNAL_KEY } from '../config/storage'
+import { SESSIONS_REFRESH_FALLBACK_MS } from '../config/timing'
 
 const mockWorkspaceCtx = { workspaceId: 'ws-1' }
 vi.mock('./WorkspaceContext', () => ({ useWorkspace: () => mockWorkspaceCtx }))
@@ -141,6 +143,59 @@ describe('SessionsContext', () => {
     expect(patchGlobalUiState).toHaveBeenCalledWith([
       { op: 'remove', path: 'pinnedSessions', value: 's1' },
     ])
+  })
+
+  it('togglePin signals other tabs via the pins-changed storage key', async () => {
+    const user = userEvent.setup()
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    await user.click(screen.getByTestId('pin'))
+
+    expect(setItem).toHaveBeenCalledWith(PINS_CHANGE_SIGNAL_KEY, expect.any(String))
+    setItem.mockRestore()
+  })
+
+  it('refetches ui-state on a cross-tab pins-changed storage event', async () => {
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+    listSessions.mockClear()
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: PINS_CHANGE_SIGNAL_KEY }))
+    })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalled()
+    })
+  })
+
+  it('refetches on the fallback interval when no daemon signal arrives', async () => {
+    vi.useFakeTimers()
+
+    try {
+      renderWithProvider()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      listSessions.mockClear()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SESSIONS_REFRESH_FALLBACK_MS)
+      })
+
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('setWorkspaceColor with value calls patchGlobalUiState with set op', async () => {

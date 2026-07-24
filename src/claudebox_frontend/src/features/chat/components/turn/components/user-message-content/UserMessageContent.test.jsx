@@ -175,6 +175,82 @@ describe('UserMessageContent', () => {
     expect(screen.getByAltText('image.jpg')).toBeInTheDocument()
   })
 
+  it('renders a collapsed inline-replies placeholder', () => {
+    const inlineReplies = [
+      { quote: 'ctx window', from: 'assistant', response: 'how big?' },
+      { quote: 'my text', from: 'user', response: 'a note' },
+    ]
+    render(<UserMessageContent message="see comments" inlineReplies={inlineReplies} />)
+
+    expect(screen.getByText('Replied inline - 2 comments')).toBeInTheDocument()
+    expect(screen.queryByText('how big?')).not.toBeInTheDocument()
+  })
+
+  it('expands the inline-replies placeholder to reveal quote/reply pairs', async () => {
+    const user = userEvent.setup()
+    const inlineReplies = [{ quote: 'ctx window', from: 'assistant', response: 'how big?' }]
+    render(<UserMessageContent message="see" inlineReplies={inlineReplies} />)
+
+    await user.click(screen.getByTestId('inline-replies-placeholder'))
+
+    expect(screen.getByText('how big?')).toBeInTheDocument()
+    expect(screen.getByText('ctx window')).toBeInTheDocument()
+  })
+
+  it('singularizes the inline-replies placeholder for a single comment', () => {
+    render(
+      <UserMessageContent
+        message=""
+        inlineReplies={[{ quote: 'q', from: 'user', response: 'r' }]}
+      />,
+    )
+
+    expect(screen.getByText('Replied inline - 1 comment')).toBeInTheDocument()
+  })
+
+  it('renders no inline-replies placeholder when inlineReplies is null', () => {
+    render(<UserMessageContent message="Plain" inlineReplies={null} />)
+
+    expect(screen.queryByTestId('inline-replies-placeholder')).not.toBeInTheDocument()
+  })
+
+  describe('content-only sends (empty composer)', () => {
+    it('renders no empty message box for an attachment-only send', () => {
+      const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
+      const { container } = render(<UserMessageContent message="" attachments={attachments} />)
+
+      // Attachment chips present, but no message-content element at all.
+      expect(screen.getByAltText('photo.png')).toBeInTheDocument()
+      expect(container.querySelector('.message-content')).toBeNull()
+      expect(container.querySelector('.message-content-with-commands')).toBeNull()
+    })
+
+    it('renders no empty message box for a reply-only send', () => {
+      const inlineReplies = [{ quote: 'q', from: 'user', response: 'r' }]
+      const { container } = render(<UserMessageContent message="" inlineReplies={inlineReplies} />)
+
+      expect(screen.getByText('Replied inline - 1 comment')).toBeInTheDocument()
+      expect(container.querySelector('.message-content')).toBeNull()
+      expect(container.querySelector('.message-content-with-commands')).toBeNull()
+    })
+
+    it('suppresses the box for a whitespace-only message too', () => {
+      const attachments = [{ name: 'a.pdf', type: 'application/pdf', data: 'JVBERi0=' }]
+      const { container } = render(<UserMessageContent message="   " attachments={attachments} />)
+
+      expect(screen.getByText('a.pdf')).toBeInTheDocument()
+      expect(container.querySelector('.message-content')).toBeNull()
+    })
+
+    it('still renders the message box when text is present alongside attachments', () => {
+      const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
+      const { container } = render(<UserMessageContent message="Look" attachments={attachments} />)
+
+      expect(screen.getByText('Look')).toHaveClass('message-content')
+      expect(container.querySelector('.message-content')).not.toBeNull()
+    })
+  })
+
   describe('attachment zoom', () => {
     it('opens zoom overlay on image click', async () => {
       const user = userEvent.setup()

@@ -46,6 +46,7 @@ export default function useChatKeyboard({
   setSending,
   enqueueMessage,
   deferSend,
+  hasBufferedReplies,
   isCreating,
   canInterrupt,
   interruptStatus,
@@ -72,6 +73,17 @@ export default function useChatKeyboard({
   const handleSubmit = useCallback(async () => {
     const input = peekInput()
     if (!input) {
+      // Composer is empty, but a reply-only inline batch still sends (no side bar).
+      if (hasBufferedReplies?.()) {
+        setSending(true)
+        try {
+          await send('', { attachments: [] })
+        } catch {
+          // nothing to restore
+        } finally {
+          setSending(false)
+        }
+      }
       return
     }
 
@@ -83,14 +95,14 @@ export default function useChatKeyboard({
 
     setSending(true)
     try {
-      await send(input.rawPrompt, input.currentAttachments)
+      await send(input.rawPrompt, { attachments: input.currentAttachments })
       commitInput(input.rawPrompt)
     } catch {
       // Text remains in textarea - nothing to restore
     } finally {
       setSending(false)
     }
-  }, [peekInput, commitInput, send, setSending, isCreating, deferSend])
+  }, [peekInput, commitInput, send, setSending, isCreating, deferSend, hasBufferedReplies])
 
   // Queue handler - Alt+Enter queues message for later sending
   const handleQueue = useCallback(() => {

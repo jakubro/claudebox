@@ -1,6 +1,6 @@
 /** Tests for ChatPanel component. */
 
-import { act, render as rtlRender, screen } from '@testing-library/react'
+import { act, render as rtlRender, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatPanel from './ChatPanel'
@@ -107,20 +107,25 @@ vi.mock('./hooks/useMessageJump', () => ({
   }),
 }))
 
+// Stable identity across renders (mirrors the real useRef-backed context) so
+// effects keyed on these refs fire only on their intended trigger, not per render.
+const mockAppActions = vi.hoisted(() => ({
+  jumpPrevRef: { current: null },
+  jumpNextRef: { current: null },
+  jumpTopRef: { current: null },
+  jumpBottomRef: { current: null },
+  chatScrollPositionRef: { current: 0 },
+  chatAutoScrollEnabledRef: { current: true },
+  autoCollapseEnabledRef: { current: true },
+  markUserIntentRef: { current: null },
+  markProgrammaticScrollRef: { current: null },
+  focusChatTab: vi.fn(),
+  addSessionTab: vi.fn(),
+  replaceSessionTab: vi.fn(),
+}))
+
 vi.mock('../../context/AppActionsContext', () => ({
-  useAppActions: () => ({
-    jumpPrevRef: { current: null },
-    jumpNextRef: { current: null },
-    jumpTopRef: { current: null },
-    jumpBottomRef: { current: null },
-    chatScrollPositionRef: { current: 0 },
-    chatAutoScrollEnabledRef: { current: true },
-    markUserIntentRef: { current: null },
-    markProgrammaticScrollRef: { current: null },
-    focusChatTab: vi.fn(),
-    addSessionTab: vi.fn(),
-    replaceSessionTab: vi.fn(),
-  }),
+  useAppActions: () => mockAppActions,
 }))
 
 // --- Mock heavy external libraries used by Turn's children ---
@@ -136,10 +141,13 @@ vi.mock('./tools/tool-block', () => ({
 // --- Mock child components that are not Turn ---
 
 vi.mock('./components/chat-control-bar', () => ({
-  default: ({ onReload }) => (
+  default: ({ onReload, onToggleAutoCollapse }) => (
     <div data-testid="mock-chat-control-bar">
       <button type="button" data-testid="mock-reload-btn" onClick={onReload}>
         Reload
+      </button>
+      <button type="button" data-testid="mock-autocollapse-btn" onClick={onToggleAutoCollapse}>
+        AutoCollapse
       </button>
     </div>
   ),
@@ -310,6 +318,8 @@ describe('ChatPanel', () => {
     mockChatControllerData = defaultChatControllerData()
     mockDaemonStreamData = { progressMessage: null }
     mockInterrupt.mockClear()
+    mockAppActions.autoCollapseEnabledRef.current = true
+    mockAppActions.chatAutoScrollEnabledRef.current = true
   })
 
   describe('event filtering', () => {
@@ -373,6 +383,185 @@ describe('ChatPanel', () => {
 
       const turns = screen.getAllByTestId('turn-container')
       expect(turns).toHaveLength(1)
+    })
+  })
+
+  describe('auto-collapse', () => {
+    // Events carry `ts` so getTurnTimeRange yields a startTime - without it
+    // TurnMeta (and its collapse toggle) never renders, so a turn cannot be
+    // expanded/collapsed by hand.
+    const threeCompletedTurns = () => ({
+      events: [
+        { type: 'user', is_human: true, content: 'One', turn_id: 't1', ts: '2026-01-01T00:00:01Z' },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'A1',
+          turn_id: 't1',
+          ts: '2026-01-01T00:00:02Z',
+        },
+        { type: 'result', subtype: 'success', turn_id: 't1' },
+        { type: 'user', is_human: true, content: 'Two', turn_id: 't2', ts: '2026-01-01T00:00:11Z' },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'A2',
+          turn_id: 't2',
+          ts: '2026-01-01T00:00:12Z',
+        },
+        { type: 'result', subtype: 'success', turn_id: 't2' },
+        {
+          type: 'user',
+          is_human: true,
+          content: 'Three',
+          turn_id: 't3',
+          ts: '2026-01-01T00:00:21Z',
+        },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'A3',
+          turn_id: 't3',
+          ts: '2026-01-01T00:00:22Z',
+        },
+        { type: 'result', subtype: 'success', turn_id: 't3' },
+      ],
+    })
+
+    it('collapses every turn except the last by default', async () => {
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+      expect(document.querySelector('[data-turn-id="t2"]')).toHaveClass('turn-collapsed')
+      expect(document.querySelector('[data-turn-id="t3"]')).not.toHaveClass('turn-collapsed')
+    })
+
+    it('expands every collapsed turn when auto-collapse is toggled off', async () => {
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      const user = userEvent.setup()
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      await user.click(screen.getByTestId('mock-autocollapse-btn'))
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+      expect(document.querySelector('[data-turn-id="t2"]')).not.toHaveClass('turn-collapsed')
+    })
+
+    const withFourthTurn = () => ({
+      events: [
+        ...threeCompletedTurns().events,
+        {
+          type: 'user',
+          is_human: true,
+          content: 'Four',
+          turn_id: 't4',
+          ts: '2026-01-01T00:00:31Z',
+        },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'A4',
+          turn_id: 't4',
+          ts: '2026-01-01T00:00:32Z',
+        },
+        { type: 'result', subtype: 'success', turn_id: 't4' },
+      ],
+    })
+
+    it('keeps a manually-expanded turn expanded when a new turn arrives', async () => {
+      const user = userEvent.setup()
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      const { rerender } = await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      // Manually expand the oldest collapsed turn.
+      await user.click(document.querySelector('[data-turn-id="t1"] .turn-meta'))
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+
+      // A new turn arrives (t4 becomes the last turn).
+      mockEventsData = defaultEventsData(withFourthTurn())
+      await act(async () => {
+        rerender(<ChatPanel />)
+      })
+
+      // The manual expand survives; the previously-last turn (t3) collapses.
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t3"]')).toHaveClass('turn-collapsed')
+      })
+      expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      expect(document.querySelector('[data-turn-id="t2"]')).toHaveClass('turn-collapsed')
+      expect(document.querySelector('[data-turn-id="t4"]')).not.toHaveClass('turn-collapsed')
+    })
+
+    it('returns a manually-expanded turn to auto control once it is collapsed by hand', async () => {
+      const user = userEvent.setup()
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      const { rerender } = await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      // Expand t1, then collapse it again by hand (clears its manual-expand memory).
+      await user.click(document.querySelector('[data-turn-id="t1"] .turn-meta'))
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+      await user.click(document.querySelector('[data-turn-id="t1"] .turn-meta'))
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      // New turn arrives: t1 stays collapsed (back under auto control).
+      mockEventsData = defaultEventsData(withFourthTurn())
+      await act(async () => {
+        rerender(<ChatPanel />)
+      })
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t4"]')).not.toHaveClass('turn-collapsed')
+      })
+      expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+    })
+
+    it('wipes manual-expand memory when auto-collapse is toggled off then on', async () => {
+      const user = userEvent.setup()
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      // Manually expand t1.
+      await user.click(document.querySelector('[data-turn-id="t1"] .turn-meta'))
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+
+      // Toggle off (all expand) then on (fresh collapse-all-but-last, memory wiped).
+      await user.click(screen.getByTestId('mock-autocollapse-btn'))
+      await user.click(screen.getByTestId('mock-autocollapse-btn'))
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+      expect(document.querySelector('[data-turn-id="t2"]')).toHaveClass('turn-collapsed')
+      expect(document.querySelector('[data-turn-id="t3"]')).not.toHaveClass('turn-collapsed')
     })
   })
 

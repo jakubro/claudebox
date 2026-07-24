@@ -57,7 +57,7 @@ export default function useMessageQueue({
     if (resultCount > prevResultCountRef.current && manager.hasQueued()) {
       const item = manager.handleResponseCycleEnd()
       if (item) {
-        sendFn(item.content, item.attachments)
+        sendFn(item.content, { attachments: item.attachments })
       }
     }
     prevResultCountRef.current = resultCount
@@ -69,7 +69,7 @@ export default function useMessageQueue({
     if (compactionCount > prevCompactionCountRef.current && manager.hasQueued()) {
       const item = manager.handleResponseCycleEnd()
       if (item) {
-        sendFn(item.content, item.attachments)
+        sendFn(item.content, { attachments: item.attachments })
       }
     }
     prevCompactionCountRef.current = compactionCount
@@ -125,7 +125,7 @@ export default function useMessageQueue({
     id => {
       const item = manager.sendNowItem(id)
       if (item) {
-        sendFn(item.content, item.attachments)
+        sendFn(item.content, { attachments: item.attachments })
       }
     },
     [manager, sendFn],

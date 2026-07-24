@@ -309,6 +309,7 @@ test.describe('Container Status Indicators', () => {
   })
 
   // SPEC: container:stop-clears-uniformly
+  // SPEC: panel-session:stopped-shows-stopped
   test('stopping a session clears every status dot together - no surface wedges', async ({
     page,
   }) => {
@@ -320,21 +321,27 @@ test.describe('Container Status Indicators', () => {
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
         const base = loadFixture('sessions/default.json').sessions[0]
+        // num_turns > 0 keeps the row visible after the active session deselects
+        // to welcome on stop (hide-empty otherwise hides a 0-turn stopped session),
+        // isolating this test to status-dot fidelity rather than list visibility.
         await route.fulfill({
           json: {
-            sessions: [{ ...base, container_id: stopped ? undefined : DEFAULT_CONTAINER_ID }],
+            sessions: [
+              { ...base, num_turns: 1, container_id: stopped ? undefined : DEFAULT_CONTAINER_ID },
+            ],
           },
         })
       } else {
         await route.fallback()
       }
     })
-    // The composite DELETE marks the session container-less for later refetches.
+    // The composite DELETE initiates the stop; the container stays in the sessions
+    // list through the STOPPING grace period (stop_container keeps it registered)
+    // and leaves only once the terminal stopped -> remove sequence completes below.
     await page.route(
       `**/api/workspaces/${DEFAULT_WORKSPACE_ID}/containers/${DEFAULT_CONTAINER_ID}`,
       async route => {
         if (route.request().method() === 'DELETE') {
-          stopped = true
           await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
         } else {
           await route.fallback()
@@ -357,10 +364,12 @@ test.describe('Container Status Indicators', () => {
     await expect(headerDot).toHaveAttribute('data-status', 'stopping')
     await expect(panelDot).toHaveClass(/container-status-stopping/)
 
-    // Daemon broadcasts the terminal stopping -> stopped transition, then the
-    // sessions list refetches without the container.
+    // Daemon broadcasts the terminal stopping -> stopped transition; remove() then
+    // drops the container from the registry and re-signals (SessionsChangedEvent),
+    // so the list refetches without it and status is authoritative.
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopping')
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopped')
+    stopped = true
     await daemon.sendEvent({ type: 'sessions_changed' })
 
     // Every dot clears together - none wedged on stopping, none back to running.

@@ -59,12 +59,18 @@ export default function usePendingMessages(events, sessionId) {
     }
   }, [events, pendingMessages])
 
-  // Add a pending message with optional attachments, returns its ID for later removal
-  const addPendingMessage = useCallback((content, attachments = null) => {
+  // Add a pending message with optional attachments and inline replies, returns its ID
+  const addPendingMessage = useCallback((content, attachments = null, inlineReplies = null) => {
     const id = crypto.randomUUID()
     setPendingMessages(prev => [
       ...prev,
-      { id, content, attachments: attachments?.length ? attachments : null, addedAt: Date.now() },
+      {
+        id,
+        content,
+        attachments: attachments?.length ? attachments : null,
+        inlineReplies: inlineReplies?.length ? inlineReplies : null,
+        addedAt: Date.now(),
+      },
     ])
     return id
   }, [])

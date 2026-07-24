@@ -170,13 +170,15 @@ export function getFirstLine(text, maxLength = 50) {
 }
 
 /**
- * Strip markdown formatting to plain text.
+ * Strip markdown formatting and HTML tags to plain text.
  */
 export function stripMarkdown(text) {
   if (!text) {
     return ''
   }
-  return String(stripper.processSync(text)).trim()
+  return String(stripper.processSync(text))
+    .replace(/<[^>]+>/g, '')
+    .trim()
 }
 
 /** Extract filename from path. */

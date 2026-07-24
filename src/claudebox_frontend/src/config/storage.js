@@ -9,5 +9,6 @@ export const WORKSPACE_STORAGE_KEY = 'claudebox-workspace-id'
 // localStorage namespace prefix for queued-message persistence.
 export const MESSAGE_QUEUE_STORAGE_PREFIX = 'queue:'
 
-// Cross-tab change-signal key (storage event).
+// Cross-tab change-signal keys (storage event).
 export const BOOKMARKS_CHANGE_SIGNAL_KEY = 'claudebox-bookmarks-changed'
+export const PINS_CHANGE_SIGNAL_KEY = 'claudebox-pins-changed'

@@ -133,6 +133,16 @@ class TestOnInject:
         resolved = tracker.resolve(event)
         assert resolved == "turn-1"
 
+    def test_compact_boundary_inject_clears_compacting(self):
+        # Fallback-injected boundaries bypass resolve(); on_inject must clear _compacting.
+        tracker = TurnTracker()
+        tracker.on_event(_make_user_message("turn-1"))
+        tracker.on_inject(subtype="compact_start", is_human=False, turn_id=None)
+        assert tracker.is_compacting is True
+
+        tracker.on_inject(subtype="compact_boundary", is_human=False, turn_id=None)
+        assert tracker.is_compacting is False
+
 
 # --- resolve ---
 

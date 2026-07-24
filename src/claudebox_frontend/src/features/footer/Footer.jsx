@@ -171,7 +171,9 @@ export default function Footer() {
         data-testid="footer-session"
         onClick={copySessionPath}
         style={{ cursor: sessionDir ? 'pointer' : undefined }}>
-        <span style={{ visibility: copied ? 'hidden' : 'visible' }}>{sessionId || '-'}</span>
+        <span style={{ visibility: copied ? 'hidden' : 'visible' }}>
+          {sessionId ? sessionId.split('-')[0] : '-'}
+        </span>
         {copied && <span className="footer-session-copied-text">Copied!</span>}
       </span>
       <span className="footer-sep">|</span>

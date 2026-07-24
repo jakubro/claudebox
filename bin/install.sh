@@ -169,6 +169,17 @@ install_cli() {
     print_warn "~/.local/bin added to PATH in ~/.bashrc"
     print_hint "Run 'source ~/.bashrc' to apply changes in current shell"
   fi
+
+  # Bash tab-completion (opt-in): generate the snippet; the user sources it themselves.
+  print_step "Generating bash completion..."
+  if uv run --project ~/.claudebox/lib register-python-argcomplete claudebox >~/.claudebox/completion.bash 2>/dev/null; then
+    print_success "Wrote ~/.claudebox/completion.bash"
+    print_hint "Enable bash tab-completion by adding to ~/.bashrc:"
+    print_hint "  [ -f ~/.claudebox/completion.bash ] && source ~/.claudebox/completion.bash"
+  else
+    rm -f ~/.claudebox/completion.bash
+    print_warn "argcomplete not available — skipping bash completion"
+  fi
 }
 
 # Builds the frontend for host-side daemon serving
@@ -254,7 +265,7 @@ run_prune() {
   local rc=$?
 
   if [[ $rc -ne 0 ]]; then
-    print_warn "claudebox prune partial failures (rc=$rc); continuing"
+    print_warn "claudebox prune partial failures (rc=$rc) — continuing"
   fi
 
   print_success "Pruned"

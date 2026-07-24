@@ -3,6 +3,8 @@
 import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { useSessionDir } from '../context/SessionDataContext'
@@ -10,6 +12,7 @@ import usePathResolution from '../hooks/usePathResolution'
 import { extractPathCandidates, uniqueCandidates } from '../utils/pathCandidates'
 import MarkdownCodeFence from './MarkdownCodeFence'
 import MermaidDiagram from './MermaidDiagram'
+import markdownSanitizeSchema from './markdownSanitizeSchema'
 import PathHighlighter from './PathHighlighter'
 
 /**
@@ -30,38 +33,45 @@ function Markdown({ children, className }) {
   const content = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
+      rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeKatex]}
       components={{
-        p({ children }) {
+        a({ href, children, node, ...props }) {
           return (
-            <p>
+            <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          )
+        },
+        p({ children, node, ...props }) {
+          return (
+            <p {...props}>
               <PathHighlighter sessionDir={sessionDir} resolvedPaths={resolvedPaths}>
                 {children}
               </PathHighlighter>
             </p>
           )
         },
-        li({ children }) {
+        li({ children, node, ...props }) {
           return (
-            <li>
+            <li {...props}>
               <PathHighlighter sessionDir={sessionDir} resolvedPaths={resolvedPaths}>
                 {children}
               </PathHighlighter>
             </li>
           )
         },
-        td({ children }) {
+        td({ children, node, ...props }) {
           return (
-            <td>
+            <td {...props}>
               <PathHighlighter sessionDir={sessionDir} resolvedPaths={resolvedPaths}>
                 {children}
               </PathHighlighter>
             </td>
           )
         },
-        th({ children }) {
+        th({ children, node, ...props }) {
           return (
-            <th>
+            <th {...props}>
               <PathHighlighter sessionDir={sessionDir} resolvedPaths={resolvedPaths}>
                 {children}
               </PathHighlighter>

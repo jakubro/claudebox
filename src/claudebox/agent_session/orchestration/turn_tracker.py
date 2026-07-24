@@ -50,6 +50,10 @@ class TurnTracker:
         if subtype == "compact_start":
             self._compacting = self._current
 
+        # Fallback-injected boundaries bypass resolve(); clear here for idempotency.
+        if subtype == "compact_boundary":
+            self._compacting = None
+
         if is_human and turn_id is None:
             import uuid as _uuid
 

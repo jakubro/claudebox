@@ -18,12 +18,14 @@ from claude_agent_sdk.types import ToolUseBlock as SdkToolUseBlock
 from claudebox.agent_session.events import (
     AgentEvent,
     AssistantMessagePayload,
+    CompactBoundaryPayload,
     McpServerInit,
     RateLimitPayload,
     ResultPayload,
     ResultUsage,
     SystemInitData,
     SystemInitPayload,
+    TaskNotificationPayload,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -34,6 +36,15 @@ from claudebox.agent_session.events import (
 from claudebox.agent_session.runtime_claude import ClaudeRuntime
 
 
+def _translate(msg) -> AgentEvent:
+    """Translate an SDK message and assert a non-None AgentEvent result."""
+
+    evt = ClaudeRuntime._translate_sdk_message(msg)
+    assert evt is not None
+
+    return evt
+
+
 # Per-kind translation
 # --------------------------------------------------------------------------------------------------
 
@@ -42,7 +53,7 @@ def test_translate_system_message():
     """System message -> kind='system_init' with typed SystemInitPayload."""
 
     msg = SystemMessage(subtype="init", data={"session_id": "abc", "model": "claude-opus"})
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt, AgentEvent)
     assert evt.kind == "system_init"
@@ -56,7 +67,7 @@ def test_translate_user_message_string_content():
     """User message with string content -> kind='user_message' + typed UserMessagePayload."""
 
     msg = UserMessage("hello there")
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert evt.kind == "user_message"
     assert isinstance(evt.payload, UserMessagePayload)
@@ -67,7 +78,7 @@ def test_translate_assistant_message_with_text_block():
     """Assistant message with TextBlock -> kind='assistant_message'; content[0] is TextBlock dataclass."""
 
     msg = AssistantMessage(content=[SdkTextBlock(text="hi")], model="claude")
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert evt.kind == "assistant_message"
     assert isinstance(evt.payload, AssistantMessagePayload)
@@ -83,7 +94,7 @@ def test_translate_assistant_message_with_tool_use_block():
         content=[SdkToolUseBlock(id="tu1", name="Bash", input={"command": "ls"})],
         model="claude",
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, AssistantMessagePayload)
     block = evt.payload.content[0]
@@ -104,7 +115,7 @@ class TestAskUserQuestionInputValidation:
             content=[SdkToolUseBlock(id="tu", name=name, input=input_data)],
             model="claude",
         )
-        evt = ClaudeRuntime._translate_sdk_message(msg)
+        evt = _translate(msg)
         assert isinstance(evt.payload, AssistantMessagePayload)
         block = evt.payload.content[0]
         assert isinstance(block, ToolUseBlock)
@@ -155,7 +166,7 @@ def test_translate_user_message_with_tool_result_block():
     """SDK ToolResultBlock -> claudebox ToolResultBlock dataclass; user-side wrapper."""
 
     msg = UserMessage(content=[SdkToolResultBlock(tool_use_id="tu1", content="ok")])
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert evt.kind == "user_message"
     assert isinstance(evt.payload, UserMessagePayload)
@@ -178,7 +189,7 @@ def test_translate_result_message():
         total_cost_usd=0.01,
         result="done",
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert evt.kind == "result"
     assert isinstance(evt.payload, ResultPayload)
@@ -188,11 +199,94 @@ def test_translate_result_message():
     assert evt.payload.num_turns == 1
 
 
+def test_translate_compact_boundary():
+    """SDK compact_boundary system message -> kind='compact_boundary'; trigger mapped, token metadata carried."""
+
+    msg = SystemMessage(
+        subtype="compact_boundary",
+        data={
+            "compact_metadata": {
+                "trigger": "auto",
+                "pre_tokens": 169326,
+                "post_tokens": 40000,
+                "duration_ms": 1200,
+            },
+        },
+    )
+    evt = _translate(msg)
+
+    assert evt.kind == "compact_boundary"
+    assert isinstance(evt.payload, CompactBoundaryPayload)
+    assert evt.payload.trigger == "context_limit"  # SDK "auto" -> claudebox taxonomy
+    assert evt.payload.pre_tokens == 169326
+    assert evt.payload.post_tokens == 40000
+    assert evt.payload.duration_ms == 1200
+
+
+def test_translate_compact_boundary_manual_trigger_and_optional_absent():
+    """Manual trigger preserved verbatim; absent optional token fields default to None."""
+
+    msg = SystemMessage(
+        subtype="compact_boundary",
+        data={"compact_metadata": {"trigger": "manual", "pre_tokens": 128000}},
+    )
+    evt = _translate(msg)
+
+    assert isinstance(evt.payload, CompactBoundaryPayload)
+    assert evt.payload.trigger == "manual"
+    assert evt.payload.pre_tokens == 128000
+    assert evt.payload.post_tokens is None
+    assert evt.payload.duration_ms is None
+
+
+def test_translate_task_notification():
+    """SDK task_notification system message -> kind='task_notification'; status + summary carried."""
+
+    msg = SystemMessage(
+        subtype="task_notification",
+        data={
+            "task_id": "agent_abc",
+            "status": "completed",
+            "output_file": "/tmp/agent_abc.jsonl",
+            "summary": "Absorb lens finished",
+        },
+    )
+    evt = _translate(msg)
+
+    assert evt.kind == "task_notification"
+    assert isinstance(evt.payload, TaskNotificationPayload)
+    assert evt.payload.task_id == "agent_abc"
+    assert evt.payload.status == "completed"
+    assert evt.payload.summary == "Absorb lens finished"
+
+
+def test_translate_task_notification_status_map():
+    """SDK 'stopped' normalizes to 'killed'; 'failed' passes through unchanged."""
+
+    stopped = _translate(
+        SystemMessage(
+            subtype="task_notification",
+            data={"task_id": "a1", "status": "stopped", "output_file": "", "summary": ""},
+        )
+    )
+    assert isinstance(stopped.payload, TaskNotificationPayload)
+    assert stopped.payload.status == "killed"
+
+    failed = _translate(
+        SystemMessage(
+            subtype="task_notification",
+            data={"task_id": "a2", "status": "failed", "output_file": "", "summary": ""},
+        )
+    )
+    assert isinstance(failed.payload, TaskNotificationPayload)
+    assert failed.payload.status == "failed"
+
+
 def test_agent_event_payload_is_sdk_free():
     """AgentEvent.payload classes live in claudebox; no SDK type instance leaks."""
 
     msg = AssistantMessage(content=[SdkTextBlock(text="x")], model="claude")
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, AssistantMessagePayload)
 
@@ -208,7 +302,7 @@ def test_match_kind_narrows_payload_type():
     """``match evt.kind:`` narrows ``evt.payload`` to the corresponding dataclass type."""
 
     msg = SystemMessage(subtype="init", data={"session_id": "abc"})
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     match evt.kind:
         case "system_init":
@@ -271,11 +365,10 @@ class _StubSdkBlock:
     meta: dict = dataclasses.field(default_factory=dict)
 
 
-def test_translate_unknown_sdk_message_raises():
-    """Unknown SDK message class -> loud ValueError naming the class."""
+def test_translate_unknown_sdk_message_dropped():
+    """Unknown SDK message class -> dropped (None), not raised - additive types stay non-breaking."""
 
-    with pytest.raises(ValueError, match="Unknown SDK message type.*_StubSdkMessage"):
-        ClaudeRuntime._translate_sdk_message(_StubSdkMessage())
+    assert ClaudeRuntime._translate_sdk_message(_StubSdkMessage()) is None
 
 
 def test_translate_unknown_sdk_block_emits_unknown_block(caplog):
@@ -285,7 +378,7 @@ def test_translate_unknown_sdk_block_emits_unknown_block(caplog):
         content=[SdkTextBlock(text="prefix"), _StubSdkBlock(text="x", meta={"k": "v"})],  # ty: ignore[invalid-argument-type]
         model="claude",
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, AssistantMessagePayload)
     blocks = evt.payload.content
@@ -305,7 +398,7 @@ def test_unknown_block_round_trips_through_conversion():
     )
 
     msg = AssistantMessage(content=[_StubSdkBlock(text="raw")], model="claude")  # ty: ignore[invalid-argument-type]
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, AssistantMessagePayload)
     block_dict = _block_to_dict(evt.payload.content[0])
@@ -340,7 +433,7 @@ def test_claude_init_translates_to_typed_init_data():
             "cwd": "/repo",
         },
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, SystemInitPayload)
     assert isinstance(evt.payload.data, SystemInitData)
@@ -350,20 +443,44 @@ def test_claude_init_translates_to_typed_init_data():
     assert evt.payload.data.permissionMode == "default"
     assert evt.payload.data.cwd == "/repo"
     assert evt.payload.data.mcp_servers == [McpServerInit(name="jina", status="connected")]
+    assert evt.payload.data.extra == {}
 
 
-def test_claude_init_unknown_data_keys_raise():
-    """SDK init data carrying unknown keys -> ValueError listing them (fail-loud per D1a)."""
+def test_claude_init_unknown_data_keys_captured_in_extra():
+    """SDK init data carrying unknown keys -> captured verbatim in `extra`, not raised."""
 
     msg = SystemMessage(
         subtype="init",
         data={"session_id": "sess-1", "future_field": "x", "another_future": [1, 2]},
     )
+    evt = _translate(msg)
 
-    with pytest.raises(
-        ValueError, match="Unknown SDK init data fields.*another_future.*future_field"
-    ):
-        ClaudeRuntime._translate_sdk_message(msg)
+    assert isinstance(evt.payload, SystemInitPayload)
+    assert evt.payload.data.extra == {"another_future": [1, 2], "future_field": "x"}
+
+
+@pytest.mark.parametrize(
+    ("subtype", "data"),
+    [
+        (
+            "retry",
+            {
+                "attempt": 2,
+                "error": "overloaded_error",
+                "error_status": 529,
+                "max_retries": 5,
+                "retry_delay_ms": 1000,
+            },
+        ),
+        ("task_progress", {"task_id": "t1", "description": "working"}),
+    ],
+)
+def test_translate_non_init_system_message_skipped(subtype, data):
+    """Non-init system message -> dropped (None), never run through init-field validation."""
+
+    msg = SystemMessage(subtype=subtype, data=data)
+
+    assert ClaudeRuntime._translate_sdk_message(msg) is None
 
 
 def test_claude_result_emits_no_usage_today():
@@ -379,7 +496,7 @@ def test_claude_result_emits_no_usage_today():
         total_cost_usd=0.01,
         result="done",
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, ResultPayload)
     assert evt.payload.usage is None
@@ -449,7 +566,7 @@ def test_typed_payload_asdict_round_trip_assistant():
         ],
         model="claude",
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert isinstance(evt.payload, AssistantMessagePayload)
     payload_dict = dataclasses.asdict(evt.payload)
@@ -481,7 +598,7 @@ def test_translate_rate_limit_event():
         uuid="u1",
         session_id="s1",
     )
-    evt = ClaudeRuntime._translate_sdk_message(msg)
+    evt = _translate(msg)
 
     assert evt.kind == "rate_limit"
     assert isinstance(evt.payload, RateLimitPayload)
@@ -503,3 +620,63 @@ def test_rate_limit_event_projects_to_system_subtype():
     assert events[0].type == "system"
     assert events[0].subtype == "rate_limit"
     assert events[0].primary is False
+
+
+def test_compact_boundary_projects_to_system_subtype():
+    """compact_boundary AgentEvent -> one system/compact_boundary event; optional token fields omitted when None."""
+
+    from claudebox.agent_session.orchestration.conversion import agent_event_to_events
+
+    full = AgentEvent(
+        kind="compact_boundary",
+        payload=CompactBoundaryPayload(
+            trigger="context_limit", pre_tokens=128000, post_tokens=40000, duration_ms=1200
+        ),
+    )
+    events = list(agent_event_to_events(full))
+
+    assert len(events) == 1
+    assert events[0].type == "system"
+    assert events[0].subtype == "compact_boundary"
+    assert events[0].raw["message"]["data"]["compact_metadata"] == {
+        "trigger": "context_limit",
+        "pre_tokens": 128000,
+        "post_tokens": 40000,
+        "duration_ms": 1200,
+    }
+
+    minimal = AgentEvent(kind="compact_boundary", payload=CompactBoundaryPayload(trigger="manual"))
+    minimal_events = list(agent_event_to_events(minimal))
+
+    # Optional fields omitted entirely, never emitted as null.
+    assert minimal_events[0].raw["message"]["data"]["compact_metadata"] == {"trigger": "manual"}
+
+
+def test_task_notification_projects_to_system_subtype():
+    """task_notification AgentEvent -> one system/task_notification event; summary omitted when None."""
+
+    from claudebox.agent_session.orchestration.conversion import agent_event_to_events
+
+    full = AgentEvent(
+        kind="task_notification",
+        payload=TaskNotificationPayload(task_id="agent_abc", status="completed", summary="Done"),
+    )
+    events = list(agent_event_to_events(full))
+
+    assert len(events) == 1
+    assert events[0].type == "system"
+    assert events[0].subtype == "task_notification"
+    assert events[0].raw["message"]["data"] == {
+        "task_id": "agent_abc",
+        "status": "completed",
+        "summary": "Done",
+    }
+
+    minimal = AgentEvent(
+        kind="task_notification",
+        payload=TaskNotificationPayload(task_id="a1", status="killed"),
+    )
+    minimal_events = list(agent_event_to_events(minimal))
+
+    # summary omitted entirely when None.
+    assert minimal_events[0].raw["message"]["data"] == {"task_id": "a1", "status": "killed"}

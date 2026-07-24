@@ -24,6 +24,21 @@ export async function waitForAppReady(page) {
 }
 
 /**
+ * Turn off auto-collapse so every turn renders expanded.
+ *
+ * Auto-collapse defaults on and collapses all turns except the last; tests that
+ * assert on content inside earlier turns disable it first to see full turns.
+ * Idempotent — only clicks when auto-collapse is currently on.
+ */
+export async function disableAutoCollapse(page) {
+  const toggle = page.locator('[data-testid="autocollapse-toggle"]')
+  if ((await toggle.getAttribute('aria-pressed')) === 'true') {
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  }
+}
+
+/**
  * Wait for mobile layout to be ready and return the input locator.
  *
  * Waits for mobile layout root, top bar, input field, and font loading.

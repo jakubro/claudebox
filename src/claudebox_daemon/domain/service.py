@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from claudebox import Broadcaster, get_logger
+from claudebox import get_logger
+from .broadcaster import DaemonBroadcaster
 from .config import DaemonConfig
 from .containers import ContainerProxyClient, ContainerStatus
 from .errors import WorkspaceNotRegistered
@@ -24,7 +25,7 @@ class DaemonService:
         self._workspaces: dict[str, WorkspaceService] = {}
 
         self.proxy = ContainerProxyClient()
-        self.events = Broadcaster()
+        self.events = DaemonBroadcaster()
 
     # Service
     # ----------------------------------------------------------------------------------------------

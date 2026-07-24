@@ -2,7 +2,7 @@
 
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TURN_MIN_PREDICTED_HEIGHT_PX } from '../../../config/dimensions'
+import { TURN_BASE_HEIGHT_PX, TURN_MIN_PREDICTED_HEIGHT_PX } from '../../../config/dimensions'
 import useTurnHeights from './useTurnHeights'
 
 // --- Mock observer plumbing ---
@@ -148,8 +148,8 @@ describe('useTurnHeights - initial mount', () => {
       vi.runAllTimers()
     })
 
-    expect(result.current.turnHeights).toEqual({ 0: 200, 1: 500, 2: 300 })
-    expect(result.current.userMessageHeights).toEqual({ 0: 40, 1: 400, 2: 0 })
+    expect(result.current.turnHeights).toEqual({ 'turn-0': 200, 'turn-1': 500, 'turn-2': 300 })
+    expect(result.current.userMessageHeights).toEqual({ 'turn-0': 40, 'turn-1': 400, 'turn-2': 0 })
   })
 
   it('caches prediction for off-screen turns instead of intrinsic-size measurement', () => {
@@ -163,9 +163,9 @@ describe('useTurnHeights - initial mount', () => {
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
 
     // No IntersectionObserver fire -> off-screen -> predicted (MIN floor).
-    expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
-    expect(result.current.turnHeights[0]).not.toBe(400) // not the misleading placeholder
-    expect(result.current.userMessageHeights[0]).toBe(0)
+    expect(result.current.turnHeights['turn-0']).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
+    expect(result.current.turnHeights['turn-0']).not.toBe(400) // not the misleading placeholder
+    expect(result.current.userMessageHeights['turn-0']).toBe(0)
   })
 
   it('sets userMessageHeight to 0 when on-screen turn has no user message element', () => {
@@ -179,8 +179,8 @@ describe('useTurnHeights - initial mount', () => {
       vi.runAllTimers()
     })
 
-    expect(result.current.turnHeights).toEqual({ 0: 300 })
-    expect(result.current.userMessageHeights).toEqual({ 0: 0 })
+    expect(result.current.turnHeights).toEqual({ 'turn-0': 300 })
+    expect(result.current.userMessageHeights).toEqual({ 'turn-0': 0 })
   })
 
   it('attaches observers when container appears after initial null', () => {
@@ -202,8 +202,8 @@ describe('useTurnHeights - initial mount', () => {
       vi.runAllTimers()
     })
 
-    expect(result.current.turnHeights).toEqual({ 0: 250 })
-    expect(result.current.userMessageHeights).toEqual({ 0: 50 })
+    expect(result.current.turnHeights).toEqual({ 'turn-a': 250 })
+    expect(result.current.userMessageHeights).toEqual({ 'turn-a': 50 })
     expect(resizeCallback).not.toBeNull()
   })
 })
@@ -228,7 +228,7 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights).toEqual({ 0: 500 })
+    expect(result.current.turnHeights).toEqual({ 'turn-collapse': 500 })
 
     // Simulate collapse - height shrinks; on-screen still, so cache refreshes.
     turnElements[0].offsetHeight = 60
@@ -236,7 +236,7 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights).toEqual({ 0: 60 })
+    expect(result.current.turnHeights).toEqual({ 'turn-collapse': 60 })
   })
 
   it('does not overwrite cached real height with intrinsic placeholder when off-screen', () => {
@@ -251,7 +251,7 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights).toEqual({ 0: 800 })
+    expect(result.current.turnHeights).toEqual({ 'turn-stable': 800 })
 
     // Turn goes off-screen; ResizeObserver fires with the 400 intrinsic placeholder
     markIntersecting(turnElements, false)
@@ -261,7 +261,7 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
       vi.runAllTimers()
     })
     // Cached 800 wins - off-screen fire ignored.
-    expect(result.current.turnHeights).toEqual({ 0: 800 })
+    expect(result.current.turnHeights).toEqual({ 'turn-stable': 800 })
   })
 
   it('refreshes while on-screen (streaming growth)', () => {
@@ -275,14 +275,14 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights).toEqual({ 0: 200 })
+    expect(result.current.turnHeights).toEqual({ 'turn-streaming': 200 })
 
     turnElements[0].offsetHeight = 600
     act(() => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights).toEqual({ 0: 600 })
+    expect(result.current.turnHeights).toEqual({ 'turn-streaming': 600 })
   })
 
   it('upgrades a predicted entry to real measurement on first on-screen visit', () => {
@@ -292,7 +292,7 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
 
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
     // First observation off-screen -> prediction (min floor since no events).
-    expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
+    expect(result.current.turnHeights['turn-upgrade']).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
 
     // Turn scrolls into view; next ResizeObserver fire upgrades cache to 800.
     markIntersecting(turnElements, true)
@@ -300,7 +300,7 @@ describe('useTurnHeights - sticky cache under content-visibility:auto', () => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights[0]).toBe(800)
+    expect(result.current.turnHeights['turn-upgrade']).toBe(800)
   })
 
   it('getLogicalScrollHeight sums cached heights (on-screen real, off-screen predicted)', () => {
@@ -371,15 +371,15 @@ describe('useTurnHeights - idle warmup', () => {
 
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
     // Off-screen first observation -> predicted (MIN floor).
-    expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
+    expect(result.current.turnHeights['turn-warm']).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
 
     // Idle scheduler queued via setTimeout(0); advance to fire warmup.
     act(() => vi.runAllTimers())
 
     expect(turnElements[0].classList.add).toHaveBeenCalledWith('force-measure')
     expect(turnElements[0].classList.remove).toHaveBeenCalledWith('force-measure')
-    expect(result.current.turnHeights[0]).toBe(800)
-    expect(result.current.userMessageHeights[0]).toBe(30)
+    expect(result.current.turnHeights['turn-warm']).toBe(800)
+    expect(result.current.userMessageHeights['turn-warm']).toBe(30)
   })
 
   it('skips turns currently on-screen (regular observer covers them)', () => {
@@ -406,7 +406,7 @@ describe('useTurnHeights - idle warmup', () => {
       resizeCallback?.()
       vi.runAllTimers()
     })
-    expect(result.current.turnHeights[0]).toBe(600)
+    expect(result.current.turnHeights['turn-already-real']).toBe(600)
     turnElements[0].classList.add.mockClear()
 
     // Turn goes off-screen; warmup runs again on next turns.length tick.
@@ -429,13 +429,13 @@ describe('useTurnHeights - idle warmup', () => {
     // so we avoid the infinite-reschedule loop that runAllTimers would trip.
     act(() => vi.runOnlyPendingTimers())
     expect(turnElements[0].classList.add).not.toHaveBeenCalled()
-    expect(result.current.turnHeights[0]).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
+    expect(result.current.turnHeights['turn-streaming']).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
 
     // Streaming ends -> run the previously-rescheduled timer, warmup proceeds.
     rerender({ s: false })
     act(() => vi.runOnlyPendingTimers())
     expect(turnElements[0].classList.add).toHaveBeenCalledWith('force-measure')
-    expect(result.current.turnHeights[0]).toBe(700)
+    expect(result.current.turnHeights['turn-streaming']).toBe(700)
   })
 
   it('stops scheduling once all turns are measured', () => {
@@ -444,11 +444,87 @@ describe('useTurnHeights - idle warmup', () => {
     ])
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
     act(() => vi.runAllTimers())
-    expect(result.current.turnHeights[0]).toBe(500)
+    expect(result.current.turnHeights['turn-once']).toBe(500)
     turnElements[0].classList.add.mockClear()
 
     // Another idle pass should be a no-op - cache already has real measurement.
     act(() => vi.runAllTimers())
     expect(turnElements[0].classList.add).not.toHaveBeenCalled()
+  })
+
+  it('restarts warmup after mid-flight preemption so newly-added off-screen turns converge', () => {
+    // Turn appears off-screen; its warmup is scheduled but NOT yet run.
+    const first = createMockContainer([{ totalHeight: 500, turnId: 'turn-1' }])
+    const { result, rerender } = renderHook(({ ref, t }) => useTurnHeights(ref, t), {
+      initialProps: { ref: first.messagesRef, t: first.turns },
+    })
+    expect(result.current.turnHeights['turn-1']).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
+
+    // turns.length grows before the pending warmup fires -> preemption. The stuck
+    // shared-flag bug left warmupActiveRef true here, blocking every future warmup.
+    const second = createMockContainer([
+      { totalHeight: 500, turnId: 'turn-1' },
+      { totalHeight: 900, turnId: 'turn-2' },
+    ])
+    first.messagesRef.current = second.messagesRef.current
+    rerender({ ref: first.messagesRef, t: second.turns })
+    expect(result.current.turnHeights['turn-2']).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
+
+    // Warmup must have restarted: draining idle timers converges BOTH off-screen
+    // turns from predictions to real measurements.
+    act(() => vi.runAllTimers())
+    expect(result.current.turnHeights['turn-1']).toBe(500)
+    expect(result.current.turnHeights['turn-2']).toBe(900)
+  })
+})
+
+describe('useTurnHeights - collapse-aware sizing', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('rewrites an off-screen turn to the collapsed strip seed when it collapses', () => {
+    const events = [{ type: 'assistant', subtype: 'text', content: 'x'.repeat(2000) }]
+    const { messagesRef, turns } = createMockContainer([
+      { totalHeight: 800, turnId: 'turn-c', userMessage: '', events },
+    ])
+    const { result, rerender } = renderHook(
+      ({ collapsed }) => useTurnHeights(messagesRef, turns, false, collapsed),
+      { initialProps: { collapsed: new Set() } },
+    )
+    // Off-screen: seeded with the (large) expanded prediction, not a collapsed strip.
+    const expanded = result.current.turnHeights['turn-c']
+    expect(expanded).toBeGreaterThan(TURN_BASE_HEIGHT_PX)
+
+    // Collapse while off-screen: the state-driven effect rewrites the cache entry
+    // even though no ResizeObserver fires for a content-visibility-skipped subtree.
+    act(() => {
+      rerender({ collapsed: new Set(['turn-c']) })
+    })
+    expect(result.current.turnHeights['turn-c']).toBe(TURN_BASE_HEIGHT_PX)
+    expect(result.current.turnHeights['turn-c']).toBeLessThan(expanded)
+  })
+
+  it('restores an off-screen collapsed turn to its full seed when it expands', () => {
+    const events = [{ type: 'assistant', subtype: 'text', content: 'x'.repeat(2000) }]
+    const { messagesRef, turns } = createMockContainer([
+      { totalHeight: 800, turnId: 'turn-c', userMessage: '', events },
+    ])
+    const { result, rerender } = renderHook(
+      ({ collapsed }) => useTurnHeights(messagesRef, turns, false, collapsed),
+      { initialProps: { collapsed: new Set(['turn-c']) } },
+    )
+    // Starts collapsed -> strip seed.
+    expect(result.current.turnHeights['turn-c']).toBe(TURN_BASE_HEIGHT_PX)
+
+    // Expand while off-screen -> grows back above the strip.
+    act(() => {
+      rerender({ collapsed: new Set() })
+    })
+    expect(result.current.turnHeights['turn-c']).toBeGreaterThan(TURN_BASE_HEIGHT_PX)
   })
 })

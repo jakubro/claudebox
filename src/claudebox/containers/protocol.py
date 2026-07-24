@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Iterable, Protocol
 
 if TYPE_CHECKING:
     from .models import ImageBuildMode
+    from ..config import Config
 
 
 class ContainerRuntimeProtocol(Protocol):
@@ -36,8 +37,13 @@ class ContainerRuntimeProtocol(Protocol):
         run_args: Iterable = (),
         cmd_args: Iterable = (),
         detach: bool = False,
+        config: "Config | None" = None,
     ) -> str | None:
-        """Spawn a container, returning backend ID if detached."""
+        """Spawn a container, returning backend ID if detached.
+
+        ``config`` overrides the runtime's captured config for this launch so
+        run args reflect the current workspace settings.
+        """
 
         ...
 

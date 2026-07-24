@@ -831,8 +831,14 @@ test.describe('Chat Flow', () => {
   })
 
   test.describe('Input Animations', () => {
+    // The decorative border animation is a compositor-driven overlay: a static
+    // conic gradient rotated via transform, revealed through the textarea's
+    // transparent border. Assert on `.textarea-border-overlay` (opacity gates the
+    // reveal - polled because it fades over 0.25s; its `::before` carries the
+    // `border-travel` rotation).
+
     // SPEC: input:anim-idle
-    test('idle textarea with placeholder has border-ripple animation', async ({ page }) => {
+    test('idle empty input reveals the animated border ring', async ({ page }) => {
       await mockSSE(page)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
@@ -843,11 +849,12 @@ test.describe('Chat Flow', () => {
       // Blur input so placeholder shows (idle state)
       await page.locator('[data-testid="footer"]').click()
 
-      // Textarea should have animation (border-ripple)
-      const animation = await input.evaluate(el => {
-        return getComputedStyle(el).animationName
-      })
-      expect(animation).toContain('border-ripple')
+      const overlay = page.locator('.textarea-border-overlay')
+      await expect
+        .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
+        .toBeGreaterThan(0.5)
+      const anim = await overlay.evaluate(el => getComputedStyle(el, '::before').animationName)
+      expect(anim).toContain('border-travel')
     })
 
     // SPEC: input:anim-focus
@@ -857,9 +864,10 @@ test.describe('Chat Flow', () => {
       await waitForAppReady(page)
 
       const input = page.locator('[data-testid="chat-input"]')
+      await input.fill('typed')
       await input.focus()
 
-      // Should have box-shadow glow
+      // Should have box-shadow glow (static focus ring, non-working)
       const boxShadow = await input.evaluate(el => {
         return getComputedStyle(el).boxShadow
       })
@@ -867,55 +875,45 @@ test.describe('Chat Flow', () => {
     })
 
     // SPEC: input:anim-working
-    test('working state adds color-cycling animation', async ({ page }) => {
+    test('working state reveals the color-cycling border ring', async ({ page }) => {
       await mockSSE(page, 'events/progress-working.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
       // Chat input wrapper should have status-working class
-      const chatInput = page.locator('.chat-input')
-      await expect(chatInput).toHaveClass(/status-working/)
+      await expect(page.locator('.chat-input')).toHaveClass(/status-working/)
 
-      // Working state should have an active color-cycling animation (not "none")
-      const styles = await chatInput.evaluate(el => {
-        const cs = getComputedStyle(el)
-        return {
-          animationName: cs.animationName,
-          animation: cs.animation,
-        }
-      })
-      // Assert working state is active: animation running or border color changed
-      const hasAnimation =
-        styles.animationName && styles.animationName !== 'none' && styles.animationName !== ''
-      const hasBorderEffect = await chatInput.evaluate(el => {
-        const cs = getComputedStyle(el)
-        return cs.borderLeftColor !== '' && cs.borderLeftColor !== 'rgb(0, 0, 0)'
-      })
-      expect(hasAnimation || hasBorderEffect).toBeTruthy()
+      const overlay = page.locator('.textarea-border-overlay')
+      await expect
+        .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
+        .toBeGreaterThan(0.5)
+      const anim = await overlay.evaluate(el => getComputedStyle(el, '::before').animationName)
+      expect(anim).toContain('border-travel')
     })
 
     // SPEC: input:animation
-    test('working + focused textarea has focus-breathe animation', async ({ page }) => {
+    test('working cue stays revealed when the input is focused', async ({ page }) => {
       await mockSSE(page, 'events/progress-working.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
       // Ensure working state
-      const chatInput = page.locator('.chat-input')
-      await expect(chatInput).toHaveClass(/status-working/)
+      await expect(page.locator('.chat-input')).toHaveClass(/status-working/)
 
-      const input = page.locator('[data-testid="chat-input"]')
-      await input.focus()
+      await page.locator('[data-testid="chat-input"]').focus()
 
-      // Should have focus-breathe animation
-      const animation = await input.evaluate(el => {
-        return getComputedStyle(el).animationName
-      })
-      expect(animation).toContain('focus-breathe')
+      // The working border cue must persist even while focused (composer is
+      // usually focused during streaming).
+      const overlay = page.locator('.textarea-border-overlay')
+      await expect
+        .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
+        .toBeGreaterThan(0.5)
+      const anim = await overlay.evaluate(el => getComputedStyle(el, '::before').animationName)
+      expect(anim).toContain('border-travel')
     })
 
     // SPEC: input:anim-idle
-    test('non-empty unfocused textarea does NOT have idle animation', async ({ page }) => {
+    test('non-empty unfocused textarea hides the border ring', async ({ page }) => {
       await mockSSE(page)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
@@ -926,11 +924,11 @@ test.describe('Chat Flow', () => {
       await input.fill('Some text')
       await page.locator('[data-testid="footer"]').click()
 
-      // Idle animation should NOT be present (SPEC says "Empty and unfocused")
-      const animation = await input.evaluate(el => {
-        return getComputedStyle(el).animationName
-      })
-      expect(animation).not.toContain('border-ripple')
+      // Overlay hidden (SPEC: idle ripple only when "Empty and unfocused")
+      const opacity = await page
+        .locator('.textarea-border-overlay')
+        .evaluate(el => Number.parseFloat(getComputedStyle(el).opacity))
+      expect(opacity).toBeLessThan(0.5)
     })
   })
 })

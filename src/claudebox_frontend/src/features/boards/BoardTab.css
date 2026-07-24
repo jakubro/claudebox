@@ -359,6 +359,10 @@
   background: var(--success, #4caf50);
 }
 
+.ticket-status-dot.stopping {
+  background: var(--warning, #f59e0b);
+}
+
 .ticket-status-dot.stopped {
   background: var(--text-muted);
 }

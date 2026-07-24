@@ -109,7 +109,7 @@ describe('useMessageQueue', () => {
       // Increment resultCount to trigger drain
       rerender(defaultProps({ resultCount: 1 }))
 
-      expect(sendFn).toHaveBeenCalledWith('queued msg', null)
+      expect(sendFn).toHaveBeenCalledWith('queued msg', { attachments: null })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
@@ -125,7 +125,7 @@ describe('useMessageQueue', () => {
 
       rerender(defaultProps({ resultCount: 1 }))
 
-      expect(sendFn).toHaveBeenCalledWith('with attachment', attachments)
+      expect(sendFn).toHaveBeenCalledWith('with attachment', { attachments })
     })
 
     it('drains one item per resultCount increment', () => {
@@ -144,7 +144,7 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ resultCount: 1 }))
 
       expect(sendFn).toHaveBeenCalledTimes(1)
-      expect(sendFn).toHaveBeenCalledWith('first', null)
+      expect(sendFn).toHaveBeenCalledWith('first', { attachments: null })
       expect(result.current.queueItems).toHaveLength(1)
       expect(result.current.queueItems[0].content).toBe('second')
 
@@ -152,7 +152,7 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ resultCount: 2 }))
 
       expect(sendFn).toHaveBeenCalledTimes(2)
-      expect(sendFn).toHaveBeenLastCalledWith('second', null)
+      expect(sendFn).toHaveBeenLastCalledWith('second', { attachments: null })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
@@ -196,7 +196,7 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ resultCount: 5 }))
 
       expect(sendFn).toHaveBeenCalledTimes(1)
-      expect(sendFn).toHaveBeenCalledWith('msg', null)
+      expect(sendFn).toHaveBeenCalledWith('msg', { attachments: null })
     })
   })
 
@@ -214,7 +214,7 @@ describe('useMessageQueue', () => {
 
       rerender(defaultProps({ compactionCount: 1 }))
 
-      expect(sendFn).toHaveBeenCalledWith('queued during compaction', null)
+      expect(sendFn).toHaveBeenCalledWith('queued during compaction', { attachments: null })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
@@ -504,7 +504,7 @@ describe('useMessageQueue', () => {
         result.current.sendNowItem(secondId)
       })
 
-      expect(sendFn).toHaveBeenCalledWith('second', null)
+      expect(sendFn).toHaveBeenCalledWith('second', { attachments: null })
       expect(result.current.queueItems).toHaveLength(2)
       expect(result.current.queueItems[0].content).toBe('first')
       expect(result.current.queueItems[1].content).toBe('third')
@@ -526,7 +526,7 @@ describe('useMessageQueue', () => {
         result.current.sendNowItem(id)
       })
 
-      expect(sendFn).toHaveBeenCalledWith('with file', attachments)
+      expect(sendFn).toHaveBeenCalledWith('with file', { attachments })
       expect(result.current.queueItems).toHaveLength(0)
     })
 

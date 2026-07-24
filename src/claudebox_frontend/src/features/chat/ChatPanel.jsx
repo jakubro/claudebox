@@ -19,12 +19,16 @@ import { computeDuplicateAskUserIds } from '../../utils/eventProcessing'
 import { scrollAndHighlight } from '../../utils/scroll'
 import ChatInputArea from './components/ChatInputArea'
 import ChatControlBar from './components/chat-control-bar'
+import useComposerMaxHeight from './components/chat-input/hooks/useComposerMaxHeight'
 import HistoricalTurnList from './components/HistoricalTurnList'
+import { InlineThreadsOverlay, QuoteAffordance } from './components/inline-replies'
+import useInlineReplies from './components/inline-replies/hooks/useInlineReplies'
 import MiniMap from './components/minimap'
 import QueuedMessageBubble from './components/QueuedMessageBubble'
 import RewindModal from './components/RewindModal'
 import SettingChangeDivider from './components/SettingChangeDivider'
 import Turn from './components/turn'
+import { TurnCollapseProvider } from './components/turn/TurnCollapseContext'
 import WelcomeContent from './components/WelcomeContent'
 import useChatController from './hooks/useChatController'
 import useChatCreatingClear from './hooks/useChatCreatingClear'
@@ -75,6 +79,12 @@ export default function ChatPanel() {
   const eventsRef = useRef(events)
   eventsRef.current = events
 
+  // Stable ref to turns for the auto-collapse recompute effect - lets it read
+  // the current turns without keying on the turns array (which changes every
+  // streaming flush).
+  const turnsRef = useRef(turns)
+  turnsRef.current = turns
+
   const {
     jumpPrevRef,
     jumpNextRef,
@@ -82,6 +92,7 @@ export default function ChatPanel() {
     jumpBottomRef,
     chatScrollPositionRef,
     chatAutoScrollEnabledRef,
+    autoCollapseEnabledRef,
     markUserIntentRef,
     markProgrammaticScrollRef,
     focusChatTab,
@@ -275,11 +286,13 @@ export default function ChatPanel() {
   // reserves layout space only when pinned (and only on desktop).
   const reserveMinimapSpace = minimapPinned && !isMobile
 
-  // Restore minimap toggle from persisted session UI state
+  // Restore the minimap toggle from persisted session UI state
   useEffect(() => {
     if (sessionId) {
       getUiState(sessionId)
-        .then(data => setMinimapPinned(data.session?.minimapPinned ?? true))
+        .then(data => {
+          setMinimapPinned(data.session?.minimapPinned ?? true)
+        })
         .catch(err => console.warn('ChatPanel: getUiState failed', err))
     }
   }, [sessionId])
@@ -293,6 +306,144 @@ export default function ChatPanel() {
       return next
     })
   }, [sessionId])
+
+  // Inline replies: the unsent buffer (persisted per session, anchored). Sent threads
+  // re-hydrate from the transcript turns' inline replies, so there is no side bar / toggle.
+  const composerHandleRef = useRef(null)
+  const {
+    unsent: inlineRepliesUnsent,
+    add: addInlineReply,
+    editReply: editInlineReply,
+    remove: removeInlineReply,
+    markSent: markInlineRepliesSent,
+    unsentRef: inlineRepliesUnsentRef,
+  } = useInlineReplies(sessionId)
+
+  // Unified dispatch: fold the buffered (non-blank) inline replies into a single
+  // turn alongside the composer prompt + attachments. content=prompt (never the
+  // serialized XML) keeps the optimistic pending turn reconcilable. No-op when
+  // there is genuinely nothing to send.
+  const sendWithInlineReplies = useCallback(
+    (content, opts = {}) => {
+      const nonBlank = inlineRepliesUnsentRef.current.filter(r => r.response.trim())
+      const hasContent = typeof content === 'string' ? content.trim() : content
+      if (!(hasContent || opts.attachments?.length) && nonBlank.length === 0) {
+        return undefined
+      }
+      const wire = markInlineRepliesSent()
+      return send(content, { ...opts, inlineReplies: wire.length > 0 ? wire : null })
+    },
+    [send, inlineRepliesUnsentRef, markInlineRepliesSent],
+  )
+
+  // Reply-only send gate: with no side bar, composer Enter is the trigger, so the
+  // composer must know a batch is buffered to dispatch when its own field is empty.
+  const hasBufferedReplies = useCallback(
+    () => inlineRepliesUnsentRef.current.some(r => r.response.trim()),
+    [inlineRepliesUnsentRef],
+  )
+
+  // Enter inside a reply box sends the whole batch (composer text + attachments + replies).
+  const submitInlineReplyBatch = useCallback(() => {
+    const payload = composerHandleRef.current?.extractOrEmpty?.() ?? {
+      rawPrompt: '',
+      currentAttachments: [],
+    }
+    sendWithInlineReplies(payload.rawPrompt, { attachments: payload.currentAttachments })
+  }, [sendWithInlineReplies])
+
+  // Affordance click: capture the quote; the highlight + docked box appear via the overlay.
+  const handleQuote = useCallback(quote => addInlineReply(quote), [addInlineReply])
+
+  // Composer max height, shared with the inline reply boxes' autoresize.
+  const composerMaxHeight = useComposerMaxHeight(panelRef)
+
+  // Sent inline-reply threads, sourced from the transcript turns (durable across reload) plus
+  // the just-sent optimistic pending messages (so a fresh send docks immediately). Each reply
+  // carries its own source-turn anchor, so the overlay docks it at its source block.
+  const sentInlineThreads = useMemo(() => {
+    const fromTurns = turns.flatMap(t =>
+      (t.inlineReplies || []).map((r, i) => ({ ...r, id: `${t.turn_id}:reply:${i}` })),
+    )
+    const fromPending = showPendingMessages.flatMap((pm, pi) =>
+      (pm.inlineReplies || []).map((r, i) => ({ ...r, id: `pending:${pi}:${i}` })),
+    )
+    return [...fromTurns, ...fromPending]
+  }, [turns, showPendingMessages])
+
+  // Auto-collapse: keep only the last turn expanded. The enabled flag mirrors
+  // autoscroll's lifetime - stored in an app-level ref so it persists across
+  // ChatPanel remounts (tab/board switch); reset to ON on session change below.
+  const [autoCollapseEnabled, setAutoCollapseEnabled] = useState(
+    () => autoCollapseEnabledRef.current,
+  )
+  const [collapsedTurnIds, setCollapsedTurnIds] = useState(() => new Set())
+  // Turn ids the user hand-expanded while auto-collapse is on; the new-turn recompute
+  // subtracts them so they stay open. In-memory; wiped on the enable edge and session change.
+  const manuallyExpandedIdsRef = useRef(new Set())
+  const lastTurnId = turns.length > 0 ? (turns[turns.length - 1]?.turn_id ?? null) : null
+
+  const handleToggleAutoCollapse = useCallback(() => {
+    setAutoCollapseEnabled(prev => {
+      const next = !prev
+      autoCollapseEnabledRef.current = next
+      return next
+    })
+  }, [autoCollapseEnabledRef])
+
+  const handleToggleTurnCollapse = useCallback(turnId => {
+    setCollapsedTurnIds(prev => {
+      const next = new Set(prev)
+      if (next.has(turnId)) {
+        // Expanding by hand: remember it so the new-turn recompute keeps it open.
+        next.delete(turnId)
+        manuallyExpandedIdsRef.current.add(turnId)
+      } else {
+        // Collapsing by hand: return the turn to auto control.
+        next.add(turnId)
+        manuallyExpandedIdsRef.current.delete(turnId)
+      }
+      return next
+    })
+  }, [])
+
+  // Auto-collapse recompute (on enable and on each new turn): collapse every turn
+  // except the last, minus the hand-expanded ones (sticky). The enable edge (off->on)
+  // wipes that memory for a fresh collapse-all-but-last; the disable edge expands all.
+  // Reads turnsRef so streaming flushes (lastTurnId unchanged) never re-run it.
+  const prevAutoCollapseRef = useRef(autoCollapseEnabled)
+  useEffect(() => {
+    const wasEnabled = prevAutoCollapseRef.current
+    prevAutoCollapseRef.current = autoCollapseEnabled
+    if (autoCollapseEnabled) {
+      const allTurnIds = turnsRef.current.map(t => t.turn_id).filter(Boolean)
+      if (wasEnabled) {
+        // New-turn edge: prune manual-expand memory to turns still present.
+        const present = new Set(allTurnIds)
+        for (const id of manuallyExpandedIdsRef.current) {
+          if (!present.has(id)) {
+            manuallyExpandedIdsRef.current.delete(id)
+          }
+        }
+      } else {
+        // Enable edge (off->on): fresh re-engage wipes manual-expand memory.
+        manuallyExpandedIdsRef.current.clear()
+      }
+      const manual = manuallyExpandedIdsRef.current
+      setCollapsedTurnIds(new Set(allTurnIds.filter(id => id !== lastTurnId && !manual.has(id))))
+    } else if (wasEnabled) {
+      setCollapsedTurnIds(new Set())
+    }
+  }, [autoCollapseEnabled, lastTurnId])
+
+  // Reset auto-collapse to ON when the session changes (mirrors autoscroll's
+  // session reset) - a new session always opens with only the last turn shown.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is the reset trigger
+  useEffect(() => {
+    autoCollapseEnabledRef.current = true
+    setAutoCollapseEnabled(true)
+    manuallyExpandedIdsRef.current.clear()
+  }, [sessionId, autoCollapseEnabledRef])
 
   // Refocus invariant: clicks on the empty .chat-messages container (background,
   // not on any turn / interactive child) restore focus to the chat textarea.
@@ -363,6 +514,7 @@ export default function ChatPanel() {
     messagesRef,
     turns,
     isResponding,
+    collapsedTurnIds,
   )
 
   // Desktop notifications and sound when response completes while tab is hidden
@@ -452,6 +604,7 @@ export default function ChatPanel() {
       messages: messagesRef,
       autoScrollEnabled: chatAutoScrollEnabledRef,
       events: eventsRef,
+      composerHandle: composerHandleRef,
     }),
     [panelRef, messagesRef, chatAutoScrollEnabledRef],
   )
@@ -524,10 +677,11 @@ export default function ChatPanel() {
   // ChatInputArea's action bundle - mirrors inputState above. onWelcomeDeferSend
   // is the welcome->active bridge; the rest forward unchanged.
   const inputActions = {
-    send,
+    send: sendWithInlineReplies,
     enqueueMessage,
     deferSend,
     onWelcomeDeferSend: handleWelcomeDeferSend,
+    hasBufferedReplies,
   }
 
   return (
@@ -540,6 +694,8 @@ export default function ChatPanel() {
           messagesRef={messagesRef}
           autoScrollEnabledRef={chatAutoScrollEnabledRef}
           isAutoScrollEnabled={isAutoScrollEnabled}
+          autoCollapseEnabled={autoCollapseEnabled}
+          onToggleAutoCollapse={handleToggleAutoCollapse}
           onJumpPrev={jumpPrev}
           onJumpNext={jumpNext}
           minimapPinned={minimapPinned}
@@ -584,7 +740,9 @@ export default function ChatPanel() {
               !isCreating ? (
                 <p className="chat-empty">Waiting for messages...</p>
               ) : (
-                <>
+                <TurnCollapseProvider
+                  collapsedTurnIds={collapsedTurnIds}
+                  onToggleTurnCollapse={handleToggleTurnCollapse}>
                   <HistoricalTurnList
                     turns={historicalTurns}
                     boundaryNextUserMessage={activeTurn?.userMessage ?? null}
@@ -604,6 +762,7 @@ export default function ChatPanel() {
                       key={`${activeTurn.turn_id || 'g'}-${lastTurnIndex}`}
                       userMessage={activeTurn.userMessage}
                       attachments={activeTurn.attachments}
+                      inlineReplies={activeTurn.inlineReplies}
                       events={activeTurn.events}
                       turnId={activeTurn.turn_id}
                       todoDiffs={todoDiffs}
@@ -648,6 +807,7 @@ export default function ChatPanel() {
                           key={`pending-${pm.id}`}
                           userMessage={pm.content}
                           attachments={pm.attachments}
+                          inlineReplies={pm.inlineReplies}
                           events={[]}
                           pending={true}
                           hasNextUserMessage={true}
@@ -682,9 +842,21 @@ export default function ChatPanel() {
                       />
                     ))}
                   </div>
-                </>
+                </TurnCollapseProvider>
               )}
             </div>
+            {!isMobile && (
+              <InlineThreadsOverlay
+                messagesRef={messagesRef}
+                unsent={inlineRepliesUnsent}
+                sentThreads={sentInlineThreads}
+                resolveSignal={turns.length}
+                maxHeight={composerMaxHeight}
+                onEditReply={editInlineReply}
+                onRemove={removeInlineReply}
+                onSubmitBatch={submitInlineReplyBatch}
+              />
+            )}
             {!isMobile && (
               <MiniMap
                 groups={turns}
@@ -700,6 +872,11 @@ export default function ChatPanel() {
                 getLogicalScrollHeight={getLogicalScrollHeight}
               />
             )}
+            <QuoteAffordance
+              messagesRef={messagesRef}
+              enabled={!(isMobile || showReplayOverlay)}
+              onQuote={handleQuote}
+            />
           </>
         )}
       </div>

@@ -23,8 +23,10 @@ export function buildSegments(groups, turnHeights, userMessageHeights = {}) {
       currentSegment = { turns: [], index: segments.length }
     }
 
-    const totalHeight = turnHeights[i] ?? 100
-    const userHeight = userMessageHeights[i] ?? 0
+    // Keyed by stable turn_id (useTurnHeights exports by turnId); stays correct
+    // when the groups array reorders, e.g. a compaction dropping an earlier turn.
+    const totalHeight = turnHeights[group.turn_id] ?? 100
+    const userHeight = userMessageHeights[group.turn_id] ?? 0
     const userHeightPct = totalHeight > 0 ? Math.round((userHeight / totalHeight) * 100) : 0
 
     const duration = calculateDuration(group.events)

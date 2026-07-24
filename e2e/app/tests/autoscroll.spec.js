@@ -3,7 +3,7 @@
 import { expect, test } from '@playwright/test'
 import { openBookmarksPanel, openSessionsPanel, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_ID, DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import { createSSEController, mockSSE, mockSSEDynamic } from '../mocks/sse.js'
 
 test.describe('Autoscroll', () => {
   // SPEC: chat:autoscroll-bottom
@@ -300,10 +300,6 @@ test.describe('Autoscroll', () => {
           },
         },
       })
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // Synthesize a long conversation with explicit turn_id on every user
       // event so the bookmark's target (turn_001) has a [data-turn-id] anchor.
       // The fixture file `long-conversation.jsonl` omits turn_id on user
@@ -342,10 +338,20 @@ test.describe('Autoscroll', () => {
           ts: `2025-01-18T12:00:${id}Z`,
         })
       }
-      await controller.sendEvents(events)
+      // Preload the synthesized turns so they replay on the initial connection
+      // and re-replay on every reconnect. A controller's one-shot sendEvents is
+      // silently dropped when it lands in the app's reconnect gap (the app
+      // churns through ~3 SSE connections while resuming), leaving 0 turns.
+      await mockSSEDynamic(page, () => events)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
 
+      // Wait for the last turn to render before asserting scroll state. It
+      // anchors the bottom where autoscroll settles and is never virtualized
+      // away, whereas turn_001 scrolls out of view once pinned to bottom.
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
-      await expect(messagesContainer).toBeVisible()
+      const lastTurnId = `turn_${String(N).padStart(3, '0')}`
+      await expect(page.locator(`[data-turn-id="${lastTurnId}"]`)).toBeVisible()
 
       // Wait for the initial autoscroll to settle at bottom.
       await expect

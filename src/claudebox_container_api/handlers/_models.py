@@ -10,6 +10,9 @@ class SendRequest(BaseModel):
 
     prompt: str = ""
     attachments: list[dict] | None = None
+    # Kept as list[dict] (not a typed model): the item key `from` is a Python
+    # keyword, so a Pydantic model would need Field(alias="from") + populate_by_name.
+    inline_replies: list[dict] | None = None
 
 
 class SetModelRequest(BaseModel):

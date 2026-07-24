@@ -202,4 +202,102 @@ describe('Markdown', () => {
       expect(container.querySelector('.path-link')).toBeNull()
     })
   })
+
+  describe('raw HTML sanitization', () => {
+    it('renders details/summary as real elements', () => {
+      const { container } = render(
+        <Markdown>{'<details><summary>More</summary>hidden body</details>'}</Markdown>,
+      )
+
+      expect(container.querySelector('details')).not.toBeNull()
+      expect(container.querySelector('summary')).toHaveTextContent('More')
+      expect(container).toHaveTextContent('hidden body')
+    })
+
+    it('renders presentational tags (kbd, sub, sup, mark, dl)', () => {
+      const { container } = render(
+        <Markdown>
+          {
+            '<kbd>Ctrl</kbd><sub>2</sub><sup>n</sup><mark>hi</mark><dl><dt>term</dt><dd>def</dd></dl>'
+          }
+        </Markdown>,
+      )
+
+      expect(container.querySelector('kbd')).toHaveTextContent('Ctrl')
+      expect(container.querySelector('sub')).toHaveTextContent('2')
+      expect(container.querySelector('sup')).toHaveTextContent('n')
+      expect(container.querySelector('mark')).toHaveTextContent('hi')
+      expect(container.querySelector('dl dt')).toHaveTextContent('term')
+      expect(container.querySelector('dl dd')).toHaveTextContent('def')
+    })
+
+    it('renders a table with merged cells', () => {
+      const { container } = render(
+        <Markdown>
+          {'<table><tbody><tr><td colspan="2">spanned</td></tr></tbody></table>'}
+        </Markdown>,
+      )
+
+      const td = container.querySelector('td')
+      expect(td).not.toBeNull()
+      expect(td).toHaveAttribute('colspan', '2')
+    })
+
+    it('strips script tags', () => {
+      const { container } = render(
+        <Markdown>{'<script>window.__xss = true</script>safe text'}</Markdown>,
+      )
+
+      expect(container.querySelector('script')).toBeNull()
+      expect(container).toHaveTextContent('safe text')
+    })
+
+    it('strips inline event handlers', () => {
+      const { container } = render(
+        <Markdown>{'<div onclick="window.__xss = true">click</div>'}</Markdown>,
+      )
+
+      expect(container.querySelector('[onclick]')).toBeNull()
+      expect(container).toHaveTextContent('click')
+    })
+
+    it('strips iframe, svg, and object', () => {
+      const { container } = render(
+        <Markdown>
+          {
+            '<iframe src="https://evil"></iframe><svg><circle r="1" /></svg><object data="x"></object>'
+          }
+        </Markdown>,
+      )
+
+      expect(container.querySelector('iframe')).toBeNull()
+      expect(container.querySelector('svg')).toBeNull()
+      expect(container.querySelector('object')).toBeNull()
+    })
+
+    it('forces rel and target on links', () => {
+      const { container } = render(<Markdown>{'<a href="https://example.com">ext</a>'}</Markdown>)
+
+      const link = container.querySelector('a')
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link.getAttribute('rel')).toContain('noopener')
+    })
+
+    it('neutralizes javascript: links', () => {
+      const { container } = render(
+        <Markdown>{'<a href="javascript:window.__xss = true">x</a>'}</Markdown>,
+      )
+
+      const link = container.querySelector('a')
+      expect(link?.getAttribute('href') ?? '').not.toContain('javascript:')
+    })
+
+    it('preserves inline style verbatim', () => {
+      const { container } = render(<Markdown>{'<span style="color: red">styled</span>'}</Markdown>)
+
+      const span = container.querySelector('span[style]')
+      expect(span).not.toBeNull()
+      expect(span.style.color).toBe('red')
+    })
+  })
 })

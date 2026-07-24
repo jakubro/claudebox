@@ -2,14 +2,14 @@
 
 import argparse
 import asyncio
-import json
 from datetime import UTC, datetime
 
 import httpx
 from rich.table import Table
 
 from claudebox import console
-from claudebox.constants import daemon_base_url, daemon_config_path
+from claudebox.constants import daemon_base_url
+from ._completers import complete_container_target, registered_workspace_ids
 from ._term import print_fail, print_ok
 
 
@@ -41,12 +41,14 @@ def register(parser: argparse.ArgumentParser) -> None:
         "stop",
         help="SIGTERM a container (10s grace) - accepts <id>, prefix, or all",
     )
-    stop_action.add_argument("target", help="container id, unique prefix, or 'all'")
+    stop_target = stop_action.add_argument("target", help="container id, unique prefix, or 'all'")
+    setattr(stop_target, "completer", complete_container_target)
     kill_action = actions.add_parser(
         "kill",
         help="SIGKILL a container immediately - accepts <id>, prefix, or all",
     )
-    kill_action.add_argument("target", help="container id, unique prefix, or 'all'")
+    kill_target = kill_action.add_argument("target", help="container id, unique prefix, or 'all'")
+    setattr(kill_target, "completer", complete_container_target)
 
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0)
@@ -109,7 +111,7 @@ async def _run(action: str, args: argparse.Namespace) -> int:
 async def _fetch_all(client: httpx.AsyncClient) -> tuple[list[dict], bool]:
     """Return (containers, daemon_down=True if daemon unreachable)."""
 
-    workspace_ids = _list_registered_workspace_ids()
+    workspace_ids = registered_workspace_ids()
 
     if not workspace_ids:
         try:
@@ -149,22 +151,6 @@ async def _fetch_all(client: httpx.AsyncClient) -> tuple[list[dict], bool]:
             containers.append(c)
 
     return containers, False
-
-
-def _list_registered_workspace_ids() -> list[str]:
-    """Return all registered workspace IDs from ``~/.claudebox/daemon.json``."""
-
-    config_path = daemon_config_path()
-
-    if not config_path.exists():
-        return []
-
-    try:
-        data = json.loads(config_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return []
-
-    return [entry["id"] for entry in data.get("workspaces", []) if entry.get("id")]
 
 
 def _render_list(containers: list[dict]) -> None:

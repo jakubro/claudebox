@@ -108,3 +108,65 @@ class TestBuildContentBlocks:
         assert blocks[0]["type"] == "text"
         assert blocks[1]["type"] == "image"
         assert blocks[2]["type"] == "document"
+
+
+# --- _serialize_inline_replies ---
+
+
+class TestSerializeInlineReplies:
+    """Test <inline-replies> wire-envelope serialization."""
+
+    def test_single_reply(self):
+        xml = SessionService._serialize_inline_replies(
+            [{"quote": "context window", "from": "assistant", "response": "how big?"}]
+        )
+
+        assert xml == (
+            "<inline-replies>\n"
+            '  <reply><quote from="assistant">context window</quote>'
+            "<response>how big?</response></reply>\n"
+            "</inline-replies>"
+        )
+
+    def test_escapes_inner_text_only(self):
+        xml = SessionService._serialize_inline_replies(
+            [{"quote": "a < b & c", "from": "user", "response": "x > y"}]
+        )
+
+        assert "a &lt; b &amp; c" in xml
+        assert "x &gt; y" in xml
+
+    def test_multiple_replies_carry_from_attribution(self):
+        xml = SessionService._serialize_inline_replies(
+            [
+                {"quote": "q1", "from": "assistant", "response": "r1"},
+                {"quote": "q2", "from": "user", "response": "r2"},
+            ]
+        )
+
+        assert xml.count("<reply>") == 2
+        assert 'from="assistant"' in xml
+        assert 'from="user"' in xml
+
+    def test_strips_anchor_fields_from_the_wire(self):
+        # Anchor fields ride on the display event + reload but must never reach the
+        # model - the from/quote/response allowlist keeps them structurally invisible.
+        xml = SessionService._serialize_inline_replies(
+            [
+                {
+                    "quote": "context window",
+                    "from": "assistant",
+                    "response": "how big?",
+                    "turnId": "t-42",
+                    "prefix": "the runtime embeds ",
+                    "suffix": " in the Model",
+                    "offset": 19,
+                }
+            ]
+        )
+
+        for anchor_token in ("t-42", "turnId", "prefix", "suffix", "offset", "the runtime embeds"):
+            assert anchor_token not in xml
+
+        assert "context window" in xml
+        assert "how big?" in xml

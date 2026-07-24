@@ -3,8 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { listSessions } from '../api/sessions'
 import { getUiState, patchGlobalUiState } from '../api/uiState'
-import { PINNED_PATH, WORKSPACE_COLOR_PATH } from '../config/storage'
-import { SESSIONS_CHANGED_DEBOUNCE_MS } from '../config/timing'
+import { PINNED_PATH, PINS_CHANGE_SIGNAL_KEY, WORKSPACE_COLOR_PATH } from '../config/storage'
+import { SESSIONS_CHANGED_DEBOUNCE_MS, SESSIONS_REFRESH_FALLBACK_MS } from '../config/timing'
 import { useDaemonStreamContext } from './DaemonStreamContext'
 import { useWorkspace } from './WorkspaceContext'
 
@@ -13,8 +13,9 @@ const SessionsContext = createContext(null)
 /**
  * Provide preloaded sessions list with SSE-driven refresh.
  *
- * Refetches when the daemon broadcasts sessions_changed or container_status
- * events, replacing the previous 30s polling interval.
+ * Refetches when the daemon signals sessions_changed or container_status. A
+ * low-frequency fallback poll guarantees the list still converges if a daemon
+ * signal is missed or dropped.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
@@ -60,6 +61,28 @@ export function SessionsProvider({ children }) {
     return () => clearTimeout(debounceRef.current)
   }, [sessionsChanged, containerStatus, fetchSessions])
 
+  // Defense-in-depth: the daemon signals above are the primary refresh trigger,
+  // but a dropped or missed signal would otherwise strand the list. A low-frequency
+  // poll guarantees the list eventually converges.
+  useEffect(() => {
+    const interval = setInterval(fetchSessions, SESSIONS_REFRESH_FALLBACK_MS)
+
+    return () => clearInterval(interval)
+  }, [fetchSessions])
+
+  // Cross-tab pin sync: pins are optimistic UI-state with no daemon SSE signal,
+  // so mirror useBookmarks - another tab writes PINS_CHANGE_SIGNAL_KEY on toggle
+  // and this listener refetches ui-state to pick up the change.
+  useEffect(() => {
+    const handleStorage = e => {
+      if (e.key === PINS_CHANGE_SIGNAL_KEY) {
+        fetchSessions()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [fetchSessions])
+
   // Set workspace accent color with optimistic update - fire-and-forget
   const setWorkspaceColor = useCallback(color => {
     setWorkspaceColorState(color)
@@ -87,16 +110,22 @@ export function SessionsProvider({ children }) {
     })
   }, [])
 
-  // Toggle pin with optimistic update - fire-and-forget, no read needed
+  // Toggle pin with optimistic update - fire-and-forget, no read needed.
+  // Signals other tabs via PINS_CHANGE_SIGNAL_KEY so they refetch ui-state.
   const togglePin = useCallback(sessionId => {
     setPinnedSessions(prev => {
       const isPinned = prev.includes(sessionId)
       if (isPinned) {
         patchGlobalUiState([{ op: 'remove', path: PINNED_PATH, value: sessionId }])
-        return prev.filter(id => id !== sessionId)
+      } else {
+        patchGlobalUiState([{ op: 'add', path: PINNED_PATH, value: sessionId }])
       }
-      patchGlobalUiState([{ op: 'add', path: PINNED_PATH, value: sessionId }])
-      return [...prev, sessionId]
+      try {
+        localStorage.setItem(PINS_CHANGE_SIGNAL_KEY, Date.now().toString())
+      } catch {
+        // localStorage may be unavailable
+      }
+      return isPinned ? prev.filter(id => id !== sessionId) : [...prev, sessionId]
     })
   }, [])
 

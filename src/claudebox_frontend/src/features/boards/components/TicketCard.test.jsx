@@ -2,7 +2,7 @@
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TicketCard from './TicketCard'
 
 vi.mock('@dnd-kit/sortable', () => ({
@@ -20,12 +20,39 @@ vi.mock('@dnd-kit/utilities', () => ({
   CSS: { Transform: { toString: () => '' } },
 }))
 
+// Controllable session state for the shared status derivation.
+let mockSessions = []
+let mockStopping = new Set()
+
+vi.mock('../../../context/SessionsContext', () => ({
+  useSessionsList: () => ({ sessions: mockSessions }),
+}))
+
+vi.mock('../../../context/ContainerMapContext', () => ({
+  useContainerMap: () => ({
+    // Mirrors the real deriveSessionStatus: container presence -> running/stopping, else none.
+    deriveSessionStatus: (sessionId, sessions = []) => {
+      const hasContainer = sessions.some(s => s.session_id === sessionId && s.container_id)
+      if (!hasContainer) {
+        return 'none'
+      }
+      return mockStopping.has(sessionId) ? 'stopping' : 'running'
+    },
+  }),
+}))
+
 const baseTicket = {
   path: 'tickets/feat-1.md',
   title: 'Add authentication',
   session: null,
-  status: null,
 }
+
+const runningSessions = [{ session_id: 'abcd1234efgh', container_id: 'ctr-1' }]
+
+beforeEach(() => {
+  mockSessions = []
+  mockStopping = new Set()
+})
 
 describe('TicketCard', () => {
   it('renders ticket title', () => {
@@ -35,7 +62,8 @@ describe('TicketCard', () => {
   })
 
   it('renders session info when ticket has session', () => {
-    const ticket = { ...baseTicket, session: 'abcd1234efgh', status: 'running' }
+    mockSessions = runningSessions
+    const ticket = { ...baseTicket, session: 'abcd1234efgh' }
     render(<TicketCard ticket={ticket} />)
 
     expect(screen.getByText(/running/)).toBeInTheDocument()
@@ -48,16 +76,28 @@ describe('TicketCard', () => {
     expect(screen.queryByText(/running|stopped/)).not.toBeInTheDocument()
   })
 
-  it('shows running status when status is running', () => {
-    const ticket = { ...baseTicket, session: 'abcd1234efgh', status: 'running' }
+  it('shows running status when the session has a live container', () => {
+    mockSessions = runningSessions
+    const ticket = { ...baseTicket, session: 'abcd1234efgh' }
     const { container } = render(<TicketCard ticket={ticket} />)
 
     expect(container.querySelector('.ticket-status-dot.running')).toBeInTheDocument()
     expect(screen.getByText(/running \(abcd/)).toBeInTheDocument()
   })
 
-  it('shows stopped status when status is not running', () => {
-    const ticket = { ...baseTicket, session: 'abcd1234efgh', status: 'stopped' }
+  it('shows stopping status while the session is tearing down', () => {
+    mockSessions = runningSessions
+    mockStopping = new Set(['abcd1234efgh'])
+    const ticket = { ...baseTicket, session: 'abcd1234efgh' }
+    const { container } = render(<TicketCard ticket={ticket} />)
+
+    expect(container.querySelector('.ticket-status-dot.stopping')).toBeInTheDocument()
+    expect(screen.getByText(/stopping \(abcd/)).toBeInTheDocument()
+  })
+
+  it('shows stopped status when the session has no live container', () => {
+    // mockSessions empty -> deriveSessionStatus returns 'none' -> gray "stopped".
+    const ticket = { ...baseTicket, session: 'abcd1234efgh' }
     const { container } = render(<TicketCard ticket={ticket} />)
 
     expect(container.querySelector('.ticket-status-dot.stopped')).toBeInTheDocument()

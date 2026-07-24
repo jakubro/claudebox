@@ -7,7 +7,6 @@ import {
   parsePersistedOutput,
   parseSlashCommand,
   parseStructuredQA,
-  stripTaskNotifications,
 } from './parsers'
 
 describe('parseSlashCommand', () => {
@@ -442,49 +441,5 @@ describe('parseStructuredQA with ExitPlanMode response', () => {
     expect(result).toEqual([
       { header: 'Plan', text: 'Review the plan above', answers: ['Approve'] },
     ])
-  })
-})
-
-describe('stripTaskNotifications', () => {
-  it('removes task-notification tags and content', () => {
-    const msg = 'Hello<task-notification task-id="123">notify</task-notification> World'
-    expect(stripTaskNotifications(msg)).toBe('Hello World')
-  })
-
-  it('removes multiple task-notification tags', () => {
-    const msg =
-      '<task-notification task-id="1">x</task-notification>Content<task-notification task-id="2">y</task-notification>'
-    expect(stripTaskNotifications(msg)).toBe('Content')
-  })
-
-  it('returns original message when no notifications present', () => {
-    const msg = 'no notifications here'
-    expect(stripTaskNotifications(msg)).toBe('no notifications here')
-  })
-
-  it('returns falsy input as-is', () => {
-    expect(stripTaskNotifications('')).toBe('')
-    expect(stripTaskNotifications(null)).toBe(null)
-    expect(stripTaskNotifications(undefined)).toBe(undefined)
-  })
-
-  it('handles multiline notification content', () => {
-    const msg = 'before<task-notification task-id="1">line1\nline2</task-notification>after'
-    expect(stripTaskNotifications(msg)).toBe('beforeafter')
-  })
-
-  it('preserves leading spaces after stripping notifications', () => {
-    const msg = '  indented<task-notification task-id="1">x</task-notification>'
-    expect(stripTaskNotifications(msg)).toBe('  indented')
-  })
-
-  it('preserves trailing spaces after stripping notifications', () => {
-    const msg = '<task-notification task-id="1">x</task-notification>content  '
-    expect(stripTaskNotifications(msg)).toBe('content  ')
-  })
-
-  it('strips surrounding newlines but not spaces after removal', () => {
-    const msg = '\n<task-notification task-id="1">x</task-notification>\n  spaced  \n'
-    expect(stripTaskNotifications(msg)).toBe('  spaced  ')
   })
 })

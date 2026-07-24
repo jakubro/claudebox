@@ -295,10 +295,19 @@ class ContainerService:
     async def remove(self, container_id: str) -> None:
         """Force-remove the container backend and drop it from the registry.
 
+        When the removed container served a session, broadcast a
+        ``SessionsChangedEvent`` so every tab refetches and drops the container
+        from the list promptly once removal completes.
+
         Raises ContainerNotFound if not in registry.
         """
 
+        # Local import mirrors sessions.service's deferred ..containers imports:
+        # keeps the containers <-> sessions dependency out of module load order.
+        from ..sessions.models import SessionsChangedEvent
+
         container = self.get(container_id)
+        session_id = container.session_id
 
         loop = asyncio.get_running_loop()
 
@@ -317,6 +326,14 @@ class ContainerService:
 
         self._containers.pop(container_id, None)
         await self.save()
+
+        if session_id:
+            await self._events.broadcast(
+                SessionsChangedEvent(
+                    workspace_id=self._workspace.id,
+                    container_id=container_id,
+                )
+            )
 
     async def send(self, payload: Any, container_id: str, endpoint: str, method: str) -> dict:
         """Send a request to a container, retrying once on stale port."""
@@ -391,6 +408,10 @@ class ContainerService:
             # "CLAUDEBOX_DEV": str(int(is_dev_mode())),
         }
 
+        # Reload workspace config each create so mount/port/env/network reflect the current
+        # settings.toml, not the load-time snapshot (agent/profile/backend stay on the snapshot).
+        config = Config.load(self._workspace.path)
+
         loop = asyncio.get_running_loop()
 
         backend_id = await loop.run_in_executor(
@@ -405,6 +426,7 @@ class ContainerService:
                 extra_volumes=extra_volumes,
                 run_args=run_args or [],
                 detach=True,
+                config=config,
             ),
         )
 

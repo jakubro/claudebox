@@ -49,6 +49,7 @@ export default function ChatInputArea({ isWelcome, state, actions, refs, queueEd
         send={isWelcome ? NOOP : actions.send}
         enqueueMessage={isWelcome ? NOOP : actions.enqueueMessage}
         deferSend={isWelcome ? actions.onWelcomeDeferSend : actions.deferSend}
+        hasBufferedReplies={isWelcome ? undefined : actions.hasBufferedReplies}
         queueEdit={queueEdit}
       />
     </div>

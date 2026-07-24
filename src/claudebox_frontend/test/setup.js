@@ -12,11 +12,12 @@ global.IntersectionObserver = vi.fn(() => ({
 }))
 
 // Warning: this mock never fires callbacks. Tests needing resize events must override.
-global.ResizeObserver = vi.fn(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}))
+// A class (not vi.fn) so `new ResizeObserver()` works when a component instantiates it directly.
+global.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
 
 afterEach(() => {
   cleanup()

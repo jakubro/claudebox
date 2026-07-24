@@ -15,6 +15,7 @@ vi.mock('lucide-react', () => ({
   ArrowDownToLine: () => <span data-testid="icon-arrow-down">ArrowDown</span>,
   Check: () => <span data-testid="icon-check">Check</span>,
   ChevronDown: () => <span data-testid="icon-chevron-down">ChevronDown</span>,
+  ChevronsDownUp: () => <span data-testid="icon-chevrons-down-up">ChevronsDownUp</span>,
   ChevronUp: () => <span data-testid="icon-chevron-up">ChevronUp</span>,
   GitFork: () => <span data-testid="icon-git-fork">GitFork</span>,
   Loader2: ({ className }) => (
@@ -23,6 +24,7 @@ vi.mock('lucide-react', () => ({
     </span>
   ),
   Map: () => <span data-testid="icon-map">Map</span>,
+  MessageSquareQuote: () => <span data-testid="icon-message-square-quote">MessageSquareQuote</span>,
   Package: () => <span data-testid="icon-package">Package</span>,
   Pencil: () => <span data-testid="icon-pencil">Pencil</span>,
   Pin: () => <span data-testid="icon-pin">Pin</span>,
@@ -97,6 +99,8 @@ describe('ChatControlBar', () => {
       messagesRef: { current: { scrollTop: 0, scrollHeight: 1000 } },
       autoScrollEnabledRef: { current: false },
       isAutoScrollEnabled: false,
+      autoCollapseEnabled: true,
+      onToggleAutoCollapse: vi.fn(),
       onJumpPrev: vi.fn(),
       onJumpNext: vi.fn(),
       minimapPinned: false,
@@ -215,7 +219,7 @@ describe('ChatControlBar', () => {
       const { container } = render(<ChatControlBar {...defaultProps} />)
 
       const separators = container.querySelectorAll('.panel-control-separator')
-      expect(separators).toHaveLength(4)
+      expect(separators).toHaveLength(5)
     })
   })
 
@@ -280,6 +284,35 @@ describe('ChatControlBar', () => {
       await user.click(screen.getByTitle('Show minimap'))
 
       expect(defaultProps.onToggleMinimap).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('auto-collapse toggle', () => {
+    it('shows pressed state when auto-collapse is enabled', () => {
+      render(<ChatControlBar {...defaultProps} autoCollapseEnabled={true} />)
+
+      const btn = screen.getByTestId('autocollapse-toggle')
+      expect(btn).toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'true')
+      expect(btn).toHaveAttribute('title', 'Disable auto-collapse')
+    })
+
+    it('shows unpressed state when auto-collapse is disabled', () => {
+      render(<ChatControlBar {...defaultProps} autoCollapseEnabled={false} />)
+
+      const btn = screen.getByTestId('autocollapse-toggle')
+      expect(btn).not.toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'false')
+      expect(btn).toHaveAttribute('title', 'Enable auto-collapse')
+    })
+
+    it('calls onToggleAutoCollapse when clicked', async () => {
+      const user = userEvent.setup()
+      render(<ChatControlBar {...defaultProps} />)
+
+      await user.click(screen.getByTestId('autocollapse-toggle'))
+
+      expect(defaultProps.onToggleAutoCollapse).toHaveBeenCalledOnce()
     })
   })
 

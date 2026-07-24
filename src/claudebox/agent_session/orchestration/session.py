@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
+from xml.sax.saxutils import escape, quoteattr
 
 from .attachments import AttachmentInfo, AttachmentService
 from .broadcaster import Broadcaster
@@ -441,14 +442,20 @@ class SessionService:
     # Incoming Events
     # ----------------------------------------------------------------------------------------------
 
-    async def send(self, prompt: str, attachments: list[dict] | None = None) -> None:
+    async def send(
+        self,
+        prompt: str,
+        attachments: list[dict] | None = None,
+        inline_replies: list[dict] | None = None,
+    ) -> None:
         """Send user prompt to SDK, injecting synthetic events where needed.
 
-        Three paths: (1) attachments - validates, builds content blocks, injects
-        synthetic user event with display metadata; (2) internal commands
-        (/compact, /context) - injects synthetic user event since SDK won't echo;
-        (3) normal - sets prompt on pipeline for result-only turn injection,
-        then queries SDK.
+        Paths: (1) attachments and/or inline replies - validates, builds content
+        blocks, injects a synthetic user event with display metadata (attachment
+        chips + quote/reply pairs) and suppresses the SDK echo; (2) internal
+        commands (/compact, /context) - injects a synthetic user event since the
+        SDK won't echo; (3) normal - sets prompt on the pipeline for result-only
+        turn injection, then queries the SDK.
 
         Raises AttachmentInvalid if any attachment fails base64 decode or
         exceeds MAX_ATTACHMENT_BYTES.
@@ -456,47 +463,38 @@ class SessionService:
 
         self._logger.info("Sending query", prompt=prompt[:100], **self._log_context)
 
-        if attachments:
-            # Only this branch dereferences _base_session.path.
-            assert self._base_session is not None, "no active session"
-            self._validate_attachments(attachments)
+        if inline_replies or attachments:
+            # Drop comments with a blank reply - they are never sent.
+            replies = [r for r in (inline_replies or []) if (r.get("response") or "").strip()]
 
-            # Write attachment files to session directory
-            attachments_dir = self._base_session.path / SESSION_ATTACHMENTS_DIR
-            attachments_dir.mkdir(exist_ok=True)
+            attachment_meta = self._store_attachments(attachments) if attachments else []
 
-            attachment_meta = []
+            # Nothing left once blank replies are dropped.
+            if not prompt.strip() and not replies and not attachment_meta:
+                return
 
-            for a in attachments:
-                decoded = base64.b64decode(a["data"])
-                stored_name = f"{uuid.uuid4().hex[:8]}_{a['name']}"
-                (attachments_dir / stored_name).write_bytes(decoded)
-                attachment_meta.append(
-                    {
-                        "name": a["name"],
-                        "type": a["type"],
-                        "size": len(decoded),
-                        "filename": stored_name,
-                    }
-                )
-
-            # Inject synthetic user event with display metadata (no base64)
+            # Display-only event; content=prompt (never the serialized XML) so the
+            # optimistic pending turn reconciles by content. The pairs drive the placeholder.
             await self._event_pipeline.inject_event(
                 event_type=EventType.USER,
                 subtype=EventSubtype.MESSAGE,
                 content=prompt,
                 is_human=True,
                 primary=True,
-                attachments=attachment_meta,
+                attachments=attachment_meta or None,
+                inline_replies=replies or None,
             )
 
-            # Signal pipeline to suppress the SDK echo - synthetic injection is canonical
-            # One suppression suffices: all attachments are sent in a single SDK
-            # query, so the SDK emits exactly one user message echo to suppress.
+            # Suppress the SDK echo - the injected event is canonical (one query, one echo).
             self._event_pipeline.suppress_next_user_echo()
 
-            # Build content blocks for SDK (with full base64 data)
-            content_blocks = self._build_content_blocks(prompt, attachments)
+            # Prompt verbatim, then the serialized <inline-replies> envelope when present.
+            text = prompt
+
+            if replies:
+                text = (prompt + "\n\n" if prompt else "") + self._serialize_inline_replies(replies)
+
+            content_blocks = self._build_content_blocks(text, attachments or [])
             await self._sdk_client.query(content_blocks)
 
             return
@@ -531,6 +529,32 @@ class SessionService:
                     name=a["name"],
                     size_mb=f"{len(decoded) / 1024 / 1024:.1f}",
                 )
+
+    def _store_attachments(self, attachments: list[dict]) -> list[dict]:
+        """Validate, persist attachment files to the session dir, and return display metadata."""
+
+        assert self._base_session is not None, "no active session"
+        self._validate_attachments(attachments)
+
+        attachments_dir = self._base_session.path / SESSION_ATTACHMENTS_DIR
+        attachments_dir.mkdir(exist_ok=True)
+
+        attachment_meta = []
+
+        for a in attachments:
+            decoded = base64.b64decode(a["data"])
+            stored_name = f"{uuid.uuid4().hex[:8]}_{a['name']}"
+            (attachments_dir / stored_name).write_bytes(decoded)
+            attachment_meta.append(
+                {
+                    "name": a["name"],
+                    "type": a["type"],
+                    "size": len(decoded),
+                    "filename": stored_name,
+                }
+            )
+
+        return attachment_meta
 
     async def send_and_wait(self, prompt: str) -> str:
         """Send prompt and wait for the assistant's complete response.
@@ -623,6 +647,28 @@ class SessionService:
                     )
 
         return blocks
+
+    @staticmethod
+    def _serialize_inline_replies(replies: list[dict]) -> str:
+        """Serialize inline-reply pairs into the <inline-replies> wire envelope.
+
+        XML-escapes only the inner quote/response text and the `from` attribution;
+        the surrounding free-text prompt is never wrapped or escaped.
+        """
+
+        lines = ["<inline-replies>"]
+
+        for r in replies:
+            frm = quoteattr(r.get("from") or "")
+            quote = escape(r.get("quote") or "")
+            response = escape(r.get("response") or "")
+            lines.append(
+                f"  <reply><quote from={frm}>{quote}</quote><response>{response}</response></reply>"
+            )
+
+        lines.append("</inline-replies>")
+
+        return "\n".join(lines)
 
     # Outgoing Events
     # ----------------------------------------------------------------------------------------------

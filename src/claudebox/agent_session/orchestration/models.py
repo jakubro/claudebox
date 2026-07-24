@@ -131,6 +131,9 @@ class PublishedEvent(Event):
     # Attachment display metadata (for user messages with files)
     attachments: list[dict] | None = None
 
+    # Inline-reply display data (quote/from/response pairs) for user messages
+    inline_replies: list[dict] | None = None
+
     # Capability surface - populated only on system/init events for race-free initial render
     capabilities: dict | None = None
     runtime_name: str | None = None

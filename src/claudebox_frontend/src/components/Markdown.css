@@ -18,3 +18,45 @@
 .code-copy-btn:hover {
   background: var(--bg-tertiary);
 }
+
+/* Raw HTML elements (rehype-raw + sanitize) */
+details {
+  margin: 0.5em 0;
+  padding: 0.4em 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+kbd {
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 0.85em;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+mark {
+  padding: 0 2px;
+  color: var(--bg-primary);
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+dt {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+dd {
+  margin: 0 0 0.4em 1.2em;
+  color: var(--text-secondary);
+}

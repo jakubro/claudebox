@@ -182,6 +182,7 @@ Panels toggle from icon strips on the left (Sessions, Containers) and right (Tod
 - Input history (Up/Down), draft persistence, and auto-resize textarea
 - XML block folding in the input area (Ctrl+' to collapse, Ctrl+\ to expand)
 - Rewind to any user message — fork here (replaces current session) or fork in new browser tab
+- Inline quote-and-reply — drag-select any message text to quote it, reply to several fragments in a side comments bar, and send them together as one turn (desktop)
 - Turn-level copy buttons, collapsible turns, duration and timestamp badges
 - Slash command autocomplete — type `/` at the start of input for a substring-matched dropdown of available commands
 
@@ -333,7 +334,7 @@ The model id follows LangChain's `init_chat_model` convention. Common providers:
 | Ollama | none | `"ollama:llama3.2:3b"` |
 | Local OpenAI server (vLLM, LM Studio, llama.cpp) | none | `"openai:<model>"` + `[langgraph.openai] base_url` |
 
-Anthropic, OpenAI, and Ollama are tested in CI; the other providers ship in the image and are user-supported. LangGraph workspaces also support MCP servers via `[langgraph.mcp.<name>]` blocks and a configurable `web_search` backend — see [`etc/settings.sample.toml`](etc/settings.sample.toml) for every knob.
+LangGraph workspaces also support MCP servers via `[langgraph.mcp.<name>]` blocks and a configurable `web_search` backend — see [`etc/settings.sample.toml`](etc/settings.sample.toml) for every knob.
 
 ### What's different under LangGraph
 
@@ -402,6 +403,16 @@ The container image is built in three layers, each rebuilt at different frequenc
 | **Agent** | Claude Code CLI (via mise) + Python dependencies (`uv sync`) | On `build --layer agent` |
 
 `build` rebuilds all layers with caching. `build --layer agent` forces only the agent layer to rebuild (fast update for new Claude Code versions). `build --layer all` discards all caches.
+
+### Shell completion (bash)
+
+Turn on Tab-completion for the `claudebox` command by adding this line to your `~/.bashrc`:
+
+```bash
+[ -f ~/.claudebox/completion.bash ] && source ~/.claudebox/completion.bash
+```
+
+Reload your shell, and pressing Tab fills in commands and their arguments as you type — `claudebox <Tab>` lists the commands, `claudebox containers stop <Tab>` offers a running container, and `claudebox workspaces deregister <Tab>` offers a registered workspace.
 
 ### Maintenance
 

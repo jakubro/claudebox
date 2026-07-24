@@ -60,8 +60,11 @@ test.describe('Footer', () => {
     })
 
     // SPEC: footer:session-id
-    test('shows session ID', async ({ page }) => {
-      await expect(page.locator('[data-testid="footer-session"]')).toContainText('test-session-001')
+    test('shows only the first fragment of the session ID', async ({ page }) => {
+      const session = page.locator('[data-testid="footer-session"]')
+      // 'test-session-001' -> 'test'; the rest is truncated (full id via tooltip/copy).
+      await expect(session).toContainText('test')
+      await expect(session).not.toContainText('session-001')
     })
 
     // SPEC: footer:runtime-id
@@ -654,9 +657,9 @@ test.describe('Footer', () => {
   test.describe('Footer Buttons', () => {
     // SPEC: footer:copy-session
     test('has copy session dir button', async ({ page }) => {
-      // Wait for session data to load (session ID shows in footer)
+      // Wait for session data to load (session id shows its first fragment)
       const sessionEl = page.locator('[data-testid="footer-session"]')
-      await expect(sessionEl).toContainText('test-session')
+      await expect(sessionEl).toContainText('test')
 
       // Session element is clickable (copies session dir path)
       await expect(sessionEl).toHaveCSS('cursor', 'pointer')
@@ -673,8 +676,8 @@ test.describe('Footer', () => {
   test.describe('Footer Extras', () => {
     // SPEC: footer:notifications-position
     test('notification toggle is positioned right of session ID', async ({ page }) => {
-      // Wait for footer to fully render
-      await expect(page.locator('[data-testid="footer-session"]')).toContainText('test-session')
+      // Wait for footer to fully render (session id shows its first fragment)
+      await expect(page.locator('[data-testid="footer-session"]')).toContainText('test')
 
       const sessionId = page.locator('[data-testid="footer-session"]')
       const notificationsToggle = page.locator('[data-testid="footer-notifications-toggle"]')

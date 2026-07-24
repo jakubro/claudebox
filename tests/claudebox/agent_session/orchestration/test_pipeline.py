@@ -10,7 +10,9 @@ from claude_agent_sdk import UserMessage
 from claudebox.agent_session.events import (
     AgentEvent,
     AssistantMessagePayload,
+    CompactBoundaryPayload,
     ResultPayload,
+    TaskNotificationPayload,
     TextBlock,
     UserMessagePayload,
 )
@@ -396,6 +398,87 @@ class TestCompactBoundaryFallbackOnError:
         injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
         assert all(c["subtype"] != "compact_boundary" for c in injected)
         assert any(c["subtype"] == "error" for c in injected)
+
+
+# --- Compact boundary normal path (translated SDK boundary) ---
+
+
+class TestCompactBoundaryNormalPath:
+    """A translated compact_boundary flows through _run once and clears is_compacting."""
+
+    @pytest.mark.anyio
+    async def test_boundary_published_once_and_clears_compacting(self):
+        pipeline = _make_pipeline()
+
+        # Seed a compaction in flight through the real turn tracker.
+        pipeline._turn_tracker.on_event(
+            AgentEvent(kind="user_message", payload=UserMessagePayload(uuid="t1", content=""))
+        )
+        pipeline._turn_tracker.on_inject(subtype="compact_start", is_human=False, turn_id=None)
+        assert pipeline._turn_tracker.is_compacting is True
+
+        boundary = AgentEvent(
+            kind="compact_boundary",
+            payload=CompactBoundaryPayload(trigger="context_limit", pre_tokens=128000),
+        )
+
+        async def _yield_boundary_then_stop():
+            yield boundary
+            pipeline._running = False
+
+        pipeline._running = True
+        pipeline._sdk_client.ready = asyncio.Event()
+        pipeline._sdk_client.ready.set()
+        pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
+            _yield_boundary_then_stop  # Test async-gen structurally replaces the SDK receive method.
+        )
+
+        await pipeline._run()
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        boundaries = [e for e in published if e.subtype == "compact_boundary"]
+        assert len(boundaries) == 1
+        assert boundaries[0].message_data == {
+            "compact_metadata": {"trigger": "context_limit", "pre_tokens": 128000},
+        }
+        assert pipeline._turn_tracker.is_compacting is False
+
+
+class TestTaskNotificationNormalPath:
+    """A translated task_notification flows through _run and publishes a system event with message_data."""
+
+    @pytest.mark.anyio
+    async def test_notification_published_with_message_data(self):
+        pipeline = _make_pipeline()
+
+        notification = AgentEvent(
+            kind="task_notification",
+            payload=TaskNotificationPayload(
+                task_id="agent_abc", status="completed", summary="Done"
+            ),
+        )
+
+        async def _yield_notification_then_stop():
+            yield notification
+            pipeline._running = False
+
+        pipeline._running = True
+        pipeline._sdk_client.ready = asyncio.Event()
+        pipeline._sdk_client.ready.set()
+        pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
+            _yield_notification_then_stop
+        )
+
+        await pipeline._run()
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        notifs = [e for e in published if e.subtype == "task_notification"]
+        assert len(notifs) == 1
+        assert notifs[0].message_data == {
+            "task_id": "agent_abc",
+            "status": "completed",
+            "summary": "Done",
+        }
 
 
 # --- turn_tracker property ---

@@ -7,6 +7,7 @@ import { predictTurnHeight } from '../utils/predictTurnHeight'
 import { scheduleIdleWarmup } from '../utils/turnHeightWarmup'
 
 const EMPTY_HEIGHTS = {}
+const EMPTY_SET = new Set()
 
 /**
  * Return turn and user-message heights for minimap proportional display.
@@ -31,7 +32,12 @@ const EMPTY_HEIGHTS = {}
  * on a cache-version counter - repeated calls between cache mutations are
  * O(1) instead of a fresh querySelectorAll + per-turn iteration.
  */
-export default function useTurnHeights(messagesRef, turns, isStreaming = false) {
+export default function useTurnHeights(
+  messagesRef,
+  turns,
+  isStreaming = false,
+  collapsedTurnIds = EMPTY_SET,
+) {
   const [heights, setHeights] = useState(EMPTY_HEIGHTS)
   const [userHeights, setUserHeights] = useState(EMPTY_HEIGHTS)
   const resizeObserverRef = useRef(null)
@@ -49,9 +55,14 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
   turnsRef.current = turns
   const isStreamingRef = useRef(isStreaming)
   isStreamingRef.current = isStreaming
-  // Warmup loop sentinels - single active loop; effect cleanup signals stop
+  // Latest collapsed-turn-id set mirrored to a ref so isCollapsed reads it without
+  // re-subscribing observers or destabilizing updateHeights / getLogicalScrollHeight.
+  const collapsedIdsRef = useRef(collapsedTurnIds)
+  collapsedIdsRef.current = collapsedTurnIds
+  const isCollapsed = useCallback(turnId => collapsedIdsRef.current.has(turnId), [])
+  // Warmup guard - prevents double-scheduling within a single effect run. Reset
+  // on cleanup so a preempted run can restart (see the warmup effect).
   const warmupActiveRef = useRef(false)
-  const warmupShouldStopRef = useRef(false)
   // Memo plumbing for getLogicalScrollHeight: bump cacheVersionRef whenever
   // cacheRef or the observed DOM changes. memoVersionRef tracks the version
   // at which memoResultRef was computed; equal versions = cache hit.
@@ -111,7 +122,9 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
         total += cached.height
       } else if (turnId) {
         const turn = turnsRef.current?.find(t => t.turn_id === turnId)
-        total += turn ? predictTurnHeight(turn, effectiveWidth) : INTRINSIC_TURN_HEIGHT_PX
+        total += turn
+          ? predictTurnHeight(turn, effectiveWidth, isCollapsed(turnId))
+          : INTRINSIC_TURN_HEIGHT_PX
       } else {
         // Pending turn (no turnId) - always on-screen at bottom, trust live measure.
         total += el.offsetHeight
@@ -120,7 +133,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
     memoResultRef.current = total
     memoVersionRef.current = cacheVersionRef.current
     return total
-  }, [messagesRef, readTurnId, effectiveWidthFor])
+  }, [messagesRef, readTurnId, effectiveWidthFor, isCollapsed])
 
   // Update heights from observed elements, applying sticky cache.
   // `fastPath`: skip the O(N) sweep and re-measure only the bottom turn -
@@ -139,14 +152,18 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
       const turnElements = container.querySelectorAll('[data-testid="turn-container"]')
 
       if (fastPath && turnElements.length > 0) {
-        const lastIndex = turnElements.length - 1
-        const el = turnElements[lastIndex]
+        const el = turnElements[turnElements.length - 1]
         const turnId = readTurnId(el)
         const measuredHeight = el.offsetHeight
         const userEl = findUserEl(el)
         const measuredUserHeight = userEl ? userEl.offsetHeight : 0
 
-        if (turnId && onScreenRef.current.has(turnId)) {
+        if (!turnId) {
+          // Pending turn (no data-turn-id) is not a minimap segment; nothing to export.
+          return
+        }
+
+        if (onScreenRef.current.has(turnId)) {
           const prev = cacheRef.current.get(turnId)
           if (
             !prev ||
@@ -165,18 +182,18 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
 
         let changed = false
         setHeights(prev => {
-          if (prev[lastIndex] === measuredHeight) {
+          if (prev[turnId] === measuredHeight) {
             return prev
           }
           changed = true
-          return { ...prev, [lastIndex]: measuredHeight }
+          return { ...prev, [turnId]: measuredHeight }
         })
         setUserHeights(prev => {
-          if (prev[lastIndex] === measuredUserHeight) {
+          if (prev[turnId] === measuredUserHeight) {
             return prev
           }
           changed = true
-          return { ...prev, [lastIndex]: measuredUserHeight }
+          return { ...prev, [turnId]: measuredUserHeight }
         })
         if (changed) {
           cacheVersionRef.current += 1
@@ -190,62 +207,61 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
       const effectiveWidth = effectiveWidthFor(container)
       let cacheTouched = false
 
-      let index = 0
       for (const el of turnElements) {
         const turnId = readTurnId(el)
+        // Pending turn (no data-turn-id) is not a minimap segment; skip export.
+        if (!turnId) {
+          continue
+        }
         const measuredHeight = el.offsetHeight
         const userEl = findUserEl(el)
         const measuredUserHeight = userEl ? userEl.offsetHeight : 0
 
-        if (turnId) {
-          currentTurnIds.add(turnId)
-          const cached = cacheRef.current.get(turnId)
-          const isOnScreen = onScreenRef.current.has(turnId)
-          if (!cached) {
-            if (isOnScreen) {
-              // On-screen first observation - measurement is the real layout.
-              cacheRef.current.set(turnId, {
-                height: measuredHeight,
-                userHeight: measuredUserHeight,
-                predicted: false,
-              })
-            } else {
-              // Off-screen first observation - offsetHeight may be the 400px
-              // intrinsic-size placeholder. Cache the prediction instead so
-              // the minimap reflects content shape from frame 1; idle warmup
-              // upgrades to real measurement later.
-              const turn = turnsRef.current?.find(t => t.turn_id === turnId)
-              cacheRef.current.set(turnId, {
-                height: predictTurnHeight(turn, effectiveWidth),
-                userHeight: 0,
-                predicted: true,
-              })
-            }
-            cacheTouched = true
-          } else if (isOnScreen) {
-            // Refresh while visible: streaming growth, or prediction upgrade on first scroll-in.
-            if (
-              cached.height !== measuredHeight ||
-              cached.userHeight !== measuredUserHeight ||
-              cached.predicted
-            ) {
-              cacheRef.current.set(turnId, {
-                height: measuredHeight,
-                userHeight: measuredUserHeight,
-                predicted: false,
-              })
-              cacheTouched = true
-            }
+        currentTurnIds.add(turnId)
+        const cached = cacheRef.current.get(turnId)
+        const isOnScreen = onScreenRef.current.has(turnId)
+        if (!cached) {
+          if (isOnScreen) {
+            // On-screen first observation - measurement is the real layout.
+            cacheRef.current.set(turnId, {
+              height: measuredHeight,
+              userHeight: measuredUserHeight,
+              predicted: false,
+            })
+          } else {
+            // Off-screen first observation - offsetHeight may be the 400px
+            // intrinsic-size placeholder. Cache the prediction instead so
+            // the minimap reflects content shape from frame 1; idle warmup
+            // upgrades to real measurement later.
+            const turn = turnsRef.current?.find(t => t.turn_id === turnId)
+            cacheRef.current.set(turnId, {
+              height: predictTurnHeight(turn, effectiveWidth, isCollapsed(turnId)),
+              userHeight: 0,
+              predicted: true,
+            })
           }
-          const entry = cacheRef.current.get(turnId)
-          newHeights[index] = entry.height
-          newUserHeights[index] = entry.userHeight
-        } else {
-          // Pending turn - skip cache, report live measurement.
-          newHeights[index] = measuredHeight
-          newUserHeights[index] = measuredUserHeight
+          cacheTouched = true
+        } else if (isOnScreen) {
+          // Refresh while visible: streaming growth, or prediction upgrade on first scroll-in.
+          if (
+            cached.height !== measuredHeight ||
+            cached.userHeight !== measuredUserHeight ||
+            cached.predicted
+          ) {
+            cacheRef.current.set(turnId, {
+              height: measuredHeight,
+              userHeight: measuredUserHeight,
+              predicted: false,
+            })
+            cacheTouched = true
+          }
         }
-        index++
+        const entry = cacheRef.current.get(turnId)
+        // Export keyed by stable turnId (the minimap reads turnHeights[group.turn_id]);
+        // an index key would misalign turns when the groups array reorders, e.g. a
+        // compaction dropping an earlier turn.
+        newHeights[turnId] = entry.height
+        newUserHeights[turnId] = entry.userHeight
       }
 
       // Prune cache entries for turns no longer in the DOM (rewind, fork-here).
@@ -282,7 +298,7 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
         cacheVersionRef.current += 1
       }
     },
-    [messagesRef, readTurnId, effectiveWidthFor, findUserEl],
+    [messagesRef, readTurnId, effectiveWidthFor, findUserEl, isCollapsed],
   )
 
   // Setup observers - re-runs when containerEl changes.
@@ -411,27 +427,33 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
     }
   }, [containerEl, updateHeights, readTurnId])
 
-  // Idle-time warmup: replace predicted entries with real measurements.
+  // Idle-time warmup: replace predicted entries with real measurements. Each run
+  // owns a fresh stop token and clears the active guard on cleanup, so a run
+  // preempted by a turns.length change or by streaming stops cleanly and the next
+  // run restarts. A single shared stop flag would stay set after the first
+  // preemption and block every later warmup, stranding off-screen turns on their
+  // predictions.
   // biome-ignore lint/correctness/useExhaustiveDependencies: turns.length triggers re-warmup on growth
   useEffect(() => {
     if (!containerEl || warmupActiveRef.current) {
       return
     }
     warmupActiveRef.current = true
-    warmupShouldStopRef.current = false
+    const shouldStopRef = { current: false }
     scheduleIdleWarmup({
       containerEl,
       cacheRef,
       onScreenRef,
       isStreamingRef,
-      shouldStopRef: warmupShouldStopRef,
+      shouldStopRef,
       onCacheUpdate: updateHeights,
       onComplete: () => {
         warmupActiveRef.current = false
       },
     })
     return () => {
-      warmupShouldStopRef.current = true
+      shouldStopRef.current = true
+      warmupActiveRef.current = false
     }
   }, [containerEl, turns.length, updateHeights])
 
@@ -440,6 +462,52 @@ export default function useTurnHeights(messagesRef, turns, isStreaming = false) 
   useEffect(() => {
     updateHeights()
   }, [turns.length, updateHeights])
+
+  // Collapse/expand is an authoritative resize even off-screen, where
+  // content-visibility hides it from the ResizeObserver and the on-screen refresh
+  // gate. Rewrite the cache for each turn whose collapsed flag flipped; scoped to
+  // flips, so the never-shrink-on-scroll-past guard for expanded turns is untouched.
+  const prevCollapsedIdsRef = useRef(collapsedTurnIds)
+  useEffect(() => {
+    const prev = prevCollapsedIdsRef.current
+    prevCollapsedIdsRef.current = collapsedTurnIds
+    const container = messagesRef?.current
+    if (!container) {
+      return
+    }
+    const flipped = []
+    for (const id of collapsedTurnIds) {
+      if (!prev.has(id)) {
+        flipped.push(id)
+      }
+    }
+    for (const id of prev) {
+      if (!collapsedTurnIds.has(id)) {
+        flipped.push(id)
+      }
+    }
+    if (flipped.length === 0) {
+      return
+    }
+    const effectiveWidth = effectiveWidthFor(container)
+    let touched = false
+    for (const turnId of flipped) {
+      const turn = turnsRef.current?.find(t => t.turn_id === turnId)
+      if (!turn) {
+        continue
+      }
+      cacheRef.current.set(turnId, {
+        height: predictTurnHeight(turn, effectiveWidth, collapsedTurnIds.has(turnId)),
+        userHeight: 0,
+        predicted: true,
+      })
+      touched = true
+    }
+    if (touched) {
+      cacheVersionRef.current += 1
+      updateHeights()
+    }
+  }, [collapsedTurnIds, messagesRef, effectiveWidthFor, updateHeights])
 
   return { turnHeights: heights, userMessageHeights: userHeights, getLogicalScrollHeight }
 }

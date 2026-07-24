@@ -230,6 +230,28 @@ describe('Footer', () => {
     expect(screen.getByText('Copied!')).toBeInTheDocument()
   })
 
+  it('shows only the first fragment of a hyphenated session id; click copies full path', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    })
+    mockSessionDataCtx = defaultSessionDataCtx({
+      sessionId: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789',
+      sessionDir: '/tmp/sessions/ws--a1b2c3d4-e5f6-7890-abcd-ef0123456789',
+    })
+
+    render(<Footer />)
+    const session = screen.getByTestId('footer-session')
+    expect(session).toHaveTextContent('a1b2c3d4')
+    expect(session).not.toHaveTextContent('e5f6')
+
+    await user.click(session)
+    expect(writeText).toHaveBeenCalledWith('/tmp/sessions/ws--a1b2c3d4-e5f6-7890-abcd-ef0123456789')
+  })
+
   it('toggles notifications on button click', async () => {
     const user = userEvent.setup()
 
@@ -350,7 +372,8 @@ describe('Footer empty/new session state', () => {
     render(<Footer />)
     expect(screen.getByText('proj')).toBeInTheDocument()
     expect(screen.getByText('claude-opus-4-8')).toBeInTheDocument()
-    expect(screen.getByText('new-sess-x')).toBeInTheDocument()
+    // Footer shows only the first '-'-delimited fragment of the session id.
+    expect(screen.getByText('new')).toBeInTheDocument()
     expect(screen.getByTestId('footer-permission-mode-picker')).toHaveAttribute(
       'data-disabled',
       'false',

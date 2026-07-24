@@ -3,6 +3,7 @@
 import {
   ArrowDownToLine,
   ChevronDown,
+  ChevronsDownUp,
   ChevronUp,
   GitFork,
   Loader2,
@@ -31,6 +32,8 @@ import SessionNameEditor from './components/SessionNameEditor'
  * @param {Object} props.messagesRef - Ref to messages container for scroll
  * @param {Object} props.autoScrollEnabledRef - Ref tracking auto-scroll state
  * @param {boolean} props.isAutoScrollEnabled - Whether auto-scroll is active
+ * @param {boolean} props.autoCollapseEnabled - Whether auto-collapse of earlier turns is active
+ * @param {Function} props.onToggleAutoCollapse - Callback to toggle auto-collapse
  * @param {Function} props.onJumpPrev - Callback to jump to previous message
  * @param {Function} props.onJumpNext - Callback to jump to next message
  * @param {boolean} props.minimapPinned - Whether minimap is pinned visible
@@ -43,6 +46,8 @@ export default function ChatControlBar({
   messagesRef,
   autoScrollEnabledRef,
   isAutoScrollEnabled,
+  autoCollapseEnabled,
+  onToggleAutoCollapse,
   onJumpPrev,
   onJumpNext,
   minimapPinned,
@@ -195,6 +200,16 @@ export default function ChatControlBar({
             )}
             <span className="panel-control-separator" />
             <SessionPromptEditor disabled={!sessionId} />
+            <span className="panel-control-separator" />
+            <button
+              type="button"
+              className={`panel-control-btn${autoCollapseEnabled ? ' pressed' : ''}`}
+              onClick={onToggleAutoCollapse}
+              aria-pressed={autoCollapseEnabled}
+              data-testid="autocollapse-toggle"
+              title={autoCollapseEnabled ? 'Disable auto-collapse' : 'Enable auto-collapse'}>
+              <ChevronsDownUp size={12} />
+            </button>
           </div>
         )}
       </SessionNameEditor>

@@ -186,6 +186,14 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
   padding: 6px 12px;
+}
+
+/* Icon-to-label spacing uses margin-right, not flex gap: gap does not apply
+   between the svg and a bare-text label (an anonymous flex item). 12px icon + 8px
+   matches the workspace rows' 12px check column + 8px option gap, so the label
+   lines up with the workspace names. translateY centers the glyph with its label. */
+.workspace-switcher-register svg {
+  margin-right: 8px;
+  transform: translateY(1px);
 }

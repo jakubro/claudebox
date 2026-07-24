@@ -12,9 +12,9 @@ router = APIRouter(prefix="/api")
 
 @router.post("/send", response_model=None)
 async def send(svc: SessionDep, body: SendRequest):
-    """Queue a user prompt with optional attachments for processing by the assistant."""
+    """Queue a user prompt with optional attachments and inline replies for the assistant."""
 
-    await svc.send(body.prompt, body.attachments)
+    await svc.send(body.prompt, body.attachments, body.inline_replies)
 
     return None
 

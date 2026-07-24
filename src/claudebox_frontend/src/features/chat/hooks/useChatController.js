@@ -152,7 +152,7 @@ export default function useChatController({ events, contextRefs }) {
       return
     }
     if (!isCreating && sessionId) {
-      send(deferredSend.content, deferredSend.attachments)
+      send(deferredSend.content, { attachments: deferredSend.attachments })
       setDeferredSend(null)
       deferredSendRef.current = null
     }

@@ -1,7 +1,7 @@
 /** Auto-resize textarea to fit content with scroll compensation. */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { MOBILE_BREAKPOINT } from '../../../../../config/dimensions'
+import { useCallback, useEffect, useRef } from 'react'
+import useComposerMaxHeight from './useComposerMaxHeight'
 
 /** Manage textarea auto-resize with scroll compensation for chat input. */
 export default function useTextareaResize(
@@ -10,29 +10,8 @@ export default function useTextareaResize(
   messagesRef,
   isAutoScrollEnabledRef,
 ) {
-  const [maxTextareaHeight, setMaxTextareaHeight] = useState(120)
+  const maxTextareaHeight = useComposerMaxHeight(panelRef)
   const prevTextareaHeightRef = useRef(0)
-
-  // Track panel height for dynamic textarea max (33% of panel)
-  useEffect(() => {
-    const panel = panelRef.current
-    if (!panel) {
-      return
-    }
-
-    const updateMaxHeight = () => {
-      const panelHeight = panel.clientHeight
-      const minFloor = window.innerWidth <= MOBILE_BREAKPOINT ? 60 : 120
-      const newMax = Math.max(minFloor, Math.floor(panelHeight * 0.33))
-      setMaxTextareaHeight(newMax)
-    }
-
-    const observer = new ResizeObserver(updateMaxHeight)
-    observer.observe(panel)
-    updateMaxHeight() // Initial calculation
-
-    return () => observer.disconnect()
-  }, [panelRef])
 
   // Resize textarea to fit content with scroll compensation
   const resizeTextarea = useCallback(() => {

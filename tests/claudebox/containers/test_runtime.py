@@ -107,3 +107,43 @@ class TestStopKillRouting:
 
         runtime._backend.kill.assert_called_once_with("b1")
         runtime._backend.stop.assert_not_called()
+
+
+# --- run_container per-call config override ---
+
+
+def _volume_args(call_args) -> list[str]:
+    backend_args = list(call_args.args)
+
+    return [backend_args[i + 1] for i, a in enumerate(backend_args) if a == "--volume"]
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+class TestRunContainerConfigOverride:
+    """`ContainerRuntime.run_container(config=...)` builds run args from the override, not self.config."""
+
+    def test_override_config_supplies_volumes(self, _touch_file, _touch_dir, tmp_path):
+        runtime = ContainerRuntime(_make_config(tmp_path))
+        runtime._backend = MagicMock()
+        runtime._backend.run_container.return_value = "b1"
+
+        override = _make_config(tmp_path)
+        override.mounts = {tmp_path / "fresh_src": tmp_path / "fresh_dst"}
+
+        runtime.run_container(name="c1", labels={}, env={}, detach=True, config=override)
+
+        volumes = _volume_args(runtime._backend.run_container.call_args)
+        assert any("fresh_src" in v for v in volumes)
+
+    def test_without_override_uses_self_config(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path)
+        config.mounts = {tmp_path / "snapshot_src": tmp_path / "snapshot_dst"}
+        runtime = ContainerRuntime(config)
+        runtime._backend = MagicMock()
+        runtime._backend.run_container.return_value = "b1"
+
+        runtime.run_container(name="c1", labels={}, env={}, detach=True)
+
+        volumes = _volume_args(runtime._backend.run_container.call_args)
+        assert any("snapshot_src" in v for v in volumes)

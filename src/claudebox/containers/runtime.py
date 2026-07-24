@@ -56,11 +56,12 @@ class ContainerRuntime:
         run_args: Iterable = (),
         cmd_args: Iterable = (),
         detach: bool = False,
+        config: Config | None = None,
     ) -> str | None:
-        """Build run args and spawn a container in one step."""
+        """Build run args and spawn a container; ``config`` overrides the runtime config for this launch."""
 
         args = get_container_run_args(
-            self.config,
+            config or self.config,
             verbose=self.verbose,
             name=name,
             labels=labels,

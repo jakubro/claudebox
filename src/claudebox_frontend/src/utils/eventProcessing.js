@@ -32,8 +32,8 @@ const SETTING_CHANGE_SUBTYPES = new Set([
 /** Pattern for detecting embedded thinking XML in text content. */
 const THINKING_XML_PATTERN = /<thinking>[\s\S]*?<\/thinking>/
 
-/** Pattern to extract task_id attributes from notification XML tags. */
-const NOTIFICATION_TASK_ID_PATTERN = /<task-notification\s+task_id="([^"]+)"/g
+/** Pattern matching the async-task completion notification injected as a user message. */
+const TASK_NOTIFICATION_PATTERN = /^\s*<task-notification[\s>]/
 
 /**
  * Compute threshold-filtered timing offsets for a list of event timestamps.
@@ -182,18 +182,10 @@ export function processEvents(events) {
         const isCompactionContent = [...compactionSummary.values()].some(arr =>
           arr.includes(event.content),
         )
-        // Skip task notification XML (used for correlation, not display)
-        const isNotificationXml = /<task-notification[\s>]/.test(event.content)
         // Skip redundant model-set and effort-set echoes (shown via changed events)
         const isModelSetEcho = SdkProtocol.MODEL_SET_PATTERN.test(event.content?.trim())
         const isEffortSetEcho = SdkProtocol.EFFORT_SET_PATTERN.test(event.content?.trim())
-        if (
-          isSkillMarkdown ||
-          isCompactionContent ||
-          isNotificationXml ||
-          isModelSetEcho ||
-          isEffortSetEcho
-        ) {
+        if (isSkillMarkdown || isCompactionContent || isModelSetEcho || isEffortSetEcho) {
           continue
         }
         // Interrupt acknowledgment - skip entirely, the interrupted turn border is sufficient
@@ -309,6 +301,17 @@ export function isVisibleEvent(event) {
   ) {
     return false
   }
+  // Async-task completion is shown via the typed system/task_notification event (Tasks
+  // panel + Tool block); the SDK also injects the same completion as a user message
+  // carrying <task-notification> markup. Hide that echo - matched regardless of the
+  // stored human flag so sessions recorded before the typed event existed stay clean on reload.
+  if (
+    event.type === EventType.USER &&
+    typeof event.content === 'string' &&
+    TASK_NOTIFICATION_PATTERN.test(event.content)
+  ) {
+    return false
+  }
   return event.type !== EventType.RESULT
 }
 
@@ -358,7 +361,15 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
 
     if (isHumanEvent(event) && !isNested) {
       currentTurnIndex = turns.length
-      turns.push(createTurn(event.turn_id, event.content, [], event.attachments || null))
+      turns.push(
+        createTurn(
+          event.turn_id,
+          event.content,
+          [],
+          event.attachments || null,
+          event.inline_replies || null,
+        ),
+      )
       cloned.add(currentTurnIndex)
     } else if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.INTERRUPT_SENT) {
       // Skip if this turn already completed successfully - the interrupt arrived after
@@ -467,19 +478,6 @@ export function appendTaskNotifications(existing, newVisibleEvents) {
           content,
         })
       }
-      continue
-    }
-
-    if (
-      event.type === EventType.USER &&
-      event.subtype === EventSubtype.TEXT &&
-      !event.is_human &&
-      event.content
-    ) {
-      if (!notifications) {
-        notifications = new Map(existing)
-      }
-      _parseNotificationTags(event.content, 'task-notification', notifications)
     }
   }
 
@@ -929,34 +927,8 @@ export function getMcpServers(events) {
 // Private helpers
 // ------------------------------------------------------------------------
 
-/** Parse XML notification tags from content and add to notifications map. */
-function _parseNotificationTags(content, tagName, notifications) {
-  const pattern = new RegExp(
-    `<${tagName}\\s+task_id="([^"]+)"\\s+status="([^"]+)">([\\s\\S]*?)<\\/${tagName}>`,
-    'g',
-  )
-  for (const match of content.matchAll(pattern)) {
-    const [, taskId, status, fullContent] = match
-    const trimmed = fullContent.trim()
-    notifications.set(taskId, {
-      status,
-      summary: trimmed.split('\n')[0] || status,
-      content: trimmed,
-    })
-  }
-}
-
-/** Extract task_id values from notification XML tags in content. */
-function _extractNotificationTaskIds(content) {
-  const ids = []
-  for (const match of content.matchAll(NOTIFICATION_TASK_ID_PATTERN)) {
-    ids.push(match[1])
-  }
-  return ids
-}
-
 /** Create a turn object. */
-function createTurn(turn_id, userMessage, events, attachments = null) {
+function createTurn(turn_id, userMessage, events, attachments = null, inlineReplies = null) {
   return {
     turn_id,
     userMessage,
@@ -964,6 +936,7 @@ function createTurn(turn_id, userMessage, events, attachments = null) {
     settingChanges: [],
     interrupted: false,
     attachments,
+    inlineReplies,
   }
 }
 
@@ -1018,21 +991,6 @@ function _resolveAsyncTaskIds(event, asyncMap) {
     const taskId = event.message_data?.task_id
     const toolUseId = taskId && asyncMap.get(taskId)
     return toolUseId ? [toolUseId] : []
-  }
-  if (
-    event.type === EventType.USER &&
-    !event.is_human &&
-    event.subtype === EventSubtype.TEXT &&
-    event.content
-  ) {
-    const ids = []
-    for (const taskId of _extractNotificationTaskIds(event.content)) {
-      const toolUseId = asyncMap.get(taskId)
-      if (toolUseId) {
-        ids.push(toolUseId)
-      }
-    }
-    return ids
   }
   return []
 }

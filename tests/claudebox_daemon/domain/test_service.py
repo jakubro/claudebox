@@ -16,7 +16,7 @@ from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 _PATCHES = (
     "claudebox_daemon.domain.service.DaemonConfig",
     "claudebox_daemon.domain.service.ContainerProxyClient",
-    "claudebox_daemon.domain.service.Broadcaster",
+    "claudebox_daemon.domain.service.DaemonBroadcaster",
     "claudebox_daemon.domain.service.HealthMonitor",
     "claudebox_daemon.domain.service.SessionMutationObserver",
     "claudebox_daemon.domain.service.WorkspaceService",
@@ -102,7 +102,7 @@ def patched():
         yield {
             "DaemonConfig": m_config,
             "ContainerProxyClient": m_proxy,
-            "Broadcaster": m_broadcaster,
+            "DaemonBroadcaster": m_broadcaster,
             "HealthMonitor": m_health,
             "SessionMutationObserver": m_mutation,
             "WorkspaceService": m_ws,

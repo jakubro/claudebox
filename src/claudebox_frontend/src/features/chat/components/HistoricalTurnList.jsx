@@ -55,6 +55,7 @@ function HistoricalTurnList({
         key={`${turn.turn_id || 'g'}-${i}`}
         userMessage={turn.userMessage}
         attachments={turn.attachments}
+        inlineReplies={turn.inlineReplies}
         events={turn.events}
         turnId={turn.turn_id}
         todoDiffs={todoDiffs}

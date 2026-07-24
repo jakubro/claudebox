@@ -114,4 +114,35 @@ describe('predictTurnHeight', () => {
     // effectiveWidth 0 -> charsPerLine clamped to 20 -> 200/20 = 10 lines.
     expect(predictTurnHeight(turn, 0)).toBe(TURN_BASE_HEIGHT_PX + 10 * LINE_HEIGHT_PX)
   })
+
+  it('returns only the strip height (base + user lines) when collapsed', () => {
+    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
+    const turn = {
+      turn_id: 't',
+      events: [
+        { type: 'assistant', subtype: 'text', content: 'x'.repeat(charsPerLine * 10) },
+        { type: 'assistant', subtype: 'tool_use', content: 'Bash' },
+      ],
+      userMessage: 'u'.repeat(charsPerLine * 2),
+      attachments: [{}, {}, {}],
+    }
+    // Collapsed omits assistant text / tool / attachment contributions; keeps base + 2 user lines.
+    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH, true)).toBe(
+      TURN_BASE_HEIGHT_PX + 2 * LINE_HEIGHT_PX,
+    )
+    // The expanded prediction is much taller than the collapsed strip.
+    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH, false)).toBeGreaterThan(
+      predictTurnHeight(turn, EFFECTIVE_WIDTH, true),
+    )
+  })
+
+  it('collapsed height for a turn with no user message is the base strip', () => {
+    const turn = {
+      turn_id: 't',
+      events: [{ type: 'assistant', subtype: 'text', content: 'hello world' }],
+      userMessage: '',
+      attachments: null,
+    }
+    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH, true)).toBe(TURN_BASE_HEIGHT_PX)
+  })
 })

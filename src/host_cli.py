@@ -1,5 +1,7 @@
 """Claudebox CLI entry point."""
 
+# PYTHON_ARGCOMPLETE_OK
+
 import argparse
 import importlib
 import math
@@ -10,6 +12,12 @@ from typing import Protocol
 import claudebox_cli
 from claudebox import HelpFormatter, cli
 from claudebox import epilog as _install_epilog
+
+
+try:
+    import argcomplete
+except ImportError:  # pragma: no cover - optional bash-completion dependency
+    argcomplete = None  # ty: ignore[invalid-assignment]
 
 
 class CliCommandModule(Protocol):
@@ -63,6 +71,13 @@ class Cli:
         return self._parser
 
     def run(self):
+        """Dispatch the CLI, wiring bash completion before argparse parses."""
+
+        # argcomplete short-circuits (and exits) only inside the completion
+        # subprocess where _ARGCOMPLETE is set; normal invocations are unaffected.
+        if argcomplete is not None:
+            argcomplete.autocomplete(self._parser)
+
         cli(None, self._parser)
 
     def _print_help_and_exit(self, _args: argparse.Namespace) -> int:

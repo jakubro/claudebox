@@ -190,7 +190,7 @@ describe('MiniMap', () => {
         { turn_id: '1', userMessage: 'Short', events: [] },
         { turn_id: '2', userMessage: 'Tall', events: [] },
       ]
-      const turnHeights = { 0: 100, 1: 300 }
+      const turnHeights = { 1: 100, 2: 300 }
       render(
         <MiniMap
           groups={groups}
@@ -211,11 +211,11 @@ describe('MiniMap', () => {
         { turn_id: '2', userMessage: 'Long stack trace', events: [] },
         { turn_id: '3', userMessage: null, events: [{ type: 'assistant' }] },
       ]
-      const turnHeights = { 0: 200, 1: 500, 2: 300 }
-      // Turn 0: user msg is 40px of 200px total (20%)
-      // Turn 1: user msg is 400px of 500px total (80%)
-      // Turn 2: no user message
-      const userMessageHeights = { 0: 40, 1: 400, 2: 0 }
+      const turnHeights = { 1: 200, 2: 500, 3: 300 }
+      // Turn 1: user msg is 40px of 200px total (20%)
+      // Turn 2: user msg is 400px of 500px total (80%)
+      // Turn 3: no user message
+      const userMessageHeights = { 1: 40, 2: 400, 3: 0 }
       render(
         <MiniMap
           groups={groups}

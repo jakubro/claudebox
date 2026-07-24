@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import Turn from './Turn'
+import { TurnCollapseProvider } from './TurnCollapseContext'
 
 vi.mock('../../../../hooks/useCapabilities', () => ({
   default: () => ({ capabilities: null, runtimeName: null }),
@@ -253,6 +254,58 @@ describe('Turn', () => {
 
       const meta = document.querySelector('.turn-meta')
       expect(meta).not.toHaveClass('turn-meta-collapsible')
+    })
+  })
+
+  describe('central collapse via context', () => {
+    const makeCompletedTurnEvents = () => {
+      const now = Date.now()
+      vi.setSystemTime(now)
+      return [
+        textEvent('Response text', new Date(now - 5000).toISOString()),
+        textEvent('More text', new Date(now).toISOString()),
+      ]
+    }
+
+    it('derives collapsed from the central set when a provider is present', () => {
+      const events = makeCompletedTurnEvents()
+
+      render(
+        <TurnCollapseProvider collapsedTurnIds={new Set(['t1'])} onToggleTurnCollapse={vi.fn()}>
+          <Turn events={events} turnId="t1" isActive={false} />
+        </TurnCollapseProvider>,
+      )
+
+      expect(document.querySelector('.turn-content')).toHaveClass('turn-content-collapsed')
+    })
+
+    it('stays expanded when its turn id is not in the central set', () => {
+      const events = makeCompletedTurnEvents()
+
+      render(
+        <TurnCollapseProvider collapsedTurnIds={new Set(['other'])} onToggleTurnCollapse={vi.fn()}>
+          <Turn events={events} turnId="t1" isActive={false} />
+        </TurnCollapseProvider>,
+      )
+
+      expect(document.querySelector('.turn-content')).not.toHaveClass('turn-content-collapsed')
+    })
+
+    it('meta-row click calls the central per-turn toggle with its turn id', () => {
+      const onToggleTurnCollapse = vi.fn()
+      const events = makeCompletedTurnEvents()
+
+      render(
+        <TurnCollapseProvider
+          collapsedTurnIds={new Set()}
+          onToggleTurnCollapse={onToggleTurnCollapse}>
+          <Turn events={events} turnId="t1" isActive={false} />
+        </TurnCollapseProvider>,
+      )
+
+      fireEvent.click(document.querySelector('.turn-meta'))
+
+      expect(onToggleTurnCollapse).toHaveBeenCalledWith('t1')
     })
   })
 

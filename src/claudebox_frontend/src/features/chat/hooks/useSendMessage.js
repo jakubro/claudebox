@@ -24,11 +24,11 @@ export default function useSendMessage({
   onContainerGone,
 }) {
   return useCallback(
-    async (content, attachments = null) => {
-      const messageId = addPendingMessage?.(content, attachments)
+    async (content, { attachments = null, inlineReplies = null } = {}) => {
+      const messageId = addPendingMessage?.(content, attachments, inlineReplies)
       startSubmitting()
       try {
-        await sendMessage(content, attachments)
+        await sendMessage(content, { attachments, inlineReplies })
         submitSucceeded()
       } catch (err) {
         if (messageId) {

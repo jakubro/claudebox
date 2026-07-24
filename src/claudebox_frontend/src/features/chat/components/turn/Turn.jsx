@@ -12,6 +12,7 @@ import TurnBlockList from './components/TurnBlockList'
 import TurnMeta from './components/TurnMeta'
 import TurnProgress from './components/TurnProgress'
 import UserMessageContent from './components/user-message-content'
+import { useTurnCollapse } from './hooks/useTurnCollapse'
 import { TurnProvider } from './TurnContext'
 import { getAssistantTextContent, getTurnPreview, getTurnTimeRange } from './utils/turnContent'
 
@@ -34,6 +35,7 @@ import { getAssistantTextContent, getTurnPreview, getTurnTimeRange } from './uti
  * @param {string} props.nextUserMessage - Content of next user message
  * @param {boolean} props.hasPendingMessages - Whether pending messages exist
  * @param {Array} props.attachments - Attachment metadata for user message
+ * @param {Array} props.inlineReplies - Inline reply pairs (quote/from/response) for user message
  * @param {boolean} props.defaultCollapsed - Whether to start collapsed
  * @param {Set} props.duplicateAskUserIds - Cross-turn duplicate AskUserQuestion IDs to hide
  * @param {Function} props.onFormSubmit - Callback for form submission
@@ -47,6 +49,7 @@ import { getAssistantTextContent, getTurnPreview, getTurnTimeRange } from './uti
 function Turn({
   userMessage,
   attachments = null,
+  inlineReplies = null,
   events,
   turnId = null,
   todoDiffs = null,
@@ -71,7 +74,22 @@ function Turn({
   isAssistantBookmarked = false,
   onToggleBookmark,
 }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  // Collapse state comes from central control (TurnCollapseProvider) when
+  // present; falls back to local state for standalone rendering (pending turns
+  // with no turn id, isolated tests) where no provider is mounted.
+  const turnCollapse = useTurnCollapse()
+  const [localCollapsed, setLocalCollapsed] = useState(defaultCollapsed)
+  const hasCentralCollapse = turnCollapse != null && turnId != null
+  const collapsed = hasCentralCollapse ? turnCollapse.collapsedTurnIds.has(turnId) : localCollapsed
+
+  const toggleCollapse = () => {
+    if (hasCentralCollapse) {
+      turnCollapse.onToggleTurnCollapse(turnId)
+    } else {
+      setLocalCollapsed(prev => !prev)
+    }
+  }
+
   const blocks = useMemo(() => processEvents(events), [events])
 
   // Check if compaction is in progress (has its own spinner via CompactionBlock,
@@ -132,11 +150,15 @@ function Turn({
       className={`turn-container ${pending ? 'pending' : ''} ${collapsed ? 'turn-collapsed' : ''}`}
       data-testid="turn-container"
       data-turn-id={turnId || undefined}>
-      {(userMessage || attachments?.length > 0) && (
+      {(userMessage || attachments?.length > 0 || inlineReplies?.length > 0) && (
         <div
           className={`chat-message chat-message-user${isUserBookmarked ? ' bookmarked' : ''}${forking ? ' forking' : ''}`}
           data-testid="message-user">
-          <UserMessageContent message={userMessage} attachments={attachments} />
+          <UserMessageContent
+            message={userMessage}
+            attachments={attachments}
+            inlineReplies={inlineReplies}
+          />
           {turnId && onToggleBookmark && (
             <button
               type="button"
@@ -167,7 +189,7 @@ function Turn({
               duration={duration}
               canCollapse={canCollapse}
               collapsed={collapsed}
-              onToggleCollapse={() => setCollapsed(!collapsed)}
+              onToggleCollapse={toggleCollapse}
               assistantTextContent={assistantTextContent}
               turnId={turnId}
               isBookmarked={isAssistantBookmarked}
@@ -175,7 +197,7 @@ function Turn({
             />
           )}
           {collapsed && preview && (
-            <div className="turn-preview" onClick={() => setCollapsed(false)}>
+            <div className="turn-preview" onClick={toggleCollapse}>
               <span className="turn-preview-text">{preview}</span>
               <span className="turn-preview-status">{resultStatus === 'error' ? '✗' : '✓'}</span>
             </div>

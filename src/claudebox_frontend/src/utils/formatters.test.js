@@ -442,6 +442,20 @@ describe('stripMarkdown', () => {
   it('returns plain text unchanged', () => {
     expect(stripMarkdown('plain text')).toBe('plain text')
   })
+
+  it('strips an inline HTML tag keeping its text', () => {
+    expect(stripMarkdown('<kbd>Ctrl</kbd>')).toBe('Ctrl')
+  })
+
+  it('strips inline HTML tags from surrounding text', () => {
+    expect(stripMarkdown('Press <kbd>Ctrl</kbd> now')).toBe('Press Ctrl now')
+  })
+
+  it('leaves no HTML tags in the output', () => {
+    const out = stripMarkdown('<details><summary>More</summary>body</details>')
+    expect(out).not.toContain('<')
+    expect(out).not.toContain('>')
+  })
 })
 
 describe('getBasename', () => {

@@ -1,0 +1,99 @@
+/* Span-anchored inline replies: durable quote highlight + floating reply composers. */
+
+/* Durable highlight painted over a quoted span (CSS Custom Highlight API): a dotted underline over a
+   subtle accent fill, matching the file-path highlight affordance. text-underline-offset is honored on
+   Chromium; other engines draw the underline at the default offset (harmless). */
+::highlight(inline-quote) {
+  background-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+  text-underline-offset: 2px;
+}
+
+/* Floating composer: a z-axis popover pinned to its quoted span, above the transcript and below modals. */
+.inline-float {
+  position: fixed;
+  z-index: 150;
+  max-width: min(560px, 90vw);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+}
+
+.inline-threads-moved {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+.inline-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+}
+
+.inline-thread.sent {
+  opacity: 0.85;
+}
+
+.inline-thread-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-left: 2px solid var(--text-muted);
+  padding-left: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inline-thread-from {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: lowercase;
+  line-height: 1rem;
+}
+
+.inline-thread-quote-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline-thread-icon-btn {
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.inline-thread-icon-btn:hover {
+  color: var(--text-primary);
+}
+
+.inline-thread-input {
+  width: 100%;
+  resize: none;
+  overflow-y: hidden;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.inline-thread-response {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  color: var(--text-primary);
+}

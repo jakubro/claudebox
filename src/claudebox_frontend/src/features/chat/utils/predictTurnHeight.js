@@ -5,6 +5,7 @@ import {
   AVG_CHAR_WIDTH_PX,
   LINE_HEIGHT_PX,
   PX_PER_ATTACHMENT_ROW,
+  PX_PER_INLINE_REPLIES_PLACEHOLDER,
   PX_PER_THINKING_BLOCK,
   PX_PER_TOOL_BLOCK,
   TURN_BASE_HEIGHT_PX,
@@ -24,12 +25,21 @@ const THINKING_TAG = /<thinking>/g
  * fixtures via lib/e2e/app/tests/predictor-calibration.spec.js. The same spec
  * doubles as a regression test asserting drift stays under 30% per fixture.
  */
-export function predictTurnHeight(turn, effectiveWidth) {
+export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false) {
   if (!turn) {
     return TURN_MIN_PREDICTED_HEIGHT_PX
   }
 
   const charsPerLine = Math.max(20, Math.floor(effectiveWidth / AVG_CHAR_WIDTH_PX))
+  const userChars = (turn.userMessage || '').length
+  const userLines = userChars > 0 ? Math.ceil(userChars / charsPerLine) : 0
+
+  if (isCollapsed) {
+    // Collapsed strip: base chrome + user-message line(s); the assistant content is
+    // hidden, so seed off-screen turns with this until the real strip is measured.
+    return TURN_BASE_HEIGHT_PX + userLines * LINE_HEIGHT_PX
+  }
+
   let textChars = 0
   let thinkingBlocks = 0
   let toolBlocks = 0
@@ -49,11 +59,11 @@ export function predictTurnHeight(turn, effectiveWidth) {
     }
   }
 
-  const userChars = (turn.userMessage || '').length
-  const userLines = userChars > 0 ? Math.ceil(userChars / charsPerLine) : 0
   const textLines = Math.ceil(textChars / charsPerLine)
   const attachmentCount = turn.attachments?.length || 0
   const attachmentRows = attachmentCount > 0 ? Math.ceil(attachmentCount / ATTACHMENTS_PER_ROW) : 0
+  // Collapsed by default, so a flat contribution regardless of comment count.
+  const inlineRepliesHeight = turn.inlineReplies?.length > 0 ? PX_PER_INLINE_REPLIES_PLACEHOLDER : 0
 
   const predicted =
     TURN_BASE_HEIGHT_PX +
@@ -61,7 +71,8 @@ export function predictTurnHeight(turn, effectiveWidth) {
     textLines * LINE_HEIGHT_PX +
     thinkingBlocks * PX_PER_THINKING_BLOCK +
     toolBlocks * PX_PER_TOOL_BLOCK +
-    attachmentRows * PX_PER_ATTACHMENT_ROW
+    attachmentRows * PX_PER_ATTACHMENT_ROW +
+    inlineRepliesHeight
 
   return Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, predicted)
 }

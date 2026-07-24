@@ -4,6 +4,7 @@ version = "1.1.0"
 requires-python = ">=3.11"
 dependencies = [
   "aiofiles>=24.0",
+  "argcomplete>=3.0",
   "claude-agent-sdk>=0.1.65",
   "duckduckgo-search>=6.0",
   "fastapi>=0.115",
@@ -28,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 web-search-tavily = [
-    "langchain-tavily>=0.1",
+  "langchain-tavily>=0.1",
 ]
 
 # Per-provider LangChain provider extras. init_chat_model lazy-imports the
@@ -61,15 +62,15 @@ langgraph-cloud = ["claudebox[anthropic,openai,google,groq]"]
 langgraph-all = ["claudebox[anthropic,openai,google,groq,mistral,bedrock,cohere,fireworks,together,deepseek,xai,perplexity,nvidia,huggingface]"]
 
 dev = [
-    "anyio[trio]>=4.0",
-    "inline-snapshot",
-    "pytest-anyio",
-    "pytest-cov",
-    "pytest-httpserver>=1.0,<2",
-    "pytest-socket>=0.7",
-    "pytest>=8.0",
-    "ruff>=0.15",
-    "ty>=0.0.34",
+  "anyio[trio]>=4.0",
+  "inline-snapshot",
+  "pytest-anyio",
+  "pytest-cov",
+  "pytest-httpserver>=1.0,<2",
+  "pytest-socket>=0.7",
+  "pytest>=8.0",
+  "ruff>=0.15",
+  "ty>=0.0.34",
 ]
 
 [tool.coverage.run]

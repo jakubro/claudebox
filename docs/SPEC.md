@@ -280,6 +280,10 @@ The center area of the workspace shows a single **main panel** whose content is 
 - Pending messages are scoped per session — switching sessions clears pending state <!-- claim:chat:pending-session-scoped -->
 - Empty state: "Waiting for messages..." <!-- claim:chat:empty-state -->
 - Assistant messages rendered as markdown (code blocks, inline code, lists, links, LaTeX math); the same renderer is used for ticket detail content so chat and ticket markdown look identical <!-- claim:chat:markdown -->
+- Messages may include common inline and block HTML — collapsible details/summary, keyboard keys, definition lists, figures, and tables with merged cells — which appears as formatted content rather than literal tag text <!-- claim:chat:html-content -->
+- A details block appears as an expandable section the reader can open and close <!-- claim:chat:html-details-toggle -->
+- Unsafe HTML in a message never runs: scripts, inline event handlers, and javascript: links are removed, and embedded frames and standalone vector graphics do not appear <!-- claim:chat:html-safe -->
+- A link in a message opens in a new tab without giving the opened page access back to the app <!-- claim:chat:html-link-safe -->
 - Large sessions with many turns stay responsive: off-screen turns skip rendering work while remaining findable by browser find and selectable across the boundary <!-- claim:chat:lazy-paint -->
 
 **Turn Progress Indicators:**
@@ -325,7 +329,7 @@ The center area of the workspace shows a single **main panel** whose content is 
 - Double-clicking the main area header (outside its interactive controls) toggles the main area's maximize state, mirroring panel-tab double-click behavior <!-- claim:maximize:header-double-click -->
 - Clicking the session name in the main area header copies the session directory path to clipboard and flashes a "Copied!" indicator <!-- claim:session-header:click-copies-dir -->
 - The session directory tooltip is identical across the main area header, the sessions panel item, and the footer <!-- claim:session-dir-tooltip-uniform -->
-- Clicking empty chat space focuses the prompt textarea; clicking message content does nothing and preserves OS-standard text selection (double-click selects the word, drag selects a range) <!-- claim:chat:selection-not-preempted -->
+- Clicking empty chat space focuses the prompt textarea; clicking message content does nothing and preserves OS-standard text selection (double-click selects the word, drag selects a range); selecting text in a message additionally shows a small floating quote button near the selection <!-- claim:chat:selection-not-preempted -->
 - Stopping the active session immediately deselects it: the main area transitions to the welcome screen and the session appears as stopped in the sessions panel <!-- claim:session:stop-transitions-to-welcome -->
 - Slash commands in user messages render with bold weight; recognised commands also show a subtle dotted underline and a hover card with usage, description, and metadata; unrecognised commands render with bold weight only <!-- claim:chat:user-message-slash-command-styling -->
 - The slash-command autocomplete appears only when the current runtime supports skills; when unsupported, typing `/` types the literal character with no dropdown <!-- claim:slash-autocomplete:capability-gated -->
@@ -365,6 +369,7 @@ Control bar at top of Chat panel with two groups: <!-- claim:chat:control-bar --
 | Fork | Fork icon | Split-button: main button forks entire session (reuse container); chevron opens dropdown with fork variants. Alt+click or middle-click on the main button forks into a new browser tab. While a fork initiated from this control bar is in flight, the icon shows a spinner and both buttons disable — same as the per-turn rewind control. Appears only when the current runtime supports session forking. | <!-- claim:chat:control-fork --> <!-- claim:fork-button:capability-gated -->
 | | | Separator | <!-- claim:chat:control-fork-separator -->
 | Session Prompt | Note icon | Toggle dropdown editor for per-session prompt text | <!-- claim:chat:control-session-prompt -->
+| Auto-collapse | Chevrons-down-up icon | Toggle auto-collapse of earlier turns, keeping only the last turn expanded; on by default; pressed when on | <!-- claim:chat:turn-autocollapse-toggle -->
 
 **Right group:**
 
@@ -390,6 +395,7 @@ Control bar at top of Chat panel with two groups: <!-- claim:chat:control-bar --
 - Collapsed: full user message + assistant first line + status + metadata <!-- claim:turn:collapsed-content -->
 - Collapsed preview strips markdown to plain text (no raw `**bold**`, `# headers`, etc.) <!-- claim:turn:preview-strip-markdown -->
 - Collapsed content remains searchable via browser Ctrl+F <!-- claim:turn:collapse-css -->
+- With auto-collapse on, only the last turn stays expanded; turning it off expands every collapsed turn, and when a new turn arrives the previously-last turn collapses; a turn you expand by hand stays open as new turns arrive, until you collapse it by hand or turn auto-collapse off and back on <!-- claim:chat:turn-autocollapse-behavior -->
 
 ### 3.9 Input Animations
 
@@ -451,7 +457,7 @@ Attach files/images to messages: <!-- claim:input:attachment -->
 | Max size | 10MB per file | <!-- claim:input:attachment-max-size -->
 | Supported types | Any file type | <!-- claim:input:attachment-types -->
 
-- Image attachments in message history render correctly <!-- claim:chat:attachment-src -->
+- Image attachments in message history appear correctly; an attachment-only send with an empty composer shows just the attachment thumbnails, with no empty message box above them <!-- claim:chat:attachment-src -->
 - Click image attachment in message history to open zoom overlay <!-- claim:chat:attachment-zoom -->
 - Escape, backdrop click, or close button closes zoom overlay <!-- claim:chat:attachment-zoom-close -->
 
@@ -548,6 +554,17 @@ Queue messages for sequential delivery while Claude is responding:
 - Session switch restores that session's queued messages from storage <!-- claim:chat:queue-session-clear -->
 - Queue persists per session; survives page refresh <!-- claim:chat:queue-persist -->
 - Queued messages preserve attachments <!-- claim:chat:queue-attachments -->
+
+### 3.17 Inline Replies
+
+Quote any part of a turn - prose, code, tool output, or a thinking block - write a reply beside each quoted span, then send them together as one turn. Quoting and replying are desktop-only.
+
+- Selecting text anywhere in a turn - prose, code, tool output, or a thinking block - and clicking the quote button paints a durable highlight on the quoted span and opens a reply box beside it, pre-filled with the quoted text and its source (the user or the assistant) and with the reply field focused and empty <!-- claim:chat:inline-replies-quote -->
+- Unsent replies accumulate, each editable in the reply box beside its quoted span; a reply can be deleted, which clears its highlight; the unsent replies and their highlights are restored after a page reload or a return to the session <!-- claim:chat:inline-replies-buffer -->
+- Sending delivers one turn that may also carry the composer message and any attachments; each sent reply's highlight stays on its quoted span and its reply is shown read-only when the span is hovered or clicked; the send-turn shows a compact "Replied inline - N comments" placeholder that expands in place to reveal each quote and its reply; comments left with a blank reply are omitted; a reply-only send with an empty composer shows only the placeholder, with no empty message box above it <!-- claim:chat:inline-replies-send -->
+- The placeholder is display-only: its wording never appears as raw text in the transcript, and it is the quote-and-reply pairs, not the placeholder, that reach the assistant <!-- claim:chat:inline-replies-placeholder-only -->
+- The quoted span shows a dotted underline over a subtle fill and stays highlighted for the rest of the session and across reload; hovering a highlighted span briefly shows its reply beside the span - read-only once sent, still editable while unsent - and clicking the span keeps that reply box open until its close button is pressed; sent highlights and their replies are permanent <!-- claim:chat:inline-replies-highlight -->
+- Each reply box opens beside its highlighted span and stays beside it as the transcript scrolls; several reply boxes can be open at once without overlapping one another; hovering a highlight shows its box briefly, clicking keeps the box open, and pressing its close button dismisses it - closing a box whose reply is still empty discards the quote and its highlight <!-- claim:chat:inline-replies-float -->
 
 ---
 
@@ -835,7 +852,6 @@ Background tasks show status updates in the original Tool block: <!-- claim:tool
 | failed | ● (red) | red | Summary text | <!-- claim:tool:bgtask-failed -->
 | killed | ● (yellow) | yellow | Summary text | <!-- claim:tool:bgtask-killed -->
 
-- Task notification markup stripped from user messages <!-- claim:tool:bgtask-strip-xml -->
 - Status updates correlate to their originating task across turns <!-- claim:tool:bgtask-correlation -->
 
 ### 4.17 Background Task Consolidated Rendering
@@ -894,6 +910,7 @@ Tool output with code or text content: <!-- claim:tool:codeblock-detect -->
 - Clicking session ID copies full session directory path to clipboard; shows "Copied!" briefly <!-- claim:panel-session:copy-id -->
 - Preview of first and last messages (last prefixed with "...") <!-- claim:panel-session:preview -->
 - Auto-refresh when sessions change <!-- claim:panel-session:auto-refresh -->
+- A session whose container has stopped shows as stopped (gray dot), never stuck on "stopping" <!-- claim:panel-session:stopped-shows-stopped -->
 - Current session row highlighted <!-- claim:panel-session:current-highlight -->
 - Loading state: "Loading..." <!-- claim:panel-session:loading -->
 - Error state: "Failed to load sessions" with Retry button <!-- claim:panel-session:error -->
@@ -1014,7 +1031,7 @@ Each ticket rendered as a card in its column × swimlane cell: <!-- claim:board:
 
 - Card shows ticket title (from first `#` heading, fallback to filename) <!-- claim:board:card-title -->
 - Cards with an assigned session show status indicator: dot + status text + truncated session ID <!-- claim:board:card-session -->
-- Session status dot: green (running), gray (stopped/no container) <!-- claim:board:card-session-dot -->
+- Session status dot: green (running), amber (stopping), gray (no container) <!-- claim:board:card-session-dot -->
 - Click card to open detail overlay <!-- claim:board:card-click-detail -->
 - Ctrl+click / Cmd+click to toggle multi-select <!-- claim:board:card-multi-select -->
 
@@ -1196,7 +1213,7 @@ Displays keyboard shortcuts reference tables. <!-- claim:panel-help:shortcuts-ta
 | Model           | Model name + chevron, "—" if null; clickable to open model picker | "Model — name"                 | <!-- claim:footer:model -->
 | Effort          | Effort level name + chevron; clickable to open effort picker | "Effort — level"               | <!-- claim:footer:effort -->
 | Permission mode | Permission mode label + chevron; clickable to open mode picker | "Permission mode — label"      | <!-- claim:footer:permission-mode -->
-| Session ID      | Full ID                                   | "Session directory — /path/..." | <!-- claim:footer:session-id -->
+| Session ID      | First fragment (before the first "-"); full id stays in the tooltip / copy | "Session directory — /path/..." | <!-- claim:footer:session-id -->
 | Runtime ID      | 12-char prefix; "—" when no container; clicking copies the full id; transitions to "—" immediately when the container stops | "Container — full-id" | <!-- claim:footer:runtime-id -->
 
 On a brand-new session, every footer field shows a real value from the moment the session view appears. <!-- claim:footer:new-session-populated -->
@@ -1762,6 +1779,14 @@ Running `claudebox workspaces list`, `register`, or `deregister` manages the dae
 - Registering an already-registered workspace succeeds and reports it was already registered <!-- claim:cli:workspaces-register-idempotent -->
 - Two paths sharing a basename get distinct workspace IDs <!-- claim:cli:workspaces-register-collision -->
 - Running `workspaces deregister <id>` removes the workspace from the registry; the `.workspace` marker file is preserved <!-- claim:cli:workspaces-deregister -->
+
+### 21.13 Shell completion
+
+Bash tab-completion is opt-in; once enabled, pressing Tab offers context-appropriate completions:
+
+- With bash completion enabled, pressing Tab completes the command tree: verbs, each noun group's actions, and flags <!-- claim:cli:completion -->
+- Completing a container target offers container ids across all workspaces plus `all`, falling back to `all` when the daemon is unreachable <!-- claim:cli:completion:container-ids -->
+- Completing a workspace to deregister offers the registered workspace ids without contacting the daemon <!-- claim:cli:completion:workspace-ids -->
 
 ---
 

@@ -3,20 +3,6 @@
 import { unescapeXml } from './xml'
 
 /**
- * Strip task notification XML tags from message content.
- * These are used for background task correlation but should not be displayed.
- */
-export function stripTaskNotifications(message) {
-  if (!message) {
-    return message
-  }
-  // Remove <task-notification> tags and their content.
-  const stripped = message.replace(/<task-notification\s+[^>]*>[\s\S]*?<\/task-notification>/g, '')
-  // Only strip newlines if we removed something (preserve leading/trailing spaces)
-  return stripped === message ? message : stripped.replace(/^\n+|\n+$/g, '')
-}
-
-/**
  * Walk `<local-command-stdout|stderr>` blocks in `message`, returning interleaved
  * typed segments. Returns null when no blocks are present so callers can branch
  * on absence without re-running the regex.
@@ -60,12 +46,6 @@ export function parseLocalCommandSegments(message) {
  * Returns array of segments: { type: 'text' | 'stdout' | 'stderr' | 'qa', content: string, questions?: [] }
  */
 export function parseLocalCommandOutput(message) {
-  if (!message) {
-    return []
-  }
-
-  // Strip task notifications before parsing (used for background task correlation, not display)
-  message = stripTaskNotifications(message)
   if (!message) {
     return []
   }

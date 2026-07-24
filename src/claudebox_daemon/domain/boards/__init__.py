@@ -3,7 +3,6 @@
 from .errors import BoardNotFound, BoardParseError, SwimlaneNotFound, TicketNotFound
 from .models import (
     Board,
-    BoardSessionStatusEvent,
     BoardState,
     BoardSummary,
     BoardTicket,

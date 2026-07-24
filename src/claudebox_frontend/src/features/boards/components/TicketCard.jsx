@@ -2,7 +2,9 @@
 
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
+import { useContainerMap } from '../../../context/ContainerMapContext'
+import { useSessionsList } from '../../../context/SessionsContext'
 import useTicketContextMenu from '../hooks/useTicketContextMenu'
 import TicketContextMenu from './TicketContextMenu'
 
@@ -28,6 +30,8 @@ export default function TicketCard({
     ticket.path,
     onArchive,
   )
+  const { deriveSessionStatus } = useContainerMap()
+  const { sessions } = useSessionsList()
 
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: ticket.path,
@@ -57,13 +61,11 @@ export default function TicketCard({
     [ticket.path, onToggleSelect],
   )
 
-  const statusDot = useMemo(() => {
-    if (!ticket.session) {
-      return null
-    }
-    const isRunning = ticket.status === 'running'
-    return <span className={`ticket-status-dot ${isRunning ? 'running' : 'stopped'}`} />
-  }, [ticket.session, ticket.status])
+  // Live session status from the shared derivation: 'running' | 'stopping' | 'none'.
+  // Mapped to the card's dot/label vocabulary (none -> gray "stopped").
+  const sessionStatus = ticket.session ? deriveSessionStatus(ticket.session, sessions) : null
+  const statusClass =
+    sessionStatus === 'running' ? 'running' : sessionStatus === 'stopping' ? 'stopping' : 'stopped'
 
   const className = [
     'ticket-card',
@@ -94,9 +96,9 @@ export default function TicketCard({
       </div>
       {ticket.session && (
         <div className="ticket-card-session">
-          {statusDot}
+          <span className={`ticket-status-dot ${statusClass}`} />
           <span className="ticket-session-id">
-            {ticket.status === 'running' ? 'running' : 'stopped'} ({ticket.session.slice(0, 4)}..)
+            {statusClass} ({ticket.session.slice(0, 4)}..)
           </span>
         </div>
       )}

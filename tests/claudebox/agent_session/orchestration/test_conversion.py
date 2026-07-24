@@ -7,7 +7,6 @@ from inline_snapshot import snapshot
 
 from claudebox.agent_session.orchestration.conversion import (
     _is_synthetic_user_message,
-    _parse_notification_xml,
     dict_message_to_events,
     serialize_event,
     to_published_event,
@@ -90,17 +89,21 @@ class TestDictMessageToEventsUser:
         event = _first({"type": "user", "message": {"content": content}})
         assert event.is_human is False
 
-    def test_task_notification_xml(self):
-        content = "<task-notification><task-id>abc123</task-id><summary>Working</summary></task-notification>"
-        event = _first({"type": "user", "message": {"content": content}})
-        assert event.type == "system"
-        assert event.subtype == "task_notification"
-        data = event.raw["message"]["data"]
-        assert data["task_id"] == "abc123"
-        assert data["summary"] == "Working"
-
     def test_non_notification_synthetic(self):
         content = "<local-command-stdout>some output</local-command-stdout>"
+        event = _first({"type": "user", "message": {"content": content}})
+        assert event.type == "user"
+        assert event.subtype == "text"
+        assert event.is_human is False
+
+    def test_task_notification_reclassified_non_human(self):
+        # The SDK injects async-task completion as a user-message echo; it must stay a
+        # non-human user event (the typed system/task_notification carries the signal),
+        # never a human message and never re-parsed into a second system event.
+        content = (
+            "<task-notification>\n<task-id>agent_abc</task-id>\n"
+            "<status>completed</status>\n</task-notification>"
+        )
         event = _first({"type": "user", "message": {"content": content}})
         assert event.type == "user"
         assert event.subtype == "text"
@@ -353,6 +356,7 @@ class TestSerializeEvent:
                 "source_file": None,
                 "source_offset": None,
                 "attachments": None,
+                "inline_replies": None,
                 "capabilities": None,
                 "runtime_name": None,
             }
@@ -371,7 +375,7 @@ class TestIsSyntheticUserMessage:
             "This session is being continued from a previous conversation",
             "<local-command-stdout>output</local-command-stdout>",
             "<local-command-stderr>error</local-command-stderr>",
-            "<task-notification><task-id>x</task-id></task-notification>",
+            "<task-notification>\n<task-id>x</task-id>\n</task-notification>",
             "<system-reminder>reminder</system-reminder>",
         ],
     )
@@ -392,24 +396,3 @@ class TestIsSyntheticUserMessage:
 
     def test_whitespace_preserved(self):
         assert _is_synthetic_user_message("  <system-reminder>x</system-reminder>  ") is True
-
-
-# --- _parse_notification_xml ---
-
-
-class TestParseNotificationXml:
-    """Test notification XML parsing."""
-
-    def test_task_notification(self):
-        xml = "<task-notification><task-id>abc</task-id><summary>Working</summary></task-notification>"
-        result = _parse_notification_xml(xml)
-        assert result == {"task_id": "abc", "summary": "Working"}
-
-    def test_non_matching_returns_none(self):
-        assert _parse_notification_xml("not xml at all") is None
-        assert _parse_notification_xml("<div>nope</div>") is None
-
-    def test_whitespace_handling(self):
-        xml = "  <task-notification> <task-id> abc </task-id> </task-notification>  "
-        result = _parse_notification_xml(xml)
-        assert result["task_id"] == "abc"  # ty: ignore[not-subscriptable]

@@ -42,19 +42,21 @@ export function ContainerMapProvider({ children }) {
     })
   }, [])
 
-  // Single source of truth for a session's container status - stopping wins
-  // over running wins over none. Every status dot (panel, header, bookmarks)
-  // routes through this so the surfaces cannot diverge. Container presence
-  // resolves via the eager map then the canonical sessions list;
-  // `fallbackContainerId` lets a caller pass an already-resolved id.
+  // Single source of truth for a session's container status. Container presence
+  // is authoritative: resolve it first (eager map, then the canonical sessions
+  // list, then `fallbackContainerId`). A session with no live container is 'none'
+  // even if the optimistic `stoppingSessions` set still holds it; 'stopping'
+  // applies only while a container is present, so status follows the list. Every
+  // status dot (panel, header, bookmarks) routes through this so the surfaces
+  // cannot diverge.
   const deriveSessionStatus = useCallback(
     (sessionId, sessions = [], fallbackContainerId = null) => {
-      if (stoppingSessions.has(sessionId)) {
-        return 'stopping'
-      }
       const containerId =
         resolveContainerId(sessionId, containerMap, sessions) ?? fallbackContainerId
-      return containerId ? 'running' : 'none'
+      if (!containerId) {
+        return 'none'
+      }
+      return stoppingSessions.has(sessionId) ? 'stopping' : 'running'
     },
     [stoppingSessions, containerMap],
   )

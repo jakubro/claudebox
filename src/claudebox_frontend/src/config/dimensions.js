@@ -22,6 +22,8 @@ export const PX_PER_THINKING_BLOCK = 60
 export const PX_PER_TOOL_BLOCK = 40
 export const PX_PER_ATTACHMENT_ROW = 42
 export const ATTACHMENTS_PER_ROW = 3
+/** Flat height of the collapsed "Replied inline" placeholder (independent of comment count). */
+export const PX_PER_INLINE_REPLIES_PLACEHOLDER = 30
 export const TURN_MIN_PREDICTED_HEIGHT_PX = 100
 export const WARMUP_CHUNK_SIZE = 8
 export const WARMUP_MIN_IDLE_MS = 5

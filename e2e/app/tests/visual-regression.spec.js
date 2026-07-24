@@ -3,6 +3,7 @@
 import { devices, expect, test } from '@playwright/test'
 import {
   closeAllSidePanels,
+  disableAutoCollapse,
   openBookmarksPanel,
   openHelpPanel,
   openLogsPanel,
@@ -418,6 +419,9 @@ test.describe('Visual Regression - Interactive Tools', () => {
     await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    // The answered fixture spans two turns; auto-collapse (default on) hides the
+    // tool block in the earlier turn, so expand every turn before asserting.
+    await disableAutoCollapse(page)
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-askuser-answered.png', OPTS)
@@ -436,6 +440,9 @@ test.describe('Visual Regression - Interactive Tools', () => {
     await mockSSE(page, 'events/tool-exit-plan-answered.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    // The answered fixture spans two turns; auto-collapse (default on) hides the
+    // tool block in the earlier turn, so expand every turn before asserting.
+    await disableAutoCollapse(page)
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-exitplan-answered.png', OPTS)

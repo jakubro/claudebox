@@ -712,3 +712,64 @@ class TestConstructorRejectsUnknownKwargs:
     def test_unknown_kwarg_raises_type_error(self, tmp_workspace):
         with pytest.raises(TypeError):
             SessionService(workspace=tmp_workspace, port=8080)  # ty: ignore[unknown-argument]  # intentional misuse - asserts the runtime TypeError.
+
+
+# --- send: inline replies ---
+
+
+class TestSendInlineReplies:
+    """Test the inline-replies branch of SessionService.send."""
+
+    @staticmethod
+    def _mock_session(tmp_workspace) -> SessionService:
+        session = _make_session(tmp_workspace)
+        session._event_pipeline = MagicMock()
+        session._event_pipeline.inject_event = AsyncMock()
+        session._sdk_client = MagicMock()
+        session._sdk_client.query = AsyncMock()
+
+        return session
+
+    @pytest.mark.anyio
+    async def test_injects_pairs_suppresses_echo_and_queries_serialized_block(self, tmp_workspace):
+        session = self._mock_session(tmp_workspace)
+        replies = [{"quote": "ctx", "from": "assistant", "response": "how big?"}]
+
+        await session.send("main message", inline_replies=replies)
+
+        inject_kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.
+        assert inject_kwargs["content"] == "main message"
+        assert inject_kwargs["inline_replies"] == replies
+        assert inject_kwargs["is_human"] is True
+        session._event_pipeline.suppress_next_user_echo.assert_called_once()  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.
+
+        blocks = session._sdk_client.query.call_args.args[0]  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.
+        text = blocks[0]["text"]
+        assert text.startswith("main message\n\n<inline-replies>")
+        assert "<response>how big?</response>" in text
+
+    @pytest.mark.anyio
+    async def test_empty_batch_no_ops(self, tmp_workspace):
+        session = self._mock_session(tmp_workspace)
+
+        await session.send("", inline_replies=[{"quote": "q", "from": "user", "response": "   "}])
+
+        session._event_pipeline.inject_event.assert_not_awaited()  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.
+        session._sdk_client.query.assert_not_awaited()  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.
+
+    @pytest.mark.anyio
+    async def test_blank_reply_dropped_but_prompt_still_sends(self, tmp_workspace):
+        session = self._mock_session(tmp_workspace)
+
+        await session.send(
+            "hello",
+            inline_replies=[
+                {"quote": "q1", "from": "user", "response": ""},
+                {"quote": "q2", "from": "assistant", "response": "keep me"},
+            ],
+        )
+
+        inject_kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.
+        assert len(inject_kwargs["inline_replies"]) == 1
+        assert inject_kwargs["inline_replies"][0]["response"] == "keep me"
+        assert "keep me" in session._sdk_client.query.call_args.args[0][0]["text"]  # ty: ignore[unresolved-attribute]  # Mock attribute on test-replaced method.

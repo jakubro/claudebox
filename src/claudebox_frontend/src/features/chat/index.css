@@ -31,6 +31,11 @@
 @import "./components/turn/components/user-message-content/SlashCommandToken.css";
 @import "./components/turn/components/user-message-content/components/QAResponseBlock.css";
 @import "./components/turn/components/user-message-content/components/AttachmentThumbnails.css";
+@import "./components/turn/components/user-message-content/components/InlineReplies.css";
+
+/* Inline replies (comments bar, bubble, quote affordance) */
+@import "./components/inline-replies/InlineThreadsOverlay.css";
+@import "./components/inline-replies/QuoteAffordance.css";
 
 /* Tool block */
 @import "./components/turn/components/tool-block/ToolBlock.css";

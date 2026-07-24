@@ -17,6 +17,8 @@ EventKind = Literal[
     "system_init",
     "result",
     "rate_limit",
+    "compact_boundary",
+    "task_notification",
 ]
 
 
@@ -86,13 +88,15 @@ class McpServerInit:
 
 @dataclass(frozen=True)
 class SystemInitData:
-    """Closed enumeration of SDK init data fields at the pinned version.
+    """Recognised SDK init data fields at the pinned version, plus an `extra` passthrough.
 
-    Future SDK additions are caught by `runtime_claude.py::_translate_sdk_message`
-    via key-set comparison and raise `ValueError` listing the unknown keys - an
-    explicit ticket then adds the new field. The promotion fields `session_id`
-    and `model` live on `SystemInitPayload` and are excluded here; the wire
-    flatten reinjects them into the dict shape for downstream consumers.
+    Fields the SDK adds that claudebox does not yet consume are captured verbatim
+    into `extra` by `runtime_claude.py::_translate_sdk_message` (with a one-shot
+    warning) rather than raised on - additive SDK releases stay non-breaking,
+    mirroring `UnknownBlock`. Promote a key to a typed field here once a consumer
+    needs to read it. The promotion fields `session_id` and `model` live on
+    `SystemInitPayload` and are excluded here; the wire flatten reinjects them
+    into the dict shape for downstream consumers.
 
     Field names match the SDK's exact emission casing (including `apiKeySource`
     and `permissionMode` camelCase) - the shape is owned by the upstream SDK.
@@ -114,6 +118,7 @@ class SystemInitData:
     slash_commands: list[str] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
     uuid: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -186,12 +191,38 @@ class RateLimitPayload:
     utilization: float | None = None
 
 
+@dataclass(frozen=True)
+class CompactBoundaryPayload:
+    """Compaction-complete boundary - carries the SDK's compact_metadata."""
+
+    trigger: str
+    pre_tokens: int | None = None
+    post_tokens: int | None = None
+    duration_ms: int | None = None
+
+
+@dataclass(frozen=True)
+class TaskNotificationPayload:
+    """Async-subagent terminal signal - carries the SDK task_notification fields.
+
+    `status` is normalized to the claudebox notification vocabulary
+    (completed / failed / killed); `summary` is the SDK's one-line summary and
+    is later overwritten by the monitor's own output-file extraction when present.
+    """
+
+    task_id: str
+    status: str
+    summary: str | None = None
+
+
 EventPayload = (
     SystemInitPayload
     | UserMessagePayload
     | AssistantMessagePayload
     | ResultPayload
     | RateLimitPayload
+    | CompactBoundaryPayload
+    | TaskNotificationPayload
 )
 
 

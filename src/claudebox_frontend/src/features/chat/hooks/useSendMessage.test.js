@@ -39,9 +39,12 @@ describe('useSendMessage', () => {
       await result.current('hello')
     })
 
-    expect(deps.addPendingMessage).toHaveBeenCalledWith('hello', null)
+    expect(deps.addPendingMessage).toHaveBeenCalledWith('hello', null, null)
     expect(deps.startSubmitting).toHaveBeenCalledOnce()
-    expect(mockSendMessage).toHaveBeenCalledWith('hello', null)
+    expect(mockSendMessage).toHaveBeenCalledWith('hello', {
+      attachments: null,
+      inlineReplies: null,
+    })
     expect(deps.submitSucceeded).toHaveBeenCalledOnce()
     expect(deps.submitFailed).not.toHaveBeenCalled()
   })
@@ -51,11 +54,11 @@ describe('useSendMessage', () => {
     const { result } = renderHook(() => useSendMessage(deps))
 
     await act(async () => {
-      await result.current('msg', attachments)
+      await result.current('msg', { attachments })
     })
 
-    expect(deps.addPendingMessage).toHaveBeenCalledWith('msg', attachments)
-    expect(mockSendMessage).toHaveBeenCalledWith('msg', attachments)
+    expect(deps.addPendingMessage).toHaveBeenCalledWith('msg', attachments, null)
+    expect(mockSendMessage).toHaveBeenCalledWith('msg', { attachments, inlineReplies: null })
   })
 
   it('removes pending message and calls submitFailed on error', async () => {

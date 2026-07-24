@@ -140,6 +140,12 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
   })
 
+  it('renders the decorative border overlay (compositor animation target)', () => {
+    const { container } = render(<ChatInput {...defaultProps} />)
+
+    expect(container.querySelector('.textarea-border-overlay')).toBeInTheDocument()
+  })
+
   it('keeps textarea enabled when not connected (always-enabled invariant)', () => {
     render(<ChatInput {...defaultProps} isConnected={false} />)
 
@@ -163,7 +169,7 @@ describe('ChatInput', () => {
       await user.type(textarea, 'hello')
       await user.keyboard('{Enter}')
 
-      expect(defaultProps.send).toHaveBeenCalledWith('hello', [])
+      expect(defaultProps.send).toHaveBeenCalledWith('hello', { attachments: [] })
     })
 
     it('does not submit on Shift+Enter', async () => {
@@ -245,7 +251,7 @@ describe('ChatInput', () => {
       await user.type(textarea, 'test message')
       await user.keyboard('{Enter}')
 
-      expect(defaultProps.send).toHaveBeenCalledWith('test message', [])
+      expect(defaultProps.send).toHaveBeenCalledWith('test message', { attachments: [] })
       expect(textarea.value).toBe('')
     })
 
@@ -260,7 +266,7 @@ describe('ChatInput', () => {
 
       await vi.waitFor(() => {
         expect(defaultProps.send).toHaveBeenCalledTimes(1)
-        expect(defaultProps.send).toHaveBeenCalledWith('test message', [])
+        expect(defaultProps.send).toHaveBeenCalledWith('test message', { attachments: [] })
       })
     })
 
@@ -275,7 +281,7 @@ describe('ChatInput', () => {
       await user.keyboard('{Enter}')
 
       await vi.waitFor(() => {
-        expect(defaultProps.send).toHaveBeenCalledWith('first', [])
+        expect(defaultProps.send).toHaveBeenCalledWith('first', { attachments: [] })
       })
 
       // Send a second message - verifies `sending` was reset to false
@@ -285,7 +291,7 @@ describe('ChatInput', () => {
 
       await vi.waitFor(() => {
         expect(defaultProps.send).toHaveBeenCalledTimes(2)
-        expect(defaultProps.send).toHaveBeenLastCalledWith('second', [])
+        expect(defaultProps.send).toHaveBeenLastCalledWith('second', { attachments: [] })
       })
     })
   })

@@ -49,6 +49,7 @@ function ChatInput({
   send,
   enqueueMessage,
   deferSend,
+  hasBufferedReplies,
   queueEdit,
 }) {
   const {
@@ -56,6 +57,7 @@ function ChatInput({
     messages: messagesRef,
     autoScrollEnabled: autoScrollEnabledRef,
     events: eventsRef,
+    composerHandle,
   } = refs || {}
   const { item: editingQueueItem, clear: clearEditingQueueItem } = queueEdit || {}
 
@@ -234,6 +236,27 @@ function ChatInput({
     return input
   }, [peekInput, commitInput])
 
+  // Imperative handle for an external submit (the inline-replies bar Send): peek +
+  // clear the composer, tolerating an empty composer so a replies-only batch still sends.
+  const extractOrEmpty = useCallback(() => {
+    const input = peekInput()
+    if (input) {
+      commitInput(input.rawPrompt)
+      return input
+    }
+    return { rawPrompt: '', currentAttachments: [] }
+  }, [peekInput, commitInput])
+
+  useEffect(() => {
+    if (!composerHandle) {
+      return
+    }
+    composerHandle.current = { extractOrEmpty }
+    return () => {
+      composerHandle.current = null
+    }
+  }, [composerHandle, extractOrEmpty])
+
   // Keyboard + action handlers
   const { handleKeyDown, handleSubmit } = useChatKeyboard({
     textareaRef,
@@ -244,6 +267,7 @@ function ChatInput({
     setSending,
     enqueueMessage,
     deferSend,
+    hasBufferedReplies,
     isCreating,
     canInterrupt,
     interruptStatus,
@@ -478,6 +502,9 @@ function ChatInput({
         />
       )}
       <div className={`chat-input-row${isMobile ? ' mobile' : ''}`}>
+        {/* Decorative compositor-driven border shimmer / working cue (pure CSS,
+            rotated on the GPU); non-interactive, behind the textarea. */}
+        <div className="textarea-border-overlay" aria-hidden="true" />
         <textarea
           ref={textareaRef}
           data-testid="chat-input"

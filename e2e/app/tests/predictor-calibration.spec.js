@@ -5,7 +5,7 @@ import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { TURN_HORIZONTAL_PADDING_PX } from '../../../src/claudebox_frontend/src/config/dimensions.js'
 import { predictTurnHeight } from '../../../src/claudebox_frontend/src/features/chat/utils/predictTurnHeight.js'
-import { waitForAppReady } from '../helpers.js'
+import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSEDynamic } from '../mocks/sse.js'
 
@@ -250,6 +250,8 @@ test.describe('predictor accuracy regression', () => {
       await mockSSEDynamic(page, () => EVENTS)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
+      // Predictor estimates expanded heights; keep every turn expanded to match.
+      await disableAutoCollapse(page)
 
       // Force real layout on every turn - content-visibility:auto would return
       // the 400px intrinsic for off-screen turns, masking real layout heights.

@@ -42,6 +42,10 @@ export function AppActionsProvider({
   const chatScrollPositionRef = useRef(0)
   const chatAutoScrollEnabledRef = useRef(true)
 
+  // Auto-collapse toggle (persists across ChatPanel remounts - tab/board
+  // switches - like autoscroll; reset to true on session change / reload).
+  const autoCollapseEnabledRef = useRef(true)
+
   const focusChatTab = useCallback(() => onFocusChat?.(), [onFocusChat])
 
   const value = useMemo(
@@ -52,6 +56,7 @@ export function AppActionsProvider({
       closePanel: onClosePanel,
       chatScrollPositionRef,
       chatAutoScrollEnabledRef,
+      autoCollapseEnabledRef,
       chatPanelSwitchingRef: panelSwitchingRef,
       jumpPrevRef,
       jumpNextRef,

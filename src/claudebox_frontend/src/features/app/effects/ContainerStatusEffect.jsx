@@ -17,8 +17,13 @@ import { resolveSessionIdFromContainer } from '../../../utils/containerLookup'
  */
 export default function ContainerStatusEffect() {
   const { lastContainerEvent } = useDaemonStreamContext()
-  const { containerMap, addStoppingSession, removeStoppingSession, removeSessionContainer } =
-    useContainerMap()
+  const {
+    containerMap,
+    addStoppingSession,
+    removeStoppingSession,
+    removeSessionContainer,
+    stoppingSessions,
+  } = useContainerMap()
   const { sessions } = useSessionsList()
 
   // Cache containerId -> sessionId from "stopping" events so "stopped" lookups
@@ -60,6 +65,23 @@ export default function ContainerStatusEffect() {
     removeStoppingSession,
     removeSessionContainer,
   ])
+
+  // Self-heal from the authoritative sessions list: when the refreshed list shows
+  // a stopping session with no live container, drop the transient stopping hint
+  // (and any stale eager mapping) so status settles to gray. Covers the cases the
+  // SSE "stopped" handler above can miss (its cached containerId -> sessionId map).
+  useEffect(() => {
+    if (stoppingSessions.size === 0) {
+      return
+    }
+    for (const sessionId of stoppingSessions) {
+      const session = sessions.find(s => s.session_id === sessionId)
+      if (!session?.container_id) {
+        removeStoppingSession(sessionId)
+        removeSessionContainer(sessionId)
+      }
+    }
+  }, [sessions, stoppingSessions, removeStoppingSession, removeSessionContainer])
 
   return null
 }

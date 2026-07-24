@@ -11,7 +11,6 @@ Two entry points produce the same ``Iterator[Event]`` output:
 """
 
 import dataclasses
-import re
 from collections.abc import Iterator
 from datetime import datetime
 
@@ -19,10 +18,12 @@ from .models import Event, EventSubtype, EventType, PublishedEvent
 from ..events import (
     AgentEvent,
     AssistantMessagePayload,
+    CompactBoundaryPayload,
     ContentBlock,
     RateLimitPayload,
     ResultPayload,
     SystemInitPayload,
+    TaskNotificationPayload,
     TextBlock,
     ThinkingBlock,
     ToolResultBlock,
@@ -39,30 +40,25 @@ _TYPED_KIND_TO_DICT_TYPE = {
     "assistant_message": EventType.ASSISTANT,
     "result": EventType.RESULT,
     "rate_limit": EventType.SYSTEM,
+    "compact_boundary": EventType.SYSTEM,
+    "task_notification": EventType.SYSTEM,
 }
 
 
 # Synthetic user markers - runtime wraps these in user messages but they originate
-# from the system (compaction preamble, local command output, task notifications,
-# hook context). Matched by prefix against stripped content to reclassify as
-# non-human events.
+# from the system (compaction preamble, local command output, task-completion
+# notifications, hook context). Matched by prefix against stripped content to
+# reclassify as non-human events.
 _SYNTHETIC_USER_MARKERS = (
     "This session is being continued from a previous conversation",
     "<local-command-stdout>",
     "<local-command-stderr>",
+    # Async-task completion also arrives as a typed system/task_notification event (the
+    # completion signal driving the Tasks panel); this user-message echo is reclassified
+    # for display only - never re-parsed into a second system event.
     "<task-notification>",
     "<system-reminder>",
 )
-
-
-# Pattern for nested-element notification XML.
-_NOTIFICATION_PATTERN = re.compile(
-    r"<task-notification>(.*?)</task-notification>",
-    re.DOTALL,
-)
-
-# Child element extraction: <tag-name>value</tag-name>
-_CHILD_ELEMENT_PATTERN = re.compile(r"<([a-z-]+)>([^<]*)</\1>")
 
 
 def dict_message_to_events(data: dict) -> Iterator[Event]:
@@ -109,21 +105,6 @@ def dict_message_to_events(data: dict) -> Iterator[Event]:
 
     if isinstance(content, str):
         if msg_type == EventType.USER and _is_synthetic_user_message(content):
-            # Normalize nested-element notification XML into system/task_notification events
-            notification = _parse_notification_xml(content)
-
-            if notification:
-                yield Event(
-                    type=EventType.SYSTEM,
-                    subtype=EventSubtype.TASK_NOTIFICATION,
-                    content=None,
-                    primary=False,
-                    is_human=False,
-                    raw={"message": {"subtype": "task_notification", "data": notification}},
-                )
-
-                return
-
             yield Event(
                 type=msg_type,
                 subtype=EventSubtype.TEXT,
@@ -190,6 +171,11 @@ def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
         # `message_data.model` and the promoted `event.model` field via
         # to_published_event. D3α-permitted wire-shape redundancy.
         data_dict = dataclasses.asdict(payload.data)
+
+        # `extra` holds unconsumed SDK init keys - omit when empty so the common-case
+        # wire shape is unchanged; surface it only when the SDK sent new keys.
+        if not data_dict.get("extra"):
+            data_dict.pop("extra", None)
 
         if payload.model is not None:
             data_dict["model"] = payload.model
@@ -261,6 +247,40 @@ def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
             },
         }
 
+    if isinstance(payload, CompactBoundaryPayload):
+        compact_metadata: dict = {"trigger": payload.trigger}
+
+        if payload.pre_tokens is not None:
+            compact_metadata["pre_tokens"] = payload.pre_tokens
+
+        if payload.post_tokens is not None:
+            compact_metadata["post_tokens"] = payload.post_tokens
+
+        if payload.duration_ms is not None:
+            compact_metadata["duration_ms"] = payload.duration_ms
+
+        return {
+            "type": msg_type,
+            "message": {
+                "subtype": EventSubtype.COMPACT_BOUNDARY,
+                "data": {"compact_metadata": compact_metadata},
+            },
+        }
+
+    if isinstance(payload, TaskNotificationPayload):
+        data: dict = {"task_id": payload.task_id, "status": payload.status}
+
+        if payload.summary is not None:
+            data["summary"] = payload.summary
+
+        return {
+            "type": msg_type,
+            "message": {
+                "subtype": EventSubtype.TASK_NOTIFICATION,
+                "data": data,
+            },
+        }
+
     raise TypeError(f"Unknown EventPayload type: {type(payload).__name__}")
 
 
@@ -296,26 +316,6 @@ def _is_synthetic_user_message(content: str) -> bool:
     stripped = content.strip()
 
     return any(stripped.startswith(marker) for marker in _SYNTHETIC_USER_MARKERS)
-
-
-def _parse_notification_xml(content: str) -> dict[str, str] | None:
-    """Parse nested-element `<task-notification>` XML into a structured dict."""
-
-    stripped = content.strip()
-    match = _NOTIFICATION_PATTERN.match(stripped)
-
-    if not match:
-        return None
-
-    inner = match.group(1)
-
-    fields = {}
-
-    for child in _CHILD_ELEMENT_PATTERN.finditer(inner):
-        key = child.group(1).replace("-", "_")
-        fields[key] = child.group(2).strip()
-
-    return fields
 
 
 def _block_to_event(block: dict, *, msg_type: str, message: dict) -> Event | None:

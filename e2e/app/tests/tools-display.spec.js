@@ -1,7 +1,7 @@
 /** E2E tests for tool display functionality. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { createSSEController, mockSSE } from '../mocks/sse.js'
 
@@ -3284,6 +3284,7 @@ test.describe('Tools Display', () => {
       await mockSSE(page, 'events/bg-task-no-multi-block.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
+      await disableAutoCollapse(page)
 
       // Even though a second turn occurs and a task_notification arrives later,
       // the Task should still be a single consolidated block in turn 1
@@ -3309,6 +3310,7 @@ test.describe('Tools Display', () => {
       await mockSSE(page, 'events/bg-task-inline-taskoutput.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
+      await disableAutoCollapse(page)
 
       // The TaskOutput tool block should be visible in the second turn
       const taskOutputBlock = page.locator('[data-testid="tool-block"]')
@@ -3450,23 +3452,24 @@ test.describe('Tools Display', () => {
       await expect(bullet).toHaveClass(/killed/)
     })
 
-    // SPEC: tool:bgtask-strip-xml
-    test('task notification XML is stripped from user message display', async ({ page }) => {
+    test('background task completion notification is not shown as a raw chat message', async ({
+      page,
+    }) => {
       await mockSSE(page, 'events/tool-task-bg-strip-xml.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The user message containing <task-notification> XML should not show raw tags
-      await expect(page.locator('text=<task-notification')).not.toBeVisible()
-      await expect(page.locator('text=</task-notification>')).not.toBeVisible()
+      // The genuine human message renders...
+      await expect(page.getByText('Research the codebase in the background')).toBeVisible()
 
-      // The notification content should not appear as raw text in a user bubble
-      // (it's used for correlation, not display)
-      const userBubbles = page.locator('.user-message, .message-user, [data-role="user"]')
+      // ...but the <task-notification> completion echo (stored as a human message) is hidden.
+      await expect(page.getByText('<task-notification', { exact: false })).toHaveCount(0)
+      await expect(page.getByText('</task-notification>', { exact: false })).toHaveCount(0)
+
+      const userBubbles = page.locator('[data-testid="message-user"]')
       const count = await userBubbles.count()
       for (let i = 0; i < count; i++) {
-        const bubble = userBubbles.nth(i)
-        await expect(bubble).not.toContainText('task-notification')
+        await expect(userBubbles.nth(i)).not.toContainText('task-notification')
       }
     })
   })

@@ -1,7 +1,7 @@
 /** E2E tests for interactive tools including AskUserQuestion forms and ExitPlanMode approve/reject. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
@@ -350,6 +350,7 @@ test.describe('ExitPlanMode - Answered State', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // Should show Approved (fixture has Approve answer)
     const answeredBlock = page.locator('[data-testid="tool-block"]').filter({
@@ -368,6 +369,7 @@ test.describe('ExitPlanMode - Answered State', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // Plan should still be visible (not collapsed like AskUserQuestion)
     const planContent = page.locator('.tool-plan')
@@ -425,6 +427,7 @@ test.describe('ExitPlanMode - Disable After Reply', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // The tool block should exist
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
@@ -444,6 +447,7 @@ test.describe('AskUserQuestion - Answered State', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // Look for a tool block with "completed" status (the one that was answered)
     const _completedToolBlock = page.locator(
@@ -469,6 +473,7 @@ test.describe('AskUserQuestion - Answered State', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // At least one turn should have an answered AskUserQuestion (no form visible, shows "Answered")
     // Due to potential event duplication, we just check that an answered state exists
@@ -486,6 +491,7 @@ test.describe('AskUserQuestion - Disable After Reply', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // The tool block should exist
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
@@ -571,6 +577,7 @@ test.describe('AskUserQuestion - XML Response Rendering', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // Should show "Answered" status
     const answeredBlock = page.locator('[data-testid="tool-block"]').filter({
@@ -753,6 +760,7 @@ test.describe('AskUser Form Details', () => {
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    await disableAutoCollapse(page)
 
     // The answered tool block should show "Answered" (question side)
     const answeredBlock = page.locator('[data-testid="tool-block"]').filter({

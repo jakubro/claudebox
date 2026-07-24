@@ -8,6 +8,7 @@ import { parseLocalCommandOutput, parseSlashCommand } from '../../../../../../ut
 import { extractPathCandidates, uniqueCandidates } from '../../../../../../utils/pathCandidates'
 import LocalCommandBlock from '../LocalCommandBlock'
 import AttachmentThumbnails from './components/AttachmentThumbnails'
+import InlineReplies from './components/InlineReplies'
 import QAResponseBlock from './components/QAResponseBlock'
 import SlashCommandToken from './SlashCommandToken'
 
@@ -17,13 +18,28 @@ import SlashCommandToken from './SlashCommandToken'
  * @param {object} props
  * @param {string} props.message - Raw message text to parse and render.
  * @param {Array} props.attachments - Optional array of attachment metadata.
+ * @param {Array} props.inlineReplies - Optional array of inline reply pairs (quote/from/response).
  */
-export default function UserMessageContent({ message, attachments }) {
+export default function UserMessageContent({ message, attachments, inlineReplies }) {
   const sessionDir = useSessionDir()
   const candidates = useMemo(() => uniqueCandidates(extractPathCandidates(message)), [message])
   const resolvedPaths = usePathResolution(candidates)
   const attachmentRow =
     attachments?.length > 0 ? <AttachmentThumbnails attachments={attachments} /> : null
+  const inlineRepliesRow =
+    inlineReplies?.length > 0 ? <InlineReplies replies={inlineReplies} /> : null
+
+  // Content-only send (attachments and/or inline replies with an empty composer):
+  // render just the rows, with no empty message box. Covers all branches below.
+  const hasText = !!message?.trim()
+  if (!hasText) {
+    return (
+      <>
+        {attachmentRow}
+        {inlineRepliesRow}
+      </>
+    )
+  }
 
   // First check for slash command
   const parsed = parseSlashCommand(message)
@@ -35,6 +51,7 @@ export default function UserMessageContent({ message, attachments }) {
           {parsed.args && <> {parsed.args}</>}
         </span>
         {attachmentRow}
+        {inlineRepliesRow}
       </>
     )
   }
@@ -52,6 +69,7 @@ export default function UserMessageContent({ message, attachments }) {
           </PathHighlighter>
         </span>
         {attachmentRow}
+        {inlineRepliesRow}
       </>
     )
   }
@@ -77,6 +95,7 @@ export default function UserMessageContent({ message, attachments }) {
         })}
       </div>
       {attachmentRow}
+      {inlineRepliesRow}
     </>
   )
 }

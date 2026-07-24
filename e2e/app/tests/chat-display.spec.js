@@ -1,7 +1,7 @@
 /** E2E tests for chat display including turns, timestamps, collapsible content, and control bar. */
 
 import { expect, test } from '@playwright/test'
-import { assertRedColor, waitForAppReady } from '../helpers.js'
+import { assertRedColor, disableAutoCollapse, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { createSSEController, mockSSE } from '../mocks/sse.js'
 
@@ -915,6 +915,7 @@ test.describe('Chat Display', () => {
       await mockSSE(page, 'events/nonhuman-text-with-command-output.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
+      await disableAutoCollapse(page)
 
       // First turn: non-human user text fully wrapped in stdout tag
       const firstTurn = page.locator('.turn-container').nth(0)
