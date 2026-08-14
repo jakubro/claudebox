@@ -39,8 +39,6 @@ just build           # production build (frontend → dist/)
 
 ```bash
 just install-py      # uv sync --extra dev (auto-routes to /tmp venv when CLAUDEBOX_AGENT is set)
-just lint-py         # ruff check + format check (src/, tests/, e2e/cli/, scripts/)
-just fix-py          # ruff check --fix + format
 just test-py         # pytest tests/
 just test-py-cov     # pytest tests/ with coverage
 ```
@@ -55,9 +53,12 @@ UV_PROJECT_ENVIRONMENT='<agent-venv>' VIRTUAL_ENV= uv pip install langchain-anth
 
 ```bash
 just install-shared-js  # npm ci at lib root (biome + jscpd + knip)
-just lint-js            # biome + jscpd + knip (+ frontend-guidelines-audit non-fatal)
-just fix-js             # biome check --fix
 ```
+
+Linting and auto-fix are whole-repo only: `just lint` runs ruff check + ruff format --check + ty +
+python-guidelines-audit + biome + frontend-guidelines-audit + spec-coverage + knip + jscpd, and `just fix`
+runs ruff check --fix + ruff format + ty --fix + biome check --fix. There are no per-language `lint-*` /
+`fix-*` recipes - reach for a tool directly (`npx biome check <path>`) when iterating on one file.
 
 ### Frontend (vite + vitest)
 
@@ -74,12 +75,11 @@ cd lib/src/claudebox_frontend && npm run dev   # dev server (proxies /api to con
 ### E2E (playwright + pytest + spec-coverage)
 
 ```bash
-just install-e2e-fe          # npm ci in e2e/app + Playwright browsers (chromium)
-just test-e2e-fe             # Playwright at lib/e2e/app/
-just test-e2e-cli            # pytest at lib/e2e/cli/
-just lint-e2e                # spec-coverage.js (// SPEC: + # SPEC: tracking)
-just test-e2e-cov            # same as lint-e2e
-just update-e2e-fe-snapshots # regenerate visual regression snapshots
+just install-e2e-app          # npm ci in e2e/app + Playwright browsers (chromium)
+just test-e2e-app             # Playwright at lib/e2e/app/
+just test-e2e-cli             # pytest at lib/e2e/cli/
+just test-e2e-cov             # spec-coverage.js (// SPEC: + # SPEC: tracking)
+just update-e2e-app-snapshots # regenerate visual regression snapshots
 ```
 
 ### Shell completion (argcomplete)
@@ -152,6 +152,22 @@ if (capabilities && !capabilities.supports_skills) return null
 
 Tests pass synthetic flag overrides via `src/test-utils/mockCapabilities.js`.
 
+### Executor Ownership
+
+Unbounded filesystem or CPU work **never** goes on the default thread-pool executor. Give it a dedicated, bounded one.
+
+- 🚫 **Never** hand work whose cost scales with user data to `asyncio.to_thread(...)` or `run_in_executor(None, ...)` — both mean the process-wide default pool, which is where `EventLog.append` (via aiofiles) and `Projection._async_save` write
+- ✅ **Always** own a `ThreadPoolExecutor` on the service doing the work, size it explicitly, and release it on the owning lifespan's teardown
+- ✅ **Always** prefer a single worker when the work is a cache rebuild — serializing it is the point, and it pairs with single-flighting so concurrent callers share one run instead of queueing N
+
+```python
+# claudebox_container_api/files/file_service.py
+self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="path-resolve")
+await loop.run_in_executor(self._executor, self._resolver.resolve, candidates, temp_dir)
+```
+
+**Worked example.** `PathResolver._build_index` walked the whole workspace on the default pool. On a workspace with hundreds of session directories the walks took every worker, `EventLog.append` never got one, and the session went silent mid-turn — no exception, no log line, `is_alive` still true, the runtime still writing complete replies to its own transcript. Container restarts made it worse, since restart triggers replay and replay triggers path resolution. The only signal was the absence of events; assume any starvation you introduce presents the same way. See ARCHITECTURE.md §1.5 Executor Ownership.
+
 ### Conventions
 
 - ✅ **Always** use `claudebox.serialization` for JSON (re-exported from `claudebox/core/serialization.py`) — custom encoder handles datetime, Path, dataclass
@@ -170,6 +186,38 @@ Tests pass synthetic flag overrides via `src/test-utils/mockCapabilities.js`.
 - ✅ **Always** use `ContainerRuntime` as the primary interface — it combines `Config`, `ContainerBackend`, and CLI flags
 - ✅ **Always** use Rich `console` for user-facing output — not bare `print()`
 - 🚫 Never sprinkle async throughout the CLI; default to synchronous code. Use asyncio only where genuinely concurrent work is needed (e.g., multiplexing live streams into one output).
+
+### Per-verb `EPILOG`
+
+Every `cmd_*.py` defines an `EPILOG` with the same shape, so a new verb does not have to be reverse-engineered from an existing one:
+
+```
+examples:
+  claudebox logs                    tail daemon log, then follow
+  claudebox logs --tail 50          backfill 50 lines, then follow
+
+<topic>:
+  Two-space indented content.
+
+notes:
+  Prose that does not fit a topical heading.
+```
+
+- ✅ **Always** lead with `examples:` — two columns, command left, effect right, hand-aligned
+- ✅ **Always** use lowercase, colon-terminated section headings and indent their content two spaces
+- ✅ **Always** put trailing prose under a heading (`notes:` when nothing more specific fits) — never a bare paragraph
+- ✅ **Always** use single backticks for literal values and paths; double backticks render literally and read as noise
+- 🚫 **Never** state an option's default in the epilog — it belongs in that option's `help=`, which is the single source (the formatter no longer appends one)
+
+### Cold path
+
+Shell completion re-executes the program on every keypress, so import-time work is paid per keystroke (ARCHITECTURE.md §2, "CLI cold path").
+
+- ✅ **Always** import through the `claudebox` facade (`from claudebox import console`) — the cross-package audit requires it, and the lazy root makes it cost exactly what the defining submodule costs. Deep imports like `from claudebox.core.cli import console` fail `just lint`
+- 🚫 **Never** put import-time side effects in a CLI entry module — no subprocess, no network, no filesystem scan while the parser is being built. Defer to render or call time (`LazyEpilogParser` is the pattern)
+- ✅ **Always** import a heavy dependency inside the function that needs it when only some verbs use it — `ContainerRuntime` / `ImageBuildMode` pull structlog and the container backend; add a one-line comment saying why
+- ✅ **Always** keep the parser complete. Completion accuracy is non-negotiable: the win comes from making the full parser cheap to build, never from describing fewer verbs or flags
+- 🚫 **Never** re-export a name from `claudebox/__init__.py` that is also a submodule name — importing the submodule binds it on the package and shadows the export (see ARCHITECTURE.md §2, "CLI cold path")
 
 **Volume mounts**: New mounts go in `get_volumes()` generator in `claudebox.containers.run`. Each mount is a `(host_path, container_path)` tuple via `prepare_volume()` which resolves and ensures host path exists.
 
@@ -192,6 +240,20 @@ Three-layer DDD with strict import boundaries:
 - ✅ **Always** prefix internal handler modules with underscore (`_models.py`, `_shared.py`)
 - 🚫 **Never** prefix router files with underscore — that prefix is reserved for shared internals with no public HTTP surface
 - 🚫 **Never** put business logic in handlers — validation, orchestration, and state management live in domain
+
+### Executor Ownership
+
+§1's Executor Ownership rule extends to the daemon: one event loop serves every workspace, so one wedged podman call or contended lock stalls all of them.
+
+- ✅ **Always** dispatch podman calls, `FileLock` writes, and synchronous filesystem listing to `DaemonService`'s owned executor — never the default pool
+- ✅ **Always** give outbound HTTP calls an explicit bounded timeout — one profile safe for both ordinary requests and proxied SSE streams, not `read=None`
+- ✅ **Always** give every `FileLock` an explicit `timeout=` and translate a `filelock.Timeout` into a typed error — never let acquisition block forever
+- ✅ **Always** give subprocess dispatch an explicit `timeout=` and log argv + elapsed time before it propagates; exempt only long-running foreground processes the daemon never calls
+- 🚫 **Never** assume `AsyncPoller`'s `asyncio.wait_for` backstop makes an unbounded call inside `_poll()` safe — bound the call itself
+- 🚫 **Never** read a bound placed around `run_in_executor` as a bound on the work — it starts at submission, so it measures queueing plus execution, and firing it reclaims a worker only while the job is still queued. Record whether the job ever started (`executors.tracked`) so a full pool is never logged as a hung filesystem
+- ✅ **Always** dispatch to the pool that matches the work's concern (`listing` / `podman` / `state`) — a single shared pool makes every class of blocking work fail together
+- ✅ **Always** collapse concurrent callers asking one question onto one job (`SingleFlight`) before widening a pool — N tabs refetching on one broadcast is one scan, not N
+- ✅ **Always** make a liveness signal observe the resource that actually serves requests, and keep the endpoint reporting it off that resource — a proxy that stays green through an outage is worse than no signal, because it is trusted
 
 ### Error Handling
 
@@ -439,7 +501,7 @@ Split contexts exist to prevent unnecessary re-renders. This is the most common 
 ```javascript
 // Canonical component structure:
 // 1. File header comment
-// 2. Imports (Biome auto-organizes alphabetically — `just fix-js` to apply)
+// 2. Imports (Biome auto-organizes alphabetically — `just fix` to apply)
 // 3. function declaration (never arrow)
 // 4. hooks at top
 // 5. handlers
@@ -463,6 +525,7 @@ export default ComponentName
 - ✅ **Always** use function declarations for components — never arrow functions
 - ✅ **Always** destructure props in the function signature
 - ✅ **Always** use `handle*` for internal handlers, `on*` for callback props
+- 🚫 **Never** build a component-override map inline in a render body when the subtree beneath it is expensive — it's used as the JSX element type per tag, so a new identity per render forces React to rebuild instead of reconcile. Hoist to module scope; route per-render values through context instead of a closure (see ARCHITECTURE.md 5.8)
 
 ### API Patterns
 
@@ -487,6 +550,8 @@ Three tiers for API calls:
 - Component prefix convention: `.chat-panel`, `.tool-block`, `.session-item`
 - State modifiers via chaining: `.turn-container.pending`
 - CSS variables for theme values (defined in `features/app/App.css`)
+- Font stacks are pinned, not generic: `--font-sans` / `--font-mono` (`features/app/App.css`) lead with a self-hosted webfont (`@fontsource/inter`, `@fontsource/jetbrains-mono`) so text renders identically everywhere. 🚫 **Never** write a bare `font-family: monospace` / `system-ui` directly in component CSS — use the variable, which still falls back to the OS stack if the webfont fails to load.
+- The pinned mono face ships contextual alternates that merge `--`, `->` and `!=` into one glyph, so `:root` carries `font-variant-ligatures: no-contextual` — the narrowest setting that disables them, since the face ships no `liga` table for `font-variant-ligatures: none` to act on beyond `calt` — and the `button, input, select, textarea` reset re-inherits it, since the UA font shorthand resets it on form controls.
 - Continuous **decorative** animations (shimmers, glows, spinners) must animate compositor-accelerated properties (`transform` / `opacity`) — never animate custom properties that feed `background`/`box-shadow`/gradient repaints, which run on the main thread and stutter under load (e.g. while streaming). Rotate a transform-driven layer and reveal it through a border/mask instead
 - `src/main.css` is the top-level cascade orchestrator — imports feature and cross-feature `index.css` files in deterministic order
 - App foundation (variables, resets, layout, theme) in `features/app/` — imported first by orchestrator
@@ -599,6 +664,38 @@ Each context should own **one concern**. Split when a context mixes unrelated re
 - ✅ **Always** split a context when it exceeds ~500 lines or manages 3+ unrelated state slices
 - 🚫 **Never** mix transport/connection logic with data transformation in the same context
 
+### Context Write-Back Loops
+
+A context value that a component both **writes to** and **renders from** is a loop waiting to
+close. It closes when an effect writes on every run and the write always changes state identity:
+
+```jsx
+// 🚫 the shape that loops
+<IconStrip bottomPanels={['logs']} />        // new array identity every render
+useEffect(() => {
+  register(id)                                // adds -> new Map -> new context value
+  return () => unregister(id)                 // removes -> new Map -> new context value
+}, [bottomPanels])                            // identity changed -> runs again -> forever
+```
+
+The parent re-renders because the context value changed, rebuilds the literal, and the effect runs
+again. Early-return guards inside the setters do not save it: remove-then-add nets to unchanged
+content but two new identities. React aborts the tree with "maximum update depth exceeded" and the
+page goes blank — though it may only cross that threshold under load, spinning and burning CPU the
+rest of the time.
+
+- ✅ **Always** hoist array/object literals passed as props to module constants, or `useMemo` them
+- ✅ **Always** key an effect on a value's **content** (e.g. a joined id string) when the container
+  holding it is rebuilt each render
+- ✅ **Always** make context writers idempotent — return the previous state when the new state is
+  content-equal, so a repeated write costs nothing
+- ✅ **Always** state ownership declaratively (`setIds(side, ids)`) rather than as incremental
+  add/remove pairs, so there is no intermediate state to churn through
+- 🚫 **Never** release-and-reclaim on every dependency change when the intent is "release on
+  unmount" — that is the churn, not the cleanup
+- 🚫 **Never** mock a context's writers to `vi.fn()` in the only test that renders the component —
+  the real provider never runs, and this entire class of bug stays invisible
+
 ### Hook Scope
 
 Same single-responsibility rule applies to hooks:
@@ -606,6 +703,7 @@ Same single-responsibility rule applies to hooks:
 - ✅ **Always** one clear purpose per hook — if the name needs "and" to describe it, split it
 - ✅ **Always** extract pure functions from hooks into `features/{feature}/utils/` with descriptive filenames
 - ✅ **Always** use composition hooks to combine actions from multiple contexts (e.g., `useNewSession`)
+- ✅ **Always** run side effects (I/O, storage writes, anything that can throw) from `useEffect` or an explicit callback — never inside a `setState` updater, which React can replay during render
 - 🚫 **Never** let a hook exceed ~500 lines — decompose into smaller composable hooks
 
 ### Chrome Buttons
@@ -630,6 +728,8 @@ When the frontend communicates with the daemon (multi-workspace mode), these con
 **Workspace-scoped API calls**: All container endpoints are prefixed with `/api/workspaces/{workspace_id}/`. Use `workspaceFetch(path, options)` from `api/apiClient.js` — it auto-injects the workspace prefix. Container-scoped calls use `containerFetch(path, options)` which further adds the container ID prefix. For daemon-level endpoints (`/api/daemon/*`), use plain `fetch()`.
 
 **Daemon SSE stream**: The daemon broadcasts events via `GET /api/daemon/stream`. Current event types: `container_status` (container lifecycle changes), `session_progress` (progress during create/resume/fork), and `sessions_changed` (session list mutations). The frontend subscribes via `useDaemonStream()` hook (`hooks/useDaemonStream.js`), which wraps `useSSE`. New daemon-level push events should be added as dataclasses in the appropriate domain models module and broadcast via the shared `Broadcaster`.
+
+**Frontend failure reporting**: `api/errorReport.js`'s `reportError({ kind, message, stack })` best-effort-POSTs to `/api/daemon/report`, deduplicated client-side by `kind:message`, and logs to the daemon log via `DaemonService.report_frontend_error`. A `catch` that only degrades silently or `console.warn`s should call this instead — see `ErrorBoundary`'s `componentDidCatch` and `useLocalStorage`'s persist-failure catch. Never pass message text, draft content, or file contents — `message` identifies the failure, not the conversation.
 
 **Testing daemon-facing code**: Mock `workspaceFetch`/`containerFetch` at the `api/apiClient` module level. For contexts, mock the API modules they call. For hooks, mock both the context and API modules.
 
@@ -662,8 +762,21 @@ just test-fe
 just test-fe src/features/chat/components/tools/utils/helpers.test.js
 
 # E2E tests (playwright)
-just test-e2e-fe
+just test-e2e-app
 ```
+
+### Visual Regression Snapshots
+
+`visual-regression.spec.js` renders identically in the container and on Jakub's
+machine — the app pins its own webfonts (see Styling above), so no OS font
+resolution is left to diverge. A failure is a genuine visual difference (or
+occasionally a real bug); investigate it, do not dismiss it as environment
+noise.
+
+Regenerate reference images only when a change is intended to alter the
+rendered output, via `just update-e2e-app-snapshots` (runs the suite with
+`--update-snapshots`) — the pinned webfont makes the result equivalent whether
+run in the container or on the host, so either is a valid source of truth.
 
 ### Principles
 
@@ -686,6 +799,8 @@ just test-e2e-fe
 | **Mock-echo handler test** | Handler test mocks `service.X` to return a hand-crafted object, then asserts the JSON response echoes each of that object's fields | Exercises FastAPI/Pydantic serialization, not the handler. Handler is a thin pass-through; this proves nothing about it. | Rewrite: assert URL-param → service-arg mapping, status code, content-type, error contract. Or delete. |
 | **Helper-setup echo** | Test calls `_make_service(available=False)` (which constructs sub-services as `None`), then asserts `svc.sub_service is None` after `start()` | The assertion checks the helper's setup, not the method under test. The method could be a no-op or wildly broken — test still passes. | Rewrite to assert the actual contract (no exception, no state mutation), or delete. |
 | **Name-vs-body mismatch** | `test_kw_only_enforced` constructs with kwargs and asserts identity, never attempts a positional call | Body would pass even with `kw_only=False`. The name promises behavior the body doesn't check. | Rewrite to trigger the failure path (`with pytest.raises(TypeError): Cls("positional")`), or delete. |
+| **Same-source assertion** | Parsing a systemd unit file and asserting on a field read from that same file; reading a live parser object's own `.description` and checking the rendered `--help` text contains it; rebuilding a source function's rounding/formatting math inline to construct a test's expected value | Expected value is derived from the identical artifact or formula the assertion checks - no source change in the codebase could ever make it fail | Delete. If the property matters, lock it with an independently authored literal (a hardcoded string, a captured `inline_snapshot`) or size the input to sidestep the source's own math, never by re-deriving it. Not this: cross-referencing two independently maintained artifacts for drift, or feeding hand-crafted input to a parser/classifier under test. |
+| **Reimplemented mock** | Mocking `formatDurationClock` with a hand-rolled `MM:SS` formula in a component test, when the real formatter returns `H:MM:SS` | The real logic never executes; a wrong render passes clean because the mock, not the function, defines correctness | Don't mock a pure, side-effect-free function to isolate a test - let it run for real. |
 
 **The acid test for any new test**: if you flipped the implementation to a no-op or a wrong implementation, would the test fail? If no, the test isn't earning its keep. If the answer needs you to flip a *Python language feature* (dataclass kwargs, default values, type hints), you're testing the language — not your code.
 
@@ -738,6 +853,8 @@ describe('buildToolHeader', () => {
 - Unit tests: Vitest + React Testing Library (jsdom)
 - E2E tests: Playwright (Chromium) with SSE/API mocking via fixtures
 - Test files co-located: `Component.test.jsx` alongside `Component.jsx`
+
+**Wait for the capability, not for a proxy that paints earlier.** Before `page.keyboard.press` of a global shortcut, await `waitForShortcutsReady(page)` from `e2e/app/helpers.js` (already folded into `waitForAppReady`). The app shell attaches its keydown listener in an effect that runs after paint, so anything visible — the footer included — can be on screen while the listener is not yet attached; a press landing in that gap is dropped silently, nothing retries it, and the check fails on a wait for a panel that never opens. Raising the timeout hides the race instead of removing it and slows every run. The same shape applies to any capability wired up in an effect: wait on a signal the feature itself publishes.
 
 ---
 
@@ -824,13 +941,14 @@ These apply to all Python packages (`claudebox`, `claudebox_cli`, `claudebox_dae
 - ✅ **Always** class docstring on every class, including dataclasses
 - ✅ **Always** function docstring on public functions — except when name + signature + class context already tells the complete story
 - ✅ **Always** blank line after any docstring (between `"""` and code body)
-- ✅ **Always** size docstring to code complexity — simple functions get single-line docstrings
+- ✅ **Always** default to one line; a second line must carry a fact the first doesn't — name it, or delete the line
+- ✅ **Always** keep comment/docstring lines under ~100 chars (biome's `lineWidth`) — compress wording first; if content genuinely doesn't fit, split into multiple tight lines (each a complete thought), never one crammed mega-line or word-wrapped prose
 - 🚫 **Never** docstrings after variables — use `# comment` before the variable instead
 - 🚫 **Never** repeat information already visible in type hints or class Attributes
 - 🚫 **Never** comment sentinel patterns — `NOT_PROVIDED = object()` and `MISSING = object()` are self-evident
 - 🚫 **Never** explain standard library usage, common design patterns, or language idioms
 
-**Docstring sizing**: Match complexity. Wrappers and obvious functions get single lines:
+**Docstring sizing**: Default to one line. Wrappers and obvious functions get single lines:
 
 ```python
 # ✅ Simple wrapper → single-line docstring
@@ -1027,7 +1145,8 @@ These apply to all JS/JSX files in the frontend.
 - ✅ **Always** blank line after file comment (before imports)
 - ✅ **Always** JSDoc on every exported function/component — imperative mood
 - ✅ **Always** `@param` for props on React components
-- ✅ **Always** size comment to code complexity — simple functions get single-line JSDoc
+- ✅ **Always** default to one line; a second line must carry a fact the first doesn't — name it, or delete the line
+- ✅ **Always** keep comment/JSDoc lines under ~100 chars (biome's `lineWidth`) — compress wording first; if content genuinely doesn't fit, split into multiple tight lines (each a complete thought), never one crammed mega-line or word-wrapped prose
 - 🚫 **Never** repeat information already visible in function signature or PropTypes
 
 **File-level comments**: Single line at top of file:

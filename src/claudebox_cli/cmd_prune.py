@@ -3,6 +3,8 @@
 import argparse
 import subprocess
 
+from rich.markup import escape
+
 from claudebox import Config, cleanup_stale_dirs, console
 from ._term import print_fail
 
@@ -11,17 +13,18 @@ NAME = "prune"
 ORDER = 50
 DESCRIPTION = "Remove stopped containers, dangling images, stale dirs"
 EPILOG = """\
-examples:
+Examples:
   claudebox prune                summary count only
   claudebox -v prune             list each removed item
 
-prune removes:
-  - stale session and temp directories under ~/.claudebox and /tmp
-  - dangling claudebox container images
-  - stopped claudebox containers (typically none under auto-removal)
+Removes:
+  stale session and temp directories under ~/.claudebox and /tmp
+  dangling claudebox container images
+  stopped claudebox containers (typically none under auto-removal)
 
-partial failure: each removal is independent; a failure in one category does
-not abort the rest. Command exits non-zero if any item failed.
+Notes:
+  Each removal is independent: a failure in one category does not abort the rest.
+  The command exits non-zero if any item failed.
 """
 
 
@@ -87,7 +90,7 @@ def _prune_backend(
         )
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
         failures.append(label)
-        print_fail(f"{label}: {exc}")
+        print_fail(f"{label}: {_describe_failure(exc)}")
 
         return 0
 
@@ -98,6 +101,24 @@ def _prune_backend(
             console.print(f"removed {label.rstrip('s')} {line}", style="dim italic")
 
     return len(removed_lines)
+
+
+def _describe_failure(exc: subprocess.CalledProcessError | FileNotFoundError) -> str:
+    """Render a runtime failure with the runtime's own words, not just Python's.
+
+    Bare Python text ("exit status 125") cannot tell a still-referenced image from a bad filter.
+    Escaped: print_fail interpolates into Rich markup, so a bracket reads as a style tag or raises MarkupError.
+    """
+
+    if isinstance(exc, FileNotFoundError):
+        return escape(str(exc))
+
+    stderr = escape((exc.stderr or "").strip())
+
+    if not stderr:
+        return f"exit status {exc.returncode}"
+
+    return f"exit status {exc.returncode}: {stderr}"
 
 
 def _parse_prune_output(stdout: str) -> list[str]:
@@ -119,7 +140,7 @@ def _print_summary(verbose: bool, container_count: int, image_count: int, dir_co
         console.print(
             f"removed {container_count} stopped containers, "
             f"{image_count} dangling images, "
-            f"{dir_count} stale dirs"
+            f"{dir_count} stale dirs",
         )
 
         return

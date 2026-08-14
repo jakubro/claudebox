@@ -13,7 +13,6 @@ const STATUS_ICONS = {
   blocked: '⊘',
 }
 
-/** Render panel showing todo items with status indicators. */
 export default function TodosPanel() {
   const { todosBySubagent, subagentLabels, isResuming, isReplaying } = useEvents()
 

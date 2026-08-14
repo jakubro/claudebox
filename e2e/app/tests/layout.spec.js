@@ -33,15 +33,13 @@ test.describe('Layout', () => {
         await expect(page.locator(`[data-testid="${id}"]`)).toBeVisible()
       }
 
-      // Vertical positions: sessions/bookmarks/boards form the top group;
-      // logs sits at the bottom of the strip.
+      // sessions/bookmarks/boards form the top group; logs sits at the bottom of the strip.
       const ys = {}
       for (const id of ids) {
         ys[id] = (await page.locator(`[data-testid="${id}"]`).boundingBox()).y
       }
       expect(ys['icon-sessions']).toBeLessThan(ys['icon-bookmarks'])
       expect(ys['icon-bookmarks']).toBeLessThan(ys['icon-boards'])
-      // Logs is the lowest of the four.
       expect(ys['icon-logs']).toBeGreaterThan(ys['icon-boards'])
     })
 
@@ -65,8 +63,7 @@ test.describe('Layout', () => {
         await expect(page.locator(`[data-testid="${id}"]`)).toBeVisible()
       }
 
-      // Each icon's vertical position must be strictly below the previous one
-      // - covers the "top to bottom" ordering portion of the claim.
+      // Covers the "top to bottom" ordering portion of the claim.
       let prevY = -Infinity
       for (const id of order) {
         const { y } = await page.locator(`[data-testid="${id}"]`).boundingBox()
@@ -80,8 +77,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Claim says "tooltip shows panel name and shortcut" - validate every icon,
-      // not just sessions, since the claim implies the full set.
+      // Validates every icon, not just sessions, since the claim implies the full set.
       const expected = {
         'icon-sessions': 'Sessions (Alt+1)',
         'icon-todos': 'Todos (Alt+2)',
@@ -109,14 +105,11 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Sessions is visible by default
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
-      // Click sessions icon to close
       await page.locator('[data-testid="icon-sessions"]').click()
       await expect(page.locator('[data-testid="panel-sessions"]')).not.toBeVisible()
 
-      // Click again to reopen
       await page.locator('[data-testid="icon-sessions"]').click()
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
     })
@@ -129,19 +122,16 @@ test.describe('Layout', () => {
       const panel = page.locator('[data-testid="panel-sessions"]')
       await expect(panel).toBeVisible()
 
-      // Capture the panel's current width - the claim says "saves width" on close,
-      // so reopening must restore it (within reasonable tolerance for layout settle).
+      // The claim says "saves width" on close, so reopening must restore it within tolerance.
       const widthBefore = await panel.evaluate(el => {
         const group = el.closest('.dv-view')
         return group ? group.offsetWidth : 0
       })
       expect(widthBefore).toBeGreaterThan(0)
 
-      // Toggle off
       await page.locator('[data-testid="icon-sessions"]').click()
       await expect(panel).not.toBeVisible()
 
-      // Toggle on - saved width must be restored
       await page.locator('[data-testid="icon-sessions"]').click()
       await expect(panel).toBeVisible()
       const widthAfter = await panel.evaluate(el => {
@@ -156,7 +146,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Sessions panel should be visible on fresh load (default layout)
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
     })
 
@@ -165,19 +154,16 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Three default right panels should be visible (Usage and MCP hidden).
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-tasks"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
 
-      // Right panel group should be approximately 15% of window width
       const viewportWidth = page.viewportSize().width
       const rightGroup = page.locator('[data-testid="panel-todos"]').first()
       const rightBox = await rightGroup.boundingBox()
-      // The right panel group width: from leftmost right panel to viewport edge
-      // Use the todos panel's parent group width as proxy
+      // Todos panel's parent group stands in for the right group's width (leftmost panel to edge).
       const rightPanelWidth = viewportWidth - rightBox.x
       const ratio = rightPanelWidth / viewportWidth
       expect(ratio, `Right panel ratio ${ratio} should be ~15%`).toBeGreaterThan(0.1)
@@ -193,7 +179,6 @@ test.describe('Layout', () => {
 
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
 
-      // Even after opening other panels
       await toggleSessionsPanel(page)
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
     })
@@ -206,9 +191,7 @@ test.describe('Layout', () => {
       const chatBox = await page.locator('[data-testid="panel-chat"]').boundingBox()
       expect(chatBox).toBeTruthy()
 
-      // Left strip lives to the left of chat; rightmost-default panel (todos)
-      // lives to the right. This anchors the "in center" half of the claim
-      // beyond mere visibility.
+      // Left strip sits left of chat, todos sits right of it - anchors the "in center" claim beyond visibility.
       const leftStripBox = await page.locator('[data-testid="icon-sessions"]').boundingBox()
       const rightPanelBox = await page.locator('[data-testid="panel-todos"]').boundingBox()
       expect(leftStripBox.x + leftStripBox.width).toBeLessThanOrEqual(chatBox.x)
@@ -236,10 +219,8 @@ test.describe('Layout', () => {
       const footer = page.locator('[data-testid="footer"]')
       await expect(footer).toBeVisible()
 
-      // Status indicator should be present
       const statusEl = page.locator('[data-testid="footer-status"]')
       await expect(statusEl).toBeVisible()
-      // Should have a data-status attribute indicating connection state
       const statusAttr = await statusEl.getAttribute('data-status')
       expect(statusAttr).toBeTruthy()
     })
@@ -260,9 +241,7 @@ test.describe('Layout', () => {
 
       const statusEl = page.locator('[data-testid="footer-status"]')
       await expect(statusEl).toBeVisible()
-      // Connected state should show data-status="ready"
       await expect(statusEl).toHaveAttribute('data-status', 'ready')
-      // Connection dot color should be green-dominant (high green, low red/blue)
       await assertColor(statusEl, 'color', { g: 150 }, 105)
     })
 
@@ -272,9 +251,8 @@ test.describe('Layout', () => {
       await waitForAppReady(page)
 
       const modelEl = page.locator('[data-testid="footer-model"]')
-      // Model should show from fixture (claude-sonnet-4-6 -> "Sonnet")
+      // Fixture's model id claude-sonnet-5 maps to the display name "Sonnet".
       await expect(modelEl).toContainText('Sonnet')
-      // Should have a chevron indicator for clickability
       await expect(modelEl.locator('.chevron, svg, [data-icon]').first()).toBeVisible()
     })
 
@@ -308,8 +286,8 @@ test.describe('Layout', () => {
               },
             })
           },
-          // Force the workspace default to null too - only then does the
-          // picker have nothing to display and falls through to "-".
+          // Only when the workspace default is also null does the picker have nothing to
+          // display and fall through to "-".
           getSessionDefaults: async route => {
             await route.fulfill({
               json: {
@@ -329,7 +307,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // With null session model AND null workspace default, footer shows "-"
       const modelEl = page.locator('[data-testid="footer-model"]')
       await expect(modelEl).toContainText('-')
     })
@@ -342,7 +319,6 @@ test.describe('Layout', () => {
       const modelEl = page.locator('[data-testid="footer-model"]')
       await modelEl.click()
 
-      // Model dropdown should appear
       const dropdown = page.locator('[data-testid="model-dropdown"]')
       await expect(dropdown).toBeVisible()
     })
@@ -354,10 +330,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Open sessions panel
       await openSessionsPanel(page)
 
-      // Get initial width by finding the panel's dockview group
       const initialWidth = await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
         const group = el.closest('.dv-view')
         return group ? group.offsetWidth : 0
@@ -365,14 +339,11 @@ test.describe('Layout', () => {
 
       expect(initialWidth).toBeGreaterThan(0)
 
-      // Close panel
       await toggleSessionsPanel(page)
       await expect(page.locator('[data-testid="panel-sessions"]')).not.toBeVisible()
 
-      // Reopen panel
       await openSessionsPanel(page)
 
-      // Poll until width stabilizes (close to initial)
       await expect
         .poll(async () => {
           const width = await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
@@ -394,8 +365,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Right side defaults: Todos, Stash, Tasks (Usage and MCP hidden by default).
-      // Verify all three are visible AND vertically ordered top-to-bottom.
+      // Right side defaults are Todos, Stash, Tasks; Usage and MCP are hidden by default.
       const ids = [
         { sel: '[data-testid="panel-todos"]', name: 'todos' },
         { sel: '[data-testid="stash-empty"]', name: 'stash' },
@@ -410,7 +380,6 @@ test.describe('Layout', () => {
         })
         tops.push({ name, top })
       }
-      // Each subsequent panel must sit strictly below the previous one.
       for (let i = 1; i < tops.length; i++) {
         expect(tops[i].top, `${tops[i].name} below ${tops[i - 1].name}`).toBeGreaterThan(
           tops[i - 1].top,
@@ -423,10 +392,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Both todos and stash visible by default
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
 
-      // Get initial positions
       const _initialTodosTop = await page.locator('[data-testid="panel-todos"]').evaluate(el => {
         const group = el.closest('.dv-view')
         return group ? group.getBoundingClientRect().top : 0
@@ -437,14 +404,11 @@ test.describe('Layout', () => {
         return group ? group.getBoundingClientRect().top : 0
       })
 
-      // Close todos
       await toggleTodosPanel(page)
       await expect(page.locator('[data-testid="panel-todos"]')).not.toBeVisible()
 
-      // Reopen todos
       await openTodosPanel(page)
 
-      // Poll until order is correct (todos above stash)
       await expect
         .poll(async () => {
           const todosTop = await page.locator('[data-testid="panel-todos"]').evaluate(el => {
@@ -464,7 +428,6 @@ test.describe('Layout', () => {
   test.describe('Layout Persistence', () => {
     // SPEC: layout:save
     test('layout saved after panel toggle', async ({ page }) => {
-      // Track PATCH calls
       const patchCalls = []
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'PATCH') {
@@ -479,10 +442,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Toggle sessions panel
       await openSessionsPanel(page)
 
-      // Wait for debounce (poll until PATCH request completes)
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
       const resolved = resolveOpsPayload(patchCalls[patchCalls.length - 1])
       expect(resolved).toHaveProperty('session.layout')
@@ -490,7 +451,6 @@ test.describe('Layout', () => {
 
     // SPEC: layout:save
     test('layout debounced on rapid toggles', async ({ page }) => {
-      // Track PATCH calls
       const patchCalls = []
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'PATCH') {
@@ -505,21 +465,18 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Rapid toggles (3 times quickly)
       await toggleSessionsPanel(page)
       await toggleSessionsPanel(page)
       await toggleSessionsPanel(page)
 
-      // Wait for debounce (poll until at least one PATCH completes)
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
 
-      // Should have debounced to minimal saves (1-2, not 3)
+      // Debouncing should collapse 3 rapid toggles to 1-2 saves.
       expect(patchCalls.length).toBeLessThanOrEqual(2)
     })
 
     // SPEC: layout:save-content
     test('payload includes layout JSON', async ({ page }) => {
-      // Track PATCH calls
       let savedPayload = null
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'PATCH') {
@@ -534,13 +491,11 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Toggle panel to trigger save
       await openSessionsPanel(page)
 
-      // Wait for debounce (poll until PATCH request completes)
       await expect.poll(() => savedPayload).toBeTruthy()
 
-      // Verify payload structure (operation-based, resolved to nested object)
+      // The payload is operation-based; resolve it to a nested object before asserting.
       const resolved = resolveOpsPayload(savedPayload)
       expect(resolved).toHaveProperty('session.layout')
       expect(resolved).toHaveProperty('session.panelGroups')
@@ -550,7 +505,6 @@ test.describe('Layout', () => {
 
     // SPEC: layout:save-content
     test('payload includes saved panel widths', async ({ page }) => {
-      // Track PATCH calls
       let savedPayload = null
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'PATCH') {
@@ -565,10 +519,9 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for debounce (poll until initial layout save completes)
       await expect.poll(() => savedPayload).toBeTruthy()
 
-      // Verify panel widths are saved (right panel is open by default)
+      // Right panel is open by default, so its width should be in the initial save.
       const resolved = resolveOpsPayload(savedPayload)
       expect(resolved).toHaveProperty('session.panelGroups.right.width')
       expect(resolved.session.panelGroups.right.width).toBeGreaterThan(0)
@@ -576,7 +529,7 @@ test.describe('Layout', () => {
 
     // SPEC: layout:restore
     test('layout restored from server on load', async ({ page }) => {
-      // Prepare saved state with sessions panel open (schema v2)
+      // Fixture is schema v2, with the sessions panel open.
       const savedSession = loadFixture('layouts/sessions-open.json')
       savedSession.layout.panels.chat.title = '12345678'
 
@@ -592,7 +545,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The saved layout includes sessions panel in left.order - verify it's visible
+      // Fixture's left.order includes sessions.
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
     })
 
@@ -610,7 +563,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Default layout: chat visible, sessions on left, todos visible in right sidebar
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
@@ -629,7 +581,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Default layout should be used
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
@@ -644,16 +595,14 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Check title format: "[Session Name] | [Workspace] | Claudebox"
+      // Expected format: "[Session Name] | [Workspace] | Claudebox"
       const title = await page.title()
       expect(title).toContain('Claudebox')
-      // Title should use pipe delimiters
       expect(title).toContain('|')
     })
 
     // SPEC: notify:title-format
     test('title shows workspace when no session name', async ({ page }) => {
-      // Mock session without a name
       await mockAPI(page, {
         handlers: {
           getSessionStatus: async route => {
@@ -670,7 +619,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for title to update (session data needs to load)
+      // Title updates once session data finishes loading.
       await expect.poll(() => page.title()).toContain('my-project')
       const title = await page.title()
       expect(title).toContain('Claudebox')
@@ -688,7 +637,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Get initial stash panel width
       const getGroupWidth = () =>
         page.locator('[data-testid="stash-empty"]').evaluate(el => {
           const group = el.closest('.dv-view')
@@ -697,19 +645,15 @@ test.describe('Layout', () => {
       const initialWidth = await getGroupWidth()
       expect(initialWidth).toBeGreaterThan(0)
 
-      // Stash and Todos are grouped in right sidebar with tabs
+      // Stash and Todos share a tabbed group in the right sidebar.
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
 
-      // Double-click on stash tab - this should trigger maximize
       await stashTab.dblclick()
-      // Maximized panel should be significantly wider than initial
       await expect.poll(getGroupWidth).toBeGreaterThan(initialWidth * 1.5)
 
-      // Double-click again should restore
       await stashTab.dblclick()
 
-      // Verify panels are restored to approximately original width
       await expect
         .poll(async () => Math.abs((await getGroupWidth()) - initialWidth))
         .toBeLessThanOrEqual(20)
@@ -722,7 +666,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Get initial dimensions of right sidebar
       const getGroupWidth = () =>
         page.locator('[data-testid="stash-empty"]').evaluate(el => {
           const group = el.closest('.dv-view')
@@ -732,14 +675,10 @@ test.describe('Layout', () => {
       const initialWidth = await getGroupWidth()
       expect(initialWidth).toBeGreaterThan(0)
 
-      // Maximize
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await stashTab.dblclick()
-
-      // Unmaximize
       await stashTab.dblclick()
 
-      // Poll until width is restored (within tolerance)
       await expect
         .poll(async () => {
           const width = await getGroupWidth()
@@ -755,17 +694,13 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Verify todos panel is visible
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
 
-      // Find todos tab
       const todosTab = page.locator('.icon-tab').filter({ hasText: 'Todos' })
       await expect(todosTab).toBeVisible()
 
-      // Middle-click (button: 1 = middle mouse button)
       await todosTab.click({ button: 'middle' })
 
-      // Panel should close
       await expect(page.locator('[data-testid="panel-todos"]')).not.toBeVisible()
     })
 
@@ -784,7 +719,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Tab bar "+" button should be visible in chat group
       const newBtn = page.locator('[data-testid="header-new-session-btn"]')
       await expect(newBtn).toBeVisible()
       await expect(newBtn).toHaveAttribute(
@@ -792,7 +726,6 @@ test.describe('Layout', () => {
         'New session (Alt+Click or middle-click for new browser tab)',
       )
 
-      // Click to create new session
       await newBtn.click()
 
       await expect.poll(() => newSessionCalled).toBe(true)
@@ -806,16 +739,14 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Use the header-prefixed chevron testid to scope to the session-header-strip's
-      // split-button - the SessionsPanel hosts its own NewSessionSplitButton.
+      // The header-prefixed testid disambiguates from SessionsPanel's own similar-chevron button.
       const chevron = page.locator('[data-testid="header-new-session-chevron"]')
       await expect(chevron).toBeVisible()
       await expect(chevron).toHaveAttribute('title', 'More start options')
 
       await chevron.click()
 
-      // Header dropdown portals to <body> (so it escapes the right icon strip's
-      // stacking context and never gets clipped by side panels).
+      // Portaling to <body> escapes the icon strip's stacking context, so side panels never clip the dropdown.
       const dropdown = page.locator('.new-session-dropdown-portal')
       await expect(dropdown).toBeVisible()
       const portaledToBody = await dropdown.evaluate(el => el.parentElement === document.body)
@@ -834,33 +765,27 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Chat panel should be visible
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
 
-      // Toggle other panels to verify Chat remains visible
       await openSessionsPanel(page)
 
-      // Close other panels
       await toggleSessionsPanel(page)
       await expect(page.locator('[data-testid="panel-sessions"]')).not.toBeVisible()
 
-      // Chat panel should STILL be visible (cannot be closed)
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
 
-      // Verify Chat has no close button in its tab (if tab exists)
       const chatCloseBtn = page
         .locator('.dv-default-tab')
         .filter({ hasText: 'Chat' })
         .locator('.icon-tab-close')
       const closeCount = await chatCloseBtn.count()
-      expect(closeCount).toBe(0) // Chat tab should have no close button
+      expect(closeCount).toBe(0)
     })
   })
 
   test.describe('Width Persistence to Server', () => {
     // SPEC: layout:save-content
     test('panel width included in PATCH payload after toggle', async ({ page }) => {
-      // Track PATCH calls with their payloads
       const patchCalls = []
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'PATCH') {
@@ -875,14 +800,11 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Open sessions panel
       await toggleSessionsPanel(page)
       await openSessionsPanel(page)
 
-      // Wait for debounced save (poll until PATCH request completes)
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
 
-      // Verify left panel width is saved in PATCH payload (operation-based)
       const resolved = resolveOpsPayload(patchCalls[patchCalls.length - 1])
       expect(resolved).toHaveProperty('session.panelGroups.left.width')
       expect(resolved.session.panelGroups.left.width).toBeGreaterThan(0)
@@ -890,7 +812,7 @@ test.describe('Layout', () => {
 
     // SPEC: layout:restore
     test('saved width from server applied on panel open', async ({ page }) => {
-      // Mock ui-state with specific widths (schema v2)
+      // Schema v2 ui-state with specific widths.
       const savedSession = {
         panelGroups: {
           left: { width: 350, order: ['sessions'] },
@@ -910,10 +832,9 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Open sessions panel (which should use saved width)
       await openSessionsPanel(page)
 
-      // Poll until saved width is applied (should be non-trivial, based on saved 350)
+      // Saved width is 350, so the applied width should clear this floor easily.
       await expect
         .poll(async () => {
           return await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
@@ -945,17 +866,15 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Title should include session name
       await expect.poll(() => page.title()).toContain('My Important Task')
     })
 
     // SPEC: panel-session:rename
     test('session rename UI works correctly', async ({ page }) => {
-      // Track rename API calls
       let renameApiCalled = false
       let renamePayload = null
 
-      // Set up mockAPI first, then override with custom handler (Playwright uses LIFO)
+      // Playwright resolves routes LIFO, so this custom handler overrides mockAPI's default.
       await mockAPI(page, {
         handlers: {
           updateSession: async route => {
@@ -969,33 +888,24 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Open sessions panel
       await openSessionsPanel(page)
 
-      // Find the current session item
       const sessionItem = page.locator('[data-testid="session-item"]').first()
       await expect(sessionItem).toBeVisible()
 
-      // Click the pencil/edit button to start renaming
       const editBtn = sessionItem.locator('.sessions-edit-btn')
       await expect(editBtn).toBeVisible()
       await editBtn.click()
 
-      // Edit input should appear
       const editInput = sessionItem.locator('.sessions-edit-input')
       await expect(editInput).toBeVisible()
 
-      // Type new name
       await editInput.fill('My Renamed Task')
-
-      // Save the rename (press Enter)
       await editInput.press('Enter')
 
-      // Wait for API call (poll until rename API is called)
       await expect.poll(() => renameApiCalled).toBe(true)
       expect(renamePayload).toHaveProperty('name', 'My Renamed Task')
 
-      // Edit input should disappear after save
       await expect(editInput).not.toBeVisible()
     })
   })
@@ -1007,11 +917,9 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Both todos and stash visible by default in right sidebar
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
 
-      // Get initial positions to verify order
       const initialTodosTop = await page.locator('[data-testid="panel-todos"]').evaluate(el => {
         const group = el.closest('.dv-view')
         return group ? group.getBoundingClientRect().top : 0
@@ -1022,33 +930,25 @@ test.describe('Layout', () => {
         return group ? group.getBoundingClientRect().top : 0
       })
 
-      // Verify todos is above stash
       expect(initialTodosTop).toBeLessThan(stashTop)
 
-      // Find todos tab and drag it to create a floating/detached panel
       const todosTab = page.locator('.icon-tab').filter({ hasText: 'Todos' })
       await expect(todosTab).toBeVisible()
 
       const tabBox = await todosTab.boundingBox()
       if (tabBox) {
-        // Drag tab far from its position to detach it
+        // Drag the tab to the viewport center to detach it into a floating panel.
         await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2)
         await page.mouse.down()
-        // Drag to center of viewport to create floating panel
         const viewport = page.viewportSize()
         await page.mouse.move(viewport.width / 2, viewport.height / 2)
         await page.mouse.up()
 
-        // Now toggle todos panel off and on via icon
         await toggleTodosPanel(page)
         await toggleTodosPanel(page)
 
-        // Stash should still be visible and unaffected
+        // Toggling the detached panel must not disturb stash's position in the sidebar.
         await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
-
-        // The key assertion: toggling a panel that was detached
-        // should not break the sidebar order of remaining panels
-        // (stash should remain where it was, not be affected by todos detachment)
       }
     })
   })
@@ -1056,14 +956,10 @@ test.describe('Layout', () => {
   test.describe('Layout Auto-Copy', () => {
     // SPEC: layout:auto-copy
     test('new session inherits panel layout from most recent session', async ({ page }) => {
-      // Simulate Session A having a customized layout with sessions panel open on the left.
-      // When Session B loads, ui_state.py copies Session A's layout, so the GET
-      // for Session B returns Session A's saved layout (with sessions panel open).
+      // Simulates Session A's layout (sessions panel open). Session B has none of its own, so
+      // ui_state.py's server-side auto-copy returns Session A's saved layout for B's ui-state GET.
       const sessionALayout = loadFixture('layouts/sessions-open.json')
 
-      // Mock ui-state to return session A's layout for the new session B.
-      // This simulates the server-side auto-copy behavior in ui_state.py:
-      // when a new session has no layout, the server copies from the most recent session.
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
           await route.fulfill({ json: { global: {}, session: sessionALayout } })
@@ -1076,14 +972,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Session B should inherit Session A's layout, which had the sessions panel open.
-      // Verify that the sessions panel is visible (inherited from Session A).
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
-
-      // Verify chat panel is still visible (always present)
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
-
-      // Verify right sidebar panels are visible (inherited from Session A)
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
     })
@@ -1105,10 +995,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Verify sessions panel is visible (inherited)
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
-      // Verify the inherited left panel width is applied (greater than minimum)
       await expect
         .poll(async () => {
           return await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
@@ -1121,8 +1009,6 @@ test.describe('Layout', () => {
 
     // SPEC: layout:auto-copy
     test('new session without previous layout gets default layout', async ({ page }) => {
-      // When there is no previous session to copy from, the server returns empty session state.
-      // The app should fall back to the default layout.
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
           await route.fulfill({ json: { global: {}, session: {} } })
@@ -1135,7 +1021,6 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Default layout: chat visible, sessions on left, right panels visible
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
@@ -1145,7 +1030,6 @@ test.describe('Layout', () => {
     test('inherited layout triggers save for new session', async ({ page }) => {
       const sessionALayout = loadFixture('layouts/sessions-open.json')
 
-      // Track PATCH calls to verify the new session saves its own layout
       const patchCalls = []
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
@@ -1160,10 +1044,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for the new session to save its own layout (debounced PATCH)
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
 
-      // Verify the saved payload includes layout data (session B now owns its layout)
       const resolved = resolveOpsPayload(patchCalls[patchCalls.length - 1])
       expect(resolved).toHaveProperty('session.layout')
       expect(resolved).toHaveProperty('session.panelGroups')
@@ -1178,14 +1060,11 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Get initial chat width
       const initialWidth = await page.locator('[data-testid="panel-chat"]').evaluate(el => {
         return el.getBoundingClientRect().width
       })
 
-      // Close all default-open panels:
-      //   left:  sessions, bookmarks, boards
-      //   right: todos, stash, tasks
+      // Close every default-open panel: left (sessions, bookmarks, boards), right (todos, stash, tasks).
       await toggleSessionsPanel(page)
       await page.keyboard.press('Alt+5') // bookmarks
       await page.keyboard.press('Alt+6') // boards
@@ -1193,7 +1072,6 @@ test.describe('Layout', () => {
       await toggleStashPanel(page)
       await page.keyboard.press('Alt+4') // tasks
 
-      // Poll until chat expands (larger width)
       await expect
         .poll(async () => {
           return await page.locator('[data-testid="panel-chat"]').evaluate(el => {
@@ -1210,21 +1088,17 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Get initial todos panel width
       const todosPanel = page.locator('[data-testid="panel-todos"]')
       await expect(todosPanel).toBeVisible()
       const initialWidth = await todosPanel.evaluate(el => el.getBoundingClientRect().width)
 
-      // Close both right panels
       await toggleTodosPanel(page)
       await expect(todosPanel).not.toBeVisible()
       await toggleStashPanel(page)
       await expect(page.locator('[data-testid="stash-empty"]')).not.toBeVisible()
 
-      // Reopen todos
       await openTodosPanel(page)
 
-      // Poll until width is approximately restored
       await expect
         .poll(async () => {
           const restoredWidth = await todosPanel.evaluate(el => el.getBoundingClientRect().width)
@@ -1234,29 +1108,24 @@ test.describe('Layout', () => {
     })
 
     // SPEC: layout:panel-drag-invalidate
-    // MOCK-LIMITED: Dockview's drag-to-reposition and sash setPointerCapture() cannot
-    // be fully simulated via Playwright. Verify resize infrastructure exists and that
-    // panels can be dragged (sash elements with correct cursor).
+    // MOCK-LIMITED: Dockview's drag-to-reposition and sash setPointerCapture() aren't simulable in Playwright,
+    // so this only verifies resize infrastructure exists (sash elements with the correct cursor).
     test('resize sashes exist for panel width adjustment', async ({ page }) => {
       await mockAPI(page)
       await mockSSE(page)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Ensure a panel is visible (confirming split layout is active)
       const todosPanel = page.locator('[data-testid="panel-todos"]')
       await expect(todosPanel).toBeVisible()
 
-      // Dockview sash elements should exist between split groups
       const sashes = page.locator('.dv-sash')
       const sashCount = await sashes.count()
       expect(sashCount).toBeGreaterThan(0)
 
-      // Sash should have ew-resize cursor (horizontal split between chat and panel)
       const cursor = await sashes.first().evaluate(el => getComputedStyle(el).cursor)
       expect(cursor).toMatch(/ew-resize|col-resize|pointer/)
 
-      // Panel tabs should exist for dragging (dockview tab elements)
       const panelTabs = page.locator('.dv-tab')
       expect(await panelTabs.count()).toBeGreaterThan(0)
     })
@@ -1268,7 +1137,6 @@ test.describe('Layout', () => {
     test('tab bar background is a horizontal gradient from default to accent color', async ({
       page,
     }) => {
-      // Mock ui-state to return a workspace accent color
       await mockAPI(page, {
         handlers: {
           getUIState: async route => {
@@ -1305,10 +1173,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Sessions panel is open by default
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
-      // Get the initial sessions panel width
       const getSessionsWidth = () =>
         page.locator('[data-testid="panel-sessions"]').evaluate(el => {
           const group = el.closest('.dv-view')
@@ -1317,12 +1183,11 @@ test.describe('Layout', () => {
       const initialWidth = await getSessionsWidth()
       expect(initialWidth).toBeGreaterThan(0)
 
-      // Double-click a tab to maximize the center panel
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
       await stashTab.dblclick()
 
-      // Sessions panel should be hidden while maximized (width collapsed to 0 or not visible)
+      // The width read can throw once the panel unmounts while maximized; treat that as 0.
       await expect
         .poll(async () => {
           try {
@@ -1333,10 +1198,9 @@ test.describe('Layout', () => {
         })
         .toBeLessThan(5)
 
-      // Press Alt+1 (toggle sessions) while maximized
+      // Alt+1 toggles sessions.
       await page.keyboard.press('Alt+1')
 
-      // Layout should unmaximize - sessions panel should be visible again
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
       await expect.poll(getSessionsWidth).toBeGreaterThan(50)
     })
@@ -1350,15 +1214,12 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // MCP panel is closed by default
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
 
-      // Double-click a tab to maximize the center panel
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
       await stashTab.dblclick()
 
-      // Wait for maximize to take effect (sessions panel collapses)
       await expect
         .poll(async () => {
           try {
@@ -1372,13 +1233,12 @@ test.describe('Layout', () => {
         })
         .toBeLessThan(5)
 
-      // Press Alt+8 (toggle MCP) while maximized
+      // Alt+8 toggles MCP.
       await page.keyboard.press('Alt+8')
 
-      // Layout should unmaximize AND MCP panel should now be visible
       await expect(page.locator('[data-testid="panel-mcp"]')).toBeVisible()
 
-      // Sessions panel should also be restored (it was open before maximize)
+      // Sessions was open before maximize, so unmaximizing should restore it too.
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
     })
 
@@ -1392,11 +1252,9 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // MCP is hidden by default (SPEC §1.6) - choose it for the closed-panel case.
+      // MCP is hidden by default (SPEC section 1.6) - choose it for the closed-panel case.
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
 
-      // Hovering the MCP icon (closed panel) eventually shows the floating
-      // preview after the hover-intent delay.
       await page.locator('[data-testid="icon-mcp"]').hover()
       await expect(page.locator('.floating-panel')).toBeVisible()
     })
@@ -1410,9 +1268,8 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Maximize so the floating preview can render on hover. Use side-panel
-      // collapse as the maximize signal - dockview's `dv-groupview-maximized`
-      // class isn't always set in mocked env.
+      // Maximizing lets the floating preview render on hover; side-panel collapse stands in as the
+      // maximize signal since dockview's dv-groupview-maximized class isn't always set when mocked.
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
       await stashTab.dblclick()
@@ -1429,10 +1286,8 @@ test.describe('Layout', () => {
         })
         .toBeLessThan(5)
 
-      // At the default Desktop Chrome viewport (1280×720) the ratio
-      // 0.6 × 1280 = 768 falls below the 800px floor, so the post-fix formula
-      // resolves to 800px. The pre-fix formula resolves to
-      // max(300, 1280 × 0.4) = 512px - distinct enough to differentiate.
+      // Default Desktop Chrome viewport (1280x720): 0.6x1280=768 is below the 800px floor, so the
+      // formula resolves to 800; a naive max(300, 0.4x viewport) would give 512, ruled out below.
       await page.locator('.icon-strip-right [data-testid="icon-logs"]').hover()
       await expect(page.locator('.floating-panel')).toBeVisible()
       const actual = await page.evaluate(() =>
@@ -1451,15 +1306,12 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Logs strip starts closed
       await expect(page.locator('[data-testid="bottom-panel-container"]')).not.toBeVisible()
 
-      // Double-click a tab to maximize the center panel
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
       await stashTab.dblclick()
 
-      // Wait for maximize (sessions panel collapses)
       await expect
         .poll(async () => {
           try {
@@ -1497,7 +1349,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Pin button in chat control bar (use .panel-control-btn to distinguish from sessions panel pin)
+      // .panel-control-btn scopes to the chat control bar, distinct from the sessions panel's pin button.
       const pinBtn = page.locator('.panel-control-btn[title="Pin session"]')
       await expect(pinBtn).toBeVisible()
     })
@@ -1509,23 +1361,18 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Initially unpinned (use .panel-control-btn to target control bar specifically)
       const pinBtn = page.locator('.panel-control-btn[title="Pin session"]')
       await expect(pinBtn).toBeVisible()
       await expect(pinBtn).not.toHaveClass(/pressed/)
 
-      // Click to pin
       await pinBtn.click()
 
-      // Should now be pressed and title changed
       const pinnedBtn = page.locator('.panel-control-btn[title="Unpin session"]')
       await expect(pinnedBtn).toHaveClass(/pressed/)
       await expect(pinnedBtn).toHaveAttribute('aria-pressed', 'true')
 
-      // Click again to unpin
       await pinnedBtn.click()
 
-      // Should return to unpinned state
       const unpinnedBtn = page.locator('.panel-control-btn[title="Pin session"]')
       await expect(unpinnedBtn).toBeVisible()
       await expect(unpinnedBtn).not.toHaveClass(/pressed/)
@@ -1538,8 +1385,7 @@ test.describe('Layout', () => {
     test('header buttons tint toward brightened workspace accent on hover when color is set', async ({
       page,
     }) => {
-      // Override ui-state to seed a workspace accent color. The latest matching
-      // route wins; outer beforeEach already registered the default mock.
+      // Overrides the outer beforeEach's default mock; the latest matching Playwright route wins.
       await page.route(/\/api\/workspaces\/[^/]+\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
           await route.fulfill({
@@ -1615,8 +1461,7 @@ test.describe('Layout', () => {
         await page.waitForTimeout(200)
       }
 
-      // The new-tab path should have triggered window.open, not modified the
-      // originating tab's session view.
+      // The new-tab path triggers window.open rather than modifying this tab's session view.
       const opened = await page.evaluate(() => window.__opened || [])
       expect(opened.length).toBeGreaterThan(0)
     })

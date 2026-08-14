@@ -37,15 +37,20 @@ export default defineConfig({
     {
       name: 'mobile',
       testMatch: ['**/mobile.spec.js'],
-      // Pixel 5 is Chromium-based — keeps the install footprint at chromium-only
-      // while still providing a phone viewport (393×851) and hasTouch.
+      // Pixel 5 is Chromium-based, keeping the install footprint at chromium-only
+      // while still providing a phone viewport (393x851) and hasTouch.
       use: { ...devices['Pixel 5'], hasTouch: true },
     },
   ],
 
+  // The build is NOT here on purpose - it belongs to the `test-e2e-app` recipe.
+  // This command runs only when Playwright decides to start a server, so with
+  // `reuseExistingServer` a leftover `serve` would skip the build entirely and
+  // the suite would score whatever bundle was left in dist/. Serving alone is
+  // safe to skip: `serve` reads from disk per request, so a server started by
+  // an earlier run picks up a freshly built bundle.
   webServer: {
-    command:
-      'npm --prefix ../../src/claudebox_frontend run build && npx serve -s -l 5173 -L -n -u --no-port-switching ../../src/claudebox_frontend/dist',
+    command: 'npx serve -s -l 5173 -L -n -u --no-port-switching ../../src/claudebox_frontend/dist',
     url: 'http://localhost:5173',
     timeout: 120 * 1000,
     reuseExistingServer: !process.env.CI,

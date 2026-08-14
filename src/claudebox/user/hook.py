@@ -14,13 +14,7 @@ from ..core import serialization
 
 
 class HookRequest(Request):
-    """Request context for hook invocations with parsed hook data.
-
-    Attributes:
-        data: The raw hook payload dictionary from Claude Code.
-        hook_event_name: Name of the hook event (e.g., 'PreToolUse', 'Stop').
-        transcript_path: Path to the session transcript file.
-    """
+    """Request context for a hook invocation, parsed from the raw payload dict."""
 
     def __init__(self, data: dict):
         super().__init__(session_id=data["session_id"])
@@ -31,12 +25,7 @@ class HookRequest(Request):
 
 
 class HookResponse:
-    """Builder for hook JSON response with context, messages, and stop control.
-
-    Supports adding context for the model, displaying messages to the user,
-    setting environment variables, and stopping execution. Serialized to JSON
-    via __str__.
-    """
+    """Builder for the hook JSON response; serialized to JSON via __str__."""
 
     def __init__(self, request: HookRequest):
         self._request = request
@@ -114,9 +103,8 @@ class HookResponse:
 def hook(__fn, /) -> Callable:
     """Decorator for Claude Code hook functions.
 
-    Reads JSON from stdin, creates HookRequest/HookResponse, calls the decorated
-    function with 'request' and/or 'response' kwargs based on signature, and
-    prints the response JSON.
+    Reads JSON from stdin, builds HookRequest/HookResponse, calls the decorated function with
+    'request' and/or 'response' kwargs based on its signature, then prints the response JSON.
 
     Example:
         @hook

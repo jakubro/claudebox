@@ -1,0 +1,12 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Say hello","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Hello! How can I help you today?","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Show me a function","ts":"2025-01-18T12:00:03Z","turn_id":"turn_002","id":"evt_004","primary":true}
+{"type":"assistant","subtype":"text","content":"```python\ndef main() -> None:\n    pass\n```","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","ts":"2025-01-18T12:00:05Z","id":"evt_006","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Show me a table","ts":"2025-01-18T12:00:06Z","turn_id":"turn_003","id":"evt_007","primary":true}
+{"type":"assistant","subtype":"text","content":"<table>\n<tr><td>a</td><td>b</td></tr>\n</table>","ts":"2025-01-18T12:00:07Z","id":"evt_008","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_003","ts":"2025-01-18T12:00:08Z","id":"evt_009","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Show me a picture","ts":"2025-01-18T12:00:09Z","turn_id":"turn_004","id":"evt_010","primary":true}
+{"type":"assistant","subtype":"text","content":"![](cat.png)","ts":"2025-01-18T12:00:10Z","id":"evt_011","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_004","ts":"2025-01-18T12:00:11Z","id":"evt_012","primary":false,"is_human":false}

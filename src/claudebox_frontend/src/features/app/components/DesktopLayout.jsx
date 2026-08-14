@@ -6,7 +6,6 @@ import useAppRefs from '../hooks/useAppRefs'
 import useDockviewLayout from '../hooks/useDockviewLayout'
 import DesktopLayoutBody from './DesktopLayoutBody'
 
-/** Render the full desktop dockview layout with providers, panels, shortcuts, and floating panels. */
 export default function DesktopLayout() {
   const [showHelpOverlay, setShowHelpOverlay] = useState(false)
   const { jumpRefs, newSessionRefs, scrollIntentRefs, newSessionRef, newSessionInNewTabRef } =

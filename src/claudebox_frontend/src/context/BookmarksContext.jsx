@@ -8,10 +8,8 @@ import { useWorkspace } from './WorkspaceContext'
 const BookmarksContext = createContext(null)
 
 /**
- * Provide a single bookmark state instance shared by all consumers.
- *
- * Ensures ChatPanel and BookmarksPanel use the same state - toggling a bookmark
- * in the chat immediately reflects in the bookmarks panel and vice versa.
+ * Ensures ChatPanel and BookmarksPanel share state - toggling a bookmark in one immediately
+ * reflects in the other.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.

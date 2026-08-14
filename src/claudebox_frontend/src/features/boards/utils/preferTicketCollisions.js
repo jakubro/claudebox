@@ -5,10 +5,9 @@ import { pointerWithin, rectIntersection } from '@dnd-kit/core'
 /**
  * Prefer ticket droppables over their containing cells when resolving collisions.
  *
- * Tickets are SortableContext children fully contained within cell droppables;
- * default rectIntersection / closestCenter tie-break to the cell because nested
- * rects produce equal scores. Ticket IDs are file paths (no `:`); cell/header
- * IDs always contain `:`.
+ * Tickets are SortableContext children fully contained within cell droppables, so default
+ * rectIntersection/closestCenter tie-break to the cell (nested rects score equal). Ticket
+ * IDs are file paths (no `:`); cell/header IDs always contain `:`.
  *
  * @param {object} args - dnd-kit CollisionDetection args.
  * @returns {Array} Filtered collision candidates.

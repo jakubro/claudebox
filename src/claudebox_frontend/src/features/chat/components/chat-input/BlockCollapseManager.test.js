@@ -1,9 +1,14 @@
 /** Tests for BlockCollapseManager collapse/expand operations. */
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import BlockCollapseManager from './BlockCollapseManager'
 
 describe('BlockCollapseManager', () => {
+  // Id counter is shared across manager instances - rewind so expected ids stay test-order independent.
+  beforeEach(() => {
+    BlockCollapseManager.resetGlobalCounterForTests()
+  })
+
   describe('collapseLocal', () => {
     it('collapses block enclosing cursor', () => {
       const m = new BlockCollapseManager()

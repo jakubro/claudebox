@@ -16,14 +16,11 @@ test.describe('Tasks Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Tasks is visible by default
     await expect(page.locator('[data-testid="panel-tasks"]')).toBeVisible()
 
-    // Press Alt+4 to close
     await page.keyboard.press('Alt+4')
     await expect(page.locator('[data-testid="panel-tasks"]')).not.toBeVisible()
 
-    // Press Alt+4 again to reopen
     await page.keyboard.press('Alt+4')
     await expect(page.locator('[data-testid="panel-tasks"]')).toBeVisible()
   })
@@ -94,12 +91,10 @@ test.describe('Tasks Panel', () => {
       },
     ])
 
-    // Wait for the task to be processed
     await expect(page.getByText('Running build...').first()).toBeVisible()
 
     await openTasksPanel(page)
 
-    // Should show task entry with description
     const taskEntry = page.locator('[data-testid="task-entry"]')
     await expect(taskEntry).toBeVisible()
     await expect(taskEntry.locator('.task-description')).toContainText('Build project')
@@ -130,15 +125,12 @@ test.describe('Tasks Panel', () => {
 
     await openTasksPanel(page)
 
-    // Switch to "All" filter
     await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
 
-    // Click the task entry
     const taskEntry = page.locator('[data-testid="task-entry"]').first()
     await expect(taskEntry).toBeVisible()
     await taskEntry.click()
 
-    // The tool block with matching data-tool-use-id should exist in chat
     const toolBlock = page.locator('[data-tool-use-id="task_bg_001"]')
     await expect(toolBlock).toBeVisible()
     // Scroll position and highlight verification is timing-dependent in mocks
@@ -193,7 +185,6 @@ test.describe('Tasks Panel', () => {
 
     await openTasksPanel(page)
 
-    // Task entry should have running status class
     const taskEntry = page.locator('[data-testid="task-entry"]')
     await expect(taskEntry).toHaveClass(/task-running/)
   })
@@ -205,7 +196,6 @@ test.describe('Tasks Panel', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // All three icons should be visible in the right strip
       const stashIcon = page.locator('[data-testid="icon-stash"]')
       const tasksIcon = page.locator('[data-testid="icon-tasks"]')
       const usageIcon = page.locator('[data-testid="icon-usage"]')
@@ -214,12 +204,11 @@ test.describe('Tasks Panel', () => {
       await expect(tasksIcon).toBeVisible()
       await expect(usageIcon).toBeVisible()
 
-      // Get vertical positions (top values) - icons are stacked vertically in the strip
+      // Icons are stacked vertically in the strip, so compare their top offsets.
       const stashTop = await stashIcon.evaluate(el => el.getBoundingClientRect().top)
       const tasksTop = await tasksIcon.evaluate(el => el.getBoundingClientRect().top)
       const usageTop = await usageIcon.evaluate(el => el.getBoundingClientRect().top)
 
-      // Tasks should be below Stash and above Usage
       expect(tasksTop).toBeGreaterThan(stashTop)
       expect(tasksTop).toBeLessThan(usageTop)
     })
@@ -233,11 +222,9 @@ test.describe('Tasks Panel', () => {
       const tasksIcon = page.locator('[data-testid="icon-tasks"]')
       await expect(tasksIcon).toBeVisible()
 
-      // Verify the button has the correct tooltip (title attribute includes "Tasks")
       const title = await tasksIcon.getAttribute('title')
       expect(title).toBe('Tasks (Alt+4)')
 
-      // Verify the icon contains an SVG element (lucide-react renders SVG)
       await expect(tasksIcon.locator('svg')).toBeVisible()
     })
 
@@ -252,11 +239,9 @@ test.describe('Tasks Panel', () => {
       // Switch to "All" filter to see all completed tasks
       await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
 
-      // Should have 3 task entries
       const taskEntries = page.locator('[data-testid="task-entry"]')
       await expect(taskEntries).toHaveCount(3)
 
-      // Oldest task (first) should appear first in the list
       const descriptions = await taskEntries.locator('.task-description').allTextContents()
       expect(descriptions[0]).toContain('First task - lint code')
       expect(descriptions[1]).toContain('Second task - run tests')
@@ -277,7 +262,7 @@ test.describe('Tasks Panel', () => {
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
 
-      // Description element should contain the text from the Task tool input.description
+      // Sourced from the Task tool input.description.
       const descriptionEl = taskEntry.locator('.task-description')
       await expect(descriptionEl).toBeVisible()
       await expect(descriptionEl).toContainText('Build project')
@@ -336,11 +321,9 @@ test.describe('Tasks Panel', () => {
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
 
-      // Duration element should be visible
       const durationEl = taskEntry.locator('.task-duration')
       await expect(durationEl).toBeVisible()
 
-      // Capture initial duration text
       const initialDuration = await durationEl.textContent()
 
       // Wait for the live-tick interval to update (poll instead of fixed timeout)
@@ -361,15 +344,12 @@ test.describe('Tasks Panel', () => {
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
 
-      // Duration element should be visible for completed task
       const durationEl = taskEntry.locator('.task-duration')
       await expect(durationEl).toBeVisible()
 
-      // Capture duration text
       const duration = await durationEl.textContent()
 
-      // Confirm duration does NOT tick (completed task has static duration)
-      // Poll multiple times to verify stability
+      // Poll to confirm the completed task's duration stays static (no live tick).
       await expect.poll(async () => durationEl.textContent(), { timeout: 2000 }).toBe(duration)
     })
   })
@@ -383,8 +363,7 @@ test.describe('Tasks Panel', () => {
 
       await openTasksPanel(page)
 
-      // Default "Active" filter - completed task should not show
-      // The fixture has a completed task, so Active filter should show "No tasks"
+      // The fixture has a completed task, so the default Active filter shows "No tasks".
       await expect(page.locator('.tasks-list-empty')).toBeVisible()
     })
 
@@ -396,10 +375,8 @@ test.describe('Tasks Panel', () => {
 
       await openTasksPanel(page)
 
-      // Switch to "All" filter
       await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
 
-      // Completed task should now be visible
       await expect(page.locator('[data-testid="task-entry"]')).toBeVisible()
     })
   })
@@ -444,7 +421,6 @@ test.describe('Tasks Panel', () => {
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
 
-      // Completed task should NOT have inline border-left-color style
       const borderColor = await taskEntry.evaluate(el => el.style.borderLeftColor)
       expect(borderColor).toBeFalsy()
     })
@@ -473,7 +449,6 @@ test.describe('Tasks Panel', () => {
 
       await openTasksPanel(page)
 
-      // Should show resuming state
       await expect(page.locator('[data-testid="panel-tasks"]')).toContainText('Resuming...')
     })
   })
@@ -495,7 +470,6 @@ test.describe('Tasks Panel', () => {
       const activeTab = page.locator('.tasks-filter-btn', { hasText: 'Active' })
       await expect(activeTab).toBeVisible()
 
-      // "All" badge should contain a number
       const allBadge = allTab.locator('.panel-list-item-count')
       await expect(allBadge).toBeVisible({ timeout: 10000 })
       const badgeText = await allBadge.textContent()
@@ -518,7 +492,6 @@ test.describe('Tasks Panel', () => {
       const taskEntry = page.locator('[data-testid="task-entry"]').first()
       await expect(taskEntry).toBeVisible()
 
-      // Killed should display as failed - same CSS class/border as failed tasks
       await expect(taskEntry).toHaveClass(/task-failed|task-error/)
     })
   })

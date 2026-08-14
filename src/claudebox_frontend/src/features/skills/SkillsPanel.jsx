@@ -7,7 +7,6 @@ import { useSessionData } from '../../context/SessionDataContext'
 import useCapabilities from '../../hooks/useCapabilities'
 import { CATEGORY_COLORS, categorizeCommands, flattenCommands, TABS } from '../../utils/categorize'
 
-/** Render panel showing available skills organized by category. */
 export default function SkillsPanel() {
   const { capabilities } = useCapabilities()
   const { commands } = useSessionData()
@@ -25,7 +24,6 @@ export default function SkillsPanel() {
     return cmds.map(entry => ({ ...entry, category: activeTab }))
   }, [categorized, activeTab])
 
-  // Count for tab badges
   const counts = useMemo(
     () => ({
       custom: categorized.custom.length,

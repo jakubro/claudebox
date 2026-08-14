@@ -6,10 +6,6 @@ const VARIANT_DETAIL = {
 }
 
 /**
- * Render confirmation modal for an action that interrupts the active response.
- *
- * Title is fixed ("Claude is working"); the detail line varies by `variant`.
- *
  * @param {object} props
  * @param {'stop'|'reload'} [props.variant='stop'] - Which action is about to interrupt the response.
  * @param {Function} props.onConfirm - Proceed with the destructive action.

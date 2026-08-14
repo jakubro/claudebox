@@ -1,5 +1,7 @@
 /** Droppable column cell within a swimlane band. */
 
+// audit-ignore-file: excessive-props
+
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useCallback, useMemo, useState } from 'react'
@@ -10,9 +12,7 @@ import TicketLink from './TicketLink'
 /**
  * Render a single column cell that accepts dropped ticket cards.
  *
- * Right-click opens a context menu with a single action that archives every
- * ticket at this state×swimlane intersection, with the affected counts and
- * names embedded in the label.
+ * Right-click opens a context menu that bulk-archives every ticket in this state x swimlane cell.
  *
  * @param {object} props
  * @param {string} props.columnKey - Column identifier (e.g. 'backlog').

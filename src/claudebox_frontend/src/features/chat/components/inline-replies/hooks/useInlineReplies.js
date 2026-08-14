@@ -1,22 +1,21 @@
 /** Inline-replies buffer: the unsent, editable, per-session-persisted replies (with durable anchors). */
 
 import { useCallback, useEffect, useRef } from 'react'
+import { INLINE_REPLIES_STORAGE_PREFIX } from '../../../../../config/storage'
 import useLocalStorage from '../../../../../hooks/useLocalStorage'
 
-// Stable default - a fresh [] each render would re-fire useLocalStorage's
-// key/default effect and loop. See useDrafts' DEFAULT_DRAFTS.
+// Stable default - a fresh [] per render re-fires useLocalStorage's key/default effect and loops.
+// See useDrafts' DEFAULT_DRAFTS for the same pattern.
 const EMPTY_UNSENT = [] // audit-ignore: misplaced-constant
 
 /**
- * Manage the inline-replies buffer for a session.
- *
- * The unsent buffer persists to localStorage per session (mirroring chat drafts) and carries each
- * reply's anchor; sent threads are re-hydrated from the transcript turns' inline replies, not here.
+ * Persists to localStorage per session (mirroring chat drafts) and carries each reply's anchor;
+ * sent threads are re-hydrated from the transcript turns' inline replies, not here.
  * @param {string|null} sessionId - Scopes the localStorage key; null disables persistence.
  */
 export default function useInlineReplies(sessionId) {
   const [unsent, setUnsent, flushUnsent] = useLocalStorage(
-    sessionId ? `inline-replies:${sessionId}` : null,
+    sessionId ? `${INLINE_REPLIES_STORAGE_PREFIX}${sessionId}` : null,
     EMPTY_UNSENT,
   )
 
@@ -57,8 +56,8 @@ export default function useInlineReplies(sessionId) {
     [setUnsent],
   )
 
-  // Drop blank replies, clear the unsent buffer, and return the anchored payload for the send.
-  // Anchor fields ride to the injected event (and reload); the backend strips them from the Claude wire.
+  // Drop blank replies, clear the unsent buffer, and return the anchored payload for the send;
+  // anchor fields ride to the injected event (and reload) - the backend strips them from the Claude wire.
   const markSent = useCallback(() => {
     const nonBlank = unsentRef.current.filter(r => r.response.trim())
 

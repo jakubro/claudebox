@@ -16,7 +16,7 @@
   border-radius: 4px;
   color: var(--text-primary);
   font-size: 13px;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .chat-input textarea {
@@ -27,9 +27,8 @@
   line-height: 1.4;
 }
 
-/* Static focus ring - no animation, so it never competes for the main thread
-   during streaming. The animated "working" cue is the compositor-driven overlay
-   (a transform-rotated conic gradient) layered over the border. */
+/* Static focus ring: no animation, so it never competes for the main thread during streaming;
+   the "working" cue is a separate compositor-driven overlay (transform-rotated conic gradient). */
 .chat-input input:focus,
 .chat-input textarea:focus {
   outline: none;
@@ -45,9 +44,8 @@
   cursor: not-allowed;
 }
 
-/* While the agent is working, keep the border visible but neutral (drop the green
-   focus glow) so the color-sweep overlay reads as the "working" cue over a solid
-   border box, not lines floating in blank space. Working wins over focus. */
+/* Working state drops the green focus glow so the color-sweep overlay is the sole "working" cue
+   over a solid border, not floating lines; working wins over focus. */
 .chat-input.status-working textarea:placeholder-shown {
   border-color: var(--border);
   box-shadow: none;
@@ -87,10 +85,8 @@
   min-width: 0;
 }
 
-/* Compositor-accelerated "working" accent: a conic gradient rotated via transform
-   (GPU), so it stays smooth while the main thread is saturated during streaming.
-   Layered on top of the textarea and masked to a 1px ring aligned with the border,
-   so the colour sweeps over the always-visible border rather than replacing it. */
+/* Compositor-accelerated "working" accent: a conic gradient rotated via transform (GPU) stays
+   smooth under main-thread load; masked to a 1px ring so colour sweeps over the border, not replacing it. */
 .textarea-border-overlay {
   position: absolute;
   inset: 0;
@@ -101,8 +97,8 @@
   opacity: 0;
   transition: opacity 0.25s ease;
   overflow: hidden;
-  /* Size query container so the gleam's travel keyframes can use the input's own
-     width/height (cqw/cqh) - keeps the transform path GPU-composited and adaptive. */
+  /* Size query container so the gleam's keyframes can use the input's own width/height (cqw/cqh),
+     keeping the transform path GPU-composited and adaptive. */
   container-type: size;
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -117,10 +113,8 @@
 .textarea-border-overlay::before {
   content: "";
   position: absolute;
-  /* Centre the gleam on the top-left border corner; the keyframes translate that
-     centre around the perimeter (via cqw/cqh) so it stays GPU-composited. Kept
-     SHORTER than the input height so it only ever touches one edge - a taller blob
-     lights the top and bottom rings at once, which reads as a symmetric pair. */
+  /* Centres the gleam on the top-left corner; keyframes translate it around the perimeter (cqw/cqh).
+     Kept SHORTER than the input height so it touches only one edge - taller lights both rings at once. */
   top: -19px;
   left: -65px;
   width: 130px;
@@ -136,8 +130,8 @@
   background: radial-gradient(closest-side, rgba(139, 92, 246, 0.85), rgba(139, 92, 246, 0));
 }
 
-/* Reveal the overlay for an empty idle-unfocused input (subtle gleam) and whenever
-   the agent is working (colour sweep). The solid border stays visible underneath. */
+/* Reveals the overlay for an empty idle-unfocused input (subtle gleam) or while working (colour sweep);
+   the solid border stays visible underneath. */
 .chat-input:not(.status-working) .chat-input-row:has(textarea:placeholder-shown:not(:focus))
   .textarea-border-overlay,
 .chat-input.status-working
@@ -146,9 +140,8 @@
   opacity: 1;
 }
 
-/* Move the gleam centre clockwise around the border corners. The long top/bottom
-   edges get most of the timeline (47% each) and the short sides the rest, so on a
-   wide input the speed reads as near-uniform. cqw/cqh adapt to the input size. */
+/* Moves the gleam clockwise around the border corners; long top/bottom edges get 47% of the timeline
+   each so a wide input still reads as near-uniform speed. cqw/cqh adapt to the input size. */
 @keyframes border-travel {
   0% {
     transform: translate(0, 0);

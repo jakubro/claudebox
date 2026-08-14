@@ -16,11 +16,8 @@ test.describe('Compaction Blocks', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Compaction block should be visible (use first() for strict mode)
     const compactionBlock = page.locator('.compaction-block').first()
     await expect(compactionBlock).toBeVisible()
-
-    // Should show "Conversation compacted"
     await expect(compactionBlock).toContainText('Conversation compacted')
   })
 
@@ -29,7 +26,6 @@ test.describe('Compaction Blocks', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Should have bullet (◎) for completed state
     const bullet = page.locator('.compaction-bullet').first()
     await expect(bullet).toBeVisible()
     await expect(bullet).toHaveText('◎')
@@ -41,12 +37,10 @@ test.describe('Compaction Blocks', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Result should show "NNK tokens, reason" in a single element
     const compactionBlock = page.locator('.compaction-block').first()
     const result = compactionBlock.locator('.compaction-result')
     await expect(result).toBeVisible()
     const resultText = await result.textContent()
-    // Matches pattern like "128K tokens, auto_compact"
     expect(resultText).toMatch(/\d+K tokens, \w+/)
   })
 
@@ -54,7 +48,6 @@ test.describe('Compaction Blocks', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Should have corner bracket (└)
     const corner = page.locator('.compaction-corner').first()
     await expect(corner).toBeVisible()
     await expect(corner).toHaveText('└')
@@ -68,16 +61,11 @@ test.describe('Compaction Blocks', () => {
     const compactionBlock = page.locator('.compaction-block').first()
     await expect(compactionBlock).toBeVisible()
 
-    // Initially, summary should not be visible
     await expect(compactionBlock.locator('.compaction-summary')).not.toBeVisible()
 
-    // Click to expand
     await compactionBlock.locator('.compaction-header').click()
 
-    // Summary should now be visible (if summary content exists)
     await expect(compactionBlock.locator('.compaction-summary')).toBeVisible()
-
-    // Should contain the summary text from fixture
     await expect(compactionBlock.locator('.compaction-summary')).toContainText(
       'Previous conversation covered',
     )
@@ -91,11 +79,9 @@ test.describe('Compaction Blocks', () => {
     const compactionBlock = page.locator('.compaction-block').first()
     await expect(compactionBlock).toBeVisible()
 
-    // Expand
     await compactionBlock.locator('.compaction-header').click()
     await expect(compactionBlock.locator('.compaction-summary')).toBeVisible()
 
-    // Collapse
     await compactionBlock.locator('.compaction-header').click()
     await expect(compactionBlock.locator('.compaction-summary')).not.toBeVisible()
   })
@@ -119,18 +105,15 @@ test.describe('Compaction In Progress', () => {
   // SPEC: tool:compaction-bullet
   test('shows spinning bullet while compacting', async ({ page }) => {
     await mockAPI(page)
-    // Use compact_start only fixture (no boundary yet)
+    // Fixture has compact_start with no paired boundary yet.
     await mockSSE(page, 'events/compaction-in-progress.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
     const compactionBlock = page.locator('.compaction-block').first()
     await expect(compactionBlock).toBeVisible()
-
-    // Should show "Compacting conversation..." text
     await expect(compactionBlock).toContainText('Compacting conversation...')
 
-    // Should have the Loader2 spinner (SVG with spinner class)
     const spinner = compactionBlock.locator('.compaction-pending .spinner')
     await expect(spinner).toBeVisible()
   })
@@ -139,10 +122,8 @@ test.describe('Compaction In Progress', () => {
   test('compaction indicator clears when next human turn arrives without boundary', async ({
     page,
   }) => {
-    // Reproduces the stuck-state recovery: SSE delivers compact_start without
-    // a paired compact_boundary (interrupt/error/SDK-skip), then a fresh human
-    // user event arrives. The reducer must detect the human turn boundary and
-    // clear isCompacting so the next pending Turn renders normally.
+    // Recovers from a stuck state: compact_start without a paired boundary (interrupt/error/SDK-skip)
+    // must still clear isCompacting once the next human turn arrives.
     await mockAPI(page)
     const sse = await createSSEController(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -167,8 +148,7 @@ test.describe('Compaction In Progress', () => {
       ts: '2025-01-18T12:00:02Z',
     })
 
-    // The reducer's isCompacting flag - exposed via __isCompacting test hook on
-    // the chat panel - must be false after the human turn arrives.
+    // isCompacting must go false once the human turn arrives, even without a compact_boundary.
     await expect
       .poll(async () => {
         return await page.evaluate(() => {

@@ -1,0 +1,6 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Look up the calendar tools and list events","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"ToolSearch","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"ToolSearch","tool_input":{"query":"select:gcal_list","max_results":2},"id":"evt_002","primary":false,"is_human":false}
+{"type":"user","subtype":"tool_result","content":"[{\"name\":\"mcp__gcal__list_events\",\"description\":\"List calendar events.\"}]","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"mcp__gcal__list_events","ts":"2025-01-18T12:00:03Z","tool_use_id":"tool_002","tool_name":"mcp__gcal__list_events","tool_input":{},"id":"evt_004","primary":false,"is_human":false}
+{"type":"user","subtype":"tool_result","content":"3 events","ts":"2025-01-18T12:00:04Z","tool_use_id":"tool_002","id":"evt_005","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:05Z","id":"evt_006","primary":false,"is_human":false}

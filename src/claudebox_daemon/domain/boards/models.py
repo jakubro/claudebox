@@ -14,12 +14,7 @@ from claudebox.extensions.tickets import (  # noqa: F401
 
 @dataclass
 class BoardUpdateEvent(DataClass):
-    """SSE event emitted when a board.yaml changes on disk.
-
-    Attributes:
-        workspace_id: Workspace containing the board.
-        board_id: Identifier of the changed board.
-    """
+    """SSE event emitted when a board.yaml changes on disk."""
 
     workspace_id: str
     board_id: str

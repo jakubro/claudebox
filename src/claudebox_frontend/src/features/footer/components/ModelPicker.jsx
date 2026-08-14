@@ -7,12 +7,8 @@ import useCapabilities from '../../../hooks/useCapabilities'
 import useDropdown from '../../../hooks/useDropdown'
 
 /**
- * Render a footer dropdown for selecting the active Claude model.
- *
- * Available models come from SessionDataContext (fetched once on connect).
- * Optimistically updates on selection; confirmed by next session refresh.
- * On welcome (no active session), `defaultValue` populates the display so
- * the picker shows what a new session would inherit.
+ * Claude model dropdown: models load once from SessionDataContext on connect and update
+ * optimistically on selection, confirmed next refresh. `defaultValue` previews inheritance pre-session.
  *
  * @param {object} props
  * @param {string|null} props.currentModel - Currently active model name.

@@ -1,8 +1,6 @@
 /* App shell — global foundation, theme, layout */
 
-/* Global rotation utility. Apply `.spin` to any element to rotate it
-   clockwise at one turn per `--spin-duration` (default 1s). Single source
-   of truth for spinner motion across all sites. */
+/* .spin: rotate clockwise, one turn per --spin-duration (default 1s) - single spinner-motion source. */
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -29,24 +27,33 @@
   --error: #f44747;
   --success: #22c55e;
 
-  /* Chrome button vertical metrics — single source of truth for the inset
-     hover-bg system used by panel headers, the session header strip, and
-     session-item icon buttons. Sized so 22 + 3 + 3 = 28px (the strip height). */
+  /* Pinned webfonts - the OS-stack tail is a fallback for the brief window before the self-hosted
+     font finishes loading, never the norm. */
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+    sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
+  /* Disables the mono face's calt, which merges `--`, `->` and `!=` into one glyph. */
+  font-variant-ligatures: no-contextual;
+
+  /* Chrome button metrics - single source for the inset hover-bg system (panel headers, session
+     strip, session-item icons); sized so 22+3+3=28px matches the strip height. */
   --chrome-btn-h: 22px;
   --chrome-btn-pad-y: 3px;
   --chrome-btn-mar-y: 3px;
   --chrome-btn-line-height: 1;
 
-  /* Brighter icon color for the four main-area-header buttons (stop, +,
-     chevron, workspace switcher) so they read as a coherent action set
-     against the strip's accent gradient. */
+  /* Brighter icon color for the four main-area-header buttons (stop, +, chevron, workspace
+     switcher) so they read as a coherent action set against the strip's accent gradient. */
   --header-icon-color: var(--text-primary);
 }
 
-/* Shared chrome-icon-button metrics for the sessions panel header and
-   per-row icon buttons. Centralised here to avoid duplication between
-   SessionsPanel.css and SessionItem.css; per-component CSS keeps only
-   its own color/hover specifics. */
+/* Shared chrome-icon-button metrics for the sessions panel header and per-row icon buttons -
+   centralised here to avoid duplication between SessionsPanel.css and SessionItem.css; each
+   component's CSS keeps only its own color/hover specifics. */
 .sessions-new,
 .sessions-refresh,
 .sessions-new-chevron,
@@ -84,11 +91,21 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* Form controls don't inherit the body font by default in Chromium - without this, a screenshot
+   would show the OS's own control font. The UA shorthand also resets the ligature setting,
+   hence the second declaration. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-variant-ligatures: inherit;
 }
 
 /* Dockview theme overrides */

@@ -1,8 +1,7 @@
 """End-to-end behavioral tests for ``claudebox prune``.
 
-Real-binary surface: subprocess exec paths through fake podman. The fake bin
-records every invocation; the test asserts the CLI shelled out to the
-expected prune sub-commands without a Python traceback.
+Real-binary surface: subprocess exec paths through fake podman.
+The fake bin records every invocation; the CLI shells to the expected sub-commands without a traceback.
 """
 
 import pytest
@@ -23,9 +22,7 @@ class TestPrunePartialFailure:
         assert "stale" in result.stdout or "stale" in result.stderr
 
     def test_prune_no_python_traceback(self, run_claudebox, record_dir) -> None:
-        # Fake podman returns canned output for `image prune` and `container prune`.
-        # The contract: no Python traceback regardless of canned outcome; the CLI
-        # records both calls to the fake's records log.
+        # Fake podman returns canned output for `image prune`/`container prune`; no traceback, both calls logged.
         result = run_claudebox(["prune"], timeout=60)
         assert "Traceback" not in result.stderr
 

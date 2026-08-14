@@ -26,9 +26,18 @@ root = true
 [network]
 #mode = "slirp4netns:allow_host_loopback=true"
 
+## Nested rootless containers
+[containers]
+#nested = true
+
 ## Environment variables passed to container
 [env]
 #CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1
+
+## IDE integration
+[editor]
+## URI template for "open in IDE" tool-block affordances.
+# url_template = "jetbrains://idea/navigate/reference?project=myProject&path={path}:{line}"
 
 ###############################################################################
 ## LangGraph runtime (alternative to the default Claude Agent SDK)            #
@@ -37,25 +46,41 @@ root = true
 
 [langgraph]
 ## Model in LangChain's "provider:model-id" form (init_chat_model convention)
-#model = "anthropic:claude-sonnet-4-5"
+#model = "anthropic:claude-opus-5"
 ## Pin the context window for models outside the curated table
 #max_tokens_override = 65536
 
 ## Per-provider knobs land under [langgraph.<provider>] and are forwarded
-## verbatim to the underlying Chat<provider> constructor.
+## verbatim to the underlying Chat<provider> constructor. Reasoning is one of
+## them: each provider spells it differently, and the transcript shows a model's
+## reasoning only where the provider is asked to return it.
 
 [langgraph.ollama]
 #base_url = "http://host.containers.internal:11434"   # Ollama on the host
+#reasoning = true   # surface a reasoning model's thinking in the transcript
+
+[langgraph.anthropic]
+## No required knobs - ANTHROPIC_API_KEY is resolved from the shell.
+#thinking = { type = "adaptive" }   # extended thinking, depth chosen per request
 
 [langgraph.openai]
 ## Local OpenAI-compatible server (vLLM / LM Studio / llama.cpp)
 #base_url = "http://127.0.0.1:8000/v1"
 #probe_on_connect = true   # opt-in /v1/models pre-flight at session start
+#reasoning_effort = "high"   # o-series reasoning depth: low | medium | high
 
 ## Per-model cost override (USD per million tokens) for models the curated
 ## price table does not carry.
 [langgraph.cost]
 #"my-custom-model:7b" = { input = 0.5, output = 1.5 }
+
+## Profile hook scripts, keyed by lifecycle event. Each runs with the Claude Code hook
+## payload on stdin and may return `hookSpecificOutput.additionalContext`, which is placed
+## in front of the model on the session's first turn. Relative paths resolve against the
+## installed profile directory. Omit the section to use the conventional path
+## (`hooks/session_start.py`) when it exists.
+[langgraph.hooks]
+#session_start = "hooks/session_start.py"
 
 ## Web-search backend for the web_search tool
 [langgraph.web_search]

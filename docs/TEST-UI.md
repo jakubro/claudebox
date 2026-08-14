@@ -58,7 +58,9 @@ All commands run from `lib/` via `just`. The test venv is injected via `UV_PROJE
 
 Starts the test environment. Kills any existing instance first. Blocks until Ctrl-C.
 
-**Prerequisites**: `just install-py` (installs Python deps into container-local venv). Playwright and Chrome are pre-installed in the container image.
+**Prerequisites**: `just install-py` (installs Python deps into container-local venv). Google Chrome ships in the container image at `/usr/bin/google-chrome`, which is what harness scripts get from `channel="chrome"`; `start.sh` installs Playwright itself into the harness venv.
+
+The image also ships a Playwright of its own with matching browser builds, but `lib/e2e/app` pins its own `@playwright/test` and each Playwright release demands its own browser build. When the two versions differ, the image's builds do not satisfy the pinned one and the Playwright suite fails with `Executable doesn't exist at .../chromium_headless_shell-<build>`. Run `just install-e2e-app` to fetch the build the pinned version wants - see GUIDELINES.md §0.
 
 ### `just test-ui-stop`
 
@@ -177,6 +179,9 @@ Check `cat /tmp/claudebox-test/daemon.log` for errors. Common causes: missing de
 
 **Playwright or Chrome not found**
 Run `just install-py` to sync the test venv. Chrome is pre-installed in the container image — if missing, the container image needs rebuilding.
+
+**`Executable doesn't exist at .../chromium_headless_shell-<build>`**
+The pinned `@playwright/test` in `lib/e2e/app` wants a browser build the container image does not carry (the image installs the builds for its own Playwright version). Run `just install-e2e-app` to download the matching build. Expect this after any bump to either Playwright version.
 
 **Screenshots are blank or show wrong state**
 Ensure the test-UI is fully ready before capturing. Add `page.wait_for_timeout(3000)` after navigation. Check that Vite has finished compiling (`daemon.log` shows "ready in" message).

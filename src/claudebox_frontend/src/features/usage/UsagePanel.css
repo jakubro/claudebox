@@ -28,6 +28,6 @@
 }
 
 .usage-cost {
-  font-family: monospace;
+  font-family: var(--font-mono);
   text-align: right;
 }

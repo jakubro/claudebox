@@ -12,12 +12,12 @@ if TYPE_CHECKING:
     from .session.session import Session
 
 
-def ensure_tmp(session: "Session") -> None:
-    """Ensure /tmp symlinks to session temp directory.
+# The container-wide temp path this module manages.
+TMP_PATH = Path("/tmp")
 
-    No-op if suppressed via CLAUDEBOX_NO_TMP_REMAP env var, or already
-    pointing to the correct target.
-    """
+
+def ensure_tmp(session: "Session") -> None:
+    """Ensure /tmp symlinks to session temp directory; no-op if CLAUDEBOX_NO_TMP_REMAP is set or already correct."""
 
     if os.environ.get("CLAUDEBOX_NO_TMP_REMAP") == "1":
         return
@@ -25,7 +25,7 @@ def ensure_tmp(session: "Session") -> None:
     dst = session.temp_dir
     touch_dir(dst)
 
-    tmp = Path("/tmp")
+    tmp = TMP_PATH
 
     # Idempotent: skip if already pointing to correct destination
     if tmp.is_symlink():
@@ -35,26 +35,34 @@ def ensure_tmp(session: "Session") -> None:
         except OSError:
             pass
 
-    # Remove and recreate
     _remove_tmp()
     tmp.symlink_to(dst)
 
 
 def restore_tmp() -> None:
-    """Restore /tmp as regular empty directory."""
+    """Restore /tmp as regular empty directory; no-op if CLAUDEBOX_NO_TMP_REMAP is set or /tmp is not our symlink."""
 
-    tmp = _remove_tmp()
+    if os.environ.get("CLAUDEBOX_NO_TMP_REMAP") == "1":
+        return
+
+    tmp = TMP_PATH
+
+    # A /tmp we did not create belongs to another session; removing it destroys their files.
+    if not tmp.is_symlink():
+        return
+
+    tmp.unlink(missing_ok=True)
     touch_dir(tmp)
 
 
 def _remove_tmp() -> Path:
-    """Remove /tmp whether symlink or directory."""
+    """Remove /tmp whether symlink or directory - ensure_tmp owns the replacement."""
 
-    tmp = Path("/tmp")
+    tmp = TMP_PATH
 
     if tmp.is_symlink():
         tmp.unlink(missing_ok=True)
     else:
-        shutil.rmtree("/tmp", ignore_errors=True)
+        shutil.rmtree(tmp, ignore_errors=True)
 
     return tmp

@@ -16,8 +16,7 @@ const mockWorkspace = { workspaceId: 'ws-1' }
 vi.mock('../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => mockRouting,
 }))
-// useSessionsList returns the SessionsContext value object - consumers
-// destructure `{ sessions }` from it.
+// useSessionsList returns { sessions }, so the mock must match that shape.
 vi.mock('../../context/SessionsContext', () => ({
   useSessionsList: () => ({ sessions: mockSessions }),
 }))
@@ -70,7 +69,6 @@ describe('ContainerRow', () => {
 
     const nameCell = document.querySelector('.containers-session-name')
     expect(nameCell.textContent).toBe('')
-    // No '(unnamed)' placeholder anywhere on the row.
     expect(screen.queryByText('(unnamed)')).not.toBeInTheDocument()
   })
 
@@ -130,7 +128,6 @@ describe('ContainerRow', () => {
     render(<ContainerRow container={baseContainer({ session_id: 'sess-abc12345-xyz' })} />)
 
     const cell = document.querySelector('.containers-session-id')
-    // visible text is the 8-char prefix.
     expect(cell.textContent).toBe('sess-abc')
   })
 

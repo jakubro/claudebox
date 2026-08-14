@@ -17,7 +17,6 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should show empty state message
       await expect(page.getByText('Waiting for messages...')).toBeVisible()
     })
   })
@@ -29,56 +28,64 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should have turn container with user + assistant messages
       const turn = page.locator('.turn-container').first()
       await expect(turn).toBeVisible()
 
-      // Turn should contain both user and assistant content
       await expect(page.getByText('Hello Claude').first()).toBeVisible()
       await expect(page.getByText('Hello! How can I help you today?').first()).toBeVisible()
     })
   })
 
-  test.describe('Lazy Paint', () => {
-    // SPEC: chat:lazy-paint
-    test('turns use content-visibility for off-screen paint skipping', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
+  test.describe('Windowed Rendering', () => {
+    // SPEC: chat:virtualized-render
+    test('only the turns near the viewport are present in the page', async ({ page }) => {
+      await mockSSE(page, 'events/long-conversation.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
+      await expect(page.locator('.turn-container').first()).toBeVisible()
 
-      const turn = page.locator('.turn-container').first()
-      await expect(turn).toBeVisible()
+      const counts = await page.evaluate(() => ({
+        rendered: document.querySelectorAll('[data-testid="turn-container"]').length,
+        userMessages: document.querySelectorAll('[data-testid="message-user"]').length,
+      }))
 
-      // Browser opts the turn into off-screen paint skipping via the
-      // content-visibility property. Verify the computed style is 'auto'
-      // (the contract - without it, large sessions stall on initial paint).
-      const cv = await turn.evaluate(el => getComputedStyle(el).contentVisibility)
-      expect(cv).toBe('auto')
-
-      // contain-intrinsic-size reserves a placeholder height so the
-      // scrollbar doesn't jump as off-screen turns materialize. Assert
-      // the height token is present (value tracked in CSS, not asserted
-      // pixel-exact here - pure presence is the contract).
-      const intrinsic = await turn.evaluate(el => getComputedStyle(el).containIntrinsicSize)
-      expect(intrinsic).toMatch(/\d+px/)
+      // The fixture holds 16 turns; only a bounded window of them is built.
+      expect(counts.rendered).toBeGreaterThan(0)
+      expect(counts.rendered).toBeLessThan(16)
+      expect(counts.userMessages).toBeLessThan(16)
     })
 
-    // SPEC: chat:lazy-paint
-    test('off-screen turn text stays in the DOM so browser find still works', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
+    // SPEC: chat:virtualized-render
+    test('the list keeps its full scroll height while windowed', async ({ page }) => {
+      await mockSSE(page, 'events/long-conversation.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
+      await expect(page.locator('.turn-container').first()).toBeVisible()
 
-      // The whole point of content-visibility:auto (vs display:none /
-      // virtualization) is that off-screen content stays addressable.
-      // Verify the assistant text is findable via DOM query regardless
-      // of viewport position - same surface Cmd-F uses.
-      const text = await page
-        .locator('.turn-container')
-        .first()
-        .locator('text=Hello! How can I help you today?')
-        .count()
-      expect(text).toBeGreaterThan(0)
+      const { scrollHeight, clientHeight } = await page.evaluate(() => {
+        const c = document.querySelector('.chat-messages')
+        return { scrollHeight: c.scrollHeight, clientHeight: c.clientHeight }
+      })
+
+      // Scrollable well beyond one viewport even though most turns are absent.
+      expect(scrollHeight).toBeGreaterThan(clientHeight * 2)
+    })
+
+    // SPEC: chat:offscreen-turns-absent
+    test('scrolling to the top brings the earliest turn into the page', async ({ page }) => {
+      await mockSSE(page, 'events/long-conversation.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await expect(page.locator('.turn-container').first()).toBeVisible()
+
+      // The first turn starts out windowed away.
+      await expect(page.getByText('Hello', { exact: true })).toHaveCount(0)
+
+      await page.evaluate(() => {
+        document.querySelector('.chat-messages').scrollTop = 0
+      })
+
+      await expect(page.getByText('Hello', { exact: true }).first()).toBeVisible()
     })
   })
 
@@ -89,10 +96,7 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for turn to complete (result event has been received)
-      // Should show completion indicator with checkmark
       await expect(page.locator('.turn-progress-complete').first()).toBeVisible()
-      // Check it contains checkmark
       await expect(page.locator('.turn-progress-complete').first()).toContainText('✓')
     })
 
@@ -102,7 +106,6 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Duration badge should be visible on completed turn
       await expect(page.locator('.turn-duration').first()).toBeVisible()
     })
   })
@@ -110,9 +113,8 @@ test.describe('Chat Display', () => {
   test.describe('Duration Display', () => {
     // SPEC: chat:duration-badge
     test('duration badge ticks live while a turn is responding', async ({ page }) => {
-      // Drive the SSE stream so the turn enters the "responding" state with
-      // a streaming assistant block but no result event. The duration badge
-      // must render and tick over time.
+      // Drive SSE into the "responding" state (streaming assistant block, no result event);
+      // the duration badge must render and tick over time.
       const controller = await createSSEController(page)
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
@@ -192,13 +194,10 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for completion
       await expect(page.locator('.turn-progress-complete').first()).toBeVisible()
 
-      // Duration should be static (not ticking) - capture value and verify it stays same
       const duration1 = await page.locator('.turn-duration').first().textContent()
 
-      // Poll to verify duration stays the same after 1+ second
       await expect
         .poll(async () => {
           const duration2 = await page.locator('.turn-duration').first().textContent()
@@ -220,7 +219,6 @@ test.describe('Chat Display', () => {
       await input.fill('Test pending message')
       await input.press('Enter')
 
-      // Pending turn should render at reduced opacity per SPEC
       const pendingTurn = page.locator('.turn-container.pending')
       await expect(pendingTurn).toBeVisible()
       const opacity = await pendingTurn.evaluate(el => getComputedStyle(el).opacity)
@@ -238,18 +236,14 @@ test.describe('Chat Display', () => {
       const turn = page.locator('.turn-container').first()
       await expect(turn).toBeVisible()
 
-      // Find collapse button (chevron)
       const collapsible = turn.locator('.turn-meta-collapsible')
       await expect(collapsible).toBeVisible()
 
-      // Initially expanded - content should be visible
       const turnContent = turn.locator('.turn-content')
       await expect(turnContent).toBeVisible()
 
-      // Click to collapse
       await collapsible.click()
 
-      // Content should now be hidden
       await expect(turnContent).not.toBeVisible()
     })
 
@@ -263,11 +257,9 @@ test.describe('Chat Display', () => {
       const collapsible = turn.locator('.turn-meta-collapsible')
       const turnContent = turn.locator('.turn-content')
 
-      // Collapse
       await collapsible.click()
       await expect(turnContent).not.toBeVisible()
 
-      // Expand again
       await collapsible.click()
       await expect(turnContent).toBeVisible()
     })
@@ -281,14 +273,11 @@ test.describe('Chat Display', () => {
       const turn = page.locator('.turn-container').first()
       const collapsible = turn.locator('.turn-meta-collapsible')
 
-      // Collapse the turn
       await collapsible.click()
 
-      // Preview should appear
       const preview = turn.locator('.turn-preview')
       await expect(preview).toBeVisible()
 
-      // Preview should show assistant's first text line
       await expect(preview).toContainText('Hello! How can I help you today?')
       const previewText = await preview.textContent()
       expect(previewText.trim().length).toBeGreaterThan(3)
@@ -306,10 +295,8 @@ test.describe('Chat Display', () => {
       const collapsible = turn.locator('.turn-meta-collapsible')
       const turnContent = turn.locator('.turn-content')
 
-      // Collapse the turn
       await collapsible.click()
 
-      // Content element should still exist in DOM (not removed)
       const contentExists = await turnContent.count()
       expect(contentExists).toBe(1)
 
@@ -332,15 +319,12 @@ test.describe('Chat Display', () => {
       const collapsible = turn.locator('.turn-meta-collapsible')
       const turnContent = turn.locator('.turn-content')
 
-      // Collapse first
       await collapsible.click()
       await expect(turnContent).not.toBeVisible()
 
-      // Click preview to expand
       const preview = turn.locator('.turn-preview')
       await preview.click()
 
-      // Content should be visible again
       await expect(turnContent).toBeVisible()
     })
   })
@@ -352,7 +336,6 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Timestamp element should be visible
       const timestamp = page.locator('.turn-timestamp').first()
       await expect(timestamp).toBeVisible()
     })
@@ -363,12 +346,11 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Get timestamp text
       const timestamp = page.locator('.turn-timestamp').first()
       const timestampText = await timestamp.textContent()
 
-      // Should match relative format (just now, Xm ago, Xh ago, Xd ago)
-      // OR date format for older timestamps (M/D/YYYY or similar)
+      // Matches relative format (just now, Xm/Xh/Xd ago) or date format for older timestamps
+      // (M/D/YYYY or similar).
       const validPattern = /^(just now|\d+[mhd] ago|\d{1,2}\/\d{1,2}\/\d{4})$/
       expect(timestampText.trim()).toMatch(validPattern)
     })
@@ -379,14 +361,12 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Duration and timestamp should both be visible in header
       const duration = page.locator('.turn-duration').first()
       const timestamp = page.locator('.turn-timestamp').first()
 
       await expect(duration).toBeVisible()
       await expect(timestamp).toBeVisible()
 
-      // Verify timestamp is positioned after duration (higher x coordinate)
       const durationBox = await duration.boundingBox()
       const timestampBox = await timestamp.boundingBox()
 
@@ -402,13 +382,10 @@ test.describe('Chat Display', () => {
       const timestamp = page.locator('.turn-timestamp').first()
       await expect(timestamp).toBeVisible()
 
-      // Hover over timestamp
       await timestamp.hover()
 
-      // Timestamp should not have its own interactive hover effects:
-      // no underline, no background change, no distinct cursor override.
-      // Note: cursor:pointer and color changes are inherited from parent
-      // .turn-meta-collapsible (the entire row is clickable for collapse).
+      // Timestamp has no interactive hover effects of its own: no underline, no background
+      // change, no distinct cursor. Those are inherited from the clickable parent row.
       const styles = await timestamp.evaluate(el => {
         const s = window.getComputedStyle(el)
         return { textDecoration: s.textDecorationLine || s.textDecoration, bg: s.backgroundColor }
@@ -426,11 +403,9 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Control bar element should be visible
       const controlBar = page.locator('.panel-control-bar')
       await expect(controlBar).toBeVisible()
 
-      // Control bar should be inside the chat panel
       const chatPanel = page.locator('[data-testid="panel-chat"]')
       await expect(chatPanel.locator('.panel-control-bar')).toBeVisible()
     })
@@ -443,7 +418,8 @@ test.describe('Chat Display', () => {
 
       const controlBar = page.locator('.panel-control-bar')
 
-      // Should have control buttons including: pin, rename, reload, compact, session-prompt, minimap, prev, next, autoscroll
+      // Should have control buttons including: pin, rename, reload, compact, session-prompt,
+      // minimap, prev, next, autoscroll
       await expect(controlBar.locator('button[title="Rename session"]')).toBeVisible()
       await expect(
         controlBar.locator('button[title="Reload session (picks up config changes)"]'),
@@ -472,7 +448,7 @@ test.describe('Chat Display', () => {
       await mockAPI(page, {
         handlers: {
           getSessionStatus: async route => {
-            // Return minimal status with null session_id but valid workspace
+            // Minimal status: null session_id but valid workspace.
             await route.fulfill({
               json: {
                 session_id: null,
@@ -499,14 +475,11 @@ test.describe('Chat Display', () => {
 
       const controlBar = page.locator('.panel-control-bar')
 
-      // Click rename button
       await controlBar.locator('button[title="Rename session"]').click()
 
-      // Edit input should appear
       const input = controlBar.locator('.chat-control-edit-input')
       await expect(input).toBeVisible()
 
-      // Save and cancel buttons should appear
       await expect(controlBar.locator('button[title="Save"]')).toBeVisible()
       await expect(controlBar.locator('button[title="Cancel"]')).toBeVisible()
     })
@@ -519,14 +492,11 @@ test.describe('Chat Display', () => {
 
       const controlBar = page.locator('.panel-control-bar')
 
-      // Enter edit mode
       await controlBar.locator('button[title="Rename session"]').click()
       await expect(controlBar.locator('.chat-control-edit-input')).toBeVisible()
 
-      // Press Escape
       await page.keyboard.press('Escape')
 
-      // Should return to normal mode
       await expect(controlBar.locator('button[title="Rename session"]')).toBeVisible()
       await expect(controlBar.locator('.chat-control-edit-input')).not.toBeVisible()
     })
@@ -539,14 +509,11 @@ test.describe('Chat Display', () => {
 
       const controlBar = page.locator('.panel-control-bar')
 
-      // Enter edit mode
       await controlBar.locator('button[title="Rename session"]').click()
       await expect(controlBar.locator('.chat-control-edit-input')).toBeVisible()
 
-      // Click cancel
       await controlBar.locator('button[title="Cancel"]').click()
 
-      // Should return to normal mode
       await expect(controlBar.locator('button[title="Rename session"]')).toBeVisible()
       await expect(controlBar.locator('.chat-control-edit-input')).not.toBeVisible()
     })
@@ -570,20 +537,16 @@ test.describe('Chat Display', () => {
 
       const controlBar = page.locator('.panel-control-bar')
 
-      // Enter edit mode
       await controlBar.locator('button[title="Rename session"]').click()
       const input = controlBar.locator('.chat-control-edit-input')
       await expect(input).toBeVisible()
 
-      // Type new name and press Enter
       await input.fill('New Session Name')
       await page.keyboard.press('Enter')
 
-      // API should be called with new name
       await expect.poll(() => updateCalled).toBe(true)
       expect(updatePayload.name).toBe('New Session Name')
 
-      // Should return to normal mode
       await expect(controlBar.locator('button[title="Rename session"]')).toBeVisible()
     })
   })
@@ -625,8 +588,8 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-fork
     test('fork buttons disable + spinner appears while fork is in flight', async ({ page }) => {
-      // Hold the fork API open long enough to observe the in-flight UI:
-      // icon swaps to a spinning Loader2 and both buttons disable.
+      // Hold the fork API open to observe in-flight UI: icon swaps to a spinning Loader2
+      // and both buttons disable.
       let releaseFork
       const forkHeld = new Promise(resolve => {
         releaseFork = resolve
@@ -644,15 +607,13 @@ test.describe('Chat Display', () => {
 
       await forkBtn.click()
 
-      // While the fork is mid-flight: spin icon present, both buttons disabled.
-      // Loader2 renders as <svg class="spin">.
+      // Mid-flight: spin icon present, both buttons disabled. Loader2 renders as <svg class="spin">.
       await expect(controlBar.locator('.chat-control-fork-split svg.spin')).toBeVisible({
         timeout: 3000,
       })
       await expect(forkBtn).toBeDisabled()
       await expect(chevron).toBeDisabled()
 
-      // Release the fork response and verify both re-enable.
       releaseFork()
       await expect(forkBtn).toBeEnabled({ timeout: 5000 })
       await expect(chevron).toBeEnabled()
@@ -720,18 +681,17 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The turn-timestamp element should have a title attribute showing the start time
-      // Start time from fixture is 2025-01-18T12:00:00Z (timestamp 1705600000000)
-      // End time from fixture is 2025-01-18T12:00:05Z (timestamp 1705600005200)
+      // Fixture start time is 2025-01-18T12:00:00Z (1705600000000); end time is 12:00:05Z
+      // (1705600005200).
       const timestamp = page.locator('.turn-timestamp').first()
       await expect(timestamp).toBeVisible()
 
-      // The title attribute is set to new Date(startTime).toLocaleString()
-      // startTime is Math.min of assistant turn event timestamps = 12:00:01
+      // title = new Date(startTime).toLocaleString(), where startTime is Math.min of assistant
+      // turn event timestamps (12:00:01).
       const titleAttr = await timestamp.getAttribute('title')
 
-      // Title should reflect the assistant turn start time (12:00:01), not the end (12:00:05)
-      // User message at 12:00:00 is a separate turn, not included in this calculation
+      // Reflects the assistant turn start (12:00:01), not the end (12:00:05); the user message
+      // at 12:00:00 is a separate turn, excluded from this calculation.
       const startDate = new Date(1737201601000).toLocaleString()
       expect(titleAttr).toBe(startDate)
     })
@@ -742,7 +702,6 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The turn-duration element title should also match start time
       const duration = page.locator('.turn-duration').first()
       await expect(duration).toBeVisible()
 
@@ -762,14 +721,11 @@ test.describe('Chat Display', () => {
       const turn = page.locator('.turn-container').first()
       const collapseBtn = turn.locator('.turn-collapse-btn, .turn-meta-collapsible')
 
-      // Collapse the turn
       await collapseBtn.first().click()
 
-      // Preview should appear
       const preview = turn.locator('.turn-preview')
       await expect(preview).toBeVisible()
 
-      // Preview text should not contain markdown syntax characters
       const previewText = await preview.locator('.turn-preview-text').textContent()
       expect(previewText).not.toContain('**')
       expect(previewText).not.toContain('`')
@@ -785,17 +741,100 @@ test.describe('Chat Display', () => {
       const turn = page.locator('.turn-container').first()
       const collapseBtn = turn.locator('.turn-collapse-btn, .turn-meta-collapsible')
 
-      // Collapse the turn
       await collapseBtn.first().click()
 
-      // Preview should contain the plain text version of the markdown content
       const preview = turn.locator('.turn-preview')
       await expect(preview).toBeVisible()
 
       const previewText = await preview.locator('.turn-preview-text').textContent()
-      // Should contain the words without markdown formatting
       expect(previewText).toContain('bold text')
       expect(previewText).toContain('inline code')
+    })
+  })
+
+  test.describe('Collapsed Turn With No Strippable Text', () => {
+    async function collapseAndMeasure(turn) {
+      await turn.locator('.turn-meta-collapsible').click()
+
+      const preview = turn.locator('.turn-preview')
+      await expect(preview).toBeVisible()
+      const previewText = (await preview.locator('.turn-preview-text').textContent()).trim()
+      const turnBox = await turn.locator('.turn').boundingBox()
+      const metaBox = await turn.locator('.turn-meta').boundingBox()
+
+      return { previewText, turnBox, metaBox }
+    }
+
+    // SPEC: turn:collapsed-preview-fallback
+    test('a code-only reply stands the same height as a prose reply, preview non-empty', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await disableAutoCollapse(page)
+
+      const turns = page.locator('.turn-container')
+      const prose = await collapseAndMeasure(turns.nth(0))
+      const codeOnly = await collapseAndMeasure(turns.nth(1))
+
+      expect(codeOnly.previewText.length).toBeGreaterThan(0)
+      expect(Math.abs(codeOnly.turnBox.height - prose.turnBox.height)).toBeLessThan(5)
+      // The button group's bottom edge stays inside the turn's own bottom edge.
+      expect(codeOnly.metaBox.y + codeOnly.metaBox.height).toBeLessThanOrEqual(
+        codeOnly.turnBox.y + codeOnly.turnBox.height,
+      )
+    })
+
+    // SPEC: turn:collapsed-preview-fallback
+    test('a table-only reply stands the same height as a prose reply, preview non-empty', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await disableAutoCollapse(page)
+
+      const turns = page.locator('.turn-container')
+      const prose = await collapseAndMeasure(turns.nth(0))
+      const tableOnly = await collapseAndMeasure(turns.nth(2))
+
+      expect(tableOnly.previewText.length).toBeGreaterThan(0)
+      expect(Math.abs(tableOnly.turnBox.height - prose.turnBox.height)).toBeLessThan(5)
+      expect(tableOnly.metaBox.y + tableOnly.metaBox.height).toBeLessThanOrEqual(
+        tableOnly.turnBox.y + tableOnly.turnBox.height,
+      )
+    })
+
+    // SPEC: turn:collapsed-preview-fallback
+    test('an alt-less image-only reply stands the same height as a prose reply, preview non-empty', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await disableAutoCollapse(page)
+
+      const turns = page.locator('.turn-container')
+      const prose = await collapseAndMeasure(turns.nth(0))
+      const imageOnly = await collapseAndMeasure(turns.nth(3))
+
+      expect(imageOnly.previewText.length).toBeGreaterThan(0)
+      expect(Math.abs(imageOnly.turnBox.height - prose.turnBox.height)).toBeLessThan(5)
+      expect(imageOnly.metaBox.y + imageOnly.metaBox.height).toBeLessThanOrEqual(
+        imageOnly.turnBox.y + imageOnly.turnBox.height,
+      )
+    })
+
+    // SPEC: turn:collapsed-preview-fallback
+    test('an ordinary prose reply is unaffected by the fallback path', async ({ page }) => {
+      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await disableAutoCollapse(page)
+
+      const prose = await collapseAndMeasure(page.locator('.turn-container').nth(0))
+      expect(prose.previewText).toBe('Hello! How can I help you today?')
     })
   })
 
@@ -807,11 +846,9 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should show stdout block
       const stdoutBlock = page.locator('.local-command-stdout').first()
       await expect(stdoutBlock).toBeVisible()
 
-      // Should be expanded by default (content visible)
       await expect(stdoutBlock.locator('.local-command-content')).toBeVisible()
       await expect(stdoutBlock.locator('.local-command-content')).toContainText('Hello from stdout')
     })
@@ -825,7 +862,6 @@ test.describe('Chat Display', () => {
       const stdoutBlock = page.locator('.local-command-stdout').first()
       await expect(stdoutBlock).toBeVisible()
 
-      // Should have stdout label in header
       await expect(stdoutBlock.locator('.local-command-header')).toContainText('stdout')
     })
 
@@ -835,17 +871,11 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should show stderr block
       const stderrBlock = page.locator('.local-command-stderr').first()
       await expect(stderrBlock).toBeVisible()
 
-      // Should contain error message
       await expect(stderrBlock).toContainText('Error: Something went wrong')
-
-      // Should have stderr label
       await expect(stderrBlock.locator('.local-command-header')).toContainText('stderr')
-
-      // Should have red/warning color on the stderr block or its label
       await assertRedColor(stderrBlock.locator('.local-command-header'), 'color')
     })
 
@@ -855,7 +885,6 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Raw XML tags should not be visible
       const pageContent = await page.textContent('body')
       expect(pageContent).not.toContain('<local-command-stdout>')
       expect(pageContent).not.toContain('</local-command-stdout>')
@@ -872,16 +901,12 @@ test.describe('Chat Display', () => {
       const stdoutBlock = page.locator('.local-command-stdout').first()
       await expect(stdoutBlock).toBeVisible()
 
-      // Initially expanded
       await expect(stdoutBlock.locator('.local-command-content')).toBeVisible()
 
-      // Click header to collapse
       await stdoutBlock.locator('.local-command-header').click()
 
-      // Content should be hidden
       await expect(stdoutBlock.locator('.local-command-content')).not.toBeVisible()
 
-      // Click again to expand
       await stdoutBlock.locator('.local-command-header').click()
       await expect(stdoutBlock.locator('.local-command-content')).toBeVisible()
     })
@@ -895,15 +920,12 @@ test.describe('Chat Display', () => {
       // Third turn has consecutive stdout + stderr blocks
       const turns = page.locator('.turn-container')
 
-      // Should have multiple turns
       await expect(turns).toHaveCount(3)
 
-      // Third turn should have both stdout and stderr blocks
       const thirdTurn = turns.nth(2)
       await expect(thirdTurn.locator('.local-command-stdout')).toBeVisible()
       await expect(thirdTurn.locator('.local-command-stderr')).toBeVisible()
 
-      // Content should be present inside the blocks
       await expect(thirdTurn.locator('.local-command-stdout')).toContainText('stdout content')
       await expect(thirdTurn.locator('.local-command-stderr')).toContainText('stderr content')
     })
@@ -924,7 +946,6 @@ test.describe('Chat Display', () => {
       await expect(stdoutBlock.locator('.local-command-header')).toContainText('stdout')
       await expect(stdoutBlock.locator('.local-command-content')).toContainText('Hello from stdout')
 
-      // No raw XML tags visible
       const turnContent = await firstTurn.textContent()
       expect(turnContent).not.toContain('<local-command-stdout>')
 
@@ -948,21 +969,17 @@ test.describe('Chat Display', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // User message text should be visible
       await expect(page.getByText('Check this image')).toBeVisible()
 
-      // Image attachment renders as <img> thumbnail
       const img = page.locator('.message-attachment-thumb')
       await expect(img).toBeVisible()
       await expect(img).toHaveAttribute('alt', 'photo.png')
 
-      // Non-image attachment renders with extension badge
       await expect(page.locator('.message-attachment-ext', { hasText: 'PDF' })).toBeVisible()
       await expect(
         page.locator('.message-attachment-name', { hasText: 'report.pdf' }),
       ).toBeVisible()
 
-      // Assistant response is also visible
       await expect(
         page.getByText('I can see the image and the PDF document.').first(),
       ).toBeVisible()
@@ -981,7 +998,6 @@ test.describe('Chat Display', () => {
       const controlBar = page.locator('.panel-control-bar')
       await expect(controlBar).toBeVisible()
 
-      // Minimap toggle should be the rightmost button in the right group
       const minimapToggle = controlBar.locator('[data-testid="control-minimap-toggle"]')
       await expect(minimapToggle).toBeVisible()
     })
@@ -991,7 +1007,7 @@ test.describe('Chat Display', () => {
       const controlBar = page.locator('.panel-control-bar')
       await expect(controlBar).toBeVisible()
 
-      // Separator element should exist in the right group (second panel-control-group)
+      // Separator lives in the right group (second panel-control-group).
       const rightGroup = controlBar.locator('.panel-control-group').last()
       const separators = rightGroup.locator('.panel-control-separator')
       await expect(separators.last()).toBeVisible()
@@ -1045,8 +1061,8 @@ test.describe('Chat Display', () => {
       await controller.sendEvent({
         type: 'system',
         subtype: 'model_changed',
-        model: 'claude-opus-4-6',
-        previous_model: 'claude-sonnet-4-6',
+        model: 'claude-opus-5',
+        previous_model: 'claude-sonnet-5',
         timestamp: Date.now() + 300,
       })
 
@@ -1064,7 +1080,6 @@ test.describe('Chat Display', () => {
         { type: 'result', subtype: 'success', timestamp: Date.now() + 600 },
       ])
 
-      // Divider should appear between turns
       await expect(page.locator('[data-testid="setting-change-divider"]')).toBeVisible()
     })
 
@@ -1111,7 +1126,6 @@ test.describe('Chat Display', () => {
         { type: 'result', subtype: 'success', timestamp: Date.now() + 600 },
       ])
 
-      // Effort divider should appear with "Effort" label
       const divider = page.locator('[data-testid="setting-change-divider"]')
       await expect(divider).toBeVisible()
       await expect(divider).toContainText('Effort')

@@ -1,9 +1,4 @@
-"""Shell tool - bash.
-
-Default 60s timeout (cap 300s). stdout/stderr each truncated at 100 KB with a
-tail marker. cwd=workspace_path. Timeout flows through ToolException so
-tool_result.is_error=True.
-"""
+"""Shell tool - bash. Timeout errors flow through ToolException so tool_result.is_error=True."""
 
 import subprocess
 
@@ -24,12 +19,17 @@ def make_shell_tools(ctx: ToolContext) -> list[BaseTool]:
     cwd = str(ctx.workspace_path)
 
     @tool
-    def bash(command: str, timeout_seconds: int = _BASH_TIMEOUT_DEFAULT) -> dict:
+    def bash(
+        command: str,
+        description: str = "",
+        timeout_seconds: int = _BASH_TIMEOUT_DEFAULT,
+    ) -> dict:
         """Run `command` through /bin/bash -c with `timeout_seconds` (default 60, max 300).
 
-        Returns a dict with `stdout`, `stderr`, and `exit_code`. stdout/stderr
-        each capped at 100 KB (truncation tail marker appended). cwd is the
-        workspace path; the container is the only isolation boundary.
+        `description` is shown to the user in place of the raw command; it has no effect on execution.
+
+        Returns `stdout`/`stderr` (capped at 100 KB, tail marker appended) and `exit_code`.
+        cwd is the workspace path; the container is the only isolation boundary.
         """
 
         effective_timeout = min(max(1, timeout_seconds), _BASH_TIMEOUT_CAP)
@@ -45,7 +45,7 @@ def make_shell_tools(ctx: ToolContext) -> list[BaseTool]:
             )
         except subprocess.TimeoutExpired as exc:
             raise ToolException(
-                f"bash: command timed out after {effective_timeout}s: {command!r}"
+                f"bash: command timed out after {effective_timeout}s: {command!r}",
             ) from exc
 
         stdout = result.stdout

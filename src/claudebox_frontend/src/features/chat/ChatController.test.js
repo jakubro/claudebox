@@ -184,9 +184,8 @@ describe('ChatController', () => {
     })
 
     it('wheel listener: downward wheel at bottom does not latch intent', () => {
-      // Within AUTOSCROLL_THRESHOLD (50px) of bottom + deltaY > 0: the view
-      // cannot move; this is a no-op gesture, not intent. The listener must
-      // gate before reaching markUserIntent.
+      // Within AUTOSCROLL_THRESHOLD (50px) of bottom + deltaY > 0: no-op gesture, not intent -
+      // the listener must gate before reaching markUserIntent.
       const listeners = {}
       const realEl = {
         scrollTop: 460, // distFromBottom = 40, at-bottom
@@ -211,8 +210,8 @@ describe('ChatController', () => {
     })
 
     it('wheel listener: upward wheel at bottom latches intent', () => {
-      // Upward wheel (deltaY < 0) at-bottom is genuine intent - view will
-      // move away from bottom - so the listener must NOT gate.
+      // Upward wheel (deltaY < 0) at-bottom is genuine intent (view will move away from bottom)
+      // so the listener must NOT gate.
       const listeners = {}
       const realEl = {
         scrollTop: 460, // at-bottom
@@ -237,8 +236,8 @@ describe('ChatController', () => {
     })
 
     it('wheel listener: downward wheel above threshold latches intent', () => {
-      // Above AUTOSCROLL_THRESHOLD: any wheel direction is real intent. This
-      // preserves the input-source disengage contract from the prior rework.
+      // Above AUTOSCROLL_THRESHOLD, any wheel direction counts as real intent under the
+      // input-source disengage contract.
       const listeners = {}
       const realEl = {
         scrollTop: 200, // distFromBottom = 300, above threshold
@@ -263,8 +262,8 @@ describe('ChatController', () => {
     })
 
     it('keydown listener: scroll-down keys at bottom do not latch intent', () => {
-      // PageDown / End / ArrowDown / unshifted Space at-bottom: view cannot
-      // move - no intent. The listener must filter these.
+      // PageDown / End / ArrowDown / unshifted Space at-bottom: view cannot move, no intent -
+      // the listener must filter these.
       const listeners = {}
       const realEl = {
         scrollTop: 460, // at-bottom
@@ -291,8 +290,8 @@ describe('ChatController', () => {
     })
 
     it('keydown listener: scroll-up keys at bottom latch intent', () => {
-      // PageUp / Home / ArrowUp / Shift+Space at-bottom: view will move up -
-      // genuine intent. The listener must pass these through.
+      // PageUp / Home / ArrowUp / Shift+Space at-bottom: view will move up, genuine intent -
+      // the listener must pass these through.
       const listeners = {}
       const realEl = {
         scrollTop: 460, // at-bottom
@@ -317,11 +316,8 @@ describe('ChatController', () => {
     })
 
     it('monotonically re-engages exactly once during scroll-to-bottom sweep with interleaved wheel events', () => {
-      // Sweep scrollTop from 200 to 500 in 5px steps; at each step dispatch a
-      // downward wheel (deltaY > 0) through the actual wheel listener,
-      // followed by the React onScroll (handleUserScroll). User scenario:
-      // previously latched (above threshold), now scrolling back DOWN toward
-      // bottom. Contract: zero per-tick disable/enable flicker.
+      // Sweep: latched above threshold, scrolling back toward bottom. Contract: zero flicker
+      // while re-engaging.
       const listeners = {}
       const realEl = {
         scrollTop: 200,
@@ -368,10 +364,9 @@ describe('ChatController', () => {
       expect(falseToTrue).toHaveLength(1)
       expect(trueToFalse).toHaveLength(0)
 
-      // Callback stream after the initial precondition disengage: exactly one
-      // true fire, zero false fires. Pre-fix the per-tick listener
-      // unconditionally re-latched, fighting handleUserScroll's re-engage on
-      // every wheel tick within the at-bottom zone.
+      // Callback stream after the precondition disengage: exactly one true fire, zero false
+      // fires - the per-tick listener must not re-latch unconditionally and fight
+      // handleUserScroll's re-engage on every wheel tick within the at-bottom zone.
       const sweepCallbacks = callbacks.slice(1)
       const trueFires = sweepCallbacks.filter(c => c.value === true)
       const falseFires = sweepCallbacks.filter(c => c.value === false)
@@ -643,12 +638,9 @@ describe('ChatController', () => {
     })
 
     it('skips scroll restoration when contentRect.height is unchanged across observer firings', () => {
-      // Width-only reflows (e.g. tab-row layout shift after panel.api.setTitle
-      // during rename) fire the ResizeObserver with the same contentRect.height.
-      // Restoring scroll on every firing destroys the user's place when
-      // contextRefs.chatScrollPositionRef holds a stale value (0 in the failing
-      // path during streaming bursts). The observer must bail when the height
-      // is unchanged so unrelated reflows are no-ops.
+      // Width-only reflows (e.g. tab-row shift after panel.api.setTitle rename) fire the observer with
+      // the same contentRect.height; restoring on every firing would destroy the user's place when
+      // chatScrollPositionRef is stale (0 during streaming), so it must bail when height is unchanged.
       controller.isAutoScrollEnabled = false
       controller.attachResizeObserver(mockContainerEl, contextRefs)
 
@@ -658,8 +650,8 @@ describe('ChatController', () => {
       flushRAF()
       expect(mockContainerEl.scrollTop).toBe(300)
 
-      // Simulate a width-only reflow: browser briefly resets scrollTop, observer
-      // fires with the SAME height. Bail must preserve the new position.
+      // Simulate a width-only reflow: browser briefly resets scrollTop, observer fires with the same
+      // height. Bail must preserve the new position.
       mockContainerEl.scrollTop = 50
       resizeCallback([{ contentRect: { height: 500 } }])
       flushRAF()

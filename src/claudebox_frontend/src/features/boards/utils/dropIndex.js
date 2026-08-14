@@ -1,12 +1,10 @@
 /** Translate a visual drop slot in a swimlane-filtered cell to a flat YAML index. */
 
 /**
- * Compute the flat-list index where a ticket should be inserted, given a drop
- * target ticket path and the swimlane currently filtering the rendered cell.
+ * Compute the flat-list index for a ticket dropped in a swimlane-filtered cell.
  *
- * Per-state YAML lists intermix swimlanes; the rendered cell is the per-lane
- * filtered subset. The visual slot above the drop-target ticket maps to the
- * absolute index in the unfiltered list right at that lane match.
+ * Per-state YAML lists intermix swimlanes; the visual slot above the drop target maps to
+ * the absolute index in the unfiltered list at that lane's matching position.
  *
  * @param {Array} unfilteredColumn - Tickets in the target state's flat list.
  * @param {string} targetSwimlane - Lane id ('__unsorted__' for unsorted).

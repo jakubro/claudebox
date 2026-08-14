@@ -9,29 +9,27 @@ import {
 let _workspaceId = null
 let _containerId = null
 
-/** Set the active workspace ID. Called by WorkspaceContext on discovery. */
+/** Called by WorkspaceContext on discovery. */
 export function setWorkspaceId(id) {
   _workspaceId = id
 }
 
-/** Get current workspace ID. */
 export function getWorkspaceId() {
   return _workspaceId
 }
 
-/** Set the active container ID. Called after session new/resume returns container_id. */
+/** Called after session new/resume returns container_id. */
 export function setContainerId(id) {
   _containerId = id
 }
 
-/** Get current container ID. */
 export function getContainerId() {
   return _containerId
 }
 
 /**
- * Fetch with automatic retry for transient errors (network failures, cert expiry, gateway errors).
- * Retries with exponential backoff. Non-retryable errors propagate immediately.
+ * Fetch with automatic retry for transient errors (network failures, cert expiry, gateway errors);
+ * retries with exponential backoff; non-retryable errors propagate immediately.
  * @param {string} url - Request URL.
  * @param {RequestInit} [options] - Standard fetch options.
  * @returns {Promise<Response>}
@@ -67,7 +65,6 @@ export async function retryFetch(url, options) {
 }
 
 /**
- * Fetch with workspace prefix.
  * @param {string} path - Relative path (e.g., '/sessions').
  * @param {RequestInit} options - Standard fetch options.
  * @returns {Promise<Response>}
@@ -80,7 +77,6 @@ export function workspaceFetch(path, options) {
 }
 
 /**
- * Fetch routed through the daemon's container proxy.
  * @param {string} path - Path including /api prefix (e.g., '/api/send').
  * @param {RequestInit} options - Standard fetch options.
  * @returns {Promise<Response>}
@@ -111,7 +107,6 @@ export function containerUrl(path) {
 }
 
 /**
- * Determine whether a failed fetch should be retried.
  * @param {Error} error - The caught error (TypeError for network failures).
  * @param {Response} [response] - The HTTP response, if the request completed.
  * @returns {boolean}

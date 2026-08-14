@@ -1,18 +1,21 @@
 line-length = 100
 indent-width = 4
-target-version = "py311"
+target-version = "py313"
 
 [format]
 line-ending = "lf"
 
 [lint]
-ignore = [
-  "F401",
-]
-
 extend-select = [
   "I",
+  "RUF001",
+  "RUF002",
+  "RUF003",
+  "COM812",
 ]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
 
 [lint.isort]
 case-sensitive = true
@@ -24,5 +27,5 @@ known-first-party = [
   "claudebox_cli",
   "claudebox_container_api",
   "claudebox_daemon",
-  "claudebox_frontend"
+  "claudebox_frontend",
 ]

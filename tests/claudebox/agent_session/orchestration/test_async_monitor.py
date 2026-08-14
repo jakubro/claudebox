@@ -10,11 +10,6 @@ from claudebox.agent_session.orchestration.async_monitor import AsyncTaskMonitor
 from claudebox.agent_session.orchestration.models import Event
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_monitor(
     tmp_path: Path,
     on_event: AsyncMock | None = None,
@@ -33,11 +28,6 @@ def _make_monitor(
     )
 
     return monitor, output_file, cb
-
-
-# ---------------------------------------------------------------------------
-# Construction
-# ---------------------------------------------------------------------------
 
 
 class TestInit:
@@ -70,11 +60,6 @@ class TestInit:
         assert monitor._offset == 512
 
 
-# ---------------------------------------------------------------------------
-# stop()
-# ---------------------------------------------------------------------------
-
-
 class TestStop:
     """The stop method sets internal flag to halt the run loop."""
 
@@ -83,11 +68,6 @@ class TestStop:
         monitor._running = True
         monitor.stop()
         assert monitor._running is False
-
-
-# ---------------------------------------------------------------------------
-# _process_line - JSON parsing and event dispatch
-# ---------------------------------------------------------------------------
 
 
 class TestProcessLine:
@@ -145,11 +125,6 @@ class TestProcessLine:
         assert offset_arg == 42
 
 
-# ---------------------------------------------------------------------------
-# run() - file tailing integration
-# ---------------------------------------------------------------------------
-
-
 class TestRun:
     """Integration tests for the run loop using real files."""
 
@@ -181,7 +156,7 @@ class TestRun:
             if call_count >= 2:
                 monitor.stop()
 
-        monitor.on_event = _counting_cb  # ty: ignore[invalid-assignment]  # Test callback structurally replaces the real on_event handler.
+        monitor.on_event = _counting_cb  # ty: ignore[invalid-assignment]
 
         await monitor.run()
 
@@ -203,7 +178,7 @@ class TestRun:
             await cb(event, path, off)
             monitor.stop()
 
-        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]  # Test callback structurally replaces the real on_event handler.
+        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]
         await monitor.run()
 
         # Should only have seen the second line's event
@@ -222,7 +197,7 @@ class TestRun:
             await cb(event, path, off)
             monitor.stop()
 
-        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]  # Test callback structurally replaces the real on_event handler.
+        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]
 
         # Create file after a short delay
         async def _create_file():
@@ -265,7 +240,7 @@ class TestRun:
             await cb(event, path, off)
             monitor.stop()
 
-        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]  # Test callback structurally replaces the real on_event handler.
+        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]
         await monitor.run()
 
         assert cb.call_count == 1
@@ -286,7 +261,7 @@ class TestRun:
             if len(offsets_seen) >= 3:
                 monitor.stop()
 
-        monitor.on_event = _tracking_cb  # ty: ignore[invalid-assignment]  # Test callback structurally replaces the real on_event handler.
+        monitor.on_event = _tracking_cb  # ty: ignore[invalid-assignment]
         await monitor.run()
 
         # Each offset should be strictly greater than the previous

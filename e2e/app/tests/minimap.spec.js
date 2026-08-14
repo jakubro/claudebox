@@ -20,10 +20,8 @@ test.describe('Mini-map', () => {
     const minimap = page.locator('.minimap-overlay')
     await expect(minimap).toHaveCount(1)
 
-    // Scroll up to disable autoscroll and trigger minimap
     await scrollToShowMinimap(page)
 
-    // Mini-map should become visible (has 'visible' class)
     await expect(minimap).toHaveClass(/visible/)
   })
 
@@ -32,20 +30,15 @@ test.describe('Mini-map', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Scroll to show mini-map
     const chatPanel = await scrollToShowMinimap(page)
 
     const minimap = page.locator('.minimap-overlay')
     await expect(minimap).toHaveClass(/visible/)
 
-    // Check position is on right side
     const minimapBox = await minimap.boundingBox()
     const chatBox = await chatPanel.boundingBox()
-
-    // Mini-map should be near right edge of chat panel
     expect(minimapBox.x + minimapBox.width).toBeGreaterThan(chatBox.x + chatBox.width - 50)
 
-    // Overlay should have z-index above chat content
     const zIndex = await minimap.evaluate(el => parseInt(getComputedStyle(el).zIndex, 10))
     expect(zIndex).toBeGreaterThan(0)
   })
@@ -55,7 +48,6 @@ test.describe('Mini-map', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Scroll to show mini-map
     const chatPanel = page
       .locator('.chat-messages, .chat-panel, [data-testid="chat-panel"]')
       .first()
@@ -63,11 +55,9 @@ test.describe('Mini-map', () => {
       el.scrollTop = 100
     })
 
-    // Viewport thumb should exist
     const thumb = page.locator('.minimap-thumb')
     await expect(thumb).toHaveCount(1)
 
-    // Thumb should have a height (indicating viewport size)
     const thumbHeight = await thumb.evaluate(el => {
       return parseInt(window.getComputedStyle(el).height, 10)
     })
@@ -84,17 +74,14 @@ test.describe('Mini-map', () => {
     const thumb = page.locator('.minimap-thumb')
     const messages = page.locator('.chat-messages').first()
 
-    // Use wheel events to scroll - programmatic scrollTop doesn't reliably
-    // disable autoscroll because handleUserScroll guards against scrollHeight
-    // changes during content load.
+    // Wheel events are used because programmatic scrollTop doesn't reliably disable autoscroll -
+    // handleUserScroll guards against scrollHeight changes during content load.
     const box = await messages.boundingBox()
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
 
-    // Scroll to top via wheel
     await page.mouse.wheel(0, -99999)
     await expect.poll(() => thumb.evaluate(el => parseFloat(getComputedStyle(el).top))).toBe(0)
 
-    // Scroll down to move thumb away from top
     await page.mouse.wheel(0, 300)
     await expect
       .poll(() => thumb.evaluate(el => parseFloat(getComputedStyle(el).top)), { timeout: 3000 })
@@ -118,11 +105,9 @@ test.describe('Mini-map', () => {
     })
     await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
 
-    // Click near the bottom of the minimap to jump scroll position
     const box = await minimap.boundingBox()
     await minimap.click({ position: { x: box.width / 2, y: box.height - 10 } })
 
-    // scrollTop should have changed after clicking
     await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
   })
 
@@ -131,18 +116,15 @@ test.describe('Mini-map', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Wait for SSE replay to populate sub-bars - waitForAppReady returns before
-    // turns finish hydrating, so a synchronous count() race-flakes under load.
+    // waitForAppReady returns before turns finish hydrating, so a synchronous count() race-flakes under load.
     const bars = page.locator('.minimap-subbar')
     await expect.poll(() => bars.count(), { timeout: 5000 }).toBeGreaterThan(0)
 
-    // Verify bars have background colors (not transparent)
     const firstBarBg = await bars.first().evaluate(el => getComputedStyle(el).backgroundColor)
     expect(firstBarBg).not.toBe('rgba(0, 0, 0, 0)')
     expect(firstBarBg).not.toBe('transparent')
 
-    // Alternation is a design intent verified visually; here we just confirm bars have colors
-    // and are rendered (non-transparent backgrounds verified above)
+    // Alternation itself is a design intent verified visually, not asserted here.
   })
 
   test.describe('Segment Structure', () => {
@@ -151,7 +133,6 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should have at least one segment
       const segments = page.locator('[data-testid="minimap-segment"]')
       await expect(segments.first()).toBeAttached()
       const count = await segments.count()
@@ -174,8 +155,7 @@ test.describe('Mini-map', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Long conversation has multiple human messages - poll until they hydrate
-      // (waitForAppReady returns before SSE replay completes).
+      // Poll until they hydrate - waitForAppReady returns before SSE replay completes.
       const humanLines = page.locator('[data-testid="minimap-human-line"]')
       await expect.poll(() => humanLines.count(), { timeout: 5000 }).toBeGreaterThan(0)
 
@@ -218,16 +198,14 @@ test.describe('Mini-map', () => {
 
   test.describe('Auto-show Behavior', () => {
     // SPEC: chat:minimap-auto-show-scroll
-    // NOTE: The negative case (autoscroll does NOT show minimap) is hard to test with mocks
-    // because autoscroll fires on new SSE events which also trigger render, making it
-    // difficult to isolate the autoscroll-vs-manual-scroll distinction in this environment.
+    // The negative case (autoscroll doesn't show minimap) is hard to isolate with mocks: both
+    // fire from the same SSE-triggered render.
     test('shows on manual scroll (not autoscroll)', async ({ page }) => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
       const minimap = page.locator('.minimap-overlay')
 
-      // Scroll to show minimap
       await scrollToShowMinimap(page)
       await expect(minimap).toHaveClass(/visible/)
     })
@@ -286,7 +264,6 @@ test.describe('Mini-map', () => {
 
       const minimap = page.locator('.minimap-overlay')
 
-      // Show minimap via scroll
       await scrollToShowMinimap(page)
       await expect(minimap).toHaveClass(/visible/)
 
@@ -308,7 +285,6 @@ test.describe('Mini-map', () => {
       const messages = page.locator('.chat-messages').first()
       const box = await minimap.boundingBox()
 
-      // Scroll chat to top first
       await messages.evaluate(el => {
         el.scrollTop = 0
       })
@@ -321,7 +297,6 @@ test.describe('Mini-map', () => {
 
       await page.mouse.move(startX, startY)
       await page.mouse.down()
-      // Move in steps to simulate a real drag
       const steps = 5
       for (let i = 1; i <= steps; i++) {
         await page.mouse.move(startX, startY + ((endY - startY) * i) / steps)
@@ -360,10 +335,8 @@ test.describe('Mini-map', () => {
       await expect(pinnedBtn).toBeVisible()
       await expect(pinnedBtn).toHaveClass(/pressed/)
 
-      // Click to unpin
       await pinnedBtn.click()
 
-      // Should now be unpressed with updated title
       const unpinnedBtn = controlBar.locator('button[title="Show minimap"]')
       await expect(unpinnedBtn).not.toHaveClass(/pressed/)
     })
@@ -377,8 +350,7 @@ test.describe('Mini-map', () => {
       const minimap = page.locator('.minimap-overlay')
       await expect(minimap).toHaveClass(/visible/)
 
-      // Verify minimap stays visible even after auto-hide delay would have elapsed.
-      // Use a poll that checks visibility remains stable over time.
+      // Poll checks visibility remains stable past the auto-hide delay.
       await expect
         .poll(() => minimap.evaluate(el => el.classList.contains('visible')), { timeout: 2000 })
         .toBe(true)
@@ -422,7 +394,6 @@ test.describe('Mini-map', () => {
       // Default is pinned - minimap visible
       await expect(minimap).toHaveClass(/visible/)
 
-      // Unpin
       const pinnedBtn = controlBar.locator('button[title="Hide minimap"]')
       await pinnedBtn.click()
 
@@ -432,18 +403,12 @@ test.describe('Mini-map', () => {
   })
 })
 
-/**
- * Scroll chat panel up to disable autoscroll and trigger minimap visibility.
- *
- * Two scrolls needed: first scroll updates useAutoScroll's ref,
- * second scroll lets MiniMap's handler read the updated ref.
- */
+/** Scrolls up twice: the first scroll updates useAutoScroll's ref, the second lets MiniMap's handler read it. */
 async function scrollToShowMinimap(page) {
   const chatPanel = page.locator('.chat-messages, .chat-panel, [data-testid="chat-panel"]').first()
 
-  // Scroll up to disable autoscroll and trigger minimap.
-  // Use wheel events - programmatic scrollTop doesn't reliably disable autoscroll
-  // because useAutoScroll guards against scrollHeight changes during content load.
+  // Wheel events are used because programmatic scrollTop doesn't reliably disable autoscroll -
+  // useAutoScroll guards against scrollHeight changes during content load.
   const box = await chatPanel.boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.wheel(0, -300)

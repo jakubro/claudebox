@@ -5,11 +5,7 @@ import useCapabilities from '../../../../../hooks/useCapabilities'
 import useDropdown from '../../../../../hooks/useDropdown'
 
 /**
- * Split-button for rewind: main button rewinds here, chevron reveals rewind variants.
- * @param {Object} props
- * @param {string} props.turnId - Turn identifier to rewind from.
  * @param {Function} props.onRewind - Callback receiving (turnId, mode).
- * @param {boolean} props.forking - Whether a fork is in progress.
  */
 function RewindSplitButton({ turnId, onRewind, forking = false }) {
   const { capabilities } = useCapabilities()

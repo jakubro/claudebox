@@ -15,11 +15,11 @@ describe('useMessageQueue', () => {
     })
   })
 
-  /** Helper: default props for renderHook. */
   function defaultProps(overrides = {}) {
     return {
       resultCount: 0,
       compactionCount: 0,
+      isLoading: false,
       interruptStatus: null,
       errorMessage: null,
       sessionId: 'session-1',
@@ -197,6 +197,89 @@ describe('useMessageQueue', () => {
 
       expect(sendFn).toHaveBeenCalledTimes(1)
       expect(sendFn).toHaveBeenCalledWith('msg', { attachments: null })
+    })
+  })
+
+  describe('drain is held while a stored conversation loads', () => {
+    it('does not send while loading, however far the counter climbs', () => {
+      const { result, rerender } = renderHook(props => useMessageQueue(props), {
+        initialProps: defaultProps({ isLoading: true, resultCount: 0 }),
+      })
+
+      act(() => {
+        result.current.enqueueMessage('typed during load')
+      })
+
+      // Replaying stored responses walks the counter up by many.
+      rerender(defaultProps({ isLoading: true, resultCount: 12 }))
+      rerender(defaultProps({ isLoading: true, resultCount: 37 }))
+
+      expect(sendFn).not.toHaveBeenCalled()
+      expect(result.current.queueItems).toHaveLength(1)
+    })
+
+    it('does not send on the commit that ends the load', () => {
+      const { result, rerender } = renderHook(props => useMessageQueue(props), {
+        initialProps: defaultProps({ isLoading: true, resultCount: 0 }),
+      })
+
+      act(() => {
+        result.current.enqueueMessage('queued before the load ended')
+      })
+
+      // The final replay slice and the replay-ended dispatch land in ONE commit, so the counter jump
+      // arrives with the flag turning false. That jump is replayed history, not a live cycle.
+      rerender(defaultProps({ isLoading: false, resultCount: 37 }))
+
+      expect(sendFn).not.toHaveBeenCalled()
+      expect(result.current.queueItems).toHaveLength(1)
+    })
+
+    it('drains on the first live completion after the load, one item at a time', () => {
+      const { result, rerender } = renderHook(props => useMessageQueue(props), {
+        initialProps: defaultProps({ isLoading: true, resultCount: 0 }),
+      })
+
+      act(() => {
+        result.current.enqueueMessage('first')
+        result.current.enqueueMessage('second')
+      })
+
+      rerender(defaultProps({ isLoading: false, resultCount: 40 }))
+
+      expect(sendFn).not.toHaveBeenCalled()
+
+      // A genuine live completion drains exactly one, proving the counter was re-synced across the
+      // load rather than left behind at its pre-load value.
+      rerender(defaultProps({ isLoading: false, resultCount: 41 }))
+
+      expect(sendFn).toHaveBeenCalledTimes(1)
+      expect(sendFn).toHaveBeenCalledWith('first', { attachments: null })
+
+      rerender(defaultProps({ isLoading: false, resultCount: 42 }))
+
+      expect(sendFn).toHaveBeenCalledTimes(2)
+      expect(sendFn).toHaveBeenLastCalledWith('second', { attachments: null })
+    })
+
+    it('holds the compaction-driven drain too', () => {
+      const { result, rerender } = renderHook(props => useMessageQueue(props), {
+        initialProps: defaultProps({ isLoading: true, compactionCount: 0 }),
+      })
+
+      act(() => {
+        result.current.enqueueMessage('queued before the load ended')
+      })
+
+      // A stored conversation containing a compaction replays its boundary.
+      rerender(defaultProps({ isLoading: true, compactionCount: 3 }))
+      rerender(defaultProps({ isLoading: false, compactionCount: 3 }))
+
+      expect(sendFn).not.toHaveBeenCalled()
+
+      rerender(defaultProps({ isLoading: false, compactionCount: 4 }))
+
+      expect(sendFn).toHaveBeenCalledTimes(1)
     })
   })
 

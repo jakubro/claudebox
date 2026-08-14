@@ -23,7 +23,6 @@ const eventsMock = (overrides = {}) => ({
   ...overrides,
 })
 
-// Mock the context hooks
 vi.mock('../../../context/EventsContext', () => ({
   useEvents: vi.fn(),
 }))
@@ -34,9 +33,7 @@ vi.mock('../../../context/LogsStreamContext', () => ({
   useLogsStream: vi.fn(),
 }))
 
-// Mock event-processing helpers so the hook can be unit-tested without
-// reproducing event-shape conventions in every test case. extractTasks and
-// getMcpServers are exercised end-to-end via their own unit tests.
+// Mocked so the hook doesn't need real event shapes; extractTasks/getMcpServers have their own unit tests.
 vi.mock('../../../utils/eventProcessing', () => ({
   extractTasks: vi.fn(() => []),
   getMcpServers: vi.fn(() => []),
@@ -177,9 +174,7 @@ describe('useBadgeCounts', () => {
 
     const { result } = renderHook(() => useBadgeCounts())
 
-    // Only `failed` counts - `disconnected` and `disabled` are not "failed
-    // to connect" in the strict sense; the danger badge represents a
-    // server that the user must take action on.
+    // Only `failed` counts toward the danger badge - `disconnected`/`disabled` don't need user action.
     expect(result.current.mcpFailedCount).toBe(2)
   })
 })

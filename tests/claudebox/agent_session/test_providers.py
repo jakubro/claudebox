@@ -31,11 +31,11 @@ from claudebox.agent_session.errors import (
 
 class TestProviderSpecParse:
     def test_parses_normal_form(self):
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-4-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
         assert spec.provider == "anthropic"
-        assert spec.model_id == "claude-sonnet-4-5"
-        assert spec.full_id == "anthropic:claude-sonnet-4-5"
+        assert spec.model_id == "claude-sonnet-5"
+        assert spec.full_id == "anthropic:claude-sonnet-5"
         assert spec.kwargs == {}
 
     def test_parses_ollama_with_colon_in_model_id(self):
@@ -56,33 +56,17 @@ class TestProviderSpecParse:
         assert spec.kwargs is kwargs
 
     def test_rejects_bare_model_id_no_colon(self):
-        """parse() requires the explicit `provider:model` form; no-colon strings raise.
-
-        Workspace TOML must declare `[langgraph] model = "ollama:llama3.2:3b"`
-        (or `"anthropic:claude-sonnet-4-5"`, etc.) - the bare model-id form
-        is rejected so misconfiguration surfaces at session start with an
-        actionable error instead of failing at init_chat_model time.
-        """
+        """A bare model id raises so misconfiguration fails at session start, not later at init_chat_model."""
 
         with pytest.raises(ValueError, match="provider:model"):
             ProviderSpec.parse("simple-no-colon-name", {})
 
     def test_accepts_bare_ollama_model_id_with_internal_colons_garbage_in_garbage_out(self):
-        """A bare ollama-shaped model id (with internal colons) parses but produces wrong fields.
-
-        `partition(":")` splits on the FIRST colon. For `"llama3.2:3b"`,
-        provider becomes `"llama3.2"` and model_id becomes `"3b"`, which
-        is semantically wrong. Documented behaviour: users must write the
-        explicit `ollama:` form. The garbage-in-garbage-out case here
-        ensures init_chat_model fails loudly at construction (no registered
-        `llama3.2` provider package) rather than silently routing to a
-        wrong target.
-        """
+        """A bare id like "llama3.2:3b" misparses into provider="llama3.2"/model_id="3b" -
+        init_chat_model then fails loudly instead of silently routing to the wrong target."""
 
         spec = ProviderSpec.parse("llama3.2:3b", {})
 
-        # Documents the misparse - users hitting this should see init_chat_model
-        # fail loudly because "llama3.2" is not a registered provider package.
         assert spec.provider == "llama3.2"
         assert spec.model_id == "3b"
 
@@ -99,10 +83,10 @@ class TestProviderSpecParse:
             ProviderSpec.parse("", {})
 
     def test_frozen_dataclass(self):
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-4-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
         with pytest.raises(
-            Exception
+            Exception,
         ):  # FrozenInstanceError subclasses dataclasses.FrozenInstanceError
             spec.provider = "other"  # ty: ignore[invalid-assignment]
 
@@ -137,11 +121,6 @@ class TestInstallHint:
             assert provider in PROVIDER_EXTRAS, (
                 f"Tier 1 provider {provider!r} missing from PROVIDER_EXTRAS"
             )
-
-
-# ----------------------------------------------------------------------------
-# Section 2 - ProviderStrategy registry + per-provider probes + catalogs (.b)
-# ----------------------------------------------------------------------------
 
 
 def _httpx_client_mock(
@@ -258,7 +237,9 @@ class TestProbeOllama:
         bad_response = MagicMock()
         bad_response.status_code = 500
         bad_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "boom", request=MagicMock(), response=bad_response
+            "boom",
+            request=MagicMock(),
+            response=bad_response,
         )
         client_mock.post.return_value = bad_response
 
@@ -302,8 +283,7 @@ class TestProbeOpenAICompatible:
         """`base_url` set + no probe_on_connect -> no HTTP call (default off)."""
 
         spec = self._spec()  # no probe_on_connect
-        # No httpx patching needed - the gate should prevent any HTTP call.
-        # But we patch to verify it was NOT called.
+        # Patch httpx anyway, to assert get() was never called despite the gate.
         client_mock = _httpx_client_mock()
 
         with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
@@ -349,8 +329,7 @@ class TestProbeOpenAICompatible:
             try:
                 _probe_openai_compatible(spec)
             except OpenAICompatibleUnreachable as exc:
-                # Both inherit from ProviderError; the OpenAI-compatible one must
-                # NOT also be an OllamaUnreachable so handlers can disambiguate.
+                # Both inherit ProviderError, but must stay distinct so handlers can disambiguate.
                 assert not isinstance(exc, OllamaUnreachable)
 
 
@@ -373,7 +352,7 @@ class TestFetchOllamaCatalog:
             "models": [
                 {"name": "llama3.2:3b"},
                 {"name": "qwen2.5:7b"},
-            ]
+            ],
         }
         client_mock = _httpx_client_mock(json_payload=payload)
 
@@ -443,7 +422,7 @@ class TestFetchOpenAICatalog:
             "data": [
                 {"id": "gpt-4o"},
                 {"id": "qwen2.5-7b-instruct"},
-            ]
+            ],
         }
         client_mock = _httpx_client_mock(json_payload=payload)
 
@@ -478,18 +457,21 @@ class TestFetchOpenAICatalog:
         assert [m.id for m in models] == ["gpt-4o", "gpt-4o-mini"]
 
 
-# ----------------------------------------------------------------------------
-# Section 4 - Lookup helpers (.c)
-# ----------------------------------------------------------------------------
-
-
 class TestLookupContextWindow:
     """`lookup_context_window(spec, override)` reads MODEL_CONTEXT_WINDOW with workspace override."""
 
     def test_table_hit_anthropic_sonnet(self):
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-4-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
-        assert lookup_context_window(spec, None) == 200_000
+        assert lookup_context_window(spec, None) == 1_000_000
+
+    def test_haiku_alias_matches_dated_id(self):
+        """The alias the Anthropic API accepts resolves to the same window as the dated id."""
+
+        alias = ProviderSpec.parse("anthropic:claude-haiku-4-5", {})
+        dated = ProviderSpec.parse("anthropic:claude-haiku-4-5-20251001", {})
+
+        assert lookup_context_window(alias, None) == lookup_context_window(dated, None)
 
     def test_table_hit_ollama_llama(self):
         spec = ProviderSpec.parse("ollama:llama3.2:3b", {})
@@ -506,7 +488,7 @@ class TestLookupContextWindow:
     def test_override_wins_over_table(self):
         """Workspace `max_tokens_override = N` short-circuits table lookup."""
 
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-4-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
         assert lookup_context_window(spec, 65_536) == 65_536
 
@@ -522,9 +504,17 @@ class TestLookupPrice:
     """`lookup_price(spec, overrides)` reads PRICE_PER_MTOK with workspace overrides."""
 
     def test_table_hit_anthropic_sonnet(self):
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-4-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
         assert lookup_price(spec, {}) == {"input": 3.0, "output": 15.0}
+
+    def test_haiku_alias_matches_dated_id(self):
+        """The alias the Anthropic API accepts prices the same as the dated catalog id."""
+
+        alias = ProviderSpec.parse("anthropic:claude-haiku-4-5", {})
+        dated = ProviderSpec.parse("anthropic:claude-haiku-4-5-20251001", {})
+
+        assert lookup_price(alias, {}) == lookup_price(dated, {})
 
     def test_table_hit_openai_gpt4o(self):
         spec = ProviderSpec.parse("openai:gpt-4o", {})
@@ -541,8 +531,8 @@ class TestLookupPrice:
     def test_override_wins_over_curated_table(self):
         """Workspace `[langgraph.cost]` overrides take precedence over PRICE_PER_MTOK."""
 
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-4-5", {})
-        overrides = {"claude-sonnet-4-5": {"input": 1.0, "output": 5.0}}
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
+        overrides = {"claude-sonnet-5": {"input": 1.0, "output": 5.0}}
 
         assert lookup_price(spec, overrides) == {"input": 1.0, "output": 5.0}
 

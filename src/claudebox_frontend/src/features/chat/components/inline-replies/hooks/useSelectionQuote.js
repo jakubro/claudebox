@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { captureAnchor, EXCLUDE_SELECTOR, INCLUDE_SELECTOR } from '../anchor'
+import { clampHorizontal } from '../overlayDom'
+
+// Approximate affordance-button width (QuoteAffordance.css) - unmounted here, so nothing to measure for the clamp.
+const QUOTE_AFFORDANCE_WIDTH = 26
 
 /**
- * Watch selections inside `messagesRef` and surface a quote affordance near the selection end.
- *
- * Resolves from the selection anchor (clamp-to-anchor): a drag spanning two turns
- * attributes to the anchor turn rather than being dropped. Returns null while the
- * selection is collapsed, empty, or outside the transcript.
+ * Resolves from the selection anchor (clamp-to-anchor): a drag spanning two turns attributes to the anchor turn.
+ * Returns null while the selection is collapsed, empty, or outside the transcript.
  * @param {object} messagesRef - Ref to the `.chat-messages` scroll container.
  * @param {boolean} enabled - Whether selection tracking is active (desktop, in-session).
  * @returns {{ affordance: object|null, clear: function }}
@@ -82,6 +83,11 @@ export default function useSelectionQuote(messagesRef, enabled) {
       const turnEl = el.closest('[data-turn-id]')
       const from = roleEl.dataset.testid === 'message-user' ? 'user' : 'assistant'
       const rect = range.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const left = clampHorizontal(
+        { left: rect.right, width: QUOTE_AFFORDANCE_WIDTH },
+        { left: containerRect.left, right: containerRect.right },
+      )
 
       setAffordance({
         text,
@@ -90,7 +96,7 @@ export default function useSelectionQuote(messagesRef, enabled) {
         prefix: captured.prefix,
         suffix: captured.suffix,
         offset: captured.offset,
-        left: rect.right,
+        left,
         top: rect.bottom,
       })
     }

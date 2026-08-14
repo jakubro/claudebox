@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockCapabilities } from '../../test-utils/mockCapabilities'
 import SkillsPanel from './SkillsPanel'
 
-// Mock data - mutable ref for per-test override
 const mockState = { commands: {} }
 const mockEventsData = { isResuming: false, isReplaying: false }
 let mockUseCapabilities = { capabilities: mockCapabilities(), runtimeName: 'Claude' }
@@ -107,7 +106,6 @@ describe('SkillsPanel', () => {
 
     render(<SkillsPanel />)
 
-    // Custom tab (default) - only deploy
     expect(screen.getByText('/deploy')).toBeInTheDocument()
     expect(screen.queryByText('/compact')).not.toBeInTheDocument()
     expect(screen.queryByText('/cost')).not.toBeInTheDocument()
@@ -137,11 +135,9 @@ describe('SkillsPanel', () => {
 
     render(<SkillsPanel />)
 
-    // Start on Custom tab - only /deploy visible
     expect(screen.getByText('/deploy')).toBeInTheDocument()
     expect(screen.queryByText('/mcp__slack__send')).not.toBeInTheDocument()
 
-    // Switch to MCP
     await user.click(screen.getByRole('button', { name: /MCP/ }))
 
     expect(screen.getByText('/mcp__slack__send')).toBeInTheDocument()

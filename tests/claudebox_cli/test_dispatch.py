@@ -1,8 +1,7 @@
 """Verify the verb-mode parser dispatches each verb to the expected handler.
 
-The parser is module-level state in ``host_cli``; tests exercise it directly via
-``parser.parse_args`` rather than spawning subprocesses. The host_cli ``cli()``
-guard prevents dispatch on import.
+The parser is module-level state in ``host_cli``; tests call ``parser.parse_args`` directly instead of spawning
+subprocesses, and the ``cli()`` guard prevents dispatch on import.
 """
 
 import argparse
@@ -29,7 +28,6 @@ from host_cli import app
 parser = app.parser
 
 
-# (verb, expected handler).
 _VERB_HANDLERS = [
     ("run", cmd_run.handle),
     ("build", cmd_build.handle),
@@ -90,7 +88,6 @@ class TestRunAgentArgs:
 
     def test_agent_args_after_double_dash(self) -> None:
         args = parser.parse_args(["run", "--", "--resume"])
-        # REMAINDER preserves the leading `--`; cmd_run.handle strips it.
         assert args.agent_args == ["--", "--resume"]
 
     def test_agent_args_complex(self) -> None:

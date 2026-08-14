@@ -23,10 +23,9 @@ the Free Software Foundation, either version 3 of the License, or
 # Paths: Config
 # -------------------------------------
 #
-# Home-derived paths are accessor functions, not module-level constants -
-# evaluating Path.home() at import time freezes the resolved path and silently
-# defeats Path.home monkeypatching in tests. See GUIDELINES.md "Home-derived
-# paths" for the contract.
+# Home-derived paths are accessor functions, not module-level constants - evaluating Path.home()
+# at import time would freeze the resolved path and defeat monkeypatching in tests (see
+# GUIDELINES.md "Home-derived paths").
 
 CONFIG_DIR_NAME = ".claudebox"  # per-workspace and home config directory
 CLAUDEBOX_SETTINGS_FILE = f"{CONFIG_DIR_NAME}/settings.toml"  # relative to workspace or home
@@ -134,6 +133,15 @@ CONTAINER_CLAUDE_JSON_MOUNT = Path("/root/.claude.json")
 
 CONTAINER_IMAGE_NAME = "claudebox"
 
+# Granted only when [containers] nested = true - lets the baked-in rootless podman-in-podman
+# toolchain initialize storage.
+CONTAINER_NESTED_FUSE_DEVICE = "/dev/fuse"
+
+# Inner podman's storage root, tmpfs-mounted at run time so it never persists past the session.
+# Must match storage.conf's `graphroot` baked by install_containers.sh - kept in sync by hand.
+CONTAINER_NESTED_GRAPHROOT = "/var/lib/containers-storage"
+CONTAINER_NESTED_GRAPHROOT_TMPFS_SIZE = "8g"
+
 DEFAULT_LABELS = {"app": "claudebox"}
 LABEL_DAEMON_MANAGED = "claudebox-daemon-managed"
 LABEL_ID = "claudebox-id"
@@ -151,13 +159,13 @@ WEB_CONTAINER_PORT = 8080
 DAEMON_PORT = 41820
 DAEMON_DEV_PORT = 41920
 GIT_SUBPROCESS_TIMEOUT = timedelta(seconds=5)
+SDK_CONTROL_REQUEST_TIMEOUT = timedelta(seconds=30)  # ceiling on a single SDK control round-trip
 
 
 def daemon_base_url() -> str:
-    """Daemon HTTP base URL - honors CLAUDEBOX_DAEMON_URL env override.
+    """Daemon HTTP base URL, honoring CLAUDEBOX_DAEMON_URL (falls back to the canonical default).
 
-    Called at handler time so test fixtures can mutate the env before the
-    CLI binds the URL. Empty env value falls back to the canonical default.
+    Evaluated lazily so test fixtures can override the env var before the CLI binds the URL.
     """
 
     return os.environ.get("CLAUDEBOX_DAEMON_URL") or f"https://localhost:{DAEMON_PORT}"
@@ -167,15 +175,31 @@ def daemon_base_url() -> str:
 # -------------------------------------
 
 SESSION_MAX_AGE = timedelta(days=365)  # stale threshold for cleanup
+SESSION_STALL_TIMEOUT = timedelta(minutes=15)  # runtime silence mid-turn before it is reported
+SESSION_STALL_CHECK_INTERVAL = timedelta(seconds=15)  # how often the stall watchdog samples
 SESSIONS_DIR_NAME = "sessions"  # subdirectory under config_dir
 SESSION_METADATA_FILE = "session.json"  # per-session metadata file
 SESSION_EVENTS_FILE = "events.jsonl"  # per-session event log
+SESSION_COMPACTION_FILE = "compaction.json"
 SESSION_ATTACHMENTS_DIR = "attachments"  # per-session attachment files
 
 # Size limits
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10 MB per attachment
 MAX_TOOL_OUTPUT_SIZE = 100 * 1024  # 100 KB per tool output payload
 SDK_PROCESS_BUFFER_SIZE = 1024 * 1024 * 1024  # 1 GB stdio buffer for the SDK subprocess
+
+
+# Locking
+# -------------------------------------
+
+FILE_LOCK_TIMEOUT_SECONDS = 5.0  # bound on FileLock acquisition
+
+
+# Container backend
+# -------------------------------------
+
+PODMAN_COMMAND_TIMEOUT = timedelta(seconds=15)  # bound on quick podman admin commands
+PODMAN_RUN_TIMEOUT = timedelta(seconds=60)  # bound on a detached container spawn
 
 
 # Logging

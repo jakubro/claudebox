@@ -31,9 +31,7 @@ hljs.registerLanguage('typescript', typescript)
 hljs.registerLanguage('xml', xml)
 hljs.registerLanguage('yaml', yaml)
 
-/**
- * Map file extension to syntax highlighter language.
- */
+/** Map file extension to syntax highlighter language. */
 export const extensionToLanguage = {
   // JavaScript/TypeScript
   js: 'javascript',
@@ -106,7 +104,6 @@ export function getLanguageFromPath(filePath) {
     return null
   }
 
-  // Handle special filenames (Dockerfile, Makefile, etc.)
   const filename = filePath.split('/').pop().toLowerCase()
   if (filename === 'dockerfile') {
     return 'bash'
@@ -115,7 +112,6 @@ export function getLanguageFromPath(filePath) {
     return 'bash'
   }
 
-  // Extract extension
   const extMatch = filePath.match(/\.([^.]+)$/)
   if (!extMatch) {
     return null
@@ -125,12 +121,9 @@ export function getLanguageFromPath(filePath) {
   return extensionToLanguage[ext] || null
 }
 
-// Minimum relevance score for highlightAuto to be trusted
 const MIN_RELEVANCE = 5 // audit-ignore: misplaced-constant
 
-/**
- * Detect language from content using highlight.js.
- */
+/** Detect language from content using highlight.js. */
 export function detectLanguageFromContent(content) {
   if (!content || content.length < 10) {
     return null
@@ -164,7 +157,6 @@ export function looksLikeMarkdown(content) {
     /```[\s\S]*?```/, // Code blocks
   ]
 
-  // Count matching patterns
   const matches = patterns.filter(p => p.test(content)).length
 
   // Require at least 2 different markdown indicators
@@ -172,8 +164,6 @@ export function looksLikeMarkdown(content) {
 }
 
 /**
- * Detect language for content with optional file path hint.
- *
  * @param {string} content - Source code or text to analyze.
  * @param {string} [filePath] - File path for extension-based detection.
  * @param {boolean} [checkMarkdown=false] - Check for markdown patterns.

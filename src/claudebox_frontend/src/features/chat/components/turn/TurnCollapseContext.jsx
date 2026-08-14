@@ -5,17 +5,10 @@ import { createContext, useMemo } from 'react'
 export const TurnCollapseContext = createContext(null)
 
 /**
- * Provide central turn-collapse state to the turn list.
- *
- * Owned above the turn list (ChatPanel) so a single control can drive every
- * turn's collapse without threading props through the memoized historical list.
- * Consumed by Turn via useTurnCollapse(); Turn falls back to local collapse
- * state when no provider is present (standalone rendering, pending turns).
- *
- * @param {Object} props
+ * Owned above the turn list so one control drives collapse without prop-threading through the memoized list.
+ * Falls back to local state via useTurnCollapse() with no provider (standalone rendering, pending turns).
  * @param {Set<string>} props.collapsedTurnIds - Currently-collapsed turn ids.
  * @param {Function} props.onToggleTurnCollapse - Toggle one turn's collapse: (turnId) => void.
- * @param {React.ReactNode} props.children - Child components.
  */
 export function TurnCollapseProvider({ collapsedTurnIds, onToggleTurnCollapse, children }) {
   const value = useMemo(

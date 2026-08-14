@@ -3,11 +3,7 @@
 import { ChevronDown, ChevronRight, MessageSquareQuote } from 'lucide-react'
 import { useState } from 'react'
 
-/**
- * Display a compact inline-replies placeholder that expands in place to show quote/reply pairs.
- * @param {object} props
- * @param {Array} props.replies - Inline reply pairs, each { quote, from, response }.
- */
+/** @param {Array} props.replies - Inline reply pairs, each { quote, from, response }. */
 export default function InlineReplies({ replies }) {
   const [expanded, setExpanded] = useState(false)
   const count = replies.length

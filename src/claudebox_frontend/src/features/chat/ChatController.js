@@ -4,10 +4,7 @@ import { AUTOSCROLL_THRESHOLD } from '../../config/dimensions'
 import { PROGRAMMATIC_SCROLL_HOLD_MS } from '../../config/timing'
 import { isPrimaryPointer } from '../../utils/pointer'
 
-/**
- * Keys on `.chat-messages` that count as "user is scrolling" intent. Matches
- * the browser's native scroll-key behaviour for a focused scroll container.
- */
+/** Keys on `.chat-messages` that count as user-scroll intent, matching native scroll-key behaviour. */
 const SCROLL_INTENT_KEYS = new Set([
   'PageUp',
   'PageDown',
@@ -19,9 +16,8 @@ const SCROLL_INTENT_KEYS = new Set([
 ])
 
 /**
- * Keys whose native scroll direction is downward. At-bottom these cannot move
- * the view further; firing them is a no-op gesture, not intent. Plain Space
- * also belongs here (Shift+Space scrolls up and is handled separately).
+ * Keys whose native direction is downward; at-bottom they're a no-op, not intent. Plain Space
+ * belongs here too (Shift+Space scrolls up, handled separately).
  */
 const SCROLL_DOWN_KEYS = new Set(['PageDown', 'End', 'ArrowDown'])
 
@@ -37,10 +33,8 @@ export default class ChatController {
     // Scroll state
     this.isAutoScrollEnabled = true
     this.isProgrammaticScroll = false
-    // Latched once the user has expressed scroll intent (wheel/touch/key) -
-    // cleared only on re-engagement (manual scroll back to bottom) or session
-    // change. Decouples intent classification from height-equality heuristics
-    // that race with streaming-driven content growth.
+    // Latched on scroll intent (wheel/touch/key); cleared only on re-engagement or session change.
+    // Decouples intent from height-equality heuristics that race with streaming content growth.
     this.userIntentActive = false
 
     // Element references (set via initialize)
@@ -146,8 +140,7 @@ export default class ChatController {
       }
       this.isProgrammaticScroll = true
       el.scrollTop = el.scrollHeight
-      // Synchronous clear (scoped to this commit). Concurrent native scrolls
-      // dispatched after this point are user-driven.
+      // Synchronous clear (scoped to this commit) - scrolls dispatched after this point are user-driven.
       this.isProgrammaticScroll = false
     })
   }
@@ -217,25 +210,20 @@ export default class ChatController {
       if (e.ctrlKey) {
         return
       }
-      // At-bottom + downward wheel: view cannot move; not a gesture. Without
-      // this gate, every wheel tick within AUTOSCROLL_THRESHOLD of bottom
-      // races markUserIntent (disable) against handleUserScroll's re-engage
-      // (re-enable) on every tick, producing a per-tick indicator flicker.
+      // At-bottom + downward wheel is a no-op, not a gesture. Without this gate, every wheel tick
+      // near bottom races markUserIntent (disable) against handleUserScroll's re-engage, flickering the indicator.
       if (this.isAtBottom() && e.deltaY > 0) {
         return
       }
-      // Inner scrollable will consume this wheel; outer listener must defer.
-      // Covers code blocks (<pre overflow:auto>), tables, and any future
-      // nested overflow:auto/scroll containers under .chat-messages.
+      // Inner scrollable consumes this wheel; outer listener defers (code blocks, tables, any
+      // nested overflow:auto/scroll container under .chat-messages).
       if (this._isNestedScrollableConsuming(e, messagesEl, e.deltaX, e.deltaY)) {
         return
       }
       this.markUserIntent()
     }
-    // pointerdown/pointermove on touch share the same coarse gate - no deltas
-    // to examine. Browsers hand the gesture to the innermost scrollable
-    // ancestor, so any such ancestor implies the outer listener should defer.
-    // Mouse pointers route through the wheel handler instead.
+    // pointerdown/pointermove (touch only) share this coarse gate - no deltas to examine, and
+    // browsers hand the gesture to the innermost scrollable ancestor; mouse routes through wheel instead.
     const onPointerDown = e => {
       if (e.pointerType !== 'touch' || !isPrimaryPointer(e)) {
         return
@@ -262,8 +250,7 @@ export default class ChatController {
       if (!SCROLL_INTENT_KEYS.has(e.key)) {
         return
       }
-      // At-bottom + scroll-down key: cannot move the view; not intent.
-      // Plain Space scrolls down; Shift+Space scrolls up (so passes through).
+      // At-bottom + scroll-down key is a no-op, not intent. Plain Space scrolls down; Shift+Space passes through.
       if (this.isAtBottom() && (SCROLL_DOWN_KEYS.has(e.key) || (e.key === ' ' && !e.shiftKey))) {
         return
       }
@@ -315,8 +302,7 @@ export default class ChatController {
         if (this.isAutoScrollEnabled) {
           containerEl.scrollTop = containerEl.scrollHeight
         } else {
-          // Disabled-autoscroll path: restore persisted scroll position so
-          // genuine height changes don't shift the view.
+          // Disabled-autoscroll: restore the persisted position so real height changes don't shift the view.
           containerEl.scrollTop = contextRefs.chatScrollPositionRef.current
         }
         this.isProgrammaticScroll = false
@@ -384,7 +370,7 @@ export default class ChatController {
   /**
    * Coarse variant of _isNestedScrollableConsuming for touch events where no
    * delta is available. Returns true if any ancestor between target and
-   * messagesEl declares overflow ∈ {auto, scroll} on either axis. Browsers
+   * messagesEl declares overflow in {auto, scroll} on either axis. Browsers
    * route touch panning to the innermost scrollable ancestor, so any such
    * ancestor implies the outer listener should defer.
    */

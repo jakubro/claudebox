@@ -42,9 +42,7 @@ function mockWorkspaceContainers(page, containers = SAMPLE_CONTAINERS) {
 
 test.describe('Containers Panel', () => {
   test.beforeEach(async ({ page }) => {
-    // Use the containers-test sessions fixture so s-foo-1 / s-bar-1 referenced
-    // by SAMPLE_CONTAINERS exist with `session_dir` populated; the click-to-copy
-    // tests below assert on the session-directory tooltip and clipboard payload.
+    // s-foo-1 / s-bar-1 need `session_dir` populated for the click-to-copy tests' tooltip/clipboard assertions.
     await mockAPI(page, { sessionsFixture: 'sessions/containers-test.json' })
     await mockSSE(page)
   })
@@ -186,7 +184,6 @@ test.describe('Containers Panel', () => {
     await waitForAppReady(page)
     await page.locator('[data-testid="icon-containers"]').click()
 
-    // No '(unnamed)' placeholder anywhere in the panel.
     await expect(page.locator('[data-testid="panel-containers"]')).not.toContainText('(unnamed)')
   })
 
@@ -263,8 +260,7 @@ test.describe('Containers Panel', () => {
 
   // SPEC: panel-containers:columns (8-char session id matching the Sessions panel)
   test('session id cell renders the 8-character prefix only', async ({ page }) => {
-    // Override the standard fixture's `s-foo-1` (7 chars) with a longer id so
-    // the slice(0, 8) behavior is observable.
+    // Longer id than the standard fixture's `s-foo-1` (7 chars) so slice(0, 8) is observable.
     const longContainers = [
       {
         ...SAMPLE_CONTAINERS[0],
@@ -287,12 +283,8 @@ test.describe('Containers Panel', () => {
   test('columns align across rows regardless of per-row content width or current-row state', async ({
     page,
   }) => {
-    // Four containers with distinct ages so the relative-time strings render at
-    // measurably different widths (`18h ago`, `23h ago`, `1d ago`, `2d ago`).
-    // created_at is computed relative to Date.now() so the strings stay stable
-    // across the test window. One container's session id matches the fixture's
-    // s-foo-1 so URL navigation marks its row as current (no Resume control) -
-    // exercises the actions-column reservation case.
+    // Four ages (18h/23h/1d/2d) make relative-time strings render at different widths; s-foo-1
+    // becomes current via URL nav (no Resume), exercising the actions-column reservation case.
     const now = Date.now()
     const hours = h => new Date(now - h * 3600 * 1000).toISOString()
     const alignmentContainers = [
@@ -339,8 +331,7 @@ test.describe('Containers Panel', () => {
     ]
 
     await mockWorkspaceContainers(page, alignmentContainers)
-    // Navigate to s-foo-1 so the first row becomes the current container and
-    // its ResumeControl is suppressed.
+    // s-foo-1's row becomes current, suppressing its ResumeControl.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/s-foo-1`)
     await waitForAppReady(page)
     await page.locator('[data-testid="icon-containers"]').click()
@@ -349,8 +340,7 @@ test.describe('Containers Panel', () => {
     await expect(panel).toBeVisible()
     await expect(panel.locator('.containers-row')).toHaveCount(4)
 
-    // Confirm the age column renders varying widths (otherwise the alignment
-    // assertion below would be vacuous).
+    // Confirm the age column renders varying widths, or the alignment check below is vacuous.
     const ageTexts = await panel.locator('.containers-age').allTextContents()
     const unique = new Set(ageTexts)
     expect(unique.size).toBeGreaterThanOrEqual(3)
@@ -361,8 +351,7 @@ test.describe('Containers Panel', () => {
       .evaluate(el => getComputedStyle(el).display)
     expect(listDisplay).toBe('grid')
 
-    // Row-level x-coordinate identity across the four rows. Sub-pixel rounding
-    // tolerated within ±0.5px.
+    // Row-level x-coordinate identity across the four rows, with +/-0.5px for sub-pixel rounding.
     async function columnXs(selector) {
       return panel
         .locator(selector)
@@ -381,8 +370,7 @@ test.describe('Containers Panel', () => {
       expect(max - min).toBeLessThanOrEqual(0.5)
     }
 
-    // Stop button x is identical across the current row (Stop only) and a
-    // non-current running row (Stop + Resume).
+    // Stop button x matches between the current row (Stop only) and a non-current row (+Resume).
     const currentStopX = await panel
       .locator('[data-testid="container-stop-c-align-1111-aaaa"]')
       .evaluate(el => el.getBoundingClientRect().x)
@@ -397,8 +385,8 @@ test.describe('Containers Panel', () => {
     const otherRow = page.locator('[data-testid="container-row-c-align-2222-bbbb"]')
     await expect(otherRow.locator('[data-testid="session-resume-btn"]')).toHaveCount(1)
 
-    // Probe + screenshot artifacts for the per-ticket commit gate (§A.5).
-    // Opt-in via env var so the side-effect doesn't surprise other runs.
+    // Probe/screenshot artifacts support the per-ticket commit gate; opt-in via env var so the
+    // side-effect doesn't surprise other runs.
     if (process.env.PROBE_OUT_DIR) {
       const dir = process.env.PROBE_OUT_DIR
       const probe = await panel.evaluate(el => {

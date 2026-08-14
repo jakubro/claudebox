@@ -2,7 +2,13 @@
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 export const MAX_LOGS = 1000
+export const MAX_MERMAID_CACHE_ENTRIES = 50
+export const MAX_INPUT_HISTORY_ENTRIES = 200
+export const MAX_INPUT_HISTORY_BYTES = 256 * 1024 // 256 KB, oldest entries evicted first
 
-// Decay rate for staleness color fade past STALENESS_STALE_PEAK_MS:
-// fade fraction = 1 - 1 / (1 + STALENESS_FADE_RATE * overflow_ms).
+// Events materialized per drain slice on resume; bounds each commit so the browser keeps a paint/input window.
+// Higher = longer commits; lower = more commits, each re-rendering every TodoWrite/Task-bearing turn.
+export const REPLAY_DRAIN_SLICE_SIZE = 50
+
+// Staleness fade past STALENESS_STALE_PEAK_MS: fraction = 1 - 1 / (1 + STALENESS_FADE_RATE * overflow_ms).
 export const STALENESS_FADE_RATE = 0.00002

@@ -2,11 +2,7 @@
 
 import { Check } from 'lucide-react'
 
-/**
- * Display Q/A pairs with headers, question text, and multiple answers per question.
- * @param {object} props
- * @param {Array<{header: string, text: string, answers: string[]}>} props.questions - Q/A data.
- */
+/** @param {Array<{header: string, text: string, answers: string[]}>} props.questions */
 export default function QAResponseBlock({ questions }) {
   return (
     <div className="qa-response-block">

@@ -29,7 +29,8 @@ def _build_app(board_service):
             content={"error": exc.error_key, **exc.context},
         )
 
-    app.add_exception_handler(TicketError, _handle_ticket_error)  # ty: ignore[invalid-argument-type]  # Starlette type narrows to BaseException-handler; our handler accepts the specific subclass.
+    # Starlette narrows the handler param to BaseException; ours accepts TicketError specifically.
+    app.add_exception_handler(TicketError, _handle_ticket_error)  # ty: ignore[invalid-argument-type]
 
     return app
 

@@ -24,6 +24,7 @@ def _make_config(tmp_path, **overrides):
         "ports": None,
         "network_mode": None,
         "env": None,
+        "containers_nested": False,
     }
     defaults.update(overrides)
 
@@ -138,6 +139,30 @@ class TestGetContainerArgs:
         args = list(get_container_run_args(config))
         assert "--network" not in args
 
+    def test_no_nested_device_by_default(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config))
+        assert "--device" not in args
+
+    def test_nested_device_when_enabled(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path, containers_nested=True)
+        args = list(get_container_run_args(config))
+
+        idx = args.index("--device")
+        assert args[idx + 1] == "/dev/fuse"
+
+    def test_nested_tmpfs_graphroot_when_enabled(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path, containers_nested=True)
+        args = list(get_container_run_args(config))
+
+        idx = args.index("--tmpfs")
+        assert args[idx + 1].startswith("/var/lib/containers-storage:size=")
+
+    def test_no_nested_tmpfs_by_default(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config))
+        assert "--tmpfs" not in args
+
     def test_image_name_present(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path)
         args = list(get_container_run_args(config))
@@ -170,7 +195,7 @@ class TestGetContainerArgs:
             get_container_run_args(
                 config,
                 extra_volumes=[(host_dir, "/container/path:ro", True)],
-            )
+            ),
         )
         image_idx = args.index(CONTAINER_IMAGE_NAME)
         vol_args = [args[i + 1] for i, a in enumerate(args) if a == "--volume"]
@@ -188,7 +213,7 @@ class TestGetContainerArgs:
             get_container_run_args(
                 config,
                 extra_volumes=[(host_file, "/root/.mcp.json:ro", False)],
-            )
+            ),
         )
         vol_args = [args[i + 1] for i, a in enumerate(args) if a == "--volume"]
         assert f"{host_file.resolve()}:/root/.mcp.json:ro" in vol_args

@@ -16,8 +16,7 @@ if TYPE_CHECKING:
 class ContainerRuntime:
     """High-level interface to container build and run operations.
 
-    Wraps ContainerBackend (podman/docker) and provides a unified API
-    that matches ContainerRuntimeProtocol.
+    Wraps ContainerBackend (podman/docker) and provides a unified API that matches ContainerRuntimeProtocol.
     """
 
     def __init__(self, config: Config | None = None, *, verbose: bool = False):
@@ -58,7 +57,7 @@ class ContainerRuntime:
         detach: bool = False,
         config: Config | None = None,
     ) -> str | None:
-        """Build run args and spawn a container; ``config`` overrides the runtime config for this launch."""
+        """Build run args and spawn a container; ``config`` overrides the captured config."""
 
         args = get_container_run_args(
             config or self.config,

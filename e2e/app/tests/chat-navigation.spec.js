@@ -1,7 +1,7 @@
 /** E2E tests for chat message jump navigation via keyboard shortcuts and control bar buttons. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady, waitForStableScroll } from '../helpers.js'
+import { waitForAppReady, waitForStableScroll, waitForStableScrollHeight } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
@@ -37,13 +37,10 @@ test.describe('Chat Navigation', () => {
         })
         .toBe(true)
 
-      // Claim says "previous HUMAN message" - verify the destination row
-      // matches a human-message marker rather than landing on assistant text.
-      // Human messages carry data-testid="message-user".
-      // The human message that the jump landed on should be near the TOP of
-      // the viewport - i.e. the topmost human message currently visible
-      // should sit above the viewport mid-line. Widen the tolerance to
-      // accommodate scroll-snap rounding and per-turn padding.
+      // Verifies against the message-user marker (data-testid), not assistant text, per the
+      // "previous HUMAN message" claim.
+      // Topmost visible human message sits above viewport mid-line; tolerance covers
+      // scroll-snap rounding and per-turn padding.
       const targetHuman = await messages.evaluate(el => {
         const viewportRect = el.getBoundingClientRect()
         const viewportTop = viewportRect.top
@@ -70,10 +67,12 @@ test.describe('Chat Navigation', () => {
 
       const messages = page.locator('[data-testid="chat-messages"]')
       await expect(messages).toBeVisible()
+      // Wait for streamed turns to finish rendering, so there is content below the top for
+      // Alt+Down to jump to (under load, the shortcut can fire while scrollTop is still 0).
+      await waitForStableScrollHeight(messages)
 
-      // Dispatch a wheel event first to disengage autoscroll - bare scrollTop
-      // writes don't count as user-scroll intent, so autoscroll would otherwise
-      // race to snap back to bottom before Alt+Down fires.
+      // Dispatch a wheel event to disengage autoscroll first - bare scrollTop writes are not
+      // user-scroll intent, so autoscroll would otherwise snap back to bottom before Alt+Down.
       await messages.dispatchEvent('wheel', { deltaY: -100 })
       await messages.evaluate(el => {
         el.scrollTop = 0
@@ -84,10 +83,8 @@ test.describe('Chat Navigation', () => {
 
       await expect.poll(async () => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
 
-      // The human message that the jump landed on should be near the TOP of
-      // the viewport - i.e. the topmost human message currently visible
-      // should sit above the viewport mid-line. Widen the tolerance to
-      // accommodate scroll-snap rounding and per-turn padding.
+      // Topmost visible human message sits above viewport mid-line; tolerance covers
+      // scroll-snap rounding and per-turn padding.
       const targetHuman = await messages.evaluate(el => {
         const viewportRect = el.getBoundingClientRect()
         const viewportTop = viewportRect.top
@@ -121,7 +118,6 @@ test.describe('Chat Navigation', () => {
       })
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
 
-      // Press Alt+Down - no messages below, should stay at bottom
       await page.keyboard.press('Alt+ArrowDown')
 
       await expect
@@ -142,16 +138,14 @@ test.describe('Chat Navigation', () => {
       const messages = page.locator('[data-testid="chat-messages"]')
       await expect(messages).toBeVisible()
 
-      // Disengage autoscroll before forcing scrollTop=0 - without this the
-      // autoscroll engine may snap the scroll back to bottom between the
-      // programmatic write and the Alt+Up press.
+      // Disengage autoscroll before forcing scrollTop=0, or it may snap back to bottom
+      // between the programmatic write and the Alt+Up press.
       await messages.dispatchEvent('wheel', { deltaY: -100 })
       await messages.evaluate(el => {
         el.scrollTop = 0
       })
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
 
-      // Press Alt+Up - no messages above, should remain at top
       await page.keyboard.press('Alt+ArrowUp')
 
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
@@ -165,15 +159,14 @@ test.describe('Chat Navigation', () => {
       const messages = page.locator('[data-testid="chat-messages"]')
       await expect(messages).toBeVisible()
 
-      // Wait for the long-conversation fixture to actually render - without
-      // this, scrollHeight may still be <= clientHeight when we try to seek to
-      // the middle, so scrollTop stays 0 and the test races on layout.
+      // Wait for the long-conversation fixture to render, or scrollHeight may still be
+      // <= clientHeight when seeking to the middle, leaving scrollTop at 0 and racing layout.
       await expect
         .poll(async () => messages.evaluate(el => el.scrollHeight - el.clientHeight))
         .toBeGreaterThan(100)
 
-      // Disengage autoscroll before positioning the scroll mid-document -
-      // otherwise it can snap back to bottom before Alt+Up/Down fire.
+      // Disengage autoscroll before positioning mid-document, or it can snap back to bottom
+      // before Alt+Up/Down fire.
       await messages.dispatchEvent('wheel', { deltaY: -100 })
       await messages.evaluate(el => {
         el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2)
@@ -191,9 +184,8 @@ test.describe('Chat Navigation', () => {
         })
         .toBe(true)
 
-      // Wait for scroll to stabilize (two consecutive equal reads) before
-      // capturing scrollAfterUp - otherwise Alt+Down would race the in-flight
-      // scroll animation and could read a non-final position.
+      // Wait for scroll to stabilize (two equal reads) before capturing scrollAfterUp, or
+      // Alt+Down would race the in-flight scroll animation and read a non-final position.
       const scrollAfterUp = await waitForStableScroll(messages)
 
       // Alt+Down should jump to a message below current viewport
@@ -223,10 +215,8 @@ test.describe('Chat Navigation', () => {
         })
         .toBeGreaterThan(0)
 
-      // Press Alt+Home
       await page.keyboard.press('Alt+Home')
 
-      // Should scroll to top
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
     })
 
@@ -238,13 +228,12 @@ test.describe('Chat Navigation', () => {
       const messages = page.locator('[data-testid="chat-messages"]')
       await expect(messages).toBeVisible()
 
-      // Wait for initial autoscroll to settle, then use Alt+Home to scroll to top
-      // (avoids fighting autoscroll by going through the tested shortcut path)
+      // Wait for initial autoscroll to settle, then use Alt+Home to reach the top (avoids
+      // fighting autoscroll by going through the tested shortcut path).
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
       await page.keyboard.press('Alt+Home')
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
 
-      // Press Alt+End
       await page.keyboard.press('Alt+End')
 
       // Should scroll near bottom (explicit timeout - preceding steps consume test budget)
@@ -271,7 +260,6 @@ test.describe('Chat Navigation', () => {
       const messages = page.locator('[data-testid="chat-messages"]')
       await expect(messages).toBeVisible()
 
-      // Scroll to bottom first
       await messages.evaluate(el => {
         el.scrollTop = el.scrollHeight
       })
@@ -279,10 +267,8 @@ test.describe('Chat Navigation', () => {
 
       const scrollBefore = await messages.evaluate(el => el.scrollTop)
 
-      // Click prev button
       await page.locator('button[title="Previous message (Alt+Up)"]').click()
 
-      // Should scroll up
       await expect
         .poll(async () => {
           const scrollAfter = await messages.evaluate(el => el.scrollTop)
@@ -299,17 +285,15 @@ test.describe('Chat Navigation', () => {
       const messages = page.locator('[data-testid="chat-messages"]')
       await expect(messages).toBeVisible()
 
-      // Wheel-scroll up to disengage autoscroll (programmatic scrollTop=0 doesn't
-      // qualify as user-scroll, so autoscroll snaps back to bottom on next tick).
+      // Wheel-scroll up to disengage autoscroll first: a programmatic scrollTop=0 is not
+      // user-scroll, so autoscroll would snap back to bottom on the next tick.
       await messages.hover()
       await page.mouse.wheel(0, -10000)
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeLessThan(50)
       const scrollBefore = await messages.evaluate(el => el.scrollTop)
 
-      // Click next button
       await page.locator('button[title="Next message (Alt+Down)"]').click()
 
-      // Should scroll down
       await expect
         .poll(async () => {
           return await messages.evaluate(el => el.scrollTop)
@@ -333,10 +317,8 @@ test.describe('Chat Navigation', () => {
       })
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
 
-      // Press Alt+Up
       await page.keyboard.press('Alt+ArrowUp')
 
-      // A message should have the highlight class
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -360,10 +342,8 @@ test.describe('Chat Navigation', () => {
       })
       await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
 
-      // Press Alt+Up to jump to previous human message
       await page.keyboard.press('Alt+ArrowUp')
 
-      // Wait for highlight to appear
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -372,7 +352,6 @@ test.describe('Chat Navigation', () => {
         })
         .toBeGreaterThan(0)
 
-      // The highlighted message should be near the top of the messages container
       await expect
         .poll(async () => {
           return await page.evaluate(() => {

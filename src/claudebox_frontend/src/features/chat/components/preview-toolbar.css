@@ -1,6 +1,5 @@
-/* Shared toolbar styles for preview containers (MermaidDiagram, MarkdownPreview).
-   Each component provides its own -container and -toolbar class names;
-   these rules target the common inner elements. */
+/* Shared toolbar styles for preview containers (MermaidDiagram, MarkdownPreview); each supplies its own
+   -container/-toolbar class names, these rules target the common inner elements. */
 
 /* CopyButton override: join flex flow, inherit toolbar opacity */
 .preview-toolbar .copy-btn {

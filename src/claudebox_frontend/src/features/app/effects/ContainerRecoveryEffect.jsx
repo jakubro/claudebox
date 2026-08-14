@@ -9,14 +9,8 @@ import { useSessionRouting } from '../../../context/SessionRoutingContext'
 import { resumeAndReconnect } from '../utils/sessionResume'
 
 /**
- * Attempt session resume when container SSE reconnection is exhausted.
- *
- * When a container restarts (e.g., port change), the SSE stream breaks and
- * SSEConnectionManager retries exhaust. Unlike daemon-level reconnection
- * (handled by DaemonReconnectEffect), this handles container-level disconnection
- * by calling resumeSession() to get a fresh container ID before giving up.
- *
- * Renders nothing - exists solely for container-level recovery.
+ * When a container restarts (e.g. port change), SSE breaks and SSEConnectionManager's retries exhaust.
+ * Unlike daemon-level reconnection (DaemonReconnectEffect), this calls resumeSession() for a fresh ID first.
  */
 export default function ContainerRecoveryEffect() {
   const { activeSessionId } = useSessionRouting()
@@ -42,7 +36,6 @@ export default function ContainerRecoveryEffect() {
     }
     prevRecoveryRef.current = containerRecoveryNeeded
 
-    // No active session to recover
     if (!activeSessionId) {
       closeSSE()
       return
@@ -53,7 +46,6 @@ export default function ContainerRecoveryEffect() {
       return
     }
 
-    // Attempt resume to get a fresh container ID
     resumeAndReconnect({
       activeSessionId,
       startResume,

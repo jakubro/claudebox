@@ -61,10 +61,8 @@ describe('useClaudeStatus', () => {
 
     renderHook(() => useClaudeStatus())
 
-    // Initial fetch
     expect(fetch).toHaveBeenCalledTimes(1)
 
-    // Advance 60 seconds and flush microtasks
     await act(async () => {
       vi.advanceTimersByTime(60000)
       await Promise.resolve()
@@ -115,7 +113,7 @@ describe('useClaudeStatus', () => {
       json: () =>
         Promise.resolve({
           status: { indicator: 'minor', description: 'Partially Degraded Service' },
-          incidents: [{ name: 'Elevated errors on Claude Opus 4.5' }],
+          incidents: [{ name: 'Elevated errors on Claude Opus 5' }],
         }),
     })
 
@@ -127,7 +125,7 @@ describe('useClaudeStatus', () => {
 
     expect(result.current.indicator).toBe('minor')
     expect(result.current.description).toBe(
-      'Partially Degraded Service - Elevated errors on Claude Opus 4.5',
+      'Partially Degraded Service - Elevated errors on Claude Opus 5',
     )
   })
 

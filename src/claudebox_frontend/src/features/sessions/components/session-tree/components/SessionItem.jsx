@@ -16,7 +16,6 @@ import { formatSessionDirTooltip } from '../../../../../utils/session'
 import ResumeSplitButton from './ResumeSplitButton'
 
 /**
- * Render a session item with display, edit, and resume functionality.
  * @param {object} props
  * @param {object} props.session - Session data with id, name, timestamps, messages.
  * @param {boolean} props.isCurrent - Whether this is the active session.
@@ -61,8 +60,7 @@ function SessionItem({
 
   const startedTime = formatRelativeTime(session.started_at)
   const updatedTime = session.updated_at ? formatRelativeTime(session.updated_at) : null
-  // Memoize the two tooltip-only `toLocaleString` calls - formatters are
-  // sub-millisecond but cumulative across rows × flush rate.
+  // Memoize the two tooltip-only `toLocaleString` calls - sub-ms each but cumulative across rows x flush rate.
   const startedAbsolute = useMemo(
     () => formatAbsoluteTime(session.started_at),
     [session.started_at],
@@ -90,9 +88,8 @@ function SessionItem({
     setEditName('')
   }
 
-  // Mobile: whole card is the tap target. Non-current -> resume; current -> close
-  // the drawer (no resume call). Edit-mode swallows clicks via the edit-row's
-  // own inputs; pencil click in display mode adds its own stopPropagation.
+  // Mobile: whole card is the tap target - non-current resumes, current closes the drawer; edit-mode
+  // swallows clicks via its own inputs, and the pencil click stops propagation itself.
   const handleCardClick =
     isMobile && !isEditing
       ? () => (isCurrent ? onClose?.() : handleResumeWithSpinner(() => onResume()))
@@ -105,7 +102,6 @@ function SessionItem({
       role={isMobile && !isEditing ? 'button' : undefined}
       tabIndex={isMobile && !isEditing ? 0 : undefined}
       onClick={handleCardClick}>
-      {/* Row 1: Edit input or header */}
       {isEditing ? (
         <div className="sessions-row sessions-edit-row">
           <input
@@ -258,7 +254,6 @@ function SessionItem({
         )}
       </div>
 
-      {/* Row 4: First message */}
       <div className="sessions-row sessions-first">
         {session.first_message ? (
           <span title={formatMessagePreview(session.first_message)}>
@@ -269,7 +264,6 @@ function SessionItem({
         )}
       </div>
 
-      {/* Row 5: Last message */}
       <div className="sessions-row sessions-last">
         {session.last_message && session.last_message !== session.first_message ? (
           <span title={formatMessagePreview(session.last_message)}>
@@ -283,8 +277,7 @@ function SessionItem({
   )
 }
 
-// Memo barrier: SessionTree re-renders 20\u00D7/sec during streaming because its
-// parent SessionsPanel ultimately sources status from a context that flushes
-// at SSE batch cadence. Default shallow compare suffices once SessionTree
-// stops creating fresh arrow callbacks per render (see useMemo there).
+// Memo barrier: SessionTree re-renders ~20x/sec while streaming since its parent sources status from a
+// context that flushes at SSE batch cadence; shallow compare suffices once SessionTree stops creating
+// fresh callbacks per render (see useMemo there).
 export default memo(SessionItem)

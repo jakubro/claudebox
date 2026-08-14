@@ -2,14 +2,6 @@
 
 import { diffWords } from 'diff'
 
-/**
- * Render inline word-level diff between two lines.
- *
- * @param {object} props
- * @param {string} props.oldLine - Original line content.
- * @param {string} props.newLine - Modified line content.
- * @param {'remove'|'add'} props.type - Which side of the diff to render.
- */
 export default function InlineDiff({ oldLine, newLine, type }) {
   const changes = diffWords(oldLine, newLine)
   return (

@@ -1,7 +1,7 @@
 /** E2E tests for mermaid diagram rendering. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
@@ -35,16 +35,14 @@ test.describe('Mermaid Diagrams', () => {
       const svg = page.locator('.mermaid-diagram svg').first()
       await expect(svg).toBeVisible()
 
-      // Verify dark theme: SVG background or node fill should use dark/muted colors
       const bgColor = await svg.evaluate(el => {
-        // Check the SVG element's background or the first rect/node fill
         const rect = el.querySelector('rect, .node rect, .label-container')
         if (rect) {
           return getComputedStyle(rect).fill || rect.getAttribute('fill')
         }
         return getComputedStyle(el).backgroundColor
       })
-      // Dark theme means the color is not white/light - expect a non-trivially-light value
+      // Dark theme is asserted indirectly: color must not be white/light.
       expect(bgColor).toBeTruthy()
       expect(bgColor).not.toBe('rgb(255, 255, 255)')
       expect(bgColor).not.toBe('#ffffff')
@@ -53,16 +51,14 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-no-side-effect
     test('non-mermaid code blocks render normally', async ({ page }) => {
-      // Use mixed fixture with both mermaid and JS code blocks
+      // Fixture mixes a mermaid block with a JS code block.
       await mockSSE(page, 'events/mermaid-mixed.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Mermaid block renders as SVG diagram
       await expect(page.locator('.mermaid-container').first()).toBeVisible()
       await expect(page.locator('.mermaid-diagram svg').first()).toBeVisible()
 
-      // Non-mermaid JS code block renders as normal code (not mermaid)
       const codeBlock = page.locator('.code-block-wrapper').first()
       await expect(codeBlock).toBeVisible()
       await expect(codeBlock.locator('code')).toContainText('const x = 42')
@@ -79,11 +75,10 @@ test.describe('Mermaid Diagrams', () => {
       const container = page.locator('.mermaid-container').first()
       await expect(container.locator('.mermaid-diagram')).toBeVisible()
 
-      // Hover to reveal toolbar, click toggle
       await container.hover()
       await container.locator('.mermaid-toolbar-btn').first().click()
 
-      // Should show syntax highlighter with source (PreTag="div" renders code inside div, not pre)
+      // PreTag="div" renders the highlighted source inside a div, not a pre.
       await expect(container.locator('.mermaid-diagram')).not.toBeVisible()
       await expect(container.locator('code')).toBeVisible()
       await expect(container.locator('code')).toContainText('graph TD')
@@ -98,11 +93,9 @@ test.describe('Mermaid Diagrams', () => {
       const container = page.locator('.mermaid-container').first()
       await container.hover()
 
-      // Toggle to source
       await container.locator('.mermaid-toolbar-btn').first().click()
       await expect(container.locator('code')).toBeVisible()
 
-      // Toggle back to diagram
       await container.locator('.mermaid-toolbar-btn.pressed').click()
       await expect(container.locator('.mermaid-diagram')).toBeVisible()
     })
@@ -177,7 +170,6 @@ test.describe('Mermaid Diagrams', () => {
       await expect(copyBtn).toBeVisible()
       await copyBtn.click()
 
-      // Verify clipboard contains raw mermaid source
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
       expect(clipboardText).toContain('graph TD')
       expect(clipboardText).toContain('A[Start]')
@@ -191,9 +183,59 @@ test.describe('Mermaid Diagrams', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should show code block wrapper (fallback), not mermaid diagram
       await expect(page.locator('.code-block-wrapper').first()).toBeVisible()
       await expect(page.locator('.mermaid-diagram')).not.toBeVisible()
+    })
+
+    // SPEC: chat:mermaid-failure-notice
+    test('a syntax failure shows a notice naming the reason, source stays visible', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/mermaid-syntax-error.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const notice = page.locator('.mermaid-failure-notice')
+      await expect(notice).toBeVisible()
+
+      const text = await notice.locator('.mermaid-failure-text').textContent()
+      expect(text).toContain('Diagram failed to draw - Parse error on line')
+      expect(text).toContain('Expecting')
+
+      // Source and copy button survive the failure, unaffected by the new notice.
+      await expect(page.locator('.code-block-wrapper').first()).toBeVisible()
+      await expect(page.locator('.code-copy-btn').first()).toBeVisible()
+    })
+
+    // SPEC: chat:mermaid-failure-notice
+    test('an unsupported diagram type reports a reason distinct from a syntax error', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/mermaid-unsupported-type.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const notice = page.locator('.mermaid-failure-notice')
+      await expect(notice).toBeVisible()
+      const text = await notice.locator('.mermaid-failure-text').textContent()
+      expect(text).toContain('Diagram failed to draw - No diagram type detected')
+      // Distinct failure category from a grammar-level parse error (see the sibling test above).
+      expect(text).not.toContain('Parse error')
+    })
+
+    // SPEC: chat:mermaid-failure-notice
+    test('a corrected diagram in a later message draws with no notice carried over', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/mermaid-recover.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await disableAutoCollapse(page)
+
+      await expect(page.locator('.mermaid-failure-notice')).toBeVisible()
+      await expect(page.locator('.mermaid-diagram svg').first()).toBeVisible()
+      // The second (corrected) diagram carries no notice, even though the first still shows one.
+      await expect(page.locator('.mermaid-failure-notice')).toHaveCount(1)
     })
   })
 })

@@ -1,9 +1,8 @@
 """End-to-end behavioral tests for ``claudebox update``.
 
-Real-binary surface: install.sh missing → clean error + non-zero exit, no
-Python traceback. The concurrent-blocked claim is re-anchored on a unit
-test in tests/claudebox_cli/test_update_flock.py (the flock mechanism is
-inside install.sh, not exercised at the e2e layer).
+Real-binary surface: install.sh missing gives a clean error, non-zero exit, no Python
+traceback. The concurrent-blocked claim is anchored by tests/claudebox_cli/test_update_flock.py -
+the flock mechanism lives in install.sh and isn't exercised at the e2e layer.
 """
 
 import pytest
@@ -18,9 +17,8 @@ class TestUpdateRouting:
     """``claudebox update`` shells out to install.sh; verify the dispatch surface."""
 
     def test_missing_install_sh_exits_non_zero(self, run_claudebox) -> None:
-        # Hermetic HOME contains no ~/.claudebox/lib/bin/install.sh; cmd_update
-        # reports the missing-script error cleanly (no Python traceback) and
-        # exits non-zero.
+        # Hermetic HOME lacks ~/.claudebox/lib/bin/install.sh; cmd_update reports it cleanly
+        # and exits non-zero.
         result = run_claudebox(["update"], timeout=10)
         assert result.returncode != 0
         assert "Traceback" not in result.stderr

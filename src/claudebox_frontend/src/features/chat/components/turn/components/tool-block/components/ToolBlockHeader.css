@@ -52,6 +52,28 @@
   min-width: 0;
 }
 
+.tool-open-in-editor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tool-header-area:hover .tool-open-in-editor-btn {
+  opacity: 1;
+}
+
+.tool-open-in-editor-btn:hover {
+  color: var(--text-primary);
+}
+
 .block-timing {
   color: var(--text-muted);
   font-size: 11px;

@@ -8,25 +8,12 @@ import useDropdownPosition from '../hooks/useDropdownPosition'
 import useNewSession from '../hooks/useNewSession'
 
 /**
- * Render a Plus + chevron split-button that creates new sessions.
- *
- * Click -> new session in current browser tab.
- * Alt-click / middle-click on the main button -> new session in new browser tab.
- * Chevron -> dropdown with "New session" / "New session in new browser tab".
+ * Click -> current tab; Alt/middle-click on main button -> new tab; chevron -> dropdown with both options.
  *
  * @param {Object} props
- * @param {'inline'|'portal'} [props.dropdownPlacement='inline'] - Where to render the dropdown.
- *   `inline` keeps the dropdown inside the wrapper span (suitable for the session header strip
- *   and other roomy containers). `portal` renders into document.body and positions via
- *   useDropdownPosition (suitable for tight containers like the SessionsPanel header).
- * @param {string} [props.dataTestIdPrefix='session'] - Prefix for the main button's data-testid.
- *   Becomes `${prefix}-new-session-btn`. Use `'header'` inside the session header strip and
- *   `'session'` inside the SessionsPanel.
- * @param {'accent'|'plain'} [props.hoverVariant='accent'] - Hover background treatment.
- *   `accent` picks up the workspace-accent tint (`var(--accent-hover, var(--bg-tertiary))`).
- *   `plain` uses `var(--bg-tertiary)` directly with no accent. Default `accent` matches the
- *   main-area-header instance; the SessionsPanel passes `plain` so its `+`/chevron align with
- *   the existing refresh button.
+ * @param {'inline'|'portal'} [props.dropdownPlacement='inline'] - `inline` renders inside the wrapper span (session header strip); `portal` renders to document.body via useDropdownPosition (tight containers like SessionsPanel).
+ * @param {string} [props.dataTestIdPrefix='session'] - Prefix for the main button's data-testid (`${prefix}-new-session-btn`) - `'header'` in the session header strip, `'session'` in SessionsPanel.
+ * @param {'accent'|'plain'} [props.hoverVariant='accent'] - `accent` picks up the workspace-accent tint (matches main-area-header); `plain` uses `var(--bg-tertiary)` with no accent (SessionsPanel, aligning with its refresh button).
  * @param {string} [props.className] - Optional extra class on the wrapper for layout-specific styling.
  */
 export default function NewSessionSplitButton({

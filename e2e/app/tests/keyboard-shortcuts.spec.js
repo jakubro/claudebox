@@ -13,14 +13,12 @@ test.describe('Keyboard Shortcuts', () => {
   test.describe('Interrupt (Ctrl+.)', () => {
     // SPEC: shortcut:ctrl-dot
     test('Ctrl+. sends interrupt request', async ({ page }) => {
-      // Track interrupt calls
       const interruptCalls = []
       await page.route('**/api/interrupt', async route => {
         interruptCalls.push(await route.request().method())
         await route.fulfill({ status: 200, json: { success: true } })
       })
 
-      // Use controller to simulate responding state
       const controller = await createSSEController(page)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
@@ -46,11 +44,9 @@ test.describe('Keyboard Shortcuts', () => {
       // Wait for the assistant message to appear (confirms isResponding)
       await expect(page.getByText('Working on it...')).toBeVisible()
 
-      // Focus the chat input and press Ctrl+.
       await page.locator('[data-testid="chat-input"]').focus()
       await page.keyboard.press('Control+.')
 
-      // Verify interrupt was called
       await expect.poll(() => interruptCalls.length).toBeGreaterThan(0)
     })
   })
@@ -64,15 +60,11 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Type something and stash it
       await input.fill('Text to stash')
       await input.focus()
       await page.keyboard.press('Control+s')
 
-      // Input should be cleared
       await expect(input).toHaveValue('')
-
-      // Stash panel should show the item
       await expect(page.getByText('Text to stash')).toBeVisible()
     })
 
@@ -84,14 +76,10 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
       await input.focus()
-
-      // Clear any existing value
       await input.fill('')
 
-      // Press Ctrl+S
       await page.keyboard.press('Control+s')
 
-      // Stash empty message should still be visible (no new item added)
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
     })
   })
@@ -105,18 +93,15 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Stash an item
       await input.fill('Stashed via shortcut')
       await input.focus()
       await page.keyboard.press('Control+s')
       await expect(input).toHaveValue('')
       await expect(page.getByText('Stashed via shortcut')).toBeVisible()
 
-      // Press Ctrl+Shift+S to pop
       await input.focus()
       await page.keyboard.press('Control+Shift+S')
 
-      // Text should be inserted and stash should be empty
       await expect(input).toHaveValue('Stashed via shortcut')
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
     })
@@ -131,13 +116,10 @@ test.describe('Keyboard Shortcuts', () => {
       await input.fill('Current text')
       await input.focus()
 
-      // Verify stash is empty
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
 
-      // Press Ctrl+Shift+S
       await page.keyboard.press('Control+Shift+S')
 
-      // Input should still have original value
       await expect(input).toHaveValue('Current text')
     })
 
@@ -149,16 +131,13 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // First, stash something
       await input.fill('Stashed text')
       await input.focus()
       await page.keyboard.press('Control+s')
 
-      // Wait for input to clear AND stash item to appear
       await expect(input).toHaveValue('')
       await expect(page.getByText('Stashed text')).toBeVisible()
 
-      // Click the "Insert into input and remove" button (pop button)
       await page.getByTitle('Insert into input and remove').click()
 
       // Input should have the stashed value (pendingInsert triggers effect)
@@ -174,10 +153,9 @@ test.describe('Keyboard Shortcuts', () => {
       const input = page.locator('[data-testid="chat-input"]')
       await input.fill('Current text')
 
-      // Verify stash is empty
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
 
-      // Input should still have original value (no stash to pop)
+      // No stash to pop, so the input value is untouched.
       await expect(input).toHaveValue('Current text')
     })
   })
@@ -200,7 +178,6 @@ test.describe('Keyboard Shortcuts', () => {
 
       await page.keyboard.press('Control+,')
 
-      // Check the wrapped result
       await expect(input).toHaveValue('wrap <this>this word</this> please')
     })
 
@@ -221,8 +198,43 @@ test.describe('Keyboard Shortcuts', () => {
 
       await page.keyboard.press('Control+,')
 
-      // Check that empty tags were inserted
       await expect(input).toHaveValue('te<this></this>xt')
+    })
+
+    // SPEC: input:editing-keys-persist
+    test('draft shaped with Ctrl+, survives a reload', async ({ page }) => {
+      await mockSSE(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const input = page.locator('[data-testid="chat-input"]')
+      await input.fill('wrap this word please')
+      await input.focus()
+      await input.evaluate(el => {
+        el.setSelectionRange(5, 14)
+      })
+      await page.keyboard.press('Control+,')
+      await expect(input).toHaveValue('wrap <this>this word</this> please')
+
+      // Poll until the wrapped draft lands in localStorage (key: draft:{sessionId}).
+      await expect
+        .poll(async () => {
+          return await page.evaluate(() => {
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i)
+              if (key?.startsWith('draft:')) {
+                return JSON.parse(localStorage.getItem(key))?.current ?? null
+              }
+            }
+            return null
+          })
+        })
+        .toBe('wrap <this>this word</this> please')
+
+      await page.reload()
+      await waitForAppReady(page)
+
+      await expect(input).toHaveValue('wrap <this>this word</this> please')
     })
   })
 
@@ -236,13 +248,11 @@ test.describe('Keyboard Shortcuts', () => {
       const input = page.locator('[data-testid="chat-input"]')
       await input.fill('Test text')
 
-      // Click somewhere outside the chat panel (like footer)
       await page.locator('[data-testid="footer"]').click()
 
-      // Now press Ctrl+S
       await page.keyboard.press('Control+s')
 
-      // Input should still have the value (stash didn't work since panel not focused)
+      // Stash did not fire since the chat panel isn't focused.
       await expect(input).toHaveValue('Test text')
     })
   })
@@ -259,7 +269,6 @@ test.describe('Keyboard Shortcuts', () => {
       await input.press('Shift+Enter')
       await input.type('Line 2')
 
-      // Should have both lines
       const value = await input.inputValue()
       expect(value).toContain('\n')
       expect(value).toBe('Line 1\nLine 2')
@@ -364,9 +373,8 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Caret at col 0 of an unindented line - Tab snaps leading from 0 to 2.
-      // Atomic value+selection set so Playwright's parallel-worker timing
-      // can't interleave the fill and the selection range under load.
+      // Caret at col 0, unindented line - Tab snaps leading indent 0 to 2; value+selection set
+      // atomically (avoids a Playwright parallel-worker race).
       await input.evaluate(ta => {
         ta.focus()
         ta.value = 'hello'
@@ -401,8 +409,7 @@ test.describe('Keyboard Shortcuts', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // 4 leading spaces - Shift+Tab snaps to 2. Atomic value+selection set
-      // for parallel-worker timing stability.
+      // 4 leading spaces - Shift+Tab snaps to 2. Value+selection are set atomically for timing stability.
       await input.evaluate(ta => {
         ta.focus()
         ta.value = '    hello'
@@ -412,8 +419,7 @@ test.describe('Keyboard Shortcuts', () => {
       await input.press('Shift+Tab')
       expect(await input.inputValue()).toBe('  hello')
 
-      // No leading whitespace - Shift+Tab is a no-op; focus stays on the textarea
-      // (browser default Shift+Tab moves focus backward).
+      // No leading whitespace - Shift+Tab is a no-op; focus stays on the textarea, not the browser default.
       await input.evaluate(ta => {
         ta.focus()
         ta.value = 'hello'
@@ -457,18 +463,15 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for the post-replay auto-focus on chat-input to settle -
-      // ChatInput's overlayMode-clear effect re-focuses chat-input via 2-rAF
-      // after replay_ended. Without this wait the next sessionsIcon.focus()
-      // races the auto-focus and flakes ~13% of the time.
+      // Wait for post-replay auto-focus to settle: ChatInput's overlayMode-clear effect re-focuses
+      // it via 2-rAF after replay_ended; without this wait, sessionsIcon.focus() races and flakes ~13%.
       await expect
         .poll(async () =>
           page.evaluate(() => document.activeElement?.getAttribute?.('data-testid')),
         )
         .toBe('chat-input')
 
-      // Move focus AWAY from the chat input first - establishing the
-      // precondition that Alt+C must observably change something.
+      // Move focus away from the chat input first, so Alt+C must observably change something.
       const sessionsIcon = page.locator('[data-testid="icon-sessions"]')
       await sessionsIcon.focus()
       await expect
@@ -513,11 +516,9 @@ test.describe('Keyboard Shortcuts', () => {
       // Sessions is visible by default
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
-      // Press Alt+1 to close sessions
       await page.keyboard.press('Alt+1')
       await expect(page.locator('[data-testid="panel-sessions"]')).not.toBeVisible()
 
-      // Press Alt+1 again to reopen sessions
       await page.keyboard.press('Alt+1')
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
     })
@@ -611,11 +612,9 @@ test.describe('Keyboard Shortcuts', () => {
       // Usage is hidden by default.
       await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
 
-      // Press Alt+7 to open usage
       await page.keyboard.press('Alt+7')
       await expect(page.locator('[data-testid="panel-usage"]')).toBeVisible()
 
-      // Press Alt+7 again to close usage
       await page.keyboard.press('Alt+7')
       await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
     })
@@ -660,12 +659,10 @@ test.describe('Keyboard Shortcuts', () => {
 
       await expect(page.locator('.help-overlay')).not.toBeVisible()
 
-      // Alt+? opens help overlay
       await page.keyboard.press('Alt+?')
       await expect(page.locator('.help-overlay')).toBeVisible()
       await expect(page.locator('.help-overlay-modal')).toBeVisible()
 
-      // Alt+? again closes it
       await page.keyboard.press('Alt+?')
       await expect(page.locator('.help-overlay')).not.toBeVisible()
     })
@@ -676,30 +673,26 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Open overlay
       await page.keyboard.press('Alt+?')
       const overlay = page.locator('.help-overlay')
       const modal = page.locator('.help-overlay-modal')
       await expect(overlay).toBeVisible()
       await expect(modal).toBeVisible()
 
-      // Centered: modal's horizontal mid-point sits within a small tolerance
-      // of the viewport mid-point (the claim names "centered modal overlay").
+      // Centered per the spec claim: modal's mid-point within a small tolerance of the viewport's.
       const vw = page.viewportSize().width
       const vh = page.viewportSize().height
       const box = await modal.boundingBox()
       expect(Math.abs(box.x + box.width / 2 - vw / 2)).toBeLessThan(20)
       expect(Math.abs(box.y + box.height / 2 - vh / 2)).toBeLessThan(80)
 
-      // Escape closes it
       await page.keyboard.press('Escape')
       await expect(overlay).not.toBeVisible()
 
-      // Reopen and verify backdrop click also closes - claim says
-      // "Escape OR clicking backdrop closes it".
+      // Reopen and verify the spec's "Escape OR clicking backdrop" claim for the other path too.
       await page.keyboard.press('Alt+?')
       await expect(overlay).toBeVisible()
-      // Click outside the modal (top-left of viewport, within the backdrop)
+      // (5, 5) is outside the modal but within the backdrop.
       await page.mouse.click(5, 5)
       await expect(overlay).not.toBeVisible()
     })
@@ -721,7 +714,6 @@ test.describe('Keyboard Shortcuts', () => {
         el.setSelectionRange(5, 9)
       })
 
-      // Type opening quote - should wrap selection
       await page.keyboard.press("'")
 
       await expect(input).toHaveValue("wrap 'this' text")
@@ -797,14 +789,13 @@ test.describe('Keyboard Shortcuts', () => {
       await input.fill('<div>hello world</div>')
       await input.focus()
 
-      // Collapse first
       await input.evaluate(el => {
         el.setSelectionRange(7, 7)
       })
       await page.keyboard.press("Control+'")
       await expect(input).toHaveValue('<div...1>')
 
-      // Place cursor inside placeholder and expand
+      // Cursor moves inside the collapsed placeholder before expanding.
       await input.evaluate(el => {
         el.setSelectionRange(3, 3)
       })
@@ -823,11 +814,9 @@ test.describe('Keyboard Shortcuts', () => {
       await input.fill('<foo>bar</foo> <baz>qux</baz>')
       await input.focus()
 
-      // Collapse all
       await page.keyboard.press('Control+"')
       await expect(input).toHaveValue('<foo...1> <baz...2>')
 
-      // Expand all
       await page.keyboard.press('Control+|')
 
       await expect(input).toHaveValue('<foo>bar</foo> <baz>qux</baz>')
@@ -851,14 +840,12 @@ test.describe('Keyboard Shortcuts', () => {
       await input.fill('<div>full content</div>')
       await input.focus()
 
-      // Collapse
       await input.evaluate(el => {
         el.setSelectionRange(7, 7)
       })
       await page.keyboard.press("Control+'")
       await expect(input).toHaveValue('<div...1>')
 
-      // Submit - should send full content
       await input.press('Enter')
 
       await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
@@ -873,11 +860,9 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Press Alt+/ to open help
       await page.keyboard.press('Alt+/')
       await expect(page.locator('.help-panel')).toBeVisible()
 
-      // Press again to close
       await page.keyboard.press('Alt+/')
       await expect(page.locator('.help-panel')).not.toBeVisible()
     })
@@ -907,16 +892,13 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Press Alt+N to create a new session
       await page.keyboard.press('Alt+n')
 
-      // Single-session mode: the header strip swaps to "Creating…" while
-      // the API response is in flight.
+      // Single-session mode swaps the header strip to "Creating..." while the API call is in flight.
       await expect(
         page.locator('[data-testid="session-header-strip"]').getByText('Creating'),
       ).toBeVisible()
 
-      // Now resolve the delayed API response
       resolveNewSession()
 
       await expect.poll(() => newSessionCalled).toBe(true)
@@ -942,10 +924,8 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Press Alt+Shift+N to create a new session in a new tab
       await page.keyboard.press('Alt+Shift+N')
 
-      // Verify the new session API was called
       await expect.poll(() => newSessionCalled).toBe(true)
     })
   })
@@ -957,16 +937,13 @@ test.describe('Keyboard Shortcuts', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Focus a non-chat element (sidebar icon button)
       const sessionsIcon = page.locator('[data-testid="icon-sessions"]')
       await sessionsIcon.focus()
       await expect(sessionsIcon).toBeFocused()
 
-      // Alt+Down should still navigate chat (global shortcut)
       await page.keyboard.press('Alt+ArrowDown')
 
-      // Should not throw - chat navigation should work regardless of focus
-      // Verify viewport moved by checking a human message is near top
+      // A human message near the top proves the viewport navigated despite focus being elsewhere.
       const humanMessages = page.locator('.chat-message-user')
       await expect(humanMessages.first()).toBeVisible()
     })

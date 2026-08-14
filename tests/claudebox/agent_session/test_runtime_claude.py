@@ -13,10 +13,6 @@ from claudebox.agent_session.hooks import HookCallbacks
 from claudebox.agent_session.runtime_claude import ClaudeRuntime
 
 
-# Helpers
-# --------------------------------------------------------------------------------------------------
-
-
 def _make_config(**overrides) -> ClaudeAgentSessionConfig:
     """Build a minimal ClaudeAgentSessionConfig for tests; overrides spread on top."""
 
@@ -47,10 +43,6 @@ def _make_runtime(**config_overrides) -> ClaudeRuntime:
         autospec=True,
     ):
         return ClaudeRuntime(config)
-
-
-# __init__
-# --------------------------------------------------------------------------------------------------
 
 
 class TestInit:
@@ -94,10 +86,6 @@ class TestInit:
         assert captured["stderr"].__self__ is runtime
 
 
-# Composition smoke
-# --------------------------------------------------------------------------------------------------
-
-
 class TestComposition:
     """ClaudeRuntime wraps BaseClaudeSDKClient via composition - never subclasses."""
 
@@ -117,10 +105,6 @@ class TestComposition:
         assert not issubclass(ClaudeRuntime, BaseClaudeSDKClient)
 
 
-# Capabilities + identity
-# --------------------------------------------------------------------------------------------------
-
-
 class TestCapabilitiesAndIdentity:
     """ClaudeRuntime exposes the 16-flag capability matrix and runtime_name."""
 
@@ -138,10 +122,6 @@ class TestCapabilitiesAndIdentity:
 
         for field_name in RuntimeCapabilities.__dataclass_fields__:
             assert getattr(caps, field_name) is True, f"{field_name} should be True"
-
-
-# query (buffering vs direct send)
-# --------------------------------------------------------------------------------------------------
 
 
 class TestQuery:
@@ -202,10 +182,6 @@ class TestQuery:
             assert arg is not blocks
 
 
-# interrupt
-# --------------------------------------------------------------------------------------------------
-
-
 class TestInterrupt:
     """Interrupt behavior - clears buffer pre-ready, forwards post-ready."""
 
@@ -233,10 +209,6 @@ class TestInterrupt:
             mock_interrupt.assert_awaited_once()
 
 
-# set_model
-# --------------------------------------------------------------------------------------------------
-
-
 class TestSetModel:
     """set_model queueing and dispatching."""
 
@@ -261,10 +233,6 @@ class TestSetModel:
         with patch.object(runtime._sdk, "set_model", new_callable=AsyncMock) as mock_set_model:
             await runtime.set_model("claude-3-opus")
             mock_set_model.assert_awaited_once_with("claude-3-opus")
-
-
-# set_permission_mode
-# --------------------------------------------------------------------------------------------------
 
 
 class TestSetPermissionMode:
@@ -297,10 +265,6 @@ class TestSetPermissionMode:
             mock_set_perm.assert_awaited_once_with("auto")
 
 
-# set_effort_level
-# --------------------------------------------------------------------------------------------------
-
-
 class TestSetEffortLevel:
     """set_effort_level queueing and side-channel write."""
 
@@ -325,10 +289,6 @@ class TestSetEffortLevel:
         with patch.object(ClaudeRuntime, "_write_effort_to_settings") as mock_write:
             await runtime.set_effort_level("high")
             mock_write.assert_called_once_with("high")
-
-
-# connect / disconnect
-# --------------------------------------------------------------------------------------------------
 
 
 class TestGetContextUsage:
@@ -358,8 +318,6 @@ class TestGetContextUsage:
     @pytest.mark.anyio
     async def test_returns_none_when_keys_missing(self):
         """SDK returns partial dict -> None (treat as no data; no fabricated 0s)."""
-
-        from claudebox.agent_session.catalogs import ContextUsage
 
         runtime = _make_runtime()
         runtime.ready.set()
@@ -525,10 +483,6 @@ class TestDisconnect:
         assert len(runtime._pending_calls) == 0
 
 
-# _flush_on_ready
-# --------------------------------------------------------------------------------------------------
-
-
 class TestFlushOnReady:
     """Buffered message + pending call flushing after ready."""
 
@@ -640,10 +594,6 @@ class TestFlushOnReady:
         assert call_order == [("set_model", "m1"), ("set_permission_mode", "auto")]
 
 
-# _stderr log routing
-# --------------------------------------------------------------------------------------------------
-
-
 class TestStderr:
     """SDK stderr log line parsing."""
 
@@ -748,10 +698,6 @@ class TestStderr:
         assert kwargs.get("stream") == "stderr"
 
 
-# _content_blocks_stream
-# --------------------------------------------------------------------------------------------------
-
-
 class TestContentBlocksStream:
     """Content block stream wrapping for the SDK's async-iterable path."""
 
@@ -780,10 +726,6 @@ class TestContentBlocksStream:
 
         async for msg in ClaudeRuntime._content_blocks_stream(blocks):
             assert msg["message"]["content"] is blocks
-
-
-# _write_effort_to_settings
-# --------------------------------------------------------------------------------------------------
 
 
 class TestWriteEffortToSettings:
@@ -835,10 +777,6 @@ class TestWriteEffortToSettings:
 
         result = json.loads(settings_path.read_text())
         assert result["effortLevel"] == "medium"
-
-
-# _isolate_settings_file
-# --------------------------------------------------------------------------------------------------
 
 
 class TestIsolateSettingsFile:
@@ -946,8 +884,7 @@ class TestIsolateSettingsFile:
         # Simulate session A writing a runtime change through the symlink.
         target_a.write_text('{"effort": "max"}')
 
-        # Re-create the regular settings.json (mimics a parallel container's
-        # container-start.sh seed) before session B's isolation runs.
+        # Re-seeds settings.json (mimics a parallel container start) before session B isolates.
         if settings_path.is_symlink():
             settings_path.unlink()
 
@@ -980,3 +917,74 @@ class TestIsolateSettingsFile:
 
         target = settings_path.resolve()
         assert target.read_text() == '{"effort": "max"}'
+
+
+class TestStreamHealth:
+    """Reader-state probe over the SDK's private query internals."""
+
+    @staticmethod
+    def _runtime_with_query(query) -> ClaudeRuntime:
+        runtime = _make_runtime()
+        runtime._sdk = MagicMock()
+        runtime._sdk._query = query
+
+        return runtime
+
+    @staticmethod
+    def _statistics(buffer_used: int = 3) -> MagicMock:
+        """Build the SDK's message-stream statistics shape, 100 being the stream's bound."""
+
+        return MagicMock(
+            current_buffer_used=buffer_used,
+            max_buffer_size=100,
+            tasks_waiting_receive=1,
+        )
+
+    def test_reports_reader_and_buffer_state(self):
+        """A live reader on a draining stream reports healthy."""
+
+        query = MagicMock()
+        query._read_task.done.return_value = False
+        query._message_receive.statistics.return_value = self._statistics()
+
+        health = self._runtime_with_query(query).stream_health()
+
+        assert health is not None
+        assert health.reader_finished is False
+        assert health.buffer_full is False
+        assert health.buffered == 3
+        assert health.consumers_waiting == 1
+
+    def test_reports_a_finished_reader_on_a_full_buffer(self):
+        """A finished reader and a saturated stream both surface."""
+
+        query = MagicMock()
+        query._read_task.done.return_value = True
+        query._message_receive.statistics.return_value = self._statistics(buffer_used=100)
+
+        health = self._runtime_with_query(query).stream_health()
+
+        assert health is not None
+        assert health.reader_finished is True
+        assert health.buffer_full is True
+
+    def test_no_query_yields_no_health(self):
+        """A runtime that never connected has nothing to report."""
+
+        assert self._runtime_with_query(None).stream_health() is None
+
+    def test_moved_internals_warn_once(self):
+        """A probe that stops resolving warns the first time, then stays quiet."""
+
+        runtime = self._runtime_with_query(object())
+        logger = MagicMock()
+        runtime._logger = logger
+
+        with patch(
+            "claudebox.agent_session.runtime_claude._WARNED_STREAM_HEALTH_UNAVAILABLE",
+            False,
+        ):
+            assert runtime.stream_health() is None
+            assert runtime.stream_health() is None
+
+        logger.warning.assert_called_once()

@@ -228,8 +228,7 @@ describe('TodosGroup', () => {
   })
 
   it('renders nothing for an empty run (no taskBlocks, no diffs)', () => {
-    // Per claim:tool:todos-block-empty-suppressed: the chrome must not appear
-    // when there is nothing to show.
+    // The chrome must not appear when there is nothing to show.
     render(<TodosGroup taskBlocks={[]} />, { wrapper: withDiffs(new Map()) })
 
     expect(screen.queryByTestId('todos-group')).not.toBeInTheDocument()
@@ -237,11 +236,8 @@ describe('TodosGroup', () => {
   })
 
   it('renders nothing during streaming race (taskBlocks present, todoDiffs not yet populated)', () => {
-    // The dominant production trigger: a TaskCreate tool_use lands in a run
-    // but its tool_result has not yet arrived, so todoDiffs.get(toolUseId)
-    // returns undefined. mergeRunItems returns [], bucketize returns
-    // {rowGroups: []}, and the chrome must stay suppressed until the diff
-    // arrives.
+    // Dominant production trigger: TaskCreate lands, tool_result not arrived, so todoDiffs.get returns
+    // undefined; mergeRunItems returns [], bucketize returns {rowGroups: []} - suppressed until diff arrives.
     render(<TodosGroup taskBlocks={[{ toolUseId: 'pending-tool' }]} />, {
       wrapper: withDiffs(new Map()),
     })

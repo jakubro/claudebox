@@ -1,12 +1,19 @@
 """Tests for claudebox_daemon.domain.boards.service.BoardService."""
 
+import asyncio
+import threading
+import time
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import claudebox_daemon.domain.boards.service as service_module
 from claudebox.extensions.tickets import TicketNotFound
 from claudebox_daemon.domain.boards.service import BoardService
+from claudebox_daemon.domain.errors import ListingTimeout
+from claudebox_daemon.domain.executors import ObservedPool
 from claudebox_daemon.domain.sessions.models import SessionInfo
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 
@@ -20,12 +27,84 @@ def _make_service(tmp_path: Path) -> tuple[BoardService, MagicMock]:
     containers = MagicMock()
     containers.send = AsyncMock(return_value={})
     events = AsyncMock()
+    executor = ObservedPool(1, name="listing")
 
-    svc = BoardService(ws, sessions, containers, events)
+    svc = BoardService(ws, sessions, containers, events, executor)
     # Replace watcher with a no-op to avoid filesystem watching in tests.
     svc._watcher = MagicMock()
 
     return svc, containers
+
+
+class TestListAll:
+    """Test list_all()'s dispatch of the workspace walk to the daemon executor, off the event loop."""
+
+    @pytest.mark.anyio
+    async def test_returns_discovered_boards(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        board_dir = tmp_path / "docs"
+        board_dir.mkdir()
+        (board_dir / "board.yaml").write_text("name: My Board\nbacklog: []\n")
+
+        result = await svc.list_all()
+
+        assert len(result) == 1
+        assert result[0].name == "My Board"
+
+    @pytest.mark.anyio
+    async def test_runs_on_the_daemon_executor_not_the_default_pool(self, tmp_path, monkeypatch):
+        """The default pool is shared by other daemon-side blocking work, so using it here would queue behind that work."""
+
+        svc, _ = _make_service(tmp_path)
+        seen_thread = []
+        original_discover = svc._discover
+
+        def _spy_discover():
+            seen_thread.append(threading.current_thread().name)
+
+            return original_discover()
+
+        monkeypatch.setattr(svc, "_discover", _spy_discover)
+
+        await svc.list_all()
+
+        assert seen_thread[0] != threading.current_thread().name
+        assert asyncio.get_running_loop()._default_executor is None  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_a_hung_workspace_walk_raises_listing_timeout_instead_of_blocking_forever(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Offloading to the executor doesn't fix a genuine hang - the call must still time out, or a stuck worker starves the shared pool."""
+
+        monkeypatch.setattr(service_module, "DISK_LISTING_TIMEOUT", timedelta(seconds=0.05))
+        svc, _ = _make_service(tmp_path)
+        monkeypatch.setattr(svc, "_discover", lambda: time.sleep(0.3))
+
+        with pytest.raises(ListingTimeout):
+            await svc.list_all()
+
+    @pytest.mark.anyio
+    async def test_concurrent_listings_share_one_walk(self, tmp_path, monkeypatch):
+        """Every open tab refetches on the same broadcast - N walks would occupy N workers to answer one question."""
+
+        svc, _ = _make_service(tmp_path)
+        walks = []
+        original_discover = svc._discover
+
+        def _slow_discover():
+            walks.append(1)
+            time.sleep(0.05)
+
+            return original_discover()
+
+        monkeypatch.setattr(svc, "_discover", _slow_discover)
+
+        await asyncio.gather(*[svc.list_all() for _ in range(10)])
+
+        assert len(walks) == 1
 
 
 class TestSendPromptSequence:
@@ -33,10 +112,7 @@ class TestSendPromptSequence:
 
     @pytest.mark.anyio
     async def test_uses_prompt_field_matching_send_request_schema(self, tmp_path):
-        """Payload must use the `prompt` key - `SendRequest` ignores other keys
-        and defaults `prompt` to empty string, so any other key sends a blank
-        message to the session.
-        """
+        """Payload must use the `prompt` key - `SendRequest` defaults other keys to a blank message."""
 
         svc, containers = _make_service(tmp_path)
         result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
@@ -47,7 +123,6 @@ class TestSendPromptSequence:
             ["tickets/active/foo.md"],
         )
 
-        # Two send calls - one per prompt template.
         assert containers.send.await_count == 2
 
         first_payload = containers.send.await_args_list[0].kwargs["payload"]

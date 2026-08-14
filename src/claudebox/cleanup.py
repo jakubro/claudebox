@@ -16,10 +16,7 @@ if TYPE_CHECKING:
 def cleanup_stale_dirs(config: "Config") -> list[Path]:
     """Remove session and temp directories older than SESSION_MAX_AGE.
 
-    Scans the sessions directory and temporary build/run directories for
-    subdirectories with timestamp-prefixed names (YYYYMMDD-HHMMSS--*). Any
-    directory whose timestamp is older than the cutoff is removed recursively.
-    Returns the list of removed paths.
+    Scans sessions and temp build/run directories for timestamp-prefixed subdirs (YYYYMMDD-HHMMSS--*).
     """
 
     cutoff = datetime.now(UTC).replace(tzinfo=None) - SESSION_MAX_AGE

@@ -23,7 +23,7 @@ vi.mock('../../api/sessions', () => ({
 const mockSessionDataCtx = {
   sessionId: 'current-session',
   workspace: '/home/user/project',
-  model: 'claude-sonnet-4-6',
+  model: 'claude-sonnet-5',
   permissionMode: 'bypassPermissions',
 }
 
@@ -141,7 +141,7 @@ const makeSession = (id, extra = {}) => ({
   session_id: id,
   session_dir: `/tmp/sessions/${id}`,
   workspace: '/home/user/project',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-5',
   started_at: new Date(Date.now() - 3600000).toISOString(),
   updated_at: new Date(Date.now() - 1800000).toISOString(),
   name: null,

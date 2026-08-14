@@ -1,6 +1,8 @@
 [Unit]
 Description=Claudebox Daemon
 After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple

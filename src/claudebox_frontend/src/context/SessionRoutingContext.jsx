@@ -6,10 +6,8 @@ import { buildTurnSegment, parseHash } from './utils/sessionRouting'
 const SessionRoutingContext = createContext(null)
 
 /**
- * Provide hash-based session routing state and navigation.
- *
- * Pure context - reads hash, exposes state + navigation functions.
- * Does NOT trigger any API calls or side effects (that's SessionRoutingEffect's job).
+ * Pure context - reads the hash, exposes state + navigation. No API calls or side effects
+ * (that's SessionRoutingEffect's job).
  *
  * @param {object} props
  * @param {React.ReactNode} props.children
@@ -56,10 +54,9 @@ export function SessionRoutingProvider({ children }) {
   }, [])
 
   /**
-   * Clear the active session segment from the URL while preserving the workspace
-   * scope (`/#/workspaces/{id}`). Used by the stop-session flow so the welcome
-   * screen surfaces without losing the workspace selection. Distinct from
-   * `navigateHome` which strips the workspace too.
+   * Clear the active session segment while preserving `/#/workspaces/{id}` - used by the
+   * stop-session flow so the welcome screen shows without losing the workspace. Unlike
+   * `navigateHome`, which strips the workspace too.
    */
   const clearActiveSession = useCallback(() => {
     const ws = routeState?.workspaceId
@@ -84,15 +81,15 @@ export function SessionRoutingProvider({ children }) {
     }
     const qs = params.toString()
     const newHash = qs ? `${hashPath}?${qs}` : hashPath
-    // replaceState avoids polluting browser history when toggling density;
-    // hashchange does NOT fire on replaceState so state must be updated manually.
+    // replaceState avoids polluting history when toggling density; it doesn't fire hashchange,
+    // so state is updated manually.
     history.replaceState(null, '', window.location.pathname + window.location.search + newHash)
     setRouteState(parseHash(newHash))
   }, [])
 
   const replaceTurnInUrl = useCallback((turnId, messageType) => {
-    // Reads current hash live so the callback identity stays stable across
-    // routeState changes - keeps the throttled scroll listener from rebinding.
+    // Reads the hash live (not routeState) so the callback identity stays stable and the
+    // throttled scroll listener doesn't rebind.
     const parsed = parseHash(window.location.hash)
     if (!(parsed?.workspaceId && parsed?.sessionId)) {
       return

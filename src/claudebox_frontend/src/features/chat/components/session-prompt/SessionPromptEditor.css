@@ -47,7 +47,7 @@
   border-radius: 4px;
   padding: 6px 8px;
   font-size: 12px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: var(--text-primary);
   box-sizing: border-box;
 }

@@ -2,9 +2,6 @@
 
 import { parseSlashCommand } from '../../../utils/parsers'
 
-/**
- * Build set of delivered content strings from human events after a timestamp.
- */
 export function getDeliveredContents(humanEvents, afterTimestamp) {
   const delivered = new Set()
   for (const event of humanEvents) {
@@ -19,10 +16,7 @@ export function getDeliveredContents(humanEvents, afterTimestamp) {
   return delivered
 }
 
-/**
- * Check if pending content matches any delivered content.
- * Handles whitespace normalization for slash commands with multi-line args.
- */
+/** Handles whitespace normalization for slash commands with multi-line args. */
 export function isDelivered(delivered, content) {
   if (delivered.has(content)) {
     return true

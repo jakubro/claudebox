@@ -14,7 +14,6 @@ describe('HelpPanel', () => {
   it('includes all documented shortcuts', () => {
     const { container } = render(<HelpPanel />)
 
-    // Extract all shortcut key-description pairs from rendered tables
     const rows = container.querySelectorAll('tr:not(.help-section)')
     const shortcuts = Array.from(rows).map(row => {
       const cells = row.querySelectorAll('td')

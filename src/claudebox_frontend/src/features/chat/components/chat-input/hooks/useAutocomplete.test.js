@@ -82,9 +82,7 @@ describe('useAutocomplete', () => {
 
     const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
 
-    // Simulate user typing '/' at position 0 of a non-empty textarea ('hello
-    // world'). The resulting value is '/hello world' with cursor at 1 (just
-    // after the inserted '/'). Picker must activate.
+    // Typing '/' at position 0 of 'hello world' gives '/hello world', cursor at 1 - picker must activate.
     act(() => {
       ref.current.value = '/hello world'
       ref.current.setSelectionRange(1, 1)
@@ -102,8 +100,7 @@ describe('useAutocomplete', () => {
 
     const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
 
-    // Cursor at end of '/hello' (position 6) with trailing ' world'. Filter
-    // reflects the leading-token prefix up to the cursor.
+    // Cursor at end of '/hello' (pos 6) with trailing ' world' - filter reflects the prefix up to the cursor.
     act(() => {
       ref.current.value = '/hello world'
       ref.current.setSelectionRange(6, 6)
@@ -229,9 +226,8 @@ describe('useAutocomplete', () => {
   })
 
   it('select preserves trailing text when command is typed in front without separating space', () => {
-    // Reported regression: user types `/deploy` at position 0 of `foo bar baz`
-    // -> value becomes `/deployfoo bar baz`, caret at 7. Pressing Tab must
-    // accept `/deploy` and preserve `foo bar baz` as the argument.
+    // Typing `/deploy` at 0 of `foo bar baz` -> `/deployfoo bar baz`, caret 7; Tab keeps the
+    // trailing text as the argument.
     const ref = createTextareaRef()
     const textareaRef = { current: ref.current }
     ref.current.value = '/deployfoo bar baz'
@@ -249,9 +245,8 @@ describe('useAutocomplete', () => {
   })
 
   it('select with already-spaced inline command preserves single space between command and args', () => {
-    // User types `/deploy ` (with trailing space) in front of `foo bar baz`
-    // and presses Tab with the caret still inside `/deploy`. Result: same
-    // value, caret immediately after the space.
+    // Typing `/deploy ` before `foo bar baz`, caret inside `/deploy`, then Tab: value is
+    // unchanged, caret lands right after the space.
     const ref = createTextareaRef()
     const textareaRef = { current: ref.current }
     ref.current.value = '/deploy foo bar baz'
@@ -269,10 +264,8 @@ describe('useAutocomplete', () => {
   })
 
   it('select with picked variant mid-token preserves text after caret as arg', () => {
-    // User types `/deploy`, moves caret to position 3 (between `/de` and
-    // `ploy`), then picks `test`. Since `test` does NOT start with `deploy`,
-    // the typed-but-after-caret portion is treated as user text and kept
-    // as the argument.
+    // Caret at 3 inside `/deploy` (`/de`|`ploy`), then picks `test`; since `test` doesn't
+    // prefix `deploy`, the after-caret text `ploy` becomes the argument.
     const ref = createTextareaRef()
     const textareaRef = { current: ref.current }
     ref.current.value = '/deploy'

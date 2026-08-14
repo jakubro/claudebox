@@ -1,11 +1,13 @@
 /** Pure derivations for Turn - extracted from Turn.jsx, no React APIs. */
 
+import { isHiddenToolSearch } from '../../../../../utils/eventProcessing'
 import { formatDuration, stripMarkdown } from '../../../../../utils/formatters'
 import { extractSystemReminders } from '../components/tool-block/utils/toolResultFormatters'
 
+const PREVIEW_MAX_LENGTH = 60
+const CODE_FENCE_LINE = /^```/
+
 /**
- * Compute earliest and latest event timestamps for a turn.
- *
  * @param {Array<{ts?: string}>} events
  * @returns {{ startTime: number | null, endTime: number | null }}
  */
@@ -33,11 +35,14 @@ export function getTurnTimeRange(events) {
 export function getTurnPreview(blocks, duration) {
   const firstTextBlock = blocks.find(b => b.type === 'text')
   if (firstTextBlock) {
-    const text = stripMarkdown(firstTextBlock.event.content)
-    const firstLine = text.split('\n')[0]
-    return firstLine.length > 60 ? `${firstLine.slice(0, 60)}...` : firstLine
+    const preview = previewFromTextBlock(firstTextBlock.event.content)
+    if (preview) {
+      return preview
+    }
   }
-  const toolCount = blocks.filter(b => b.type === 'tool').length
+  const toolCount = blocks.filter(
+    b => b.type === 'tool' && !isHiddenToolSearch(b.toolUse, b.toolResult),
+  ).length
   if (toolCount > 0) {
     return `${toolCount} tool${toolCount > 1 ? 's' : ''} used`
   }
@@ -62,4 +67,30 @@ export function getAssistantTextContent(blocks) {
     .filter(b => b.type === 'text')
     .map(b => extractSystemReminders(b.event.content).content)
     .join('\n\n')
+}
+
+/**
+ * Falls back to the raw first line when stripMarkdown empties the content (e.g. it opens with a
+ * code fence or table, which strips to nothing).
+ *
+ * @param {string} content
+ * @returns {string | null}
+ */
+function previewFromTextBlock(content) {
+  const strippedFirstLine = stripMarkdown(content).split('\n')[0]
+  if (strippedFirstLine) {
+    return truncatePreview(strippedFirstLine)
+  }
+  const rawFirstLine = firstMeaningfulLine(content)
+  return rawFirstLine ? truncatePreview(rawFirstLine) : null
+}
+
+/** First line that is neither blank nor a bare code-fence delimiter. */
+function firstMeaningfulLine(text) {
+  const line = text.split('\n').find(l => l.trim() && !CODE_FENCE_LINE.test(l.trim()))
+  return line ? line.trim() : null
+}
+
+function truncatePreview(line) {
+  return line.length > PREVIEW_MAX_LENGTH ? `${line.slice(0, PREVIEW_MAX_LENGTH)}...` : line
 }

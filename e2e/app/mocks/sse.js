@@ -7,12 +7,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const fixturesDir = path.join(__dirname, '../fixtures')
 
-/**
- * Load a JSONL events fixture as array of event objects.
- *
- * @param {string} relativePath - Path relative to fixtures directory
- * @returns {object[]} Array of parsed event objects
- */
+/** Load a JSONL events fixture (one JSON object per line) as an array of event objects. */
 function loadEventsFromFixture(relativePath) {
   const fullPath = path.join(fixturesDir, relativePath)
   const content = fs.readFileSync(fullPath, 'utf-8')
@@ -62,26 +57,13 @@ async function injectMockEventSourceBase(page) {
   })
 }
 
-/**
- * Mock the SSE stream endpoint by injecting a browser-side EventSource mock.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {string} eventsFixture - Events fixture path (relative to fixtures/)
- */
+/** Mock the SSE stream endpoint by injecting a browser-side EventSource mock. */
 export async function mockSSE(page, eventsFixture = 'events/simple-chat.jsonl') {
   const events = loadEventsFromFixture(eventsFixture)
   await injectEventSourceMock(page, events)
 }
 
-/**
- * Inject a mock EventSource into the browser context.
- *
- * Uses emit-once guard to prevent duplicate events when React StrictMode
- * double-mounts components (each mount creates new EventSource instance).
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {object[]} events - Array of events to emit
- */
+/** Inject a mock EventSource; guards against re-emitting when StrictMode double-mounts components. */
 async function injectEventSourceMock(page, events) {
   await injectMockEventSourceBase(page)
   await page.addInitScript(eventsJson => {
@@ -94,7 +76,6 @@ async function injectEventSourceMock(page, events) {
         const isLogs = url.includes('/api/logs')
         const isDaemon = url.includes('/api/daemon/')
 
-        // Simulate async connection
         setTimeout(() => {
           this.readyState = 1 // OPEN
           if (this.onopen) {
@@ -102,8 +83,7 @@ async function injectEventSourceMock(page, events) {
           }
           this._emit('open', new Event('open'))
 
-          // Track chat vs logs vs daemon instances separately.
-          // Also sets __sseChatInstance for createSSEController interop.
+          // Also sets __sseChatInstance, for createSSEController interop.
           if (isLogs) {
             window.__sseActiveLogsInstance = this
           } else if (!isDaemon) {
@@ -116,11 +96,9 @@ async function injectEventSourceMock(page, events) {
             return
           }
 
-          // Wrap events in replay boundaries if not already present.
-          // SessionRoutingEffect calls startResume() which sets isResuming=true;
-          // replay_ended clears it so the chat input becomes visible.
-          // Skip wrapping if fixture already contains replay_started (e.g., resuming.jsonl
-          // that intentionally stays in resuming state).
+          // Wrap events in replay boundaries unless present: SessionRoutingEffect's startResume()
+          // sets isResuming=true and replay_ended clears it. Skip if the fixture already has
+          // replay_started (e.g. resuming.jsonl, which intentionally stays in resuming state).
           const hasReplayBoundary = events.some(
             e => e.type === 'system' && e.subtype === 'replay_started',
           )
@@ -135,7 +113,6 @@ async function injectEventSourceMock(page, events) {
             ]
           }
 
-          // Emit events with small delay between each
           const instance = this
           allEvents.forEach((event, i) => {
             setTimeout(
@@ -156,34 +133,19 @@ async function injectEventSourceMock(page, events) {
     }
 
     window.MockEventSource = MockEventSource
-    // Replace native EventSource
     window.EventSource = window.MockEventSource
   }, JSON.stringify(events))
 }
 
-/**
- * Mock SSE with dynamic events (for interactive tests).
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {function} eventProvider - Function that returns events array
- */
+/** Mock SSE with dynamic events, for interactive tests. */
 export async function mockSSEDynamic(page, eventProvider) {
   const events = eventProvider()
   await injectEventSourceMock(page, events)
 }
 
 /**
- * Inject a controllable multi-stream MockEventSource into the browser context.
- *
- * Shared injector used by createSSEController, createDaemonSSEController, and
- * createLogsSSEController. Routes URL patterns to the correct window global and
- * auto-emits chat replay boundaries when auto-connecting.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {object} options - Injector options serialized to browser
- * @param {boolean} options.autoConnect - Auto-connect on construction
- * @param {boolean} options.trackDaemon - Track /api/daemon/stream connections
- * @param {boolean} options.countConnections - Maintain __sseConnectionCount
+ * Inject a controllable multi-stream MockEventSource; shared by createSSEController,
+ * createDaemonSSEController, and createLogsSSEController.
  */
 async function injectControllableMock(page, { autoConnect, trackDaemon, countConnections }) {
   await injectMockEventSourceBase(page)
@@ -219,9 +181,8 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
 
           if (opts.autoConnect) {
             setTimeout(() => {
-              // Honor a global kill flag for chat SSE — used by chat.kill()
-              // to simulate a container death where the stream never comes
-              // back until a fresh container_id arrives.
+              // Honor the kill flag set by chat.kill(): simulates a container death where the
+              // stream never reconnects until a fresh container_id arrives.
               if (!(isDaemon || isLogs) && window.__chatSSEKilled) {
                 this.readyState = 2
                 if (this.onerror) {
@@ -298,15 +259,8 @@ async function sendToInstance(page, instanceName, event) {
 }
 
 /**
- * Create a controllable SSE mock for testing interrupt and reconnect.
- * Returns a controller object to manipulate the stream.
- *
- * Must be called before page.goto(). Use controller methods after page loads.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {object} [options] - Configuration options
- * @param {boolean} [options.autoConnect=true] - Auto-connect on construction (false for testing connecting state)
- * @returns {object} Controller with sendEvent, connect, triggerError, getConnectionCount methods
+ * Create a controllable SSE mock for testing interrupt and reconnect. Call before
+ * page.goto(); use the returned controller's methods after the page loads.
  */
 export async function createSSEController(page, { autoConnect = true } = {}) {
   await injectControllableMock(page, {
@@ -355,12 +309,10 @@ export async function createSSEController(page, { autoConnect = true } = {}) {
     },
 
     /**
-     * Permanently kill the chat SSE connection — current instance errors and
-     * subsequent reconnect attempts immediately error out (never reach
-     * readyState=1) until reviveChat() lifts the flag. Used to simulate a
-     * container death where the chat stream cannot recover until a fresh
-     * container_id is provided. The MockEventSource autoConnect path checks
-     * window.__chatSSEKilled at fire time.
+     * Permanently kill the chat SSE connection: the current instance errors and every
+     * subsequent reconnect attempt errors immediately (never reaches readyState=1) until
+     * reviveChat() lifts the window.__chatSSEKilled flag. Simulates a container death that
+     * the chat stream cannot recover from until a fresh container_id arrives.
      */
     async kill() {
       await page.evaluate(() => {
@@ -391,15 +343,8 @@ export async function createSSEController(page, { autoConnect = true } = {}) {
 }
 
 /**
- * Create a controllable daemon SSE mock for testing container lifecycle and progress.
- *
- * Intercepts EventSource connections to `/api/daemon/stream` and exposes a controller
- * for sending daemon-level events (session_progress, container_status).
- *
- * Must be called before page.goto(). Use controller methods after page loads.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @returns {object} Controller with sendEvent and sendProgress methods
+ * Create a controllable daemon SSE mock for testing container lifecycle/progress; intercepts
+ * `/api/daemon/stream`. Call before page.goto(); use the returned controller after load.
  */
 export async function createDaemonSSEController(page) {
   await injectControllableMock(page, {
@@ -425,10 +370,9 @@ export async function createDaemonSSEController(page) {
     },
 
     /**
-     * Simulate the daemon dropping its SSE. The production useSSE hook
-     * detects readyState=2 + onerror and auto-schedules a fresh EventSource
-     * connection after RECONNECT_BASE_DELAY (1s). The new MockEventSource
-     * auto-opens, which increments daemonReconnected in useDaemonStream.
+     * Simulate the daemon dropping its SSE. The production useSSE hook detects
+     * readyState=2 + onerror and reconnects after RECONNECT_BASE_DELAY (1s); the new
+     * MockEventSource auto-opens, incrementing daemonReconnected in useDaemonStream.
      */
     async disconnect() {
       await page.evaluate(() => {
@@ -447,12 +391,8 @@ export async function createDaemonSSEController(page) {
 }
 
 /**
- * Create a controllable logs SSE mock for testing logs panel.
- *
- * Must be called before page.goto(). Use controller methods after page loads.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @returns {object} Controller with sendLog method
+ * Create a controllable logs SSE mock for testing the logs panel. Must be called before
+ * page.goto(); use the returned controller's methods after the page loads.
  */
 export async function createLogsSSEController(page) {
   await injectControllableMock(page, {
@@ -483,7 +423,7 @@ export async function createLogsSSEController(page) {
           if (instance.onerror) {
             instance.onerror(new Event('error'))
           }
-          // Use cached ref — onerror may call close() which nulls the global.
+          // Use cached ref - onerror may call close() which nulls the global.
           instance._emit('error', new Event('error'))
         }
       })

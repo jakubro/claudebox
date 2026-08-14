@@ -1,10 +1,8 @@
 /** Pure swimlane filter - extracted from SwimlaneBand.jsx, no React APIs. */
 
 /**
- * Collect all tickets in a swimlane across every column.
- *
- * The unsorted catch-all lane sweeps any ticket whose swimlane is not in the
- * known swimlane id list (or is missing).
+ * Collect all tickets in a swimlane across every column. The unsorted catch-all lane
+ * sweeps any ticket whose swimlane isn't in the known swimlane id list (or is missing).
  *
  * @param {Object<string, Array<{swimlane?: string}>>} allTickets - Columns keyed by column id.
  * @param {string} laneId - The swimlane id this band represents.

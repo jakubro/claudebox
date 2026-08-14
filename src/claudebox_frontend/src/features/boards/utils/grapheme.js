@@ -6,10 +6,9 @@ const segmenter =
     : null
 
 /**
- * Return the first grapheme cluster of `label`, uppercased when alphabetic.
- * Preserves multi-codepoint emoji (surrogate pairs, ZWJ sequences) and
- * combining marks intact. Falls back to `label[0]` when `Intl.Segmenter`
- * is unavailable.
+ * Return the first grapheme cluster of `label`, uppercased when alphabetic. Preserves
+ * multi-codepoint emoji (surrogate pairs, ZWJ sequences) and combining marks intact.
+ * Falls back to `label[0]` when `Intl.Segmenter` is unavailable.
  *
  * @param {string} label
  * @returns {string}

@@ -4,7 +4,6 @@ import { Menu, MoreHorizontal } from 'lucide-react'
 import { useSessionData } from '../../../../context/SessionDataContext'
 
 /**
- * Render mobile top bar with hamburger, session name, and details toggle.
  * @param {object} props
  * @param {Function} props.onHamburger - Open the navigation drawer.
  * @param {Function} props.onToggleDetails - Toggle the details sheet.

@@ -2,16 +2,14 @@
 
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MAX_INPUT_HISTORY_ENTRIES } from '../../../../../config/thresholds'
 import useInputHistory from './useInputHistory'
 
-// Stable defaults
 const EMPTY_EVENTS_REF = { current: [] }
 const DEFAULT_DRAFTS = { current: '', stack: [] }
 const STORAGE_KEY = 'inputHistory:test-session'
 
-/**
- * Seed localStorage with history items before rendering.
- */
+/** Seed localStorage with history items before rendering. */
 const seedHistory = items => localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
 
 describe('useInputHistory', () => {
@@ -32,15 +30,12 @@ describe('useInputHistory', () => {
     localStorage.clear()
   })
 
-  /**
-   * Render the useInputHistory hook with default or custom options.
-   */
+  /** Render the useInputHistory hook with default or custom options. */
   const renderInputHistory = (opts = {}) =>
     renderHook(
       ({ sessionId, eventsRef, eventsLength, drafts }) =>
-        // useInputHistory consumes drafts via a ref (kept live by ChatInput's
-        // direct-write path). Tests pass a static object; wrap it so the hook
-        // reads `.current` on every navigation call.
+        // useInputHistory consumes drafts via a ref (kept live by ChatInput's direct-write path).
+        // Tests pass a static object; wrap it so the hook reads `.current` on every navigation call.
         useInputHistory(
           sessionId,
           eventsRef,
@@ -198,8 +193,6 @@ describe('useInputHistory', () => {
       })
       expect(mockTextarea.value).toBe('third')
 
-      // Cursor should already be at start after navigateUp
-      // Second Up goes to second
       act(() => {
         result.current.navigateUp()
       })
@@ -239,7 +232,7 @@ describe('useInputHistory', () => {
         result.current.navigateUp()
       })
       expect(mockTextarea.value).toBe('draft2')
-      expect(saveDrafts).not.toHaveBeenCalled() // Non-destructive
+      expect(saveDrafts).not.toHaveBeenCalled()
     })
   })
 
@@ -507,8 +500,7 @@ describe('useInputHistory', () => {
         result.current.addToHistory('no persist')
       })
 
-      // Still queued in recentAdditionsRef even without sessionId
-      // Navigation should work
+      // Still queued in recentAdditionsRef even without sessionId; navigation should work.
       act(() => {
         result.current.navigateUp()
       })
@@ -523,8 +515,7 @@ describe('useInputHistory', () => {
         result.current.addToHistory('just added')
       })
 
-      // Navigate should find it even though state might not be updated yet
-      // (because recentAdditionsRef is used in effectiveHistory)
+      // Navigate finds it via recentAdditionsRef (feeds effectiveHistory) even before state updates.
       act(() => {
         result.current.navigateUp()
       })
@@ -718,6 +709,42 @@ describe('useInputHistory', () => {
 
       // Should be back to fresh state
       expect(result.current.getNavState().source).toBe(null)
+    })
+  })
+
+  describe('history cap', () => {
+    it('evicts the oldest entries once the entry cap is exceeded', () => {
+      const { result } = renderInputHistory()
+
+      act(() => {
+        for (let i = 0; i < MAX_INPUT_HISTORY_ENTRIES + 1; i++) {
+          result.current.addToHistory(`entry-${i}`)
+        }
+      })
+
+      expect(result.current.inputHistory.length).toBe(MAX_INPUT_HISTORY_ENTRIES)
+      expect(result.current.inputHistory[0]).toBe('entry-1') // entry-0 evicted
+      expect(result.current.inputHistory.at(-1)).toBe(`entry-${MAX_INPUT_HISTORY_ENTRIES}`)
+    })
+
+    it('a single entry too large to store on its own does not throw', () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('quota exceeded', 'QuotaExceededError')
+      })
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { result } = renderInputHistory()
+
+      expect(() => {
+        act(() => {
+          result.current.addToHistory('x'.repeat(1_000_000))
+        })
+      }).not.toThrow()
+
+      expect(result.current.inputHistory).toEqual(['x'.repeat(1_000_000)])
+      expect(warnSpy).toHaveBeenCalled()
+
+      setItemSpy.mockRestore()
+      warnSpy.mockRestore()
     })
   })
 

@@ -20,13 +20,9 @@ import { categorizeCommands, flattenCommands } from '../../../../../../utils/cat
 import CommandDetailPanel from '../../../chat-input/components/CommandDetailPanel'
 
 /**
- * Render the leading slash-command token of a user message. Resolves the
- * command name against the workspace catalog (`SessionDataContext.commands`):
- * a recognised command renders bold + dotted-underline with a hover card
- * showing usage, description, and metadata; an unrecognised command renders
- * bold only with no hover affordance.
+ * Resolves the command against the workspace catalog (`SessionDataContext.commands`): recognised
+ * commands get bold + dotted underline with a hover card; unrecognised commands render bold-only.
  *
- * @param {object} props
  * @param {string} props.cmd - Token from `parseSlashCommand`, including the leading `/`.
  */
 export default function SlashCommandToken({ cmd }) {

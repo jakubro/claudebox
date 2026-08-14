@@ -2,25 +2,23 @@
 
 import argparse
 
-from claudebox import ContainerRuntime
-
 
 NAME = "run"
 ORDER = 10
 DESCRIPTION = "Launch agent session in container"
 EPILOG = """\
-examples:
+Examples:
   claudebox run                  launch interactive agent session
   claudebox run -- --resume      resume the most recent agent conversation
   claudebox run -- -p "prompt"   run a non-interactive prompt through the agent
 
-passing extra arguments:
-  Arguments after "--" are forwarded to the agent wrapper inside the container.
+Arguments:
+  Everything after `--` is forwarded to the agent wrapper inside the container.
 
-project detection:
-  Walks up the directory tree looking for a .workspace marker to find the
-  project root. Falls back to cwd when no marker is present (no error, no
-  prompt, no auto-registration with the daemon).
+Notes:
+  The project root is found by walking up for a `.workspace` marker, falling back to
+  the current directory when there is none - no error, no prompt, and no automatic
+  registration with the daemon.
 """
 
 
@@ -36,6 +34,9 @@ def register(parser: argparse.ArgumentParser) -> None:
 
 def handle(args: argparse.Namespace) -> int:
     """Launch an agent session and return the container exit code."""
+
+    # Deferred: pulls structlog and the container backend, which the cold path must not pay for.
+    from claudebox import ContainerRuntime
 
     agent_args = _strip_double_dash(args.agent_args or [])
 

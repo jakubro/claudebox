@@ -3,7 +3,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock dependencies
 vi.mock('../../../api/uiState', () => ({
   patchSessionUiState: vi.fn(),
 }))
@@ -133,7 +132,6 @@ describe('useDockviewLayout', () => {
 
       expect(result.current.isMaximized).toBe(false)
 
-      // Simulate runtime maximize
       mockApi.hasMaximizedGroup.mockReturnValue(true)
       act(() => {
         maximizeCallback()
@@ -141,7 +139,6 @@ describe('useDockviewLayout', () => {
 
       expect(result.current.isMaximized).toBe(true)
 
-      // Simulate un-maximize
       mockApi.hasMaximizedGroup.mockReturnValue(false)
       act(() => {
         maximizeCallback()

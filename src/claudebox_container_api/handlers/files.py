@@ -6,7 +6,6 @@ from ._models import ResolvePathsRequest
 from ._shared import FilesDep, SessionDep
 
 
-# FastAPI router for file browser API endpoints, mounted at /api/files prefix.
 router = APIRouter(prefix="/api/files")
 
 

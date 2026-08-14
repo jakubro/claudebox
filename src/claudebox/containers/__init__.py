@@ -6,10 +6,7 @@ from ..config import Config
 
 
 def create_runtime(config: Config | None = None, *, verbose: bool = False):
-    """Create the appropriate container runtime based on config.
-
-    Returns LocalRuntime when backend is "local", ContainerRuntime otherwise.
-    """
+    """Create the appropriate container runtime based on config."""
 
     config = config or Config.load()
 

@@ -1,5 +1,7 @@
 /** Control bar with session actions and navigation buttons. */
 
+// audit-ignore-file: excessive-props
+
 import {
   ArrowDownToLine,
   ChevronDown,
@@ -24,7 +26,6 @@ import SessionPromptEditor from '../session-prompt'
 import SessionNameEditor from './components/SessionNameEditor'
 
 /**
- * Render control bar with pin, rename, reload, compact, fork, and navigation buttons.
  * @param {Object} props
  * @param {Function} props.onReload - Callback to reload session
  * @param {Function} props.onFork - Callback receiving fork mode string
@@ -88,9 +89,7 @@ export default function ChatControlBar({
   }
 
   const handleSaved = _newName => {
-    // The session header strip reads sessionName from SessionDataContext;
-    // refreshSession() flowing through updates the visible title. The dockview
-    // tab carries no session title.
+    // Session header strip reads sessionName from SessionDataContext; refreshSession() updates the visible title.
     void refresh()
     void refreshSession()
   }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { readFileAsBase64, validateFile } from '../../../../../utils/attachmentHelpers'
 
 /**
- * Hook for managing file attachments via paste, drag-drop, and programmatic addition.
  * @param {Object} params
  * @param {Function} params.setError - Error setter from InteractionContext
  * @param {Object} params.textareaRef - Ref to textarea element (for X11 paste guard)
@@ -13,11 +12,11 @@ import { readFileAsBase64, validateFile } from '../../../../../utils/attachmentH
 export default function useAttachments({ setError, textareaRef }) {
   const [attachments, setAttachments] = useState([])
   const [dragOver, setDragOver] = useState(false)
-  const middleClickOutsideRef = useRef(false) // Track middle-click outside textarea (X11 paste guard)
+  const middleClickOutsideRef = useRef(false)
 
-  // Block paste when middle-click originates outside textarea (X11 behavior)
-  // Note: Must use mousedown with capture phase - IconTab stops propagation, and X11 injects paste on button DOWN
-  // Flag cleared on mouseup+rAF instead of setTimeout - handles held middle-click (>100ms hold)
+  // Blocks paste from a middle-click outside the textarea (X11 behavior); needs mousedown capture
+  // since IconTab stops propagation and X11 fires paste on button-down. Flag clears via mouseup+rAF,
+  // not setTimeout, to survive a held click (>100ms).
   useEffect(() => {
     const handleMouseDown = e => {
       if (e.button === 1 && textareaRef.current && e.target !== textareaRef.current) {
@@ -40,7 +39,6 @@ export default function useAttachments({ setError, textareaRef }) {
     }
   }, [textareaRef])
 
-  // Process files from drag-drop or paste
   const addFiles = useCallback(
     async files => {
       for (const file of files) {
@@ -69,7 +67,6 @@ export default function useAttachments({ setError, textareaRef }) {
     [setError],
   )
 
-  // Remove attachment by id
   const removeAttachment = useCallback(id => {
     setAttachments(prev => prev.filter(a => a.id !== id))
   }, [])
@@ -81,7 +78,6 @@ export default function useAttachments({ setError, textareaRef }) {
         e.preventDefault()
         return
       }
-      // Check for file data in clipboard
       const files = e.clipboardData?.files
       if (files && files.length > 0) {
         e.preventDefault()
@@ -91,7 +87,6 @@ export default function useAttachments({ setError, textareaRef }) {
     [addFiles],
   )
 
-  // Drag-drop handlers
   const handleDragOver = useCallback(e => {
     e.preventDefault()
     setDragOver(true)

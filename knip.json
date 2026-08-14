@@ -13,6 +13,8 @@
         "!src/**/*.test.{js,jsx}"
       ],
       "ignoreDependencies": [
+        "@fontsource/inter",
+        "@fontsource/jetbrains-mono",
         "@testing-library/*",
         "@vitest/*",
         "jsdom",

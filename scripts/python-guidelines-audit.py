@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Python source against project conventions.
-
-Runs every class in AUDITS; exits 0 if all clean, 1 on any violation.
-
-Usage: python-guidelines-audit.py [--verbose]
-"""
+"""Audit Python source against project conventions; runs every AUDITS class, exits 1 on any violation."""
 
 import argparse
 import ast
@@ -53,10 +48,10 @@ class CrossPackageImportAudit:
     """
 
     FIRST_PARTY = frozenset(
-        {"claudebox", "claudebox_cli", "claudebox_container_api", "claudebox_daemon"}
+        {"claudebox", "claudebox_cli", "claudebox_container_api", "claudebox_daemon"},
     )
     EXCLUDED_DIR_PARTS = frozenset(
-        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"}
+        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"},
     )
 
     def __init__(self, root: Path):
@@ -104,7 +99,7 @@ class CrossPackageImportAudit:
             return False
 
     def _is_violation(self, module: str, source_pkg: str | None) -> bool:
-        """Whether `from module import …` from source_pkg violates the boundary rule."""
+        """Whether `from module import ...` from source_pkg violates the boundary rule."""
 
         parts = module.split(".")
         head = parts[0]
@@ -155,14 +150,11 @@ class CrossPackageImportAudit:
 
 
 class WhitespaceControlFlowAudit:
-    """Paragraph separation and dispatch shape per GUIDELINES Whitespace & Control Flow.
+    """Paragraph separation and if-return dispatch shape per GUIDELINES Whitespace & Control Flow.
 
-    Flags two things: a control block (if/for/while/with/try/match) or a return/raise
-    that is not the first statement in its block and is not separated from the
-    preceding statement by a blank line; and mutually-exclusive return dispatch
-    written as a run of sequential `if cond: ... return` blocks closed by a
-    fallthrough return instead of `if`/`elif`/`else`. def/class blank-line spacing
-    is ruff's concern and is not checked here. Walks every linted Python root.
+    Flags a control block or return/raise that isn't its block's first statement and lacks a
+    preceding blank line, and a run of >=2 sequential `if cond: ... return` blocks that should
+    be if/elif/else. def/class spacing is ruff's concern and is not checked here.
     """
 
     COMPOUND = (
@@ -180,7 +172,7 @@ class WhitespaceControlFlowAudit:
     DEF = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
     SUBDIRS = ("src", "tests", "e2e/cli", "scripts")
     EXCLUDED_DIR_PARTS = frozenset(
-        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"}
+        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"},
     )
 
     def __init__(self, root: Path):
@@ -217,7 +209,10 @@ class WhitespaceControlFlowAudit:
         return found
 
     def _check_body(
-        self, body: list[ast.stmt], lines: list[str], found: list[tuple[int, str]]
+        self,
+        body: list[ast.stmt],
+        lines: list[str],
+        found: list[tuple[int, str]],
     ) -> None:
         """Flag missing paragraph blanks and if-return dispatch runs in one block; recurse."""
 
@@ -237,7 +232,7 @@ class WhitespaceControlFlowAudit:
                         (
                             stmt.lineno,
                             f"missing blank line before `{self._kind(stmt)}` (paragraph separation)",
-                        )
+                        ),
                     )
 
             for sub in self._subbodies(stmt):
@@ -260,7 +255,7 @@ class WhitespaceControlFlowAudit:
 
                 if j - i >= 2 and j < n and isinstance(body[j], ast.Return):
                     found.append(
-                        (stmt.lineno, "use if/elif/else for mutually-exclusive return dispatch")
+                        (stmt.lineno, "use if/elif/else for mutually-exclusive return dispatch"),
                     )
 
                 i = j
@@ -353,12 +348,9 @@ class WhitespaceControlFlowAudit:
 
 
 class SdkContainmentAudit:
-    """External SDK families may only be imported from their adapter files.
-
-    Folds the former ast-grep import-ban rules (banned-claude-sdk-imports,
-    banned-langchain-langgraph-imports) into one AST pass. Prefix-pattern matching
-    auto-bans every future langchain/langgraph provider package without per-package
-    list maintenance. See GUIDELINES.md SDK Containment. Walks src/ and tests/.
+    """External SDK families may only be imported from their adapter files (GUIDELINES.md SDK
+    Containment). Prefix-pattern matching auto-bans future langchain/langgraph providers without
+    per-package list maintenance. Walks src/ and tests/.
     """
 
     @dataclass(frozen=True)
@@ -372,7 +364,7 @@ class SdkContainmentAudit:
 
     SUBDIRS = ("src", "tests")
     EXCLUDED_DIR_PARTS = frozenset(
-        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"}
+        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"},
     )
 
     RULES = (
@@ -465,7 +457,12 @@ class SdkContainmentAudit:
         return found
 
     def _record(
-        self, module: str, text: str, lineno: int, rel: str, found: list[tuple[int, str]]
+        self,
+        module: str,
+        text: str,
+        lineno: int,
+        rel: str,
+        found: list[tuple[int, str]],
     ) -> None:
         """Append a violation when `module` matches a rule and `rel` is not allowlisted."""
 
@@ -495,18 +492,15 @@ class SdkContainmentAudit:
 
 
 class CallbackCatchAllAudit:
-    """A `**kwargs` catch-all on a callable that also declares named callbacks is banned.
-
-    The footgun: a caller wiring a misnamed callback (`on_session_start` vs `on_start`) has it
-    silently swallowed by the catch-all instead of failing loud. Flags any
-    def with a non-underscore `**kwargs` parameter that also declares a callback parameter
-    (name starting `on_` or ending `_callback` / `_cb`). Underscore-prefixed catch-alls
-    (`**_server_args`) are intentional ignores and exempt. Walks src/.
+    """A `**kwargs` catch-all on a callable that also declares named callbacks is banned: a
+    misnamed callback (`on_session_start` vs `on_start`) would be silently swallowed instead of
+    failing loud. Flags a non-underscore `**kwargs` alongside a callback param (`on_*` /
+    `*_callback` / `*_cb`); underscore-prefixed catch-alls (`**_server_args`) are exempt. Walks src/.
     """
 
     SUBDIRS = ("src",)
     EXCLUDED_DIR_PARTS = frozenset(
-        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"}
+        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"},
     )
 
     def __init__(self, root: Path):
@@ -553,7 +547,7 @@ class CallbackCatchAllAudit:
                         node.lineno,
                         f"def {node.name}(...) has a `**{kwarg.arg}` catch-all alongside a named "
                         "callback parameter - drop the catch-all so a misnamed callback fails loud",
-                    )
+                    ),
                 )
 
         return found

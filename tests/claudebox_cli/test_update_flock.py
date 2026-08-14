@@ -1,16 +1,12 @@
 """Anchor for SPEC ``cli:update:concurrent-blocked``.
 
-The flock that blocks concurrent ``claudebox update`` invocations lives inside
-``install.sh`` (shell-level), not in the Python CLI. ``cmd_update`` only spawns
-install.sh and propagates its exit code. This unit test anchors the SPEC claim
-by exercising the user-visible half of the contract: when install.sh signals
-concurrent-blocked (any non-zero exit code), ``cmd_update.handle()`` returns the
-propagated exit code without a Python traceback or other corruption of the
-error surface.
+The flock blocking concurrent ``claudebox update`` lives in ``install.sh`` (shell-level), not the
+Python CLI - ``cmd_update`` only spawns it and propagates its exit code. This test exercises the
+user-visible half: when install.sh signals concurrent-blocked (non-zero exit), ``handle()``
+propagates it cleanly, without a Python traceback.
 
-The shell-level flock semantics (file locking, race avoidance) are out of
-scope here - they belong to install.sh and are exercised when the wrapper
-is invoked twice in parallel against a real install.sh.
+The real flock semantics (locking, race avoidance) are out of scope here - exercised by invoking
+the wrapper twice in parallel against a real install.sh.
 """
 
 import argparse
@@ -28,7 +24,7 @@ def fake_install_sh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Place a fake install.sh under a controlled ~/.claudebox/lib/bin/."""
 
     fake_home = tmp_path / "_home"
-    fake_home.mkdir()
+    fake_home.mkdir(exist_ok=True)
     bin_dir = fake_home / ".claudebox" / "lib" / "bin"
     bin_dir.mkdir(parents=True)
     install_sh = bin_dir / "install.sh"
@@ -40,18 +36,16 @@ def fake_install_sh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return install_sh
 
 
-# Anchor for SPEC ``cli:update:concurrent-blocked`` lives in e2e/cli/test_update.py
-# (GUIDELINES.md §8 - SPEC markers are e2e-only). This unit test verifies the
-# user-visible half of the contract in-process.
+# Formal SPEC anchor is in e2e/cli/test_update.py (SPEC markers are e2e-only); this covers the in-process half.
 class TestUpdateConcurrentBlocked:
     """``cmd_update`` propagates install.sh's non-zero exit when concurrent invocation is blocked."""
 
     def test_propagates_flock_rejection_exit_code(
-        self, fake_install_sh: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        fake_install_sh: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Simulate install.sh's flock failure path: subprocess.run returns a
-        # CompletedProcess with non-zero returncode (the shell-level flock would
-        # exit with a specific code; the contract here is exit-code propagation).
+        # Simulates install.sh's flock failure; the contract under test is propagation, not the specific code.
         def _fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess[bytes](args=cmd, returncode=42)
 

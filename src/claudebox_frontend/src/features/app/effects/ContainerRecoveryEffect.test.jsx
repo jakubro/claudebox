@@ -4,8 +4,6 @@ import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContainerRecoveryEffect from './ContainerRecoveryEffect'
 
-// --- Mock all context hooks ---
-
 const mockRouting = { activeSessionId: 'sess-1' }
 vi.mock('../../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => mockRouting,
@@ -69,7 +67,6 @@ describe('ContainerRecoveryEffect', () => {
 
     const { rerender } = render(<ContainerRecoveryEffect />)
 
-    // Simulate SSE reconnect exhaustion
     mockEvents.containerRecoveryNeeded = (overrides.events?.containerRecoveryNeeded || 0) + 1
     rerender(<ContainerRecoveryEffect />)
 

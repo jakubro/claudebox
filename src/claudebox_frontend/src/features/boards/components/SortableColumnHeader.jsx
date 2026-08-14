@@ -11,15 +11,11 @@ import { firstGrapheme } from '../utils/grapheme'
 /**
  * Render a column header that can be dragged to reorder, accept ticket drops, and renamed via double-click.
  *
- * Three roles on the same node:
- * - useSortable (id `col-header:${col}`) - column reorder; activated only via
- *   the grip handle which is the sole element wired with sortable listeners.
- * - useDroppable (id `col:${col}`) - ticket drop target; `BoardTab.handleDragEnd`
- *   recognizes the `col:` and `col-header:` prefixes as column-only moves
- *   that preserve each ticket's origin swimlane.
- * - Double-click - opens an inline rename input that PATCHes the column's
- *   display label (folder and ID stay unchanged). Mirrors SwimlaneBand's
- *   rename pattern.
+ * Three roles share this node: useSortable (`col-header:${col}`) drives reorder, activated
+ * only via the grip handle; useDroppable (`col:${col}`) is the drop target that
+ * `BoardTab.handleDragEnd` recognizes via the `col:`/`col-header:` prefix as a column-only
+ * move preserving each ticket's origin swimlane; double-click opens an inline rename that
+ * PATCHes only the display label (folder and ID stay unchanged), mirroring SwimlaneBand's pattern.
  *
  * @param {object} props
  * @param {string} props.col - Column identifier.
@@ -73,8 +69,7 @@ export default function SortableColumnHeader({
 
   const handleDoubleClick = useCallback(
     e => {
-      // dblclick fires after the toggle's two single-clicks; stop propagation
-      // so the active rename input doesn't trigger another collapse toggle.
+      // Stop propagation so the active rename input doesn't retrigger the collapse toggle.
       e.stopPropagation()
       setEditLabel(label)
       setEditing(true)

@@ -52,7 +52,6 @@ test.describe('Single-Session Mode', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Single main panel host element exists.
     const mainPanel = page.locator('[data-testid="main-panel"]')
     await expect(mainPanel).toHaveCount(1)
 
@@ -99,8 +98,7 @@ test.describe('Single-Session Mode', () => {
 
     const strip = page.locator('[data-testid="session-header-strip"]')
     await strip.click({ button: 'right' })
-    // No app-defined context menu surfaces; the browser default may show but
-    // the app does not render its own menu inside the strip.
+    // No app-defined context menu surfaces, though the browser default may still show.
     await expect(page.locator('[data-testid="session-header-context-menu"]')).toHaveCount(0)
   })
 
@@ -109,8 +107,7 @@ test.describe('Single-Session Mode', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Double-click a side-panel tab (Stash) to maximize - the main panel
-    // itself has no tab bar to double-click.
+    // Double-click a side-panel tab (Stash); the main panel has no tab bar to double-click.
     const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' }).first()
     if (await stashTab.count()) {
       await stashTab.dblclick()
@@ -128,10 +125,8 @@ test.describe('Single-Session Mode', () => {
   test('Stop button surfaces ConfirmStopModal copy', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
-    // Confirm modal is rendered conditionally; verify the data-testids exist
-    // for selectors documented in the SPEC. Live behaviour gating on
-    // isResponding is exercised by the ticket's repro script under the test-UI
-    // harness; vitest mock-tests cover the gating predicate end-to-end.
+    // This only verifies the SPEC-documented testids exist; live isResponding gating runs under the
+    // test-UI harness, and vitest mock-tests cover the gating predicate end-to-end.
     const modal = page.locator('[data-testid="confirm-stop-modal"]')
     await expect(modal).toHaveCount(0) // not visible until Stop is clicked while responding
   })
@@ -142,8 +137,7 @@ test.describe('Single-Session Mode', () => {
   test('per-turn rewind chevron exposes only fork-here and fork-browser-tab', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
-    // The chevron appears alongside the rewind button on user messages; absence
-    // of a 'fork-new-tab' option is the SPEC contract.
+    // The chevron sits by the rewind button; no 'fork-new-tab' option is the SPEC contract.
     const dropdown = page.locator('.rewind-dropdown')
     if (await dropdown.count()) {
       await expect(dropdown.getByText('Rewind in new tab', { exact: true })).toHaveCount(0)
@@ -164,9 +158,7 @@ test.describe('Single-Session Mode', () => {
   test('still-running toast slot is part of the desktop layout', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
-    // The toast surfaces only when emit sites detect a replace-while-responding
-    // event; verify the testid is wired into the DOM tree (component import
-    // and slot render are both required for this query to be resolvable).
+    // The toast only renders when an emit site fires replace-while-responding; confirms the testid slot is wired.
     const toast = page.locator('[data-testid="still-running-toast"]')
     await expect(toast).toHaveCount(0) // hidden until an emit site fires it
   })
@@ -197,8 +189,7 @@ test.describe('Single-Session Mode', () => {
   // SPEC: url:reload-restore
   // SPEC: url:cross-session-deep-link
   test('session URL accepts /turns/<role>-<turnId> deep links', async ({ page }) => {
-    // The route shape is verifiable without running scroll sync - the parser
-    // accepts the segment and the routing context surfaces activeTurnId.
+    // Verifiable without running scroll sync: the parser accepts the segment and surfaces activeTurnId.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/test-session/turns/u-tid-1`)
     await waitForAppReady(page)
     expect(await page.evaluate(() => window.location.hash)).toContain('/turns/u-tid-1')

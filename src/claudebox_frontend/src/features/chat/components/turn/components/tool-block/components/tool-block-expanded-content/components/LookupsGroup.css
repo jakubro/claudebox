@@ -1,0 +1,7 @@
+/* Row body for the Lookups panel. Rows are real nested ToolBlocks - rail/spacing come from .tool-nested
+   / .tool-block.nested; this un-caps row output height, which claim:tool:lookups-block-rows requires. */
+
+.lookups-group-rows .tool-block.nested .tool-details,
+.lookups-group-rows .tool-block.nested .tool-json {
+  max-height: none;
+}

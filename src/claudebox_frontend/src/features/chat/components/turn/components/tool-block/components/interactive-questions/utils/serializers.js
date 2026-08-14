@@ -2,9 +2,6 @@
 
 import { escapeXml } from '../../../../../../../../../utils/xml'
 
-/**
- * Format a single question as structured XML.
- */
 export function formatQuestionXml(q, i, selections, otherSelected, otherTexts) {
   const selected = selections[i]
   // Preserve whitespace - check length > 0 instead of trim()

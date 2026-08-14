@@ -7,24 +7,27 @@ import { mockSSE } from '../mocks/sse.js'
 
 test.describe('LangGraph ToolSearch', () => {
   // SPEC: langgraph:tool-search
-  test('renders the tool_search tool block + completed result with ranked matches', async ({
-    page,
-  }) => {
+  test('a successful tool_search call renders no block', async ({ page }) => {
     await mockAPI(page)
     await mockSSE(page, 'events/langgraph-tool-tool-search.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Tool block visible - the frontend renders LangGraph tool_search tool_use
-    // blocks identically to other tools (TOOL_NAME_ALIASES handles the alias).
+    // TOOL_NAME_ALIASES resolves tool_search to the hide predicate's canonical name, so it's hidden
+    // identically to Claude's ToolSearch.
+    await expect(page.locator('[data-testid="tool-block"]')).toHaveCount(0)
+  })
+
+  // SPEC: langgraph:tool-search
+  test('a failed tool_search call still renders its block', async ({ page }) => {
+    await mockAPI(page)
+    await mockSSE(page, 'events/langgraph-tool-tool-search-error.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
     await expect(toolBlock).toHaveAttribute('data-tool-use-id', 'tool_001')
-
-    // The tool result lands and the block reaches the completed state.
-    const completed = page
-      .locator('[data-testid="tool-block"][data-tool-status="completed"]')
-      .first()
-    await expect(completed).toBeVisible()
+    await expect(toolBlock).toHaveAttribute('data-tool-status', 'completed')
   })
 })

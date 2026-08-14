@@ -54,7 +54,6 @@ describe('NewSessionSplitButton', () => {
 
   it('middle-click triggers executeNewSessionInNewTab', () => {
     render(<NewSessionSplitButton />)
-    // React onAuxClick is dispatched by the click event with non-primary button.
     fireEvent(
       screen.getByTestId('session-new-session-btn'),
       new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }),

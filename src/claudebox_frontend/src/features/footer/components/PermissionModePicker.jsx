@@ -7,12 +7,8 @@ import useCapabilities from '../../../hooks/useCapabilities'
 import useDropdown from '../../../hooks/useDropdown'
 
 /**
- * Render a footer dropdown for selecting the active permission mode.
- *
- * Receives current permission mode and available modes from session data (via context).
- * Optimistically updates on selection; confirmed by next SSE event.
- * On welcome (no active session), `defaultValue` populates the display so
- * the picker shows what a new session would inherit.
+ * Permission mode dropdown, sourced from session data via context. Updates optimistically on
+ * selection, confirmed by the next SSE event. `defaultValue` previews inheritance pre-session.
  *
  * @param {object} props
  * @param {string} props.currentPermissionMode - Active permission mode ID from session data.

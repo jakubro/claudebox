@@ -36,7 +36,7 @@
 .sessions-id {
   position: relative;
   font-size: 10px;
-  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   flex-shrink: 0;
 }
 
@@ -223,9 +223,8 @@
   background: var(--bg-tertiary);
 }
 
-/* Inherits chrome from .dropdown-menu; this rule sets only the overrides.
-   position: fixed lets the dropdown escape the sessions-list overflow:auto
-   container; top/left are computed via useDropdownPosition and applied inline. */
+/* Inherits chrome from .dropdown-menu; this only overrides position: fixed so the dropdown escapes
+   the sessions-list's overflow:auto container; top/left come from useDropdownPosition, applied inline. */
 .sessions-resume-dropdown {
   position: fixed;
   z-index: 9999;

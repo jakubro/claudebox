@@ -9,7 +9,6 @@ test.describe('Session Prompt', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
     await mockSSE(page)
-    // Mock PATCH /api/sessions/:id/prompt
     await page.route(/\/api\/sessions\/current\/prompt/, async route => {
       if (route.request().method() === 'PATCH') {
         await route.fulfill({ status: 200, json: {} })
@@ -62,7 +61,6 @@ test.describe('Session Prompt', () => {
     await page.locator('.session-prompt-btn').click()
     await expect(page.locator('.session-prompt-dropdown')).toBeVisible()
 
-    // Click on chat area (outside dropdown)
     await page.locator('[data-testid="chat-input"]').click()
     await expect(page.locator('.session-prompt-dropdown')).not.toBeVisible()
   })
@@ -92,7 +90,6 @@ test.describe('Session Prompt', () => {
 
   // SPEC: chat:session-prompt-badge
   test('shows blue badge when session prompt is set', async ({ page }) => {
-    // Override status to include a session prompt
     await mockAPI(page, {
       handlers: {
         getSessionStatus: async route => {
@@ -101,7 +98,7 @@ test.describe('Session Prompt', () => {
               session_id: 'test-session-001',
               name: null,
               workspace: '/home/user/project',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               permission_mode: 'bypassPermissions',
               num_turns: 0,
               total_cost_usd: 0,
@@ -159,7 +156,6 @@ test.describe('Session Prompt', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Session prompt container should be preceded by a separator within the same group
     const container = page.locator('.session-prompt-container')
     const separator = container.locator(
       'xpath=preceding-sibling::span[@class="panel-control-separator"]',
@@ -188,7 +184,7 @@ test.describe('Session Prompt', () => {
               session_id: 'test-session-001',
               name: null,
               workspace: '/home/user/project',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               permission_mode: 'bypassPermissions',
               num_turns: 0,
               total_cost_usd: 0,
@@ -249,7 +245,7 @@ test.describe('Session Prompt', () => {
               session_id: 'test-session-001',
               name: null,
               workspace: '/home/user/project',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               permission_mode: 'bypassPermissions',
               num_turns: 0,
               total_cost_usd: 0,
@@ -293,7 +289,7 @@ test.describe('Session Prompt', () => {
       session_id: 'test-session-001',
       name: null,
       workspace: '/home/user/project',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       permission_mode: 'bypassPermissions',
       num_turns: 0,
       total_cost_usd: 0,

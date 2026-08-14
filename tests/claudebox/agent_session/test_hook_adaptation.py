@@ -1,16 +1,9 @@
 """Hook adaptation + delta-detection tests for ClaudeRuntime.
 
-Covers two concerns:
-
-1. SDK hook adapters - `_adapt_session_start` / `_adapt_pre_compact` /
-   `_adapt_post_tool_use` - translate SDK HookInput shapes into the
-   typed HookCallbacks surface.
-
-2. Delta detection - `_fire_*_changed` helpers + setter wiring. First
-   call after construction silently establishes the baseline; only
-   subsequent actual changes fire the callback. PostToolUse-as-detector
-   converges on `_fire_permission_mode_changed` so setter-driven and
-   SDK-detected changes share one delta filter.
+Adapters (_adapt_session_start/_adapt_pre_compact/_adapt_post_tool_use) translate SDK HookInput
+into typed HookCallbacks. Delta detection (_fire_*_changed + setter wiring) treats the first call
+as a silent baseline and fires only on real changes; PostToolUse-based detection converges on
+_fire_permission_mode_changed, sharing one filter with the setter path.
 """
 
 from pathlib import Path
@@ -22,7 +15,6 @@ from claudebox.agent_session.config import ClaudeAgentSessionConfig
 from claudebox.agent_session.hooks import (
     CompactStartPayload,
     HookCallbacks,
-    PostToolUsePayload,
     PreToolUsePayload,
 )
 from claudebox.agent_session.runtime_claude import ClaudeRuntime
@@ -48,10 +40,6 @@ def _make_runtime(callbacks: HookCallbacks | None = None) -> ClaudeRuntime:
 
     with patch("claudebox.agent_session.runtime_claude.BaseClaudeSDKClient"):
         return ClaudeRuntime(config)
-
-
-# Adapter: _adapt_pre_compact (trigger translation)
-# --------------------------------------------------------------------------------------------------
 
 
 class TestAdaptPreCompact:
@@ -98,13 +86,8 @@ class TestAdaptPreCompact:
     @pytest.mark.anyio
     async def test_no_callback_registered(self):
         runtime = _make_runtime(HookCallbacks(on_pre_compact=None))
-        # Should not raise
         result = await runtime._adapt_pre_compact({"trigger": "auto"}, None, {})
         assert result == {}
-
-
-# Adapter: _adapt_session_start
-# --------------------------------------------------------------------------------------------------
 
 
 class TestAdaptSessionStart:
@@ -126,10 +109,6 @@ class TestAdaptSessionStart:
         assert result == {}
 
 
-# Delta detection: set_model + _fire_model_changed
-# --------------------------------------------------------------------------------------------------
-
-
 class TestModelDeltaDetection:
     """set_model + _fire_model_changed delta detection with baseline-on-first-call."""
 
@@ -143,10 +122,10 @@ class TestModelDeltaDetection:
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
-            await runtime.set_model("claude-opus-4-7")
+            await runtime.set_model("claude-opus-5")
 
         cb.assert_not_awaited()
-        assert runtime._last_known_model == "claude-opus-4-7"
+        assert runtime._last_known_model == "claude-opus-5"
 
     @pytest.mark.anyio
     async def test_second_call_with_different_value_fires(self):
@@ -156,11 +135,11 @@ class TestModelDeltaDetection:
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
-            await runtime.set_model("claude-opus-4-7")
-            await runtime.set_model("claude-haiku-4-5")
+            await runtime.set_model("claude-opus-5")
+            await runtime.set_model("claude-sonnet-5")
 
-        cb.assert_awaited_once_with("claude-haiku-4-5")
-        assert runtime._last_known_model == "claude-haiku-4-5"
+        cb.assert_awaited_once_with("claude-sonnet-5")
+        assert runtime._last_known_model == "claude-sonnet-5"
 
     @pytest.mark.anyio
     async def test_same_value_no_fire(self):
@@ -172,8 +151,8 @@ class TestModelDeltaDetection:
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
-            await runtime.set_model("claude-opus-4-7")  # baseline
-            await runtime.set_model("claude-opus-4-7")  # no-op
+            await runtime.set_model("claude-opus-5")  # baseline
+            await runtime.set_model("claude-opus-5")  # no-op
 
         cb.assert_not_awaited()
 
@@ -184,13 +163,9 @@ class TestModelDeltaDetection:
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
-            await runtime.set_model("claude-opus-4-7")
+            await runtime.set_model("claude-opus-5")
 
-        assert runtime._last_known_model == "claude-opus-4-7"
-
-
-# Delta detection: set_permission_mode + _fire_permission_mode_changed
-# --------------------------------------------------------------------------------------------------
+        assert runtime._last_known_model == "claude-opus-5"
 
 
 class TestPermissionModeDeltaDetection:
@@ -223,10 +198,6 @@ class TestPermissionModeDeltaDetection:
         cb.assert_awaited_once_with("plan")
 
 
-# Delta detection: set_effort_level + _fire_effort_level_changed
-# --------------------------------------------------------------------------------------------------
-
-
 class TestEffortLevelDeltaDetection:
     """Symmetric to model + permission_mode delta detection."""
 
@@ -255,10 +226,6 @@ class TestEffortLevelDeltaDetection:
             await runtime.set_effort_level("low")
 
         cb.assert_awaited_once_with("low")
-
-
-# PostToolUse permission-mode-detector convergence
-# --------------------------------------------------------------------------------------------------
 
 
 class TestPostToolUseConvergence:
@@ -307,15 +274,11 @@ class TestPostToolUseConvergence:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_permission_mode_changed=cb))
 
-        await runtime._adapt_post_tool_use({}, None, {})  # no permission_mode key
+        await runtime._adapt_post_tool_use({}, None, {})
         await runtime._adapt_post_tool_use("not-a-dict", None, {})
 
         cb.assert_not_awaited()
         assert runtime._last_known_permission_mode is None  # baseline not established
-
-
-# _build_sdk_hooks
-# --------------------------------------------------------------------------------------------------
 
 
 class TestBuildSdkHooks:
@@ -324,7 +287,6 @@ class TestBuildSdkHooks:
     def test_no_callbacks_empty_dict(self):
         runtime = _make_runtime(HookCallbacks())
         hooks = ClaudeRuntime._build_sdk_hooks(runtime)
-        # No callbacks registered -> no hooks wired.
         assert hooks == {}
 
     def test_pre_compact_only(self):
@@ -336,8 +298,7 @@ class TestBuildSdkHooks:
         assert set(hooks) == {"PreCompact"}
 
     def test_permission_mode_changed_wires_post_tool_use_and_session_start(self):
-        """on_permission_mode_changed registers both PostToolUse and SessionStart adapters
-        (the latter silently establishes the baseline before any tool runs)."""
+        """on_permission_mode_changed wires PostToolUse plus a SessionStart adapter that seeds the baseline first."""
 
         async def cb(_m):
             pass
@@ -357,15 +318,11 @@ class TestBuildSdkHooks:
             pass
 
         runtime = _make_runtime(
-            HookCallbacks(on_session_start=cb_start, on_permission_mode_changed=cb_mode)
+            HookCallbacks(on_session_start=cb_start, on_permission_mode_changed=cb_mode),
         )
         hooks = ClaudeRuntime._build_sdk_hooks(runtime)
         session_start = hooks["SessionStart"][0]
-        assert len(session_start.hooks) == 2  # both adapters wired
-
-
-# Adapter: _adapt_pre_tool_use
-# --------------------------------------------------------------------------------------------------
+        assert len(session_start.hooks) == 2
 
 
 class TestAdaptPreToolUse:
@@ -391,7 +348,7 @@ class TestAdaptPreToolUse:
                 tool_use_id="tool_001",
                 tool_name="Bash",
                 tool_input={"command": "ls"},
-            )
+            ),
         )
 
     @pytest.mark.anyio
@@ -429,13 +386,8 @@ class TestAdaptPreToolUse:
         cb.assert_not_awaited()
 
 
-# Adapter: _adapt_post_tool_use (typed callback extension)
-# --------------------------------------------------------------------------------------------------
-
-
 class TestAdaptPostToolUseTypedCallback:
-    """PostToolUse adapter, in addition to permission-mode-drift detection,
-    projects SDK input into the typed on_post_tool_use callback."""
+    """PostToolUse adapter projects SDK input into on_post_tool_use, alongside permission-mode-drift detection."""
 
     @pytest.mark.anyio
     async def test_fires_post_callback_with_duration(self):
@@ -496,7 +448,7 @@ class TestAdaptPostToolUseTypedCallback:
             HookCallbacks(
                 on_permission_mode_changed=mode_cb,
                 on_post_tool_use=post_cb,
-            )
+            ),
         )
         # Baseline so the first call fires.
         runtime._last_known_permission_mode = "default"
@@ -525,10 +477,6 @@ class TestAdaptPostToolUseTypedCallback:
             {},
         )
         assert result == {}
-
-
-# Adapter: _adapt_post_tool_use_failure
-# --------------------------------------------------------------------------------------------------
 
 
 class TestAdaptPostToolUseFailure:
@@ -565,10 +513,6 @@ class TestAdaptPostToolUseFailure:
             {},
         )
         assert result == {}
-
-
-# _build_sdk_hooks - PreToolUse + PostToolUseFailure registration
-# --------------------------------------------------------------------------------------------------
 
 
 class TestBuildSdkHooksToolUse:

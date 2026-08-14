@@ -53,10 +53,8 @@ async def deregister_workspace(svc: DaemonDep, workspace_id: str):
 async def get_session_defaults(svc: WorkspaceDep) -> dict:
     """Return what a new session in this workspace would inherit plus the available choices.
 
-    Catalog fields (default + available list per axis) are NULL when the runtime
-    advertises that flag as False - frontend infers absence from the missing field.
-    The workspace's configured runtime (`agent` TOML key) selects the capability
-    matrix and default-catalog source; unknown runtimes return HTTP 422.
+    Catalog fields go NULL when the runtime flag is False; frontend infers absence from the missing field.
+    The `agent` TOML key selects the capability matrix and default source; unknown runtimes -> HTTP 422.
     """
 
     try:
@@ -69,6 +67,7 @@ async def get_session_defaults(svc: WorkspaceDep) -> dict:
     return {
         "workspace": str(svc.workspace.path),
         "runtime_name": cls.runtime_name,
+        "editor_url_template": svc.config.editor_url_template,
         "capabilities": dataclasses.asdict(caps),
         "model": cls.get_default_model() if caps.supports_models else None,
         "permission_mode": (

@@ -6,7 +6,6 @@ import { useEvents } from '../../context/EventsContext'
 import { useStash } from '../../context/StashContext'
 import { getFirstLine } from '../../utils/formatters'
 
-/** Render panel displaying stashed text snippets with copy and pop actions. */
 export default function StashPanel() {
   const { stash, stashRemove } = useStash()
   const { isResuming, isReplaying } = useEvents()

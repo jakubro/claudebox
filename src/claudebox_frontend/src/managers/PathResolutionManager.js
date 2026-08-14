@@ -5,13 +5,8 @@ import { PATH_RESOLVE_BATCH_MS } from '../config/timing'
 
 export default class PathResolutionManager {
   /**
-   * Batch concurrent enqueue calls into a single API request and maintain
-   * a session-scoped cache of resolved paths.
-   *
-   * Multiple usePathResolution hooks fire simultaneously during render.
-   * Each enqueue call adds candidates to a pending set. After a short delay,
-   * all pending candidates are flushed in one resolvePaths API call and results
-   * are distributed back to each caller's promise.
+   * Multiple usePathResolution hooks fire concurrently during render; this batches their
+   * enqueue calls into a single resolvePaths request, with results cached per session.
    */
   constructor() {
     /** @type {Map<string, Set<{resolve: Function, reject: Function}>>} */
@@ -37,7 +32,6 @@ export default class PathResolutionManager {
     this._sessionId = null
   }
 
-  /** Clear the resolution cache. */
   clearCache() {
     this._cache = new Map()
   }
@@ -123,7 +117,6 @@ export default class PathResolutionManager {
 
     const allCandidates = [...batch.keys()]
 
-    // Collect unique callers across all candidates
     const allCallers = new Set()
     for (const callers of batch.values()) {
       for (const caller of callers) {

@@ -10,14 +10,9 @@ import { useSessionRouting } from '../../../context/SessionRoutingContext'
 import { resumeAndReconnect } from '../utils/sessionResume'
 
 /**
- * Watch daemon SSE reconnection and re-resume the active session.
- *
- * When the daemon restarts, the container SSE proxy dies and reconnect attempts
- * exhaust (containerId becomes null). Once the daemon SSE reconnects, this effect
- * calls the resume endpoint to get a fresh container ID and reconnects the
- * container SSE. Skips if the container SSE survived the daemon restart.
- *
- * Renders nothing - exists solely for daemon reconnection recovery.
+ * When the daemon restarts, the container SSE proxy dies and reconnect attempts exhaust (containerId
+ * becomes null); once daemon SSE reconnects, this calls the resume endpoint for a fresh container ID
+ * and reconnects, skipping if the container SSE survived the daemon restart.
  */
 export default function DaemonReconnectEffect() {
   const { daemonReconnected } = useDaemonStreamContext()
@@ -43,7 +38,6 @@ export default function DaemonReconnectEffect() {
     }
     prevReconnectedRef.current = daemonReconnected
 
-    // No active session to re-resume
     if (!activeSessionId) {
       return
     }
@@ -53,12 +47,10 @@ export default function DaemonReconnectEffect() {
       return
     }
 
-    // Container SSE survived the daemon restart - skip redundant resume
     if (containerId && isConnected) {
       return
     }
 
-    // Re-resume: get fresh container ID from daemon
     clearResume()
     resumeAndReconnect({
       activeSessionId,

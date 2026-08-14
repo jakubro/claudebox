@@ -10,7 +10,7 @@ from starlette.requests import Request
 from claudebox import ProxyClient, get_logger
 from .errors import ContainerTimeout, ContainerUnavailable
 from .models import Container
-from ...constants import CONTAINER_PROXY_TIMEOUT
+from ...constants import CONTAINER_PROXY_LIMITS, CONTAINER_PROXY_TIMEOUT
 
 
 T = TypeVar("T")
@@ -20,7 +20,7 @@ class ContainerProxyClient(ProxyClient):
     """Proxy client scoped to container forwarding."""
 
     def __init__(self) -> None:
-        super().__init__(timeout=CONTAINER_PROXY_TIMEOUT)
+        super().__init__(timeout=CONTAINER_PROXY_TIMEOUT, limits=CONTAINER_PROXY_LIMITS)
         self._logger = get_logger(__name__)
 
     async def send(
@@ -32,10 +32,7 @@ class ContainerProxyClient(ProxyClient):
         method: str,
         raw: bool = False,
     ) -> Any:
-        """Send a request to a container endpoint.
-
-        When raw=True, returns the httpx.Response directly without parsing.
-        """
+        """Send a request to a container endpoint; returns the raw httpx.Response when raw=True."""
 
         async def handler(path: str) -> Any:
             response = await self._client.request(method, path, json=payload)

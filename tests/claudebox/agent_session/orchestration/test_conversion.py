@@ -55,7 +55,7 @@ class TestDictMessageToEventsResult:
             {
                 "type": "result",
                 "message": {"subtype": "success", "result": "done"},
-            }
+            },
         )
         assert event.type == "result"
         assert event.subtype == "success"
@@ -97,9 +97,7 @@ class TestDictMessageToEventsUser:
         assert event.is_human is False
 
     def test_task_notification_reclassified_non_human(self):
-        # The SDK injects async-task completion as a user-message echo; it must stay a
-        # non-human user event (the typed system/task_notification carries the signal),
-        # never a human message and never re-parsed into a second system event.
+        # Echoes as a user message but stays non-human - the typed task_notification event carries the signal.
         content = (
             "<task-notification>\n<task-id>agent_abc</task-id>\n"
             "<status>completed</status>\n</task-notification>"
@@ -143,7 +141,7 @@ class TestDictMessageToEventsAssistant:
         data = {
             "type": "assistant",
             "message": {
-                "content": [{"type": "tool_use", "id": "tu_1", "name": "Bash", "input": {}}]
+                "content": [{"type": "tool_use", "id": "tu_1", "name": "Bash", "input": {}}],
             },
         }
         event = _first(data)
@@ -163,7 +161,7 @@ class TestDictMessageToEventsAssistant:
         data = {
             "type": "assistant",
             "message": {
-                "content": [{"type": "tool_result", "content": [{"type": "text", "text": "ok"}]}]
+                "content": [{"type": "tool_result", "content": [{"type": "text", "text": "ok"}]}],
             },
         }
         event = _first(data)
@@ -187,7 +185,7 @@ class TestDictMessageToEventsAssistant:
                 "content": [
                     {"type": "thinking", "thinking": "hmm"},
                     {"type": "text", "text": "result"},
-                ]
+                ],
             },
         }
         events = _events(data)
@@ -302,7 +300,11 @@ class TestToPublishedEvent:
             raw={"message": {"parent_tool_use_id": "from_msg"}, "block": {}},
         )
         pub = to_published_event(
-            event, id_="e1", ts=datetime.now(), turn_id="t1", parent_tool_use_id="from_kwargs"
+            event,
+            id_="e1",
+            ts=datetime.now(),
+            turn_id="t1",
+            parent_tool_use_id="from_kwargs",
         )
         assert pub.parent_tool_use_id == "from_kwargs"
 
@@ -357,9 +359,10 @@ class TestSerializeEvent:
                 "source_offset": None,
                 "attachments": None,
                 "inline_replies": None,
+                "note": None,
                 "capabilities": None,
                 "runtime_name": None,
-            }
+            },
         )
 
 

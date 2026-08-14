@@ -3,9 +3,8 @@
 /**
  * Decide what move-API body to send for a single ticket within a bulk move.
  *
- * Returns null when the ticket is already at the destination (no-op skip).
- * The `advanceIndex` flag tells the caller to bump nextIndex for the next
- * same-lane ticket so bulk drops land at sequential positions.
+ * Returns null when the ticket is already at the destination (no-op skip). `advanceIndex`
+ * tells the caller to bump nextIndex for the next same-lane ticket so bulk drops land sequentially.
  *
  * @param {object} args
  * @param {object} args.ticket
@@ -17,10 +16,8 @@
  */
 export function planTicketMove({ ticket, targetCol, targetSwimlane, isCrossLaneMove, nextIndex }) {
   const colChanged = targetCol !== ticket.column
-  // Lane changes when the user picked a specific cell AND the selection is
-  // single-lane AND the target lane differs from the ticket's origin.
-  // Column-header drops (targetSwimlane === null) and cross-lane bulk drops
-  // always preserve per-ticket origin lane.
+  // Lane changes only for single-lane cell drops that differ from the ticket's origin;
+  // column-header drops and cross-lane bulk drops preserve per-ticket origin lane.
   const laneShouldChange =
     targetSwimlane !== null &&
     !isCrossLaneMove &&

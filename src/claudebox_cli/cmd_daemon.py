@@ -12,14 +12,16 @@ NAME = "daemon"
 ORDER = 100
 DESCRIPTION = "Manage host daemon (start|stop|restart|status)"
 EPILOG = """\
-examples:
+Examples:
   claudebox daemon start         start the host daemon
   claudebox daemon stop          stop the host daemon
   claudebox daemon restart       atomic restart (no-downtime when possible)
   claudebox daemon status        one-line state with pid + uptime
 
-actions are systemd --user wrappers around `claudebox-daemon.service`.
-Bare `claudebox daemon` prints this list and exits non-zero.
+Notes:
+  Actions are systemd --user wrappers around `claudebox-daemon.service`.
+
+  Bare `claudebox daemon` prints this list and exits non-zero.
 """
 
 _ACTIONS = (
@@ -186,7 +188,7 @@ def _parse_systemctl_timestamp(value: str) -> datetime | None:
     remainder = tokens[1]
 
     try:
-        # systemctl prints UTC by default; honour explicit TZ tokens later if needed.
+        # systemctl prints UTC by default; other zones are not parsed.
         return datetime.strptime(remainder, "%Y-%m-%d %H:%M:%S %Z").replace(tzinfo=UTC)
     except ValueError:
         return None

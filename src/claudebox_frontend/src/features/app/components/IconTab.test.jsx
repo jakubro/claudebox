@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import IconTab from './IconTab'
 
-// Mock lucide-react
 vi.mock('lucide-react', () => ({
   Archive: () => <span data-testid="icon-stash">📦</span>,
   Command: () => <span data-testid="icon-commands">⌘</span>,
@@ -24,7 +23,6 @@ vi.mock('lucide-react', () => ({
   X: () => <span data-testid="icon-close">✕</span>,
 }))
 
-// Mock AppActionsContext
 const mockMaximizeToggle = vi.fn()
 const mockClosePanel = vi.fn()
 vi.mock('../../../context/AppActionsContext', () => ({
@@ -34,12 +32,10 @@ vi.mock('../../../context/AppActionsContext', () => ({
   }),
 }))
 
-// Mock WorkspaceContext
 vi.mock('../../../context/WorkspaceContext', () => ({
   useWorkspace: () => ({ workspaceId: 'test-ws' }),
 }))
 
-// Mock boards API and navigation utils
 vi.mock('../../../api/boards', () => ({
   renameBoard: vi.fn(),
 }))
@@ -123,7 +119,6 @@ describe('IconTab', () => {
 
   it('updates rendered title when api title changes', () => {
     const api = createApi('stash', 'Stash')
-    // Capture the callback so we can invoke it
     let titleChangeCallback
     api.onDidTitleChange = vi.fn(cb => {
       titleChangeCallback = cb
@@ -133,7 +128,6 @@ describe('IconTab', () => {
     render(<IconTab api={api} />)
     expect(screen.getByText('Stash')).toBeInTheDocument()
 
-    // Simulate title change
     api.title = 'Updated'
     act(() => titleChangeCallback())
 

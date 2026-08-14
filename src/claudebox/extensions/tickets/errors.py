@@ -4,13 +4,8 @@
 class TicketError(Exception):
     """Base exception for ticket domain errors.
 
-    Mirrors ``DaemonError`` interface so daemon error handlers work transparently.
-    Subclasses define ``status_code`` and ``error_key`` as class attributes.
-
-    Attributes:
-        status_code: HTTP status code for the error response.
-        error_key: Machine-readable error identifier for the JSON body.
-        context: Extra key-value pairs included in the error response.
+    Mirrors ``DaemonError`` so daemon error handlers work transparently; subclasses set ``status_code``
+    and ``error_key`` as class attributes. ``context`` kwargs are included in the error response.
     """
 
     status_code: int = 500
@@ -54,3 +49,10 @@ class InvalidLabel(TicketError):
 
     status_code = 422
     error_key = "invalid_label"
+
+
+class BoardLocked(TicketError):
+    """board.yaml lock could not be acquired within the timeout."""
+
+    status_code = 423
+    error_key = "board_locked"

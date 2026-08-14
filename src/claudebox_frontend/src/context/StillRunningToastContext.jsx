@@ -5,11 +5,8 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 const StillRunningToastContext = createContext(null)
 
 /**
- * Provide the still-running toast state slot.
- *
- * Emit sites call `showStillRunningToast({ sessionId, sessionName, workspaceId })`
- * after navigating away from a session that was responding. DesktopLayout
- * subscribes to `toast` and renders the StillRunningToast component when set.
+ * Emit sites call `showStillRunningToast({ sessionId, sessionName, workspaceId })` after leaving
+ * a session that was responding; DesktopLayout renders StillRunningToast when `toast` is set.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children

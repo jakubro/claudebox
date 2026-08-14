@@ -28,7 +28,7 @@ class TestNotebookEdit:
         notebook_edit = _notebook_edit(tool_ctx)
 
         notebook_edit.invoke(
-            {"path": str(path), "new_source": "x = 42", "cell_id": "c1", "edit_mode": "replace"}
+            {"path": str(path), "new_source": "x = 42", "cell_id": "c1", "edit_mode": "replace"},
         )
 
         nb = nbformat.read(path, as_version=4)
@@ -52,7 +52,7 @@ class TestNotebookEdit:
         notebook_edit = _notebook_edit(tool_ctx)
 
         notebook_edit.invoke(
-            {"path": str(path), "new_source": "z = 0", "cell_id": "c1", "edit_mode": "insert"}
+            {"path": str(path), "new_source": "z = 0", "cell_id": "c1", "edit_mode": "insert"},
         )
 
         nb = nbformat.read(path, as_version=4)
@@ -64,7 +64,7 @@ class TestNotebookEdit:
         notebook_edit = _notebook_edit(tool_ctx)
 
         notebook_edit.invoke(
-            {"path": str(path), "new_source": "", "cell_id": "c1", "edit_mode": "delete"}
+            {"path": str(path), "new_source": "", "cell_id": "c1", "edit_mode": "delete"},
         )
 
         nb = nbformat.read(path, as_version=4)
@@ -86,7 +86,7 @@ class TestNotebookEdit:
 
         with pytest.raises(ValueError, match="edit_mode"):
             notebook_edit.invoke(
-                {"path": str(path), "new_source": "x", "cell_id": "c1", "edit_mode": "bogus"}
+                {"path": str(path), "new_source": "x", "cell_id": "c1", "edit_mode": "bogus"},
             )
 
     def test_unknown_cell_id_raises(self, tool_ctx, tmp_path):
@@ -96,5 +96,10 @@ class TestNotebookEdit:
 
         with pytest.raises(ValueError, match="not found"):
             notebook_edit.invoke(
-                {"path": str(path), "new_source": "x", "cell_id": "missing", "edit_mode": "replace"}
+                {
+                    "path": str(path),
+                    "new_source": "x",
+                    "cell_id": "missing",
+                    "edit_mode": "replace",
+                },
             )

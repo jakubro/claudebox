@@ -2,11 +2,7 @@
 
 import QuestionCard from '../../QuestionCard'
 
-/**
- * Render a list of answered questions as read-only cards.
- * @param {Object} props
- * @param {Array<{header: string, question: string, options?: Array}>} props.questions - Questions with their options.
- */
+/** @param {Array<{header: string, question: string, options?: Array}>} props.questions */
 export default function QuestionsDisplay({ questions }) {
   return (
     <div className="tool-questions">

@@ -6,13 +6,21 @@ from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
-import structlog
-
-from claudebox import Broadcaster, parse_timestamp, read_jsonl, use_log_file
+from claudebox import (
+    Broadcaster,
+    EventSubtype,
+    EventType,
+    parse_timestamp,
+    read_jsonl,
+    use_log_file,
+)
 
 
 class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
-    """SSE log broadcaster - accepts LogRecord, emits SSE-shaped dicts, replays from log file."""
+    """SSE log broadcaster - accepts LogRecord, emits SSE-shaped dicts, replays from log file.
+
+    Boundary frames delimit the replay, so a subscriber can tell where history ends and live output begins.
+    """
 
     # Fields in the log file JSON that map directly to SSE dict keys.
     _LOG_FILE_KNOWN_FIELDS = {"event", "level", "logger", "timestamp", "source", "stream"}
@@ -60,7 +68,7 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
 
                 if isinstance(raw_ts, (float, int)):
                     ts = float(raw_ts)
-                elif isinstance(raw_ts, str):  # todo: why do we have to do this?!
+                elif isinstance(raw_ts, str):
                     time = datetime.strptime(raw_ts, "%H:%M:%S").time()
                     ts = datetime.combine(base_date, time).timestamp()
                 else:
@@ -89,8 +97,7 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
             message = event.msg.get("event", str(event.msg))
             source = event.msg.get("source", "api")
             stream = event.msg.get("stream")
-            # Mirror the file-replay path's extra-rebuild so SSE frames carry
-            # the same structured payload (exception, session.id, etc.).
+            # Mirrors _load's extra-rebuild so SSE frames carry the same payload (exception, session.id, etc.).
             extra = {
                 k: v for k, v in event.msg.items() if k not in self._LOG_FILE_KNOWN_FIELDS
             } or None
@@ -109,6 +116,22 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
             "stream": stream,
             "extra": extra,
         }
+
+    def _on_replay_started(self, length: int) -> dict:
+        """Create the replay-started boundary frame."""
+
+        return self._boundary(EventSubtype.REPLAY_STARTED, length)
+
+    def _on_replay_ended(self) -> dict:
+        """Create the replay-ended boundary frame."""
+
+        return self._boundary(EventSubtype.REPLAY_ENDED, 0)
+
+    @classmethod
+    def _boundary(cls, subtype: EventSubtype, count: int) -> dict:
+        """Build a boundary frame; its ``type`` key is what sets it apart from a log record."""
+
+        return {"type": EventType.SYSTEM, "subtype": subtype, "count": count}
 
 
 class BroadcastLogHandler(logging.Handler):

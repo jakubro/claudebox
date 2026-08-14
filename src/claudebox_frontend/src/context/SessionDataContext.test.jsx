@@ -4,7 +4,6 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionDataProvider, useSessionActions, useSessionData } from './SessionDataContext'
 
-// Mock API modules
 const mockGetSession = vi.fn()
 const mockResumeSession = vi.fn()
 const mockGetUiState = vi.fn()
@@ -13,8 +12,8 @@ const mockSetModel = vi.fn()
 const mockSetPermissionMode = vi.fn()
 const mockSetEffortLevel = vi.fn()
 const mockSetContainerId = vi.fn()
-// Default to a present container so picker setters take the API-direct path.
-// Tests exercising the welcome-screen buffer override this with `.mockReturnValue(null)`.
+// Defaults to a present container so picker setters take the API-direct path; welcome-screen
+// buffer tests override with `.mockReturnValue(null)`.
 const mockGetContainerId = vi.fn(() => 'test-container')
 
 vi.mock('../api/apiClient', () => ({
@@ -53,12 +52,10 @@ vi.mock('./WorkspaceContext', () => ({
   WorkspaceContext: { Consumer: () => null, Provider: () => null, _currentValue: null },
 }))
 
-// Mock DaemonStreamContext
 vi.mock('./DaemonStreamContext', () => ({
   useDaemonStreamContext: () => ({ sessionsChanged: 0 }),
 }))
 
-// Mock EventsContext
 const mockReconnectSSE = vi.fn()
 const mockNotifyContainerChanged = vi.fn()
 const makeEventsData = (overrides = {}) => ({
@@ -665,7 +662,6 @@ describe('useSessionActions', () => {
 
   it('setModel buffers when no container is active (welcome screen)', async () => {
     mockGetContainerId.mockReturnValue(null)
-    // No session yet - getSession returns workspace info only.
     mockGetSession.mockResolvedValue({ workspace: '/path' })
 
     const { result } = renderHook(() => useSessionActions(), { wrapper })
@@ -705,9 +701,8 @@ describe('useSessionActions', () => {
     // While buffered, no API calls happen.
     expect(mockSetModel).not.toHaveBeenCalled()
 
-    // Simulate session attach: getContainerId now returns a real id, the
-    // session-id projection arrives. The drain effect should flush only the
-    // latest value.
+    // Session attach: getContainerId returns a real id; the drain effect flushes only the
+    // latest buffered value.
     mockGetContainerId.mockReturnValue('test-container')
     mockSetModel.mockResolvedValue({})
     mockGetSession.mockResolvedValue(SESSION_DATA)
@@ -747,8 +742,7 @@ describe('useSessionActions', () => {
       result.current.actions.setModel('claude-haiku')
     })
 
-    // Session attach: getSession now returns a session_id. The drain effect
-    // keys on the null -> set transition.
+    // Session attach: getSession now returns a session_id; the drain effect keys on the null -> set transition.
     mockGetContainerId.mockReturnValue('test-container')
     mockGetSession.mockResolvedValue(SESSION_DATA)
     await act(async () => {

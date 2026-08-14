@@ -9,14 +9,10 @@ import {
 } from '../config/storage'
 
 /**
- * Manage per-message bookmarks with backend persistence and cross-tab sync.
- *
  * Bookmark IDs use the format `turnId:user` or `turnId:assistant`.
  *
- * @param {string|null} sessionId - Current session ID for scoped lookups.
- * @param {string|null} workspaceId - Active workspace ID; gates the initial
- *   fetch and re-runs once workspace discovery completes (`workspaceFetch`
- *   throws "Workspace ID not set" until it is configured).
+ * @param {string|null} workspaceId - Gates the initial fetch; re-runs once workspace discovery
+ *   completes (`workspaceFetch` throws until then).
  */
 export default function useBookmarks(sessionId, workspaceId) {
   const [bookmarkedMessageIds, setBookmarkedMessageIds] = useState(new Set())
@@ -28,7 +24,6 @@ export default function useBookmarks(sessionId, workspaceId) {
   const mountedRef = useRef(true)
   const firstSettledRef = useRef(false)
 
-  /** Fetch bookmarks from ui-state backend. */
   const fetchBookmarks = useCallback(async () => {
     if (!workspaceId) {
       return
@@ -50,8 +45,7 @@ export default function useBookmarks(sessionId, workspaceId) {
       }
       setError(null)
     } catch (err) {
-      // Best-effort - bookmarks are non-critical; expose error for convention parity
-      // (useSessionsList / useBoardList both surface error). Panel does not render it.
+      // Best-effort - non-critical; error is set for parity with other list hooks, but the panel never renders it.
       if (mountedRef.current) {
         setError(err?.message ?? 'Failed to load bookmarks')
       }
@@ -63,12 +57,10 @@ export default function useBookmarks(sessionId, workspaceId) {
     }
   }, [sessionId, workspaceId])
 
-  // Load bookmarks on mount and session change
   useEffect(() => {
     fetchBookmarks()
   }, [fetchBookmarks])
 
-  // Cross-tab sync via storage event
   useEffect(() => {
     const handleStorage = e => {
       if (e.key === STORAGE_SIGNAL_KEY) {
@@ -79,7 +71,6 @@ export default function useBookmarks(sessionId, workspaceId) {
     return () => window.removeEventListener('storage', handleStorage)
   }, [fetchBookmarks])
 
-  // Cleanup
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -87,12 +78,6 @@ export default function useBookmarks(sessionId, workspaceId) {
     }
   }, [])
 
-  /**
-   * Check if a specific message is bookmarked.
-   * @param {string} turnId - Turn identifier.
-   * @param {'user'|'assistant'} messageType - Which message within the turn.
-   * @returns {boolean}
-   */
   const isBookmarked = useCallback(
     (turnId, messageType) => bookmarkedMessageIds.has(`${turnId}:${messageType}`),
     [bookmarkedMessageIds],
@@ -105,12 +90,6 @@ export default function useBookmarks(sessionId, workspaceId) {
     [bookmarkedMessageIds],
   )
 
-  /**
-   * Toggle bookmark on a specific message - add or remove.
-   * @param {string} turnId - Turn identifier.
-   * @param {'user'|'assistant'} messageType - Which message to bookmark.
-   * @param {string} [preview=''] - Preview text for the bookmark entry.
-   */
   const toggleBookmark = useCallback(
     (turnId, messageType, preview = '') => {
       if (!(sessionId && turnId && messageType)) {
@@ -123,7 +102,6 @@ export default function useBookmarks(sessionId, workspaceId) {
         const next = new Set(prev)
         if (next.has(bookmarkId)) {
           next.delete(bookmarkId)
-          // Remove from backend
           patchGlobalUiState([
             { op: 'remove', path: `${BOOKMARKED_TURNS_PATH}.${sessionId}`, value: bookmarkId },
             { op: 'unset', path: `${BOOKMARK_META_PATH}.${metaKey}` },
@@ -146,7 +124,6 @@ export default function useBookmarks(sessionId, workspaceId) {
           })
         } else {
           next.add(bookmarkId)
-          // Add to backend
           const meta = { preview: preview.slice(0, 80), ts: new Date().toISOString() }
           patchGlobalUiState([
             { op: 'add', path: `${BOOKMARKED_TURNS_PATH}.${sessionId}`, value: bookmarkId },
@@ -161,7 +138,6 @@ export default function useBookmarks(sessionId, workspaceId) {
           setBookmarkMeta(bm => ({ ...bm, [metaKey]: meta }))
         }
 
-        // Signal other tabs
         try {
           localStorage.setItem(STORAGE_SIGNAL_KEY, Date.now().toString())
         } catch {
@@ -174,12 +150,7 @@ export default function useBookmarks(sessionId, workspaceId) {
     [sessionId],
   )
 
-  /**
-   * Remove a bookmark from any session - used by the "All sessions" tab.
-   * @param {string} targetSessionId - Session to remove the bookmark from.
-   * @param {string} turnId - Turn identifier.
-   * @param {'user'|'assistant'} messageType - Which message to unbookmark.
-   */
+  /** Used by the "All sessions" tab to target a session other than the current one. */
   const removeBookmark = useCallback(
     (targetSessionId, turnId, messageType) => {
       if (!(targetSessionId && turnId && messageType)) {
@@ -210,7 +181,6 @@ export default function useBookmarks(sessionId, workspaceId) {
         return updated
       })
 
-      // If removing from the current session, also update local set
       if (targetSessionId === sessionId) {
         setBookmarkedMessageIds(prev => {
           const next = new Set(prev)

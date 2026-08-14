@@ -64,32 +64,27 @@ class ClaudeAgentSessionConfig(AgentSessionConfig):
 class LangGraphAgentSessionConfig(AgentSessionConfig):
     """LangGraph-specific config fields - model id + per-provider kwargs + cost / window overrides.
 
-    `model` on the base class is the required field - workspaces declare
-    `[langgraph] model = "provider:model-id"` explicitly and
-    LangGraphRuntime.connect() raises an actionable error if missing.
-    `max_tokens_override` is the escape hatch for models outside the hardcoded
-    `MODEL_CONTEXT_WINDOW` table - when set, it wins over the table lookup in
-    `_model_context_window()`.
+    `model` is required; workspaces set `[langgraph] model = "provider:model-id"`, or connect() raises.
 
-    `provider_kwargs` carries the per-active-provider knobs harvested from the
-    workspace's `[langgraph.<provider>]` sub-table (e.g. `base_url` for ollama
-    or openai-compatible). The dict is forwarded verbatim to
-    `init_chat_model(spec.full_id, **provider_kwargs)` - only the kwargs the
-    active provider's Chat<X> constructor accepts make sense; unknown kwargs
-    raise at provider init.
+    `max_tokens_override` bypasses `MODEL_CONTEXT_WINDOW`: when set, `_model_context_window()` returns it directly.
 
-    `cost_overrides` captures `[langgraph.cost]` per-model USD overrides keyed
-    by bare model id (no provider prefix). When set, `lookup_price` returns
-    the override before consulting the curated `PRICE_PER_MTOK` table.
+    `provider_kwargs` holds `[langgraph.<provider>]` knobs (e.g. `base_url`), forwarded verbatim
+    to `init_chat_model(**provider_kwargs)`; unknown kwargs raise at provider init.
 
-    `web_search_provider` selects the backend behind the langgraph web_search
-    tool. `duckduckgo` is the default (no API key); `tavily` and `brave`
-    require an API key resolved via `web_search_api_key_env`.
+    `cost_overrides` holds `[langgraph.cost]` per-model USD overrides (bare model id, no provider prefix);
+    `lookup_price` checks these before the curated `PRICE_PER_MTOK` table.
 
-    `mcp_servers` carries `[langgraph.mcp.<name>]` workspace TOML blocks as
-    per-server connection dicts (transport / command / args / env / url / ...
-    keys mapping to langchain-mcp-adapters' TypedDict variants). Empty dict
-    means no MCP servers configured.
+    `web_search_provider` picks the langgraph web_search backend: `duckduckgo` is the default (no key);
+    `tavily` and `brave` need a key resolved via `web_search_api_key_env`.
+
+    `mcp_servers` carries `[langgraph.mcp.<name>]` TOML blocks as per-server connection dicts
+    (langchain-mcp-adapters TypedDict shape); an empty dict means no MCP servers configured.
+
+    `profile_hooks` maps a lifecycle event to its profile script, from `[langgraph.hooks]`;
+    only `session_start` is consumed today, and an empty dict falls back to the conventional path.
+
+    `system_prompt` is the persona handed to the graph, via the same `--system-prompt` argument
+    the container API server already accepts for the Claude runtime.
     """
 
     max_tokens_override: int | None = None
@@ -98,3 +93,5 @@ class LangGraphAgentSessionConfig(AgentSessionConfig):
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
     provider_kwargs: dict[str, Any] = field(default_factory=dict)
     cost_overrides: dict[str, dict[str, float]] = field(default_factory=dict)
+    profile_hooks: dict[str, str] = field(default_factory=dict)
+    system_prompt: str | None = None

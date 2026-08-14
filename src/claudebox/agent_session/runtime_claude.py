@@ -1,8 +1,7 @@
 """ClaudeRuntime - AgentSession adapter wrapping claude_agent_sdk's BaseClaudeSDKClient.
 
-Composition (not inheritance) - `_sdk` holds the SDK client; methods forward
-explicitly. This is the only file in claudebox/ that imports `claude_agent_sdk`;
-the import is enforced via ruff (see GUIDELINES §SDK Containment).
+Composition, not inheritance: `_sdk` holds the SDK client, methods forward explicitly. Sole file
+in claudebox/ importing `claude_agent_sdk`, enforced via ruff (see GUIDELINES, SDK Containment).
 """
 
 import asyncio
@@ -12,7 +11,7 @@ import logging
 import shutil
 import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from typing import Any, Protocol
 
 from claude_agent_sdk import (
@@ -51,7 +50,7 @@ from claude_agent_sdk import (
 )
 
 from ._skills import walk_skills
-from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill
+from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
 from .config import ClaudeAgentSessionConfig, RuntimeCapabilities
 from .events import (
     AgentEvent,
@@ -73,11 +72,10 @@ from .events import (
 )
 from .hooks import (
     CompactStartPayload,
-    HookCallbacks,
     PostToolUsePayload,
     PreToolUsePayload,
 )
-from ..constants import claude_settings_file
+from ..constants import SDK_CONTROL_REQUEST_TIMEOUT, claude_settings_file
 from ..core.fs import touch_dir
 from ..core.io import read_json, write_json
 from ..core.logging import get_logger
@@ -89,18 +87,18 @@ LOG_LEVELS = logging.getLevelNamesMapping()
 _logger = get_logger(__name__)
 
 
-# SDK init data keys claudebox recognises at the pinned version. Keys outside this
-# set are not errors - they are captured verbatim into SystemInitData.extra and
-# logged once (see _translate_sdk_message), so additive SDK releases stay
-# non-breaking. Extend this set (and SystemInitData) only when a consumer needs to
-# read a new field. `extra` is claudebox's own passthrough bucket, not a wire key.
+# Unknown init keys aren't errors - captured into SystemInitData.extra and logged once, keeping
+# additive SDK releases non-breaking.
 KNOWN_INIT_FIELDS: frozenset[str] = frozenset(
     {f.name for f in dataclasses.fields(SystemInitData) if f.name != "extra"}
-    | {"type", "subtype", "session_id", "model"}
+    | {"type", "subtype", "session_id", "model"},
 )
 
 # Unknown init keys already warned about - dedups the warning to once per process.
 _SEEN_UNKNOWN_INIT_KEYS: set[str] = set()
+
+# Set once the health probe has failed - dedups the warning to once per process.
+_WARNED_STREAM_HEALTH_UNAVAILABLE = False
 
 
 class ToolInputValidator(Protocol):
@@ -112,14 +110,9 @@ class ToolInputValidator(Protocol):
 def _validate_ask_user_question(tool_use_id: str, input_data: dict[str, Any]) -> dict[str, Any]:
     """Coerce and validate AskUserQuestion `questions` payload.
 
-    Two failure modes seen in the wild: (1) `questions` arrives as a
-    JSON-encoded string instead of a list - recoverable via `json.loads`;
-    (2) `questions` is some other non-list value - unrecoverable.
-
-    On (1) the field is repaired silently with a warn log so the upstream
-    regression is visible. On (2) the field is dropped with an error log so
-    downstream consumers (which all expect a list) degrade gracefully rather
-    than crash on `.map()` / iteration.
+    Two failure modes: a JSON-encoded string is repaired via `json.loads` (warn log); any other
+    non-list value drops to `[]` (error log) so downstream consumers, which all expect a list,
+    degrade gracefully instead of crashing on iteration.
     """
 
     raw = input_data.get("questions")
@@ -175,9 +168,7 @@ def _validate_ask_user_question(tool_use_id: str, input_data: dict[str, Any]) ->
     return repaired
 
 
-# Per-tool-name input validators run at the SDK -> typed-payload boundary.
-# Each entry's signature is `(tool_use_id: str, input_data: dict) -> dict` and
-# must return the (possibly repaired) dict. Tools not in the registry pass
+# Per-tool-name input validators run at the SDK -> typed-payload boundary; unlisted tools pass
 # through verbatim.
 TOOL_INPUT_VALIDATORS: dict[str, ToolInputValidator] = {
     "AskUserQuestion": _validate_ask_user_question,
@@ -187,10 +178,9 @@ TOOL_INPUT_VALIDATORS: dict[str, ToolInputValidator] = {
 class ClaudeRuntime:
     """AgentSession adapter for the Claude Code SDK.
 
-    Composes (does not subclass) `BaseClaudeSDKClient` via `self._sdk`. Owns
-    the pre-connect query buffer, the per-session settings.json symlink, the
-    effort-level side-channel write, and the SDK compact-trigger taxonomy
-    translation.
+    Composes (does not subclass) `BaseClaudeSDKClient` via `self._sdk`. Owns the pre-connect query
+    buffer, the per-session settings.json symlink, the effort-level side-channel write, and the SDK
+    compact-trigger taxonomy translation.
     """
 
     runtime_name: str = "Claude"
@@ -198,11 +188,10 @@ class ClaudeRuntime:
     # PreCompact SDK trigger -> claudebox compact_metadata.trigger.
     SDK_COMPACT_TRIGGER_MAP = {"auto": "context_limit", "manual": "manual"}
 
-    # SDK task_notification status -> claudebox NotificationStatus vocabulary.
     # "stopped" maps to "killed" so the Tasks panel's killed-shown-as-failed path fires.
     SDK_TASK_STATUS_MAP = {"completed": "completed", "failed": "failed", "stopped": "killed"}
 
-    DEFAULT_MODEL = "claude-opus-4-8"
+    DEFAULT_MODEL = "claude-opus-5"
     DEFAULT_CONTEXT_WINDOW = 1_000_000
     DEFAULT_EFFORT_LEVEL = "xhigh"
     DEFAULT_PERMISSION_MODE = "default"
@@ -228,11 +217,8 @@ class ClaudeRuntime:
 
     AVAILABLE_MODELS = [
         Model(id="claude-fable-5", name="Fable 5", context_window=1_000_000),
-        Model(id="claude-mythos-5", name="Mythos 5", context_window=1_000_000),
-        Model(id="claude-opus-4-8", name="Opus 4.8", context_window=1_000_000),
-        Model(id="claude-opus-4-7", name="Opus 4.7", context_window=200_000),
-        Model(id="claude-opus-4-6", name="Opus 4.6", context_window=200_000),
-        Model(id="claude-sonnet-4-6", name="Sonnet 4.6", context_window=200_000),
+        Model(id="claude-opus-5", name="Opus 5", context_window=1_000_000),
+        Model(id="claude-sonnet-5", name="Sonnet 5", context_window=1_000_000),
         Model(id="claude-haiku-4-5-20251001", name="Haiku 4.5", context_window=200_000),
     ]
 
@@ -249,13 +235,19 @@ class ClaudeRuntime:
         PermissionMode(id="plan", name="Plan", description="Planning mode"),
         PermissionMode(id="acceptEdits", name="Accept Edits", description="Auto-accept file edits"),
         PermissionMode(
-            id="bypassPermissions", name="Bypass", description="Bypass permission checks"
+            id="bypassPermissions",
+            name="Bypass",
+            description="Bypass permission checks",
         ),
         PermissionMode(
-            id="dontAsk", name="Don't Ask", description="Allow all tools without prompting"
+            id="dontAsk",
+            name="Don't Ask",
+            description="Allow all tools without prompting",
         ),
         PermissionMode(
-            id="auto", name="Auto", description="Automatically determine permission mode"
+            id="auto",
+            name="Auto",
+            description="Automatically determine permission mode",
         ),
     ]
 
@@ -267,28 +259,23 @@ class ClaudeRuntime:
 
         options = self._build_sdk_options(config)
         options.stderr = self._stderr
-        # Hooks built post-options so adapters bind to this instance -
-        # SDK hooks dict carries bound-method adapters that translate SDK
-        # HookInput shapes into the typed HookCallbacks surface.
+        # Hooks built post-options so adapters bind to this instance.
         options.hooks = self._build_sdk_hooks(self)
         self._sdk = BaseClaudeSDKClient(options)
 
-        # Last value seen on the corresponding setter / SDK detector; gates
-        # `_fire_*_changed` callbacks against first-call baseline + no-op writes.
+        # Gates `_fire_*_changed` callbacks against first-call baseline + no-op writes.
         self._last_known_model: str | None = None
         self._last_known_permission_mode: str | None = None
         self._last_known_effort_level: str | None = None
 
-        # Pre-connect buffering - queries and pending control-plane calls drain
-        # in `_flush_on_ready` once `connect()` returns.
+        # Queries and pending control-plane calls drain in `_flush_on_ready` once `connect()` returns.
         self.ready = asyncio.Event()
         self._buffer: deque[str | list[dict]] = deque()
         self._pending_calls: deque[tuple[str, tuple, dict]] = deque()
         self._flush_task: asyncio.Task | None = None
 
-        # Per-tool_use_id start time - PreToolUse pushes `time.monotonic()`;
-        # PostToolUse / PostToolUseFailure pop and compute duration_ms. Missing
-        # keys (callback unregistered, mid-restart) fall back to 0.
+        # PreToolUse pushes `time.monotonic()`; PostToolUse/PostToolUseFailure pop it to compute
+        # duration_ms, falling back to 0 if the key is missing.
         self._tool_started_at: dict[str, float] = {}
 
     @property
@@ -328,9 +315,8 @@ class ClaudeRuntime:
     async def query(self, prompt: str | list[dict]) -> None:
         """Send query to SDK or buffer if not ready.
 
-        String prompts go through the SDK's string path; structured content
-        blocks (list of dicts) are wrapped in a transport message and sent via
-        the SDK's async-iterable path.
+        String prompts use the SDK's string path; structured content (list of dicts) is wrapped in
+        a transport message and sent via the SDK's async-iterable path.
         """
 
         if self.ready.is_set():
@@ -352,12 +338,15 @@ class ClaudeRuntime:
     async def set_model(self, model: str | None = None) -> None:
         """Set model for subsequent queries. Queued if not ready.
 
-        Fires `_fire_model_changed` after the SDK mutation; the helper gates
-        `on_model_changed` against the cached previous value.
+        Fires `_fire_model_changed` post-mutation, gating `on_model_changed` on the cached prior
+        value.
         """
 
         if self.ready.is_set():
-            await self._sdk.set_model(model)
+            try:
+                await self._control_request("set_model", self._sdk.set_model(model))
+            except TimeoutError:
+                return
 
             if model is not None:
                 await self._fire_model_changed(model)
@@ -367,12 +356,19 @@ class ClaudeRuntime:
     async def set_permission_mode(self, mode: str) -> None:
         """Set permission mode for subsequent queries. Queued if not ready.
 
-        Converges with the PostToolUse adapter on `_fire_permission_mode_changed`
-        so both setter and SDK-detected paths go through one delta filter.
+        Converges with the PostToolUse adapter on `_fire_permission_mode_changed` so setter and
+        SDK-detected paths share one delta filter.
         """
 
         if self.ready.is_set():
-            await self._sdk.set_permission_mode(mode)  # ty: ignore[invalid-argument-type]
+            try:
+                await self._control_request(
+                    "set_permission_mode",
+                    self._sdk.set_permission_mode(mode),  # ty: ignore[invalid-argument-type]
+                )
+            except TimeoutError:
+                return
+
             await self._fire_permission_mode_changed(mode)
         else:
             self._pending_calls.append(("set_permission_mode", (mode,), {}))
@@ -380,8 +376,8 @@ class ClaudeRuntime:
     async def set_effort_level(self, level: str) -> None:
         """Set effort level by writing effortLevel to ~/.claude/settings.json.
 
-        The SDK has no set_effort control-plane subtype; the CLI re-reads
-        settings.json on every query, so writing there propagates the change.
+        The SDK has no set_effort control-plane subtype; the CLI re-reads settings.json on every
+        query, so writing there propagates the change.
         """
 
         if self.ready.is_set():
@@ -415,12 +411,15 @@ class ClaudeRuntime:
         return {"mcpServers": []}
 
     async def get_context_usage(self) -> ContextUsage | None:
-        """Return current context-window usage. None if not ready or no data."""
+        """Return current context-window usage. None if not ready, timed out, or no data."""
 
         if not self.ready.is_set():
             return None
 
-        usage = await self._sdk.get_context_usage()
+        try:
+            usage = await self._control_request("get_context_usage", self._sdk.get_context_usage())
+        except TimeoutError:
+            return None
 
         if not usage:
             return None
@@ -433,6 +432,42 @@ class ClaudeRuntime:
 
         return ContextUsage(used_tokens=total, max_tokens=maximum)
 
+    def stream_health(self) -> StreamHealth | None:
+        """Best-effort read of the SDK's own reader state. None when unavailable.
+
+        The SDK exposes no public health surface, and two stalls are otherwise silent: the reader
+        task can finish without closing the message stream (every consumer parks forever), or park
+        on a bounded stream once nobody drains it. Both are invisible from outside, hence reaching
+        into `_query`; every access is guarded so a different SDK layout degrades to "unknown"
+        rather than breaking the session.
+        """
+
+        try:
+            query = self._sdk._query
+
+            if query is None:
+                return None
+
+            read_task = query._read_task
+            stats = query._message_receive.statistics()
+
+            return StreamHealth(
+                reader_finished=read_task is not None and read_task.done(),
+                buffer_full=stats.current_buffer_used >= stats.max_buffer_size,
+                buffered=stats.current_buffer_used,
+                consumers_waiting=stats.tasks_waiting_receive,
+            )
+        except Exception:
+            global _WARNED_STREAM_HEALTH_UNAVAILABLE
+
+            if not _WARNED_STREAM_HEALTH_UNAVAILABLE:
+                _WARNED_STREAM_HEALTH_UNAVAILABLE = True
+                self._logger.warning(
+                    "SDK stream health unavailable - stall guards are blind until the probe is updated",
+                )
+
+            return None
+
     async def receive_events(self) -> AsyncIterator[AgentEvent]:
         """Yield SDK-free AgentEvents projected from the live SDK response stream."""
 
@@ -442,17 +477,34 @@ class ClaudeRuntime:
             if event is not None:
                 yield event
 
+    async def _control_request(self, name: str, request: Awaitable[Any]) -> Any:
+        """Await an SDK control round-trip under a timeout, warning and re-raising on expiry.
+
+        Control requests share the transport with the message stream, so a request that never
+        answers stalls the consumer silently while the session keeps accepting queries but emits
+        no events. Callers pick the fallback.
+        """
+
+        try:
+            async with asyncio.timeout(SDK_CONTROL_REQUEST_TIMEOUT.total_seconds()):
+                return await request
+        except TimeoutError:
+            # ERROR, not WARNING: only ERROR reaches the logs-panel unread badge.
+            self._logger.error(
+                "SDK control request timed out",
+                request=name,
+                timeout_s=SDK_CONTROL_REQUEST_TIMEOUT.total_seconds(),
+            )
+
+            raise
+
     @classmethod
     def _translate_sdk_message(cls, message) -> AgentEvent | None:
         """Project an SDK message into a runtime-neutral AgentEvent with a typed payload.
 
-        Dispatches by ``isinstance`` against the SDK message classes so the
-        type-checker narrows ``message`` to the concrete class on each branch.
-        Translates ``compact_boundary`` and ``task_notification`` system messages
-        to typed events; returns ``None`` for other non-init system messages
-        (retry/mirror/progress notifications, dropped silently) and for unknown
-        message classes (dropped with a warning) so the caller ignores them -
-        additive SDK message types stay non-breaking, never raised.
+        Returns ``None`` for non-init system messages other than compact_boundary/task_notification
+        (dropped silently) and for unknown message classes (dropped with a warning), so additive
+        SDK message types stay non-breaking.
         """
 
         if isinstance(message, SdkSystemMessage):
@@ -552,8 +604,7 @@ class ClaudeRuntime:
 
         if isinstance(message, SdkAssistantMessage):
             content = cls._translate_content(getattr(message, "content", None))
-            # AssistantMessagePayload.content is list[ContentBlock]; SDK assistant
-            # messages always carry a block list, but coerce defensively.
+            # Coerce defensively; SDK assistant messages always carry a block list.
             blocks = content if isinstance(content, list) else []
 
             return AgentEvent(
@@ -601,8 +652,8 @@ class ClaudeRuntime:
     def _warn_unknown_init_keys(cls, keys: set[str]) -> None:
         """Log SDK init keys claudebox does not consume - once per key per process.
 
-        Additive SDK fields are captured into SystemInitData.extra, not raised on;
-        this warning keeps them discoverable so a consumer can promote them later.
+        Additive SDK fields land in SystemInitData.extra rather than raising; this warning keeps
+        them discoverable so a consumer can promote them later.
         """
 
         fresh = sorted(keys - _SEEN_UNKNOWN_INIT_KEYS)
@@ -617,10 +668,9 @@ class ClaudeRuntime:
     def _translate_content(cls, content) -> str | list[ContentBlock]:
         """Translate SDK message content (str or block list) into runtime-neutral form.
 
-        String content passes through; block lists are walked and each SDK block
-        class is dispatched via ``isinstance`` to the matching ContentBlock
-        dataclass. Unknown block classes are preserved as ``UnknownBlock`` and a
-        warning is logged - wire-shape continuity beats silent data loss.
+        String content passes through; block lists are walked and each SDK block class is
+        dispatched via ``isinstance`` to the matching ContentBlock dataclass. Unknown classes
+        become ``UnknownBlock`` with a logged warning - wire-shape continuity beats silent data loss.
         """
 
         if content is None:
@@ -648,7 +698,7 @@ class ClaudeRuntime:
                         id=sdk_block.id,
                         name=sdk_block.name,
                         input=input_data,
-                    )
+                    ),
                 )
             elif isinstance(sdk_block, SdkToolResultBlock):
                 blocks.append(
@@ -656,7 +706,7 @@ class ClaudeRuntime:
                         tool_use_id=sdk_block.tool_use_id,
                         content=sdk_block.content,
                         is_error=sdk_block.is_error,
-                    )
+                    ),
                 )
             else:
                 class_name = type(sdk_block).__name__
@@ -728,10 +778,8 @@ class ClaudeRuntime:
     ) -> list[Skill]:
         """Walk profile directories for SKILL.md and return parsed Skills.
 
-        Defaults to in-container bind-mount paths; daemon callers pass
-        profile-relative paths explicitly. Delegates to the shared
-        runtime-neutral walker so both ClaudeRuntime and LangGraphRuntime
-        produce identical catalogs against the same filesystem.
+        Defaults to in-container bind-mount paths; daemon callers pass profile-relative paths
+        explicitly.
         """
 
         return walk_skills(commands_dir=commands_dir, skills_dir=skills_dir)
@@ -765,15 +813,11 @@ class ClaudeRuntime:
     def _isolate_settings_file(self) -> None:
         """Symlink ~/.claude/settings.json to a per-session file.
 
-        Containers in the same workspace share the host mount of ~/.claude/;
-        without isolation, concurrent sessions would overwrite each other's
-        settings (model, permission, effort). The symlink scopes SDK
-        reads/writes to {session_dir}/claude.json while keeping the rest of
-        ~/.claude/ (auth tokens, history, MCP state) shared.
-
-        Seeds the per-session file from the current settings.json target when
-        missing; preserves an existing per-session file on resume so prior
-        runtime changes survive container restart.
+        Containers in the same workspace share the host mount of ~/.claude/, so without isolation
+        concurrent sessions would overwrite each other's settings. The symlink scopes SDK reads and
+        writes to {session_dir}/claude.json while the rest of ~/.claude/ (auth, history, MCP state)
+        stays shared; it seeds the per-session file from the current settings.json target when
+        missing, and preserves an existing one on resume.
         """
 
         src = self._config.session_dir / "claude.json"
@@ -809,9 +853,9 @@ class ClaudeRuntime:
     def _stderr(self, line: str) -> None:
         """Parse SDK log line and route to the appropriate logger level, tagged as agent stderr.
 
-        The ``source="agent"`` and ``stream="stderr"`` kvs flow through structlog
-        into the broadcast log handler's event dict so ``claudebox logs`` can
-        distinguish agent records from container API records.
+        The ``source="agent"`` and ``stream="stderr"`` kvs flow through structlog into the
+        broadcast log handler's event dict so ``claudebox logs`` can distinguish agent records
+        from container API records.
         """
 
         try:
@@ -849,15 +893,10 @@ class ClaudeRuntime:
 
     # Delta-detection state machine
     # ----------------------------------------------------------------------------------------------
-    #
-    # Each `_fire_X_changed` updates the cached `_last_known_X` and invokes
-    # `cfg.hooks.on_X_changed` iff (a) a previous baseline was established AND
-    # (b) the new value differs from it. The first call after construction
-    # silently adopts the baseline.
-    #
-    # Setter-driven changes (set_model etc.) and SDK-detected drift
-    # (PostToolUse-as-permission-mode-detector adapter) converge on these
-    # helpers so a single delta filter governs both paths.
+    # Each `_fire_X_changed` updates cached `_last_known_X` and invokes `cfg.hooks.on_X_changed` only
+    # if a baseline was already established and the new value differs - the first call after
+    # construction silently adopts the baseline. Setter-driven changes and SDK-detected drift
+    # converge on these helpers so one delta filter governs both paths.
 
     async def _fire_model_changed(self, new_model: str) -> None:
         """Fire on_model_changed if previous baseline established and value differs."""
@@ -907,10 +946,7 @@ class ClaudeRuntime:
         return {}
 
     async def _adapt_pre_compact(self, input_data, _tool_use_id, _context) -> dict:
-        """SDK PreCompact -> on_pre_compact(CompactStartPayload).
-
-        Unknown / None triggers default to "manual".
-        """
+        """SDK PreCompact -> on_pre_compact(CompactStartPayload); unknown/None triggers "manual"."""
 
         if self._config.hooks.on_pre_compact is None:
             return {}
@@ -928,9 +964,8 @@ class ClaudeRuntime:
     async def _adapt_pre_tool_use(self, input_data, _tool_use_id, _context) -> dict:
         """SDK PreToolUse -> on_pre_tool_use + start-time bookkeeping.
 
-        Always records a per-tool_use_id start timestamp so PostToolUse can
-        compute duration_ms even when on_pre_tool_use is unregistered. The
-        typed callback fires only when set.
+        Always records a per-tool_use_id start timestamp so PostToolUse can compute duration_ms
+        even when on_pre_tool_use is unregistered.
         """
 
         if not isinstance(input_data, dict):
@@ -949,7 +984,7 @@ class ClaudeRuntime:
                 tool_use_id=tool_use_id,
                 tool_name=str(input_data.get("tool_name") or ""),
                 tool_input=input_data.get("tool_input") or {},
-            )
+            ),
         )
 
         return {}
@@ -957,10 +992,9 @@ class ClaudeRuntime:
     async def _adapt_post_tool_use(self, input_data, _tool_use_id, _context) -> dict:
         """SDK PostToolUse -> permission-mode-drift detector + on_post_tool_use.
 
-        PostToolUse fires on every tool call, so this catches SDK-detected mode
-        drift (mode changed by an internal SDK action rather than an explicit
-        `set_permission_mode` call) AND projects the SDK payload into the typed
-        `on_post_tool_use` callback for downstream observers.
+        Fires on every tool call, so it both catches SDK-detected mode drift (mode changed by an
+        internal SDK action, not an explicit `set_permission_mode` call) and projects the SDK
+        payload into the typed `on_post_tool_use` callback for downstream observers.
         """
 
         if not isinstance(input_data, dict):
@@ -973,7 +1007,7 @@ class ClaudeRuntime:
 
         if self._config.hooks.on_post_tool_use is not None:
             await self._config.hooks.on_post_tool_use(
-                self._build_post_tool_use_payload(input_data, is_error=False)
+                self._build_post_tool_use_payload(input_data, is_error=False),
             )
 
         return {}
@@ -985,13 +1019,16 @@ class ClaudeRuntime:
             return {}
 
         await self._config.hooks.on_post_tool_use(
-            self._build_post_tool_use_payload(input_data, is_error=True)
+            self._build_post_tool_use_payload(input_data, is_error=True),
         )
 
         return {}
 
     def _build_post_tool_use_payload(
-        self, input_data: dict, *, is_error: bool
+        self,
+        input_data: dict,
+        *,
+        is_error: bool,
     ) -> PostToolUsePayload:
         """Project the SDK input dict into a typed `PostToolUsePayload`."""
 
@@ -1019,15 +1056,10 @@ class ClaudeRuntime:
     def _build_sdk_hooks(cls, runtime: "ClaudeRuntime") -> dict:
         """Translate typed HookCallbacks into the SDK's hooks dict shape.
 
-        SessionStart dual-wires the session-start adapter and the
-        permission-mode-detector adapter - the latter establishes
-        `_last_known_permission_mode` silently from the initial value so the
-        next real change fires `on_permission_mode_changed`.
-
-        PreToolUse / PostToolUse / PostToolUseFailure register whenever any
-        consumer cares - permission-mode-drift detection (existing) or the
-        typed `on_pre_tool_use` / `on_post_tool_use` callbacks (new). The
-        adapter bodies guard internally so multiple consumers compose cleanly.
+        SessionStart dual-wires the session-start adapter and the permission-mode-detector adapter,
+        which silently establishes `_last_known_permission_mode` from the initial value so the next
+        real change fires the callback. PreToolUse/PostToolUse/PostToolUseFailure register whenever
+        any consumer cares; adapter bodies guard internally so multiple consumers compose cleanly.
         """
 
         callbacks = runtime._config.hooks

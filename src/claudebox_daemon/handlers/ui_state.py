@@ -26,7 +26,7 @@ async def patch_ui_state(
     """Apply patch operations to global and session-specific UI state."""
 
     return JSONResponse(
-        content=svc.ui_state.patch(
+        content=await svc.ui_state.patch(
             session_id,
             **body.model_dump(by_alias=True, exclude_none=True),
         ),

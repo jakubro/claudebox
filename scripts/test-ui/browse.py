@@ -122,7 +122,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--url", default=DEFAULT_URL, help="Base URL (default: %(default)s)")
     parser.add_argument(
-        "--output", type=Path, default=DEFAULT_OUTPUT, help="Output directory for captures"
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help="Output directory for captures",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)

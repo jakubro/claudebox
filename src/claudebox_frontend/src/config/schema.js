@@ -49,17 +49,11 @@ export const ToolName = Object.freeze({
   WEB_SEARCH: 'WebSearch',
   WEB_FETCH: 'WebFetch',
   MCP_SEARCH: 'MCPSearch',
+  TOOL_SEARCH: 'ToolSearch',
 })
 
 // --- LangGraph tool-name aliases ---
-//
-// The LangGraph runtime emits tool_use names in snake_case per Python
-// convention (task_create, task_update, ...). All frontend rendering,
-// registry lookup, and event-pipeline gating is keyed on Claude's
-// PascalCase canonical names (ToolName.TASK_CREATE === 'TaskCreate', ...).
-// `normalizeToolName` is the single normalisation point - call it before
-// any registry lookup or gate comparison; downstream code reads the
-// canonical name and stays runtime-agnostic.
+// LangGraph emits snake_case names; normalizeToolName maps them to Claude's PascalCase before any lookup/gate.
 export const TOOL_NAME_ALIASES = Object.freeze({
   read_file: ToolName.READ,
   write_file: ToolName.WRITE,
@@ -77,14 +71,10 @@ export const TOOL_NAME_ALIASES = Object.freeze({
   task_get: ToolName.TASK_GET,
   task_list: ToolName.TASK_LIST,
   task_output: ToolName.TASK_OUTPUT,
+  tool_search: ToolName.TOOL_SEARCH,
 })
 
-/**
- * Normalise a tool name to its Claude PascalCase canonical form.
- * Returns the input unchanged when no alias applies.
- * @param {string} name - The raw tool name from `event.content`.
- * @returns {string}
- */
+/** Falls back to the input unchanged when no alias applies. */
 export function normalizeToolName(name) {
   return TOOL_NAME_ALIASES[name] ?? name
 }

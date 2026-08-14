@@ -1,17 +1,14 @@
 """ToolContext + ToolCatalog - dependency-injection bundle threaded through every tool factory.
 
-`ToolContext` is built ONCE in `runtime_langgraph.connect()` after the chat
-model materialises; tool factories receive it via `make_*_tools(ctx)` and
-close over it.
+`ToolContext` is built once in `runtime_langgraph.connect()` after the chat model materialises;
+tool factories receive it via `make_*_tools(ctx)` and close over it.
 
-`ToolCatalog` wraps the bound-tool list in a mutable container - populated
-AFTER `make_tools()` returns so a self-discovery tool can read the full
-catalog at invoke time without a second registration pass. Mutability is
-contained here; the enclosing `ToolContext` stays frozen.
+`ToolCatalog` wraps the bound-tool list in a mutable container, populated after `make_tools()` returns.
+A self-discovery tool reads the full catalog at invoke time without a second registration pass.
+Mutability is contained here; the enclosing `ToolContext` stays frozen.
 
-Subscope-owned fields (agent_registry, daemon_services, mcp_client, ...) land
-on `ToolContext` extensions as later families ship, each with a safe default
-so shipping one family does not force the context to know about siblings.
+Subscope-owned fields (agent_registry, daemon_services, mcp_client, ...) land on `ToolContext`
+extensions as later families ship, each with a safe default so no family needs to know about the others.
 """
 
 from collections.abc import Callable
@@ -51,12 +48,10 @@ class ToolContext:
     logger: Any
     tool_catalog: ToolCatalog
 
-    # Per-tool-family fields (alphabetical to avoid conflict on parallel adds).
-    # Each field defaults to a safe empty so wiring one tool family does not
-    # force the context to know about siblings.
-    agent_registry: AgentRegistry | None = None  # (c)
-    chat_model_factory: Callable[[], BaseChatModel] | None = None  # (c)
-    daemon_services: DaemonServiceBundle | None = None  # (d)
-    mcp_client: "MultiServerMCPClient | None" = None  # (j)
-    record_subagent_usage: Callable[[int, int], None] | None = None  # (c)
-    subagent_depth: int = 0  # (c)
+    # Per-tool-family fields, alphabetical order to avoid conflicts on parallel adds.
+    agent_registry: AgentRegistry | None = None
+    chat_model_factory: Callable[[], BaseChatModel] | None = None
+    daemon_services: DaemonServiceBundle | None = None
+    mcp_client: "MultiServerMCPClient | None" = None
+    record_subagent_usage: Callable[[int, int], None] | None = None
+    subagent_depth: int = 0

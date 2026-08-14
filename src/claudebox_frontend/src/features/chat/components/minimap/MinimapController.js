@@ -188,7 +188,13 @@ export default class MinimapController {
   }
 
   _logicalScrollHeight() {
-    return this._getLogicalScrollHeight?.() ?? this._containerEl?.scrollHeight ?? 0
+    // Falls back to native scrollHeight when the logical total isn't a usable positive number
+    // (e.g. turns carry no id to sum) - otherwise the thumb sizes to the whole track and freezes.
+    const logical = this._getLogicalScrollHeight?.()
+    if (typeof logical === 'number' && logical > 0) {
+      return logical
+    }
+    return this._containerEl?.scrollHeight ?? 0
   }
 
   _updateViewport() {
@@ -206,17 +212,14 @@ export default class MinimapController {
     if (nativeScrollHeight <= clientHeight) {
       newViewport = { top: 0, height: mapHeight }
     } else {
-      // Size uses logical scrollHeight (sum of cached turn heights) for jitter
-      // resistance against off-screen turn intrinsic-vs-real toggles under
-      // content-visibility:auto.
+      // Size uses logical scrollHeight (cached turn heights) for jitter resistance: off-screen turns
+      // toggle intrinsic-vs-real size under content-visibility:auto.
       const viewportHeight = Math.max(
         MINIMAP_MIN_THUMB_HEIGHT,
         (clientHeight / logicalScrollHeight) * mapHeight,
       )
-      // Position uses native scrollHeight: the browser caps scrollTop at
-      // (nativeScrollHeight - clientHeight), so ratio is bounded by 1 and
-      // viewportTop + viewportHeight stays <= mapHeight. The defensive
-      // Math.min guards against fractional rounding and future divergence.
+      // Position uses native scrollHeight, which caps scrollTop at (nativeScrollHeight - clientHeight).
+      // Math.min guards against fractional rounding.
       const positionRange = nativeScrollHeight - clientHeight
       const trackRange = Math.max(0, mapHeight - viewportHeight)
       const ratio = positionRange > 0 ? Math.min(1, scrollTop / positionRange) : 0

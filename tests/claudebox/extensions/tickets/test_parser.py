@@ -1,11 +1,15 @@
 """Tests for board YAML parser."""
 
+import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+from filelock import FileLock
 from ruamel.yaml import YAML
 
 from claudebox.extensions.tickets.errors import (
+    BoardLocked,
     BoardParseError,
     InvalidLabel,
     StateNotFound,
@@ -269,7 +273,6 @@ class TestParseBoard:
     def test_resolves_title_from_markdown(self, tmp_path: Path) -> None:
         """Resolve ticket title from markdown heading relative to board.yaml parent."""
         yaml_path = _write_board(tmp_path, _minimal_board_yaml())
-        # Ticket file at yaml_path.parent / path (board-file-relative)
         ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# My Cool Ticket\n\nBody here.\n")
@@ -287,7 +290,6 @@ class TestMoveTicket:
     def test_column_change(self, tmp_path: Path) -> None:
         """Move ticket from backlog to in-progress column."""
         yaml_path = _write_board(tmp_path, _minimal_board_yaml())
-        # Create the ticket file relative to board.yaml parent
         ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# T1\n")
@@ -347,8 +349,7 @@ class TestMoveTicket:
     def test_index_none_appends(self, tmp_path: Path) -> None:
         """Default behavior (index=None) appends to the target column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        # backlog: t1 (frontend), t2 (backend) -> move t1 within backlog with no index
-        # should land at the end (append). Source pop + append -> [t2, t1].
+        # No index: t1 pops from backlog and re-appends, landing after t2 -> [t2, t1].
         move_ticket(yaml_path, "tickets/backlog/t1.md")
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
@@ -366,8 +367,7 @@ class TestMoveTicket:
     def test_index_inserts_between_existing(self, tmp_path: Path) -> None:
         """index value lands between existing entries."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        # Source list: backlog has [t1, t2]; target list: in-progress has [t3].
-        # Move t1 to in-progress at index 1 -> in-progress becomes [t3, t1].
+        # backlog [t1, t2] -> in-progress [t3]; move t1 to index 1 -> in-progress [t3, t1].
         ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# T1\n")
@@ -432,6 +432,35 @@ class TestMoveTicket:
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["done"]]
         assert paths == ["tickets/completed/t1.md"]
+
+
+class TestFileLockTimeout:
+    """Tests for lock acquisition timeout in move_ticket."""
+
+    def test_move_ticket_raises_when_lock_is_held(self, tmp_path: Path) -> None:
+        """Raise BoardLocked when board.yaml's lock is already held."""
+        yaml_path = _write_board(tmp_path, _minimal_board_yaml())
+        ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
+        ticket_file.parent.mkdir(parents=True, exist_ok=True)
+        ticket_file.write_text("# T1\n")
+
+        holder = FileLock(str(yaml_path) + ".lock")
+        holder.acquire()
+
+        try:
+            with patch("claudebox.extensions.tickets.parser.FILE_LOCK_TIMEOUT_SECONDS", 0.2):
+                started = time.monotonic()
+
+                with pytest.raises(BoardLocked) as exc_info:
+                    move_ticket(yaml_path, "tickets/backlog/t1.md", column="in-progress")
+
+                elapsed = time.monotonic() - started
+        finally:
+            holder.release()
+
+        # Bounded, not blocked forever - and comfortably under the suite's own patience.
+        assert elapsed < 5.0
+        assert exc_info.value.context["path"] == str(yaml_path)
 
 
 # --- archive_ticket ---

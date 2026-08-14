@@ -1,8 +1,7 @@
 """Verify bare, unknown-verb, and legacy flag-mode invocations exit 2.
 
-Bare ``claudebox`` (no command) binds a root help handler that prints full help
-and returns 2 through normal dispatch; unknown verbs and legacy flags still
-hard-error via argparse's own error path. No translation, no deprecation warnings.
+Bare ``claudebox`` binds a root handler that returns 2 through normal dispatch; unknown verbs and legacy flags
+hard-error via argparse's own path instead - no translation, no deprecation warnings.
 """
 
 import pytest
@@ -17,10 +16,10 @@ class TestUnknownVerb:
     """Bare invocations and unknown verbs fail with exit 2."""
 
     def test_bare_claudebox_prints_help_and_returns_2(
-        self, capsys: pytest.CaptureFixture[str]
+        self,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # No command no longer errors at parse time; the bound root handler
-        # prints full help and yields exit 2 through the normal dispatch.
+        # Bare invocation doesn't error at parse time - the root handler prints help and returns 2 via dispatch.
         args = parser.parse_args([])
         assert args.handler(args) == 2
         out = capsys.readouterr().out

@@ -46,7 +46,6 @@ describe('PathResolutionManager', () => {
       'config.toml': '/abs/config.toml',
     })
 
-    // Simulate three hooks enqueueing within the batch window
     const p1 = manager.enqueue(['src/app.js'])
     const p2 = manager.enqueue(['lib/utils.py'])
     const p3 = manager.enqueue(['config.toml'])
@@ -58,7 +57,6 @@ describe('PathResolutionManager', () => {
     expect(r1).toEqual(r2)
     expect(r2).toEqual(r3)
 
-    // Only one API call was made
     expect(mockResolvePaths).toHaveBeenCalledTimes(1)
     expect(mockResolvePaths).toHaveBeenCalledWith(
       expect.arrayContaining(['src/app.js', 'lib/utils.py', 'config.toml']),
@@ -74,7 +72,6 @@ describe('PathResolutionManager', () => {
     vi.advanceTimersByTime(10)
     await Promise.all([p1, p2])
 
-    // Candidate appears once in the API call
     expect(mockResolvePaths).toHaveBeenCalledTimes(1)
     const candidates = mockResolvePaths.mock.calls[0][0]
     expect(candidates.filter(c => c === 'src/app.js')).toHaveLength(1)
@@ -96,13 +93,11 @@ describe('PathResolutionManager', () => {
     mockResolvePaths.mockResolvedValueOnce({ 'a.py': '/abs/a.py' })
     mockResolvePaths.mockResolvedValueOnce({ 'b.js': '/abs/b.js' })
 
-    // First batch
     const p1 = manager.enqueue(['a.py'])
     vi.advanceTimersByTime(10)
     const r1 = await p1
     expect(r1).toEqual({ 'a.py': '/abs/a.py' })
 
-    // Second batch (after first flush completes)
     const p2 = manager.enqueue(['b.js'])
     vi.advanceTimersByTime(10)
     const r2 = await p2

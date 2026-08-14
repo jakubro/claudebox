@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 import claudebox_cli
-from claudebox import HelpFormatter, cli
+from claudebox import HelpFormatter, LazyEpilogParser, cli
 from claudebox import epilog as _install_epilog
 
 
@@ -23,8 +23,7 @@ except ImportError:  # pragma: no cover - optional bash-completion dependency
 class CliCommandModule(Protocol):
     """The required surface for each ``claudebox_cli/cmd_*.py`` module.
 
-    Modules may optionally define ``register(parser)`` to extend their
-    subparser with verb-specific arguments; absence is treated as a no-op.
+    Modules may optionally define ``register(parser)`` for verb-specific arguments; absence is a no-op.
     """
 
     NAME: str
@@ -41,10 +40,10 @@ class Cli:
 
     def __init__(self, **kwargs) -> None:
         kwargs.setdefault("formatter_class", HelpFormatter)
-        self._parser = argparse.ArgumentParser(**kwargs)
+        self._parser = LazyEpilogParser(**kwargs)
 
-        # Two independent -v actions: top-level (default False) + per-subparser (SUPPRESS)
-        # so the latter doesn't overwrite the former. argparse parents= would share one action.
+        # Two independent -v actions: top-level default False, per-subparser SUPPRESS.
+        # So the subparser default can't overwrite the top-level one; argparse parents= would share one action.
         self._parser.add_argument(
             "-v",
             "--verbose",
@@ -58,10 +57,8 @@ class Cli:
             metavar="<command>",
         )
 
-        # Bare `claudebox` (no command) flows through the normal args.handler
-        # dispatch (claudebox.core.cli.cli) and prints full help + exits 2 -
-        # mirroring the noun-groups' sub-help-on-no-verb convention rather than
-        # argparse's terse required-arg error.
+        # Bare `claudebox` flows through the normal handler dispatch, exiting 2 with full help.
+        # Mirrors the noun-groups' sub-help convention rather than argparse's terse error.
         self._parser.set_defaults(handler=self._print_help_and_exit)
 
         self._register_modules()
@@ -73,8 +70,8 @@ class Cli:
     def run(self):
         """Dispatch the CLI, wiring bash completion before argparse parses."""
 
-        # argcomplete short-circuits (and exits) only inside the completion
-        # subprocess where _ARGCOMPLETE is set; normal invocations are unaffected.
+        # argcomplete short-circuits and exits only inside the completion subprocess (_ARGCOMPLETE set).
+        # Normal invocations are unaffected.
         if argcomplete is not None:
             argcomplete.autocomplete(self._parser)
 
@@ -144,14 +141,20 @@ class Cli:
         return sub
 
 
-app = Cli(
-    prog="claudebox",
-    description="Run AI coding agents in a containerized dev environment.",
-    epilog=f"""\
+def _build_epilog() -> str:
+    """Assemble the top-level epilog; only called when help is actually rendered."""
+
+    return f"""\
 run "claudebox <command> --help" for command-specific help
 
 {_install_epilog()}
-""",
+"""
+
+
+app = Cli(
+    prog="claudebox",
+    description="Run AI coding agents in a containerized dev environment.",
+    epilog_factory=_build_epilog,
 )
 
 

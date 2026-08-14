@@ -3,19 +3,6 @@
 import useCapabilities from '../../../../../hooks/useCapabilities'
 import { formatDuration } from '../../../../../utils/formatters'
 
-/**
- * Render the turn progress indicator showing working, stopping, or completion state.
- * @param {Object} props
- * @param {boolean} props.isActive - Whether the turn is currently active.
- * @param {boolean} props.isStopping - Whether an interrupt is in progress.
- * @param {boolean} props.showProgress - Whether to show the progress spinner.
- * @param {boolean} props.hasActiveCompaction - Whether compaction is in progress.
- * @param {boolean} props.pending - Whether this is a pending turn (no events).
- * @param {boolean} props.hasPendingMessages - Whether pending messages exist.
- * @param {boolean} props.hasNextUserMessage - Whether another user message follows.
- * @param {number} props.duration - Turn duration in seconds.
- * @returns {JSX.Element|null}
- */
 export default function TurnProgress({
   isActive,
   isStopping,

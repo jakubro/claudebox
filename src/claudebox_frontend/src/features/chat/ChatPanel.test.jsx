@@ -63,12 +63,18 @@ vi.mock('../../context/SessionRoutingContext', () => ({
   }),
 }))
 
-vi.mock('../../context/WorkspaceContext', () => ({
-  useWorkspace: () => ({
-    workspaceId: 'test-workspace',
-    workspaces: [{ id: 'test-workspace', path: '/home/user/test-workspace' }],
-  }),
-}))
+// WorkspaceContext export is also consumed directly by useSessionDefaults via
+// useContext(WorkspaceContext) - re-export the createContext object so the import resolves.
+vi.mock('../../context/WorkspaceContext', async () => {
+  const { createContext } = await import('react')
+  return {
+    WorkspaceContext: createContext(null),
+    useWorkspace: () => ({
+      workspaceId: 'test-workspace',
+      workspaces: [{ id: 'test-workspace', path: '/home/user/test-workspace' }],
+    }),
+  }
+})
 
 vi.mock('../../hooks/useCapabilities', () => ({
   default: () => ({ capabilities: null, runtimeName: null }),
@@ -107,8 +113,8 @@ vi.mock('./hooks/useMessageJump', () => ({
   }),
 }))
 
-// Stable identity across renders (mirrors the real useRef-backed context) so
-// effects keyed on these refs fire only on their intended trigger, not per render.
+// Stable identity across renders (mirrors the real useRef-backed context) so effects keyed on
+// these refs fire only on their intended trigger, not per render.
 const mockAppActions = vi.hoisted(() => ({
   jumpPrevRef: { current: null },
   jumpNextRef: { current: null },
@@ -118,6 +124,7 @@ const mockAppActions = vi.hoisted(() => ({
   chatAutoScrollEnabledRef: { current: true },
   autoCollapseEnabledRef: { current: true },
   markUserIntentRef: { current: null },
+  scrollToTurnRef: { current: null },
   markProgrammaticScrollRef: { current: null },
   focusChatTab: vi.fn(),
   addSessionTab: vi.fn(),
@@ -213,7 +220,7 @@ vi.mock('../../context/DaemonStreamContext', () => ({
   useDaemonStreamContext: () => mockDaemonStreamData,
 }))
 
-// Real Turn, real processEvents - filtering/grouping now in EventsContext
+// Real Turn, real processEvents; filtering/grouping lives in EventsContext.
 
 import {
   appendTurns,
@@ -223,9 +230,7 @@ import {
 
 // --- Helpers ---
 
-/**
- * Build turn results map from raw events (same logic that was in ChatPanel).
- */
+/** Build turn results map from raw events, mirroring ChatPanel's own turn-result mapping. */
 function buildTurnResults(events) {
   const results = {}
   for (const e of events) {
@@ -287,6 +292,7 @@ function defaultChatControllerData(overrides = {}) {
     },
     scroll: {
       handleScroll: vi.fn(),
+      scrollToBottom: vi.fn(),
     },
     pending: {
       showPendingMessages: [],
@@ -387,9 +393,8 @@ describe('ChatPanel', () => {
   })
 
   describe('auto-collapse', () => {
-    // Events carry `ts` so getTurnTimeRange yields a startTime - without it
-    // TurnMeta (and its collapse toggle) never renders, so a turn cannot be
-    // expanded/collapsed by hand.
+    // Events carry `ts` so getTurnTimeRange yields a startTime - without it TurnMeta (and its
+    // collapse toggle) never renders, so a turn cannot be expanded/collapsed by hand.
     const threeCompletedTurns = () => ({
       events: [
         { type: 'user', is_human: true, content: 'One', turn_id: 't1', ts: '2026-01-01T00:00:01Z' },
@@ -861,11 +866,10 @@ describe('ChatPanel', () => {
       await render(<ChatPanel />)
 
       expect(screen.getByTestId('welcome-page')).toBeInTheDocument()
-      // ChatInput renders inside the welcome page so users can submit a message
-      // immediately to spawn a session.
+      // ChatInput renders inside the welcome page so users can submit a message immediately to spawn a session.
       expect(screen.getByTestId('mock-chat-input')).toBeInTheDocument()
-      // The chat-control-bar (model picker, fork, etc.) only renders for an
-      // active session - it must stay hidden on the welcome screen.
+      // The chat-control-bar (model picker, fork, etc.) only renders for an active session - it must
+      // stay hidden on the welcome screen.
       expect(screen.queryByTestId('mock-chat-control-bar')).not.toBeInTheDocument()
     })
 
@@ -1042,6 +1046,102 @@ describe('ChatPanel', () => {
 
       // Real Turn shows "Stopping" indicator when isStopping=true
       expect(screen.getByText('Stopping')).toBeInTheDocument()
+    })
+  })
+
+  describe('active turn pending-message state', () => {
+    // Must assert at the ChatPanel level: ToolBlock.test.jsx's skip-detection tests drive
+    // TurnProvider directly and pass regardless of ChatPanel's own wiring.
+    function askUserQuestionEvents() {
+      return [
+        { type: 'user', is_human: true, content: 'Help me set up the project', turn_id: 't1' },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'AskUserQuestion',
+          tool_use_id: 'tool_001',
+          tool_name: 'AskUserQuestion',
+          tool_input: {
+            questions: [
+              {
+                question: 'Which framework?',
+                header: 'Framework',
+                options: [{ label: 'React' }, { label: 'Vue' }],
+              },
+            ],
+          },
+        },
+        // Awaiting-answer marker - a live question carries this result, not a missing one.
+        {
+          type: 'assistant',
+          subtype: 'tool_result',
+          content: 'Answer questions?',
+          tool_use_id: 'tool_001',
+        },
+      ]
+    }
+
+    it('marks the question Skipped and retires the live form the instant a message is in flight', async () => {
+      mockEventsData = defaultEventsData({ events: askUserQuestionEvents() })
+      const { container, rerender } = await render(<ChatPanel />)
+
+      // Mount with no message in flight, then transition - the skip effect only fires on a
+      // false->true edge, never when mounted already-pending.
+      const formBefore = container.querySelector('.tool-questions-interactive')
+      expect(formBefore).not.toBeNull()
+      expect(formBefore).not.toHaveClass('disabled')
+
+      mockChatControllerData = defaultChatControllerData({
+        pending: {
+          showPendingMessages: [{ id: 'p1', content: "actually, let's use Svelte" }],
+          addPendingMessage: vi.fn(),
+          removePendingMessage: vi.fn(),
+        },
+      })
+      await act(async () => {
+        rerender(<ChatPanel />)
+      })
+
+      // Skipping collapses the block the same way answering it does.
+      expect(container.querySelector('.tool-questions-interactive')).toBeNull()
+      expect(screen.getByText('Skipped')).toBeInTheDocument()
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-tool-status', 'completed')
+    })
+
+    it('does not retire the form as Skipped when a selection was submitted before the message goes in flight', async () => {
+      mockEventsData = defaultEventsData({ events: askUserQuestionEvents() })
+      const user = userEvent.setup()
+      const { rerender } = await render(<ChatPanel />)
+
+      // Mirrors Enter-with-a-selection: setWasAnsweredLocally(true) runs synchronously before
+      // the send call that later surfaces a pending message.
+      await user.click(screen.getByText('React'))
+      await user.click(screen.getByText('Submit Response'))
+
+      mockChatControllerData = defaultChatControllerData({
+        pending: {
+          showPendingMessages: [{ id: 'p1', content: "actually, let's use Svelte" }],
+          addPendingMessage: vi.fn(),
+          removePendingMessage: vi.fn(),
+        },
+      })
+      await act(async () => {
+        rerender(<ChatPanel />)
+      })
+
+      // Answered, not skipped - the ordering the Enter-with-selection path depends on.
+      expect(screen.queryByText('Skipped')).not.toBeInTheDocument()
+    })
+
+    it('leaves the form fully interactive when no message is in flight', async () => {
+      mockEventsData = defaultEventsData({ events: askUserQuestionEvents() })
+
+      const { container } = await render(<ChatPanel />)
+
+      const form = container.querySelector('.tool-questions-interactive')
+      expect(form).not.toBeNull()
+      expect(form).not.toHaveClass('disabled')
+      expect(form.querySelector('.tool-submit-btn')).not.toBeNull()
     })
   })
 })

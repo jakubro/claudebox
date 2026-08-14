@@ -1,5 +1,6 @@
 """Tests for container lifecycle - service stop/kill/remove + DELETE composite + POST routes."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -37,7 +38,8 @@ def _make_service(tmp_path: Path) -> tuple[ContainerService, MagicMock]:
     )
 
     proxy = MagicMock()
-    svc = ContainerService(ws, events, config, proxy)
+    executor = ThreadPoolExecutor(max_workers=2)
+    svc = ContainerService(ws, events, config, proxy, executor, executor)
     svc._runtime._backend = MagicMock()
 
     return svc, events

@@ -2,39 +2,32 @@
 
 import { useCallback } from 'react'
 import useInterruptHandler from '../../../../../hooks/useInterruptHandler'
-import { applyShiftEnter } from '../utils/smartNewline'
-import { applyTabKey } from '../utils/textareaIndent'
+import useTextEditingKeys from './useTextEditingKeys'
 
 /**
- * Hook for keyboard shortcut dispatch and chat action handlers.
- * @param {Object} params
- * @param {Object} params.textareaRef - Ref to textarea element
- * @param {Function} params.peekInput - Read textarea content without clearing
- * @param {Function} params.commitInput - Clear textarea after successful send
- * @param {Function} params.extractInput - Extracts and clears textarea content (used by queue)
- * @param {Function} params.send - Send message callback
- * @param {Function} params.setSending - Toggle sending state
- * @param {Function} params.enqueueMessage - Queue a message for later sending
- * @param {Function} params.deferSend - Defer a message for auto-send when session creation completes.
- * @param {boolean} params.isCreating - Whether session is being created (routes submit to defer/queue).
- * @param {boolean} params.canInterrupt - Whether interrupt is allowed
- * @param {string} params.interruptStatus - Current interrupt status
- * @param {Function} params.startInterrupt - Start interrupt flow
- * @param {Function} params.completeInterrupt - Complete interrupt flow
- * @param {Function} params.setError - Error setter
- * @param {Function} params.stashPush - Push to stash
- * @param {Function} params.stashPop - Pop from stash
- * @param {Function} params.clearPendingInsert - Clear pending stash insert
- * @param {Function} params.saveDrafts - Save drafts
- * @param {Function} params.resizeTextarea - Resize textarea
- * @param {Function} params.navigateUp - Navigate history up
- * @param {Function} params.navigateDown - Navigate history down
- * @param {Function} params.collapseLocal - Collapse local block
- * @param {Function} params.collapseAll - Collapse all blocks
- * @param {Function} params.expandLocal - Expand local block
- * @param {Function} params.expandAll - Expand all blocks
- * @param {Function} params.wrapSelection - Auto-pair wrap selection
- * @param {boolean} params.isMobile - Whether in mobile viewport (skips Enter-to-submit).
+ * @param {object} params.textareaRef - Ref to the textarea element.
+ * @param {Function} params.peekInput - Reads textarea content without clearing it.
+ * @param {Function} params.commitInput - Clears the textarea after a successful send.
+ * @param {Function} params.extractInput - Extracts and clears textarea content (used by the queue).
+ * @param {Function} params.send - Send-message callback.
+ * @param {Function} params.setSending - Toggles the sending state.
+ * @param {Function} params.enqueueMessage - Queues a message for later sending.
+ * @param {Function} params.deferSend - Defers a message to auto-send once session creation completes.
+ * @param {object} [params.pendingFormRef] - Ref to the active turn's live AskUserQuestion form, if any.
+ * @param {boolean} params.isCreating - Whether the session is being created (routes submit to defer/queue).
+ * @param {boolean} params.canInterrupt - Whether interrupt is allowed.
+ * @param {string} params.interruptStatus - Current interrupt status.
+ * @param {Function} params.startInterrupt - Starts the interrupt flow.
+ * @param {Function} params.completeInterrupt - Completes the interrupt flow.
+ * @param {Function} params.setError - Error setter.
+ * @param {Function} params.stashPush - Pushes to the stash.
+ * @param {Function} params.stashPop - Pops from the stash.
+ * @param {Function} params.clearPendingInsert - Clears the pending stash insert.
+ * @param {Function} params.saveDrafts - Saves drafts.
+ * @param {Function} params.navigateUp - Navigates history up.
+ * @param {Function} params.navigateDown - Navigates history down.
+ * @param {import('../BlockCollapseManager').default} params.collapseManager - Block collapse/expand state.
+ * @param {boolean} params.isMobile - Whether in a mobile viewport (skips Enter-to-submit).
  * @returns {{ handleKeyDown, handleSubmit, handleInterrupt, handleQueue }}
  */
 export default function useChatKeyboard({
@@ -47,6 +40,7 @@ export default function useChatKeyboard({
   enqueueMessage,
   deferSend,
   hasBufferedReplies,
+  pendingFormRef,
   isCreating,
   canInterrupt,
   interruptStatus,
@@ -57,19 +51,13 @@ export default function useChatKeyboard({
   stashPop,
   clearPendingInsert,
   saveDrafts,
-  resizeTextarea,
   navigateUp,
   navigateDown,
-  collapseLocal,
-  collapseAll,
-  expandLocal,
-  expandAll,
-  wrapSelection,
+  collapseManager,
   isMobile = false,
 }) {
-  // Submit handler - peek input, send, commit only on success to preserve text on failure
-  // During session creation, first message defers (auto-sends when ready);
-  // subsequent messages during creation route to the queue.
+  // Peek, send, and commit only on success - text is preserved on failure.
+  // During session creation, the first message defers; later ones route to the queue.
   const handleSubmit = useCallback(async () => {
     const input = peekInput()
     if (!input) {
@@ -104,7 +92,7 @@ export default function useChatKeyboard({
     }
   }, [peekInput, commitInput, send, setSending, isCreating, deferSend, hasBufferedReplies])
 
-  // Queue handler - Alt+Enter queues message for later sending
+  // Alt+Enter queues message for later sending.
   const handleQueue = useCallback(() => {
     const input = extractInput()
     if (!input) {
@@ -113,7 +101,6 @@ export default function useChatKeyboard({
     enqueueMessage(input.rawPrompt, input.currentAttachments)
   }, [extractInput, enqueueMessage])
 
-  // Interrupt handler
   const handleInterrupt = useInterruptHandler({
     startInterrupt,
     completeInterrupt,
@@ -121,7 +108,6 @@ export default function useChatKeyboard({
     disabled: !canInterrupt || interruptStatus === 'stopping',
   })
 
-  // Stash current input
   const handleStash = useCallback(() => {
     const textarea = textareaRef.current
     const value = textarea?.value
@@ -129,70 +115,53 @@ export default function useChatKeyboard({
       clearPendingInsert()
       stashPush(value)
       textarea.value = ''
+      // saveDrafts also clears the stack - the input dispatch below only updates `current`.
       saveDrafts({ current: '', stack: [] })
-      resizeTextarea()
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
     }
-  }, [textareaRef, stashPush, clearPendingInsert, saveDrafts, resizeTextarea])
+  }, [textareaRef, stashPush, clearPendingInsert, saveDrafts])
 
-  // Pop from stash
   const handleStashPop = useCallback(() => {
     stashPop()
   }, [stashPop])
 
-  // Wrap selection in <this></this> tags
-  const handleWrapInTags = useCallback(() => {
-    const textarea = textareaRef.current
-    if (!textarea) {
-      return
+  // Writes to the textarea and dispatches the input event typing produces, so drafts/autocomplete/
+  // resize observers see it.
+  // Omitted selStart leaves selection unmanaged.
+  const getEditingState = useCallback(() => {
+    const ta = textareaRef.current
+    return {
+      value: ta?.value ?? '',
+      selStart: ta?.selectionStart ?? 0,
+      selEnd: ta?.selectionEnd ?? 0,
     }
+  }, [textareaRef])
 
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const value = textarea.value
-    const hasSelection = start !== end
-    const selection = value.slice(start, end)
+  const applyEditingResult = useCallback(
+    result => {
+      const ta = textareaRef.current
+      if (!ta) {
+        return
+      }
+      ta.value = result.value
+      if (result.selStart !== undefined) {
+        ta.selectionStart = result.selStart
+        ta.selectionEnd = result.selEnd
+      }
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    },
+    [textareaRef],
+  )
 
-    const before = value.slice(0, start)
-    const after = value.slice(end)
-    const wrapped = `<this>${selection}</this>`
+  const { handleKeyDown: handleSharedKeyDown } = useTextEditingKeys({
+    getState: getEditingState,
+    applyResult: applyEditingResult,
+    collapseManager,
+    onInterrupt: handleInterrupt,
+  })
 
-    textarea.value = before + wrapped + after
-    const newPos = hasSelection ? start + wrapped.length : start + 6
-    textarea.selectionStart = textarea.selectionEnd = newPos
-    resizeTextarea()
-  }, [textareaRef, resizeTextarea])
-
-  // Key handler - includes all textarea-focused shortcuts
   const handleKeyDown = useCallback(
     e => {
-      // Tab - indent (Shift+Tab - dedent). Picker priority is enforced upstream by
-      // ChatInput.jsx delegation; if the picker handled Tab, this code never runs.
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        const ta = textareaRef.current
-        if (ta && applyTabKey(ta, e.shiftKey)) {
-          ta.dispatchEvent(new Event('input', { bubbles: true }))
-          resizeTextarea()
-        }
-        return
-      }
-
-      // Shift+Enter - smart newline. Layer 1: inherit current line's leading
-      // whitespace on the new line. Layer 2 (list lines): continue the marker
-      // (auto-incremented for numbered, always unchecked for tasks). Empty
-      // marker exits the list. Plain Enter (submit) and Alt+Enter (queue)
-      // fall through unchanged.
-      if (e.key === 'Enter' && e.shiftKey && !e.altKey) {
-        e.preventDefault()
-        const ta = textareaRef.current
-        if (ta) {
-          applyShiftEnter(ta)
-          ta.dispatchEvent(new Event('input', { bubbles: true }))
-          resizeTextarea()
-        }
-        return
-      }
-
       // Alt+Enter to queue message
       if (e.key === 'Enter' && e.altKey && !e.shiftKey) {
         e.preventDefault()
@@ -200,9 +169,14 @@ export default function useChatKeyboard({
         return
       }
 
-      // Enter to submit (desktop only - mobile uses send button)
+      // Enter submits (desktop only - mobile uses the send button). A pending form takes priority
+      // over the composer's empty-check, so the note rides with the answer instead of skipping the question.
       if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
+        if (pendingFormRef?.current?.hasSelection()) {
+          pendingFormRef.current.submit()
+          return
+        }
         void handleSubmit()
         return
       }
@@ -215,13 +189,6 @@ export default function useChatKeyboard({
 
       if (e.key === 'ArrowDown' && !e.altKey && navigateDown()) {
         e.preventDefault()
-        return
-      }
-
-      // Ctrl+. to interrupt
-      if (e.key === '.' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        void handleInterrupt()
         return
       }
 
@@ -239,57 +206,19 @@ export default function useChatKeyboard({
         return
       }
 
-      // Ctrl+, to wrap in <this></this> tags
-      if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        handleWrapInTags()
-        return
-      }
-
-      // Ctrl+' to collapse local, Ctrl+" (Ctrl+Shift+') to collapse all
-      if ((e.key === "'" || e.key === '"') && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        if (e.key === '"') {
-          collapseAll(textareaRef.current)
-        } else {
-          collapseLocal(textareaRef.current)
-        }
-        return
-      }
-
-      // Ctrl+\ to expand local, Ctrl+| (Ctrl+Shift+\) to expand all
-      if ((e.key === '\\' || e.key === '|') && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        if (e.key === '|') {
-          expandAll(textareaRef.current)
-        } else {
-          expandLocal(textareaRef.current)
-        }
-        return
-      }
-
-      // Wrap selection with paired characters (quotes, brackets)
-      if (textareaRef.current && wrapSelection(textareaRef.current, e)) {
-        return
-      }
+      // Tab/Shift+Tab, Shift+Enter, Ctrl+., Ctrl+comma, collapse/expand, auto-pair - shared with inline replies.
+      handleSharedKeyDown(e)
     },
     [
       handleQueue,
       handleSubmit,
       navigateUp,
       navigateDown,
-      handleInterrupt,
       handleStash,
       handleStashPop,
-      handleWrapInTags,
-      collapseLocal,
-      collapseAll,
-      expandLocal,
-      expandAll,
-      wrapSelection,
-      textareaRef,
+      handleSharedKeyDown,
       isMobile,
-      resizeTextarea,
+      pendingFormRef,
     ],
   )
 

@@ -18,14 +18,12 @@ class TestLoadConfigFiles:
         assert result.get("network", {}).get("mode") == "host"
 
     def test_hierarchical_merge(self, tmp_path):
-        # Parent config
         parent = tmp_path / "parent"
         parent.mkdir()
         parent_settings = parent / CLAUDEBOX_SETTINGS_FILE
         parent_settings.parent.mkdir(parents=True, exist_ok=True)
         parent_settings.write_text('agent = "claude"\nbackend = "podman"\n')
 
-        # Child config
         child = parent / "child"
         child.mkdir()
         child_settings = child / CLAUDEBOX_SETTINGS_FILE
@@ -39,14 +37,12 @@ class TestLoadConfigFiles:
         assert result.get("agent") == "claude"
 
     def test_root_flag_stops_walk(self, tmp_path):
-        # Grandparent config
         grandparent = tmp_path / "gp"
         grandparent.mkdir()
         gp_settings = grandparent / CLAUDEBOX_SETTINGS_FILE
         gp_settings.parent.mkdir(parents=True, exist_ok=True)
         gp_settings.write_text('agent = "gp-agent"\n')
 
-        # Parent with root = true
         parent = grandparent / "parent"
         parent.mkdir()
         parent_settings = parent / CLAUDEBOX_SETTINGS_FILE
@@ -84,6 +80,18 @@ class TestConfigLoad:
         config = Config.load(workspace_path=tmp_workspace)
         assert config.network_mode == "host"
 
+    def test_loads_containers_nested(self, tmp_workspace):
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text("[containers]\nnested = true\n")
+
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.containers_nested is True
+
+    def test_containers_nested_defaults_false(self, tmp_workspace):
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.containers_nested is False
+
     def test_profile_resolution(self, tmp_workspace):
         profile_dir = tmp_workspace / "my-profile"
         profile_dir.mkdir()
@@ -93,6 +101,53 @@ class TestConfigLoad:
 
         config = Config.load(workspace_path=tmp_workspace)
         assert config.profile == profile_dir.resolve()
+
+
+class TestConfigEditorTemplate:
+    """Test [editor] url_template parsing and hierarchy inheritance/override."""
+
+    def test_absent_by_default(self, tmp_workspace):
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.editor_url_template is None
+
+    def test_parsed_from_workspace_settings(self, tmp_workspace):
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text('[editor]\nurl_template = "vscode://file/{path}:{line}"\n')
+
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.editor_url_template == "vscode://file/{path}:{line}"
+
+    def test_inherited_from_parent_directory(self, tmp_path):
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        parent_settings = parent / CLAUDEBOX_SETTINGS_FILE
+        parent_settings.parent.mkdir(parents=True, exist_ok=True)
+        parent_settings.write_text('[editor]\nurl_template = "vscode://file/{path}:{line}"\n')
+
+        workspace = parent / "workspace"
+        workspace.mkdir()
+
+        config = Config.load(workspace_path=workspace)
+        assert config.editor_url_template == "vscode://file/{path}:{line}"
+
+    def test_workspace_overrides_parent(self, tmp_path):
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        parent_settings = parent / CLAUDEBOX_SETTINGS_FILE
+        parent_settings.parent.mkdir(parents=True, exist_ok=True)
+        parent_settings.write_text('[editor]\nurl_template = "vscode://file/{path}:{line}"\n')
+
+        workspace = parent / "workspace"
+        workspace.mkdir()
+        workspace_settings = workspace / CLAUDEBOX_SETTINGS_FILE
+        workspace_settings.parent.mkdir(parents=True, exist_ok=True)
+        workspace_settings.write_text(
+            '[editor]\nurl_template = "jetbrains://idea/navigate/reference?path={path}"\n',
+        )
+
+        config = Config.load(workspace_path=workspace)
+        assert config.editor_url_template == "jetbrains://idea/navigate/reference?path={path}"
 
 
 class TestConfigLoadErrors:
@@ -169,14 +224,14 @@ class TestConfigLangGraphProviderKwargs:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(
             "[langgraph]\n"
-            'model = "anthropic:claude-sonnet-4-5"\n'
+            'model = "anthropic:claude-sonnet-5"\n'
             "[langgraph.anthropic]\n"
-            "temperature = 0.5\n"
+            "temperature = 0.5\n",
         )
 
         config = Config.load(workspace_path=tmp_workspace)
 
-        assert config.langgraph_model == "anthropic:claude-sonnet-4-5"
+        assert config.langgraph_model == "anthropic:claude-sonnet-5"
         assert config.langgraph_provider_kwargs == {"anthropic": {"temperature": 0.5}}
 
     def test_multiple_provider_subtables_captured_per_name(self, tmp_workspace):
@@ -188,7 +243,7 @@ class TestConfigLangGraphProviderKwargs:
             "[langgraph.openai]\n"
             'base_url = "http://x:8000/v1"\n'
             "[langgraph.ollama]\n"
-            'base_url = "http://host.containers.internal:11434"\n'
+            'base_url = "http://host.containers.internal:11434"\n',
         )
 
         config = Config.load(workspace_path=tmp_workspace)
@@ -213,7 +268,7 @@ class TestConfigLangGraphProviderKwargs:
             "[langgraph.cost]\n"
             '"my-model" = { input = 1.0, output = 5.0 }\n'
             "[langgraph.ollama]\n"
-            'base_url = "http://x:11434"\n'
+            'base_url = "http://x:11434"\n',
         )
 
         config = Config.load(workspace_path=tmp_workspace)
@@ -232,7 +287,7 @@ class TestConfigLangGraphProviderKwargs:
         settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(
-            '[langgraph]\nmodel = "ollama:llama3.2:3b"\nmax_tokens_override = 65536\n'
+            '[langgraph]\nmodel = "ollama:llama3.2:3b"\nmax_tokens_override = 65536\n',
         )
 
         config = Config.load(workspace_path=tmp_workspace)
@@ -247,13 +302,13 @@ class TestConfigLangGraphProviderKwargs:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(
             "[langgraph.cost]\n"
-            '"claude-sonnet-4-5" = { input = 3.0, output = 15.0 }\n'
-            '"my-custom-model:7b" = { input = 0.5, output = 1.5 }\n'
+            '"claude-sonnet-5" = { input = 3.0, output = 15.0 }\n'
+            '"my-custom-model:7b" = { input = 0.5, output = 1.5 }\n',
         )
 
         config = Config.load(workspace_path=tmp_workspace)
 
         assert config.langgraph_cost_overrides == {
-            "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+            "claude-sonnet-5": {"input": 3.0, "output": 15.0},
             "my-custom-model:7b": {"input": 0.5, "output": 1.5},
         }

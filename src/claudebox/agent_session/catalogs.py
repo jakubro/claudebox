@@ -1,10 +1,10 @@
 """Runtime-neutral metadata catalogs - Model / PermissionMode / EffortLevel / Skill / ContextUsage.
 
-Shapes only; concrete values + filesystem-walked skill loader live on the
-adapter (e.g. `ClaudeRuntime.AVAILABLE_MODELS` and `ClaudeRuntime.get_skills`).
+Shapes only; concrete values and the filesystem-walked skill loader live on the adapter (e.g.
+`ClaudeRuntime.AVAILABLE_MODELS`, `ClaudeRuntime.get_skills`).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 from ..core.structures import DataClass
@@ -62,6 +62,21 @@ class ContextUsage:
 
     used_tokens: int
     max_tokens: int
+
+
+@dataclass(frozen=True)
+class StreamHealth:
+    """Whether a runtime is still feeding its message stream to the consumer.
+
+    `reader_finished` is terminal: the reader has stopped, so no further message can arrive.
+    `buffer_full` is just a stall, not a verdict - the producer parked because nobody drained it,
+    which may be a momentary burst.
+    """
+
+    reader_finished: bool
+    buffer_full: bool
+    buffered: int
+    consumers_waiting: int
 
 
 EffortLevelId = Literal["max", "xhigh", "high", "medium", "low"]

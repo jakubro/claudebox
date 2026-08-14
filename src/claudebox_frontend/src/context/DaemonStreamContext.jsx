@@ -6,10 +6,8 @@ import useDaemonStream from '../hooks/useDaemonStream'
 const DaemonStreamContext = createContext(null)
 
 /**
- * Provide a single daemon SSE connection shared by all consumers.
- *
- * Wraps useDaemonStream so only one EventSource connects to /api/daemon/stream,
- * regardless of how many components consume the stream data.
+ * Wraps useDaemonStream so only one EventSource connects to /api/daemon/stream, no matter how
+ * many components consume the stream data.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.

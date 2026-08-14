@@ -22,10 +22,9 @@ def _blob(uri: str, name: str, description: str = "", data: str = "content") -> 
 
 
 def _client(server_blobs: dict, *, get_tools_failures: dict | None = None):
-    """Build a fake MultiServerMCPClient with connections + scripted get_resources.
+    """Build a fake MultiServerMCPClient with scripted get_resources.
 
-    `server_blobs` maps server_name -> {"resources": [Blob...], "error": Exception | None}.
-    When `error` is set, get_resources raises that exception for that server.
+    server_blobs maps server_name -> {"resources": [Blob...], "error": Exception | None}.
     """
 
     failures = get_tools_failures or {}
@@ -93,9 +92,9 @@ class TestListMcpResources:
                     "resources": [
                         _blob("fs://b", "Resource B", "second"),
                         _blob("fs://c", "Resource C", "third"),
-                    ]
+                    ],
                 },
-            }
+            },
         )
         list_tool = make_mcp_tools(_ctx_with_client(tool_ctx, client))[0]
 
@@ -112,7 +111,7 @@ class TestListMcpResources:
             {
                 "good": {"resources": [_blob("g://1", "Good")]},
                 "bad": {"error": RuntimeError("server unreachable")},
-            }
+            },
         )
         list_tool = make_mcp_tools(_ctx_with_client(tool_ctx, client))[0]
 
@@ -139,7 +138,7 @@ class TestReadMcpResource:
             {
                 "a": {"resources": [_blob("found://x", "X", data="alpha body")]},
                 "b": {"resources": [_blob("other://y", "Y", data="beta body")]},
-            }
+            },
         )
         read_tool = make_mcp_tools(_ctx_with_client(tool_ctx, client))[1]
 
@@ -153,7 +152,7 @@ class TestReadMcpResource:
             {
                 "broken": {"error": RuntimeError("down")},
                 "working": {"resources": [_blob("ok://z", "Z", data="payload")]},
-            }
+            },
         )
         read_tool = make_mcp_tools(_ctx_with_client(tool_ctx, client))[1]
 
@@ -167,7 +166,7 @@ class TestReadMcpResource:
             {
                 "a": {"resources": [_blob("known://1", "K1")]},
                 "b": {"resources": []},
-            }
+            },
         )
         read_tool = make_mcp_tools(_ctx_with_client(tool_ctx, client))[1]
 
@@ -262,7 +261,7 @@ class TestRuntimeMcpServerToolsBinding:
                     [good_tool]
                     if server_name == "good"
                     else (_ for _ in ()).throw(RuntimeError("bad-server-down"))
-                )
+                ),
             ),
         )
 

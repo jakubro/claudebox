@@ -4,9 +4,6 @@ import { useEffect } from 'react'
 import { STILL_RUNNING_TOAST_DISMISS_MS } from '../../../config/timing'
 
 /**
- * Render a non-blocking toast confirming the prior session is still running in the background.
- * Click anywhere on the toast to navigate back. Auto-dismisses after a fixed delay.
- *
  * @param {object} props
  * @param {string} props.previousSessionName - Display name (or short id) of the prior session.
  * @param {Function} props.onReturn - Callback fired when the user clicks the toast.

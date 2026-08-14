@@ -1,8 +1,6 @@
 """End-to-end behavioral tests for ``claudebox status``.
 
-Real-binary surface: three-row render (DAEMON / CONTAINERS / WORKSPACE),
-degraded-mode behavior with no daemon HTTP, and workspace not-yet-registered
-state under hermetic HOME.
+Real-binary surface: three-row render, degraded mode without a daemon, and unregistered-workspace state.
 """
 
 import pytest
@@ -30,16 +28,17 @@ class TestStatusDegraded:
     """When the daemon is not running, status still produces a complete state snapshot."""
 
     def test_degraded_reports_daemon_not_running(self, run_claudebox) -> None:
-        # Fake systemctl returns inactive by default → cmd_status reports "not running".
+        # Fake systemctl returns inactive by default, so cmd_status reports "not running".
         result = run_claudebox(["status"], timeout=15)
         combined = result.stdout + result.stderr
         assert "not running" in combined
 
     def test_degraded_still_renders_containers_row(
-        self, run_claudebox, httpserver: HTTPServer
+        self,
+        run_claudebox,
+        httpserver: HTTPServer,
     ) -> None:
-        # Daemon unreachable → cmd_status falls back to direct runtime queries via
-        # fake podman. CONTAINERS row renders regardless.
+        # Daemon unreachable: cmd_status queries runtime directly via fake podman, so CONTAINERS still renders.
         httpserver.expect_request("/api/workspaces").respond_with_data("", status=503)
         result = run_claudebox(["status"], timeout=15)
         combined = result.stdout + result.stderr
@@ -47,8 +46,7 @@ class TestStatusDegraded:
         assert "running" in combined and "stopped" in combined
 
     def test_workspace_not_yet_registered(self, run_claudebox) -> None:
-        # Hermetic HOME contains no daemon.json → WORKSPACE row reports
-        # "not yet registered".
+        # Hermetic HOME contains no daemon.json, so WORKSPACE row reports "not yet registered".
         result = run_claudebox(["status"], timeout=15)
         combined = result.stdout + result.stderr
         assert "WORKSPACE" in combined

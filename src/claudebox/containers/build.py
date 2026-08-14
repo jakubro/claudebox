@@ -31,14 +31,11 @@ def build_image(
 ) -> None:
     """Build a claudebox container image.
 
-    Copies the container build context to a temporary directory, then copies
-    Python package files (pyproject.toml) from the source tree. If a profile is
-    configured with an image-build hook script, it is included in the build.
-    Finally, invokes the container backend to build the image.
+    Copies the build context to a temp dir, adds pyproject.toml files for uv sync
+    and the profile image-build hook if configured, then invokes the backend.
     """
 
     with make_temp_dir(dir=HOST_TEMP_BUILD_DIR, prefix=make_timestamped_dir_prefix()) as build_dir:
-        # Copy to temporary build directory
         build_dir = Path(build_dir)
         shutil.copytree(
             LIB_BUILD_DIR,
@@ -63,18 +60,12 @@ def build_image(
                 shutil.copy2(source_script, target_script)
                 target_script.chmod(0o775)
 
-        # Build image
         args = get_image_build_args(build_dir, mode)
         backend.build_image(*args)
 
 
 def get_image_build_args(path: Path, mode: ImageBuildMode | None) -> Iterable:
-    """Generate container build command arguments.
-
-    Yields command-line arguments including the Containerfile path, image tag,
-    and mode-specific options. UPDATE mode forces agent update; REBUILD mode
-    disables layer caching.
-    """
+    """Yield build args; UPDATE forces an agent update, REBUILD disables layer caching."""
 
     yield "--file"
     yield path / "Containerfile"

@@ -1,20 +1,17 @@
 /** Scrollbar replacement showing conversation structure and navigation. */
 
+// audit-ignore-file: excessive-props
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MINIMAP_MIN_WIDTH } from '../../../../config/dimensions'
 import MinimapController from './MinimapController'
 import { buildSegments, normalizeWidths } from './utils/minimap'
 
-// Two alternating blue shades for segments
-const SEGMENT_COLORS = [
-  '#3a4a5c', // muted blue-gray
-  '#5c3a5b', // muted purple
-]
+const SEGMENT_COLORS = ['#3a4a5c', '#5c3a5b']
 
 const EMPTY_HEIGHTS = {}
 
 /**
- * Render mini-map overlay for conversation navigation and overview.
  * @param {Object} props
  * @param {Array} props.groups - Turn groups to display as segments
  * @param {Object} props.turnResults - Map of turn IDs to result status
@@ -25,9 +22,7 @@ const EMPTY_HEIGHTS = {}
  * @param {Object} props.autoScrollEnabledRef - Ref to suppress during auto-scroll
  * @param {boolean} props.isStreaming - Whether assistant is actively streaming a response
  * @param {Function} props.isTurnBookmarked - Check if any message in a turn is bookmarked
- * @param {Function} props.getLogicalScrollHeight - Stable scroll-axis total from useTurnHeights
- *   cache; used by MinimapController as the denominator for thumb-size math (jitter resistance
- *   against content-visibility:auto toggles). Thumb position uses native scrollHeight.
+ * @param {Function} props.getLogicalScrollHeight - Thumb-size denominator across mount/unmount, unlike position.
  */
 export default function MiniMap({
   groups,
@@ -46,7 +41,6 @@ export default function MiniMap({
   const [visible, setVisible] = useState(false)
   const [viewport, setViewport] = useState({ top: 0, height: 100 })
 
-  // Create controller once via ref
   const controllerRef = useRef(null)
   if (!controllerRef.current) {
     controllerRef.current = new MinimapController({
@@ -56,13 +50,11 @@ export default function MiniMap({
   }
   const controller = controllerRef.current
 
-  // Build segments with normalized widths
   const segments = useMemo(() => {
     const raw = buildSegments(groups, turnHeights, userMessageHeights)
     return normalizeWidths(raw)
   }, [groups, turnHeights, userMessageHeights])
 
-  // Attach/detach DOM listeners - segments.length re-triggers when content appears/disappears
   // biome-ignore lint/correctness/useExhaustiveDependencies: segments.length ensures re-attach when mapRef transitions from null to DOM element
   useEffect(() => {
     const container = messagesRef?.current
@@ -71,12 +63,11 @@ export default function MiniMap({
     return () => controller.detach()
   }, [messagesRef, controller, autoScrollEnabledRef, getLogicalScrollHeight, segments.length])
 
-  // Sync persistent mode
   useEffect(() => {
     controller.setPersistent(persistent)
   }, [persistent, controller])
 
-  // Sync streaming state - forces visibility in non-persistent mode during active streaming
+  // Forces visibility in non-persistent mode during active streaming.
   useEffect(() => {
     controller.setStreaming(isStreaming)
   }, [isStreaming, controller])
@@ -101,7 +92,6 @@ export default function MiniMap({
     return () => cancelAnimationFrame(id)
   }, [groups, turnHeights, controller])
 
-  // Handle click to jump
   const handleClick = useCallback(
     e => {
       const map = mapRef.current
@@ -114,7 +104,6 @@ export default function MiniMap({
     [controller],
   )
 
-  // Handle drag for scrollbar behavior
   const handlePointerDown = useCallback(
     e => {
       e.preventDefault()
@@ -126,7 +115,6 @@ export default function MiniMap({
   const handlePointerEnter = useCallback(() => controller.handleMouseEnter(), [controller])
   const handlePointerLeave = useCallback(() => controller.handleMouseLeave(), [controller])
 
-  // Don't render if no segments
   const hasContent = segments.length > 0 || pendingCount > 0
   if (!hasContent) {
     return null

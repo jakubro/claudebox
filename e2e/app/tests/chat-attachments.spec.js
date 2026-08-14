@@ -36,15 +36,12 @@ test.describe('Attachments', () => {
   test('shows attachment preview with thumbnail and remove button', async ({ page }) => {
     await dropFile(page, 'photo.png', 'image/png', TINY_PNG_B64)
 
-    // Preview row should appear
     const preview = page.locator('[data-testid="attachment-preview"]')
     await expect(preview).toBeVisible()
 
-    // Image thumbnail should render
     await expect(preview.locator('img.attachment-thumb')).toBeVisible()
     await expect(page.getByText('photo.png')).toBeVisible()
 
-    // Remove button should dismiss the preview
     await page.locator('.attachment-remove').click()
     await expect(preview).not.toBeVisible()
   })
@@ -72,7 +69,6 @@ test.describe('Attachments', () => {
 
     await expect(wrapper).toHaveClass(/drag-over/)
 
-    // Dispatch dragleave
     await page.evaluate(() => {
       const el = document.querySelector('.chat-input-wrapper')
       const event = new DragEvent('dragleave', { bubbles: true, relatedTarget: document.body })
@@ -87,7 +83,6 @@ test.describe('Attachments', () => {
     const textarea = page.locator('[data-testid="chat-input"]')
     await textarea.focus()
 
-    // Simulate paste event with file in clipboardData
     await page.evaluate(b64 => {
       const textarea = document.querySelector('[data-testid="chat-input"]')
       const dataTransfer = new DataTransfer()
@@ -103,7 +98,6 @@ test.describe('Attachments', () => {
       textarea.dispatchEvent(pasteEvent)
     }, TINY_PNG_B64)
 
-    // Preview should appear with pasted image
     const preview = page.locator('[data-testid="attachment-preview"]')
     await expect(preview).toBeVisible()
     await expect(page.getByText('pasted.png')).toBeVisible()
@@ -111,11 +105,9 @@ test.describe('Attachments', () => {
 
   // SPEC: input:attachment-max-size
   test('rejects files exceeding 10MB with error', async ({ page }) => {
-    // Create a file > 10MB via evaluate
     await page.evaluate(() => {
       const el = document.querySelector('.chat-input-wrapper')
       const dataTransfer = new DataTransfer()
-      // 11MB file
       const buf = new ArrayBuffer(11 * 1024 * 1024)
       const file = new File([buf], 'huge.bin', { type: 'application/octet-stream' })
       dataTransfer.items.add(file)
@@ -124,9 +116,7 @@ test.describe('Attachments', () => {
       el.dispatchEvent(event)
     })
 
-    // Error should appear in footer
     await expect(page.locator('.footer-error-text')).toContainText('10MB')
-    // Preview should NOT appear (file was rejected)
     await expect(page.locator('[data-testid="attachment-preview"]')).not.toBeVisible()
   })
 
@@ -148,15 +138,12 @@ test.describe('Attachments', () => {
       await route.fulfill({ status: 200, json: { success: true } })
     })
 
-    // Add file via drop
     await dropFile(page, 'image.png', 'image/png', TINY_PNG_B64)
 
-    // Type message and submit
     const textarea = page.locator('[data-testid="chat-input"]')
     await textarea.fill('Check this')
     await textarea.press('Enter')
 
-    // Verify POST includes attachments
     await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
     expect(sendCalls[0].prompt).toBe('Check this')
     expect(sendCalls[0].attachments).toHaveLength(1)
@@ -170,7 +157,6 @@ test.describe('Attachment Image Source', () => {
   // SPEC: chat:attachment-src
   test('image attachments use container-proxied URL when filename is present', async ({ page }) => {
     await mockAPI(page)
-    // Mock the attachment endpoint to return an image
     await page.route('**/api/sessions/current/attachments/*', async route => {
       await route.fulfill({
         status: 200,
@@ -182,11 +168,9 @@ test.describe('Attachment Image Source', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Image attachment should be rendered
     const thumb = page.locator('.message-attachment-thumb').first()
     await expect(thumb).toBeVisible()
 
-    // The src should be a container-proxied URL, not a data: URL
     const src = await thumb.getAttribute('src')
     expect(src).toMatch(
       /\/api\/workspaces\/[^/]+\/containers\/[^/]+\/api\/sessions\/current\/attachments\//,
@@ -248,9 +232,7 @@ test.describe('Attachment Input Extras', () => {
   })
 
   // SPEC: input:attachment-dragdrop
-  // Acceptable negative test: verifies drop zone boundary
   test('drop on chat area outside input does not add attachment', async ({ page }) => {
-    // Drop file on .chat-panel (outside .chat-input-wrapper)
     await page.evaluate(b64 => {
       const el = document.querySelector('.chat-panel')
       const dataTransfer = new DataTransfer()
@@ -260,7 +242,6 @@ test.describe('Attachment Input Extras', () => {
       el.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
     }, TINY_PNG_B64)
 
-    // Attachment preview should NOT appear
     await expect(page.locator('[data-testid="attachment-preview"]')).not.toBeVisible()
   })
 
@@ -270,17 +251,14 @@ test.describe('Attachment Input Extras', () => {
       await route.fulfill({ status: 200, json: { success: true } })
     })
 
-    // Add file via drop
     await dropFile(page, 'doc.txt', 'text/plain', btoa('hello'))
 
     await expect(page.locator('[data-testid="attachment-preview"]')).toBeVisible()
 
-    // Submit
     const textarea = page.locator('[data-testid="chat-input"]')
     await textarea.fill('Here')
     await textarea.press('Enter')
 
-    // Preview should be cleared
     await expect(page.locator('[data-testid="attachment-preview"]')).not.toBeVisible()
   })
 })

@@ -77,10 +77,6 @@ export function shouldCollapseByDefault(
 }
 
 /**
- * Extract summary from tool result content.
- * @param {string} toolName - Name of the tool.
- * @param {object} input - Tool input args.
- * @param {string} resultContent - Raw result content.
  * @param {object} options - Optional context (e.g., todoDiff for TodoWrite).
  * @returns {{ summary: string, isError: boolean, details: string|null }}
  */
@@ -153,10 +149,7 @@ export function getToolTooltip(toolName, input) {
   return typeof firstVal === 'string' ? firstVal : null
 }
 
-/**
- * Extract system reminders from content.
- * Returns { content: cleanedContent, reminders: string[] }
- */
+/** Returns { content: cleanedContent, reminders: string[] } */
 export function extractSystemReminders(content) {
   const reminders = []
   const pattern = /<system-reminder>([\s\S]*?)<\/system-reminder>/g
@@ -177,8 +170,7 @@ export function hasSpecializedFormatter(toolName) {
 /** Generate human-readable summary from parsed JSON data. */
 export function generateJsonSummary(parsed) {
   if (Array.isArray(parsed)) {
-    // If array of {type: "text", text: "..."}, extract first text
-    // CSS handles truncation via ellipsis
+    // If array of {type: "text", text: "..."}, extract first text (CSS handles truncation via ellipsis)
     if (parsed[0]?.type === 'text' && parsed[0]?.text) {
       return parsed[0].text
     }
@@ -311,8 +303,7 @@ export function formatGlobResult(_input, content) {
 
 /** Extract Task tool result summary from text or JSON array. */
 export function formatTaskResult(input, content) {
-  // Async/background task detection lives in ToolBlock.jsx and reads structured
-  // tool_use_result data; this formatter handles only the plain-text fallback.
+  // Async/background task detection lives in ToolBlock.jsx; this formatter is the plain-text fallback.
   const trimmed = content.trim()
   const taskPrompt = input?.prompt || null
 
@@ -350,8 +341,6 @@ export function formatTodoWriteResult(input, _content, options = {}) {
   const todos = input?.todos || []
   const { todoDiff } = options
 
-  // Build summary from diff counts (completed/started/added/removed)
-  // Uses icons: ● completed, ◐ in_progress, ○ pending, ✕ removed
   const parts = []
   if (todoDiff) {
     const completedCount = todoDiff.completed?.length || 0
@@ -482,10 +471,10 @@ export function formatWriteHeader(name, input, isExpanded) {
   return `${name}(${path})`
 }
 
-/** Format Bash tool header with command. */
+/** Format Bash tool header with the model's description, falling back to the command. */
 export function formatBashHeader(name, input) {
-  const cmd = input?.command || 'command'
-  return `${name}(${cmd})`
+  const label = input?.description || input?.command || 'command'
+  return `${name}(${label})`
 }
 
 /** Format Grep tool header with pattern and optional path. */

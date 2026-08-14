@@ -84,10 +84,9 @@ BUILTIN_COMMANDS = frozenset(
         "upgrade",
         "usage",
         "voice",
-    }
+    },
 )
 
-# Debounce interval for projection saves (seconds).
 SAVE_DEBOUNCE_SECONDS = 0.5
 
 
@@ -102,11 +101,9 @@ class Projection:
     ):
         """Initialize projection, loading existing state or creating new summary.
 
-        `runtime` is the active AgentSession adapter when this projection backs
-        a live session - _categorize_commands sources its skill metadata from
-        the runtime's catalog so categorization stays runtime-agnostic. None is
-        only valid for throwaway projections built for the read-only get/list
-        paths, which never receive events and so never categorize.
+        `runtime` is the active AgentSession adapter backing a live session - `_categorize_commands`
+        sources skill metadata from its catalog so categorization stays runtime-agnostic. None is only
+        valid for throwaway read-only get/list projections, which never receive events to categorize.
         """
 
         self._logger = get_logger(__name__)
@@ -216,7 +213,6 @@ class Projection:
 
             return
 
-        # Update only known attributes
         for key, value in kwargs.items():
             if hasattr(self._value, key):
                 setattr(self._value, key, value)
@@ -304,10 +300,9 @@ class Projection:
     def _categorize_commands(self, commands: list[str]) -> dict[str, list[dict[str, str]]]:
         """Categorize slash commands into custom, mcp, and builtin groups.
 
-        Skill metadata is sourced from the active runtime's get_skills(); when
-        the projection is throwaway (no runtime supplied), entries fall back to
-        name-only - _categorize_commands is normally only reached during live
-        update() flows where a runtime is always present.
+        Skill metadata comes from the active runtime's `get_skills()`; a throwaway projection (no
+        runtime) falls back to name-only entries, though this method is normally only reached during
+        live `update()` flows where a runtime is always present.
         """
 
         if self._runtime is not None:

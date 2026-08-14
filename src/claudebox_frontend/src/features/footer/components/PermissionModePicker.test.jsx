@@ -74,8 +74,7 @@ describe('PermissionModePicker', () => {
   })
 
   it('exposes all 6 SDK permission modes', async () => {
-    // SDK contract: claude_agent_sdk.types.PermissionMode declares 6 literals.
-    // Picker must surface every one so users can select any mode the SDK supports.
+    // SDK contract: claude_agent_sdk.types.PermissionMode declares 6 literals; all must surface.
     const user = userEvent.setup()
     render(<PermissionModePicker currentPermissionMode="default" disabled={false} />)
 

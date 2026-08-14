@@ -6,10 +6,8 @@ import useCopyFlash from '../../../hooks/useCopyFlash'
 import useBoardData from '../../boards/hooks/useBoardData'
 
 /**
- * Render the board info - board icon plus board name, click-to-copy the board's filesystem path.
- *
- * Renders as siblings of the surrounding `.session-header-strip-left` flex container -
- * no wrapper div, no pill chrome.
+ * Renders as siblings of the surrounding `.session-header-strip-left` flex container - no
+ * wrapper div, no pill chrome.
  *
  * @param {object} props
  * @param {string} props.boardId - Board ID to display (drives useBoardData lookup).

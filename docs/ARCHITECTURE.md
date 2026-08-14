@@ -16,7 +16,7 @@ lib/
 │   ├── app/                      # Frontend E2E (Playwright) — own package.json + playwright.config.js
 │   └── cli/                      # CLI E2E (pytest) — invokes claudebox binary as subprocess
 ├── scripts/                      # Cross-tree tooling
-│   ├── frontend-guidelines-audit.js  # Frontend convention checks (non-fatal)
+│   ├── frontend-guidelines-audit.js  # Frontend convention checks (fails `just lint`)
 │   ├── spec-coverage.js              # SPEC.md claim → test-marker tracking
 │   └── test-ui/                      # In-container test harness — see TEST-UI.md
 ├── biome.json, .jscpd.json, knip.json  # JS lint configs (sweep all three JS trees)
@@ -212,6 +212,8 @@ BaseClaudeSDKClient            ← external SDK
 
 **Tool-call graceful degradation.** Tools register regardless of model capability. The single `NotImplementedError` catch lives in `LangGraphRuntime._build_graph()` — when a provider/model can't `bind_tools()` (Perplexity, some HuggingFace pipelines), the catch logs `provider_no_tool_calling` with provider/model context and rebuilds the graph with `tools=[]`; conversation continues as chat-only. No fail-loud; UX matches a workspace using a model that simply chose not to call tools. Tool factories in `langgraph_tools/*` remain provider-unaware.
 
+**Tool-call error degradation.** The sibling case: a raising tool degrades to a failed tool result instead of ending the run. `ClaudeboxToolHookMiddleware.awrap_tool_call` catches `ToolException` (every claudebox tool's own failure signal) and returns an error `ToolMessage` instead of letting `ToolNode`'s default re-raise end the turn — matching the Claude runtime's `is_error` contract. Any other exception still re-raises unchanged. `_drive_turn` also projects LangChain's `on_tool_error` callback event (fired on the tool's own span even after the middleware recovers), gated to `ToolException` so an unrecovered bug still ends the turn.
+
 **Error contract.** All in `agent_session/errors.py`: `ProviderError(Exception)` abstract base; `ProviderPackageMissing(provider, install_hint)` raised when `init_chat_model` hits `ImportError`; `OllamaUnreachable(url)` + `OllamaModelNotPulled(model)` from Ollama probes; `OpenAICompatibleUnreachable(url)` from the OpenAI-compatible probe (distinct class, NOT collapsed into OllamaUnreachable — diagnostic message references the OpenAI-compatible base_url specifically). All four typed exceptions inherit from `ProviderError`; the handler layer maps `isinstance(exc, ProviderError)` to typed HTTP responses (422 for missing-package and model-not-pulled, 503 for unreachable).
 
 **Capability matrix unchanged.** The flat 16-flag `RuntimeCapabilities` matrix is provider-agnostic — no per-provider variation in flags. Provider differences surface via behaviour, not the matrix: catalogless providers return `[]` from `get_models()` (frontend shows empty picker); models with no curated price return `None` cost (frontend hides cost row); chat-only models build a `tools=[]` graph (conversation continues without tool blocks). Frontend's existing capability gating handles all three gracefully.
@@ -222,8 +224,8 @@ Capability profile (concrete worked example):
 
 - Mid-session control plane mutations (`set_model`, `set_permission_mode`, `set_effort_level`) — **all False**. Model bound at graph construction; permission / effort have no native equivalents.
 - MCP delegation — **False (v1)**. `langchain-mcp-adapters` 0.2.x has no runtime per-server toggle; a follow-up builds it in the adapter layer.
-- Catalogs — `supports_models: True` (dynamic from Ollama `/api/tags`); `supports_skills: False`; `supports_effort_levels: False`; `supports_permission_modes: False`.
-- Telemetry — `supports_context_usage: True` (`usage_metadata` aggregated); `supports_cost_telemetry: True` (tokens native; USD via per-model `PRICE_PER_MTOK` table — toy registry at v1).
+- Catalogs — `supports_models: True` (dynamic from Ollama `/api/tags`); `supports_skills: True` (§ below); `supports_effort_levels: False`; `supports_permission_modes: False`.
+- Telemetry — `supports_context_usage: True` (`usage_metadata` from the latest model call is the occupancy level, not a running sum, since each call re-sends the whole conversation; seeded from the checkpoint's last `AIMessage` on `connect()` so a resumed session reads its real size immediately. Compaction puts its summary at the *head* of the list and preserves the most recent messages after it (`keep` defaults to 20), so a checkpoint written between a compaction and the reply that follows it still carries a pre-compaction `AIMessage` whose `usage_metadata` describes a prompt that no longer exists — and the compaction hook runs before *every* model call, so that state also occurs mid-tool-loop, where the tail is tool results rather than a prompt. Neither shape is distinguishable by position. Each compaction therefore records its own `post_tokens` alongside the length and last message id of what it kept (`{session_dir}/compaction.json`); on resume, anything after that point carries post-compaction usage and wins, and if nothing follows it the recorded count is used. A record whose last message id no longer sits where it was written is discarded, so a fork or rewind cannot seed from a history the thread no longer has). `supports_cost_telemetry: True` (tokens native; USD via per-model `PRICE_PER_MTOK` table — toy registry at v1).
 - Hooks — `supports_pre_compact_hook: True` (synthesized via token-fraction threshold; `SummarizationMiddleware` does the actual compaction). `supports_manual_compact: False`.
 - Session ops — `supports_session_resume: True`, `supports_session_fork: True`, `supports_session_rewind: True`. All native via `AsyncSqliteSaver` + LangGraph's checkpoint time-travel.
 
@@ -233,7 +235,7 @@ Selection: per-workspace via `.claudebox/settings.toml` — top-level `agent` se
 agent = "langgraph"
 
 [langgraph]
-model = "anthropic:claude-sonnet-4-5"
+model = "anthropic:claude-opus-5"
 # max_tokens_override = 65536  # optional, pins the context window for models outside MODEL_CONTEXT_WINDOW
 
 [langgraph.anthropic]
@@ -254,15 +256,21 @@ base_url = "http://127.0.0.1:8000/v1"   # vLLM / LM Studio / llama.cpp's OpenAI-
 
 Persistence: each session gets its own `checkpoints.sqlite` inside the session directory alongside `events.jsonl` + `session.json`. Cross-container-restart resume is automatic (bind-mounted from the host).
 
+**Fork.** `checkpoints.sqlite` is keyed by `thread_id`, pinned to `session_id` (`LangGraphRuntime.__init__`) - a filesystem copy alone would leave the fork's checkpoint rows pointing at the parent's `thread_id`, so the forked graph would read empty state on first resume. `claudebox_daemon/domain/sessions/service.py::SessionService._rekey_langgraph_checkpoint` re-keys every row in the copied `checkpoints`/`writes` tables from the parent's `thread_id` to the fork's own, right after the filesystem copy. Full-fidelity re-key, not a truncated rebuild: `checkpoint`/`metadata` payloads never carry the thread_id internally, so only the key column needs rewriting, and the WHOLE checkpoint chain carries over regardless of where a turn-bounded fork truncates the visible transcript (`events.jsonl` / SDK transcript). Consequence: a fork made from an earlier turn still resumes with the model remembering everything up to the point of forking, not just what the truncated transcript shows - accepted as the fork contract for LangGraph sessions. No-op for a Claude-runtime session, which has no `checkpoints.sqlite`.
+
 Failure modes: dispatched per-provider via `PROVIDER_STRATEGIES` (see "Provider strategy registry" above). Ollama probes both reachability and model-pulled when `base_url` is set; OpenAI-compatible servers (vLLM / LM Studio / llama.cpp) probe `/v1/models` opt-in via `probe_on_connect`; cloud providers (Anthropic, OpenAI, Google Gemini, Groq, Mistral, ...) have no probe and surface auth / network errors naturally at first `query()`. Typed exceptions in `agent_session/errors.py` — `OllamaUnreachable(url)`, `OllamaModelNotPulled(model)`, `OpenAICompatibleUnreachable(url)`, `ProviderPackageMissing(provider, install_hint)` — all inherit from `ProviderError`; the container API handler maps `isinstance(exc, ProviderError)` to typed HTTP responses (422 for missing-package + model-not-pulled; 503 for unreachable). Tool execution errors propagate `is_error=True` through `tool_result` blocks to the frontend's error styling.
 
 Tool surface: every `@tool`-decorated function lives under `agent_session/langgraph_tools/`, one module per subscope (`filesystem.py`, `search.py`, `shell.py`, `notebook.py`, `web.py`, ...). The aggregator `langgraph_tools/__init__.py::make_tools(ctx)` is the single registration site; `runtime_langgraph.connect()` calls it once after the chat model is built. The `ToolContext` DI bundle (`_context.py`) carries workspace path, session id, session dir, config, hooks, logger, and a mutable `ToolCatalog` populated AFTER aggregation so future self-discovery tools (`tool_search`) read the full bound set lazily at invoke time. SDK containment: the `ast-grep` prefix-pattern rule lists `langgraph_tools/**/*.py` in its `ignores:` glob so the tool modules import `langchain_core.tools` directly; no other claudebox module is permitted to.
 
+`web_fetch` SSRF guard: `web.py`'s `_guard_url` resolves the target hostname via `socket.getaddrinfo` and rejects loopback / private / link-local (including the `169.254.169.254` cloud metadata endpoint) / reserved / multicast / unspecified addresses before any request is made; `_guarded_get` re-runs the same check on every redirect hop instead of trusting `httpx`'s own `follow_redirects`, closing the redirect-based bypass a single up-front check would leave open. The response body is read via `iter_text()` and capped as bytes arrive (not after a full buffered read), so a large or malicious response cannot hold unbounded memory before the 100 KB cap engages. **Accepted residual risk**: the guard's own DNS lookup and the actual connection's DNS lookup are independent - a hostname that resolves to a public address at guard-check time and a private/internal one moments later (DNS rebinding) passes the guard and still reaches the blocked destination, since nothing pins the connection to the address that was validated. Judged disproportionate to close for what is a local dev tool with a narrow threat model; revisit if `web_fetch` gains a broader deployment story.
+
 Hook surface — PreToolUse / PostToolUse: `HookCallbacks` (in `hooks.py`) exposes `on_pre_tool_use(PreToolUsePayload)` and `on_post_tool_use(PostToolUsePayload)` typed callbacks shared by both runtimes. LangGraph fires them via `ClaudeboxToolHookMiddleware` (in `langgraph_tools/_middleware.py`), an `AgentMiddleware` that overrides `awrap_tool_call` and is composed OUTERMOST in `connect()`'s middleware list — so its observations wrap any retry / modification logic an inner middleware might introduce. The pre callback fires before the handler runs; the post callback fires after with `duration_ms` from `time.monotonic`, `is_error` derived from `ToolMessage.status == "error"`, and `tool_use_result` projected from the `ToolMessage.content`. If the handler raises, the post callback still fires with `is_error=True` and a `None` result before the exception propagates — consumers always observe a matched pair. ClaudeRuntime fires the same callbacks via SDK adapters: `_adapt_pre_tool_use` records a per-`tool_use_id` start time and fires the pre callback; `_adapt_post_tool_use` extends the existing permission-mode-drift detector to additionally fire the post callback with `is_error=False`; `_adapt_post_tool_use_failure` (new) fires the post callback with `is_error=True`. Per-`tool_use_id` timing converts to `duration_ms` on the post side.
+
+**No approval layer under LangGraph.** `ClaudeboxToolHookMiddleware.awrap_tool_call` awaits `on_pre_tool_use` for its side effects (telemetry, logging) and discards whatever it returns; `handler(request)` — the actual tool call — always runs, with no path to deny it. This is a structural difference from Claude, whose CLI can act on a PreToolUse hook's decision to block a call before it executes. Combined with `permission_mode` having no LangGraph equivalent (`set_permission_mode` raises `CapabilityNotSupported`, §1.4), the container is the entire isolation boundary for a LangGraph workspace's tool surface — an accepted design point, not a gap pending a fix.
 
 Sub-agent dispatch — `task(description, agent_type)`: the LangGraph `task` tool (in `langgraph_tools/subagent.py`) spawns a focused sub-agent on demand. Each call constructs a fresh `create_agent` sub-graph against a model produced by `ToolContext.chat_model_factory()` and the parent's full tool surface filtered through the named `AgentDefinition`'s allowlist (`None` = inherit every tool; otherwise the named subset). The sub-graph runs WITHOUT `ClaudeboxToolHookMiddleware` and WITHOUT a checkpointer — its own tool invocations stay encapsulated inside the awaited `ainvoke` and never bubble up to the parent's `astream_events` loop, matching Claude's Task tool semantics. Named agents live in `agent_session/_agent_registry.py` (a shared, runtime-neutral module); v1 ships one hardcoded `general-purpose` definition, with cross-runtime CLAUDE.md parsing as a follow-up. Recursion is bounded via a `subagent_depth` counter on `ToolContext` — each nested call builds a child context with `dataclasses.replace(ctx, subagent_depth=ctx.subagent_depth + 1)`; once the next depth would exceed `_MAX_SUBAGENT_DEPTH` (3), the tool raises `ToolException` so the model can recover. Cost telemetry aggregates: after the sub-graph completes, the `task` tool sums `usage_metadata.input_tokens` + `output_tokens` across every emitted `AIMessage` and calls `ctx.record_subagent_usage(input, output)`, which the runtime binds to `_accumulate_subagent_usage` — the sub-agent's USD contribution lands in `_used_tokens`, `_total_cost_usd`, and a per-turn counter that folds into the closing `_result_event.cost_usd` so the parent's emitted turn cost reflects sub-agent work spawned during it.
 
-AskUserQuestion via interrupt() - `ask_user_question(questions)`: the LangGraph `ask_user_question` tool (in `langgraph_tools/question.py`) calls `langgraph.types.interrupt({"questions": questions})` and returns whatever value the runtime supplies on resume. Frontend UX is identical to Claude: the `on_chat_model_end` event for the tool-call turn projects an `assistant_message` with `tool_use(name="ask_user_question", input={questions})`; the frontend's existing `InteractiveQuestions` form renders the question cards; the user's selections submit via the standard `send()` -> `/api/send` path, wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>`. The runtime detects the paused graph after `astream_events` ends by probing `await self._graph.aget_state(config)` for any task with a non-empty `interrupts` tuple (`_has_pending_interrupt`); when present, `_awaiting_resume` is set so the next `query()` builds a `Command(resume=<wrapped-text>)` instead of a fresh `HumanMessage` turn. The `interrupt()` call inside `ask_user_question` returns the wrapped text; the @tool returns it as the tool result; the model sees the answer in its next chat-model invocation. NO new event kind, NO new HTTP endpoint, NO `Protocol.resume()` method - the answer delivery is the existing user-text path. Capability flag `supports_ask_user_question` (both runtimes True) gates the frontend's `InteractiveQuestions` form so future runtimes without HITL support do not render it.
+AskUserQuestion via interrupt() - `ask_user_question(questions)`: the LangGraph `ask_user_question` tool (in `langgraph_tools/question.py`) calls `langgraph.types.interrupt({"questions": questions})` and returns whatever value the runtime supplies on resume. Frontend UX is identical to Claude: the `on_chat_model_end` event for the tool-call turn projects an `assistant_message` with `tool_use(name="ask_user_question", input={questions})`; the frontend's existing `InteractiveQuestions` form renders the question cards; the user's selections submit via the standard `send()` -> `/api/send` path, wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>`. The runtime detects the paused graph after `astream_events` ends by probing `await self._graph.aget_state(config)` for any task with a non-empty `interrupts` tuple (`_has_pending_interrupt`); when present, `_awaiting_resume` is set so the next `query()` builds a `Command(resume=<wrapped-text>)` instead of a fresh `HumanMessage` turn. The `interrupt()` call inside `ask_user_question` returns the wrapped text; the @tool returns it as the tool result; the model sees the answer in its next chat-model invocation. NO new event kind, NO new HTTP endpoint, NO `Protocol.resume()` method - the answer delivery is the existing user-text path. Capability flag `supports_ask_user_question` (both runtimes True) gates the frontend's `InteractiveQuestions` form so future runtimes without HITL support do not render it. A message typed alongside the answer does NOT join this wrapped text - it travels as a sibling `note` field on the same send (`ChatRequest.note` -> `PublishedEvent.note`), since the transcript's copy/render logic matches the wrapped answer with an anchored `^<response:(?:AskUserQuestion|ExitPlanMode)>...$` regex that any prefix or suffix would break.
 
 Task management - `task_create`, `task_get`, `task_list`, `task_output`, `task_stop`, `task_update`: the LangGraph `task_*` tools (in `langgraph_tools/task_mgmt.py`) are thin wrappers over `agent_session/_tasks.py::TaskService` - the daemon-service-shaped backing store the LangGraph runtime owns. `TaskService` lives in-container, in-process with the runtime: one instance per session, numeric monotonic ids matching Claude's UX, in-memory cache. There is NO separate `tasks.json` file - the canonical persistent log is `events.jsonl` (the same stream the frontend's `extractTasks` derives panel state from); `TaskService.rebuild_from_events(events_path)` replays prior `task_create` / `task_update` / `task_stop` / `task_output` tool_use entries on `connect()` so resume after container restart reconstructs the cache. Wire-format input / output keys are camelCase (`subject`, `description`, `activeForm`, `taskId`, `addBlockedBy`, `statusFilter`) to match Claude's TaskCreate / TaskUpdate shape; the in-chat `appendTaskDiffs` and panel rendering paths key on these names unchanged. The single Claude-vs-LangGraph deviation is the tool _name_ itself (`task_create` vs `TaskCreate`); `claudebox_frontend/src/config/schema.js::TOOL_NAME_ALIASES` + `normalizeToolName()` is the single normalisation point - `getToolConfig` and `appendTaskDiffs` both call it before lookup / gate comparison so the rest of the rendering pipeline reads the canonical Claude name. `DaemonServiceBundle` (shared `agent_session/_daemon_services.py`, frozen dataclass) carries `.tasks` on `ToolContext.daemon_services`; future subscopes will extend the bundle with `.worktrees` and `.scheduler` following the same pattern.
 
@@ -271,6 +279,10 @@ MCP resources + server-tools - `list_mcp_resources()`, `read_mcp_resource(uri)`,
 ToolSearch - `tool_search(query, max_results=5)`: the LangGraph `tool_search` tool (in `langgraph_tools/meta.py`) is a self-discovery aid. Semantic divergence from Claude's `MCPSearch`: Claude's tool surface keeps a long tail of tool schemas unbound at session start (token-budget pressure) and `MCPSearch` fetches specific schemas on demand. LangGraph binds every tool at graph construction time (`create_agent` materialises the full toolset; the system prompt accommodates all descriptions), so `tool_search` is discovery-only, not deferred loading - every result it surfaces is already callable. The factory closes over `ctx.tool_catalog`, which `connect()` populates AFTER `make_tools(ctx)` returns (the catalog-after-aggregation pattern); the tool reads `.tools` lazily at invoke time so it sees the full bound set, including `tool_search` itself. Scoring: `score = 3 * name.count(query) + description.count(query)` (case-insensitive substring count); zero-score entries dropped; sort descending; return top `max_results` as `{name, description[:200]}` dicts. Implementers tempted to graft deferred-loading on top of this surface should refer to this note - LangGraph's static binding is the design.
 
 Skill - `skill(name, arguments)`: the LangGraph `skill` tool (in `langgraph_tools/skill.py`) invokes a workspace skill by name. Skills are filesystem objects shared with Claude workspaces - `agent_session/_skills.py::walk_skills(commands_dir, skills_dir) -> list[Skill]` is the runtime-neutral discovery helper extracted from `ClaudeRuntime._parse_frontmatter` / `get_skills` so both adapters produce identical catalogs against the same `<commands_dir>/*.md` + `<skills_dir>/<name>/SKILL.md` files. At invoke time the tool calls `find_skill_source(name)` to resolve the source `.md` path, reads it, strips the YAML frontmatter via `extract_body`, and returns the body verbatim - the model treats it as turn-level instructions matching Claude's slash-command UX. When `arguments` is provided, a trailing `ARGUMENTS: {arguments}` line is appended so skills can react to user input forwarded through the call (parameter named `arguments` rather than `args` to avoid LangChain's reserved `v__args` varargs binding). Unknown names raise `ToolException` carrying the sorted available-name list so the model can recover. `LangGraphRuntime.CAPABILITIES.supports_skills` is True; the frontend's skills panel and slash-command autocomplete (gated on the flag) light up under LangGraph workspaces automatically.
+
+Frontmatter gates two distinct paths, not one: the `skill` tool itself refuses (`ToolException`) a `disable-model-invocation` skill, since a model tool call is the only way it can reach this path; a user-typed `/<skill>` never goes through this tool at all - `runtime_langgraph._resolve_slash_skill` (called from `_drive_turn`) resolves it directly against the same `find_skill_source`/`parse_frontmatter` helpers and checks `user-invocable` instead, falling back to literal text for `user-invocable: false` or an unrecognized name. `allowed-tools` / `model` / `effort` are parsed into `catalogs.Skill` but unenforced on either path - LangGraph binds tools and the model at graph construction (`_build_graph`), so scoping either per-skill would mean running the skill as a sub-agent graph rather than turn-level text.
+
+**Display echo matches Claude's tag format.** `runtime_langgraph._tag_slash_command` wraps any leading `/<name> [args]` in the same `<command-message>`/`<command-name>`/`<command-args>` tags Claude's CLI produces (`docs/reference/XML.md`), applied in `_human_message_event` to the DISPLAY event only - independent of whether `_resolve_slash_skill` found a matching skill, matching Claude tagging an unrecognized command the same way. The frontend's `parseSlashCommand` (`utils/parsers.js`) is the single consumer of this format on either runtime, so the bold/underline/hover-card styling (`claim:chat:user-message-slash-command-styling`) now lights up identically regardless of which runtime produced the tags. The model-facing turn never sees these tags - it receives the resolved skill body or the untagged literal prompt, per `_drive_turn`.
 
 Frontend (per §1.5 "Capability-Aware Frontend Wiring") honors LangGraph's profile — footer pickers for effort / permission / model-mid-session, manual compact button, and MCP panel hidden. Token usage bar, cost display, runtime identity pill ("LangGraph"), session resume / fork / rewind controls, skills panel, and slash-command autocomplete render.
 
@@ -377,7 +389,9 @@ PublishedEvent(Event) (persisted + broadcast)
   + attachments, inline_replies
 ```
 
-**Attachment / inline-reply send divergence**: user messages carrying attachments or inline replies reuse one pattern in `SessionService.send` — inject a display-only synthetic user event (`content=prompt` plus display metadata: attachment chips and/or `inline_replies` quote/reply pairs), call `suppress_next_user_echo()` so the pipeline drops the SDK's echo, and send the SDK a single richer content-block turn (the free-text prompt, then the serialized `<inline-replies>` envelope, then attachment blocks). The display event keeps `content=prompt` (never the serialized envelope) so the frontend's optimistic pending turn reconciles by content. Client-side, inline replies render as span-anchored floating composers: quoting paints a durable highlight (CSS Custom Highlight API - a dotted underline over the accent fill) on the quoted span and opens its reply box in a z-axis popover pinned to that span's client rect, tracked on scroll/resize and on the re-anchor pass; there is no in-transcript dock or side bar. Quoting covers any selectable turn text including tool-block and thinking-block output (non-text media excluded). Hovering a highlight shows its composer transiently (read-only once sent, editable while unsent) via a span-to-composer hover bridge; clicking pins it open until an explicit close button dismisses it (closing an empty one discards the quote); crowding composers auto-offset so they never overlap. A collapsed source turn hides its composer (source turns are not exempt from auto-collapse). A single `InlineThreadsOverlay` owns the document-global highlight registry and the floating composers (both live outside the memoized turn render path), re-anchoring on each transcript mutation. The unsent buffer persists per session in `localStorage` with each reply's text-quote anchor (quote + prefix/suffix context + char offset); sent-reply anchors ride the display-only user event, so composers re-anchor at their source turns on reload. Anchors reach the event and reload but are stripped from the Claude wire by the `<inline-replies>` allowlist (`from`/`quote`/`response`), leaving the wire payload unchanged.
+**Attachment / inline-reply send divergence**: user messages carrying attachments or inline replies reuse one pattern in `SessionService.send` — inject a display-only synthetic user event (`content=prompt` plus display metadata: attachment chips and/or `inline_replies` quote/reply pairs), call `suppress_next_user_echo()` so the pipeline drops the SDK's echo, and send the SDK a single richer content-block turn (the free-text prompt, then the serialized `<inline-replies>` envelope, then attachment blocks). The display event keeps `content=prompt` (never the serialized envelope) so the frontend's optimistic pending turn reconciles by content. Client-side, inline replies render as span-anchored floating composers: quoting paints a durable highlight (CSS Custom Highlight API - a dotted underline over the accent fill) on the quoted span and opens its reply box in a z-axis popover pinned to that span's client rect, tracked on scroll/resize and on the re-anchor pass; there is no in-transcript dock or side bar. Quoting covers any selectable turn text including tool-block and thinking-block output (non-text media excluded). Hovering a highlight shows its composer transiently (read-only once sent, editable while unsent) via a span-to-composer hover bridge; clicking toggles the pinned state through the same close path as the close button (closing an empty one discards the quote), testing the pinned set rather than visibility because hover usually opened the composer first, and suppressing hover for that highlight until the pointer leaves it; the click is drag-distance-gated so a selection merely ending on a highlight toggles nothing; crowding composers auto-offset so they never overlap. A collapsed source turn hides its composer (source turns are not exempt from auto-collapse). A single `InlineThreadsOverlay` owns the document-global highlight registry and the floating composers (both live outside the memoized turn render path), re-anchoring on each transcript mutation. The unsent buffer persists per session in `localStorage` with each reply's text-quote anchor (quote + prefix/suffix context + char offset); sent-reply anchors ride the display-only user event, so composers re-anchor at their source turns on reload. Anchors reach the event and reload but are stripped from the Claude wire by the `<inline-replies>` allowlist (`from`/`quote`/`response`), leaving the wire payload unchanged.
+
+**Float placement clamps before it stacks.** `.inline-float` carries a definite CSS `width` (not `max-width`) so a box near the transcript edge doesn't shrink-fit into a narrow column. `overlayDom.js`'s `clampHorizontal(box, bounds)` pulls `left` inside the transcript's own bounds (not the viewport, since the float is portalled to `document.body`) before `stackFloats` resolves vertical collisions. `useSelectionQuote`'s floating quote button applies the same clamp against an approximate fixed footprint, since it has no ref to measure before mount.
 
 **Event types**: `user`, `assistant`, `system`, `result`.
 **Subtypes**: `message`, `text`, `thinking`, `tool_use`, `tool_result`, `compact_start`, `compact_boundary`, `task_notification`, `init`, `error`, `interrupt_sent`, `replay_started`, `replay_ended`, `model_changed`, `permission_mode_changed`, `effort_level_changed`, `hook_response`.
@@ -398,6 +412,8 @@ GET /api/stream
 ```
 
 Subscriber disconnect: `unsubscribe(id)` removes queue from broadcast map. After `Session.stop()` clears the broadcaster, `unsubscribe(id)` is a no-op — the SSE stream's `finally` cleanup runs without raising even when the session has already ended.
+
+Readiness: the broadcaster and pipeline exist only between `start()` and `stop()`, so both `subscribe()` and `unsubscribe()` are safe to call outside that window — `subscribe()` raises the typed `SessionNotReady` (503) and `unsubscribe()` no-ops, neither raises `AttributeError`. `ensure_ready()` on the session is the single predicate behind this. The `/api/stream` handler calls it up front rather than relying on `subscribe()`, because `BroadcastEventSourceResponse` wraps a lazy generator: `subscribe()` runs only once the body is iterated, by which point the 200 headers are already committed and a raise can no longer produce the typed response. Every container passes through the not-ready window — the lifespan constructs the session but the daemon starts it later via `POST /api/sessions/new`.
 
 #### Session Resume
 
@@ -428,6 +444,21 @@ Monitors background Task agents spawned by the SDK:
 **events.jsonl** — append-only event log. Source of truth. One line per `PublishedEvent`, JSON-serialized.
 
 **session.json** — derived projection. Recomputable from events. Contains: `session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`, `name`, `model`, `num_turns`, `permission_mode`, `effort_level`, `todos`, `total_cost_usd`, `total_duration_ms`, `last_context_tokens`, `context_window`, `first_message`, `last_message`, `commands`, `session_prompt`, `parent_session_id`, `fork_point_cost_usd`.
+
+#### Executor Ownership
+
+The container API (§4) and the agent session (§1.5) run in **one process**, and therefore share **one default thread-pool executor** — the implicit pool behind `asyncio.to_thread(...)` and `run_in_executor(None, ...)`, sized `min(32, cpu_count + 4)`.
+
+Both halves of session persistence ride that pool:
+
+| Writer | Path onto the default pool |
+|---|---|
+| `EventLog.append` | `aiofiles` defaults `executor=None` |
+| `Projection._async_save` | `run_in_executor(None, self._write)` |
+
+Hence the invariant: **any long or unbounded synchronous work offloaded to the default executor can stall event persistence, and it does so silently** — the pipeline task stays alive, `is_alive` keeps returning true, nothing raises and nothing is logged; the consumer just parks mid-turn while the runtime keeps producing.
+
+The boundary: **event persistence and projection writes own the default executor.** Any subsystem whose filesystem or CPU cost scales with user data owns a dedicated, bounded one instead. Currently that is `FileService`, holding a single-worker `ThreadPoolExecutor` for the workspace walk and releasing it in the `files.managed()` teardown — see GUIDELINES §1 Executor Ownership.
 
 #### Capability-Aware Frontend Wiring
 
@@ -466,7 +497,7 @@ Thin host-side entry point. Argument parsing lives in `host_cli.py` (one level a
 | `prune` | `cmd_prune` | Stale dirs + dangling images + stopped containers; partial-failure tolerant |
 | `logs` | `cmd_logs` | `daemon` (default, sync file tail) / `all` (async multiplex over daemon log + container SSE) |
 | `status` | `cmd_status` | DAEMON / CONTAINERS / WORKSPACE rows; degraded mode via direct podman + filesystem reads |
-| `doctor` | `cmd_doctor` | 9 ordered environment checks; aggregate exit 1 on any failure |
+| `doctor` | `cmd_doctor` | 11 ordered environment checks; aggregate exit 1 on any failure |
 | `version` | `cmd_version` | Package version + branch/commit/install path/python/podman |
 
 | Noun-group | Implementation | Sub-actions |
@@ -477,9 +508,52 @@ Thin host-side entry point. Argument parsing lives in `host_cli.py` (one level a
 
 Workspace registration is explicit via `claudebox workspaces register`. Sessions in unregistered cwds fall back to cwd-as-workspace silently and skip writing a `.workspace` marker.
 
+#### Help rendering
+
+All three entry points — the CLI, the daemon (`claudeboxd`) and the container API server — share `HelpFormatter` in `claudebox/core/cli.py`, so colourising it colourises all of them. It derives from rich-argparse's raw-text formatter with two deliberate settings:
+
+- **Markup interpretation off** (`text_markup` / `help_markup` = `False`). Help text legitimately contains square brackets (`[daemon]`, `[container <id>]`); Rich would otherwise read them as style tags and swallow the bracket with its contents. This is the same failure that silently removed the `logs all` source prefixes.
+- **No automatic defaults.** Each option writes its own default into its help string, so none can print two, and one can describe behaviour ("cached build") where the literal value (`None`) would be meaningless.
+
+Help renders through rich-argparse's own **stdout** console and degrades to plain text under `NO_COLOR`, a dumb terminal, or a pipe. The module-level `console` in the same file is stderr-bound and is not involved — routing help through it would break `--help | less` and the snapshot capture.
+
+#### CLI cold path
+
+Shell completion re-executes the whole program on **every keypress** (argcomplete global completion, registered by `install.sh`), and `argcomplete.autocomplete()` can only short-circuit after the module graph is already loaded. Whatever happens at import time is therefore paid per keystroke, which makes the cold path latency-critical.
+
+Three rules keep it cheap:
+
+| Rule | Why |
+|---|---|
+| The `claudebox` package root re-exports lazily (PEP 562 `__getattr__`; static tools see the real types through a `TYPE_CHECKING` block) | Eager re-exports pulled the agent SDK, the web-server stack and the container runtime into every invocation. `import claudebox` went from ~760 ms to ~6 ms, and `claudebox -h` from ~1216 ms to ~371 ms. |
+| Consumers keep importing through the facade (`from claudebox import X`) | Required by the cross-package boundary audit, and free: the lazy root resolves each name to exactly its defining submodule, so a facade import now costs what a deep import would. Importing `claudebox.anything` executes the root `__init__` either way. |
+| No import-time side effects in CLI entry modules | The install line spawned two `git` subprocesses while the parser was being built. `LazyEpilogParser` defers the epilog to `format_help()`, so only `--help` pays it. |
+
+A CLI module that needs a heavy dependency for only some verbs imports it inside the function that uses it — `claudebox.containers` pulls structlog and the container backend, which help and completion must not pay for.
+
+**Name collisions matter here.** A re-exported name that is also a submodule of the package is shadowed as soon as anything imports that submodule, because the import system binds the child on the parent. This bit `cli`: the `cli` runner lives in `core/cli.py`, while install metadata used to live in `claudebox/cli.py`, so resolving `epilog` replaced the `cli` function with the module. The metadata module is now `claudebox/install.py` and no export collides.
+
+`e2e/cli/test_cold_path.py` guards the invariant structurally — no `git` during completion or a non-help verb — rather than by a wall-clock threshold that would be flaky in CI.
+
+#### `logs all` follower supervision
+
+In follow mode `logs all` is a supervised set of per-container followers (`_ContainerFollowers` in `cmd_logs.py`), not a fixed set resolved at startup. Two discovery inputs feed it:
+
+| Input | Role |
+|---|---|
+| `GET /api/daemon/stream` | Wakes a reconcile as soon as a container lifecycle frame arrives. Reconnects with backoff and never exits — a daemon restart must not leave the command deaf. Because the feed replays nothing missed while disconnected, every reconnect also wakes a reconcile. |
+| Periodic list reconcile | The single attach/detach decision point. Runs on every feed hint and at least every `_RECONCILE_SECONDS` regardless. |
+
+**Both are required — do not delete the reconcile as redundant.** Two gaps make the feed alone insufficient:
+
+- A `running` status is effectively never announced. `HealthMonitor._poll` calls `ContainerService.sync_state()` first, which assigns the status in place; the subsequent `update()` then sees no change and broadcasts nothing. The only dependable creation signal is `starting`, which fires before the container can serve logs.
+- Containers the daemon adopts rather than creates are registered with no announcement at all.
+
+Attachment is keyed on presence in the container list, not on having a live task. A stream that ends on its own is not re-opened while its container is still listed — it already reported its cause, and re-opening would replay the entire history again on every reconcile. The container becomes eligible again once it leaves the list and returns.
+
 ### 2.1 Config Hierarchy
 
-TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`.
+TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional).
 
 `ContainerRuntime` combines `Config` + `ContainerBackend` + CLI flags into a single runtime object.
 
@@ -499,7 +573,7 @@ Three build modes (`ImageBuildMode` enum):
 
 `run_container()` (in `claudebox.containers.run`) launches a TUI container:
 
-`podman run --rm -it` with volumes + env → container runs interactively, exits on agent exit.
+`podman run --rm -it` with volumes + env → container runs interactively, exits on agent exit. `config.containers_nested` additionally grants `--device /dev/fuse` and a tmpfs-mounted graphroot (§3.7).
 
 Web mode is launched by the daemon (§6), not by the CLI.
 
@@ -550,6 +624,7 @@ Three installation layers in `lib/container/build/Containerfile`:
 | Layer | Script | Content | Rebuild frequency |
 |-------|--------|---------|-------------------|
 | Base | `install_base.sh` | System packages, mise, Python 3.13, Node 24, uv, Rust, just, gh | Rare |
+| Nesting | `install_containers.sh` | Rootless podman-in-podman toolchain (§3.7); capability-gated at runtime, always baked | Rare |
 | Profile | `install_profile.sh` | Overridden by `{profile}/hooks/image-build.sh` — dev tools, linters, runtimes | On profile change |
 | Agent | `install_agent.sh` | Claude Code CLI (via mise) + Python dependencies and all LangGraph provider packages (`uv sync --frozen --extra langgraph-all` into `/opt/claudebox/.venv`) | On `--update` |
 
@@ -625,6 +700,10 @@ Shell hooks are sourced (container-*) or executed as subprocesses (agent-*). Pro
 
 **Claude Code SDK hooks** are configured in the profile's config and processed by the `@hook` decorator (§1.2). Profiles can implement any combination of Claude Code hook types (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, SessionEnd, AgentStop, Stop) and the statusline command.
 
+### 3.7 Nested Containers (rootless)
+
+The image bakes a rootless podman-in-podman toolchain (`install_containers.sh` - podman, buildah, podman-compose, the docker-CLI compat wrapper, rootless storage/subuid config) unconditionally, keeping the image single/global; `[containers] nested` (§2.1, §2.3) gates the capability at the runtime device layer. The outer agent stays root; the toolchain runs as a dedicated non-root user via PATH shims, since podman picks rootless-vs-rootful by euid. Inner containers run inside the outer container's own namespaces (no `--privileged`) - invisible outside the session and removed with it, storage tmpfs-mounted and never persisted.
+
 ---
 
 ## 4. Container API (`claudebox_container_api`)
@@ -655,6 +734,8 @@ handlers/
 ├── _shared.py          # FastAPI dependency injection (SessionDep, FilesDep annotated types)
 └── _models.py          # Pydantic request/response models
 ```
+
+PathResolver's file index persists to `{workspace}/.claudebox/path-index.json` (temp-file-plus-rename, no locking) so a container restart starts warm. A loaded index counts as freshly built for the in-memory TTL regardless of save age - the 24h load bound only gates whether the file is worth reading. Every resolution validates the entry still exists, so a stale index can't point at a moved or deleted file; concurrent persists are last-write-wins, no lock.
 
 ### 4.2 Session Lifespan
 
@@ -752,7 +833,7 @@ src/
 
 1. Connect → dispatch `connecting`
 2. `onopen` → dispatch `connected`
-3. `onmessage` → parse JSON, handle replay boundaries, accumulate in `pendingBatch`
+3. `onmessage` → parse JSON, handle replay boundaries, buffer into the streaming batch or the replay queue
 4. `onerror` → close, auto-reconnect with exponential backoff (1s–10s)
 5. `close()` → permanent shutdown (`_closed` flag prevents reconnect)
 
@@ -793,13 +874,42 @@ Streaming path:
               → incremental turns, turn results, task notifications, todo diffs
 
 Replay path:
-  SSE event → EVENT_RECEIVED (flags + pendingBatch accumulation, no flush)
-  replay_ended → flushBatch(state.pendingBatch) once
+  SSE event → replayBufferRef.push(event)   (one ordered queue, no dispatch)
+           → schedule drain (idempotent)
+  Drain tick → replaySliceEnd() picks a cut ≤ REPLAY_DRAIN_SLICE_SIZE
+            → REPLAY_SLICE { batchEvents }
+              → fold applyEventFlags over the slice, then flushBatch
+            → reschedule while the queue is non-empty or the server has not finished
+  Queue empty + replay_ended seen → REPLAY_ENDED (flags only, carries no events)
 ```
+
+**Chunked replay drain**: replay materializes in bounded slices rather than in a single commit at
+`replay_ended`. The commit phase is atomic, so one commit carrying an entire transcript cannot be
+interrupted — on a heavy session it never finishes and the tab locks until the browser discards the page.
+Draining in slices trades one unusable commit for many tolerable ones, giving the browser a paint and
+input window between each. `REPLAY_DRAIN_SLICE_SIZE` (50) is tuned on the longest single main-thread
+block, not on total load time; total time is bounded by the windowed turn list instead.
+
+Three invariants hold the drain together:
+
+1. **One ordered queue.** `isReplaying` stays true until the queue drains, not until the server signals
+   `replay_ended`. Everything arriving in between — including live events from a session that is already
+   responding again — joins the queue's tail. Routing them to the streaming path instead would let a newer
+   event commit ahead of older history still queued behind it.
+2. **Compaction runs are never split.** `appendTurns` buffers `compact_start` / `compact_boundary` /
+   post-compaction context until a later event establishes the turn they belong to, and force-flushes that
+   buffer at end of batch. A cut placed inside an open run would therefore attach the compaction block to
+   the preceding turn. `replaySliceEnd` (`context/utils/replaySlice.js`) walks the candidate slice and
+   extends or withholds the cut so every run resolves inside one slice.
+3. **The drain is cancellable.** `CLEAR_EVENTS`, reconnect, and close all clear the queue and its timer, so
+   a pending slice cannot commit the previous session's events into a freshly cleared chat.
+
+Replay progress reports events *materialized*, not events received, so the indicator tracks what is
+actually on screen.
 
 `SyntaxHighlightedCodeBlock` is `React.memo`ed on `(code, language, startingLineNumber, className)` — already-finalized code blocks bail out of re-render on each flush, so re-highlight cost is bounded to the actively-growing block. Provider value identity changes at flush rate (~20×/sec), not at SDK event rate, leaving the main thread enough headroom for input handlers between flushes.
 
-**Active/historical turn split**: `ChatPanel` renders the last (active) turn directly — it carries the live streaming events and re-renders per flush — while every earlier turn renders through `HistoricalTurnList`, a `React.memo`ed component whose props stay referentially stable between lifecycle transitions (completed turn objects keep their identity across flushes; `appendTurns` only clones the active turn). During a streaming turn the memo bails, so the historical subtree — the bulk of a long session — is not reconciled per flush; only the single active turn pays the streaming cost, regardless of how many completed turns precede it. The active→historical hand-off is the slice boundary moving as `turns` grows; turn keys (`turn_id`) are preserved, so the completing turn does not remount. This is the per-event axis; it composes with the per-turn-count `content-visibility` skipping below.
+**Active/historical turn split**: `ChatPanel` renders the last (active) turn directly — it carries the live streaming events and re-renders per flush — while every earlier turn renders through `HistoricalTurnList`, a `React.memo`ed component whose props stay referentially stable between lifecycle transitions (completed turn objects keep their identity across flushes; `appendTurns` only clones the active turn). During a streaming turn the memo bails, so the historical subtree — the bulk of a long session — is not reconciled per flush; only the single active turn pays the streaming cost, regardless of how many completed turns precede it. The active→historical hand-off is the slice boundary moving as `turns` grows; turn keys (`turn_id`) are preserved, so the completing turn does not remount. This is the per-event axis; it composes with the per-turn-count windowing below.
 
 **Central turn-collapse**: collapse is a single source of truth owned above the turn list, not per-`Turn` local state. `ChatPanel` holds `collapsedTurnIds` (a `Set<turn_id>`) and exposes it through `TurnCollapseContext`; `Turn` derives `collapsed = collapsedTurnIds.has(turn_id)` from context (falling back to local state only when rendered without a provider), so a collapse change reaches turns without adding props to the memoized `HistoricalTurnList` — the context propagates through the memo while the streaming-flush bail above is untouched. Auto-collapse is a **one-shot recompute**, not a continuous invariant: an effect keyed on `(autoCollapseEnabled, lastTurnId)` collapses every turn except the last on enable and on each new turn, and expands all on the enable→disable edge only (tracked via a prev-enabled ref). The recompute subtracts a `manuallyExpandedIdsRef` provenance set (turn ids the user expanded by hand) so a hand-expanded turn stays open across new turns until the user collapses it by hand (which drops it from the set, returning it to auto control). The enable edge (off→on) clears the set for a fresh "collapse all but last"; the set is in-memory per active chat and also cleared on session change. Consequence: the previously-last turn still collapses on a new turn (being last is not a manual expand). The recompute reads `turns` through a ref so it does not key on the per-flush `turns` identity. The enable flag lives in an app-level ref (`autoCollapseEnabledRef` in `AppActionsContext`), mirroring autoscroll's `chatAutoScrollEnabledRef` — it persists across `ChatPanel` remounts (tab/board switch) and resets to on when the session changes.
 
@@ -817,6 +927,10 @@ The run-detector (`groupBlocks` in `TurnBlockList`) only emits a grouped-Todos s
 
 **Uncontrolled textarea**: `ChatInput` uses `ref.current.value` instead of controlled state — avoids re-render on every keystroke.
 
+**Editing operations announce through the DOM event, not a callback.** Tab/Shift+Tab, Shift+Enter, tag-wrap, block collapse/expand, and bracket auto-pair all end by dispatching a real `input` event on the textarea instead of calling draft/resize/autocomplete callbacks directly — the same single `onInput` chain a keystroke drives handles all three uniformly. `expandBeforeSubmit` and `handleStash` are the two exceptions: the former runs immediately before send-clear, and the latter still calls `saveDrafts` directly because the dispatch path never clears the draft stack, only `current`.
+
+**Shared text-editing transforms, caller-specific application.** `chat-input/utils/textTransforms.js` holds every editing operation above (plus wrap-in-tags) as pure `(value, selStart, selEnd, ...) -> {value, selStart, selEnd} | null` functions; `chat-input/hooks/useTextEditingKeys.js` maps keys to them and hands the result to a caller-supplied `applyResult`. The composer (uncontrolled) applies a result by writing `textarea.value` directly; the inline reply box (controlled) calls `onEdit` then restores the caret via a pending-selection ref, since keying that off the response text would stomp the caret on unrelated parent re-renders. `BlockCollapseManager`'s placeholder-id counter is module-level so two boxes' ids never collide, while each instance's collapsed-block map stays private. Only Tab/Shift+Tab, Shift+Enter, tag-wrap, collapse/expand, auto-pair, and interrupt are shared - history, stash, and slash-autocomplete stay composer-only (no well-defined target across two inputs).
+
 **Ref-based scroll state**: `chatScrollPositionRef` and `chatAutoScrollEnabledRef` persist scroll position across tab switches without triggering re-renders.
 
 **Manager classes**: plain JS classes in `managers/` (SSE, side panels, session/board tabs, message queue, path resolution) and `features/chat/ChatController` encapsulate business logic outside React's render cycle, connected via custom hooks. They hold mutable state, expose imperative methods, and avoid re-renders on internal updates.
@@ -829,9 +943,21 @@ The run-detector (`groupBlocks` in `TurnBlockList`) only emits a grouped-Todos s
 
 **Fire-and-forget persistence**: Layout changes, stash updates, UI state use `fetch().catch(() => {})` — best-effort, never blocks UI.
 
-**Off-screen turn skipping**: `.turn-container` uses CSS `content-visibility: auto` with a `contain-intrinsic-size` placeholder (`0 400px`, tuned to median observed turn height) so the browser skips layout/paint for turns outside the viewport. Turns stay in the DOM, so browser find, selection across the boundary, and Print/Save-as-PDF all behave as if turns were eagerly rendered. No JS bridge required; older browsers without the property fall back to the prior render-everything behavior.
+**Windowed turn list**: `HistoricalTurnList` renders only the turns intersecting the viewport plus `TURN_OVERSCAN` either side, via `@tanstack/react-virtual` (`useTurnVirtualizer`). Rows are absolutely positioned inside a spacer sized to the whole transcript, so scroll position, scrollbar, and every scroll offset behave as if all turns were present. Cost of opening a session stops scaling with its length: the mounted set stays bounded (~16 turns) whether the session holds 20 turns or 520. This replaces the previous `content-visibility: auto` approach, which skipped layout and paint for off-screen turns but still built their DOM, created their React elements, and ran their per-block render work - the reason it was measured insufficient.
 
-**Minimap cache seeding + idle warmup**: under `content-visibility: auto`, an off-screen turn's `offsetHeight` returns the 400px intrinsic placeholder, not its real layout height — caching that value would lock the minimap into uniform subbars for every never-visited turn. `useTurnHeights` seeds the cache for off-screen first observations with `predictTurnHeight(turn, effectiveWidth)` — a content-derived estimate scaled to chat column width (text wrap, tool/thinking blocks, attachment rows). After mount, an idle-time warmup walks predicted turn chunks in `requestIdleCallback` slices, applies a `.force-measure` opt-out (`content-visibility: visible`), reads `offsetHeight` synchronously, removes the class — replacing predictions with real measurements within a few seconds without paint cost. Warmup defers while `isStreamingRef.current` is true. Predictor coefficients live in `config/dimensions.js`; `e2e/app/tests/predictor-calibration.spec.js` asserts per-fixture drift stays under 30% across three viewport widths. Two invariants keep this stable in long sessions: (1) heights are cached and exported keyed by stable `turn_id` (never array index), so a measured turn never regresses to a smaller predicted/intrinsic value when the groups array reorders (e.g. a compaction drops an earlier turn) — the minimap reads `turnHeights[group.turn_id]`; (2) each warmup run owns a fresh stop token and clears its active guard on teardown, so a run preempted by turn growth or streaming restarts and still converges, instead of leaving off-screen turns stuck on their initial predictions. (3) Collapse-aware sizing: `collapsedTurnIds` flows into `useTurnHeights` / `predictTurnHeight`, so a collapsed turn's segment reflects its short strip height (meta + preview + user-message line) rather than the full expanded height. A collapse/expand transition is an *authoritative* resize that rewrites the cache even for an off-screen turn — content-visibility hides the collapse inside a skipped subtree so no `ResizeObserver` fires, so a dedicated effect keyed on collapse-flag flips drives the cache write (seeded via `predictTurnHeight(..., isCollapsed)`, `predicted:true` re-arms warmup / on-screen refresh to upgrade to the real strip). This is scoped strictly to collapse flips, so the scroll-past never-shrink guard in invariant (1) for genuinely expanded turns is untouched.
+The virtualizer is owned inside `HistoricalTurnList`, below the memo boundary, not in `ChatPanel`. It re-renders its owner on every scroll frame; owning it above the boundary would pull `ChatPanel` and the live streaming turn into each of those frames, undoing the active/historical split. `ChatPanel` reaches it through `turnVirtualizerRef` for jump-to-turn.
+
+Two consequences the UI has to absorb. A turn outside the window has no element, so anything that used to find a turn with `querySelector` now goes through `withMountedTurn` / `scrollToIndex` first - Alt+Up/Down jumps, the post-replay landing turn, bookmark clicks (routed cross-panel through `scrollToTurnRef`), and inline-reply anchors, which resolve only for mounted turns and re-resolve as the window moves. And the browser's own find-on-page and Print/Save-as-PDF reach only what is currently on screen; that trade is recorded in SPEC as `claim:chat:offscreen-turns-absent`.
+
+Measurement is rounded to whole pixels, and a measurement of zero is refused in favour of the estimate. Both guard the same feedback path: a reported height re-renders the list, which re-measures, which reports again. A row settling between two subpixels reports a fresh value forever; a row that has not painted yet reports 0, which shrinks the total, widens the range, mounts more rows, and repeats until the whole transcript is mounted - the failure windowing exists to prevent.
+
+Whether the list is windowed at all is decided by what the virtualizer produced, not by a second reading of the container. The two disagree readily - the virtualizer sizes itself from `offsetHeight`, while an element also reports `clientHeight` and a bounding rect - and the disagreement surfaces as a chat with a full scroll extent and nothing in it. An empty window where turns exist means no window could be computed, so the list renders all of them. Before the container attaches there is nothing to read at all, so the virtualizer is given the window height as its `initialRect`: without it the first commit after any remount renders the entire transcript before the ref lands.
+
+**Known limitation.** A session of roughly 200+ turns can still trip React's maximum-update-depth guard and leave the chat blank, intermittently. This predates windowing: the same session reproduces it on builds from before both the chunked replay drain and this list, where it rendered nothing at all rather than a bounded window. Windowing bounds the cost and gets the session on screen in seconds, but does not remove the underlying cycle. Note that no shipped test fixture is long enough to reach the failing condition - the largest is 16 turns - so a green suite says nothing about it.
+
+**Minimap sizing**: every turn's segment is priced by `predictTurnHeight` - a content-derived estimate scaled to chat column width (text wrap, tool/thinking blocks, attachment rows, collapsed strips), the same estimator the virtualizer uses for unmounted rows. Coefficients live in `config/dimensions.js`; `e2e/app/tests/predictor-calibration.spec.js` holds per-fixture drift under 30% across three viewport widths by scrolling each fixture turn into view and measuring it while mounted.
+
+Heights are deliberately NOT sourced from real measurements. With the list windowed only a handful of turns have a height at any moment, and feeding those back into state re-renders the list, which mounts and measures more turns, which publishes again - a cycle that does not settle. Predictions are complete and independent of what happens to be on screen, so minimap proportions no longer depend on where the user has scrolled. Heights are keyed by `turn_id`, so a turn keeps its size when the list shifts underneath it (a compaction dropping an earlier turn, a rewind). The human-message marker drawn inside each segment is predicted the same way, for the same reason: measuring it needs the turn mounted, and sizing only the mounted few would flatten every other marker to its minimum.
 
 ### 5.6 Layout
 
@@ -862,7 +988,9 @@ bar above the footer when at least one bottom-slot panel is open and shrinks
 └────────────────────────────────────────────┘
 ```
 
-**Panel registry**: `config/layout.js` is the central panel configuration — maps panel IDs → components, defines side assignments (left/right/bottom), and canonical ordering per side. Bottom-slot panels are intentionally absent from `PANEL_SIDES` for dockview routing — they route through `BottomPanelsContext`, not `SidePanelManager`. The bottom-side membership is published dynamically by `<IconStrip>` mount: each strip with `bottomPanels=[...]` calls `registerBottomPanel(id, position)` on mount and `unregisterBottomPanel(id)` on unmount, so `useBottomPanels().panelSideMap` always reflects the current registration.
+**Panel registry**: `config/layout.js` is the central panel configuration — maps panel IDs → components, defines side assignments (left/right/bottom), and canonical ordering per side. Bottom-slot panels are intentionally absent from `PANEL_SIDES` for dockview routing — they route through `BottomPanelsContext`, not `SidePanelManager`. The bottom-side membership is published dynamically by `<IconStrip>`: each strip with `bottomPanels=[...]` calls `setBottomPanelIds(position, ids)` to declare everything its side owns, and clears its side on unmount, so `useBottomPanels().panelSideMap` always reflects the current membership.
+
+That call is declarative rather than a per-id register/unregister pair for a specific reason. `panelSideMap` feeds the context value, so any write re-renders every consumer — including `DesktopLayoutBody`, which renders the strips. An effect that removed each id and immediately re-added it produced two new `Map` identities for unchanged content, re-rendered the layout body, rebuilt the `bottomPanels` array literal it passes, and re-ran the effect: a closed loop that React eventually aborted, blanking the page. Stating the whole set at once makes a repeat with unchanged ids return the previous map and cost nothing, the strips' effects are keyed on id content rather than array identity, and the arrays themselves are module constants.
 
 **Bottom-panel container state**: `BottomPanelsContext` owns `{openSet: Set<panelId>, height: number, panelSideMap: Map<panelId, 'left'|'right'>}`, hydrated from `session.bottomPanels = {openSet: string[], height: number}` on session attach and persisted via debounced PATCH on user-initiated toggle/resize. `BottomPanelContainer` renders a fixed-position bar (`position: fixed; bottom: 24px`) above the footer; one open panel fills it full-width, two split 50/50 horizontally (left slot first, right slot second). One shared drag handle resizes the whole strip via `--logs-strip-h`. While dockview maximizes a group, the whole strip collapses to 0 regardless of `openSet` (global maximize semantics — no per-slot maximize).
 
@@ -935,6 +1063,8 @@ ToolContentRenderer(toolName, details, filePath, outputMode)
 
 **Gutter inference**: CodeBlock infers gutter structure from line data — file column if any line has `file`, lineNum column if any line has `lineNum`, no gutter otherwise (Edit diffs).
 
+**Element-override identity constraint**: `Markdown`'s `components` map is used by react-markdown as each tag's JSX element type, so a new identity per render (e.g. built inline, closing over `sessionDir`) makes React rebuild the subtree instead of updating it — defeating any memoisation inside it (`MarkdownCodeFence`, `MermaidDiagram`). Hoisted to module scope; per-render values reach the overrides through context instead of a closure. This is why `MarkdownCodeFence`'s memo existed without doing anything.
+
 ### 5.9 Event Processing Pipeline
 
 SSE events flow through batching, turn grouping, and visibility filtering before reaching UI components.
@@ -946,10 +1076,12 @@ EventSource('/api/stream')
 ├─ onopen → SET_CONNECTION_STATUS 'connected'
 ├─ onmessage → parse JSON
 │  ├─ replay_started → REPLAY_STARTED with flushSync() (early return)
-│  ├─ replay_ended → REPLAY_ENDED, flush entire batch (early return)
-│  └─ other → EVENT_RECEIVED
-│     ├─ Accumulate in pendingBatch
-│     ├─ Arm 50ms timeout if not replaying
+│  ├─ replay_ended → mark the server done sending; drain the rest (early return)
+│  ├─ while replaying → append to the ordered replay queue
+│  │  └─ drained in slices: REPLAY_SLICE per slice, REPLAY_ENDED once empty
+│  └─ otherwise → STREAMING_FLAGS
+│     ├─ Accumulate in the streaming buffer
+│     ├─ Arm 50ms timeout
 │     └─ Update isResponding (assistant=true, result=false)
 ├─ onerror → SET_CONNECTION_STATUS 'error'
 └─ Reconnect after 2000ms
@@ -959,8 +1091,10 @@ EventSource('/api/stream')
 
 | Mode | Trigger | Behavior |
 |------|---------|----------|
-| Live streaming | 50ms timeout | Flush pendingBatch every 50ms |
-| Replay | `replay_ended` event | Accumulate all, flush once (`flushSync()` used at `replay_started` for immediate UI feedback, not at flush) |
+| Live streaming | 50ms timeout | Flush the streaming buffer every 50ms (FLUSH_BATCH) |
+| Replay | Per drained slice | Commit `REPLAY_DRAIN_SLICE_SIZE` events at a time (REPLAY_SLICE), yielding between slices so the tab keeps painting; `flushSync()` used at `replay_started` for immediate UI feedback, not at flush |
+
+**Counters advance during replay too.** `resultCount` and `compactionCount` are folded per event by `applyEventFlags`, which the replay path runs over every slice — a stored conversation replays its completed responses, so both counters climb while history loads and a replayed completion is indistinguishable from a live one by counter value alone. Any consumer keyed on them must gate on the loading flag (`isResuming || isReplaying`) and re-sync its own previous-value refs across the load, or it fires on replayed history. Two further traps for such a consumer: the final REPLAY_SLICE and REPLAY_ENDED are dispatched in the same synchronous call, so React batches them into one commit that carries both a counter jump and the flag turning false — that commit must be skipped as well, not just the ones where the flag is still set; and a brand-new session also emits replay boundaries (`replay_to` emits them even for zero events), so "a replay ended" does not imply "history was loaded". `useMessageQueue` is the current consumer: it drains only on a live counter advance, so a queued message waits for the first completed response cycle after the load rather than firing during it.
 
 **Turn grouping state machine**:
 
@@ -1018,9 +1152,17 @@ ToolBlock(toolUse, toolResult, nestedEvents)
    └─ [awaiting + user types in chat] → mark skipped
 ```
 
-**Interactive tools**: AskUserQuestion and ExitPlanMode render forms via InteractiveQuestions. Form submit sets `wasAnsweredLocally`, collapses block, sends answer to the container API.
+**Interactive tools**: AskUserQuestion and ExitPlanMode render forms via InteractiveQuestions. Form submit sets `wasAnsweredLocally`, collapses block, sends answer to the container API. `ChatPanel`'s `handleFormSubmit` reads whatever is sitting in the composer at that moment (`composerHandleRef.current.extractOrEmpty()`) and sends it alongside the answer as a sibling `note`, rather than folding it into the answer text - same reason as ARCHITECTURE.md:267, the transcript's answer match is anchored and cannot tolerate a prefix.
 
 **Per-tool formatters**: `utils/toolResultFormatters.js` exposes `buildToolHeader`, `getToolStatus`, `getToolTooltip`, `hasSpecializedFormatter`, and `shouldCollapseByDefault`. Tool routing for the *expanded* content area lives in `ToolContentRenderer` and consults `getToolConfig(toolName).renderer` from `config/toolRegistry.js` (`syntax-or-code`, `code`, `markdown`).
+
+**Bash Command section**: `ToolBlockExpandedContent` renders Bash's raw command in a purpose-built "Command" section (`SyntaxHighlightedCodeBlock`, `language="bash"`) instead of the generic "Input" section - `toolInput` stays `null` for Bash, so the command reaches the component via its own `command` prop. Output gets a matching "Result" section, omitted when empty. `ToolBlock` derives this `command` once and reads it at both expandability gates (`hasExpandableContent`, the pending-content render gate), so the Command section renders while the call is still pending - the only handled tool admitted while pending on a payload other than `toolInput`. Every other handled tool keeps its content suppressed until the result arrives. `SyntaxHighlightedCodeBlock` takes a `showGutter` prop (default on); the Command section is the one caller that passes `showGutter={false}`, since its line numbers index nothing - `CodeBlockRow` drops the gutter cell and tags the content cell `code-block-no-gutter`, the same shape the parsed code-block path (`CodeBlockLine`) already uses for its own no-gutter callers.
+
+**Segment grouping**: `groupBlocks` (`utils/groupBlocks.js`) runs two passes over a turn's blocks - the existing positional pass emitting consecutive Todos runs, then a whole-turn gather that pulls every read-only tool block out and appends one trailing `LookupsGroup` segment (rows re-render via `ToolBlock`). Categorisation (`category: 'read-only' | 'default'`) lives in `config/toolRegistry.js`, consulted via `getToolConfig`. The gather only sees top-level blocks, so a subagent's nested lookups are excluded by construction. The gather is switchable via `config/features.js::isLookupsGroupingEnabled()`; `predictTurnHeight.js` reads the same switch so predicted and rendered heights agree.
+
+**Hidden tool blocks**: `utils/eventProcessing.js::isHiddenToolSearch(toolUse, toolResult)` is the single predicate deciding whether a tool-schema search (`ToolSearch` / LangGraph's `tool_search`) renders at all - hidden while pending or on success, visible only once the paired result reports an error. Applied at three sites that must agree: `groupBlocks` (top-level, skipped before Todos-run detection so a hidden call neither breaks nor absorbs into a run it interrupts), `processNestedEvents` (subagent Activity sections), and `predictTurnHeight` (indexes `tool_result` events by `tool_use_id` first, then skips priced blocks the predicate hides, so predicted and rendered heights agree). One predicate, one tool - not a general hidden-tools mechanism.
+
+**Open-in-editor affordance**: `ToolBlock` resolves `editorUrl` once per block (`useEditorTemplate()` reads `editor_url_template` from session-defaults, `resolveEditorUrl()` substitutes the block's `filePath`/line) and passes it down to `ToolBlockHeader`, rather than each header or `LookupsGroup` row resolving its own. The header renders the control only when a URL resolves, opening via `window.open` with `stopPropagation` so it never reaches the collapse toggle. Resolution is entirely client-side - the identity workspace mount (§2.4) already makes a bare `file_path` a valid host path.
 
 ### 5.11 Panel Management
 
@@ -1170,7 +1312,7 @@ Brief descriptions of cross-cutting subsystems not covered by dedicated sections
 | Subsystem | Location | Description |
 |-----------|----------|-------------|
 | Message queuing | `managers/MessageQueueManager.js` | Queues user messages during SSE reconnection or while awaiting response; drains on response completion, compaction boundary, or connection restore |
-| Path resolution | `managers/PathResolutionManager.js` | Resolves and highlights file paths in tool output; caches resolved paths for click-to-open |
+| Path resolution | `managers/PathResolutionManager.js` | Resolves and highlights file paths in tool output; caches resolved paths for click-to-open. Alt+Click routes the resolved path through the same editor-URL resolution as the tool-block affordance (`utils/editorUrl.js`) instead of the clipboard; plain click is unaffected |
 | Session tabs | `managers/SessionTabManager.js` | Manages dynamic session tabs in the center panel; workspace-scoped storage (`claudebox:sessionTabs:{workspaceId}`); handles creation, naming, and cleanup via Dockview API |
 | Conversation fork | `features/chat/` + daemon `/sessions/{id}/fork` | Branch a session at a specific turn into a child session, optionally reusing the live container (web UI only — leverages the daemon's fork API; rewind itself is the upstream Claude Code CLI's built-in `/rewind` command) |
 | Desktop notifications | `features/chat/hooks/` + `utils/` | Browser Notification API integration; triggers on response completion when tab is not focused; plays chime sound |
@@ -1180,9 +1322,11 @@ Brief descriptions of cross-cutting subsystems not covered by dedicated sections
 | Attachment handling | `features/chat/` | File attachment via drag-and-drop or button; reads files as base64; previews before send |
 | Markdown preview | `features/chat/components/` | Renders markdown content in tool blocks with toggle to raw source; mirrors MermaidDiagram pattern |
 | Mermaid rendering | `features/chat/` | Renders Mermaid diagram syntax in assistant messages as inline SVGs |
-| Minimap | `features/chat/components/minimap/` | Conversation overview sidebar; proportional sub-bars per turn, click/drag navigation, auto-show/hide with pin toggle. Reads cached per-turn heights from `useTurnHeights` so it is unaffected by content-visibility-driven measurement fluctuations as off-screen turns toggle between intrinsic and real heights |
+| Minimap | `features/chat/components/minimap/` | Conversation overview sidebar; proportional sub-bars per turn, click/drag navigation, auto-show/hide with pin toggle. Reads per-turn heights from `useTurnHeights`, which prices every turn from content rather than from the DOM - a windowed-out turn has no element to measure |
 | Setting change dividers | `features/chat/` | Visual dividers in chat when model or permission mode changes mid-conversation |
 | Slash command autocomplete | `features/chat/` | Autocomplete dropdown for `/` commands in chat input; populated from container API command list |
+| Workspace session-defaults cache | `hooks/useSessionDefaults.js` | Module-level cache + in-flight-request map keyed by workspace id, TTL `SESSION_DEFAULTS_CACHE_TTL_MS`, so `useCapabilities`'s many call sites share one request instead of one each. A rejection is never cached |
+| Render failure containment | `components/ErrorBoundary.jsx` | The only class component in the codebase - hooks can't express `componentDidCatch`. Wraps every dockview panel (`features/app/components/withPanelBoundary.jsx`, reset on session change), plus a nested boundary around just the chat transcript so a transcript-only throw leaves the composer usable, and a root backstop in `main.jsx`. Errors log via `utils/errorReporting.js`, reaching the daemon log |
 
 ### 5.17 URL hash schema and scroll synchronization
 
@@ -1229,6 +1373,14 @@ Use the Pointer Events API (`onPointerDown`/`onPointerMove`/`onPointerUp` and `a
 
 Outside-click detection (`useDropdown`, `useAttachments`) and prevent-blur handlers (`SessionItem`, `SessionNameEditor`, `CommandAutocomplete`) keep `mousedown` because they target click semantics, not drag. Pure hover (`mouseenter`/`mouseleave`) stays on mouse events; pointer events fire alongside on desktop, so UX is unchanged.
 
+### 5.20 Client-Side Storage Contract
+
+`useLocalStorage` writes from a `useEffect`, never from inside the `setState` updater - React can replay a queued updater during render, and a `QuotaExceededError` thrown there would unmount the tree uncaught. `persist()`/`flush()` wrap the actual write in try/catch and degrade silently on failure.
+
+Four per-session prefixes (`draft:`, `inputHistory:`, `inline-replies:`, `queue:`; registered in `config/storage.js`) hold session-scoped state; only `inputHistory:` is capped, via `utils/inputHistoryCap.js`'s oldest-first eviction. `utils/sessionStorageGc.js`'s `sweepDeadSessionStorage` removes entries once their session no longer exists, run from `SessionsContext.jsx` after each successful session fetch.
+
+The prefixes carry no workspace segment, so a session live in another workspace looks dead from one workspace's own fetched list alone. `collectLiveSessionIdsAcrossWorkspaces` unions every registered workspace's session list before the sweep runs, falling back to the current workspace's own set if that lookup fails.
+
 ---
 
 ## 6. Daemon (`claudebox_daemon`)
@@ -1258,11 +1410,31 @@ DaemonService (singleton via domain.current)
 
 **ContainerService** manages podman lifecycle for containers. Broadcasts `STOPPING` status before initiating stop, then `STOPPED` after completion — two-phase broadcast enables frontend stopping state feedback.
 
-**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction and hands that snapshot to `ContainerService` for construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService`. Run-arg settings, by contrast, are re-read per container create: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so a workspace's mounts, ports, env vars, and network mode reflect the current `settings.toml` on the next created session (new / resume / fork) without a daemon restart. The reload is deliberately scoped: `agent`, `profile`, and `backend` stay bound to the construction-time snapshot and still require a daemon restart to change. This is distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`), never per-workspace `settings.toml`.
+**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction and hands that snapshot to `ContainerService` for construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService`. Run-arg settings, by contrast, are re-read per container create: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so a workspace's mounts, ports, env vars, network mode, and nested-containers opt-in reflect the current `settings.toml` on the next created session (new / resume / fork) without a daemon restart. The reload is deliberately scoped: `agent`, `profile`, and `backend` stay bound to the construction-time snapshot and still require a daemon restart to change. This is distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`), never per-workspace `settings.toml`.
 
 **SessionService** orchestrates session lifecycle: listing from disk via `SessionRepository`, spawning containers for new/resumed sessions, forking sessions at turn boundaries. `create()`, `resume()`, and `fork()` all return a unified `SessionInfo` shape (extends `SessionMetadata` with `container_id`, `workspace`, `permission_mode`, `effort_level`) so the frontend can populate the footer from the response without waiting for the SDK init event. `fork(reuse_container=True)` transfers ownership of the live container to the new (child) session by calling `ContainerService.update(container, session_id=new_session_id)` after seeding the child's `session.json` (with `parent_session_id` linking back); `find_by_session()` then resolves the running container under the child id, so the parent's running indicator clears in the sessions panel and stop affects only the child. `parent_session_id` on the child remains the back-link from child to parent across the fork tree.
 
 **Fork seed — three sources.** The child's `session.json` is composed from three sources rather than spread verbatim from the parent: (1) identity fresh — `session_id`, `parent_session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`; (2) `INHERITED_CONFIG_FIELDS` from the parent's `session.json` — `name`, `model`, `permission_mode`, `effort_level`, `session_prompt`, `first_message`, `context_window`, `commands`; (3) accumulated counters and last-value snapshots derived from the child's (possibly truncated) `events.jsonl` via `_compute_derived_fields` — `total_cost_usd`, `total_duration_ms`, `num_turns`, `last_message`, `last_context_tokens`, `todos`. Truncation runs BEFORE the derivation step so the totals reflect the events the child's transcript will actually contain, not the parent's tail. The seed also carries `fork_point_cost_usd` (= the derived `total_cost_usd` at fork moment) — a snapshot consumed at rollup time by the usage panel: the panel deducts each session's snapshot from its reported total so the shared pre-fork cost is attributed once to the ancestor, not double-counted across siblings. Missing or unparseable parent metadata falls back to a minimal seed (identity fields only, derived counters from the file if present).
+
+### 6.1.1 Blocking-Path Contract
+
+One event loop serves every handler across every registered workspace; an unbounded call anywhere stalls the whole daemon, not just its own request.
+
+Five bounds close that surface:
+
+- **Outbound HTTP.** The shared `ContainerProxyClient` carries `CONTAINER_PROXY_TIMEOUT` (`connect=5.0, read=15.0, write=30.0, pool=30.0`) and explicit `CONTAINER_PROXY_LIMITS`. One `read` bound covers both ordinary requests and SSE streams, since every stream pings every second. `httpx.TimeoutException` maps to `ContainerTimeout` (504).
+- **FileLock acquisition.** Every `FileLock` (the daemon's own three sites; ten board-mutation sites in `parser.py`) carries `timeout=FILE_LOCK_TIMEOUT_SECONDS` (5s); a `filelock.Timeout` becomes a typed `LockTimeout`/`BoardLocked` instead of blocking forever.
+- **Podman subprocess.** `ContainerBackend._exec` takes an explicit `timeout=`: `PODMAN_COMMAND_TIMEOUT` (15s) for admin commands, `PODMAN_RUN_TIMEOUT` (60s) for a detached spawn. The interactive foreground session and `build_image` stay unbounded - the daemon never calls either.
+- **Poller backstop.** `AsyncPoller._loop` wraps each `_poll()` in `asyncio.wait_for`, sized off the poll interval - a backstop against a future unbounded call in a `_poll()` override, not the fix for any one call.
+- **Disk listing.** `BoardService.list_all`/`SessionService.list_all` dispatch to the listing pool and wrap that dispatch in a 15s `asyncio.wait_for`, raising a typed `ListingTimeout` (504). Concurrent callers share one scan per workspace via `SingleFlight` (`claudebox.core.concurrency`) — every open tab refetches on the same `sessions_changed` broadcast, so ten tabs across two workspaces asked the same question up to twenty times at once and each copy occupied a worker. Callers await through a shield, so one caller hitting its bound never cancels the scan the others are still waiting on.
+
+**A bound around a dispatch measures admission, not execution.** `asyncio.wait_for(loop.run_in_executor(...))` starts its clock at submission, so it covers time spent queued *plus* time spent running, and cancelling it reclaims a worker only while the job is still queued — once a thread has picked the job up it runs to completion regardless. A listing that never started therefore logged the same line as one that hung on the filesystem, which is how a merely-full pool came to be read as a dead network mount. Both listings now record whether a worker ever picked the job up (`executors.tracked`) and log `scan_started` / `walk_started`, the seconds spent queued, and the depth of the pool they were queued on.
+
+**Executor ownership.** Three dedicated pools (`domain/executors.py`), never the process-wide default, split by class of work: `listing` (8) for the disk scans above, `podman` (4) for every runtime invocation, `state` (4) for `FileLock`-guarded registry and ui-state writes. Sizing is per concern and shared across workspaces rather than per workspace, which would multiply threads by a number the operator sets without seeing the cost. One shared pool was the arrangement that let a listing backlog take podman dispatch, registry writes and ui-state patches down with it.
+
+**Pool observability.** `ObservedPool` wraps `submit`, so every dispatch is counted wherever it was written, including `run_in_executor`. `stats()` reports workers, queued, running and oldest-queued age per pool; `DaemonExecutors.saturated()` names the backed-up pools longest-wait-first. A job that waits longer than `QUEUE_WARN_SECONDS` (2s) for a worker logs `pool_queue_backlog` once it completes, naming the wait it incurred; a job still sitting in the queue has nothing to report from, so live depth is read from `stats()` — which is what the listing-timeout log and the health body carry. None of this was measured before, which is why a saturated pool could only be diagnosed by elimination.
+
+Board/session **mutation** paths stay on the loop, bounded only by their own lock/subprocess timeouts - not dispatched to the executor. `BoardService._discover`'s per-listing index rebuild is unchanged; persisting it across listings is a separate concern.
 
 ### 6.2 Module Map
 
@@ -1316,8 +1488,9 @@ handlers/
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/daemon/health` | GET | Daemon liveness probe — returns `{mode, status}` |
+| `/api/daemon/health` | GET | Daemon liveness probe — `{mode, status}` plus the signal breakdown and pool counters (see §6.6) |
 | `/api/daemon/stream` | GET (SSE) | Daemon-level event stream |
+| `/api/daemon/report` | POST | Frontend failure report (`kind`, `message`, `stack_trace`, `app_version`, `client_timestamp`), logged via `DaemonService.report_frontend_error` at WARNING - no free-form field, so nothing to smuggle conversation content into. Named `stack_trace` not `stack`: structlog's `StackInfoRenderer` silently drops a literal `stack` key. |
 
 **Top-level cross-workspace**:
 
@@ -1362,6 +1535,12 @@ handlers/
 
 Board change events are broadcast on the daemon-level `/api/daemon/stream` (as `BoardUpdateEvent`) — there is no per-board SSE endpoint.
 
+#### Container-proxy path contract
+
+`Container.base_url` is deliberately `/api`-less (`http://localhost:{port}`), and the proxy forwards to `f"{container.base_url}/{path}"` using the caller-supplied trailing path verbatim. **The caller therefore supplies the container's own `/api` prefix.** A container endpoint declared as `/api/logs` is reached at `/api/workspaces/{ws}/containers/{id}/api/logs` — the doubled `api` is correct, not a typo.
+
+Both callers follow this: the frontend (`LogsStreamContext`, `SSEConnectionManager`) and the CLI (`cmd_logs._container_logs_url`). Do not "fix" the omission by injecting `/api` inside the proxy — that would break every other proxied path.
+
 #### Welcome → session config buffer drain
 
 Frontend pickers (model / permission mode / effort level) live in the footer and are visible on the welcome screen, before any session attaches. Today picker setters call container-proxied endpoints that require an active container; on welcome they would silently fail. Instead `SessionDataProvider` checks `getContainerId()`: when no container is active the value is buffered in `deferredModel` / `deferredPermissionMode` / `deferredEffortLevel`. Latest-wins — repeated picker changes overwrite the buffered value before drain. When `sessionData?.session_id` transitions from null to set (session attached), a single drain effect awaits the buffered config in strict order: model → permission → effort. Each await ensures the SDK applied the change before the next call. A failed call surfaces via `onError` and the remaining successful changes still apply. The deferred message in `useChatController` keys off the same session_id transition, so the first message is sent only after the config drain completes.
@@ -1386,7 +1565,12 @@ Startup: banner logged via Rich; Caddy/uvicorn output is captured by the structl
 The daemon runs as a user-level systemd service (`claudebox-daemon.service`, in `lib/etc/systemd/`). Critical configuration:
 
 ```ini
+[Unit]
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
 [Service]
+Type=simple
 ExecStart=%h/.local/bin/claudeboxd          # symlink → lib/bin/claudebox_daemon.sh
 KillMode=process
 Delegate=yes
@@ -1403,7 +1587,17 @@ RestartSec=8
 
 **Crash vs. clean-shutdown exit contract** — the wrapper exits 0 only when shutdown was signal-initiated: the `cleanup()` trap sets a flag, and the main path exits 0 when that flag is set, otherwise it propagates the child's exit status (captured via `wait … || status=$?` to stay clear of `set -e`). Combined with `Restart=always`, a crash (e.g. a startup port-bind race) surfaces as a non-zero exit that systemd restarts after `RestartSec` and records in `systemctl --user status`, while an intentional `systemctl stop`/`restart` exits 0 and is a systemd-initiated stop, so no spurious restart loop occurs. `Restart=always` (rather than `on-failure`) recovers from any unexpected exit — appropriate for an always-on daemon.
 
+**Health-polling supervision** — `Restart=always` only recovers from the daemon exiting, not from a daemon that stays alive but stops answering (port open, every request hangs) — the failure that actually happens. `DaemonWatchdog` (`claudebox_daemon/domain/watchdog.py`, an `AsyncPoller` subclass) measures that gap: every `WATCHDOG_HEARTBEAT_INTERVAL` (5s) tick it compares intended wake-up against actual, since that's what a hung event loop looks like from the outside (a timer that fires unconditionally would report healthy through a stall). `.healthy` flips false once lag exceeds `WATCHDOG_LAG_THRESHOLD` (15s).
+
+**What health aggregates.** Loop lag alone described a daemon that stops scheduling, not one that stays alive and cannot answer — during the incident behind the pool split above, the loop was dispatching callbacks at millisecond granularity while every request queued behind eight busy threads, so health returned `ok` throughout and the daemon was restarted by hand. `/api/daemon/health` now aggregates two signals and names the one that tripped: `event_loop` (`DaemonWatchdog`, lag as above) and `serving` (`ServingProbe`, `domain/serving.py`) — every `SERVING_PROBE_INTERVAL` (5s) the probe submits a trivial job to each serving pool and requires it back inside `SERVING_PROBE_TIMEOUT` (20s). That bound covers queueing *and* execution, so it sits deliberately **above** `DISK_LISTING_TIMEOUT` (15s) — listings running their full contractual bound are progressing, not stuck, and a probe queued behind them must not read as a daemon that cannot serve. `SERVING_PROBE_MAX_FAILURES` (3) consecutive failures are required before the verdict flips, because the host script's three checks span ~4s against a verdict refreshed every 5s and would otherwise all read one transient spike. A probe that does not return reads unhealthy, never as still pending. The `podman` pool is deliberately not part of the verdict: a spawn is legitimately bounded at 60s and four concurrent ones are healthy, and since the pools were split its saturation no longer blocks the paths that serve requests — its counters are reported, not gated on. Top-level `status` stays `ok` / `degraded` because the host script greps for it; the body carries `degraded`, `signals`, per-pool latency and the pool counters, and `claudebox_watchdog.sh` logs that body before restarting so a restart is explicable afterwards. **The endpoint reads cached probe results and counters only — nothing on its path dispatches to a blocking pool** (FastAPI resolves the sync `get_daemon` dependency on AnyIO's own threadpool, which is disjoint from these), since a health check that queues behind the saturation it reports would be useless. Still undetectable by either signal: a daemon that answers health promptly while a specific request path is broken (a wedged proxy connection, a workspace whose disk is gone), since neither signal exercises per-workspace work. A separate host-side unit, `claudebox-watchdog.timer`, polls that endpoint every 30s (`lib/bin/claudebox_watchdog.sh`) and restarts `claudebox-daemon.service` after three consecutive unhealthy-or-unreachable checks, 2s apart. `StartLimitIntervalSec=600` / `StartLimitBurst=5` on the daemon unit bound the resulting restart rate — polling carries no restart-limiting of its own, unlike systemd's native watchdog, so the unit supplies it; a daemon that hangs immediately on every start reaches systemd's start-limit and stops there instead of restarting forever, visible as a failed unit in `systemctl --user status`.
+
+**Why not systemd's native watchdog (`Type=notify`)** — `NotifyAccess=main` accepts datagrams only from the process systemd tracks as the unit's main one. `lib/bin/claudebox_daemon.sh` backgrounds its Python payload and traps signals in the wrapper for teardown (see Process lifecycle above) — the process that would call `sd_notify` is a grandchild, not the main process, and no value of `NotifyAccess` admits a grandchild. `NotifyAccess=all` accepts the whole delegated cgroup, which under `Delegate=yes` includes conmon, rootlessport, and (with nested containers) a second podman — none of them should be trusted as the notifier either. Making the daemon itself the main process would fix this but breaks the teardown contract the wrapper exists for. `Type=notify` is therefore not available to this daemon while the wrapper owns teardown — do not reintroduce it.
+
+Catches a stalled event loop (lock/synchronous-filesystem stalls), not a loop still running with a request parked on an await that never returns - that needs a liveness signal from the pollers themselves (`HealthMonitor`, `SessionMutationObserver`), deliberately deferred rather than blocking this fix on it.
+
 **Maintenance timer** — `claudebox-maintenance.service` (oneshot) re-runs `lib/bin/install.sh` to refresh the local installation: it pulls the latest library, rebuilds the container image with `--update`, cleans stale session/temp directories, and prunes dangling images. `claudebox-maintenance.timer` schedules this `OnCalendar=daily` with `RandomizedDelaySec=1h` and `Persistent=true` so missed runs catch up after the host wakes from sleep.
+
+**Watchdog timer** — `claudebox-watchdog.service` (oneshot) runs `lib/bin/claudebox_watchdog.sh`, the poll-and-restart script behind Health-polling supervision above. `claudebox-watchdog.timer` schedules it `OnBootSec=30s` / `OnUnitActiveSec=30s`.
 
 ---
 
@@ -1504,6 +1698,7 @@ tests/
 
 - **Unit**: Vitest + React Testing Library (jsdom). Co-located: `Component.test.jsx` alongside `Component.jsx`.
 - **E2E**: Playwright (Chromium) at `lib/e2e/app/` (own `package.json` + `playwright.config.js`) with SSE/API mocking via fixtures.
+- **Deterministic text rendering**: the app self-hosts its fonts (`@fontsource/*`, imported once in `main.css`) behind `--font-sans`/`--font-mono` in `App.css`, so no component requests a generic family (`monospace`, `system-ui`) an OS could resolve differently. `waitForAppReady` (`e2e/app/helpers.js`) awaits `document.fonts.ready` before any screenshot.
 - **SPEC coverage**: Claims in SPEC.md tracked via `just test-e2e-cov` — runs `lib/scripts/spec-coverage.js` against both `e2e/app/tests/*.spec.js` (`// SPEC:` markers) and `e2e/cli/test_*.py` (`# SPEC:` markers).
 
 ### 7.3 Task Runner

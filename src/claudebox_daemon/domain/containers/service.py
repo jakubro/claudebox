@@ -3,11 +3,11 @@
 import asyncio
 import functools
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi.responses import Response
-from filelock import FileLock
 from starlette.requests import Request
 
 from claudebox import Broadcaster, Config, create_runtime, get_logger, read_json, write_json
@@ -21,6 +21,7 @@ from claudebox.constants import (
 from .errors import ContainerNotFound, ContainerUnavailable
 from .models import Container, ContainerStatus, ContainerStatusEvent
 from .proxy import ContainerProxyClient
+from .._locking import locked
 from ...constants import DAEMON_STATE_FILE
 
 
@@ -37,6 +38,8 @@ class ContainerService:
         events: Broadcaster,
         config: Config,
         proxy: ContainerProxyClient,
+        podman_executor: ThreadPoolExecutor,
+        state_executor: ThreadPoolExecutor,
     ) -> None:
         self._logger = get_logger(__name__)
 
@@ -44,6 +47,9 @@ class ContainerService:
         self._claudebox_config = config
         self._events = events
         self._proxy = proxy
+        # Separate pools: a spawn blocked on podman's store lock must not hold up the write recording it.
+        self._executor = podman_executor
+        self._state_executor = state_executor
 
         self._runtime = create_runtime(self._claudebox_config)
 
@@ -82,7 +88,7 @@ class ContainerService:
         loop = asyncio.get_running_loop()
         data = self.list_all()
         await loop.run_in_executor(
-            None,
+            self._state_executor,
             functools.partial(self._write_state, self._state_path, data),
         )
 
@@ -90,7 +96,7 @@ class ContainerService:
     def _write_state(cls, path, data) -> None:
         """Synchronous state write under file lock."""
 
-        with FileLock(path.with_suffix(".lock")):
+        with locked(path.with_suffix(".lock")):
             write_json(path, data)
 
     def _load(self) -> None:
@@ -101,18 +107,12 @@ class ContainerService:
         self._containers.update(containers)
 
     async def sync_state(self) -> None:
-        """Rebuild registry from running containers via the container backend.
-
-        Queries the container backend for containers with the claudebox label,
-        matches them against the registry by the claudebox-id label, and updates
-        or registers entries accordingly. Only claims containers with a matching
-        claudebox-workspace label.
-        """
+        """Rebuild registry from backend containers, matching by claudebox-id/-workspace labels."""
 
         loop = asyncio.get_running_loop()
 
         try:
-            containers = await loop.run_in_executor(None, self._runtime.list_containers)
+            containers = await loop.run_in_executor(self._executor, self._runtime.list_containers)
         except Exception:
             self._logger.warning(
                 "Failed to list containers during rediscovery",
@@ -131,7 +131,6 @@ class ContainerService:
             if not container_id:
                 continue
 
-            # Filter by workspace label
             container_workspace = labels.get(LABEL_WORKSPACE)
 
             if container_workspace != self._workspace.id:
@@ -225,25 +224,28 @@ class ContainerService:
         return container
 
     async def update(self, container: Container, **fields) -> None:
-        """Apply field updates to a container and broadcast if status changed."""
+        """Apply field updates to a container; persist only when a value actually changed."""
 
         previous_status = container.status
+        changed = False
 
         for key, val in fields.items():
             if not hasattr(container, key):
                 raise TypeError(f"Container has no field {key!r}")
 
-            setattr(container, key, val)
+            if getattr(container, key) != val:
+                setattr(container, key, val)
+                changed = True
 
-        await self.save()
+        if changed:
+            await self.save()
 
         if container.status != previous_status:
             await self._broadcast_status(container)
 
     async def stop_container(self, container_id: str, *, grace_seconds: int = 10) -> None:
-        """Send SIGTERM with a ``grace_seconds`` grace period; container ends STOPPED.
-
-        Raises ContainerNotFound if not in registry.
+        """Send SIGTERM with a ``grace_seconds`` grace period; container ends STOPPED. Raises
+        ContainerNotFound if not in registry.
         """
 
         await self._signal_to_stopped(
@@ -253,9 +255,8 @@ class ContainerService:
         )
 
     async def kill_container(self, container_id: str) -> None:
-        """Send SIGKILL immediately; container ends STOPPED.
-
-        Raises ContainerNotFound if not in registry.
+        """Send SIGKILL immediately; container ends STOPPED. Raises ContainerNotFound if not
+        in registry.
         """
 
         await self._signal_to_stopped(
@@ -280,7 +281,7 @@ class ContainerService:
         loop = asyncio.get_running_loop()
 
         try:
-            await loop.run_in_executor(None, runtime_call, container.backend_id)
+            await loop.run_in_executor(self._executor, runtime_call, container.backend_id)
         except Exception:
             self._logger.warning(
                 failure_message,
@@ -295,15 +296,11 @@ class ContainerService:
     async def remove(self, container_id: str) -> None:
         """Force-remove the container backend and drop it from the registry.
 
-        When the removed container served a session, broadcast a
-        ``SessionsChangedEvent`` so every tab refetches and drops the container
-        from the list promptly once removal completes.
-
-        Raises ContainerNotFound if not in registry.
+        Broadcasts ``SessionsChangedEvent`` when the container served a session, so tabs
+        refetch and drop it promptly. Raises ContainerNotFound if not in registry.
         """
 
-        # Local import mirrors sessions.service's deferred ..containers imports:
-        # keeps the containers <-> sessions dependency out of module load order.
+        # Local import avoids a containers <-> sessions circular import at module load time.
         from ..sessions.models import SessionsChangedEvent
 
         container = self.get(container_id)
@@ -313,7 +310,7 @@ class ContainerService:
 
         try:
             await loop.run_in_executor(
-                None,
+                self._executor,
                 functools.partial(self._runtime.remove_container, container.backend_id),
             )
         except Exception:
@@ -332,7 +329,7 @@ class ContainerService:
                 SessionsChangedEvent(
                     workspace_id=self._workspace.id,
                     container_id=container_id,
-                )
+                ),
             )
 
     async def send(self, payload: Any, container_id: str, endpoint: str, method: str) -> dict:
@@ -405,17 +402,16 @@ class ContainerService:
             **env,
             "CLAUDEBOX_WEB": "1",
             "CLAUDEBOX_PWD": str(self._workspace.path),
-            # "CLAUDEBOX_DEV": str(int(is_dev_mode())),
         }
 
-        # Reload workspace config each create so mount/port/env/network reflect the current
-        # settings.toml, not the load-time snapshot (agent/profile/backend stay on the snapshot).
+        # Reload so mount/port/env/network reflect current settings.toml; agent/profile/backend
+        # stay on the load-time snapshot.
         config = Config.load(self._workspace.path)
 
         loop = asyncio.get_running_loop()
 
         backend_id = await loop.run_in_executor(
-            None,
+            self._executor,
             functools.partial(
                 self._runtime.run_container,
                 name=container_id,
@@ -434,7 +430,7 @@ class ContainerService:
 
         try:
             port = await loop.run_in_executor(
-                None,
+                self._executor,
                 functools.partial(
                     self._runtime.get_host_port,
                     backend_id,
@@ -462,15 +458,13 @@ class ContainerService:
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            None,
+            self._executor,
             functools.partial(self._runtime.create_network, self._network),
         )
 
     async def _refresh_port(self, container: Container) -> None:
-        """Re-discover the host port for a running container.
-
-        Updates the container's port in-place. Silently skips if the container
-        is not running or port discovery fails.
+        """Re-discover the host port for a running container, updating in-place; skips
+        silently if not running or discovery fails.
         """
 
         if container.status != ContainerStatus.RUNNING:
@@ -480,7 +474,7 @@ class ContainerService:
 
         try:
             port = await loop.run_in_executor(
-                None,
+                self._executor,
                 functools.partial(
                     self._runtime.get_host_port,
                     container.backend_id,
@@ -519,7 +513,7 @@ class ContainerService:
                 container_id=container.id,
                 workspace_id=self._workspace.id,
                 status=container.status,
-            )
+            ),
         )
 
     @property

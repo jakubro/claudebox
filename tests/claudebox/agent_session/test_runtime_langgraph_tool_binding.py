@@ -91,7 +91,7 @@ class TestConnectBindsTools:
             patch.object(runtime, "_build_chat_model", return_value=object()),
             patch("claudebox.agent_session.runtime_langgraph.AsyncSqliteSaver") as mock_saver,
             patch("claudebox.agent_session.runtime_langgraph.create_agent") as mock_create_agent,
-            patch("claudebox.agent_session.runtime_langgraph.SummarizationMiddleware"),
+            patch("claudebox.agent_session.runtime_langgraph.ClaudeboxSummarizationMiddleware"),
         ):
             saver_instance = mock_saver.from_conn_string.return_value
             saver_instance.__aenter__ = _async_return(object())
@@ -105,9 +105,7 @@ class TestConnectBindsTools:
 
     @pytest.mark.anyio
     async def test_connect_degrades_to_chat_only_when_bind_tools_unsupported(self, tmp_path):
-        """When create_agent raises NotImplementedError (model can't bind_tools),
-        connect() completes with a chat-only graph (tools=[]) instead of propagating.
-        """
+        """NotImplementedError from create_agent degrades to a chat-only graph (tools=[])."""
 
         runtime = LangGraphRuntime(_config(tmp_path))
 
@@ -129,7 +127,7 @@ class TestConnectBindsTools:
                 "claudebox.agent_session.runtime_langgraph.create_agent",
                 side_effect=_create,
             ),
-            patch("claudebox.agent_session.runtime_langgraph.SummarizationMiddleware"),
+            patch("claudebox.agent_session.runtime_langgraph.ClaudeboxSummarizationMiddleware"),
         ):
             saver_instance = mock_saver.from_conn_string.return_value
             saver_instance.__aenter__ = _async_return(object())

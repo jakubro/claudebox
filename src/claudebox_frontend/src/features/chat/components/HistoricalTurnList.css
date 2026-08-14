@@ -1,0 +1,27 @@
+/* Windowed historical turn list - spacer plus absolutely positioned rows. */
+
+/* Holds the full scroll height of every historical turn, measured or predicted, so the scrollbar
+   and every scroll offset behave as if all turns were present while only the windowed rows are mounted. */
+.historical-turns {
+  position: relative;
+  width: 100%;
+}
+
+/* Rows are taken out of flow and placed by the virtualizer, so mounting or unmounting a turn never
+   shifts its neighbours.
+
+   flow-root makes each row its own block formatting context, containing the turn's bottom margin
+   inside the measured height. Without it every turn measures 16px short, and the whole column packs
+   tighter than an unwindowed one. */
+.historical-turn-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flow-root;
+}
+
+/* Fallback rows when no viewport is measurable: normal flow, no positioning. */
+.historical-turn-row-static {
+  width: 100%;
+}

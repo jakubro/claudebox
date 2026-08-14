@@ -3,12 +3,7 @@
 import { MINIMAP_MAX_WIDTH, MINIMAP_MIN_WIDTH } from '../../../../../config/dimensions'
 import { EventSubtype } from '../../../../../config/schema'
 
-/**
- * Build segments from groups (turns grouped by compaction boundaries).
- *
- * A segment contains all turns until a compact_boundary event appears.
- * The turn with compact_boundary starts a new segment.
- */
+/** A segment contains all turns until a compact_boundary event appears; that turn starts the next segment. */
 export function buildSegments(groups, turnHeights, userMessageHeights = {}) {
   const segments = []
   let currentSegment = { turns: [], index: 0 }
@@ -17,14 +12,12 @@ export function buildSegments(groups, turnHeights, userMessageHeights = {}) {
     const group = groups[i]
     const hasCompaction = group.events?.some(e => e.subtype === EventSubtype.COMPACT_BOUNDARY)
 
-    // If this turn has compaction, start new segment BEFORE adding this turn
     if (hasCompaction && currentSegment.turns.length > 0) {
       segments.push(currentSegment)
       currentSegment = { turns: [], index: segments.length }
     }
 
-    // Keyed by stable turn_id (useTurnHeights exports by turnId); stays correct
-    // when the groups array reorders, e.g. a compaction dropping an earlier turn.
+    // Keyed by stable turn_id (useTurnHeights exports by turnId); stays correct if groups reorders.
     const totalHeight = turnHeights[group.turn_id] ?? 100
     const userHeight = userMessageHeights[group.turn_id] ?? 0
     const userHeightPct = totalHeight > 0 ? Math.round((userHeight / totalHeight) * 100) : 0
@@ -40,7 +33,6 @@ export function buildSegments(groups, turnHeights, userMessageHeights = {}) {
     })
   }
 
-  // Push final segment if non-empty
   if (currentSegment.turns.length > 0) {
     segments.push(currentSegment)
   }
@@ -48,11 +40,7 @@ export function buildSegments(groups, turnHeights, userMessageHeights = {}) {
   return segments
 }
 
-/**
- * Normalize durations to width values within MINIMAP_MIN_WIDTH to MINIMAP_MAX_WIDTH range.
- */
 export function normalizeWidths(segments) {
-  // Collect all durations
   const allDurations = segments.flatMap(s => s.turns.map(t => t.duration))
   const maxDuration = Math.max(...allDurations, 1) // Avoid divide by zero
 
@@ -66,9 +54,6 @@ export function normalizeWidths(segments) {
   }))
 }
 
-/**
- * Calculate turn duration from event timestamps.
- */
 export function calculateDuration(events) {
   if (!events || events.length === 0) {
     return 0

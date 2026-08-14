@@ -3,7 +3,6 @@
 import { useContext } from 'react'
 import { SessionTreeContext } from '../SessionTreeContext'
 
-/** Access session tree state from context. */
 export function useSessionTree() {
   const context = useContext(SessionTreeContext)
   if (!context) {

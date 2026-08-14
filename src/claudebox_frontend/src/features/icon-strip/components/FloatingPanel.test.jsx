@@ -4,7 +4,6 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import FloatingPanel from './FloatingPanel'
 
-// Mock panel components via config/layout
 vi.mock('../../../config/layout', () => ({
   components: {
     sessions: () => <div data-testid="panel-sessions">Sessions Panel</div>,
@@ -51,7 +50,6 @@ describe('FloatingPanel', () => {
   })
 
   it('positions to the left of anchor for right strip', () => {
-    // Mock window.innerWidth
     Object.defineProperty(window, 'innerWidth', { value: 1024, writable: true })
 
     const rightAnchor = { top: 100, right: 1024, left: 992, bottom: 132 }
@@ -108,9 +106,7 @@ describe('FloatingPanel', () => {
   })
 
   describe('wide-panel sizing', () => {
-    // Wide panels use min(innerWidth, max(800, innerWidth * 0.6)). At
-    // innerWidth=1600 -> min(1600, max(800, 960)) = 960. At innerWidth=1024 ->
-    // min(1024, max(800, 614)) = 800. Both >= 800px floor.
+    // Wide width = min(innerWidth, max(800, innerWidth*0.6)); 960 at 1600px, clamped to 800 at 1024px.
 
     it('logs panel uses wide sizing (width >= 800px)', () => {
       Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true })

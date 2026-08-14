@@ -72,7 +72,7 @@ vi.mock('../context/SessionDataContext', () => ({
   useSessionData: () => ({
     sessionId: null,
     sessionName: null,
-    model: 'claude-sonnet-4-6',
+    model: 'claude-sonnet-5',
     permissionMode: 'bypassPermissions',
     workspace: '/home/user/project',
   }),
@@ -185,10 +185,7 @@ describe('useNewSession', () => {
 
   describe('executeNewSessionInNewTab', () => {
     it('does not toggle global isCreating on the originating tab', async () => {
-      // Originating tab must remain a passive bystander - the new browser
-      // tab manages its own EventsContext flags when it loads. Toggling
-      // startCreating here would render the chat overlay on the
-      // originating tab while the new tab opens.
+      // Originating tab must stay passive - toggling startCreating here would show the chat overlay on this tab.
       mockNewSession.mockResolvedValue({ session_id: 's2', container_id: 'c2' })
 
       const { result } = renderHook(() => useNewSession())
@@ -207,7 +204,6 @@ describe('useNewSession', () => {
       const promise = result.current.executeNewSessionInNewTab()
       // The spinner state lives in local React state; resolution turns it back off.
       await promise
-      // After completion, the local flag is reset.
       expect(result.current.isCreatingInNewTab).toBe(false)
     })
   })

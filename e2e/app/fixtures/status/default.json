@@ -3,7 +3,7 @@
   "name": null,
   "workspace": "/home/user/project",
   "permission_mode": "bypassPermissions",
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5",
   "num_turns": 0,
   "total_cost_usd": 0,
   "total_duration_ms": 0,

@@ -3,7 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SSEConnectionManager from './SSEConnectionManager'
 
-// Mock EventSource
 class MockEventSource {
   static instances = []
 
@@ -228,32 +227,26 @@ describe('SSEConnectionManager', () => {
       manager.connect()
       latestES().simulateOpen()
 
-      // Attempt 0: 1s
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
       expect(MockEventSource.instances).toHaveLength(2)
 
-      // Attempt 1: 2s
       latestES().simulateError()
       vi.advanceTimersByTime(2000)
       expect(MockEventSource.instances).toHaveLength(3)
 
-      // Attempt 2: 4s
       latestES().simulateError()
       vi.advanceTimersByTime(4000)
       expect(MockEventSource.instances).toHaveLength(4)
 
-      // Attempt 3: 8s
       latestES().simulateError()
       vi.advanceTimersByTime(8000)
       expect(MockEventSource.instances).toHaveLength(5)
 
-      // Attempt 4: 10s (capped at maxDelay)
       latestES().simulateError()
       vi.advanceTimersByTime(10000)
       expect(MockEventSource.instances).toHaveLength(6)
 
-      // Attempt 5: still 10s cap
       latestES().simulateError()
       vi.advanceTimersByTime(10000)
       expect(MockEventSource.instances).toHaveLength(7)
@@ -263,12 +256,10 @@ describe('SSEConnectionManager', () => {
       manager.connect()
       latestES().simulateOpen()
 
-      // First error: 1s (attempt 0)
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
       expect(MockEventSource.instances).toHaveLength(2)
 
-      // Successful reconnect resets counter
       latestES().simulateOpen()
       latestES().simulateError()
 
@@ -295,7 +286,7 @@ describe('SSEConnectionManager', () => {
       latestES().simulateOpen()
       latestES().simulateError()
 
-      vi.advanceTimersByTime(1000) // attempt 0
+      vi.advanceTimersByTime(1000)
       latestES().simulateOpen()
       latestES().simulateError()
 
@@ -439,17 +430,15 @@ describe('SSEConnectionManager', () => {
       limited.connect()
       latestES().simulateOpen()
 
-      // Attempt 0
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
       expect(MockEventSource.instances).toHaveLength(2)
 
-      // Attempt 1
       latestES().simulateError()
       vi.advanceTimersByTime(2000)
       expect(MockEventSource.instances).toHaveLength(3)
 
-      // Attempt 2 - exhausted, no new EventSource
+      // maxAttempts reached - no new EventSource created
       latestES().simulateError()
       vi.advanceTimersByTime(10000)
       expect(MockEventSource.instances).toHaveLength(3)
@@ -474,7 +463,6 @@ describe('SSEConnectionManager', () => {
       unlimited.connect()
       latestES().simulateOpen()
 
-      // 5 consecutive failures - should keep reconnecting
       for (let i = 0; i < 5; i++) {
         latestES().simulateError()
         vi.advanceTimersByTime(200)
@@ -500,20 +488,16 @@ describe('SSEConnectionManager', () => {
       limited.connect()
       latestES().simulateOpen()
 
-      // Use 1 attempt
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
 
-      // Reconnect succeeds - counter resets
       latestES().simulateOpen()
 
-      // 2 more failures should be allowed again
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
       latestES().simulateError()
       vi.advanceTimersByTime(2000)
 
-      // Now exhausted
       latestES().simulateError()
       expect(onExhausted).toHaveBeenCalledOnce()
 

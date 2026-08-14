@@ -51,7 +51,6 @@ describe('BookmarksContext', () => {
       </BookmarksProvider>,
     )
 
-    // useBookmarks receives the active sessionId and workspaceId
     expect(mockUseBookmarks).toHaveBeenCalledWith('test-session', 'test-ws')
   })
 

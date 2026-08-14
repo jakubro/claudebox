@@ -121,8 +121,7 @@ describe('SessionRoutingEffect - board route', () => {
 
     render()
 
-    // Discovery in flight - workspace switch deferred. WorkspaceContext
-    // discovery will auto-select the URL's workspace when it matches.
+    // Discovery in flight; WorkspaceContext auto-selects the URL's workspace once it resolves.
     expect(mockSelectWorkspace).not.toHaveBeenCalled()
   })
 

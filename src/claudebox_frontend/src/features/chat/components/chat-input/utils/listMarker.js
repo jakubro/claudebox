@@ -8,9 +8,9 @@ const NUMBERED_PAREN_RE = /^([ \t]*)(\d+)\) (.*)$/
 /**
  * Parse a single line of textarea content for markdown list-item structure.
  *
- * Recognizes bullet (`-`, `*`, `+`), numbered (`<n>. `, `<n>) `), and task
- * (`- [ ]`, `- [x]`) markers, each optionally indented. Returns null for
- * plain prose, headings, code-fence lines, and empty/whitespace-only lines.
+ * Recognizes bullet (`-`, `*`, `+`), numbered (`<n>. `, `<n>) `), and task (`- [ ]`, `- [x]`)
+ * markers, each optionally indented. Returns null for plain prose, headings, code-fence lines,
+ * and empty/whitespace-only lines.
  *
  * @param {string} lineText - Single line of content (no trailing newline).
  * @returns {{
@@ -81,9 +81,8 @@ export function parseListLine(lineText) {
 /**
  * Compute the marker for the next list item.
  *
- * Bullets reuse the same character. Numbered markers increment by one and
- * reuse the separator (`.` or `)`). Task markers always render as unchecked,
- * regardless of the prior item's check state.
+ * Bullets reuse the same character. Numbered markers increment by one and reuse the separator
+ * (`.` or `)`). Task markers always render as unchecked, regardless of the prior item's check state.
  *
  * @param {ReturnType<typeof parseListLine>} parsed - Non-null parse result.
  * @returns {string}

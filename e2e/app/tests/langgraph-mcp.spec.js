@@ -13,14 +13,11 @@ test.describe('LangGraph MCP', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Tool block visible - LangGraph MCP tools render through the generic
-    // tool-block pipeline; no specialised renderer required for v1 (the MCP
-    // panel UI stays hidden because supports_mcp_delegation stays False).
+    // Renders via the generic tool-block pipeline; MCP panel stays hidden while supports_mcp_delegation is False.
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
     await expect(toolBlock).toHaveAttribute('data-tool-use-id', 'tool_001')
 
-    // The tool result lands and the block reaches the completed state.
     const completed = page
       .locator('[data-testid="tool-block"][data-tool-status="completed"]')
       .first()

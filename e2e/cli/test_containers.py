@@ -1,7 +1,7 @@
 """End-to-end behavioral tests for ``claudebox containers`` noun-group.
 
-Surfaces only the real binary can prove: raw-print sub-help (Rich-bypassed)
-and daemon-unreachable rendering against the hermetic fake daemon.
+Surfaces only the real binary can prove: raw-print sub-help (Rich-bypassed) and daemon-unreachable
+rendering against the hermetic fake daemon.
 """
 
 import pytest
@@ -10,9 +10,8 @@ import pytest
 pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])
 
 
-# Port 1 is reserved by the IANA registry and never listened on in practice;
-# pointing CLAUDEBOX_DAEMON_URL there causes httpx to receive ECONNREFUSED,
-# which is the path the CLI's "daemon not reachable" handler exists to surface.
+# Port 1 is IANA-reserved and never listened on, so pointing CLAUDEBOX_DAEMON_URL there gives
+# httpx ECONNREFUSED - the path the CLI's "daemon not reachable" handler exists to surface.
 _DEAD_DAEMON_URL = "http://127.0.0.1:1"
 
 
@@ -39,8 +38,8 @@ class TestContainersBare:
 class TestContainersDaemonUnreachable:
     """list/stop/kill all surface a clean error + non-zero exit when daemon is down.
 
-    The stop/kill cases also exercise the prefix-match path (no container matches "abc")
-    and partial-failure surfacing (each fan-out target reports its own outcome).
+    stop/kill also exercise the prefix-match path (no container matches "abc") and
+    partial-failure surfacing (each fan-out target reports its own outcome).
     """
 
     @pytest.mark.parametrize(
@@ -52,8 +51,8 @@ class TestContainersDaemonUnreachable:
         ],
     )
     def test_daemon_unreachable_exits_1(self, args: list[str], run_claudebox) -> None:
-        # CLAUDEBOX_DAEMON_URL pointing at a closed port → ConnectError → the
-        # "daemon not reachable" branch surfaces a clean error + exit 1.
+        # A closed port triggers ConnectError, hitting the daemon-not-reachable branch (clean
+        # error, exit 1).
         result = run_claudebox(args, env={"CLAUDEBOX_DAEMON_URL": _DEAD_DAEMON_URL}, timeout=15)
         assert result.returncode == 1
         combined = result.stdout + result.stderr

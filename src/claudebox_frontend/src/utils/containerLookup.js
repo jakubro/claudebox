@@ -1,9 +1,7 @@
-/** Pure session ↔ container resolvers - extracted from multiple effects + components. */
+/** Pure session-to-container id resolvers. */
 
 /**
- * Find the session id for a container, checking the eager containerMap first
- * (populated at session creation) then the canonical sessions list.
- *
+ * Session id for a container: check the eager containerMap first (set at creation), else the sessions list.
  * @param {string} containerId
  * @param {Object<string, string>} containerMap - sessionId -> containerId.
  * @param {Array<{session_id: string, container_id?: string}>} sessions
@@ -18,9 +16,7 @@ export function resolveSessionIdFromContainer(containerId, containerMap, session
 }
 
 /**
- * Find the container id for a session, checking the eager containerMap first
- * (populated at session creation) then the canonical sessions list.
- *
+ * Container id for a session: check the eager containerMap first (set at creation), else the sessions list.
  * @param {string} sessionId
  * @param {Object<string, string>} containerMap - sessionId -> containerId.
  * @param {Array<{session_id: string, container_id?: string}>} sessions

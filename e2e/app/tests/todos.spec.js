@@ -36,7 +36,6 @@ test.describe('Todos Panel', () => {
     test('shows status icons for different states', async ({ page }) => {
       const todoPanel = page.locator('[data-testid="panel-todos"]')
 
-      // Wait for todos
       await expect(page.getByText('Fix authentication bug')).toBeVisible()
 
       // ○=pending, ◐=in_progress, ●=completed
@@ -86,7 +85,6 @@ test.describe('Todos Panel', () => {
       const sections = page.locator('[data-testid="todo-section"]')
       await expect(sections).toHaveCount(2)
 
-      // First section has no header
       const firstSection = sections.first()
       await expect(firstSection.locator('[data-testid="todo-section-header"]')).not.toBeAttached()
       await expect(firstSection.getByText('Set up project structure')).toBeVisible()
@@ -102,10 +100,8 @@ test.describe('Todos Panel', () => {
       const sections = page.locator('[data-testid="todo-section"]')
       const subagentSection = sections.nth(1)
 
-      // Has section header
       await expect(subagentSection.locator('[data-testid="todo-section-header"]')).toBeVisible()
 
-      // Contains subagent todos
       await expect(subagentSection.getByText('Create components')).toBeVisible()
       await expect(subagentSection.getByText('Add styling')).toBeVisible()
     })
@@ -120,7 +116,6 @@ test.describe('Todos Panel', () => {
       const header = page.locator('[data-testid="todo-section-header"]')
       await expect(header).toBeVisible()
 
-      // Label text with uppercase styling
       const label = header.locator('.todo-section-label')
       await expect(label).toContainText('Build the frontend')
       await expect(label).toHaveCSS('text-transform', 'uppercase')
@@ -139,7 +134,6 @@ test.describe('Todos Panel', () => {
       // TodoWrite has parent_tool_use_id "toolu_abc123xyz" but no matching Task event
       const header = page.locator('[data-testid="todo-section-header"]')
       await expect(header).toBeVisible()
-      // Should show truncated tool_use_id as fallback label
       await expect(header.locator('.todo-section-label')).toContainText('toolu_')
     })
 
@@ -150,8 +144,7 @@ test.describe('Todos Panel', () => {
       await waitForAppReady(page)
       await openTodosPanel(page)
 
-      // Fixture includes Task tool_result -> subagent section already cleaned up
-      // Only main section remains
+      // Fixture includes a Task tool_result, so the subagent section is already cleaned up.
       await expect(page.getByText('Main task')).toBeVisible()
       await expect(page.getByText('Subagent task')).not.toBeVisible()
       await expect(page.locator('[data-testid="todo-section"]')).toHaveCount(1)
@@ -174,9 +167,7 @@ test.describe('Todos Panel', () => {
     // SPEC: panel-todo:row-description-tooltip
     test('description surfaces as native tooltip on the row when set', async ({ page }) => {
       const row = page.locator('[data-testid="panel-todos"] [data-testid="todo-item"]').first()
-      // Native title attribute drives the browser tooltip.
       await expect(row).toHaveAttribute('title', 'Skim README and ARCHITECTURE')
-      // No visible inline subtitle anywhere in the panel.
       await expect(
         page.locator('[data-testid="panel-todos"] [data-testid="todo-subtitle"]'),
       ).toHaveCount(0)
@@ -185,12 +176,10 @@ test.describe('Todos Panel', () => {
     // SPEC: panel-todo:blocked-by-badge
     // SPEC: panel-todo:blocked-icon
     test('item with unresolved blockers renders ⊘ icon in place of ○', async ({ page }) => {
-      // No standalone count badge anywhere.
       await expect(
         page.locator('[data-testid="panel-todos"] [data-testid="todo-blocked-by-badge"]'),
       ).toHaveCount(0)
 
-      // The blocked row's status icon reads ⊘.
       const icons = await page
         .locator('[data-testid="panel-todos"] [data-testid="todo-item"] .todo-status')
         .allTextContents()
@@ -226,9 +215,7 @@ test.describe('Todos Panel', () => {
     })
 
     // SPEC: panel-todo:badge-update
-    // MOCK-LIMITED: All SSE events are delivered at once via fixture, so we cannot
-    // observe incremental badge updates as individual TodoWrite events arrive.
-    // The test still validates that the badge correctly reflects the final todo state.
+    // MOCK-LIMITED: fixture delivers all SSE events at once - checks final badge state, not incremental.
     test('badge updates as TodoWrite events arrive', async ({ page }) => {
       await mockSSE(page, 'events/tool-todowrite.jsonl')
       await page.goto(DEFAULT_SESSION_URL)

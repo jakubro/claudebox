@@ -10,8 +10,6 @@ import { useEvents } from './EventsContext'
 const InteractionContext = createContext(null)
 
 /**
- * Provide request lifecycle state and actions.
- *
  * Medium-frequency context - updates during submit/response cycles.
  *
  * @param {object} props
@@ -36,7 +34,6 @@ export function InteractionProvider({ children }) {
     setInterruptStatus(null)
   }, [])
 
-  // Clear isAwaitingResponse when response arrives
   useEffect(() => {
     if (isAwaitingResponse && awaitingResponseSince && events.length > 0) {
       const lastEvent = events[events.length - 1]
@@ -53,8 +50,7 @@ export function InteractionProvider({ children }) {
   // Track the last result event to detect turn completion
   const [lastResultTimestamp, setLastResultTimestamp] = useState(null)
 
-  // Update lastResultTimestamp when any result event arrives.
-  // Scans from end since result may not be the very last event (task notifications follow).
+  // Scans from the end since a result event may not be the last one - task notifications can follow it.
   useEffect(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]
@@ -67,9 +63,8 @@ export function InteractionProvider({ children }) {
     }
   }, [events, lastResultTimestamp])
 
-  // Clear "stopped" status when turn completes (result event arrives)
-  // Only clear after we see a result event, not just when isResponding becomes false
-  // This prevents flashing back to "Working..." when responses arrive after interrupt
+  // Clears "stopped" only once a result event arrives (not merely isResponding=false) - avoids
+  // flashing back to "Working..." after an interrupt.
   useEffect(() => {
     if (interruptStatus === InterruptStatus.STOPPED && lastResultTimestamp) {
       // Turn completed - clear after short delay for visual feedback

@@ -33,8 +33,7 @@ describe('useFloatingPanel', () => {
       result.current.handleIconEnter('sessions', mockEl(100), 'left')
     })
 
-    // Maximized now waits out the shared hover-intent delay (350 ms) like every
-    // other state - no instant preview.
+    // Maximized waits out the shared hover-intent delay (350 ms) like every other state - no instant preview.
     act(() => {
       vi.advanceTimersByTime(300)
     })
@@ -66,8 +65,7 @@ describe('useFloatingPanel', () => {
     const { result } = renderHook(() => useFloatingPanel(false, ACTIVE))
 
     act(() => {
-      // 'bookmarks' is NOT in ACTIVE - closed panel; preview should fire after the
-      // hover-intent delay (350 ms).
+      // 'bookmarks' is NOT in ACTIVE - closed panel; preview fires after the hover-intent delay (350 ms).
       result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
     })
 
@@ -200,8 +198,7 @@ describe('useFloatingPanel', () => {
       result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
     })
 
-    // Panel toggles active before the 350 ms intent timer fires (e.g., the
-    // click that landed the hover also toggled the panel open in dockview).
+    // Panel becomes active before the intent timer fires (e.g. a click both opens it and starts the hover).
     rerender({ active: [...ACTIVE, 'bookmarks'] })
 
     act(() => {
@@ -229,8 +226,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('keeps the preview when a panel becomes active under the maximized branch', () => {
-    // Maximized branch previews every icon - currently-visible included - so
-    // the dismiss-on-active rule that applies when not maximized must NOT fire.
+    // Maximized previews every icon, even visible ones - the not-maximized dismiss-on-active rule must not fire.
     const { result, rerender } = renderHook(({ active }) => useFloatingPanel(true, active), {
       initialProps: { active: ACTIVE },
     })

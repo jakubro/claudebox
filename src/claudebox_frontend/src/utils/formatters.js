@@ -6,10 +6,7 @@ import { parseLocalCommandSegments, parseSlashCommand, parseStructuredQA } from 
 
 const stripper = remark().use(strip)
 
-/**
- * Format duration in seconds to human readable format.
- * Examples: "5s", "1m 23s", "1h 5m 12s"
- */
+/** Format duration in seconds to human readable format (e.g. "5s", "1m 23s", "1h 5m 12s"). */
 export function formatDuration(seconds) {
   if (seconds < 0) {
     return '0s'
@@ -36,9 +33,7 @@ export function formatDuration(seconds) {
   return parts.join(' ')
 }
 
-/**
- * Format milliseconds as HH:MM:SS clock display.
- */
+/** Format milliseconds as HH:MM:SS clock display. */
 export function formatDurationClock(ms) {
   const totalSeconds = Math.floor(ms / 1000)
   const hours = Math.floor(totalSeconds / 3600)
@@ -47,10 +42,7 @@ export function formatDurationClock(ms) {
   return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
-/**
- * Format duration in seconds to compact display showing only the two most significant units.
- * Examples: "45s", "12m", "2h 15m", "3d 5h"
- */
+/** Format duration in seconds to compact display showing only the two most significant units (e.g. "45s", "12m", "2h 15m", "3d 5h"). */
 export function formatDurationCompact(seconds) {
   if (seconds < 60) {
     return `${seconds}s`
@@ -69,11 +61,7 @@ export function formatDurationCompact(seconds) {
   return `${days}d ${remainingHours}h`
 }
 
-/**
- * Format block timing as compact inline string.
- * Shows duration and/or relative offset from turn start.
- * Examples: "2s · @ +8s", "@ +3s", "45s · @ +1m 12s"
- */
+/** Format block timing as compact inline string: duration and/or relative offset from turn start (e.g. "2s @ +8s"). */
 export function formatBlockTiming(duration, relativeTime) {
   const parts = []
   if (duration !== null && duration !== undefined) {
@@ -85,9 +73,7 @@ export function formatBlockTiming(duration, relativeTime) {
   return parts.join(' · ')
 }
 
-/**
- * Format date as relative time (e.g., "5m ago", "2d ago").
- */
+/** Format date as relative time (e.g., "5m ago", "2d ago"). */
 export function formatRelativeTime(date) {
   const now = new Date()
   const diff = now - new Date(date)
@@ -110,9 +96,7 @@ export function formatRelativeTime(date) {
   return new Date(date).toLocaleDateString()
 }
 
-/**
- * Format date as locale absolute time (e.g., "Apr 25, 2026, 7:40 PM").
- */
+/** Format date as locale absolute time (e.g., "Apr 25, 2026, 7:40 PM"). */
 export function formatAbsoluteTime(date) {
   return new Date(date).toLocaleString('en-US', {
     month: 'short',
@@ -123,9 +107,7 @@ export function formatAbsoluteTime(date) {
   })
 }
 
-/**
- * Format cost as currency string with K/M/B suffixes.
- */
+/** Format cost as currency string with K/M/B suffixes. */
 export function formatCost(cost) {
   if (cost == null) {
     return '-'
@@ -150,9 +132,7 @@ export function formatTurns(turns) {
   return `${turns} turns`
 }
 
-/**
- * Format token count with K suffix for thousands.
- */
+/** Format token count with K suffix for thousands. */
 export function formatTokens(tokens) {
   if (!tokens) {
     return 'unknown'
@@ -169,9 +149,7 @@ export function getFirstLine(text, maxLength = 50) {
   return firstLine.length > maxLength ? `${firstLine.slice(0, maxLength)}...` : firstLine
 }
 
-/**
- * Strip markdown formatting and HTML tags to plain text.
- */
+/** Strip markdown formatting and HTML tags to plain text. */
 export function stripMarkdown(text) {
   if (!text) {
     return ''
@@ -190,9 +168,7 @@ export function getBasename(path) {
   return parts[parts.length - 1]
 }
 
-/**
- * Format file path for header: filename when collapsed, full path when expanded.
- */
+/** Format file path for header: filename when collapsed, full path when expanded. */
 export function formatFilePath(filePath, isExpanded) {
   if (!filePath) {
     return 'file'
@@ -200,9 +176,7 @@ export function formatFilePath(filePath, isExpanded) {
   return isExpanded ? filePath : filePath.split('/').pop()
 }
 
-/**
- * Parse structured Q/A XML and format as plain text.
- */
+/** Parse structured Q/A XML and format as plain text. */
 function formatStructuredQA(content) {
   const questions = parseStructuredQA(content)
   if (!questions) {
@@ -211,27 +185,24 @@ function formatStructuredQA(content) {
   return questions.map(q => `${q.text}: ${q.answers.join(', ')}`).join('\n')
 }
 
-/**
- * Format user message for clipboard copy.
- *
- * Transforms known XML patterns to human-readable text while preserving
- * unknown XML verbatim.
- */
-export function formatUserMessageForCopy(message) {
+/** Format user message for clipboard copy; prepends the note (a sibling field, never inside `message`) ahead of the formatted answer. */
+export function formatUserMessageForCopy(message, note = null) {
+  const notePrefix = note?.trim() ? `${note.trim()}\n\n` : ''
+
   if (!message) {
-    return ''
+    return note?.trim() || ''
   }
 
   // Check for slash command first (entire message is command)
   const slashCmd = parseSlashCommand(message)
   if (slashCmd) {
     const cmd = slashCmd.cmd.startsWith('/') ? slashCmd.cmd : `/${slashCmd.cmd}`
-    return slashCmd.args ? `${cmd} ${slashCmd.args}` : cmd
+    return notePrefix + (slashCmd.args ? `${cmd} ${slashCmd.args}` : cmd)
   }
 
   const segments = parseLocalCommandSegments(message)
   if (segments) {
-    return segments.length > 0 ? segments.map(s => s.content).join('\n\n') : message
+    return notePrefix + (segments.length > 0 ? segments.map(s => s.content).join('\n\n') : message)
   }
 
   // response:AskUserQuestion or response:ExitPlanMode: single full-wrap block
@@ -241,16 +212,13 @@ export function formatUserMessageForCopy(message) {
   if (qaMatch) {
     const content = qaMatch[1].trim()
     const formatted = formatStructuredQA(content)
-    return formatted || content || message
+    return notePrefix + (formatted || content || message)
   }
 
-  // No structured tags matched - return original message
-  return message
+  return notePrefix + message
 }
 
-/**
- * Format unix timestamp (seconds) as HH:MM:SS time string.
- */
+/** Format unix timestamp (seconds) as HH:MM:SS time string. */
 export function formatTimestamp(unixTimestamp) {
   const date = new Date(unixTimestamp * 1000)
   return date.toLocaleTimeString('en-US', {
@@ -266,10 +234,7 @@ export function getWorkspaceName(workspace) {
   return workspace ? workspace.split('/').pop() : null
 }
 
-/**
- * Format user message for one-line display preview.
- * Parses slash command XML if present, otherwise returns raw content.
- */
+/** Format user message for one-line display preview: parses slash command XML if present, otherwise returns raw content. */
 export function formatMessagePreview(content) {
   if (!content) {
     return null

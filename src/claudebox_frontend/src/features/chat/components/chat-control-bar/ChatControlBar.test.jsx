@@ -5,12 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatControlBar from './ChatControlBar'
 
-// Mock useIsMobile to always return desktop
 vi.mock('../../../../hooks/useIsMobile', () => ({
   default: () => false,
 }))
 
-// Mock lucide-react icons
 vi.mock('lucide-react', () => ({
   ArrowDownToLine: () => <span data-testid="icon-arrow-down">ArrowDown</span>,
   Check: () => <span data-testid="icon-check">Check</span>,
@@ -33,13 +31,11 @@ vi.mock('lucide-react', () => ({
   X: () => <span data-testid="icon-x">X</span>,
 }))
 
-// Mock chat API
 let mockSendMessage = vi.fn(() => Promise.resolve())
 vi.mock('../../../../api/chat', () => ({
   sendMessage: (...args) => mockSendMessage(...args),
 }))
 
-// Mock sessions API
 let mockUpdateSession = vi.fn(() => Promise.resolve())
 let mockUpdateSessionPrompt = vi.fn(() => Promise.resolve())
 vi.mock('../../../../api/sessions', () => ({
@@ -47,7 +43,6 @@ vi.mock('../../../../api/sessions', () => ({
   updateSessionPrompt: (...args) => mockUpdateSessionPrompt(...args),
 }))
 
-// Mock contexts
 let mockSessionId = 'test-session-id'
 let mockSessionName = 'Test Session'
 let mockRefreshSession = vi.fn(() => Promise.resolve())
@@ -346,8 +341,7 @@ describe('ChatControlBar', () => {
       // Save and cancel buttons must inherit canonical chrome.
       expect(saveBtn).toHaveClass('panel-control-btn')
       expect(cancelBtn).toHaveClass('panel-control-btn')
-      // Edit-mode wrapper must be a panel-control-group flex container so
-      // the input + buttons render inline with the shared 4px gap.
+      // Wrapper must be a panel-control-group so input + buttons render inline with the shared 4px gap.
       const wrapper = saveBtn.closest('.chat-control-edit-mode')
       expect(wrapper).toHaveClass('panel-control-group')
     })
@@ -486,8 +480,7 @@ describe('ChatControlBar', () => {
     })
 
     it('swaps to spinning Loader2 when forking is true', () => {
-      // The fork button must mirror the per-turn RewindSplitButton UX -
-      // spinner visible while a control-bar fork is in flight.
+      // Mirrors the per-turn RewindSplitButton UX: spinner visible while a control-bar fork is in flight.
       render(<ChatControlBar {...defaultProps} forking={true} />)
 
       const forkBtn = screen.getByTitle(

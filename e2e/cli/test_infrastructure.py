@@ -1,7 +1,6 @@
 """Sentinel tests for the hermetic CLI infrastructure.
 
-Three checks: the wrapper rejects unsafe invocation, the fake daemon is reachable
-from a CLI subprocess under loopback, and the fake bins record args correctly.
+Three checks: wrapper rejects unsafe invocation, fake daemon reachable under loopback, and fake bins record args.
 Behavior tests for individual CLI verbs live in the sibling test_*.py files.
 """
 
@@ -13,8 +12,8 @@ import pytest
 from pytest_httpserver import HTTPServer
 
 
-# pytest-socket allow-list opt-in must live in the test module — pytestmark in conftest.py
-# does not propagate to test files. See conftest.py for the broader isolation contract.
+# pytest-socket allow-list opt-in must live in the test module - conftest.py's mark doesn't propagate.
+# See conftest.py for the broader isolation contract.
 pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])
 
 

@@ -51,8 +51,7 @@ class TestToolSearch:
         names = [r["name"] for r in results]
         assert "read_file" in names
         assert "write_file" in names
-        # name matches outrank description matches; file appears 1x in name (score 3 each)
-        # and 1x in description (score 1) so combined score is 4 for both file tools.
+        # Both tools score 3 (name match) + 1 (description match) = 4.
 
     def test_matches_by_description(self, tool_ctx):
         ctx = _ctx_with_catalog(
@@ -130,6 +129,5 @@ class TestToolSearch:
         )
         tool_search = make_meta_tools(ctx)[0]
 
-        # Query in different case still hits.
         assert tool_search.invoke({"query": "read"})[0]["name"] == "READ_FILE"
         assert tool_search.invoke({"query": "text"})[0]["name"] == "READ_FILE"

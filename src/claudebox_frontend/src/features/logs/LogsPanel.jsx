@@ -6,17 +6,9 @@ import { useLogsStream } from '../../context/LogsStreamContext'
 import { formatTimestamp } from '../../utils/formatters'
 import { flattenExtras, formatPillValue } from './utils/extras'
 
-/** Render container API logs panel with auto-scroll. */
 export default function LogsPanel() {
-  const {
-    logs,
-    isLogsReplaying,
-    connectionStatus,
-    isResuming,
-    isSessionReplaying,
-    containerId,
-    clearUnreadErrors,
-  } = useLogsStream()
+  const { logs, connectionStatus, isResuming, isSessionReplaying, containerId, clearUnreadErrors } =
+    useLogsStream()
 
   const scrollRef = useRef(null)
   const isAutoScrollEnabled = useRef(true)
@@ -24,25 +16,22 @@ export default function LogsPanel() {
 
   const isConnected = connectionStatus === 'connected'
 
-  // Clear error badge when panel is opened
   // biome-ignore lint/correctness/useExhaustiveDependencies: only clear on mount
   useEffect(() => {
     clearUnreadErrors()
   }, [])
 
-  // Auto-scroll to bottom on new logs
   // biome-ignore lint/correctness/useExhaustiveDependencies: logs triggers scroll on new entries
   useEffect(() => {
-    if (isAutoScrollEnabled.current && scrollRef.current && !isLogsReplaying) {
+    if (isAutoScrollEnabled.current && scrollRef.current) {
       isProgrammaticScroll.current = true
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
       requestAnimationFrame(() => {
         isProgrammaticScroll.current = false
       })
     }
-  }, [logs, isLogsReplaying])
+  }, [logs])
 
-  // Scroll handler to detect user scroll
   const handleScroll = useCallback(() => {
     if (isProgrammaticScroll.current || !scrollRef.current) {
       return
@@ -64,14 +53,6 @@ export default function LogsPanel() {
     return (
       <div className="logs-panel logs-loading" data-testid="panel-logs">
         Resuming...
-      </div>
-    )
-  }
-
-  if (isLogsReplaying) {
-    return (
-      <div className="logs-panel logs-loading" data-testid="panel-logs">
-        Loading logs...
       </div>
     )
   }

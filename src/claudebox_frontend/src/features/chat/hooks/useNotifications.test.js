@@ -51,7 +51,6 @@ describe('useNotifications', () => {
       { initialProps: { isResponding: true } },
     )
 
-    // Complete response
     rerender({ isResponding: false })
     vi.advanceTimersByTime(60)
 
@@ -214,7 +213,6 @@ describe('playChime', () => {
   })
 
   it('creates AudioContext to play sound', () => {
-    // Track if AudioContext was instantiated
     let ctxCreated = false
     class MockAudioContext {
       constructor() {
@@ -260,7 +258,6 @@ describe('playChime', () => {
       }
     }
 
-    // Should not throw
     expect(() => playChime()).not.toThrow()
   })
 })
@@ -294,7 +291,6 @@ describe('useNotifications user interaction listeners', () => {
     rerender({ isResponding: false })
     expect(document.title).toBe('* Test | Claudebox')
 
-    // Simulate focus
     window.dispatchEvent(new Event('focus'))
 
     expect(document.title).toBe('Test | Claudebox')

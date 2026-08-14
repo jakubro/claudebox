@@ -25,8 +25,7 @@ const STATUS_CLASSES = {
   removed: 'todo-removed',
 }
 
-// Inert tool-status payload - the grouped block is a synthetic chrome host, not
-// a real tool with pending / awaiting / error states.
+// Inert tool-status payload - a synthetic chrome host, not a real tool with pending/awaiting/error states.
 const INERT_STATUS = {
   isPending: false,
   isAwaitingAnswer: false,
@@ -35,15 +34,12 @@ const INERT_STATUS = {
 }
 
 /**
- * Render a grouped "Todos" block that collapses a consecutive run of
- * TaskCreate / TaskUpdate / TaskGet / TaskList tool_uses (within one subagent
- * partition) into a single panel mounted inside the standard ToolBlock chrome.
- * Default-expanded; clicking the chrome header collapses the row body. Row
- * identity is by `_taskId` - the latest item per id across the run wins;
- * intermediate transitions collapse. Frozen-snapshot semantics: content does
- * not update as the agent does later work outside the run.
+ * Collapses a consecutive run of TaskCreate/TaskUpdate/TaskGet/TaskList tool_uses (one subagent partition)
+ * into a single panel mounted inside the standard ToolBlock chrome.
+ * Default-expanded; clicking the chrome header collapses the row body.
+ * Row identity is by `_taskId`: the latest item per id across the run wins, so intermediate transitions collapse.
+ * Frozen-snapshot semantics: content does not update as the agent does later work outside the run.
  *
- * @param {object} props
  * @param {Array<{toolUseId: string}>} props.taskBlocks - The run's task-list tool blocks, in order.
  */
 export default function TodosGroup({ taskBlocks }) {
@@ -56,13 +52,11 @@ export default function TodosGroup({ taskBlocks }) {
   const { counts, rowGroups } = useMemo(() => bucketize(mergedItems), [mergedItems])
   const summary = formatCounts(counts, STATUS_ICONS)
 
-  // Suppress the chrome entirely when there is nothing to show. Empty rowGroups
-  // is the convergence point of three upstream paths: streaming race (mutation
-  // tool_use emitted but matching tool_result not yet in todoDiffs), empty-items
-  // mutation (TaskCreate with no items / TaskUpdate that removes the last item),
-  // and any future bucketize edge case that yields no rows. Returning null here
-  // produces no DOM; once todoDiffs populates and reconciliation re-runs, the
-  // chrome appears with its rows.
+  // Suppresses the chrome entirely when there's nothing to show. Empty rowGroups has three causes:
+  // a streaming race (tool_use emitted, matching tool_result not yet in todoDiffs);
+  // an empty-items mutation (TaskCreate with no items, or TaskUpdate removing the last item);
+  // or any future bucketize edge case yielding no rows.
+  // Returning null here produces no DOM; the chrome appears once todoDiffs populates and re-renders.
   if (rowGroups.length === 0) {
     return null
   }

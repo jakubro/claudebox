@@ -22,7 +22,6 @@ test.describe('Skills Panel', () => {
     const commandsPanel = page.locator('[data-testid="panel-skills"]')
     await expect(commandsPanel).toBeVisible()
 
-    // Panel should be on the right side of the viewport
     const box = await commandsPanel.boundingBox()
     const viewport = page.viewportSize()
     expect(box.x).toBeGreaterThan(viewport.width / 2)
@@ -38,7 +37,6 @@ test.describe('Skills Panel', () => {
     await expect(iconBtn).toBeVisible()
     await expect(iconBtn).toHaveAttribute('title', 'Skills (Alt+9)')
 
-    // Command icon from lucide-react renders as SVG
     const svg = iconBtn.locator('svg')
     await expect(svg).toBeVisible()
   })
@@ -49,11 +47,9 @@ test.describe('Skills Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Title should include shortcut
     const iconBtn = page.locator('[data-testid="icon-commands"]')
     await expect(iconBtn).toHaveAttribute('title', 'Skills (Alt+9)')
 
-    // Toggle via keyboard shortcut
     await expect(page.locator('[data-testid="panel-skills"]')).not.toBeVisible()
     await page.keyboard.press('Alt+9')
     await expect(page.locator('[data-testid="panel-skills"]')).toBeVisible()
@@ -113,7 +109,6 @@ test.describe('Skills Panel', () => {
     await openSkillsPanel(page)
 
     const panel = page.locator('[data-testid="panel-skills"]')
-    // Custom tab (default) - only non-MCP commands
     await expect(panel.getByText('/deploy')).toBeVisible()
     await expect(panel.getByText('/test')).toBeVisible()
     await expect(panel.getByText('/mcp__slack__send')).not.toBeVisible()
@@ -144,7 +139,6 @@ test.describe('Skills Panel', () => {
     await openSkillsPanel(page)
 
     const panel = page.locator('[data-testid="panel-skills"]')
-    // Switch to MCP tab
     await panel.getByRole('button', { name: /^MCP/ }).click()
 
     await expect(panel.getByText('/mcp__slack__send')).toBeVisible()
@@ -177,7 +171,6 @@ test.describe('Skills Panel', () => {
     await openSkillsPanel(page)
 
     const panel = page.locator('[data-testid="panel-skills"]')
-    // Switch to All tab
     await panel.getByRole('button', { name: /^All/ }).click()
 
     await expect(panel.getByText('/deploy')).toBeVisible()
@@ -209,7 +202,6 @@ test.describe('Skills Panel', () => {
     await openSkillsPanel(page)
 
     const panel = page.locator('[data-testid="panel-skills"]')
-    // Custom: 2 (deploy, test), MCP: 1 (mcp__slack__send), All: 3
     await expect(panel.getByRole('button', { name: /Custom.*2/ })).toBeVisible()
     await expect(panel.getByRole('button', { name: /MCP.*1/ })).toBeVisible()
     await expect(panel.getByRole('button', { name: /All.*3/ })).toBeVisible()
@@ -236,7 +228,6 @@ test.describe('Skills Panel', () => {
     await openSkillsPanel(page)
 
     const panel = page.locator('[data-testid="panel-skills"]')
-    // Command should be displayed with / prefix
     await expect(panel.getByText('/compact')).toBeVisible()
   })
 
@@ -266,14 +257,13 @@ test.describe('Skills Panel', () => {
   // SPEC: panel-command:resume
   test('shows "Resuming..." during replay', async ({ page }) => {
     await mockAPI(page)
-    // Use an events fixture that triggers isReplaying state (replay_started without replay_ended)
+    // Fixture triggers isReplaying (replay_started without replay_ended).
     await mockSSE(page, 'events/resuming.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
 
-    // Wait for footer to appear (app ready indicator that doesn't depend on chat input)
+    // Footer is an app-ready indicator that doesn't depend on chat input.
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-    // Open commands panel via icon click
     await page.locator('[data-testid="icon-commands"]').click()
 
     await expect(page.locator('[data-testid="panel-skills"]')).toContainText('Resuming...')

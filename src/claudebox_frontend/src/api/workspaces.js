@@ -2,6 +2,16 @@
 
 import { workspaceFetch } from './apiClient'
 
+/** Fetch the registered-workspace list from the daemon. */
+export async function listWorkspaces() {
+  const res = await fetch('/api/workspaces')
+  if (!res.ok) {
+    throw new Error('Failed to fetch workspaces')
+  }
+  const data = await res.json()
+  return data.workspaces || []
+}
+
 /** Fetch the model / permission mode / effort level a new session in this workspace would inherit. */
 export async function getSessionDefaults() {
   const res = await workspaceFetch('/session-defaults')
@@ -11,11 +21,7 @@ export async function getSessionDefaults() {
   return res.json()
 }
 
-/** Fetch the workspace's filesystem-discovered slash commands.
- *
- * Result shape mirrors the in-session `commands` field - `{custom, mcp, builtin}` -
- * so SessionDataContext consumers do not branch on origin.
- */
+/** Fetch the workspace's filesystem-discovered slash commands; result shape mirrors the in-session `commands` field (`{custom, mcp, builtin}`) so SessionDataContext consumers do not branch on origin. */
 export async function getCommandCatalog() {
   const res = await workspaceFetch('/commands')
   if (!res.ok) {
@@ -24,10 +30,7 @@ export async function getCommandCatalog() {
   return res.json()
 }
 
-/** Register a workspace at the given absolute path.
- *
- * Idempotent - re-registering an already-known path returns the existing entry with 200.
- */
+/** Register a workspace at the given absolute path; idempotent - re-registering an already-known path returns the existing entry with 200. */
 export async function registerWorkspace(path) {
   const res = await fetch('/api/workspaces', {
     method: 'POST',
@@ -41,12 +44,7 @@ export async function registerWorkspace(path) {
   return res.json()
 }
 
-/** Deregister a workspace by id.
- *
- * Returns 404 with `error_key: "workspace_not_registered"` if the workspace was
- * never registered. The `.workspace` marker file on disk is preserved - only the
- * daemon-side registry entry is removed.
- */
+/** Deregister a workspace by id; returns 404 with `error_key: "workspace_not_registered"` if never registered. The `.workspace` marker file on disk is preserved - only the daemon-side registry entry is removed. */
 export async function deregisterWorkspace(id) {
   const res = await fetch(`/api/workspaces/${id}`, { method: 'DELETE' })
   if (!res.ok) {

@@ -10,13 +10,7 @@ from ...workspace import Workspace
 
 @dataclass
 class ToolOutputContent:
-    """Content read from a persisted tool output file.
-
-    Attributes:
-        content: File content, possibly truncated.
-        truncated: Whether content was truncated to max_size.
-        total_size: Original file size in bytes.
-    """
+    """Content read from a persisted tool output file. `total_size` is the untruncated size in bytes."""
 
     content: str
     truncated: bool
@@ -24,14 +18,7 @@ class ToolOutputContent:
 
 
 class ToolOutput:
-    """Read persisted tool output files from SDK storage.
-
-    Provides access to tool execution results that are stored separately from
-    the main conversation to handle large outputs efficiently.
-
-    Attributes:
-        _workspace: Workspace for resolving session directories.
-    """
+    """Read persisted tool output files from SDK storage."""
 
     def __init__(self, workspace: Workspace):
         self._workspace = workspace
@@ -42,10 +29,7 @@ class ToolOutput:
         tool_use_id: str,
         max_size: int = MAX_TOOL_OUTPUT_SIZE,
     ) -> ToolOutputContent:
-        """Read persisted tool output file.
-
-        Raises ToolOutputNotFound if the file does not exist.
-        """
+        """Read persisted tool output file; raises `ToolOutputNotFound` if it does not exist."""
 
         path = self._resolve_path(session_id, tool_use_id)
 
@@ -64,10 +48,7 @@ class ToolOutput:
         )
 
     def get_path(self, session_id: str, tool_use_id: str) -> Path:
-        """Get path to persisted tool output file.
-
-        Raises ToolOutputNotFound if the file does not exist.
-        """
+        """Get path to persisted tool output file; raises `ToolOutputNotFound` if it does not exist."""
 
         path = self._resolve_path(session_id, tool_use_id)
 

@@ -1,9 +1,6 @@
 /** Pure selection-state updates for InteractiveQuestions, no React APIs. */
 
-/**
- * Toggle option selection for a question. multiSelect questions hold a Set;
- * single-select questions hold an option index.
- */
+/** Toggle option selection for a question. multiSelect questions hold a Set; single-select questions hold an option index. */
 export function nextSelections(prev, qIndex, optIndex, multiSelect) {
   const next = { ...prev }
   if (multiSelect) {
@@ -20,16 +17,12 @@ export function nextSelections(prev, qIndex, optIndex, multiSelect) {
   return next
 }
 
-/**
- * Toggle the "Other" flag for a question. multiSelect flips; single-select sets true.
- */
+/** Toggle the "Other" flag for a question. multiSelect flips; single-select sets true. */
 export function nextOtherSelected(prev, qIndex, multiSelect) {
   return { ...prev, [qIndex]: multiSelect ? !prev[qIndex] : true }
 }
 
-/**
- * Whether any question carries a non-empty selection or non-empty "Other" text.
- */
+/** Whether any question carries a non-empty selection or non-empty "Other" text. */
 export function hasAnySelection(questions, selections, otherSelected, otherTexts) {
   return Boolean(
     questions?.some((q, i) => {

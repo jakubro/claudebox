@@ -27,26 +27,13 @@ function cPrefix(wsId = DEFAULT_WORKSPACE_ID, cid = DEFAULT_CONTAINER_ID) {
   return `/api/workspaces/${wsId}/containers/${cid}`
 }
 
-/**
- * Load a JSON fixture file.
- *
- * @param {string} relativePath - Path relative to fixtures directory
- * @returns {object} Parsed JSON
- */
+/** Load a JSON fixture file at a path relative to the fixtures directory. */
 export function loadFixture(relativePath) {
   const fullPath = path.join(fixturesDir, relativePath)
   return JSON.parse(fs.readFileSync(fullPath, 'utf-8'))
 }
 
-/**
- * Mock all REST API endpoints with workspace/container-proxied URL patterns.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {object} options - Mock options
- * @param {string} [options.sessionsFixture] - Sessions fixture path
- * @param {string} [options.statusFixture] - Status fixture path
- * @param {object} [options.handlers] - Custom handlers to override defaults
- */
+/** Mock all REST API endpoints with workspace/container-proxied URL patterns. */
 export async function mockAPI(page, options = {}) {
   const sessionsFixture = options.sessionsFixture || 'sessions/default.json'
   const statusFixture = options.statusFixture || 'status/default.json'
@@ -132,10 +119,8 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
-  // GET /api/workspaces/{ws}/session-defaults - Workspace session defaults
-  // (model / permission mode / effort level a new session would inherit, plus
-  // the available choice lists). Consumed by the footer's `useSessionDefaults`
-  // hook and SessionDataProvider's available-list seed on the welcome screen.
+  // GET /api/workspaces/{ws}/session-defaults - model/permission/effort defaults a new session
+  // inherits; feeds the footer and the welcome screen's available-choice lists.
   await page.route(`**${ws}/session-defaults`, async route => {
     if (handlers.getSessionDefaults) {
       await handlers.getSessionDefaults(route)
@@ -143,18 +128,16 @@ export async function mockAPI(page, options = {}) {
       await route.fulfill({
         json: {
           workspace: '/home/user/project',
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           permission_mode: 'default',
           effort_level: 'xhigh',
           runtime_name: 'Claude',
+          editor_url_template: 'claudebox-editor-test://open?path={path}&line={line}',
           capabilities: mockCapabilities(),
           available_models: [
             { id: 'claude-fable-5', name: 'Fable 5', context_window: 1000000 },
-            { id: 'claude-mythos-5', name: 'Mythos 5', context_window: 1000000 },
-            { id: 'claude-opus-4-8', name: 'Opus 4.8', context_window: 1000000 },
-            { id: 'claude-opus-4-7', name: 'Opus 4.7', context_window: 200000 },
-            { id: 'claude-opus-4-6', name: 'Opus 4.6', context_window: 200000 },
-            { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', context_window: 200000 },
+            { id: 'claude-opus-5', name: 'Opus 5', context_window: 1000000 },
+            { id: 'claude-sonnet-5', name: 'Sonnet 5', context_window: 1000000 },
             { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', context_window: 200000 },
           ],
           available_permission_modes: [
@@ -175,10 +158,8 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
-  // GET /api/workspaces/{ws}/commands - Workspace command catalog
-  // Filesystem-discovered slash commands and skills exposed to the welcome
-  // screen picker before any container session attaches. Shape mirrors the
-  // in-session `commands` field — `{custom, mcp, builtin}`.
+  // GET /api/workspaces/{ws}/commands - filesystem-discovered commands/skills for the welcome
+  // screen picker before any session attaches; mirrors the in-session {custom, mcp, builtin} shape.
   await page.route(`**${ws}/commands`, async route => {
     if (handlers.getCommandCatalog) {
       await handlers.getCommandCatalog(route)
@@ -208,8 +189,7 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
-  // GET/PATCH /api/workspaces/{ws}/sessions/:id - Get or update session
-  // Exclude reserved paths: new, and paths with additional segments
+  // GET/PATCH /api/workspaces/{ws}/sessions/:id - excludes reserved paths (new) and paths with extra segments
   await page.route(
     new RegExp(`${ws}/sessions/(?!new$)[^/]+$`.replace(/\//g, '\\/')),
     async route => {
@@ -381,15 +361,8 @@ export async function mockAPI(page, options = {}) {
 /**
  * Override a single API endpoint with an error response.
  *
- * Must be called AFTER mockAPI() — Playwright routes are LIFO, so the last
+ * Must be called AFTER mockAPI() - Playwright routes are LIFO, so the last
  * registered route for a URL pattern takes precedence.
- *
- * @param {import('@playwright/test').Page} page - Playwright page
- * @param {string|RegExp} endpoint - URL pattern to intercept
- * @param {object} [options] - Error options
- * @param {number} [options.status=500] - HTTP status code
- * @param {object} [options.body] - Response body (defaults to { error: 'Server error' })
- * @param {number} [options.timeout] - If set, abort with timeout instead of returning status
  */
 export async function mockAPIWithError(page, endpoint, { status = 500, body, timeout } = {}) {
   await page.route(endpoint, async route => {

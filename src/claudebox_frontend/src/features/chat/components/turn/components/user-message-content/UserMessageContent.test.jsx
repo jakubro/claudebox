@@ -48,9 +48,7 @@ describe('UserMessageContent', () => {
       <UserMessageContent message="<command-name>/scope</command-name><command-args>src/app</command-args>" />,
     )
 
-    // One outer .message-content bubble - not two stacked. The slash token
-    // sits inline inside that bubble so display: block on .message-content
-    // can't split the rendering across lines.
+    // One outer .message-content bubble, not two: an inline slash token can't be split by display: block.
     expect(container.querySelectorAll('.message-content')).toHaveLength(1)
     const bubble = container.querySelector('.message-content')
     expect(bubble.querySelector('.slash-command')).not.toBeNull()

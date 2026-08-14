@@ -24,13 +24,11 @@ test.describe('Footer', () => {
     // SPEC: footer:connection-dot
     // SPEC: footer:dev-indicator
     test('renders Ready status text and a green-classed dot when connected', async ({ page }) => {
-      // Connected state: text label + corresponding data-status attribute.
       await expect(page.getByText('Ready')).toBeVisible()
       const status = page.locator('[data-testid="footer-status"][data-status="ready"]')
       await expect(status).toBeVisible()
 
-      // Connection dot must be present and carry the running/connected class
-      // - CSS owns the green color, so the class is the contract.
+      // CSS owns the actual green color, so the class - not a computed color - is the contract.
       const dot = page.locator('.footer-status-dot, [data-testid="footer-status"] .status-dot')
       const dotCount = await dot.count()
       if (dotCount > 0) {
@@ -56,7 +54,7 @@ test.describe('Footer', () => {
 
     // SPEC: footer:model
     test('shows model', async ({ page }) => {
-      await expect(page.locator('[data-testid="footer-model"]')).toContainText('Sonnet 4.6')
+      await expect(page.locator('[data-testid="footer-model"]')).toContainText('Sonnet 5')
     })
 
     // SPEC: footer:session-id
@@ -69,10 +67,7 @@ test.describe('Footer', () => {
 
     // SPEC: footer:runtime-id
     test('shows runtime container id (12-char prefix) after the session id', async ({ page }) => {
-      // Footer reads from GET /api/workspaces/{ws}/containers/{id} which returns
-      // the Container record with backend_id. The default mock returns
-      // DEFAULT_BACKEND_ID; we assert the 12-char display and the full id in
-      // the tooltip.
+      // Footer reads GET .../containers/{id} (Container.backend_id); mock returns DEFAULT_BACKEND_ID.
       const runtime = page.locator('[data-testid="footer-backend-id"]')
       await expect(runtime).toContainText(DEFAULT_BACKEND_ID.slice(0, 12))
       await expect(runtime).toHaveAttribute(
@@ -91,7 +86,6 @@ test.describe('Footer', () => {
 
     // SPEC: footer:duration
     test('shows duration in H:MM:SS format', async ({ page }) => {
-      // Footer shows total response time in format like "0:00:00"
       const footerItem = page.locator('.footer-item').filter({ hasText: /\d+:\d{2}:\d{2}/ })
       await expect(footerItem.first()).toBeVisible()
     })
@@ -100,9 +94,7 @@ test.describe('Footer', () => {
     test('on new session creation, footer fields populate immediately from create-response', async ({
       page,
     }) => {
-      // Workspace, session id, model, effort level should be present from
-      // the very first frame after the new-session API resolves - no blank
-      // window while the SDK init event arrives later.
+      // Fields must populate from the new-session response, not the later SDK init event (avoids a blank window).
       await page.click('[data-testid="header-new-session-btn"]')
       await expect(page.locator('[data-testid="footer-workspace"]')).not.toContainText('-')
       await expect(page.locator('[data-testid="footer-session"]')).not.toBeEmpty()
@@ -119,23 +111,21 @@ test.describe('Footer', () => {
     // SPEC: footer:model-picker-position
     test('clicking model name opens dropdown with available models', async ({ page }) => {
       const modelBtn = page.locator('[data-testid="footer-model"]')
-      await expect(modelBtn).toContainText('Sonnet 4.6')
+      await expect(modelBtn).toContainText('Sonnet 5')
 
       await modelBtn.click()
       const dropdown = page.locator('[data-testid="model-dropdown"]')
       await expect(dropdown).toBeVisible()
 
-      // Lists models with friendly name and model ID
-      await expect(dropdown.getByText('Opus 4.6')).toBeVisible()
-      await expect(dropdown.getByText('Sonnet 4.6')).toBeVisible()
+      await expect(dropdown.getByText('Opus 5')).toBeVisible()
+      await expect(dropdown.getByText('Sonnet 5')).toBeVisible()
       await expect(dropdown.getByText('Haiku 4.5')).toBeVisible()
 
-      // Dropdown opens upward (bottom of dropdown near top of button)
+      // Dropdown opens upward: its bottom edge sits near the button's top edge.
       const btnBox = await modelBtn.boundingBox()
       const dropBox = await dropdown.boundingBox()
       expect(dropBox.y + dropBox.height).toBeLessThanOrEqual(btnBox.y + 2)
 
-      // Current model highlighted with check
       const selected = dropdown.locator('.footer-model-option.selected')
       await expect(selected).toHaveCount(1)
     })
@@ -162,11 +152,11 @@ test.describe('Footer', () => {
       const dropdown = page.locator('[data-testid="model-dropdown"]')
       await expect(dropdown).toBeVisible()
 
-      await dropdown.getByText('Opus 4.6').click()
+      await dropdown.getByText('Opus 5').click()
 
       await expect(dropdown).not.toBeVisible()
-      await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 4.6')
-      await expect.poll(() => setModelBody).toEqual({ model: 'claude-opus-4-6' })
+      await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 5')
+      await expect.poll(() => setModelBody).toEqual({ model: 'claude-opus-5' })
     })
 
     // SPEC: footer:model-picker-close
@@ -233,19 +223,17 @@ test.describe('Footer', () => {
       const dropdown = page.locator('[data-testid="permission-mode-dropdown"]')
       await expect(dropdown).toBeVisible()
 
-      // Lists all built-in permission modes with friendly labels
       const optionNames = dropdown.locator('.footer-permission-mode-option-name')
       await expect(optionNames.filter({ hasText: 'Bypass' })).toBeVisible()
       await expect(optionNames.filter({ hasText: 'Plan' })).toBeVisible()
       await expect(optionNames.filter({ hasText: 'Default' })).toBeVisible()
       await expect(optionNames.filter({ hasText: 'Auto' })).toBeVisible()
 
-      // Dropdown opens upward (bottom of dropdown near top of button)
+      // Dropdown opens upward: its bottom edge sits near the button's top edge.
       const btnBox = await modeBtn.boundingBox()
       const dropBox = await dropdown.boundingBox()
       expect(dropBox.y + dropBox.height).toBeLessThanOrEqual(btnBox.y + 2)
 
-      // Current permission mode highlighted with check
       const selected = dropdown.locator('.footer-permission-mode-option.selected')
       await expect(selected).toHaveCount(1)
     })
@@ -364,20 +352,18 @@ test.describe('Footer', () => {
       const dropdown = page.locator('[data-testid="effort-dropdown"]')
       await expect(dropdown).toBeVisible()
 
-      // Lists all effort levels with friendly names
-      // Use exact match to disambiguate "High" from "XHigh" substring match.
+      // Exact match disambiguates "High" from a "XHigh" substring match.
       await expect(dropdown.getByText('Low', { exact: true })).toBeVisible()
       await expect(dropdown.getByText('Medium', { exact: true })).toBeVisible()
       await expect(dropdown.getByText('High', { exact: true })).toBeVisible()
       await expect(dropdown.getByText('XHigh', { exact: true })).toBeVisible()
       await expect(dropdown.getByText('Max', { exact: true })).toBeVisible()
 
-      // Dropdown opens upward (bottom of dropdown near top of button)
+      // Dropdown opens upward: its bottom edge sits near the button's top edge.
       const btnBox = await effortBtn.boundingBox()
       const dropBox = await dropdown.boundingBox()
       expect(dropBox.y + dropBox.height).toBeLessThanOrEqual(btnBox.y + 2)
 
-      // Current effort level highlighted with check
       const selected = dropdown.locator('.footer-effort-option.selected')
       await expect(selected).toHaveCount(1)
     })
@@ -451,15 +437,12 @@ test.describe('Footer', () => {
 
     // SPEC: footer:effort-picker-default
     test('falls back to backend default effort level when session has none', async ({ page }) => {
-      // session-defaults mock returns "xhigh" (matches DEFAULT_EFFORT_LEVEL).
-      // When the session projection has no effort_level, the picker shows the
-      // backend default - not a hardcoded fallback.
+      // No session effort_level: picker shows the backend default (mocked "xhigh"), not a hardcoded fallback.
       await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
     })
 
     // SPEC: footer:effort-picker-persist
     test('effort level restored from session data on load', async ({ page }) => {
-      // Make session status return effort_level=high after refresh
       const effortLevel = 'high'
       await page.route('**/api/sessions/current', async route => {
         const data = loadFixture('status/default.json')
@@ -470,18 +453,18 @@ test.describe('Footer', () => {
         await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
       })
 
-      // Set effort to high via picker (triggers refresh which returns our overridden data)
+      // Selecting triggers a session refresh, which returns the overridden data below.
       await page.locator('[data-testid="footer-effort"]').click()
       const dropdown = page.locator('[data-testid="effort-dropdown"]')
       await dropdown.getByText('High', { exact: true }).click()
 
-      // After refresh, footer should show exactly "High" - not "XHigh".
+      // Exactly "High", not a leftover "XHigh".
       await expect(page.locator('[data-testid="footer-effort"]')).toHaveText(/^High/)
     })
 
     // SPEC: footer:effort-picker-all-models
     test('max option visible for all models', async ({ page }) => {
-      // Default fixture uses claude-sonnet-4-6 - Max should still be available
+      // Default fixture uses claude-sonnet-5 - Max should still be available.
       await page.locator('[data-testid="footer-effort"]').click()
       const dropdown = page.locator('[data-testid="effort-dropdown"]')
       await expect(dropdown).toBeVisible()
@@ -519,12 +502,10 @@ test.describe('Footer', () => {
         },
       ])
 
-      // Wait for working state
       await expect(
         page.locator('[data-testid="footer-status"][data-status="working"]'),
       ).toBeVisible()
 
-      // Should show interrupt hint "Ctrl+. to stop"
       const interruptHint = page.locator('.footer-interrupt')
       await expect(interruptHint).toBeVisible()
       await expect(interruptHint).toContainText('Ctrl+. to stop')
@@ -555,13 +536,11 @@ test.describe('Footer', () => {
         },
       ])
 
-      // Wait for working state with elapsed timer
       await expect(
         page.locator('[data-testid="footer-status"][data-status="working"]'),
       ).toBeVisible()
 
-      // Elapsed timer should appear with format "(Ns)" e.g. "(1s)"
-      // Wait a moment for timer to increment
+      // Give the timer a moment to increment before checking its "(Ns)" format.
       await page.waitForTimeout(1100)
       const statusText = page.locator('.footer-status-text')
       await expect(statusText).toContainText(/\(\d+s\)/)
@@ -573,10 +552,9 @@ test.describe('Footer', () => {
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
 
-      // Before SSE connects, status should be connecting
       await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-      // Connection dot in connecting state should have amber color (if rendered)
+      // Amber color, if the dot renders at all before the connection completes below.
       const statusDot = page.locator('.footer-status-dot')
       const hasDot = (await statusDot.count()) > 0
       if (hasDot) {
@@ -584,7 +562,6 @@ test.describe('Footer', () => {
         await assertColor(statusDot, 'backgroundColor', { r: 220, g: 170, b: 50 }, 80)
       }
 
-      // Complete the connection
       await controller.connect()
     })
 
@@ -617,16 +594,14 @@ test.describe('Footer', () => {
         },
       ])
 
-      // Initially should be "Working..."
       await expect(
         page.locator('[data-testid="footer-status"][data-status="working"]'),
       ).toBeVisible()
       await expect(page.locator('.footer-status-text')).toContainText('Working')
 
-      // Fast-forward past the 5-second silence threshold
+      // Past the 5-second silence threshold.
       await page.clock.fastForward(5500)
 
-      // Should transition to "Waiting..." (with dimmed styling and muted gray color)
       await expect(page.locator('.footer-status-text')).toContainText('Waiting')
       await expect(page.locator('.footer-status-text.status-silent')).toBeVisible()
 
@@ -640,7 +615,7 @@ test.describe('Footer', () => {
       expect(Math.abs(r - g)).toBeLessThan(40)
       expect(Math.abs(g - b)).toBeLessThan(40)
 
-      // Send new event - should recover to Working
+      // Activity should recover the status from Waiting back to Working.
       await controller.sendEvent({
         type: 'assistant',
         subtype: 'text',
@@ -648,7 +623,6 @@ test.describe('Footer', () => {
         timestamp: Date.now() + 6000,
       })
 
-      // Should revert to "Working..." (silence class removed)
       await expect(page.locator('.footer-status-text')).toContainText('Working')
       await expect(page.locator('.footer-status-text.status-silent')).not.toBeVisible()
     })
@@ -661,10 +635,9 @@ test.describe('Footer', () => {
       const sessionEl = page.locator('[data-testid="footer-session"]')
       await expect(sessionEl).toContainText('test')
 
-      // Session element is clickable (copies session dir path)
+      // Cursor signals the element is clickable to copy the session dir path.
       await expect(sessionEl).toHaveCSS('cursor', 'pointer')
 
-      // Click and verify "Copied!" feedback
       await sessionEl.click()
       await expect(sessionEl.locator('.footer-session-copied-text')).toBeVisible()
     })
@@ -685,38 +658,31 @@ test.describe('Footer', () => {
       await expect(sessionId).toBeVisible()
       await expect(notificationsToggle).toBeVisible()
 
-      // Verify layout: session ID appears left of notifications toggle
       const sessionBox = await sessionId.boundingBox()
       const notifBox = await notificationsToggle.boundingBox()
       expect(sessionBox.x).toBeLessThan(notifBox.x)
     })
 
     // SPEC: footer:notifications-scope
-    // Note: This test covers the toggle UI only. Actual sound and desktop notification
-    // behavior is tested in notifications.spec.js.
+    // This covers the toggle UI only; sound and desktop notification behavior is in notifications.spec.js.
     test('toggling notifications enables both sound and desktop', async ({ page }) => {
       const notificationsToggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await expect(notificationsToggle).toBeVisible()
 
-      // Initially disabled
       await expect(notificationsToggle).not.toHaveClass(/enabled/)
       await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - disabled')
 
-      // Click to enable
       await notificationsToggle.click()
 
-      // Toggle should now show enabled state (covers both sound + desktop)
+      // Single toggle covers both sound and desktop notifications.
       await expect(notificationsToggle).toHaveClass(/enabled/)
       await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - enabled')
 
-      // Bell icon aria-label should reflect enabled state
       const bellIcon = notificationsToggle.locator('svg')
       await expect(bellIcon).toHaveAttribute('aria-label', 'Notifications enabled')
 
-      // Click to disable
       await notificationsToggle.click()
 
-      // Toggle should revert to disabled state
       await expect(notificationsToggle).not.toHaveClass(/enabled/)
       await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - disabled')
     })
@@ -736,7 +702,6 @@ test.describe('Footer', () => {
       await expect(notificationsToggle).toBeVisible()
       await expect(claudeStatus).toBeVisible()
 
-      // Verify DOM order: notifications toggle x is less than claude status x
       const notifBox = await notificationsToggle.boundingBox()
       const statusBox = await claudeStatus.boundingBox()
       expect(notifBox.x).toBeLessThan(statusBox.x)
@@ -744,11 +709,9 @@ test.describe('Footer', () => {
 
     // SPEC: footer:claude-status-colors
     test('claude status dot has status-based color class', async ({ page }) => {
-      // The dot element should have a status-claude-* class
       const statusDot = page.locator('[data-testid="footer-claude-status"] .status-dot')
       await expect(statusDot).toBeVisible()
 
-      // Should have one of: status-claude-none, status-claude-minor, status-claude-major, status-claude-critical, status-claude-error
       const className = await statusDot.getAttribute('class')
       expect(className).toMatch(/status-claude-(none|minor|major|critical|error)/)
     })
@@ -758,17 +721,14 @@ test.describe('Footer', () => {
       const claudeStatus = page.locator('[data-testid="footer-claude-status"]')
       await expect(claudeStatus).toBeVisible()
 
-      // Should have a title attribute with descriptive status text
       const title = await claudeStatus.getAttribute('title')
       expect(title).toBeTruthy()
       expect(title.length).toBeGreaterThan(5)
-      // Title should contain meaningful status description (not just whitespace)
       expect(title.trim()).toMatch(/claude|status|operational|incident|degraded|all systems/i)
     })
 
     // SPEC: footer:claude-status-click
     test('clicking claude status opens status.claude.com', async ({ page, context }) => {
-      // Listen for new page (popup)
       const pagePromise = context.waitForEvent('page')
 
       const claudeStatus = page.locator('[data-testid="footer-claude-status"]')
@@ -801,18 +761,14 @@ test.describe('Sessions Panel', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Open sessions panel
       await openSessionsPanel(page)
 
-      // Panel should show loading state while sessions API is pending
       const sessionsPanel = page.locator('[data-testid="panel-sessions"]')
       await expect(sessionsPanel).toBeVisible()
       await expect(sessionsPanel).toContainText(/Loading|loading/)
 
-      // Release the delayed response
       resolveSessionsResponse()
 
-      // Panel should have rendered some content after loading completes
       const panelText = await sessionsPanel.textContent()
       expect(panelText.length).toBeGreaterThan(0)
     })
@@ -821,9 +777,7 @@ test.describe('Sessions Panel', () => {
   test.describe('Sessions List', () => {
     // SPEC: panel-session:list-order
     test('sessions list is sorted newest-first regardless of input order', async ({ page }) => {
-      // Feed sessions in REVERSE chronological order to the API so the
-      // rendered list can only be in newest-first order if the panel
-      // actively sorts (rather than simply mirroring fixture order).
+      // Sessions are fed in reverse chronological order, so newest-first proves the panel actively sorts.
       const sessions = [
         {
           session_id: 'oldest',
@@ -887,10 +841,9 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Wait for session items to load
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
-      // Session IDs are truncated to 8 chars
+      // Session IDs are truncated to 8 chars.
       await expect(page.getByText('test-ses').first()).toBeVisible()
     })
 
@@ -927,14 +880,11 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Wait for session items to load
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
-      // Message preview elements should have text-overflow: ellipsis CSS
       const firstMessage = page.locator('.sessions-first').first()
       await expect(firstMessage).toBeVisible()
 
-      // Verify the element has overflow hidden and text-overflow ellipsis (CSS truncation)
       const overflow = await firstMessage.evaluate(el => getComputedStyle(el).overflow)
       const textOverflow = await firstMessage.evaluate(el => getComputedStyle(el).textOverflow)
 
@@ -951,7 +901,7 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // First session (test-session-001) should be current
+      // test-session-001 is the current session in the fixture.
       const currentSession = page.locator('.sessions-item-current')
       await expect(currentSession).toBeVisible()
     })
@@ -967,7 +917,6 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Non-current sessions should have resume button
       const resumeButtons = page.locator('[data-testid="session-resume-btn"]')
       await expect(resumeButtons).toHaveCount(2) // 2 non-current sessions
     })
@@ -981,7 +930,7 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Resume button should contain an SVG play icon (lucide Play)
+      // lucide Play icon.
       const resumeBtn = page.locator('[data-testid="session-resume-btn"]').first()
       await expect(resumeBtn).toBeVisible()
       await expect(resumeBtn.locator('svg')).toBeVisible()
@@ -1002,14 +951,11 @@ test.describe('Sessions Panel', () => {
       await openSessionsPanel(page)
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
-      // Click the truncated session ID
       const sessionId = page.locator('.sessions-id').first()
       await sessionId.click()
 
-      // Should show "Copied!" feedback
       await expect(sessionId.locator('.sessions-id-copied')).toBeVisible()
 
-      // Clipboard should contain the session directory path
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
       expect(clipboardText).toContain('/tmp/sessions/')
     })
@@ -1023,10 +969,9 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Wait for session items to load
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
-      // Edit button (Pencil icon) should be visible on session items
+      // Pencil icon.
       const editBtn = page.locator('.sessions-edit-btn').first()
       await expect(editBtn).toBeVisible()
       await expect(editBtn).toHaveAttribute('title', 'Rename session')
@@ -1042,7 +987,6 @@ test.describe('Sessions Panel', () => {
       await openSessionsPanel(page)
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
-      // Chevron button opens dropdown with "Resume in new browser tab" option
       const chevron = page.locator('.sessions-resume-chevron').first()
       await expect(chevron).toBeVisible()
       await expect(chevron).toHaveAttribute('title', 'More resume options')
@@ -1051,10 +995,7 @@ test.describe('Sessions Panel', () => {
     // SPEC: panel-session:new-button
     // SPEC: panel-session:new
     // SPEC: footer:model-picker-scope
-    // Note: footer:model-picker-scope (model resets to default for new session) is not fully
-    // verified here. Testing that a previously-selected model does not carry over to a new
-    // session would require navigating to the new session and checking the footer model value,
-    // which adds significant complexity. The current test only verifies the API call fires.
+    // model-picker-scope is only partly covered: asserts the API call fires, not the footer's reset model.
     test('new session button creates new session', async ({ page }) => {
       let newSessionCalled = false
       await mockAPI(page, {
@@ -1074,7 +1015,6 @@ test.describe('Sessions Panel', () => {
 
       await page.locator('[data-testid="session-new-session-btn"]').click()
 
-      // Poll until new session API is called
       await expect.poll(() => newSessionCalled).toBe(true)
     })
 
@@ -1087,7 +1027,6 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Refresh button should be visible
       await expect(page.locator('[data-testid="session-refresh-btn"]')).toBeVisible()
     })
   })
@@ -1156,7 +1095,6 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Should show relative time formats (Xm ago, Xh ago)
       await expect(page.getByText(/\d+m ago/).first()).toBeVisible()
       await expect(page.getByText(/\d+h ago/).first()).toBeVisible()
     })
@@ -1194,7 +1132,7 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Should show time range with arrow: "2h ago -> 1h ago"
+      // e.g. "2h ago -> 1h ago"
       await expect(page.getByText(/->/).first()).toBeVisible()
     })
 
@@ -1213,11 +1151,10 @@ test.describe('Sessions Panel', () => {
       await page.keyboard.press('Alt+4') // Close Tasks
       await page.keyboard.press('Alt+7') // Close Usage
 
-      // Wait for session items to render (need multiple sessions)
+      // Waits for all 3 sessions from the fixture to render.
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3, { timeout: 10000 })
 
-      // Session-002 has $0.12, session-003 has $0.75 - look for non-zero cost
-      // Cost appears in either .sessions-meta-extra (wide) or .sessions-meta-overflow (narrow)
+      // Cost ($0.12/$0.75) renders in .sessions-meta-extra (wide layout) or .sessions-meta-overflow (narrow).
       const costLocator = page
         .locator('.sessions-meta-extra:visible, .sessions-meta-overflow:visible')
         .getByText(/\$0\.\d[1-9]/)
@@ -1239,11 +1176,10 @@ test.describe('Sessions Panel', () => {
       await page.keyboard.press('Alt+4') // Close Tasks
       await page.keyboard.press('Alt+7') // Close Usage
 
-      // Wait for session items to render (need multiple sessions)
+      // Waits for all 3 sessions from the fixture to render.
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3, { timeout: 10000 })
 
-      // Sessions have num_turns (5, 12) - look for non-zero turns
-      // Turns appear in either .sessions-meta-extra (wide) or .sessions-meta-overflow (narrow)
+      // Turns (5/12) render in .sessions-meta-extra (wide layout) or .sessions-meta-overflow (narrow).
       const turnsLocator = page
         .locator('.sessions-meta-extra:visible, .sessions-meta-overflow:visible')
         .getByText(/[1-9]\d* turns/)
@@ -1286,12 +1222,11 @@ test.describe('Sessions Panel', () => {
       await openSessionsPanel(page)
       await expect(page.getByText('Failed to load sessions')).toBeVisible()
 
-      // Retry button should be visible
       await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
     })
   })
 
-  // Session Search tests removed - feature not implemented in SessionsPanel
+  // SessionsPanel has no search feature; no tests for it here.
 
   test.describe('Pinned Sessions', () => {
     // SPEC: panel-session:pin-button
@@ -1303,7 +1238,6 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // All session items should have pin buttons
       const pinButtons = page.locator('[data-testid="session-pin-btn"]')
       await expect(pinButtons.first()).toBeVisible()
       const count = await pinButtons.count()
@@ -1322,17 +1256,12 @@ test.describe('Sessions Panel', () => {
       const pinBtn = page.locator('[data-testid="session-pin-btn"]').first()
       await expect(pinBtn).toBeVisible()
 
-      // Initially not pinned
       await expect(pinBtn).not.toHaveClass(/pinned/)
 
-      // Click to pin
       await pinBtn.click()
       await expect(pinBtn).toHaveClass(/pinned/)
-
-      // Pinned button should have distinctive orange/amber color
       await assertColor(pinBtn, 'color', { r: 200, g: 150, b: 50 }, 80)
 
-      // Click again to unpin
       await pinBtn.click()
       await expect(pinBtn).not.toHaveClass(/pinned/)
     })
@@ -1351,8 +1280,7 @@ test.describe('Sessions Panel', () => {
       const pinButtons = page.locator('[data-testid="session-pin-btn"]')
       await pinButtons.nth(2).click()
 
-      // After pinning, the pinned session re-sorts to top of list
-      // so the first pin button should now have the pinned class
+      // Pinning re-sorts the session to the top, so the first pin button is now the pinned one.
       await expect(pinButtons.first()).toHaveClass(/pinned/)
     })
 
@@ -1374,11 +1302,9 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Pin a session
       const pinBtn = page.locator('[data-testid="session-pin-btn"]').first()
       await pinBtn.click()
 
-      // Verify PATCH was called to persist pin state
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
     })
 
@@ -1391,14 +1317,11 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Unpinned: "Pin session"
       const pinBtn = page.locator('[data-testid="session-pin-btn"]').first()
       await expect(pinBtn).toHaveAttribute('title', 'Pin session')
 
-      // Click to pin
       await pinBtn.click()
 
-      // Pinned: "Unpin session"
       await expect(pinBtn).toHaveAttribute('title', 'Unpin session')
     })
   })
@@ -1460,8 +1383,7 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Root sessions: parent (session-001, child Jan 15) and independent (session-003, Jan 12)
-      // Parent should sort first because its descendant has newest timestamp
+      // Parent (forked Jan 15) sorts above session-003 (Jan 12): sort key is the newest descendant timestamp.
       const items = page.locator('[data-testid="session-item"]')
       await expect(items.first()).toBeVisible()
       await expect(items.first()).toContainText('Parent session')
@@ -1479,7 +1401,7 @@ test.describe('Sessions Panel', () => {
               json: {
                 session_id: 'test-session-002',
                 name: 'Forked Session',
-                model: 'claude-sonnet-4-20250514',
+                model: 'claude-sonnet-5',
                 workspace: '/home/user/project',
                 num_turns: 3,
                 total_cost_usd: 0.08,
@@ -1604,11 +1526,9 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // At exactly 7 days, should show absolute date (not "7d ago")
+      // The boundary itself: exactly 7 days old shows an absolute date, not "7d ago".
       const sessionItem = page.locator('[data-testid="session-item"]').first()
       await expect(sessionItem).toBeVisible()
-
-      // Should NOT contain relative "7d ago" format
       await expect(sessionItem).not.toContainText('7d ago')
     })
   })
@@ -1644,7 +1564,6 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Null cost should display as em dash (-)
       const sessionItem = page.locator('[data-testid="session-item"]').first()
       await expect(sessionItem).toBeVisible()
       await expect(sessionItem).toContainText('-')
@@ -1671,11 +1590,10 @@ test.describe('Sessions Panel', () => {
       await input.fill('Test message')
       await input.press('Enter')
 
-      // Should transition to submitting state with elapsed timer
       const statusText = page.locator('.footer-status-text')
       await expect(statusText).toContainText('Submitting')
 
-      // Wait briefly for elapsed timer to increment, then verify "(Ns)" format
+      // Give the timer a moment to increment before checking its "(Ns)" format.
       await page.waitForTimeout(1100)
       await expect(statusText).toContainText(/Submitting.*\(\d+s\)/)
     })
@@ -1738,10 +1656,8 @@ test.describe('Sessions Panel Sort', () => {
 
     await openSessionsPanel(page)
 
-    // Get all session IDs in DOM order
     const ids = await page.locator('[data-testid="session-item"] .sessions-id').allTextContents()
 
-    // Pinned first, then with-container, then without-container
     const pinnedIdx = ids.findIndex(id => id.startsWith('pinned-s'))
     const withCtrIdx = ids.findIndex(id => id.startsWith('with-ctr'))
     const noCtrIdx = ids.findIndex(id => id.startsWith('no-ctr-s'))
@@ -1764,8 +1680,7 @@ test.describe('Sessions Panel Meta Tooltips', () => {
   test('turn count, cost, and timestamps each carry an explanatory title attribute', async ({
     page,
   }) => {
-    // Meta-extra (turns/cost) can be hidden behind overflow when the panel is
-    // narrow; assert via attribute presence, not visibility.
+    // Assert via attribute presence, not visibility: meta-extra (turns/cost) hides behind overflow when narrow.
     const turnsSpan = page.locator('.sessions-meta-extra span[title^="Turns -"]').first()
     await expect(turnsSpan).toHaveCount(1)
     const turnsTitle = await turnsSpan.getAttribute('title')
@@ -1792,9 +1707,7 @@ test.describe('Sessions Panel Resume Spinner', () => {
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
 
-    // Stub window.open and requestAnimationFrame so the Alt+click branch
-    // (which routes through onOpenInNewTab -> window.open) doesn't navigate,
-    // and the double-rAF that would clear the spinner never fires.
+    // Stubbed so Alt+click's window.open (onOpenInNewTab) doesn't navigate; double-rAF spinner-clear never fires.
     await page.evaluate(() => {
       window.requestAnimationFrame = () => 0
       window.open = () => null
@@ -1806,9 +1719,7 @@ test.describe('Sessions Panel Resume Spinner', () => {
     const resumeBtn = page.locator('[data-testid="session-resume-btn"]').first()
     await expect(resumeBtn).toBeVisible()
 
-    // Alt+click routes through handleResumeWithSpinner -> onOpenInNewTab,
-    // which is a sync window.open - no navigation, so the SessionItem
-    // stays mounted long enough to observe the spinner state.
+    // Alt+click's sync window.open means no navigation, so SessionItem stays mounted to observe the spinner.
     await resumeBtn.click({ modifiers: ['Alt'] })
 
     await expect(resumeBtn.locator('.spin')).toBeVisible()

@@ -7,13 +7,6 @@ import { formatTokens } from '../../../../../utils/formatters'
 import { parseLocalCommandOutput } from '../../../../../utils/parsers'
 import LocalCommandBlock from './LocalCommandBlock'
 
-/**
- * Render compaction block showing progress spinner or completion details.
- * @param {Object} props
- * @param {Object} props.event - Compaction event with metadata
- * @param {string[]} props.summary - Summary content to show when expanded
- * @param {boolean} props.isCompacting - Whether compaction is in progress
- */
 export default function CompactionBlock({ event, summary, isCompacting = false }) {
   const [expanded, setExpanded] = useState(false)
 

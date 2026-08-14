@@ -23,18 +23,8 @@ class OnNestedEvent(Protocol):
 
 
 class AsyncTaskManager:
-    """Detect async task launch/completion and manage monitor lifecycle.
-
-    Listens to session events to detect when background Task agents are launched,
-    starts monitors to tail their output files, and stops monitors when task
-    completion notifications arrive. Handles session resume by reattaching
-    monitors for in-progress tasks.
-
-    Attributes:
-        _on_event: Callback for delivering parsed events to the pipeline.
-        _monitors: Active monitors keyed by agent_id.
-        _output_files: Agent output file paths keyed by agent_id.
-    """
+    """Detect async task launch/completion and manage monitor lifecycle, reattaching in-progress
+    tasks on session resume; `_monitors` and `_output_files` are keyed by agent_id."""
 
     def __init__(
         self,
@@ -50,11 +40,7 @@ class AsyncTaskManager:
     # ----------------------------------------------------------------------------------------------
 
     def check_event(self, event: PublishedEvent) -> None:
-        """Check event for async task launch or completion signals.
-
-        Inspects tool_result events for async task launches and
-        task_notification events for completions.
-        """
+        """Check event for async task launch or completion signals."""
 
         if event.subtype == "tool_result":
             self._check_launch(event)
@@ -62,12 +48,8 @@ class AsyncTaskManager:
             self._check_notification(event)
 
     def reattach(self, events: list[PublishedEvent]) -> None:
-        """Scan historical events and reattach monitors for in-progress tasks.
-
-        Used during session resume to restart monitoring of background tasks that
-        were launched before the session was interrupted. Determines the byte
-        offset to resume from to avoid duplicate event emission.
-        """
+        """Scan historical events and reattach monitors for in-progress tasks, resuming each from
+        its already-processed byte offset to avoid duplicate event emission."""
 
         in_progress = self._detect_in_progress(events)
 
@@ -127,11 +109,8 @@ class AsyncTaskManager:
     # ----------------------------------------------------------------------------------------------
 
     def enrich_notification(self, event: PublishedEvent) -> None:
-        """Replace generic summary with actual agent output from output file.
-
-        Must be called BEFORE the event is persisted/broadcast so the enriched
-        summary is stored and sent to subscribers.
-        """
+        """Replace the generic summary with actual agent output from the output file; must be called
+        BEFORE the event is persisted/broadcast so the enriched summary reaches subscribers."""
 
         msg = event.message_data
 

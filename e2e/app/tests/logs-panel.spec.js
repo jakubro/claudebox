@@ -1,7 +1,12 @@
 /** E2E tests for Logs panel including SSE streaming, log formatting, and autoscroll. */
 
 import { expect, test } from '@playwright/test'
-import { openLogsPanel, toggleLogsPanel, waitForAppReady } from '../helpers.js'
+import {
+  openLogsPanel,
+  toggleLogsPanel,
+  waitForAppReady,
+  waitForShortcutsReady,
+} from '../helpers.js'
 import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
 import { createLogsSSEController, mockSSE } from '../mocks/sse.js'
 
@@ -16,14 +21,11 @@ test.describe('Logs Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Logs panel not visible by default
     await expect(page.locator('[data-testid="panel-logs"]')).not.toBeVisible()
 
-    // Press Alt+0 to open
     await page.keyboard.press('Alt+0')
     await expect(page.locator('[data-testid="panel-logs"]')).toBeVisible()
 
-    // Press Alt+0 again to close
     await page.keyboard.press('Alt+0')
     await expect(page.locator('[data-testid="panel-logs"]')).not.toBeVisible()
   })
@@ -43,7 +45,6 @@ test.describe('Logs Panel', () => {
     await expect(sessionsIcon).toBeVisible()
     await expect(logsIcon).toBeVisible()
 
-    // Sessions on the left strip; Logs on the right strip.
     const sessionsStripClass = await sessionsIcon.evaluate(
       el => el.closest('.icon-strip')?.className || '',
     )
@@ -51,7 +52,6 @@ test.describe('Logs Panel', () => {
     expect(sessionsStripClass).toContain('icon-strip-left')
     expect(logsStripClass).toContain('icon-strip-right')
 
-    // Vertical sanity: logs sits below the top-aligned sessions icon.
     const sessionsTop = await sessionsIcon.evaluate(el => el.getBoundingClientRect().top)
     const logsTop = await logsIcon.evaluate(el => el.getBoundingClientRect().top)
     expect(logsTop).toBeGreaterThan(sessionsTop)
@@ -76,10 +76,8 @@ test.describe('Logs Panel', () => {
 
     await openLogsPanel(page)
 
-    // Should show empty/connecting state
     const logsPanel = page.locator('[data-testid="panel-logs"]')
     await expect(logsPanel).toBeVisible()
-    // Panel should contain "No logs yet" in empty state
     await expect(logsPanel).toContainText('No logs yet')
   })
 
@@ -88,22 +86,19 @@ test.describe('Logs Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Click logs icon
     await page.locator('[data-testid="icon-logs"]').click()
 
-    // Panel should be visible
     await expect(page.locator('[data-testid="panel-logs"]')).toBeVisible()
   })
 
   // SPEC: layout:logs-strip-full-width
   // SPEC: layout:bottom-panel-split
-  // The bottom-panel split claim's "1 slot fills the strip" half is verified
-  // here; the "2 slots split 50/50" half is exercised by containers-panel.spec.
+  // Covers the "1 slot fills the strip" half of the split; "2 slots split 50/50" is in containers-panel.spec.
   test('logs strip spans the full width above the footer', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open via icon click - strip is closed by default.
+    // Strip is closed by default.
     await page.locator('[data-testid="icon-logs"]').click()
 
     const strip = page.locator('[data-testid="bottom-panel-container"]')
@@ -114,11 +109,9 @@ test.describe('Logs Panel', () => {
     expect(stripBox.x).toBe(0)
     expect(stripBox.width).toBe(viewportWidth)
 
-    // Footer remains at viewport bottom; the strip sits above it.
     const footerBox = await page.locator('[data-testid="footer"]').boundingBox()
     expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(footerBox.y + 1)
 
-    // Closing returns the space to the main row.
     await page.locator('[data-testid="icon-logs"]').click()
     await expect(strip).not.toBeVisible()
   })
@@ -127,19 +120,16 @@ test.describe('Logs Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open
     await toggleLogsPanel(page)
     await expect(page.locator('[data-testid="panel-logs"]')).toBeVisible()
 
-    // Close
     await toggleLogsPanel(page)
     await expect(page.locator('[data-testid="panel-logs"]')).not.toBeVisible()
   })
 
   test.describe('Connection States', () => {
-    // SPEC: panel-log:loading
     // SPEC: panel-log:connecting
-    test('shows loading or connecting state before logs arrive', async ({ page }) => {
+    test('shows connecting state before logs arrive', async ({ page }) => {
       await createLogsSSEController(page)
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
@@ -147,17 +137,15 @@ test.describe('Logs Panel', () => {
 
       await openLogsPanel(page)
 
-      // Panel should show a loading/connecting indicator before any logs are sent
       const logsPanel = page.locator('[data-testid="panel-logs"]')
       await expect(logsPanel).toBeVisible()
-      // Panel should show a meaningful state message, not just be non-empty
+      // Require a specific expected string, not just non-empty text.
       const text = await logsPanel.textContent()
       expect(text.length).toBeGreaterThan(0)
-      const hasExpectedText =
-        text.includes('Connecting') || text.includes('Loading') || text.includes('No logs')
+      const hasExpectedText = text.includes('Connecting') || text.includes('No logs')
       expect(
         hasExpectedText,
-        `Expected panel to contain "Connecting", "Loading", or "No logs", got: "${text}"`,
+        `Expected panel to contain "Connecting" or "No logs", got: "${text}"`,
       ).toBe(true)
     })
   })
@@ -169,12 +157,11 @@ test.describe('Logs Panel', () => {
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
 
-      // Wait for footer (indicates app ready, doesn't require chat input)
+      // Footer indicates app ready without requiring chat input.
       await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
       await openLogsPanel(page)
 
-      // Send a log entry
       await logsController.sendLog({
         timestamp: 1706123456,
         level: 'INFO',
@@ -182,7 +169,6 @@ test.describe('Logs Panel', () => {
         message: 'Server started on port 8080',
       })
 
-      // Verify log entry structure
       const logLine = page.locator('.log-line').first()
       await expect(logLine).toBeVisible()
       await expect(logLine.locator('.log-timestamp')).toBeVisible()
@@ -200,7 +186,6 @@ test.describe('Logs Panel', () => {
 
       await openLogsPanel(page)
 
-      // Send logs at different levels
       await logsController.sendLogs([
         { timestamp: 1706123456, level: 'DEBUG', logger: 'test', message: 'Debug message' },
         { timestamp: 1706123457, level: 'INFO', logger: 'test', message: 'Info message' },
@@ -208,13 +193,11 @@ test.describe('Logs Panel', () => {
         { timestamp: 1706123459, level: 'ERROR', logger: 'test', message: 'Error message' },
       ])
 
-      // Verify each level has its CSS class
       await expect(page.locator('.log-level-debug')).toBeVisible()
       await expect(page.locator('.log-level-info')).toBeVisible()
       await expect(page.locator('.log-level-warning')).toBeVisible()
       await expect(page.locator('.log-level-error')).toBeVisible()
 
-      // Verify at least two different log levels have distinct computed colors
       const debugColor = await page
         .locator('.log-level-debug')
         .evaluate(el => getComputedStyle(el).color)
@@ -252,7 +235,6 @@ test.describe('Logs Panel', () => {
 
       await openLogsPanel(page)
 
-      // Send many logs to trigger scroll
       const logs = Array.from({ length: 50 }, (_, i) => ({
         timestamp: 1706123456 + i,
         level: 'INFO',
@@ -261,10 +243,8 @@ test.describe('Logs Panel', () => {
       }))
       await logsController.sendLogs(logs)
 
-      // Wait for logs to render
       await expect(page.locator('.log-line')).toHaveCount(50)
 
-      // Last log should be visible (auto-scrolled)
       const lastLog = page.locator('.log-line').last()
       await expect(lastLog).toContainText('Log entry 50')
       await expect(lastLog).toBeInViewport()
@@ -273,17 +253,15 @@ test.describe('Logs Panel', () => {
     // SPEC: panel-log:resume
     test('shows "Resuming..." during session replay', async ({ page }) => {
       await mockAPI(page)
-      // Use resuming fixture to trigger isReplaying state
+      // The resuming fixture triggers isReplaying state.
       await mockSSE(page, 'events/resuming.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
 
-      // Wait for footer (app ready indicator that doesn't depend on chat input)
+      // Footer indicates app ready without depending on chat input.
       await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-      // Open logs panel via icon click
       await page.locator('[data-testid="icon-logs"]').click()
 
-      // Should show resuming state
       await expect(page.locator('[data-testid="panel-logs"]')).toContainText('Resuming...')
     })
   })
@@ -294,11 +272,13 @@ test.describe('Logs Panel', () => {
       await mockAPI(page)
       await mockSSE(page)
 
-      // Navigate to workspace without a session (no containerId)
+      // No session in the URL means no containerId.
       await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
       await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-      // Open logs panel
+      // waitForAppReady needs chat input, which this sessionless route has none of.
+      await waitForShortcutsReady(page)
+
       await page.keyboard.press('Alt+0')
       await expect(page.locator('[data-testid="panel-logs"]')).toBeVisible()
 

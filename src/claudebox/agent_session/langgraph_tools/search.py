@@ -1,8 +1,7 @@
 """Search tools - glob, grep.
 
-glob walks the workspace path; grep wraps a ripgrep subprocess so the
-Claude -> LangGraph habit transfer keeps the same flag surface. Output capped
-at 100 KB; result list capped at 1 000 entries.
+glob walks the workspace path; grep wraps a ripgrep subprocess so the Claude -> LangGraph
+habit transfer keeps the same flag surface. Output capped at 100 KB; results capped at 1 000.
 """
 
 import subprocess
@@ -26,8 +25,8 @@ def make_search_tools(ctx: ToolContext) -> list[BaseTool]:
     def glob(pattern: str) -> list[str]:
         """List paths under the workspace matching the glob `pattern`.
 
-        Results sorted newest-first by mtime; capped at 1 000 entries. Use shell
-        glob syntax (e.g. "**/*.py" for recursive).
+        Results sorted newest-first by mtime, capped at 1 000 entries. Shell glob syntax
+        (e.g. "**/*.py" for recursive).
         """
 
         matches = list(workspace_path.rglob(pattern))
@@ -52,12 +51,10 @@ def make_search_tools(ctx: ToolContext) -> list[BaseTool]:
     ) -> str:
         """Search files for `pattern` using ripgrep semantics.
 
-        `output_mode`: "content" (default, prints matches), "files_with_matches"
-        (just filenames), or "count" (match-count per file). Flags follow rg:
-        `i` case-insensitive, `n` line numbers, `A`/`B`/`C` after/before/context
-        lines, `multiline` enables across-line patterns, `head_limit` caps the
-        number of result lines, `glob` filters by file pattern, `type` filters
-        by language. Output capped at 100 KB.
+        `output_mode`: "content" (default), "files_with_matches" (filenames only), or "count"
+        (match-count per file). Flags follow rg: `i` case-insensitive, `n` line numbers,
+        `A`/`B`/`C` after/before/context lines, `multiline` for across-line patterns, `head_limit`
+        caps result lines, `glob`/`type` filter by file pattern/language. Output capped at 100 KB.
         """
 
         argv: list[str] = ["rg", pattern, path]
@@ -101,6 +98,10 @@ def make_search_tools(ctx: ToolContext) -> list[BaseTool]:
             )
         except FileNotFoundError as exc:
             raise ToolException("grep: ripgrep ('rg') not installed in container.") from exc
+
+        # rg exit 1 = no matches, not a failure; anything else must surface as an error.
+        if result.returncode not in (0, 1):
+            raise ToolException(f"grep: rg exited {result.returncode}: {result.stderr.strip()}")
 
         output = result.stdout
 

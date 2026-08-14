@@ -72,7 +72,6 @@ describe('CopyButton', () => {
     })
     expect(screen.getByRole('button')).toHaveAttribute('title', 'Copied!')
 
-    // Advance past the 2000ms timeout
     act(() => {
       vi.advanceTimersByTime(2000)
     })

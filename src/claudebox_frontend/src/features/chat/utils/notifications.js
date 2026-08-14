@@ -2,11 +2,6 @@
 
 import { EventSubtype, EventType } from '../../../config/schema'
 
-/**
- * Play notification chime via Web Audio API.
- *
- * 440Hz sine wave, 150ms duration, 30% volume with exponential decay.
- */
 export function playChime() {
   try {
     const ctx = new AudioContext()
@@ -27,7 +22,6 @@ export function playChime() {
   }
 }
 
-/** Request browser notification permission if not already granted. */
 export async function requestNotificationPermission() {
   if (!('Notification' in window)) {
     return 'denied'
@@ -41,12 +35,7 @@ export async function requestNotificationPermission() {
   return Notification.permission
 }
 
-/**
- * Extract preview text from events for notification body.
- * Excludes thinking blocks - only uses assistant text content.
- */
 export function getResponsePreview(events) {
-  // Find last assistant text content (exclude thinking blocks)
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i]
     // Only use text subtype, not thinking
@@ -61,9 +50,7 @@ export function getResponsePreview(events) {
   return 'Response complete'
 }
 
-/**
- * Build notification title matching tab title format.
- */
+/** Matches the tab title format. */
 export function buildNotificationTitle(sessionName, workspace) {
   const parts = []
   if (sessionName) {
@@ -79,9 +66,6 @@ export function buildNotificationTitle(sessionName, workspace) {
   return parts.join(' | ')
 }
 
-/**
- * Update document title with indicator prefix.
- */
 export function setTitleIndicator(hasIndicator) {
   const title = document.title
   const hasPrefix = title.startsWith('* ')

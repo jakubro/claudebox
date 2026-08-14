@@ -4,13 +4,6 @@ import { setContainerId } from '../../../api/apiClient'
 import { resumeSession } from '../../../api/sessions'
 
 /**
- * Resume a session and reconnect SSE with a fresh container ID.
- *
- * Calls startResume, then attempts to resume the session via the API.
- * On success, updates the container ID, notifies listeners, clears stale
- * session data, and reconnects SSE. On failure, delegates to the caller's
- * onError callback.
- *
  * @param {Object} deps
  * @param {string} deps.activeSessionId - Session to resume.
  * @param {Function} deps.startResume - Signal that resume is in progress.

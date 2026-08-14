@@ -63,7 +63,7 @@ class TestEditFile:
         _, _, edit_file = _tools(tool_ctx)
 
         edit_file.invoke(
-            {"path": str(target), "old_string": "a", "new_string": "b", "replace_all": True}
+            {"path": str(target), "old_string": "a", "new_string": "b", "replace_all": True},
         )
 
         assert target.read_text() == "b b b\n"
@@ -82,7 +82,7 @@ class TestEditFile:
         _, _, edit_file = _tools(tool_ctx)
 
         edit_file.invoke(
-            {"path": str(target), "old_string": "        return", "new_string": "        pass"}
+            {"path": str(target), "old_string": "        return", "new_string": "        pass"},
         )
 
         assert target.read_text() == "    if x:\n        pass\n"

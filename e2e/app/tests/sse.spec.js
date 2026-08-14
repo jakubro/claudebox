@@ -14,7 +14,6 @@ test.describe('SSE', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Send some events
       await controller.sendEvents([
         {
           type: 'user',
@@ -38,23 +37,18 @@ test.describe('SSE', () => {
         },
       ])
 
-      // Wait for messages to appear
       await expect(page.getByText('Hello')).toBeVisible()
       await expect(page.getByText('Hi there')).toBeVisible()
 
-      // Get initial connection count
       const initialCount = await controller.getConnectionCount()
 
-      // Click reload button
       const reloadBtn = page.locator('button[title*="Reload"]')
       await expect(reloadBtn).toBeVisible()
       await reloadBtn.click()
 
-      // Poll until a new connection is made
       await expect.poll(() => controller.getConnectionCount()).toBeGreaterThan(initialCount)
 
-      // After reload, previous messages should be cleared (SSE reconnects with empty state)
-      // Turn containers from the previous session should no longer be present
+      // SSE reconnects with empty state, so turn containers from the previous session should be gone.
       await expect
         .poll(async () => {
           const turnCount = await page.locator('.turn-container').count()
@@ -70,7 +64,6 @@ test.describe('SSE', () => {
 
       const controller = await createSSEController(page)
 
-      // Mock API with custom getSessionStatus handler that counts calls
       await mockAPI(page, {
         handlers: {
           getSessionStatus: async route => {
@@ -99,13 +92,11 @@ test.describe('SSE', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Poll until initial session status fetch completes
       await expect.poll(() => sessionStatusFetchCount).toBeGreaterThanOrEqual(1)
 
-      // Record fetch count after initial connect
       const initialFetchCount = sessionStatusFetchCount
 
-      // Send user and assistant events first (puts app in "responding" state)
+      // Sending user + assistant events puts the app in the "responding" state.
       await controller.sendEvents([
         {
           type: 'user',
@@ -123,10 +114,9 @@ test.describe('SSE', () => {
         },
       ])
 
-      // Wait for responding state to be active
       await expect(page.getByText('Response')).toBeVisible()
 
-      // Now send result event (triggers transition from responding -> not responding)
+      // Result event triggers the transition from responding back to not responding.
       await controller.sendEvents([
         {
           type: 'result',
@@ -136,9 +126,7 @@ test.describe('SSE', () => {
         },
       ])
 
-      // Poll until session status is fetched again after turn completion
-      // Note: If this fails, it might indicate the app doesn't poll on complete
-      // as specified. The test is correct per SPEC: "Final fetch when response completes"
+      // Session status is refetched once more after turn completion.
       await expect.poll(() => sessionStatusFetchCount).toBeGreaterThan(initialFetchCount)
     })
   })

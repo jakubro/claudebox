@@ -2,20 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ToolName } from '../../../../../../../config/schema'
-import { isAwaitingAnswer, isInteractiveTool } from '../../../../../../../utils/eventPredicates'
+import { isInteractiveTool } from '../../../../../../../utils/eventPredicates'
 import { useTurn } from '../../../hooks/useTurn'
 import { parseAnswerLabel } from '../utils/answerLabel'
+import { isAskUserAwaitingAnswer } from '../utils/toolBlockState'
 
 /**
- * Track interactive tool answer state and skip detection.
  * Consumes TurnContext for hasNextUserMessage, nextUserMessageIsFormResponse, nextUserMessage, hasPendingMessages.
- * @param {string} toolName - Name of the tool.
- * @param {boolean} isPending - Whether the tool result is pending.
- * @param {string} resultContent - Raw result content string.
+ * @param {boolean} canRenderForm - Whether an AskUserQuestion form can actually render (capability + payload).
  * @param {string} plan - Plan content for ExitPlanMode.
- * @returns {Object} Interactive state and setters.
  */
-export default function useInteractiveState(toolName, isPending, resultContent, plan) {
+export default function useInteractiveState(toolName, canRenderForm, plan) {
   const { hasNextUserMessage, nextUserMessageIsFormResponse, nextUserMessage, hasPendingMessages } =
     useTurn()
 
@@ -31,16 +28,11 @@ export default function useInteractiveState(toolName, isPending, resultContent, 
   // Skipped on resume: interactive tool with next message that's NOT a form response
   const wasSkippedOnResume = isInteractive && hasNextUserMessage && !nextUserMessageIsFormResponse
 
-  // For AskUserQuestion awaiting response, extract questions from input
-  const isAskUserAwaitingAnswer =
-    toolName === ToolName.ASK_USER_QUESTION &&
-    (isPending || isAwaitingAnswer(resultContent)) &&
-    !wasAnswered
-
   // ExitPlanMode awaits response when plan is present and not yet answered
   const isPlanAwaitingAnswer = toolName === ToolName.EXIT_PLAN_MODE && plan && !wasAnswered
 
-  const isToolAwaiting = isAskUserAwaitingAnswer || isPlanAwaitingAnswer
+  const isToolAwaiting =
+    isAskUserAwaitingAnswer(toolName, canRenderForm, wasAnswered) || isPlanAwaitingAnswer
 
   // Detect when user skips form by typing in chat instead (persist this state)
   const prevHasPendingRef = useRef(hasPendingMessages)

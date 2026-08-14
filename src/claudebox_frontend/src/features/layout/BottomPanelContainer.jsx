@@ -1,4 +1,4 @@
-/** Bottom-panel container - renders 1-or-2 horizontal slots above the footer. */
+/** Bottom-panel strip above the footer: 1 slot full-width, 2 slots split 50/50, shared height. */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { LOGS_STRIP_MAX_HEIGHT_RATIO, LOGS_STRIP_MIN_HEIGHT } from '../../config/dimensions'
@@ -7,13 +7,11 @@ import { useAppActions } from '../../context/AppActionsContext'
 import { useBottomPanels } from '../../context/BottomPanelsContext'
 import { isPrimaryPointer } from '../../utils/pointer'
 
-/** Bottom-panel strip - 1 slot full-width, 2 slots split 50/50; single shared height. */
 export default function BottomPanelContainer() {
   const { openSet, height, panelSideMap, setHeight } = useBottomPanels()
   const { isMaximized } = useAppActions()
 
-  // Order open panels by side (left first, right second) so the rendered
-  // slots match the visual order of the icon strips that toggle them.
+  // Orders panels left-then-right to match the icon strips that toggle them.
   const visible = useMemo(() => {
     const ids = [...openSet].filter(id => panelSideMap.has(id))
     return ids.sort((a, b) => {
@@ -28,8 +26,7 @@ export default function BottomPanelContainer() {
 
   const stripVisible = visible.length > 0 && !isMaximized
 
-  // Drive `.app-container` height via :root CSS var so the main row reclaims
-  // the space when the strip collapses.
+  // Drives `.app-container` height via :root CSS var so the row reclaims space on collapse.
   useEffect(() => {
     if (!stripVisible) {
       document.documentElement.style.removeProperty('--logs-strip-h')

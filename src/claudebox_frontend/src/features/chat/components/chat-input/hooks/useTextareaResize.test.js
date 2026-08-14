@@ -25,9 +25,7 @@ describe('useTextareaResize', () => {
     vi.unstubAllGlobals()
   })
 
-  /**
-   * Create mock textarea element.
-   */
+  /** Create mock textarea element. */
   function createMockTextarea(scrollHeight = 50) {
     return {
       style: { height: '', overflowY: '' },
@@ -37,23 +35,17 @@ describe('useTextareaResize', () => {
     }
   }
 
-  /**
-   * Create mock panel element.
-   */
+  /** Create mock panel element. */
   function createMockPanel(clientHeight = 400) {
     return { clientHeight }
   }
 
-  /**
-   * Create mock messages container.
-   */
+  /** Create mock messages container. */
   function createMockMessages(scrollTop = 0) {
     return { scrollTop }
   }
 
-  /**
-   * Create refs for the hook with given mock elements.
-   */
+  /** Create refs for the hook with given mock elements. */
   function createRefs(textarea, panel, messages = createMockMessages(), autoScroll = true) {
     return {
       textareaRef: { current: textarea },
@@ -63,9 +55,7 @@ describe('useTextareaResize', () => {
     }
   }
 
-  /**
-   * Trigger all ResizeObserver callbacks.
-   */
+  /** Trigger all ResizeObserver callbacks. */
   function triggerResize() {
     act(() => {
       for (const cb of resizeCallbacks) {
@@ -158,7 +148,6 @@ describe('useTextareaResize', () => {
     // Capture scroll position after stabilization
     const scrollBefore = messages.scrollTop
 
-    // Textarea grows
     textarea.scrollHeight = 100
     act(() => {
       result.current.resizeTextarea()
@@ -189,7 +178,6 @@ describe('useTextareaResize', () => {
       result.current.resizeTextarea()
     })
 
-    // Textarea grows
     textarea.scrollHeight = 100
     act(() => {
       result.current.resizeTextarea()
@@ -212,7 +200,6 @@ describe('useTextareaResize', () => {
     triggerResize()
     expect(textarea.style.height).toBe('132px')
 
-    // Panel grows
     panel.clientHeight = 600 // max = 198
     triggerResize()
     expect(textarea.style.height).toBe('198px')
@@ -269,7 +256,6 @@ describe('useTextareaResize', () => {
       null,
     )
 
-    // Should not throw during render
     expect(() => {
       renderHook(() =>
         useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),

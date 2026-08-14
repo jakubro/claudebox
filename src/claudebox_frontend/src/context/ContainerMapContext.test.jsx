@@ -101,8 +101,8 @@ describe('deriveSessionStatus', () => {
 
   it('yields "none" when stopping but no container resolves (list-authoritative self-heal)', () => {
     const { result } = renderHook(() => useContainerMap(), { wrapper })
-    // Stopping hint lingers but no container is known anywhere (missed/unmappable
-    // "stopped" event). The list is authoritative: status settles to gray, not wedged.
+    // Stopping hint lingers with no container known (missed "stopped" event); list wins, so
+    // status resolves to 'none', not 'stopping'.
     act(() => result.current.addStoppingSession('s1'))
     expect(result.current.deriveSessionStatus('s1')).toBe('none')
     expect(

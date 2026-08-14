@@ -1,19 +1,16 @@
 """argcomplete completers for the claudebox CLI - workspace ids and container targets.
 
-Completers run inside argcomplete's completion subprocess. They MUST be
-exception-safe (return whatever was resolved, never raise) and MUST NOT write to
-stdout/stderr - any stray output corrupts argcomplete's fd-8 completion stream.
+Must stay exception-safe (return what was resolved, never raise) and never write to
+stdout/stderr - stray output corrupts argcomplete's fd-8 completion stream.
 """
 
 import json
-
-import httpx
 
 from claudebox.constants import daemon_base_url, daemon_config_path
 
 
 # Short, fixed timeout: a TAB press must stay responsive even when the daemon is down.
-_COMPLETION_HTTP_TIMEOUT = httpx.Timeout(1.5)
+_COMPLETION_HTTP_TIMEOUT_SECONDS = 1.5
 
 
 def complete_workspace_id(prefix: str = "", **kwargs) -> list[str]:
@@ -60,16 +57,24 @@ def registered_workspace_ids() -> list[str]:
 
 
 def _container_short_ids() -> list[str]:
-    """Aggregate 12-char container short ids across registered workspaces via a sync daemon query."""
+    """Aggregate 12-char container short ids across registered workspaces via a sync daemon query.
+
+    ``httpx`` is deferred: workspace-id completion needs no network, and every keypress re-executes the program.
+    """
 
     workspace_ids = registered_workspace_ids()
 
     if not workspace_ids:
         return []
 
+    import httpx
+
     short_ids: list[str] = []
 
-    with httpx.Client(verify=False, timeout=_COMPLETION_HTTP_TIMEOUT) as client:
+    with httpx.Client(
+        verify=False,
+        timeout=httpx.Timeout(_COMPLETION_HTTP_TIMEOUT_SECONDS),
+    ) as client:
         for ws_id in workspace_ids:
             try:
                 response = client.get(f"{daemon_base_url()}/api/workspaces/{ws_id}/containers")

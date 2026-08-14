@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from claudebox_daemon.domain.executors import DaemonExecutors
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from claudebox_daemon.domain.workspaces.service import WorkspaceService
 
@@ -17,12 +18,7 @@ def _make_service(
     *,
     available: bool = True,
 ) -> tuple[WorkspaceService, AsyncMock]:
-    """Create a WorkspaceService with mocked sub-services.
-
-    When available=True, tmp_path is a real directory so workspace.available
-    returns True. When available=False, the path points to a non-existent
-    directory so sub-services remain None.
-    """
+    """Create a WorkspaceService with mocked sub-services; available=False leaves them None."""
 
     if available:
         ws_path = tmp_path
@@ -32,15 +28,14 @@ def _make_service(
 
     ws = RegisteredWorkspace(id="test-ws", path=ws_path)
     events = AsyncMock()
+    executors = DaemonExecutors.create()
 
     with patch("claudebox_daemon.domain.workspaces.service.Config") as mock_config_cls:
         mock_config_cls.load.return_value = MagicMock()
         proxy = MagicMock()
-        svc = WorkspaceService(ws, events, proxy)
+        svc = WorkspaceService(ws, events, proxy, executors)
 
-    # Replace sub-services with async mocks so start/stop can be awaited.
-    # Touch the private fields directly - the public properties raise on access
-    # for unavailable workspaces.
+    # Mock sub-services via private fields (public properties raise for unavailable workspaces).
     if svc._container_service is not None:
         svc._container_service = AsyncMock()
 
@@ -101,8 +96,8 @@ class TestStart:
 
         await svc.start()
 
-        svc.container_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-        svc.session_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        svc.container_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        svc.session_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
 
 
 # --- stop ---
@@ -117,13 +112,13 @@ class TestStop:
 
         svc, _ = _make_service(tmp_path, available=True)
         call_order = []
-        svc.session_service.stop.side_effect = lambda: call_order.append("session")  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-        svc.container_service.stop.side_effect = lambda: call_order.append("container")  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        svc.session_service.stop.side_effect = lambda: call_order.append("session")  # ty: ignore[unresolved-attribute]
+        svc.container_service.stop.side_effect = lambda: call_order.append("container")  # ty: ignore[unresolved-attribute]
 
         await svc.stop()
 
-        svc.session_service.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-        svc.container_service.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        svc.session_service.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        svc.container_service.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]
         assert call_order == ["session", "container"]
 
 

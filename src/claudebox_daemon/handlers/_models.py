@@ -90,3 +90,13 @@ class RenameStateRequest(BaseModel):
     """Body for PATCH /boards/{board_id}/states/{state_id}."""
 
     label: str
+
+
+class FrontendErrorReport(BaseModel):
+    """Body for POST /api/daemon/report - a narrow failure report, never conversation content."""
+
+    kind: str
+    message: str
+    stack_trace: str | None = None
+    app_version: str | None = None
+    client_timestamp: str

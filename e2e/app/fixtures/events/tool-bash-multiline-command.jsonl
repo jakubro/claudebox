@@ -1,0 +1,4 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Run a multi-line command","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Bash","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Bash","tool_input":{"command":"cd /home/jakub/dev/share \\\n  && grep -rn 'MODEL' lib/"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"lib/src/claudebox/claude/definitions.py:12:MODEL = \"opus\"\nlib/src/claudebox/config.py:40:DEFAULT_MODEL = \"opus\"","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":false,"is_human":false}

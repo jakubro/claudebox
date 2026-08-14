@@ -7,10 +7,9 @@ import { openSessionInNewTab } from '../../../utils/navigation'
 /**
  * Manage per-turn rewind and control-bar fork flows.
  *
- * Modal state (rewindTurnId, rewindMode) opens only when fork-here would
- * interrupt a streaming response; non-interrupting requests bypass the modal
- * and execute directly. Control-bar forks are tracked with their own spinner
- * flag (`controlBarForking`) so they don't drive per-turn UI.
+ * Modal state (rewindTurnId, rewindMode) opens only when fork-here would interrupt a streaming
+ * response; non-interrupting requests bypass it and execute directly. Control-bar forks track
+ * their own spinner flag (`controlBarForking`) so they don't drive per-turn UI.
  *
  * @param {object} args
  * @param {string|null} args.sessionId - Current session id (fork source).
@@ -37,10 +36,8 @@ export default function useChatRewindFork({
   const [rewindTurnId, setRewindTurnId] = useState(null)
   const [rewindMode, setRewindMode] = useState(null)
   const [forkingTurnId, setForkingTurnId] = useState(null)
-  // Control-bar fork is independent of per-turn rewind: forks initiated from
-  // ChatControlBar pass turnId=null, which leaves forkingTurnId untouched.
-  // Track in-flight control-bar forks separately so the control bar's spinner
-  // mirrors the per-turn RewindSplitButton UX.
+  // ChatControlBar forks pass turnId=null, leaving forkingTurnId untouched, so in-flight
+  // control-bar forks are tracked separately here, mirroring RewindSplitButton's per-turn spinner.
   const [controlBarForking, setControlBarForking] = useState(false)
 
   /** Execute a fork with the given turnId and mode. */

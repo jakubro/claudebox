@@ -1,27 +1,29 @@
 /** E2E tests for chat autoscroll behavior and tab switch preservation. */
 
 import { expect, test } from '@playwright/test'
-import { openBookmarksPanel, openSessionsPanel, waitForAppReady } from '../helpers.js'
+import {
+  openBookmarksPanel,
+  openSessionsPanel,
+  waitForAppReady,
+  waitForStableScrollHeight,
+} from '../helpers.js'
 import { DEFAULT_SESSION_ID, DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { createSSEController, mockSSE, mockSSEDynamic } from '../mocks/sse.js'
 
 test.describe('Autoscroll', () => {
   // SPEC: chat:autoscroll-bottom
   test('auto-scrolls to new content at bottom', async ({ page }) => {
-    // Use long conversation to ensure scrollable content
     await mockAPI(page)
     await mockSSE(page, 'events/long-conversation.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Wait for messages to load
-    await expect(page.getByText('Hello').first()).toBeVisible()
+    // List is windowed and opens at the bottom - assert on the newest turn, not the first.
+    await expect(page.locator('[data-testid="turn-container"]').last()).toBeVisible()
 
-    // Get the chat messages container
     const messagesContainer = page.locator('[data-testid="chat-messages"]')
     await expect(messagesContainer).toBeVisible()
 
-    // Poll until scrolled near bottom (within threshold of 100px)
     await expect
       .poll(async () => {
         return await messagesContainer.evaluate(el => {
@@ -39,18 +41,17 @@ test.describe('Autoscroll', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Wait for messages to load
-    await expect(page.getByText('Hello').first()).toBeVisible()
+    // List is windowed and opens at the bottom - assert on the newest turn, not the first.
+    await expect(page.locator('[data-testid="turn-container"]').last()).toBeVisible()
 
     const messagesContainer = page.locator('[data-testid="chat-messages"]')
     await expect(messagesContainer).toBeVisible()
 
-    // Scroll up manually
     await messagesContainer.evaluate(el => {
       el.scrollTop = 0
     })
 
-    // Basic scroll position check; full autoscroll-disable with new content verified in Content Growth section below
+    // Basic scroll position check; full autoscroll-disable with new content is in Content Growth below.
     await expect
       .poll(async () => {
         return await messagesContainer.evaluate(el => el.scrollTop)
@@ -65,7 +66,6 @@ test.describe('Autoscroll', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Send initial events
     await controller.sendEvents([
       {
         type: 'user',
@@ -86,20 +86,16 @@ test.describe('Autoscroll', () => {
     const messagesContainer = page.locator('[data-testid="chat-messages"]')
     await expect(messagesContainer).toBeVisible()
 
-    // Scroll to top (disables autoscroll)
     await messagesContainer.evaluate(el => {
       el.scrollTop = 0
     })
 
-    // Verify scroll to top
     await expect.poll(() => messagesContainer.evaluate(el => el.scrollTop)).toBe(0)
 
-    // Scroll back to bottom (re-enables autoscroll)
     await messagesContainer.evaluate(el => {
       el.scrollTop = el.scrollHeight
     })
 
-    // Send more events
     await controller.sendEvents([
       {
         type: 'user',
@@ -117,7 +113,6 @@ test.describe('Autoscroll', () => {
       { type: 'result', subtype: 'success', turn_id: 'turn_002', timestamp: 1705600012000 },
     ])
 
-    // Poll until near bottom again
     await expect
       .poll(async () => {
         return await messagesContainer.evaluate(el => {
@@ -136,25 +131,23 @@ test.describe('Autoscroll', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for messages to load
-      await expect(page.getByText('Hello').first()).toBeVisible()
+      // List is windowed and opens at the bottom - wait on the newest turn, not the first.
+      await expect(page.locator('[data-testid="turn-container"]').last()).toBeVisible()
 
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
       await expect(messagesContainer).toBeVisible()
 
-      // Scroll up to a specific position
       await messagesContainer.evaluate(el => {
         el.scrollTop = 100
       })
 
-      // Verify scroll position
       await expect.poll(() => messagesContainer.evaluate(el => el.scrollTop)).toBe(100)
       const initialScroll = 100
 
-      // Open sessions panel (causes layout change)
+      // Opening the panel causes a layout change.
       await openSessionsPanel(page)
 
-      // Poll until scroll position is preserved (may vary slightly due to layout shift)
+      // Small tolerance accounts for layout-shift jitter.
       await expect
         .poll(async () => {
           const afterPanelScroll = await messagesContainer.evaluate(el => el.scrollTop)
@@ -170,7 +163,6 @@ test.describe('Autoscroll', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Send initial events
       await controller.sendEvents([
         { type: 'user', subtype: 'text', is_human: true, content: 'Hello', timestamp: Date.now() },
         { type: 'assistant', subtype: 'text', content: 'Response', timestamp: Date.now() },
@@ -180,23 +172,19 @@ test.describe('Autoscroll', () => {
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
       await expect(messagesContainer).toBeVisible()
 
-      // Scroll up to disable autoscroll
       await messagesContainer.evaluate(el => {
         el.scrollTop = 0
       })
       await expect.poll(() => messagesContainer.evaluate(el => el.scrollTop)).toBe(0)
 
-      // Open sessions panel
       await openSessionsPanel(page)
 
-      // Send more events
       await controller.sendEvents([
         { type: 'user', subtype: 'text', is_human: true, content: 'More', timestamp: Date.now() },
         { type: 'assistant', subtype: 'text', content: 'More response', timestamp: Date.now() },
         { type: 'result', subtype: 'success', turn_id: 'turn_002', timestamp: Date.now() },
       ])
 
-      // Poll to verify still near top (autoscroll still disabled)
       await expect
         .poll(async () => {
           return await messagesContainer.evaluate(el => el.scrollTop)
@@ -215,24 +203,23 @@ test.describe('Autoscroll', () => {
 
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
       await expect(messagesContainer).toBeVisible()
+      // The injected nested scrollable needs a turn to attach to, and autoscroll must settle first.
+      await waitForStableScrollHeight(messagesContainer)
 
-      // Observable autoscroll-state signal: the jump-to-bottom button's title.
-      // - "Autoscroll enabled" -> autoscroll on (button is the disabled-pressed state)
-      // - "Last message (Alt+End)" -> autoscroll off
-      // (See ChatControlBar.jsx line 212.) Avoids depending on the dev-only
-      // window.__chat_controller__ hook which is stripped from the prod build
-      // the playwright webServer serves.
+      // Button title is the observable autoscroll signal ('Autoscroll enabled' / 'Last message (Alt+End)'),
+      // see ChatControlBar.jsx:212 - avoids window.__chat_controller__, a dev-only hook stripped from prod.
       const jumpBtn = page.locator(
         'button[title="Autoscroll enabled"], button[title="Last message (Alt+End)"]',
       )
       await expect(jumpBtn).toBeVisible()
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
 
-      // Inject a synthetic nested scrollable (an overflow:auto div with room
-      // to scroll) into the last visible turn - the predicate is purely
-      // structural, so any inner overflow:auto ancestor consumes the wheel.
+      // Injects overflow:auto into the last turn; the predicate treats any such ancestor as wheel-consuming.
       await page.evaluate(() => {
-        const turn = document.querySelector('.turn-text')
+        // Must be the LAST turn (in view) - an off-window turn has no element, so scrollTop=100 won't
+        // stick, roomUp reads false, and the wheel misreads as outer intent (the guarded-against flake).
+        const turns = document.querySelectorAll('.turn-text')
+        const turn = turns[turns.length - 1]
         if (!turn) {
           throw new Error('no turn found to inject scrollable')
         }
@@ -243,22 +230,23 @@ test.describe('Autoscroll', () => {
         inner.style.cssText = 'height: 400px;'
         nested.appendChild(inner)
         turn.appendChild(nested)
+        void nested.offsetHeight // force layout so the scrollTop write sticks
         // Position partway down so wheel events have room to scroll either way
         nested.scrollTop = 100
       })
 
-      // Dispatch a real wheel on the nested scrollable via Playwright's
-      // Locator.dispatchEvent - this routes through the same CDP path the
-      // existing Content Growth test uses (line 295). page.evaluate +
-      // new WheelEvent() bubbles inconsistently in chromium under playwright,
-      // so use the framework path. Without the fix the outer .chat-messages
-      // listener treats this as user intent. With the fix
-      // isNestedScrollableConsuming bails.
+      // Guard: without scroll room, _isNestedScrollableConsuming reads roomUp=false, invalidating the assertion.
+      await expect
+        .poll(() => page.locator('#__test_nested_scrollable__').evaluate(el => el.scrollTop))
+        .toBe(100)
+
+      // Uses Playwright's Locator.dispatchEvent (same CDP path as the Content Growth test's wheel dispatch)
+      // rather than page.evaluate + new WheelEvent(), which bubbles inconsistently in chromium - without the fix,
+      // .chat-messages treats this as user intent; with it, isNestedScrollableConsuming bails.
       await page
         .locator('#__test_nested_scrollable__')
         .dispatchEvent('wheel', { deltaY: -50, bubbles: true })
 
-      // Title must remain "Autoscroll enabled" - autoscroll engagement preserved.
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
     })
   })
@@ -268,16 +256,10 @@ test.describe('Autoscroll', () => {
     test('bookmark click that lands viewport not-at-bottom disengages auto-scroll', async ({
       page,
     }) => {
-      // 60 sequential page.evaluate round-trips for the synthesized
-      // conversation plus the at-bottom settle poll plus the bookmark
-      // interaction and assertion. The default 5 s test cap is too tight
-      // once event delivery is batched (events commit on the 50 ms flush
-      // cadence rather than per dispatch), so cumulative ~600 ms of
-      // sendEvents + render + settle leaves no slack.
+      // 60 sequential page.evaluate round-trips push past the default 5s cap once delivery batches at 50ms.
       test.setTimeout(30000)
-      // Pre-seed the bookmark via ui-state - the first user message of a long
-      // conversation sits far above the bottom, so clicking the bookmark
-      // expresses intent to leave the live tail.
+      // Pre-seeding the bookmark targets the first user message of a long conversation, far above the bottom,
+      // so clicking it expresses intent to leave the live tail.
       await mockAPI(page, {
         handlers: {
           getUIState: async route => {
@@ -300,11 +282,8 @@ test.describe('Autoscroll', () => {
           },
         },
       })
-      // Synthesize a long conversation with explicit turn_id on every user
-      // event so the bookmark's target (turn_001) has a [data-turn-id] anchor.
-      // The fixture file `long-conversation.jsonl` omits turn_id on user
-      // events, which would leave turn.turn_id undefined and the data-turn-id
-      // attribute absent.
+      // Synthesizes turn_id on every user event so the bookmark's target (turn_001) has a [data-turn-id]
+      // anchor - the long-conversation.jsonl fixture omits turn_id on user events.
       const events = []
       const N = 20
       for (let i = 1; i <= N; i++) {
@@ -338,45 +317,37 @@ test.describe('Autoscroll', () => {
           ts: `2025-01-18T12:00:${id}Z`,
         })
       }
-      // Preload the synthesized turns so they replay on the initial connection
-      // and re-replay on every reconnect. A controller's one-shot sendEvents is
-      // silently dropped when it lands in the app's reconnect gap (the app
-      // churns through ~3 SSE connections while resuming), leaving 0 turns.
+      // Preloading (vs. a controller's one-shot sendEvents) makes turns replay on every reconnect; a
+      // one-shot send is silently dropped if it lands in the ~3-connection reconnect gap while resuming.
       await mockSSEDynamic(page, () => events)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for the last turn to render before asserting scroll state. It
-      // anchors the bottom where autoscroll settles and is never virtualized
-      // away, whereas turn_001 scrolls out of view once pinned to bottom.
+      // Last turn anchors the bottom (never virtualized away), unlike turn_001 which scrolls off once pinned.
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
       const lastTurnId = `turn_${String(N).padStart(3, '0')}`
       await expect(page.locator(`[data-turn-id="${lastTurnId}"]`)).toBeVisible()
 
-      // Wait for the initial autoscroll to settle at bottom.
       await expect
         .poll(() =>
           messagesContainer.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 50),
         )
         .toBe(true)
 
-      // Observable autoscroll-state signal: jump-to-bottom button title
-      // (matches the convention used by claim:chat:auto-scroll-ignores-nested-scroll).
+      // Same jump-to-bottom-button-title signal used in the nested-scrollable test above.
       const jumpBtn = page.locator(
         'button[title="Autoscroll enabled"], button[title="Last message (Alt+End)"]',
       )
       await expect(jumpBtn).toBeVisible()
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
 
-      // Click the pre-seeded bookmark for the first turn.
       await openBookmarksPanel(page)
       const panel = page.locator('[data-testid="panel-bookmarks"]')
       const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
       await expect(bookmarkItem).toBeVisible()
       await bookmarkItem.click()
 
-      // After the click the bookmarked turn is at viewport top (far from
-      // bottom) -> autoscroll must have disengaged.
+      // The bookmarked turn lands at viewport top, far from bottom, so autoscroll disengages.
       await expect(jumpBtn).toHaveAttribute('title', 'Last message (Alt+End)')
     })
 
@@ -384,9 +355,8 @@ test.describe('Autoscroll', () => {
     test('bookmark click whose target keeps viewport at bottom does not change engagement', async ({
       page,
     }) => {
-      // Default session has a single turn ("Hello" / "Hi") whose user message
-      // is within AUTOSCROLL_THRESHOLD of bottom -> willBeAtBottom predicate
-      // true -> autoscroll engagement unchanged.
+      // Default session's single turn ("Hello"/"Hi") is within AUTOSCROLL_THRESHOLD of bottom, so
+      // willBeAtBottom is true and engagement is unchanged.
       await mockAPI(page, {
         handlers: {
           getUIState: async route => {
@@ -427,7 +397,6 @@ test.describe('Autoscroll', () => {
       await expect(bookmarkItem).toBeVisible()
       await bookmarkItem.click()
 
-      // Engagement state unchanged - still on.
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
     })
   })
@@ -436,19 +405,17 @@ test.describe('Autoscroll', () => {
     // SPEC: chat:autoscroll-disable
     // SPEC: chat:autoscroll-streaming-responsive
     test('scroll position stable when new content arrives while scrolled up', async ({ page }) => {
-      // Use long-conversation fixture for initial scrollable content
       await mockAPI(page)
       await mockSSE(page, 'events/long-conversation.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for messages to load
-      await expect(page.getByText('Hello').first()).toBeVisible()
+      // List is windowed and opens at the bottom - wait on the newest turn, not the first.
+      await expect(page.locator('[data-testid="turn-container"]').last()).toBeVisible()
 
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
       await expect(messagesContainer).toBeVisible()
 
-      // Wait for autoscroll to settle at bottom
       await expect
         .poll(() =>
           messagesContainer.evaluate(el => {
@@ -458,13 +425,9 @@ test.describe('Autoscroll', () => {
         )
         .toBe(true)
 
-      // CONTRACT: ChatController classifies user-scroll intent from
-      // input events (wheel/touch/keyboard), not from height-equality
-      // heuristics. A bare programmatic `el.scrollTop = ...` write therefore
-      // no longer disengages auto-scroll - only a real wheel/touch/key event
-      // does. This test dispatches a wheel event before positioning so the
-      // assertion-under-test (scroll position holds while content streams)
-      // exercises the disengaged state.
+      // CONTRACT: ChatController infers user-scroll intent only from input events, not height-equality
+      // heuristics - a bare `el.scrollTop = ...` no longer disengages autoscroll, only a real event does;
+      // this dispatches a wheel event first to exercise that state.
       await messagesContainer.dispatchEvent('wheel', { deltaY: -100 })
       await messagesContainer.evaluate(el => {
         el.scrollTop = 100
@@ -473,7 +436,7 @@ test.describe('Autoscroll', () => {
 
       const beforeScroll = 100
 
-      // Send new SSE events while scrolled up (injected via the active mock instance)
+      // Injects new SSE events via the active mock instance while scrolled up.
       await page.evaluate(() => {
         const instance = window.__sseActiveChatInstance || window.__sseChatInstance
         if (!instance || instance.readyState !== 1) {
@@ -503,10 +466,8 @@ test.describe('Autoscroll', () => {
         }
       })
 
-      // Wait for the new content to render
       await expect(page.getByText('New question after scroll')).toBeVisible()
 
-      // Scroll position should be unchanged (autoscroll disabled) - allow small variance
       await expect
         .poll(async () => {
           const currentScroll = await messagesContainer.evaluate(el => el.scrollTop)

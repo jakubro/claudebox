@@ -17,9 +17,7 @@ import {
 } from './utils/copyableText'
 
 /**
- * @param {object} props
  * @param {string} props.toolName - Tool name (Edit, Read, Write, Grep, etc.).
- * @param {string} props.details - Raw tool output to render.
  * @param {string} [props.filePath] - File path for syntax highlighting.
  * @param {string} [props.outputMode] - Grep output mode (files_with_matches, etc.).
  * @param {number} [props.lineOffset] - Starting line number for Edit tool diffs.

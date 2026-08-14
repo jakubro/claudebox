@@ -3,7 +3,6 @@
 import { X } from 'lucide-react'
 
 /**
- * Render a row of attachment thumbnails below the textarea.
  * @param {object} props
  * @param {Array} props.attachments - Array of {id, name, type, data, size}.
  * @param {Function} props.onRemove - Called with attachment id to remove.

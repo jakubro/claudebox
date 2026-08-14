@@ -17,5 +17,5 @@ def wrap_box(text: str, width: int = 150) -> str:
             f"┌{border}┐",
             *[pad(line) for line in lines],
             f"└{border}┘",
-        ]
+        ],
     )

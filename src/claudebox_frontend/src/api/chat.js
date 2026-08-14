@@ -11,13 +11,17 @@ export class ContainerGoneError extends Error {
 }
 
 /**
- * Send a user message with optional attachments and inline replies to the active session.
+ * Send a user message with optional attachments, inline replies, and a note to the active session.
  * @param {string} prompt - The message text.
  * @param {object} [options]
  * @param {Array} [options.attachments] - Attachment payloads ({name, type, data}).
  * @param {Array} [options.inlineReplies] - Inline reply pairs ({quote, from, response}).
+ * @param {string} [options.note] - Message typed alongside an AskUserQuestion/ExitPlanMode answer.
  */
-export async function sendMessage(prompt, { attachments = [], inlineReplies = null } = {}) {
+export async function sendMessage(
+  prompt,
+  { attachments = [], inlineReplies = null, note = null } = {},
+) {
   const body = { prompt }
   if (attachments?.length > 0) {
     body.attachments = attachments.map(a => ({
@@ -28,6 +32,9 @@ export async function sendMessage(prompt, { attachments = [], inlineReplies = nu
   }
   if (inlineReplies?.length > 0) {
     body.inline_replies = inlineReplies
+  }
+  if (note?.trim()) {
+    body.note = note
   }
   const res = await containerFetch('/api/send', {
     method: 'POST',

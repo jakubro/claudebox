@@ -9,8 +9,8 @@ const StashContext = createContext(null)
 /**
  * Provide stash state and actions.
  *
- * Low-frequency context - updates on stash operations only.
- * Stash is persisted to ui-state.json per-session for cross-browser sync.
+ * Low-frequency context (updates on stash operations only); persisted to ui-state.json
+ * per-session for cross-browser sync.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
@@ -22,14 +22,12 @@ export function StashProvider({ children }) {
   const [pendingInsert, setPendingInsert] = useState(null)
   const sessionIdRef = useRef(null)
 
-  // Persist stash to server
   const persistStash = useCallback(newStash => {
     if (sessionIdRef.current) {
       patchSessionUiState(sessionIdRef.current, [{ op: 'set', path: 'stash', value: newStash }])
     }
   }, [])
 
-  // Load stash from server when sessionId changes
   useEffect(() => {
     setStash([]) // Clear immediately on session change (no persist)
     sessionIdRef.current = sessionId
@@ -40,12 +38,11 @@ export function StashProvider({ children }) {
     }
   }, [sessionId])
 
-  // Clear stash (used by reconnect) - local state only, don't persist
+  // Local state only, no persist - called on reconnect
   const clearStash = useCallback(() => {
     setStash([])
   }, [])
 
-  // Stash actions
   const stashPush = useCallback(
     text => {
       if (!text?.trim()) {

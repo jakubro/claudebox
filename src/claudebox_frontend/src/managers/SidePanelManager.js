@@ -9,7 +9,6 @@ const PANEL_TITLES = {
   mcp: 'MCP',
 }
 
-// Map each side to its dimension property and Dockview direction
 const SIDE_DIMENSION = { left: 'width', right: 'width', bottom: 'height' }
 const SIDE_DIRECTION = { left: 'left', right: 'right', bottom: 'below' }
 const ALL_SIDES = ['left', 'right', 'bottom']
@@ -36,10 +35,8 @@ export default class SidePanelManager {
   }
 
   /**
-   * Toggle panel visibility. Opens if closed, closes if open.
-   * When maximized: if panel is already open, just unmaximize (keep panel visible);
-   * if panel is closed, unmaximize and open it.
-   * Preserves group dimensions across toggle operations.
+   * While maximized, toggling an already-open panel just unmaximizes it; toggling a closed
+   * panel unmaximizes then opens it. Preserves group dimensions across toggles.
    */
   toggle(panelId) {
     const side = this.config.sides[panelId]
@@ -63,10 +60,7 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Toggle maximize state for a group.
-   * Saves layout snapshot before maximizing, restores on un-maximize.
-   */
+  /** Toggle maximize state for a group; saves a layout snapshot before maximizing and restores it on un-maximize. */
   maximizeToggle(groupApi) {
     if (!groupApi) {
       return
@@ -91,9 +85,6 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Open panel if not already open.
-   */
   open(panelId) {
     const side = this.config.sides[panelId]
     if (!side) {
@@ -101,15 +92,12 @@ export default class SidePanelManager {
     }
 
     if (this.api.getPanel(panelId)) {
-      return // Already open
+      return
     }
 
     this._withDimensionRestore(() => this._openPanel(panelId, side))
   }
 
-  /**
-   * Close panel if open.
-   */
   close(panelId) {
     const side = this.config.sides[panelId]
     if (!side) {
@@ -118,15 +106,13 @@ export default class SidePanelManager {
 
     const existingPanel = this.api.getPanel(panelId)
     if (!existingPanel) {
-      return // Already closed
+      return
     }
 
     this._withDimensionRestore(() => this._closePanel(panelId, existingPanel, side))
   }
 
-  /**
-   * Handle panel move event - detect detachment from side group.
-   */
+  /** Handle panel move event - detect detachment from side group. */
   handlePanelMove(movedPanel) {
     const panelId = movedPanel.id
     const originalSide = this.config.sides[panelId]
@@ -137,7 +123,6 @@ export default class SidePanelManager {
     const order = this.state[originalSide].order
     const group = movedPanel.api.group
 
-    // Check if still grouped with other same-side panels
     const stillGrouped = group.panels.some(
       p => p.id !== panelId && this.config.sides[p.id] === originalSide,
     )
@@ -147,9 +132,7 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Update stored dimensions from current visible groups.
-   */
+  /** Update stored dimensions from current visible groups. */
   updateDimensions() {
     for (const side of ALL_SIDES) {
       const order = this.state[side].order
@@ -168,9 +151,7 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Serialize state for persistence.
-   */
+  /** Serialize state for persistence. */
   toJSON() {
     return {
       left: { ...this.state.left, order: [...this.state.left.order] },
@@ -179,9 +160,7 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Restore state from persisted data.
-   */
+  /** Restore state from persisted data. */
   fromJSON(data) {
     if (!data) {
       return
@@ -198,9 +177,8 @@ export default class SidePanelManager {
   }
 
   /**
-   * Restore layout and state from server.
-   * Returns { loaded: true } if layout was restored, { loaded: false } otherwise.
-   * Stores preMaximizeLayout internally when present.
+   * Restore layout and state from server. Returns { loaded: true } if a layout was restored,
+   * else { loaded: false }. Stores preMaximizeLayout internally when present.
    */
   async restoreFromServer(sessionId) {
     try {
@@ -214,8 +192,7 @@ export default class SidePanelManager {
         return { loaded: false }
       }
 
-      // When inheriting from latest session (no sessionId), strip session-specific state.
-      // The frontend owns this cleanup - server returns unfiltered inherited state.
+      // When inheriting (no sessionId), strip session state - server returns it unfiltered.
       if (!sessionId) {
         delete session.stash
         delete session.notificationsEnabled
@@ -226,10 +203,8 @@ export default class SidePanelManager {
       // Strip session view IDs before restoring - only `main` is a center panel.
       this.api.fromJSON(stripSessionPanels(session.layout))
 
-      // Restore manager state
       this.fromJSON(session.panelGroups)
 
-      // Restore maximize snapshot if present.
       this.preMaximizeLayout = session.preMaximizeLayout || null
 
       return { loaded: true }
@@ -239,9 +214,7 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Exit maximized group, restoring layout snapshot if available. No-op when no group is maximized.
-   */
+  /** Exit maximized group, restoring layout snapshot if available. No-op when no group is maximized. */
   exitMaximize() {
     if (!this.api.hasMaximizedGroup()) {
       return
@@ -261,9 +234,7 @@ export default class SidePanelManager {
 
   // Private methods
 
-  /**
-   * Capture dimensions, run operation, then restore dimensions via rAF.
-   */
+  /** Capture dimensions, run operation, then restore dimensions via rAF. */
   _withDimensionRestore(operation) {
     const saved = this._captureDimensions()
     operation()
@@ -277,9 +248,7 @@ export default class SidePanelManager {
     })
   }
 
-  /**
-   * Capture current dimensions of all side panel groups.
-   */
+  /** Capture current dimensions of all side panel groups. */
   _captureDimensions() {
     const dimensions = { left: null, right: null, bottom: null }
     this._forEachTrackedPanel((panel, side) => {
@@ -297,9 +266,7 @@ export default class SidePanelManager {
     return dimensions
   }
 
-  /**
-   * Restore group dimensions after layout operation.
-   */
+  /** Restore group dimensions after layout operation. */
   _restoreDimensions(dimensions) {
     this._forEachTrackedPanel((panel, side) => {
       if (dimensions[side]) {
@@ -309,9 +276,7 @@ export default class SidePanelManager {
     })
   }
 
-  /**
-   * Iterate tracked panels, calling callback with (panel, side) for the first panel per side.
-   */
+  /** Iterate tracked panels, calling callback with (panel, side) for the first panel per side. */
   _forEachTrackedPanel(callback) {
     const visited = { left: false, right: false, bottom: false }
     const trackedPanels = new Set([
@@ -333,21 +298,17 @@ export default class SidePanelManager {
     }
   }
 
-  /**
-   * Open panel at correct position.
-   */
+  /** Open panel at correct position. */
   _openPanel(panelId, side) {
     const title = this._getPanelTitle(panelId)
     const order = this.state[side].order
 
-    // Find insertion point
     const { referencePanel, insertDirection } = this._findInsertionPoint(panelId, side)
 
     // Add to order BEFORE addPanel - onDidLayoutChange may fire synchronously
     order.push(panelId)
 
     if (referencePanel) {
-      // Insert relative to existing same-side panel
       this.api.addPanel({
         id: panelId,
         component: panelId,
@@ -391,9 +352,7 @@ export default class SidePanelManager {
     this.state[side].order = this.state[side].order.filter(id => id !== panelId)
   }
 
-  /**
-   * Find correct insertion point based on canonical order.
-   */
+  /** Find correct insertion point based on canonical order. */
   _findInsertionPoint(panelId, side) {
     const canonicalOrder = this.config.canonicalOrder[side]
     const activePanelIds = new Set(this.state[side].order)
@@ -418,9 +377,7 @@ export default class SidePanelManager {
     return { referencePanel: null, insertDirection: 'below' }
   }
 
-  /**
-   * Restore group dimensions from a persisted panelGroups snapshot.
-   */
+  /** Restore group dimensions from a persisted panelGroups snapshot. */
   _restoreDimensionsFromSnapshot(panelGroups) {
     if (!panelGroups) {
       return

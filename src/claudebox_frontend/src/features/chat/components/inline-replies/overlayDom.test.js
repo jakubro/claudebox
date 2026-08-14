@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  clampHorizontal,
   isRangeVisible,
   positionsEqual,
   rangeContainsPoint,
@@ -23,6 +24,53 @@ describe('spanRect', () => {
 
   it('returns null when the range paints nothing (collapsed source)', () => {
     expect(spanRect({ getClientRects: () => [] })).toBeNull()
+  })
+})
+
+describe('clampHorizontal', () => {
+  const bounds = { left: 0, right: 400 }
+
+  it('pulls in a box overflowing the right edge by exactly the overflow plus padding', () => {
+    expect(clampHorizontal({ left: 350, width: 100 }, bounds)).toBe(296) // right 450 = 54px past bounds.right+pad
+  })
+
+  it('pulls in a box overflowing the left edge by exactly the overflow plus padding', () => {
+    expect(clampHorizontal({ left: -20, width: 100 }, bounds)).toBe(4) // 20px past bounds.left, +4px pad
+  })
+
+  it('returns a fitting box unchanged', () => {
+    expect(clampHorizontal({ left: 150, width: 100 }, bounds)).toBe(150)
+  })
+
+  it('pins a box wider than the bounds to the left edge rather than going negative', () => {
+    expect(clampHorizontal({ left: 50, width: 500 }, bounds)).toBe(4)
+  })
+})
+
+describe('clampHorizontal composes with stackFloats', () => {
+  it('two boxes clamped into the same horizontal band still stack vertically', () => {
+    const bounds = { left: 0, right: 400 }
+    const boxes = [
+      {
+        id: 'a',
+        top: 0,
+        width: 100,
+        height: 40,
+        left: clampHorizontal({ left: 350, width: 100 }, bounds),
+      },
+      {
+        id: 'b',
+        top: 10,
+        width: 100,
+        height: 40,
+        left: clampHorizontal({ left: 360, width: 100 }, bounds),
+      },
+    ]
+
+    const out = stackFloats(boxes, 8)
+
+    expect(out.get('a')).toEqual({ left: 296, top: 0 })
+    expect(out.get('b')).toEqual({ left: 296, top: 48 })
   })
 })
 

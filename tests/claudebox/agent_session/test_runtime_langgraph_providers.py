@@ -1,13 +1,8 @@
 """Universal-provider dispatch tests for LangGraphRuntime.
 
-Section 1 (.a): `_build_chat_model` dispatches via `init_chat_model`
-with ProviderPackageMissing translation.
-Section 2 (.b): probe dispatch via `PROVIDER_STRATEGIES`.
-Section 3 (.b): catalog dispatch via `PROVIDER_STRATEGIES`.
-Section 4 (.c): cost telemetry + context-window via `_providers` lookup helpers.
-Section 5 (.d): tool-binding graceful degradation via `_build_graph`.
-Section 6 (.f): Tier 1 Anthropic integration headline - real langchain-anthropic
-                + stubbed chat model on the wire so no real API key is needed.
+Covers `_build_chat_model` dispatch via `init_chat_model`, provider probe/catalog dispatch via
+`PROVIDER_STRATEGIES`, cost and context-window lookups, tool-binding degradation in `_build_graph`,
+and a Tier 1 Anthropic integration test that stubs the chat model so no live API key is needed.
 """
 
 from pathlib import Path
@@ -59,7 +54,7 @@ class TestBuildChatModelDispatch:
 
     def test_dispatches_via_init_chat_model_for_anthropic(self, tmp_path):
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
         fake_chat_model = MagicMock()
 
@@ -69,18 +64,18 @@ class TestBuildChatModelDispatch:
         ) as mock_init:
             result = runtime._build_chat_model()
 
-        mock_init.assert_called_once_with("anthropic:claude-sonnet-4-5")
+        mock_init.assert_called_once_with("anthropic:claude-sonnet-5")
         assert result is fake_chat_model
 
     def test_dispatches_via_init_chat_model_for_ollama(self, tmp_path):
-        """Existing Ollama workspaces still route through init_chat_model now too."""
+        """Ollama models route through init_chat_model, same as every other provider."""
 
         runtime = LangGraphRuntime(
             _config(
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
 
         with patch(
@@ -99,7 +94,7 @@ class TestBuildChatModelDispatch:
                 tmp_path,
                 model="openai:gpt-4o",
                 provider_kwargs={"base_url": "http://x:8000/v1", "temperature": 0.5},
-            )
+            ),
         )
 
         with patch(
@@ -109,7 +104,9 @@ class TestBuildChatModelDispatch:
             runtime._build_chat_model()
 
         mock_init.assert_called_once_with(
-            "openai:gpt-4o", base_url="http://x:8000/v1", temperature=0.5
+            "openai:gpt-4o",
+            base_url="http://x:8000/v1",
+            temperature=0.5,
         )
 
 
@@ -118,7 +115,7 @@ class TestProviderPackageMissing:
 
     def test_raises_typed_error_for_anthropic(self, tmp_path):
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
 
         with patch(
@@ -136,7 +133,7 @@ class TestProviderPackageMissing:
         """Unknown providers get the constructed `pip install langchain-<provider>` hint."""
 
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="future_provider:some-model", provider_kwargs={})
+            _config(tmp_path, model="future_provider:some-model", provider_kwargs={}),
         )
 
         with patch(
@@ -153,7 +150,7 @@ class TestProviderPackageMissing:
         """Original ImportError must be preserved as __cause__ for diagnostic chains."""
 
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
         original = ImportError("No module named 'langchain_anthropic'")
 
@@ -170,7 +167,7 @@ class TestProviderPackageMissing:
         """Non-ImportError exceptions from init_chat_model are NOT caught."""
 
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
 
         with patch(
@@ -181,9 +178,7 @@ class TestProviderPackageMissing:
                 runtime._build_chat_model()
 
 
-# ----------------------------------------------------------------------------
-# Section 2 - Probe dispatch via PROVIDER_STRATEGIES (.b)
-# ----------------------------------------------------------------------------
+# Probe dispatch via PROVIDER_STRATEGIES
 
 
 def _ok_httpx_client_mock() -> MagicMock:
@@ -243,7 +238,7 @@ class TestProbeDispatch:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
         client_mock = _ok_httpx_client_mock()
 
@@ -266,7 +261,7 @@ class TestProbeDispatch:
         """Cloud providers (anthropic) have no entry in PROVIDER_STRATEGIES - no probe runs."""
 
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
         client_mock = _ok_httpx_client_mock()
 
@@ -293,7 +288,7 @@ class TestProbeDispatch:
                 tmp_path,
                 model="openai:qwen2.5-7b-instruct",
                 provider_kwargs={"base_url": "http://127.0.0.1:8000/v1"},
-            )
+            ),
         )
         client_mock = _ok_httpx_client_mock()
 
@@ -321,7 +316,7 @@ class TestProbeDispatch:
                     "base_url": "http://127.0.0.1:8000/v1",
                     "probe_on_connect": True,
                 },
-            )
+            ),
         )
         client_mock = _ok_httpx_client_mock()
 
@@ -349,7 +344,7 @@ class TestProbeDispatch:
                     "base_url": "http://127.0.0.1:8000/v1",
                     "probe_on_connect": True,
                 },
-            )
+            ),
         )
         client_mock = _ok_httpx_client_mock()
         client_mock.get.side_effect = httpx.ConnectError("refused")
@@ -366,9 +361,7 @@ class TestProbeDispatch:
                 await runtime.connect()
 
 
-# ----------------------------------------------------------------------------
-# Section 3 - Catalog dispatch via PROVIDER_STRATEGIES (.b)
-# ----------------------------------------------------------------------------
+# Catalog dispatch via PROVIDER_STRATEGIES
 
 
 class TestCatalogDispatch:
@@ -378,7 +371,7 @@ class TestCatalogDispatch:
         """Cloud providers (anthropic) have no fetch_catalog - empty list."""
 
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
 
         assert runtime.get_models() == []
@@ -391,7 +384,7 @@ class TestCatalogDispatch:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
         client_mock = MagicMock()
         response = MagicMock()
@@ -414,7 +407,7 @@ class TestCatalogDispatch:
                 tmp_path,
                 model="openai:gpt-4o",
                 provider_kwargs={"base_url": "http://127.0.0.1:8000/v1"},
-            )
+            ),
         )
         client_mock = MagicMock()
         response = MagicMock()
@@ -439,7 +432,7 @@ class TestCatalogDispatch:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
         client_mock = MagicMock()
         response = MagicMock()
@@ -464,7 +457,7 @@ class TestCatalogDispatch:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://offline:11434"},
-            )
+            ),
         )
         client_mock = MagicMock()
         client_mock.__enter__ = MagicMock(return_value=client_mock)
@@ -476,7 +469,7 @@ class TestCatalogDispatch:
 
 
 class TestProbeOllamaDispatchedRaisesExpectedTypes:
-    """Smoke test J1/J2 coverage through the new dispatch path (companion to test_runtime_langgraph_failures)."""
+    """Ollama probe failures propagate as typed errors through PROVIDER_STRATEGIES dispatch."""
 
     @pytest.mark.anyio
     async def test_unreachable_raises_through_strategy(self, tmp_path):
@@ -485,7 +478,7 @@ class TestProbeOllamaDispatchedRaisesExpectedTypes:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
         client_mock = _ok_httpx_client_mock()
         client_mock.get.side_effect = httpx.ConnectError("refused")
@@ -508,7 +501,7 @@ class TestProbeOllamaDispatchedRaisesExpectedTypes:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
         client_mock = _ok_httpx_client_mock()
         post_response = MagicMock()
@@ -528,9 +521,7 @@ class TestProbeOllamaDispatchedRaisesExpectedTypes:
                 await runtime.connect()
 
 
-# ----------------------------------------------------------------------------
-# Section 4 - Cost telemetry + context-window via _providers lookup helpers (.c)
-# ----------------------------------------------------------------------------
+# Cost telemetry + context-window via _providers lookup helpers
 
 
 class TestCostAccumulation:
@@ -539,7 +530,7 @@ class TestCostAccumulation:
     def test_uses_curated_table_for_known_model(self, tmp_path):
         """Anthropic Sonnet 1M input + 0.5M output -> 1.0 * 3.0 + 0.5 * 15.0 = 10.50 USD."""
 
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-4-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
 
@@ -555,8 +546,6 @@ class TestCostAccumulation:
 
         assert cost is None
         assert runtime._total_cost_usd == 0.0
-        # Tokens accumulate even when cost can't be computed.
-        assert runtime._used_tokens == 1_500_000
 
     def test_override_wins_over_curated_table(self, tmp_path):
         """Workspace `cost_overrides` take precedence over PRICE_PER_MTOK rates."""
@@ -564,9 +553,9 @@ class TestCostAccumulation:
         runtime = LangGraphRuntime(
             _config(
                 tmp_path,
-                model="anthropic:claude-sonnet-4-5",
-                cost_overrides={"claude-sonnet-4-5": {"input": 1.0, "output": 5.0}},
-            )
+                model="anthropic:claude-sonnet-5",
+                cost_overrides={"claude-sonnet-5": {"input": 1.0, "output": 5.0}},
+            ),
         )
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
@@ -582,7 +571,7 @@ class TestCostAccumulation:
                 tmp_path,
                 model="ollama:llama3.2:3b",
                 provider_kwargs={"base_url": "http://127.0.0.1:11434"},
-            )
+            ),
         )
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
@@ -598,7 +587,7 @@ class TestCostAccumulation:
                 tmp_path,
                 model="custom_provider:my-custom-model",
                 cost_overrides={"my-custom-model": {"input": 0.5, "output": 1.5}},
-            )
+            ),
         )
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
@@ -613,7 +602,8 @@ class TestCostAccumulation:
 
         runtime._accumulate_subagent_usage(input_tokens=500_000, output_tokens=250_000)
 
-        assert runtime._used_tokens == 750_000
+        # A sub-agent's prompt occupies its own window, never the parent session's.
+        assert runtime._context_tokens == 0
         assert runtime._total_cost_usd == 0.0
         assert runtime._subagent_cost_this_turn == 0.0
 
@@ -623,12 +613,12 @@ class TestModelContextWindow:
 
     @pytest.mark.anyio
     async def test_resolves_for_anthropic_sonnet(self, tmp_path):
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-4-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
 
         usage = await runtime.get_context_usage()
 
         assert usage is not None
-        assert usage.max_tokens == 200_000
+        assert usage.max_tokens == 1_000_000
 
     @pytest.mark.anyio
     async def test_resolves_for_openai_gpt4o(self, tmp_path):
@@ -642,7 +632,7 @@ class TestModelContextWindow:
     @pytest.mark.anyio
     async def test_override_wins_over_curated_table(self, tmp_path):
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", max_tokens_override=65_536)
+            _config(tmp_path, model="anthropic:claude-sonnet-5", max_tokens_override=65_536),
         )
 
         usage = await runtime.get_context_usage()
@@ -651,9 +641,7 @@ class TestModelContextWindow:
         assert usage.max_tokens == 65_536
 
 
-# ----------------------------------------------------------------------------
-# Section 5 - Tool-binding graceful degradation via _build_graph (.d)
-# ----------------------------------------------------------------------------
+# Tool-binding graceful degradation via _build_graph
 
 
 class TestToolBindingDegradation:
@@ -664,7 +652,7 @@ class TestToolBindingDegradation:
 
         import logging
 
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-4-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
         runtime._chat_model = MagicMock()
         runtime._checkpointer = MagicMock()
 
@@ -701,7 +689,7 @@ class TestToolBindingDegradation:
     def test_success_does_not_catch(self, tmp_path):
         """Successful first call -> exactly one create_agent invocation; no warning."""
 
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-4-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
         runtime._chat_model = MagicMock()
         runtime._checkpointer = MagicMock()
 
@@ -719,7 +707,7 @@ class TestToolBindingDegradation:
     def test_non_NotImplemented_propagates(self, tmp_path):
         """RuntimeError (or any non-NotImplementedError) is NOT caught - propagates out."""
 
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-4-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
         runtime._chat_model = MagicMock()
         runtime._checkpointer = MagicMock()
 
@@ -731,21 +719,13 @@ class TestToolBindingDegradation:
                 runtime._build_graph(tools=[MagicMock()], middleware=[])
 
 
-# ----------------------------------------------------------------------------
-# Section 6 - Tier 1 Anthropic integration headline (.f)
-# ----------------------------------------------------------------------------
+# Tier 1 Anthropic integration headline
 
 
 class TestTier1AnthropicIntegration:
-    """The migration headline: Claude Agent SDK out, LangGraph in, Anthropic model unchanged.
-
-    Real langchain-anthropic + real init_chat_model dispatch - proves the
-    `anthropic:claude-sonnet-4-5` workspace setting routes correctly through
-    the universal-provider plumbing. The chat model's API call is intercepted
-    so the test runs without a live ANTHROPIC_API_KEY; the AgentEvent stream
-    rendering (system_init / assistant_message / result with curated cost)
-    is the behavioural surface verified.
-    """
+    """Anthropic models run through LangGraphRuntime, not the Claude Agent SDK: real langchain-anthropic +
+    init_chat_model dispatch routes `anthropic:claude-sonnet-5` through the universal-provider plumbing,
+    with the API call stubbed (no live ANTHROPIC_API_KEY) and the AgentEvent stream as the verified surface."""
 
     def test_init_chat_model_dispatches_to_real_chatanthropic(self, tmp_path):
         """`_build_chat_model` invoked with model=anthropic:... returns a real ChatAnthropic instance."""
@@ -756,7 +736,7 @@ class TestTier1AnthropicIntegration:
         # ANTHROPIC_API_KEY needed at construction even when no API call fires.
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-fake-key-not-used"}):
             runtime = LangGraphRuntime(
-                _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+                _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
             )
             chat_model = runtime._build_chat_model()
 
@@ -764,31 +744,27 @@ class TestTier1AnthropicIntegration:
             f"expected real ChatAnthropic, got {type(chat_model).__name__}"
         )
         # The model id round-trips through init_chat_model verbatim (no Ollama prefix translation).
-        assert chat_model.model == "claude-sonnet-4-5"
+        assert chat_model.model == "claude-sonnet-5"
 
     @pytest.mark.anyio
     async def test_agent_event_stream_renders_anthropic_turn(self, tmp_path):
-        """Drive a turn through receive_events() against a stubbed Anthropic chat model.
+        """Drive a turn through receive_events() against a stubbed Anthropic chat model; checks that:
 
-        Validates the migration headline end-to-end at the unit level:
-        - system_init event carries `model="anthropic:claude-sonnet-4-5"`
-        - assistant_message event carries the model text response as a TextBlock
-        - result event carries non-None `total_cost_usd` from curated PRICE_PER_MTOK
-          (anthropic Sonnet rate 3.0/15.0 per million tokens) and non-zero used_tokens
-        - the cost is the Anthropic curated value, NOT the Ollama zero-rows value
+        - system_init carries `model="anthropic:claude-sonnet-5"`
+        - assistant_message carries the model text response as a TextBlock
+        - result carries non-None `total_cost_usd` from curated PRICE_PER_MTOK
+          (Anthropic Sonnet rate 3.0/15.0 per million tokens) and non-zero used_tokens
+        - the cost is the Anthropic curated value, not the Ollama zero-rows value
         """
 
         pytest.importorskip("langchain_anthropic")
         from langchain_core.messages import AIMessage
 
         runtime = LangGraphRuntime(
-            _config(tmp_path, model="anthropic:claude-sonnet-4-5", provider_kwargs={})
+            _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
 
-        # Stub the underlying chat model so create_agent's astream_events
-        # yields a deterministic on_chat_model_end with a text-only AIMessage.
-        # Bypasses the real Anthropic HTTP transport; keeps every other layer
-        # (graph construction, event projection, cost telemetry) real.
+        # Stubs the chat model to yield a deterministic AIMessage; everything else stays real.
         canned_ai = AIMessage(
             content="The migration works - same brain, different runtime.",
             usage_metadata={
@@ -825,9 +801,7 @@ class TestTier1AnthropicIntegration:
             ),
         ):
             await runtime.connect()
-            # Replace the graph with our deterministic stub after connect() built
-            # the real one (we keep connect()'s side effects: checkpointer entered,
-            # tasks rebuilt, ready event set).
+            # Swaps in the stub graph after connect(), keeping its side effects (checkpointer, tasks, ready event).
             runtime._graph = stubbed_graph
 
             events: list = []
@@ -851,7 +825,7 @@ class TestTier1AnthropicIntegration:
 
         # system_init carries the provider:model_id verbatim.
         system_init = next(e for e in events if e.kind == "system_init")
-        assert system_init.payload.model == "anthropic:claude-sonnet-4-5"
+        assert system_init.payload.model == "anthropic:claude-sonnet-5"
 
         # assistant_message has the model text as a TextBlock.
         assistant = next(e for e in events if e.kind == "assistant_message")
@@ -859,12 +833,39 @@ class TestTier1AnthropicIntegration:
         assert text_blocks, f"no TextBlock in assistant content: {assistant.payload.content}"
         assert "migration works" in text_blocks[0].text
 
-        # result carries the curated Anthropic cost (3.0 * 1.0 + 15.0 * 0.5 = 10.50)
-        # and non-zero token usage. None cost would mean lookup_price failed -
-        # which would prove the curated table doesn't carry claude-sonnet-4-5.
+        # Curated Anthropic cost (3.0*1.0 + 15.0*0.5 = 10.50); None means lookup_price failed.
         result = next(e for e in events if e.kind == "result")
         assert result.payload.total_cost_usd == pytest.approx(10.50)
         assert result.payload.usage is not None
         assert result.payload.usage.used_tokens == 1_500_000
-        # Anthropic Sonnet 200K context window (from MODEL_CONTEXT_WINDOW per .c).
-        assert result.payload.usage.max_tokens == 200_000
+        # Anthropic Sonnet 1M context window, from MODEL_CONTEXT_WINDOW.
+        assert result.payload.usage.max_tokens == 1_000_000
+
+
+class TestAnthropicPromptCaching:
+    """Anthropic prompt caching is wired for Anthropic workspaces and nobody else."""
+
+    def test_no_caching_middleware_for_other_providers(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path, model="ollama:llama3.2:3b"))
+
+        assert runtime._prompt_caching_middleware() is None
+
+    def test_anthropic_gets_caching_middleware(self, tmp_path):
+        """Requires the [anthropic] extra; skips cleanly on a core-only install."""
+
+        caching = pytest.importorskip("langchain_anthropic.middleware")
+
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
+
+        assert isinstance(
+            runtime._prompt_caching_middleware(),
+            caching.AnthropicPromptCachingMiddleware,
+        )
+
+    def test_missing_provider_package_degrades_to_uncached(self, tmp_path):
+        """An image built without the extra keeps working - uncached, not broken."""
+
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
+
+        with patch.dict("sys.modules", {"langchain_anthropic.middleware": None}):
+            assert runtime._prompt_caching_middleware() is None

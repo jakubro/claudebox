@@ -31,9 +31,7 @@ test.describe('Bookmarks Panel', () => {
   test('renders panel-level loading placeholder during cold load - no tabs, no false-empty', async ({
     page,
   }) => {
-    // Hold the /ui-state response so the bookmarks loading state stays visible
-    // for assertions. The bookmarks hook gates `loading=true` until the first
-    // ui-state fetch settles.
+    // Holds /ui-state so loading stays visible; the hook gates loading=true until the first fetch settles.
     let resolveUiState
     const uiStateGate = new Promise(r => {
       resolveUiState = r
@@ -80,8 +78,7 @@ test.describe('Bookmarks Panel', () => {
     page,
   }) => {
     await mockSSE(page)
-    // Start at a session so the app fully boots (panels mount), then we
-    // navigate home to enter the no-session welcome state.
+    // Starts at a session so the app fully boots (panels mount), then navigates home to the no-session state.
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
@@ -122,8 +119,7 @@ test.describe('Bookmarks Panel', () => {
     await page.waitForTimeout(300)
     await expect(allTab).toHaveClass(/active/)
 
-    // Now change session presence - auto-switch should win again.
-    // Navigate home, then back to session.
+    // Changing session presence again: auto-switch should win, navigating home then back to session.
     await page.evaluate(() => {
       history.pushState(null, '', window.location.pathname + window.location.search)
       window.dispatchEvent(new HashChangeEvent('hashchange'))
@@ -138,8 +134,7 @@ test.describe('Bookmarks Panel', () => {
   // SPEC: panel-bookmarks:tabs
   // SPEC: panel-bookmarks:tab-auto-switch
   test('tabs render with count badges for this/all sessions', async ({ page }) => {
-    // Seed bookmarks via the ui-state GET response so the badges have non-zero
-    // counts to render. 2 in current session + 1 elsewhere -> This=2, All=3.
+    // Seeds bookmarks via ui-state GET for non-zero badges: 2 in this session + 1 elsewhere -> This=2, All=3.
     await page.route(/\/ui-state(?:\?|$)/, async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
@@ -174,8 +169,7 @@ test.describe('Bookmarks Panel', () => {
     await expect(thisTab).toBeVisible()
     await expect(allTab).toBeVisible()
 
-    // Each tab must surface a numeric badge - the claim names "with count
-    // badges". Non-zero seeded state proves the badge actually renders.
+    // Non-zero seeded counts prove the numeric badges actually render, not just exist.
     await expect(thisTab).toContainText('2')
     await expect(allTab).toContainText('3')
   })
@@ -216,15 +210,12 @@ test.describe('Bookmark Toggle on Turns', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Find user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await expect(userMsg).toBeVisible()
 
-    // Bookmark button should be hidden initially
     const bookmarkBtn = userMsg.locator('.message-bookmark-btn')
     await expect(bookmarkBtn).toHaveCSS('opacity', '0')
 
-    // Hover to reveal
     await userMsg.hover()
     await expect(bookmarkBtn).toHaveCSS('opacity', '1')
   })
@@ -242,14 +233,12 @@ test.describe('Bookmark Toggle on Turns', () => {
     const bookmarkBtn = userMsg.locator('.message-bookmark-btn')
     await expect(bookmarkBtn).toBeVisible()
 
-    // Should not be active initially
     await expect(bookmarkBtn).not.toHaveClass(/active/)
 
-    // Click to bookmark (force: rewind split button overlaps in hover state)
+    // dispatchEvent bypasses the rewind split button that overlaps this element in hover state.
     await bookmarkBtn.dispatchEvent('click')
     await expect(bookmarkBtn).toHaveClass(/active/)
 
-    // Click again to unbookmark
     await bookmarkBtn.dispatchEvent('click')
     await expect(bookmarkBtn).not.toHaveClass(/active/)
   })
@@ -261,18 +250,16 @@ test.describe('Bookmark Toggle on Turns', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     const bookmarkBtn = userMsg.locator('.message-bookmark-btn')
     await bookmarkBtn.dispatchEvent('click')
     await expect(bookmarkBtn).toHaveClass(/active/)
 
-    // Reload the page (ui-state mock retains state in-memory)
+    // ui-state mock retains state in-memory across reload.
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark should still be active after reload
     const userMsgAfter = page.locator('[data-testid="message-user"]').first()
     await userMsgAfter.hover()
     const bookmarkBtnAfter = userMsgAfter.locator('.message-bookmark-btn')
@@ -286,17 +273,14 @@ test.describe('Bookmark Toggle on Turns', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // No bookmark-highlighted sub-bars initially
     const subbars = page.locator('[data-testid="minimap-subbar"]')
     const firstSubbar = subbars.first()
     await expect(firstSubbar).not.toHaveCSS('background-color', 'rgb(232, 185, 49)')
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // Minimap sub-bar should now have bookmark yellow background
     await expect(firstSubbar).toHaveCSS('background-color', 'rgb(232, 185, 49)')
   })
 
@@ -307,15 +291,12 @@ test.describe('Bookmark Toggle on Turns', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Clear any existing signal
     await page.evaluate(() => localStorage.removeItem('claudebox-bookmarks-changed'))
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // localStorage signal should have been written
     const signal = await page.evaluate(() => localStorage.getItem('claudebox-bookmarks-changed'))
     expect(signal).not.toBeNull()
   })
@@ -344,21 +325,18 @@ test.describe('Bookmark Toggle on Assistant Turns', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     const userBtn = userMsg.locator('.message-bookmark-btn')
     await userBtn.dispatchEvent('click')
     await expect(userBtn).toHaveClass(/active/)
 
-    // Bookmark assistant message in same turn
     const assistantMsg = page.locator('[data-testid="message-assistant"]').first()
     await assistantMsg.hover()
     const assistantBtn = assistantMsg.locator('.turn-bookmark-btn')
     await assistantBtn.dispatchEvent('click')
     await expect(assistantBtn).toHaveClass(/active/)
 
-    // Both should be active independently
     await userMsg.hover()
     await expect(userMsg.locator('.message-bookmark-btn')).toHaveClass(/active/)
   })
@@ -407,17 +385,14 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // Open bookmarks panel
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     await expect(panel).toBeVisible()
 
-    // Bookmark item should show preview and timestamp
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(bookmarkItem).toBeVisible()
     await expect(bookmarkItem.locator('.bookmark-preview')).toBeVisible()
@@ -430,20 +405,16 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // Open bookmarks panel
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
 
-    // Click the bookmark entry
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await bookmarkItem.click()
 
-    // The bookmarked turn should be in viewport (scrolled to)
     await expect(userMsg).toBeInViewport()
   })
 
@@ -453,28 +424,22 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // Open bookmarks panel
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
 
-    // Bookmark item should be present
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(bookmarkItem).toBeVisible()
 
-    // Hover to reveal remove button
     await bookmarkItem.hover()
     const removeBtn = bookmarkItem.locator('.bookmark-remove')
     await expect(removeBtn).toBeVisible()
 
-    // Click remove
     await removeBtn.click()
 
-    // Bookmark should be gone - empty state shown
     await expect(panel).toContainText('No bookmarks')
   })
 
@@ -484,21 +449,17 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark a user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // Open bookmarks panel
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
 
-    // Bookmark item should NOT have a type label
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(bookmarkItem.locator('.bookmark-type')).toHaveCount(0)
 
-    // Preview should be present - the remove button is the first child;
-    // the preview lives inside .bookmark-row alongside the status dot.
+    // The remove button is the first child; the preview lives inside .bookmark-row alongside the status dot.
     const preview = bookmarkItem.locator('.bookmark-preview')
     await expect(preview).toBeVisible()
   })
@@ -509,17 +470,14 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark the first user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
 
-    // Open bookmarks panel and click the entry
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     await panel.locator('[data-testid="bookmark-item"]').first().click()
 
-    // The user message should get the jump-highlight class
     await expect(userMsg).toHaveClass(/jump-highlight/)
   })
 
@@ -552,24 +510,19 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open bookmarks panel, switch to All sessions
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     await panel.locator('button', { hasText: 'All sessions' }).click()
 
-    // Bookmark item should exist
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(bookmarkItem).toBeVisible()
 
-    // Hover to reveal remove button
     await bookmarkItem.hover()
     const removeBtn = bookmarkItem.locator('.bookmark-remove')
     await expect(removeBtn).toBeVisible()
 
-    // Click remove
     await removeBtn.click()
 
-    // Bookmark should be gone - empty state shown
     await expect(panel).toContainText('No bookmarks')
   })
 
@@ -602,14 +555,11 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open bookmarks panel
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
 
-    // Switch to "All sessions" tab
     await panel.locator('button', { hasText: 'All sessions' }).click()
 
-    // Should show bookmark from the other session with session name and preview
     const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
     await expect(bookmarkItem).toBeVisible()
     await expect(bookmarkItem.locator('.bookmark-preview')).toContainText(
@@ -626,7 +576,6 @@ test.describe('Bookmarks Panel Interactions', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Bookmark a user message
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await userMsg.locator('.message-bookmark-btn').dispatchEvent('click')
@@ -634,7 +583,7 @@ test.describe('Bookmarks Panel Interactions', () => {
     await openBookmarksPanel(page)
     const panel = page.locator('[data-testid="panel-bookmarks"]')
 
-    // The status dot is a sibling of the preview inside .bookmark-row
+    // The status dot is a sibling of the preview inside .bookmark-row.
     const dot = panel
       .locator('[data-testid="bookmark-item"]')
       .first()

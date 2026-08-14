@@ -1,5 +1,6 @@
 """Daemon service - top-level object owning all daemon dependencies."""
 
+import asyncio
 from pathlib import Path
 
 from claudebox import get_logger
@@ -7,8 +8,11 @@ from .broadcaster import DaemonBroadcaster
 from .config import DaemonConfig
 from .containers import ContainerProxyClient, ContainerStatus
 from .errors import WorkspaceNotRegistered
+from .executors import DaemonExecutors
 from .health import HealthMonitor
 from .mutation_observer import SessionMutationObserver
+from .serving import ServingProbe
+from .watchdog import DaemonWatchdog
 from .workspaces import RegisteredWorkspace, WorkspaceService
 
 
@@ -23,9 +27,12 @@ class DaemonService:
         self._health_monitor = HealthMonitor(self)
         self._mutation_observer = SessionMutationObserver(self)
         self._workspaces: dict[str, WorkspaceService] = {}
+        self._executors = DaemonExecutors.create()
 
         self.proxy = ContainerProxyClient()
         self.events = DaemonBroadcaster()
+        self.watchdog = DaemonWatchdog()
+        self.serving = ServingProbe(self._executors)
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -38,6 +45,8 @@ class DaemonService:
         await self._sync_state()
         await self._health_monitor.start()
         await self._mutation_observer.start()
+        await self.watchdog.start()
+        await self.serving.start()
 
         self._logger.info("Daemon service initialized")
 
@@ -46,12 +55,16 @@ class DaemonService:
 
         self._logger.debug("Stopping daemon service...")
 
+        await self.serving.stop()
+        await self.watchdog.stop()
         await self._mutation_observer.stop()
         await self._health_monitor.stop()
         await self.proxy.close()
 
         for workspace in self._workspaces.values():
             await workspace.stop()
+
+        self._executors.shutdown()
 
         self._logger.info("Daemon service stopped")
 
@@ -83,7 +96,12 @@ class DaemonService:
         are reachable via `get_workspace` without a subsequent sync.
         """
 
-        workspace = self._daemon_config.register_workspace(path)
+        loop = asyncio.get_running_loop()
+        workspace = await loop.run_in_executor(
+            self._executors.state,
+            self._daemon_config.register_workspace,
+            path,
+        )
 
         if workspace.id not in self._workspaces:
             try:
@@ -97,12 +115,16 @@ class DaemonService:
         return workspace
 
     async def deregister_workspace(self, workspace_id: str) -> None:
-        """Remove a workspace from config and evict it from the in-memory map.
+        """Remove a workspace from config and evict it from the map; raises WorkspaceNotRegistered if absent."""
 
-        Raises WorkspaceNotRegistered if the workspace is not in config.
-        """
+        loop = asyncio.get_running_loop()
+        removed = await loop.run_in_executor(
+            self._executors.state,
+            self._daemon_config.deregister_workspace,
+            workspace_id,
+        )
 
-        if not self._daemon_config.deregister_workspace(workspace_id):
+        if not removed:
             raise WorkspaceNotRegistered(workspace_id=workspace_id)
 
         svc = self._workspaces.pop(workspace_id, None)
@@ -142,10 +164,55 @@ class DaemonService:
                     "id": ws.workspace.id,
                     "path": str(ws.workspace.path),
                     "containers": {"running": running, "stopped": stopped},
-                }
+                },
             )
 
         return entries
+
+    # Diagnostics
+    # ----------------------------------------------------------------------------------------------
+
+    def health(self) -> dict:
+        """Aggregate every liveness signal, naming the one that tripped. Reads cached state only."""
+
+        signals = {
+            "event_loop": "ok" if self.watchdog.healthy else "degraded",
+            "serving": "ok" if self.serving.healthy else "degraded",
+        }
+        degraded = [name for name, state in signals.items() if state == "degraded"]
+
+        return {
+            "mode": "daemon",
+            "status": "degraded" if degraded else "ok",
+            "degraded": degraded,
+            "signals": signals,
+            "serving": {
+                "unanswered_pools": self.serving.failing,
+                "consecutive_failures": self.serving.consecutive_failures,
+                "latency_seconds": self.serving.last_latency_seconds,
+            },
+            "pools": self._executors.stats(),
+        }
+
+    def report_frontend_error(
+        self,
+        *,
+        kind: str,
+        message: str,
+        stack_trace: str | None,
+        app_version: str | None,
+        client_timestamp: str,
+    ) -> None:
+        """Log a frontend-reported failure. Named stack_trace, not stack - structlog's StackInfoRenderer silently drops a literal "stack" key."""
+
+        self._logger.warning(
+            "frontend_error",
+            kind=kind,
+            message=message,
+            stack_trace=stack_trace,
+            app_version=app_version,
+            client_timestamp=client_timestamp,
+        )
 
     # State Management
     # ----------------------------------------------------------------------------------------------
@@ -171,14 +238,11 @@ class DaemonService:
         self._daemon_config = DaemonConfig.load()
 
     async def _load_workspace(self, workspace_id: str) -> WorkspaceService:
-        """Load a registered workspace into the daemon runtime.
-
-        Raises WorkspaceNotRegistered if workspace_id is not in the daemon config.
-        """
+        """Load a registered workspace into the daemon runtime; raises WorkspaceNotRegistered if unregistered."""
 
         workspace = self._daemon_config.get_workspace(workspace_id)
 
-        svc = WorkspaceService(workspace, self.events, self.proxy)
+        svc = WorkspaceService(workspace, self.events, self.proxy, self._executors)
         await svc.start()
 
         self._workspaces[workspace_id] = svc

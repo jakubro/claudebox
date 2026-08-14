@@ -5,10 +5,8 @@ import { createContext, useCallback, useContext, useMemo, useRef } from 'react'
 const AppActionsContext = createContext(null)
 
 /**
- * Provide stable actions and refs for app-wide coordination.
- *
- * All values are stable (refs or memoized callbacks) so consumers
- * never re-render due to this context changing.
+ * Stable actions and refs (refs or memoized callbacks) for app-wide coordination - consumers
+ * never re-render when this context changes.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
@@ -21,8 +19,8 @@ const AppActionsContext = createContext(null)
  * @param {React.RefObject} props.jumpNextRef - Ref for jump-to-next-message callback.
  * @param {React.RefObject} props.jumpTopRef - Ref for jump-to-top callback.
  * @param {React.RefObject} props.jumpBottomRef - Ref for jump-to-bottom callback.
- * @param {React.RefObject} props.markUserIntentRef - Ref for markUserIntent callback (cross-panel scroll-intent signal).
- * @param {React.RefObject} props.markProgrammaticScrollRef - Ref for markProgrammaticScroll callback (brackets programmatic scroll writes from sibling panels).
+ * @param {React.RefObject} props.markUserIntentRef - Cross-panel scroll-intent signal ref.
+ * @param {React.RefObject} props.markProgrammaticScrollRef - Brackets programmatic scroll writes from sibling panels.
  */
 export function AppActionsProvider({
   children,
@@ -42,9 +40,13 @@ export function AppActionsProvider({
   const chatScrollPositionRef = useRef(0)
   const chatAutoScrollEnabledRef = useRef(true)
 
-  // Auto-collapse toggle (persists across ChatPanel remounts - tab/board
-  // switches - like autoscroll; reset to true on session change / reload).
+  // Auto-collapse toggle persists across ChatPanel remounts (tab/board switches) like
+  // autoscroll; resets to true on session change/reload.
   const autoCollapseEnabledRef = useRef(true)
+
+  // Registered by ChatPanel; sibling panels (Bookmarks today) jump to a turn through this
+  // instead of querying the DOM, since a windowed turn outside the viewport has no element.
+  const scrollToTurnRef = useRef(null)
 
   const focusChatTab = useCallback(() => onFocusChat?.(), [onFocusChat])
 
@@ -58,6 +60,7 @@ export function AppActionsProvider({
       chatAutoScrollEnabledRef,
       autoCollapseEnabledRef,
       chatPanelSwitchingRef: panelSwitchingRef,
+      scrollToTurnRef,
       jumpPrevRef,
       jumpNextRef,
       jumpTopRef,

@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { getWorkspaceId } from '../api/apiClient'
-import { EventSubtype, EventType } from '../config/schema'
+import { EventType } from '../config/schema'
 import { MAX_LOGS } from '../config/thresholds'
 import useSSE from '../hooks/useSSE'
 import { useEvents } from './EventsContext'
@@ -10,27 +10,22 @@ import { useEvents } from './EventsContext'
 const LogsStreamContext = createContext(null)
 
 /**
- * Provide a single logs SSE connection shared across panel mount/unmount cycles.
- *
- * Lifts the logs EventSource from component scope (LogsPanel) to provider scope,
- * preventing reconnection churn when the panel is toggled and avoiding HTTP/1.1
- * connection slot exhaustion from overlapping EventSource instances.
+ * Lifts the logs EventSource from component scope (LogsPanel) to provider scope - avoids
+ * reconnect churn on panel toggle and HTTP/1.1 connection-slot exhaustion from overlapping
+ * instances.
  *
  * @param {object} props
- * @param {React.ReactNode} props.children - Child components.
+ * @param {React.ReactNode} props.children
  */
 export function LogsStreamProvider({ children }) {
   const { isResuming, isReplaying: isSessionReplaying, containerId } = useEvents()
   const [logs, setLogs] = useState([])
-  const [isLogsReplaying, setIsLogsReplaying] = useState(false)
   const [hasUnreadErrors, setHasUnreadErrors] = useState(false)
   const prevContainerIdRef = useRef(containerId)
 
-  // Clear logs when container changes
   if (containerId !== prevContainerIdRef.current) {
     prevContainerIdRef.current = containerId
     setLogs([])
-    setIsLogsReplaying(false)
     setHasUnreadErrors(false)
   }
 
@@ -52,12 +47,9 @@ export function LogsStreamProvider({ children }) {
   const onMessage = useCallback(event => {
     const data = JSON.parse(event.data)
 
+    // Boundary frames delimit history for consumers that need it; the panel streams through
+    // without surfacing a transition.
     if (data.type === EventType.SYSTEM) {
-      if (data.subtype === EventSubtype.REPLAY_STARTED) {
-        setIsLogsReplaying(true)
-      } else if (data.subtype === EventSubtype.REPLAY_ENDED) {
-        setIsLogsReplaying(false)
-      }
       return
     }
 
@@ -73,7 +65,6 @@ export function LogsStreamProvider({ children }) {
   const value = useMemo(
     () => ({
       logs,
-      isLogsReplaying,
       connectionStatus,
       isResuming,
       isSessionReplaying,
@@ -83,7 +74,6 @@ export function LogsStreamProvider({ children }) {
     }),
     [
       logs,
-      isLogsReplaying,
       connectionStatus,
       isResuming,
       isSessionReplaying,
@@ -98,7 +88,7 @@ export function LogsStreamProvider({ children }) {
 
 /**
  * Access logs SSE stream data.
- * @returns {{ logs: Array, isLogsReplaying: boolean, connectionStatus: string, isResuming: boolean, isSessionReplaying: boolean, containerId: string|null }}
+ * @returns {{ logs: Array, connectionStatus: string, isResuming: boolean, isSessionReplaying: boolean, containerId: string|null }}
  */
 export function useLogsStream() {
   const context = useContext(LogsStreamContext)

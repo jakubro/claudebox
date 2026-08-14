@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Show me the middle of the config file","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Read","tool_input":{"file_path":"/home/user/project/config.json","offset":42},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"    42→  \"key\": \"value\"","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Line 42 sets the key.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

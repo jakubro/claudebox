@@ -1,5 +1,7 @@
 /** Board view rendered inside the main panel - columns, swimlanes, and drag-and-drop. */
 
+// audit-ignore-file: file-size
+
 import {
   DndContext,
   DragOverlay,
@@ -55,7 +57,6 @@ function BoardTab({ boardId }) {
     useSensor(KeyboardSensor),
   )
 
-  // Derive columns, labels, and terminal set from board.states
   const columns = useMemo(() => {
     if (!board?.states) {
       return []
@@ -84,16 +85,12 @@ function BoardTab({ boardId }) {
     return new Set(board.states.filter(s => s.active).map(s => s.id))
   }, [board])
 
-  // Drive the board grid's column track widths. Collapsed columns shrink to
-  // 32px; expanded columns share remaining space via minmax(200px, 1fr).
-  // Recomputed when columns reorder or collapse state changes - every cell
-  // and header in the same column inherits the same track width.
+  // Collapsed columns shrink to 32px; expanded columns share space via minmax(200px, 1fr).
   const gridTemplateColumns = useMemo(
     () => columns.map(c => (collapsedColumns.has(c) ? '32px' : 'minmax(200px, 1fr)')).join(' '),
     [columns, collapsedColumns],
   )
 
-  // Initialize collapsed columns from terminal states on board identity change
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on board identity only
   useEffect(() => {
     if (board?.states) {
@@ -101,7 +98,6 @@ function BoardTab({ boardId }) {
     }
   }, [board?.id])
 
-  // Build a flat lookup of all tickets by path
   const ticketsByPath = useMemo(() => {
     if (!board?.columns) {
       return {}
@@ -117,7 +113,6 @@ function BoardTab({ boardId }) {
 
   const activeTicket = activeId ? ticketsByPath[activeId] : null
 
-  // Group tickets by swimlane × column
   const swimlaneIds = useMemo(() => {
     if (!board?.swimlanes) {
       return []
@@ -225,15 +220,11 @@ function BoardTab({ boardId }) {
         return
       }
 
-      // Ticket card move - bulk-aware. Dragging a selected ticket carries
-      // every selected ticket with it; dragging an unselected ticket moves
-      // just that one (selection unchanged).
+      // Bulk-aware move: dragging a selected ticket carries every selected ticket with it.
       const ticketPath = activeStr
 
-      // over-id parsing - three shapes:
-      //   `col-header:` / `col:`  - column-only move, lane preserved per ticket
-      //   `${col}::${lane}`       - cell drop (target col + lane)
-      //   another ticket path      - drop ON a ticket (insert at that visual slot)
+      // over-id shapes: 'col-header:'/'col:' prefix = column-only move (lane preserved per ticket);
+      // '${col}::${lane}' = cell drop; another ticket path = drop onto that ticket.
       let targetCol
       let targetSwimlane
       let dropIndex
@@ -262,9 +253,8 @@ function BoardTab({ boardId }) {
         ? Array.from(selectedTickets).filter(p => ticketsByPath[p])
         : [ticketPath]
 
-      // When the selection spans multiple swimlanes, preserve each ticket's
-      // origin lane on cell drops - unifying every ticket into the drop
-      // target's lane unconditionally would lose per-ticket categorization.
+      // Preserve each ticket's origin lane on cell drops when the selection spans multiple swimlanes,
+      // rather than unifying every ticket into the drop target's lane.
       const sourceLanes = new Set(
         ticketsToMove.map(p => ticketsByPath[p]?.swimlane || '__unsorted__'),
       )
@@ -298,8 +288,7 @@ function BoardTab({ boardId }) {
                 await assignTickets(boardId, ticketsToMove)
               }
             } else {
-              // Bulk case: spawn ONE shared session and reassign every selected
-              // ticket to it (overwriting any prior associations).
+              // Bulk case: spawn one shared session and reassign every selected ticket to it.
               await assignTickets(boardId, ticketsToMove, { parallel: false })
             }
           } catch (err) {

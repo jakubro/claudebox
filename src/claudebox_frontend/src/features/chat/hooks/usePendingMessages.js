@@ -5,13 +5,11 @@ import { MIN_PENDING_DISPLAY_MS } from '../../../config/timing'
 import { isHumanEvent } from '../../../utils/eventPredicates'
 import { getDeliveredContents, isDelivered } from '../utils/pendingReconciliation'
 
-/** Track pending messages and reconcile with SSE delivery. */
 export default function usePendingMessages(events, sessionId) {
   const [pendingMessages, setPendingMessages] = useState([])
 
-  // Clear pending messages only on genuine session switches (both old and new are
-  // non-null and different). During resume, sessionId transitions old -> null -> old;
-  // clearing on null would wipe a message submitted before the resume flow started.
+  // Clears only on genuine session switches (old and new both non-null and different). During resume,
+  // sessionId goes old -> null -> old; clearing on null would wipe a message submitted before resume started.
   const prevSessionIdRef = useRef(sessionId)
   useEffect(() => {
     const prev = prevSessionIdRef.current
@@ -21,8 +19,7 @@ export default function usePendingMessages(events, sessionId) {
     }
   }, [sessionId])
 
-  // Filter pending messages that haven't been delivered via SSE yet
-  // Also respect minimum display time to prevent flicker
+  // Filters out delivered messages, but respects minimum display time to prevent flicker.
   const showPendingMessages = useMemo(() => {
     if (pendingMessages.length === 0) {
       return []
@@ -49,7 +46,6 @@ export default function usePendingMessages(events, sessionId) {
 
     const humanEvents = events.filter(isHumanEvent)
 
-    // Remove pending messages that have been delivered
     const remaining = pendingMessages.filter(
       pm => !isDelivered(getDeliveredContents(humanEvents, pm.addedAt), pm.content),
     )
@@ -59,21 +55,25 @@ export default function usePendingMessages(events, sessionId) {
     }
   }, [events, pendingMessages])
 
-  // Add a pending message with optional attachments and inline replies, returns its ID
-  const addPendingMessage = useCallback((content, attachments = null, inlineReplies = null) => {
-    const id = crypto.randomUUID()
-    setPendingMessages(prev => [
-      ...prev,
-      {
-        id,
-        content,
-        attachments: attachments?.length ? attachments : null,
-        inlineReplies: inlineReplies?.length ? inlineReplies : null,
-        addedAt: Date.now(),
-      },
-    ])
-    return id
-  }, [])
+  // Add a pending message with optional attachments, inline replies, and a note; returns its ID
+  const addPendingMessage = useCallback(
+    (content, attachments = null, inlineReplies = null, note = null) => {
+      const id = crypto.randomUUID()
+      setPendingMessages(prev => [
+        ...prev,
+        {
+          id,
+          content,
+          attachments: attachments?.length ? attachments : null,
+          inlineReplies: inlineReplies?.length ? inlineReplies : null,
+          note: note || null,
+          addedAt: Date.now(),
+        },
+      ])
+      return id
+    },
+    [],
+  )
 
   // Remove a specific pending message by ID (for error handling)
   const removePendingMessage = useCallback(id => {

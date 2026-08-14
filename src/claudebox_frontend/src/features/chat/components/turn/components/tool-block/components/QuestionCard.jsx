@@ -1,11 +1,9 @@
 /** Shared layout for a single question: header, text, and options slot. */
 
 /**
- * Display a question with header, text, and option slots.
- * @param {Object} props
- * @param {string} props.header - Question header/title.
+ * @param {React.ReactNode} props.header - Question number/label.
  * @param {string} props.question - Question text.
- * @param {React.ReactNode} props.children - Option elements to render.
+ * @param {React.ReactNode} props.children - Options content.
  */
 export default function QuestionCard({ header, question, children }) {
   return (

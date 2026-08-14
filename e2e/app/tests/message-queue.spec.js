@@ -20,11 +20,9 @@ test.describe('Message Queue', () => {
       await input.fill('queued message')
       await input.press('Alt+Enter')
 
-      // Queued bubble should appear
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
       await expect(page.getByText('queued message')).toBeVisible()
 
-      // Input should be cleared
       await expect(input).toHaveValue('')
     })
 
@@ -39,13 +37,11 @@ test.describe('Message Queue', () => {
       await input.fill('second queued')
       await input.press('Alt+Enter')
 
-      // Both queued bubbles visible
       const bubbles = page.locator('[data-testid="queued-message-bubble"]')
       await expect(bubbles).toHaveCount(2)
       await expect(page.getByText('first queued')).toBeVisible()
       await expect(page.getByText('second queued')).toBeVisible()
 
-      // Bubbles have dimmed styling
       const bubble = bubbles.first()
       await expect(bubble).toHaveClass(/queued-message-bubble/)
     })
@@ -97,10 +93,7 @@ test.describe('Message Queue', () => {
       await bubble.hover()
       await bubble.locator('button[title="Edit"]').click()
 
-      // Bubble removed from queue
       await expect(bubble).not.toBeVisible()
-
-      // Content loaded into textarea
       await expect(input).toHaveValue('edit me')
     })
   })
@@ -112,7 +105,6 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Simulate Claude responding
       await controller.sendEvents([
         {
           type: 'user',
@@ -130,19 +122,16 @@ test.describe('Message Queue', () => {
         },
       ])
 
-      // Queue a message while Claude is responding
       await input.fill('queued follow-up')
       await input.press('Alt+Enter')
 
-      // Queued bubble should be visible
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
 
-      // Complete response cycle
       await controller.sendEvents([
         { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: Date.now() + 200 },
       ])
 
-      // Queued bubble should be consumed (auto-sent)
+      // Queued bubble is consumed (auto-sent).
       await expect(page.locator('[data-testid="queued-message-bubble"]')).not.toBeVisible({
         timeout: 5000,
       })
@@ -156,18 +145,13 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Queue a message
       await input.fill('queued first')
       await input.press('Alt+Enter')
 
-      // Send another immediately with Enter
       await input.fill('immediate send')
       await input.press('Enter')
 
-      // Queued bubble should still be present
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
-
-      // Immediate message should appear as pending turn
       await expect(page.getByText('immediate send')).toBeVisible()
     })
   })
@@ -179,7 +163,7 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Start a response so interrupt is available
+      // Interrupt is only available once a response is in progress.
       await controller.sendEvents([
         {
           type: 'user',
@@ -197,14 +181,10 @@ test.describe('Message Queue', () => {
         },
       ])
 
-      // Queue a message
       await input.fill('will be paused')
       await input.press('Alt+Enter')
-
-      // Interrupt
       await input.press('Control+.')
 
-      // Queued bubble should still exist but be paused
       const bubble = page.locator('[data-testid="queued-message-bubble"]')
       await expect(bubble).toBeVisible()
       await expect(bubble).toHaveClass(/paused/)
@@ -216,7 +196,6 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Start response, queue message, then interrupt
       await controller.sendEvents([
         {
           type: 'user',
@@ -273,7 +252,6 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Start response, queue, interrupt
       await controller.sendEvents([
         {
           type: 'user',
@@ -295,15 +273,12 @@ test.describe('Message Queue', () => {
       await input.press('Alt+Enter')
       await input.press('Control+.')
 
-      // Bubble should be paused
       const bubble = page.locator('[data-testid="queued-message-bubble"]')
       await expect(bubble).toHaveClass(/paused/)
 
-      // Click re-queue
       await bubble.hover()
       await bubble.locator('button[title="Re-queue"]').click()
 
-      // Bubble should no longer be paused
       await expect(bubble).not.toHaveClass(/paused/)
     })
   })
@@ -315,7 +290,6 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Queue three messages
       await input.fill('first queued')
       await input.press('Alt+Enter')
       await input.fill('second queued')
@@ -326,13 +300,11 @@ test.describe('Message Queue', () => {
       const bubbles = page.locator('[data-testid="queued-message-bubble"]')
       await expect(bubbles).toHaveCount(3)
 
-      // Hover the second bubble and click "Send now"
       const secondBubble = bubbles.nth(1)
       await secondBubble.hover()
       await expect(secondBubble.locator('button[title="Send now"]')).toBeVisible()
       await secondBubble.locator('button[title="Send now"]').click()
 
-      // Second bubble removed, first and third remain
       await expect(bubbles).toHaveCount(2)
       await expect(page.getByText('first queued')).toBeVisible()
       await expect(page.getByText('third queued')).toBeVisible()
@@ -367,12 +339,11 @@ test.describe('Message Queue', () => {
       await input.press('Alt+Enter')
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
 
-      // Refresh the page
       await createSSEController(page)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Queued bubble should reappear from localStorage
+      // Queued bubble reappears from localStorage.
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
       await expect(page.getByText('survives refresh')).toBeVisible()
     })
@@ -381,7 +352,7 @@ test.describe('Message Queue', () => {
   test.describe('Queue Lifecycle', () => {
     // SPEC: chat:queue-session-clear
     test('session switch clears queued messages', async ({ page }) => {
-      // Override session routes so sessionId actually changes on new session (LIFO wins)
+      // Override session routes so sessionId actually changes on new session.
       const statusFixture = loadFixture('status/default.json')
       let currentSessionId = statusFixture.session_id
       await page.route('**/api/sessions/current', async route => {
@@ -412,7 +383,6 @@ test.describe('Message Queue', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Add attachment via drop
       await page.evaluate(() => {
         const file = new File(['test content'], 'test.txt', { type: 'text/plain' })
         const dt = new DataTransfer()
@@ -422,22 +392,17 @@ test.describe('Message Queue', () => {
         wrapper.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }))
       })
 
-      // Wait for attachment to process
       await expect(page.locator('[data-testid="attachment-preview"]')).toBeVisible()
 
-      // Queue message with attachment
       await input.fill('message with attachment')
       await input.press('Alt+Enter')
 
-      // Attachment preview should clear from input
       await expect(page.locator('[data-testid="attachment-preview"]')).not.toBeVisible()
 
-      // Edit the queued bubble
       const bubble = page.locator('[data-testid="queued-message-bubble"]')
       await bubble.hover()
       await bubble.locator('button[title="Edit"]').click()
 
-      // Attachment should reappear in input
       await expect(page.locator('[data-testid="attachment-preview"]')).toBeVisible()
       await expect(input).toHaveValue('message with attachment')
     })

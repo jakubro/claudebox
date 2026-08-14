@@ -39,11 +39,12 @@ describe('useSendMessage', () => {
       await result.current('hello')
     })
 
-    expect(deps.addPendingMessage).toHaveBeenCalledWith('hello', null, null)
+    expect(deps.addPendingMessage).toHaveBeenCalledWith('hello', null, null, null)
     expect(deps.startSubmitting).toHaveBeenCalledOnce()
     expect(mockSendMessage).toHaveBeenCalledWith('hello', {
       attachments: null,
       inlineReplies: null,
+      note: null,
     })
     expect(deps.submitSucceeded).toHaveBeenCalledOnce()
     expect(deps.submitFailed).not.toHaveBeenCalled()
@@ -57,8 +58,12 @@ describe('useSendMessage', () => {
       await result.current('msg', { attachments })
     })
 
-    expect(deps.addPendingMessage).toHaveBeenCalledWith('msg', attachments, null)
-    expect(mockSendMessage).toHaveBeenCalledWith('msg', { attachments, inlineReplies: null })
+    expect(deps.addPendingMessage).toHaveBeenCalledWith('msg', attachments, null, null)
+    expect(mockSendMessage).toHaveBeenCalledWith('msg', {
+      attachments,
+      inlineReplies: null,
+      note: null,
+    })
   })
 
   it('removes pending message and calls submitFailed on error', async () => {

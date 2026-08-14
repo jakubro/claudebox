@@ -1,6 +1,5 @@
 """Tests for container API logging - LogBroadcaster file-based replay."""
 
-import asyncio
 import json
 
 import pytest
@@ -26,6 +25,12 @@ def _drain_queue(queue):
         items.append(queue.get_nowait())
 
     return items
+
+
+def _drain_records(queue):
+    """Drain the queue keeping only log records; the replay boundary frames are dropped."""
+
+    return [item for item in _drain_queue(queue) if "type" not in item]
 
 
 # --- Construction ---
@@ -73,7 +78,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 2
 
         assert items[0]["message"] == "Server started"
@@ -86,12 +91,31 @@ class TestLogBroadcasterFileReplay:
 
     @pytest.mark.anyio
     async def test_replay_empty_when_file_missing(self, tmp_path):
-        """Missing log file replays nothing - empty queue, no synthetic events."""
+        """Missing log file replays no records - only the boundary pair reaches the queue."""
 
         b = LogBroadcaster(tmp_path / "nonexistent.log")
         _, queue = await b.subscribe()
 
-        assert _drain_queue(queue) == []
+        assert _drain_records(queue) == []
+
+    @pytest.mark.anyio
+    async def test_replay_is_wrapped_in_boundary_frames(self, tmp_path):
+        """History arrives between replay_started and replay_ended so consumers can bound it."""
+
+        log_file = tmp_path / "container_api.log"
+        _write_log_lines(
+            log_file,
+            [{"event": "One", "level": "info", "logger": "app", "timestamp": "10:00:00"}],
+        )
+
+        b = LogBroadcaster(log_file)
+        _, queue = await b.subscribe()
+
+        items = _drain_queue(queue)
+
+        assert items[0] == {"type": "system", "subtype": "replay_started", "count": 1}
+        assert items[-1] == {"type": "system", "subtype": "replay_ended", "count": 0}
+        assert [item["message"] for item in items[1:-1]] == ["One"]
 
     @pytest.mark.anyio
     async def test_extra_fields_collected(self, tmp_path):
@@ -112,7 +136,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert items[0]["extra"] == {"exc_info": "traceback here"}
 
     @pytest.mark.anyio
@@ -128,7 +152,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert items[0]["extra"] is None
 
     @pytest.mark.anyio
@@ -137,15 +161,15 @@ class TestLogBroadcasterFileReplay:
         log_file.write_text(
             "not json\n"
             + json.dumps(
-                {"event": "Good", "level": "info", "logger": "app", "timestamp": "12:00:00"}
+                {"event": "Good", "level": "info", "logger": "app", "timestamp": "12:00:00"},
             )
-            + "\n"
+            + "\n",
         )
 
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 1
         assert items[0]["message"] == "Good"
 
@@ -168,7 +192,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 1
         assert items[0]["message"] == "Has timestamp"
 
@@ -190,7 +214,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 1
         assert items[0]["message"] == "Float ts"
         assert items[0]["timestamp"] == pytest.approx(1713264000.123)
@@ -213,7 +237,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 1
         assert items[0]["message"] == "Int ts"
         assert items[0]["timestamp"] == 1713264000.0
@@ -246,7 +270,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 2
 
         assert items[0]["source"] == "agent"
@@ -281,7 +305,7 @@ class TestLogBroadcasterFileReplay:
         b = LogBroadcaster(log_file)
         _, queue = await b.subscribe()
 
-        items = _drain_queue(queue)
+        items = _drain_records(queue)
         assert len(items) == 2
         assert items[0]["message"] == "String ts"
         assert items[1]["message"] == "Float ts"

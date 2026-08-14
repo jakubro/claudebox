@@ -8,10 +8,6 @@ import { useSessionData } from '../../../../../../../../../context/SessionDataCo
 import { formatFileSize } from '../../../../../../../../../utils/formatters'
 
 /**
- * Render persisted output with optional expand/collapse to fetch full content.
- * @param {Object} props
- * @param {string} props.preview - Preview text to display initially.
- * @param {string} props.toolUseId - Tool use ID for fetching full content.
  * @param {string} [props.fileSize] - Human-readable total file size.
  * @param {string} [props.previewSize] - Human-readable preview size.
  */

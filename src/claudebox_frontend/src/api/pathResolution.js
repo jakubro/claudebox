@@ -3,7 +3,6 @@
 import { containerFetch } from './apiClient'
 
 /**
- * Resolve path candidates to absolute host paths via container API.
  * @param {string[]} candidates - Array of path candidate strings.
  * @returns {Promise<Object<string, string>>} Map of candidate -> resolved absolute path.
  */

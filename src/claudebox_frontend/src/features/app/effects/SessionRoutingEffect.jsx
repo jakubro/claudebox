@@ -13,16 +13,11 @@ import { useStash } from '../../../context/StashContext'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 
 /**
- * Bridge between URL routing and session lifecycle.
- *
- * Reacts to activeSessionId changes from SessionRoutingContext:
- * - Non-null: calls POST /sessions/{id}/resume, sets container ID, reconnects SSE.
- * - Null: clears session data, stash, disconnects SSE.
- *
- * Also switches the active workspace when the URL targets a board in a different workspace.
- *
- * Uses a sequence counter to guard against race conditions from rapid session switching.
- * Only honors the response matching the current activeSessionId.
+ * Reacts to activeSessionId from SessionRoutingContext: non-null resumes the session (POST
+ * /sessions/{id}/resume, sets container ID, reconnects SSE); null clears session data/stash and
+ * disconnects SSE. Also switches the active workspace when the URL targets a board in a different
+ * workspace. A sequence counter guards rapid-switch races - only the response matching the
+ * current activeSessionId is honored.
  */
 export default function SessionRoutingEffect() {
   const { activeSessionId, activeBoardId, activeWorkspaceId, navigateHome } = useSessionRouting()
@@ -86,7 +81,6 @@ export default function SessionRoutingEffect() {
   )
 
   useEffect(() => {
-    // Skip if session ID hasn't actually changed
     if (activeSessionId === prevSessionIdRef.current) {
       return
     }
@@ -107,8 +101,8 @@ export default function SessionRoutingEffect() {
       selectWorkspace(activeWorkspaceId)
     }
 
-    // Skip resume for just-created sessions - useNewSession already set up the container
-    // and SSE will connect naturally via the container ID change.
+    // Skip resume for just-created sessions - useNewSession already set up the container, and SSE
+    // connects naturally via the container ID change.
     if (!isCreating) {
       handleResume(activeSessionId, seq)
     }
@@ -124,9 +118,8 @@ export default function SessionRoutingEffect() {
     isCreating,
   ])
 
-  // Switch workspace when the board URL targets a workspace different from the
-  // active one. Otherwise the main panel reads activeBoardId directly from
-  // SessionRoutingContext and renders BoardTab without any imperative call here.
+  // Switch workspace when the board URL targets a workspace different from the active one -
+  // otherwise MainPanel reads activeBoardId directly and renders BoardTab with no imperative call here.
   useEffect(() => {
     if (!activeBoardId) {
       return

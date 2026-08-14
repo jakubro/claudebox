@@ -1,26 +1,20 @@
-"""Global daemon configuration - registered workspaces, port, settings."""
+"""Global daemon configuration - registered workspaces."""
 
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-from filelock import FileLock
-
 from claudebox import DataClass, read_json, write_json
 from claudebox.constants import daemon_config_path
+from ._locking import locked
 from .errors import WorkspaceNotRegistered
 from .workspaces.models import RegisteredWorkspace
 
 
 @dataclass
 class DaemonConfig(DataClass):
-    """Global daemon configuration persisted at `daemon_config_path()`.
-
-    Attributes:
-        path: Filesystem path to the config file.
-        workspaces: Registered workspace entries.
-    """
+    """Global daemon configuration persisted at `daemon_config_path()`."""
 
     path: Path
     workspaces: list[RegisteredWorkspace] = field(default_factory=list)
@@ -92,7 +86,7 @@ class DaemonConfig(DataClass):
     def save(self) -> None:
         """Persist daemon config to disk with file locking."""
 
-        with FileLock(self.path.with_suffix(".lock")):
+        with locked(self.path.with_suffix(".lock")):
             data = self.asdict()
             del data["path"]
             write_json(self.path, data)

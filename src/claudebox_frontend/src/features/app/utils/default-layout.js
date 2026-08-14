@@ -3,10 +3,9 @@
 import { DEFAULT_PANEL_WIDTH } from '../../../config/dimensions'
 
 /**
- * Apply or remove the `data-main-group` attribute on every group based on
- * whether it hosts the main panel as its sole content. Used as a re-application
- * pass on layout events (fromJSON restore, drag-create, panel-move) where the
- * synchronous setAttribute in `buildDefaultLayout` does not cover the group.
+ * Apply or remove `data-main-group` on every group based on whether it hosts only the main panel.
+ * Re-applied on layout events (fromJSON restore, drag-create, panel-move) that the synchronous
+ * setAttribute in `buildDefaultLayout` doesn't cover.
  */
 export function applyMainGroupMarker(api) {
   for (const group of api.groups) {
@@ -27,26 +26,22 @@ export function buildDefaultLayout(api, manager) {
     title: 'Main',
   })
 
-  // Mark the main panel's group synchronously so MainPanel.css can target it
-  // at first paint. The previous :has([data-testid="main-panel"]) selector
-  // was evaluated lazily by the browser, briefly flashing the dockview tab
-  // bar before React mounted the inner content.
+  // Mark the main panel's group synchronously so MainPanel.css can target it at first paint - a
+  // lazily-evaluated CSS selector would flash the dockview tab bar before React mounts.
   main.group?.element?.setAttribute('data-main-group', 'true')
 
-  // Left side: only the Sessions panel opens by default; it anchors the
-  // left group with a sized width.
+  // Left side: only the Sessions panel opens by default; it anchors the left group with a sized width.
   addPanelColumn(api, manager, 'left', ['sessions'])
 
-  // Right side: Todos, Stash, Tasks, Bookmarks, Boards open by default in
-  // canonical order. Usage and MCP remain hidden - users can toggle them
-  // on via the icon strip. Bookmarks/Boards seed here (not on the left)
-  // because PANEL_SIDES routes them to the right strip.
+  // Right side: Todos, Stash, Tasks, Bookmarks, Boards open by default in canonical order; Usage and
+  // MCP stay hidden until toggled via the icon strip. Bookmarks/Boards seed here (not left) because
+  // PANEL_SIDES routes them to the right strip.
   addPanelColumn(api, manager, 'right', ['todos', 'stash', 'tasks', 'bookmarks', 'boards'])
 }
 
 /**
- * Add a stacked column of panels anchored to the main panel on one side.
- * The first panel sets the column width; subsequent panels stack below.
+ * Add a stacked column of panels anchored to the main panel on one side; the first panel sets
+ * the column width, subsequent panels stack below.
  */
 function addPanelColumn(api, manager, side, panelIds) {
   panelIds.forEach((panelId, i) => {

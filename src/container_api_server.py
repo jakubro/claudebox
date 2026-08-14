@@ -17,7 +17,7 @@ parser.add_argument(
     "--port",
     type=int,
     default=WEB_CONTAINER_PORT,
-    help="Server port",
+    help="Server port (default: %(default)s)",
 )
 
 parser.add_argument(
@@ -28,7 +28,7 @@ parser.add_argument(
 parser.add_argument(
     "--permission-mode",
     default="default",
-    help="Permission mode",
+    help="Permission mode (default: %(default)s)",
 )
 
 

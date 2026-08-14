@@ -1,8 +1,6 @@
 /** Leading slash-command detection for the chat textarea. */
 
 /**
- * Locate a leading slash command in textarea content.
- *
  * @param {string} value - Textarea value.
  * @returns {{token: string, end: number}|null} Token (e.g. `/scope`) and index past it, or null.
  */

@@ -4,11 +4,7 @@ import { useTurn } from '../../../../../hooks/useTurn'
 import ToolBlock from '../../../ToolBlock'
 
 /**
- * Render a ToolBlock in nested context (e.g., inside Task output).
  * Consumes TurnContext for todoDiffs.
- * @param {Object} props
- * @param {Object} props.toolUse - Tool invocation data.
- * @param {Object} props.toolResult - Tool result data.
  * @param {number} [props.blockRelativeTime] - Precomputed offset from turn start in seconds.
  */
 export default function NestedToolWrapper({ toolUse, toolResult, blockRelativeTime = null }) {

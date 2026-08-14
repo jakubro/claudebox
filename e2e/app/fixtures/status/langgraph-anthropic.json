@@ -3,7 +3,7 @@
   "name": null,
   "workspace": "/home/user/project",
   "permission_mode": null,
-  "model": "anthropic:claude-sonnet-4-5",
+  "model": "anthropic:claude-sonnet-5",
   "num_turns": 0,
   "total_cost_usd": 0,
   "total_duration_ms": 0,

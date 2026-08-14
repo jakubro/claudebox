@@ -13,8 +13,7 @@ describe('buildDefaultLayout', () => {
   let manager
 
   beforeEach(() => {
-    // Return a panel with a fresh group.element each call so the synchronous
-    // setAttribute on the main panel's group has a real DOM target.
+    // Fresh group.element per call so the main panel's synchronous setAttribute has a real DOM target.
     api = {
       addPanel: vi.fn(() => ({ group: { element: document.createElement('div') } })),
     }

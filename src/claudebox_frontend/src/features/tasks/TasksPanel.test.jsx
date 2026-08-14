@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import TasksPanel from './TasksPanel'
 
-// Mock contexts
 const mockEvents = []
 const mockFocusChatTab = vi.fn()
 const mockEventsData = { isResuming: false, isReplaying: false }
@@ -90,7 +89,6 @@ describe('TasksPanel', () => {
 
     render(<TasksPanel />)
 
-    // Switch to All filter to see completed task
     await user.click(screen.getByRole('button', { name: /All/ }))
 
     const entry = screen.getByTestId('task-entry')
@@ -118,7 +116,6 @@ describe('TasksPanel', () => {
 
     render(<TasksPanel />)
 
-    // Switch to All filter to see failed task
     await user.click(screen.getByRole('button', { name: /All/ }))
 
     const entry = screen.getByTestId('task-entry')
@@ -129,7 +126,6 @@ describe('TasksPanel', () => {
     const user = userEvent.setup()
     const now = Date.now()
 
-    // Add running task
     mockEvents.push({
       subtype: 'tool_use',
       content: 'Task',
@@ -138,7 +134,6 @@ describe('TasksPanel', () => {
       tool_input: { description: 'Running task' },
     })
 
-    // Add completed task
     mockEvents.push(
       {
         subtype: 'tool_use',
@@ -161,10 +156,8 @@ describe('TasksPanel', () => {
     expect(screen.getByText('Running task')).toBeInTheDocument()
     expect(screen.queryByText('Completed task')).not.toBeInTheDocument()
 
-    // Click "All" filter to see both
     await user.click(screen.getByRole('button', { name: /All/ }))
 
-    // Both visible with All filter
     expect(screen.getByText('Running task')).toBeInTheDocument()
     expect(screen.getByText('Completed task')).toBeInTheDocument()
   })
@@ -172,7 +165,6 @@ describe('TasksPanel', () => {
   it('shows filter counts', () => {
     const now = Date.now()
 
-    // Add 2 running tasks
     mockEvents.push(
       {
         subtype: 'tool_use',
@@ -192,7 +184,6 @@ describe('TasksPanel', () => {
 
     render(<TasksPanel />)
 
-    // Check counts in filter buttons
     expect(screen.getByRole('button', { name: /All.*2/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Active.*2/ })).toBeInTheDocument()
   })
@@ -217,7 +208,6 @@ describe('TasksPanel', () => {
   it('shows tasks in chronological order (oldest first)', async () => {
     const now = Date.now()
 
-    // Add older task
     mockEvents.push({
       subtype: 'tool_use',
       content: 'Task',
@@ -226,7 +216,6 @@ describe('TasksPanel', () => {
       tool_input: { description: 'Older task' },
     })
 
-    // Add newer task
     mockEvents.push({
       subtype: 'tool_use',
       content: 'Task',
@@ -238,7 +227,6 @@ describe('TasksPanel', () => {
     render(<TasksPanel />)
 
     const entries = screen.getAllByTestId('task-entry')
-    // Older task should appear first (chronological order)
     expect(entries[0]).toHaveTextContent('Older task')
     expect(entries[1]).toHaveTextContent('Newer task')
   })
@@ -301,7 +289,6 @@ describe('TasksPanel', () => {
       render(<TasksPanel />)
 
       const entry = screen.getByTestId('task-entry')
-      // Running task should have inline border-left-color style
       expect(entry.style.borderLeftColor).toBeTruthy()
     })
 
@@ -356,7 +343,6 @@ describe('TasksPanel', () => {
 
       render(<TasksPanel />)
 
-      // Switch to All to see completed task
       await user.click(screen.getByRole('button', { name: /All/ }))
 
       expect(screen.getByText('1m 5s')).toBeInTheDocument()

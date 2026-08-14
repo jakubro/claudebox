@@ -2,6 +2,7 @@
 
 import asyncio
 import dataclasses
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,6 +68,8 @@ class EventPipeline:
         # Lifecycle
         self._running = False
         self._task: asyncio.Task | None = None
+        self._last_message_at: float | None = None
+        self._stream_lost = False
 
         # Async task monitoring
         self._async_task_manager = AsyncTaskManager(on_event=self._process_nested_event)
@@ -87,6 +90,32 @@ class EventPipeline:
 
         return self._turn_tracker
 
+    @property
+    def stream_lost(self) -> bool:
+        """True once the runtime signals end-of-stream - unrecoverable, unlike a merely dead
+        consumer (replaceable in place); only a reconnect restores the flow of events.
+        """
+
+        return self._stream_lost
+
+    @property
+    def last_message_at(self) -> float | None:
+        """`time.monotonic()` when a message was last read off the runtime stream, None before that.
+
+        Counts reads only - injected events and subagent-monitor output can't forge progress -
+        which makes it a liveness signal, not an activity one.
+        """
+
+        return self._last_message_at
+
+    @property
+    def is_alive(self) -> bool:
+        """True while the consumer loop runs and its task hasn't exited; false on a started
+        pipeline means events stopped being persisted or broadcast, however healthy it looks.
+        """
+
+        return self._running and self._task is not None and not self._task.done()
+
     # Pipeline API
     # ----------------------------------------------------------------------------------------------
 
@@ -99,6 +128,7 @@ class EventPipeline:
 
         self._running = True
         self._task = asyncio.create_task(self._run())
+        self._task.add_done_callback(self._on_task_done)
 
     async def stop(self) -> None:
         """Cancel background task, stop monitors, and close files."""
@@ -134,10 +164,8 @@ class EventPipeline:
         self._prompt = prompt
 
     def suppress_next_user_echo(self) -> None:
-        """Signal that the next SDK user message echo should be suppressed.
-
-        Called by session.send() after injecting a synthetic user event for
-        attachment messages. One-shot: clears itself after suppressing one message.
+        """One-shot: session.send() calls this before injecting a synthetic attachment user
+        event; clears itself after suppressing one message.
         """
 
         self._suppress_user_echo = True
@@ -183,12 +211,9 @@ class EventPipeline:
     async def _run(self) -> None:
         """Main loop: read SDK messages, enrich, persist, broadcast.
 
-        Tracks the user event per response cycle and assistant emission per turn.
-        When a result arrives for a turn that produced no assistant event (e.g.,
-        unknown slash command), injects synthetic user and assistant events to
-        surface the SDK's response content. Turn-scoped assistant tracking keeps a
-        trailing result after a mid-response crash-restart from duplicating the
-        already-emitted message.
+        A result with no assistant event (e.g. unknown slash command) gets synthetic user/assistant
+        events injected to surface it; turn-scoped assistant tracking stops a crash-restart's
+        trailing result from duplicating an already-emitted message.
         """
 
         await self._sdk_client.ready.wait()
@@ -198,8 +223,10 @@ class EventPipeline:
 
             try:
                 saw_user_event = False
+                saw_result = False
 
                 async for agent_event in self._sdk_client.receive_events():
+                    self._last_message_at = time.monotonic()
                     self._logger.debug("Received agent event", kind=agent_event.kind)
 
                     if not self._running:
@@ -208,11 +235,8 @@ class EventPipeline:
                     if agent_event.kind == "system_init":
                         await self._initialize(agent_event=agent_event)
 
-                    # Suppress SDK echo of user message when synthetic injection
-                    # is canonical (e.g., attachments). Must go before turn_tracker
-                    # and conversion to prevent spurious turn state updates.
-                    # The tool_use_result guard ensures we only suppress human-typed
-                    # messages, not tool result messages which share the user kind.
+                    # Suppress SDK echo of a canonical synthetic injection (e.g. attachments) before turn_tracker
+                    # runs to avoid spurious state; excludes tool_use_result, which also carries the user kind.
                     if (
                         self._suppress_user_echo
                         and isinstance(agent_event.payload, UserMessagePayload)
@@ -237,17 +261,16 @@ class EventPipeline:
                         await self._enrich_edit_line_offset(published)
                         self._enrich_init_capabilities(published)
 
-                        # User echo is per-cycle; assistant emission is turn-scoped
-                        # (via TurnTracker) so a crash-restart's trailing result is
-                        # not mistaken for a result-only turn.
+                        # User echo is per-cycle; assistant emission is turn-scoped via TurnTracker so a
+                        # crash-restart's trailing result isn't mistaken for a result-only turn.
                         if published.type == "user" and published.is_human:
                             saw_user_event = True
                         elif published.type == "assistant":
                             self._turn_tracker.mark_assistant_emitted(published.turn_id)
+                        elif published.type == "result":
+                            saw_result = True
 
-                        # Result-only turn: SDK returned a result without any
-                        # assistant response (e.g., unknown slash command).
-                        # Inject synthetic events so the turn is visible.
+                        # Result-only turn (e.g. unknown slash command): inject synthetic events so it's visible.
                         if (
                             published.type == "result"
                             and not self._turn_tracker.has_assistant_emitted(published.turn_id)
@@ -260,26 +283,77 @@ class EventPipeline:
 
                         await self._process_event(published)
                         self._async_task_manager.check_event(published)
-            except Exception as exc:
-                self._logger.exception("Pipeline error")
 
-                # Unstick frontend compaction state before surfacing the error,
-                # so the next pending Turn renders the regular Working spinner
-                # rather than the Compacting indicator.
-                if self._turn_tracker.is_compacting:
-                    await self.inject_event(
-                        event_type=EventType.SYSTEM,
-                        subtype=EventSubtype.COMPACT_BOUNDARY,
-                        message_data={"compact_metadata": {"status": "error"}},
+                if self._running and not saw_result:
+                    # Every turn ends on a result; the only other exit is the runtime's end-of-stream sentinel,
+                    # delivered once after the process exits - re-entering would park forever.
+                    self._logger.error(
+                        "Runtime stream ended without a result - transport is gone",
+                        session_id=self._session_id,
                     )
+                    self._stream_lost = True
+                    self._running = False
 
-                await self.inject_event(
-                    event_type=EventType.SYSTEM,
-                    subtype=EventSubtype.ERROR,
-                    content=f"Message failed to process: {exc}",
-                )
+                    break
+            except asyncio.CancelledError:
+                # Deliberate shutdown via stop(); re-raised so the task doesn't look alive with the loop gone.
+                self._logger.info("Pipeline cancelled", session_id=self._session_id)
+
+                raise
+            except (Exception, BaseExceptionGroup) as exc:
+                # BaseExceptionGroup isn't an Exception, so anyio task-group failures would
+                # otherwise escape uncaught and kill the consumer silently.
+                self._logger.exception("Pipeline error")
+                await self._surface_error(exc)
             finally:
                 self._prompt = None
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        """Report how the consumer loop ended, so a dead pipeline is never silent - also retrieves
+        the exception, which a strong-referenced task would otherwise only surface via its destructor.
+        """
+
+        if task.cancelled():
+            self._logger.info("Pipeline task cancelled", session_id=self._session_id)
+
+            return
+
+        exc = task.exception()
+
+        if exc is not None:
+            self._logger.error(
+                "Pipeline task died - events are no longer being persisted",
+                session_id=self._session_id,
+                error=str(exc),
+                exc_info=exc,
+            )
+        elif self._running:
+            self._logger.warning(
+                "Pipeline task exited while still running",
+                session_id=self._session_id,
+            )
+
+    async def _surface_error(self, exc: BaseException) -> None:
+        """Unstick compaction state and surface an error event, never raising - recovery reuses the
+        same append that may have just failed, so an unguarded second failure here ends the consumer.
+        """
+
+        try:
+            # Unstick frontend compaction state so the next pending Turn shows the Working spinner, not Compacting.
+            if self._turn_tracker.is_compacting:
+                await self.inject_event(
+                    event_type=EventType.SYSTEM,
+                    subtype=EventSubtype.COMPACT_BOUNDARY,
+                    message_data={"compact_metadata": {"status": "error"}},
+                )
+
+            await self.inject_event(
+                event_type=EventType.SYSTEM,
+                subtype=EventSubtype.ERROR,
+                content=f"Message failed to process: {exc}",
+            )
+        except Exception:
+            self._logger.exception("Pipeline error recovery failed")
 
     async def _initialize(
         self,
@@ -311,7 +385,6 @@ class EventPipeline:
         self._initialized = True
         self._logger.info("Session initialized", session_id=self._session_id)
 
-        # Now that we have session_id, persist events that arrived before init
         for event in self._buffer:
             await self._process_event(event)
 
@@ -384,13 +457,9 @@ class EventPipeline:
         result_event: PublishedEvent,
         saw_user_event: bool,
     ) -> None:
-        """Inject synthetic events for a result-only turn so it becomes visible.
-
-        When the SDK returns a result without emitting any assistant events (e.g.,
-        unknown slash command), the frontend would show nothing because result events
-        are hidden. This injects a synthetic user message (if needed) and assistant
-        text to surface the SDK's response, then overrides the result subtype to
-        "error" for red border styling.
+        """Inject synthetic events for a result-only turn (e.g. unknown slash command), since the
+        frontend hides bare result events. Adds a user message (if needed) and assistant text, then
+        marks the result subtype "error" for red border styling.
         """
 
         if not saw_user_event and self._prompt:

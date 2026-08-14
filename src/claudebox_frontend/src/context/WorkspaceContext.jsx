@@ -2,20 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { setWorkspaceId } from '../api/apiClient'
+import { listWorkspaces } from '../api/workspaces'
 import { WORKSPACE_STORAGE_KEY } from '../config/storage'
 import { parseHash } from './utils/sessionRouting'
 
 export const WorkspaceContext = createContext(null)
-
-/** Fetch the registered-workspace list from the daemon. */
-async function fetchWorkspaces() {
-  const res = await fetch('/api/workspaces')
-  if (!res.ok) {
-    throw new Error('Failed to fetch workspaces')
-  }
-  const data = await res.json()
-  return data.workspaces || []
-}
 
 /** Discover registered workspaces and maintain the active selection. */
 export function WorkspaceProvider({ children }) {
@@ -34,7 +25,7 @@ export function WorkspaceProvider({ children }) {
   /** Refetch workspaces; reconcile active selection if it disappeared. */
   const refreshWorkspaces = useCallback(async () => {
     try {
-      const list = await fetchWorkspaces()
+      const list = await listWorkspaces()
       setWorkspaces(list)
       if (workspaceId && !list.find(w => w.id === workspaceId)) {
         selectWorkspace(list[0]?.id ?? null)
@@ -49,7 +40,7 @@ export function WorkspaceProvider({ children }) {
   useEffect(() => {
     async function discover() {
       try {
-        const list = await fetchWorkspaces()
+        const list = await listWorkspaces()
         setWorkspaces(list)
 
         if (list.length === 1) {

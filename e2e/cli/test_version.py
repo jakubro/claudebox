@@ -1,7 +1,6 @@
 """End-to-end behavioral tests for ``claudebox version``.
 
-Real-binary surface: ``importlib.metadata.version("claudebox")`` resolution from
-the installed binary, plus the labeled branch/commit lines populated via fake git.
+Real-binary surface: ``importlib.metadata.version("claudebox")`` from the installed binary, plus branch/commit lines via fake git.
 """
 
 from importlib.metadata import version as pkg_version
@@ -19,7 +18,6 @@ class TestVersionOutput:
     def test_version_exits_zero_with_package_version(self, run_claudebox) -> None:
         result = run_claudebox(["version"])
         assert result.returncode == 0
-        # The binary resolves the installed package version via importlib.metadata.
         expected = pkg_version("claudebox")
         assert f"claudebox {expected}" in result.stdout
 

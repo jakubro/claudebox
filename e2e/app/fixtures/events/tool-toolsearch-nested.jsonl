@@ -1,0 +1,8 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Delegate the calendar lookup to a subagent","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Task","ts":"2025-01-18T12:00:01Z","tool_use_id":"task_001","tool_name":"Task","tool_input":{"description":"Find calendar tools","prompt":"Find and use the calendar tools"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"ToolSearch","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","tool_name":"ToolSearch","tool_input":{"query":"select:gcal_list"},"id":"evt_003","primary":false,"is_human":false,"parent_tool_use_id":"task_001"}
+{"type":"user","subtype":"tool_result","content":"[{\"name\":\"mcp__gcal__list_events\"}]","ts":"2025-01-18T12:00:03Z","tool_use_id":"tool_001","id":"evt_004","primary":false,"is_human":false,"parent_tool_use_id":"task_001"}
+{"type":"assistant","subtype":"tool_use","content":"mcp__gcal__list_events","ts":"2025-01-18T12:00:04Z","tool_use_id":"tool_002","tool_name":"mcp__gcal__list_events","tool_input":{},"id":"evt_005","primary":false,"is_human":false,"parent_tool_use_id":"task_001"}
+{"type":"user","subtype":"tool_result","content":"3 events","ts":"2025-01-18T12:00:05Z","tool_use_id":"tool_002","id":"evt_006","primary":false,"is_human":false,"parent_tool_use_id":"task_001"}
+{"type":"user","subtype":"tool_result","content":"Found 3 calendar events.","ts":"2025-01-18T12:00:06Z","tool_use_id":"task_001","id":"evt_007","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:07Z","id":"evt_008","primary":false,"is_human":false}

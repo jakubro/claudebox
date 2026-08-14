@@ -78,7 +78,6 @@ class TestInitialize:
         on_event = AsyncMock()
         pipeline = _make_pipeline(tmp_workspace, on_event=on_event)
 
-        # Buffer an event before init
         await pipeline.inject_event(event_type="system", subtype="early_bird")
         assert len(pipeline._buffer) == 1
 
@@ -89,9 +88,7 @@ class TestInitialize:
 
             await pipeline._initialize(session_id="sess-1")
 
-        # Buffer flushed
         assert len(pipeline._buffer) == 0
-        # Event was persisted via _process_event (log.append + on_event)
         mock_log.append.assert_called_once()
         on_event.assert_awaited_once()
 

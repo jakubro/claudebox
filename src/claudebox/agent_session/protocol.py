@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Protocol, runtime_checkable
 
-from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill
+from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
 from .config import RuntimeCapabilities
 from .events import AgentEvent
 
@@ -41,6 +41,8 @@ class AgentSession(Protocol):
     async def get_mcp_status(self) -> dict: ...
 
     async def get_context_usage(self) -> ContextUsage | None: ...
+
+    def stream_health(self) -> StreamHealth | None: ...
 
     def receive_events(self) -> AsyncIterator[AgentEvent]: ...
 

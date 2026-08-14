@@ -2,8 +2,6 @@
 
 import re
 
-import pytest
-
 from claudebox.core.log_rendering import format_timestamp_iso, render_event
 
 
@@ -94,7 +92,6 @@ class TestFileFormatGuard:
 
         from claudebox.core import logging as logmod
 
-        # Walk the shared chain and locate the TimeStamper instance.
         ts_processors = [
             p for p in logmod._shared_processors if isinstance(p, structlog.processors.TimeStamper)
         ]
@@ -110,8 +107,7 @@ class TestFileFormatGuard:
     def test_format_timestamp_iso_not_in_file_chain(self) -> None:
         """File handler's processor chain must not include ``format_timestamp_iso``."""
 
-        # Inspect logging.py source - the file chain (_use_log_file) must use
-        # JSONRenderer terminally without the ISO timestamp processor.
+        # _use_log_file's chain must end in JSONRenderer without the ISO timestamp processor.
         import inspect
 
         from claudebox.core import logging as logmod

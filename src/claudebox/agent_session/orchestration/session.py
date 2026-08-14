@@ -4,8 +4,10 @@ import asyncio
 import base64
 import os
 import re
+import time
 import uuid
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import cast
 from xml.sax.saxutils import escape, quoteattr
@@ -34,6 +36,8 @@ from ...constants import (
     SDK_PROCESS_BUFFER_SIZE,
     SESSION_ATTACHMENTS_DIR,
     SESSION_METADATA_FILE,
+    SESSION_STALL_CHECK_INTERVAL,
+    SESSION_STALL_TIMEOUT,
 )
 from ...core.file_cache import FileCache
 from ...core.logging import get_logger
@@ -78,10 +82,7 @@ class SessionService:
         self._repo = SessionRepository(self._workspace)
 
         # Cast to non-Optional; start() populates them.
-        #
-        # TODO: type-honest refactor (sweep 11) - Builder + Started container
-        # so post-start access is genuinely non-Optional without the cast lie.
-        # 80+ internal access sites to migrate. Out of scope for this batch.
+        # TODO: a Builder + Started container would drop this cast lie, type-honestly.
         self._sdk_client: AgentSession = cast(AgentSession, None)
         self._event_pipeline: EventPipeline = cast(EventPipeline, None)
         self._broadcaster: Broadcaster = cast(Broadcaster, None)
@@ -92,7 +93,20 @@ class SessionService:
 
         self._client_task: asyncio.Task | None = None
         self._pipeline_task: asyncio.Task | None = None
+        self._stall_watchdog_task: asyncio.Task | None = None
         self._context_refresh_timer: asyncio.TimerHandle | None = None
+        self._pipeline_repair_lock = asyncio.Lock()
+        self._suppress_restart_divider = False
+
+        # `time.monotonic()` when a query was dispatched, cleared by the turn's result.
+        # Arms the stall watchdog: silence only means a fault while an answer is owed.
+        self._turn_dispatched_at: float | None = None
+
+        # Tool calls started but not finished - a long one emits nothing meanwhile; that's work, not a stall.
+        self._tools_outstanding = 0
+
+        # One stall report per turn - the watchdog samples continuously, the fault is one event.
+        self._stall_reported = False
 
     @property
     def base_session(self) -> BaseSession | None:
@@ -135,7 +149,7 @@ class SessionService:
             "session": {
                 "id": self._base_session and self._base_session.id,
                 "workspace": str(self._workspace.path),
-            }
+            },
         }
 
     # Session API
@@ -188,9 +202,8 @@ class SessionService:
                 debug_mode=is_dev_mode(),
             )
         elif workspace_config.agent == "langgraph":
-            # set_model / set_permission_mode / set_effort_level are unsupported
-            # under LangGraph v1 (graph-construction-time bind); the corresponding
-            # change-callbacks are intentionally not registered.
+            # set_model/set_permission_mode/set_effort_level are unsupported under LangGraph
+            # (a graph-construction-time bind), so the change-callbacks below are not registered.
             raw_model = workspace_config.langgraph_model or ""
             provider = raw_model.partition(":")[0]
             provider_kwargs = dict(workspace_config.langgraph_provider_kwargs.get(provider, {}))
@@ -215,6 +228,8 @@ class SessionService:
                 mcp_servers=workspace_config.langgraph_mcp_servers or {},
                 provider_kwargs=provider_kwargs,
                 cost_overrides=workspace_config.langgraph_cost_overrides,
+                profile_hooks=workspace_config.langgraph_hooks,
+                system_prompt=self._system_prompt,
             )
         else:
             raise UnknownRuntime(workspace_config.agent)
@@ -236,6 +251,11 @@ class SessionService:
 
         self._client_task = asyncio.create_task(self._sdk_client.connect())
         self._pipeline_task = asyncio.create_task(self._event_pipeline.start())
+        self._stall_watchdog_task = asyncio.create_task(self._watch_for_stalls())
+
+        self._client_task.add_done_callback(partial(self._log_task_exit, "client"))
+        self._pipeline_task.add_done_callback(partial(self._log_task_exit, "pipeline"))
+        self._stall_watchdog_task.add_done_callback(partial(self._log_task_exit, "stall watchdog"))
 
         self._logger.info("Session started", session_id=session_id, **self._log_context)
 
@@ -246,6 +266,7 @@ class SessionService:
 
         self._logger.info("Stopping session...", **self._log_context)
 
+        await self._dispose("_stall_watchdog_task", "cancel")
         await self._dispose("_pipeline_task", "cancel")
         await self._dispose("_client_task", "cancel")
         await self._dispose("_event_pipeline", "stop")
@@ -269,6 +290,11 @@ class SessionService:
         self._last_known_model = None
         self._pending_session_prompt = None
         self._pending_compact_trigger = None
+
+        # Disarms the watchdog across a restart: nothing is owed until the next send,
+        # so a reconnect that didn't help can't loop.
+        self._turn_dispatched_at = None
+        self._tools_outstanding = 0
 
         if self._on_stop is not None:
             self._on_stop()
@@ -314,14 +340,38 @@ class SessionService:
             finally:
                 setattr(self, attr, None)
 
+    def _log_task_exit(self, name: str, task: asyncio.Task) -> None:
+        """Report a background task's exit, so a task that dies alone is not invisible.
+
+        Calling .exception() is what makes it observable: asyncio only reports an unretrieved
+        one from the task destructor, which a permanently-referenced task never reaches. Silent
+        on success by design - connect() and pipeline start() both return promptly.
+        """
+
+        if task.cancelled():
+            self._logger.info("Background task cancelled", task=name, **self._log_context)
+
+            return
+
+        exc = task.exception()
+
+        if exc is not None:
+            self._logger.error(
+                "Background task died",
+                task=name,
+                error=str(exc),
+                exc_info=exc,
+                **self._log_context,
+            )
+
     # Session Manager API
     # ----------------------------------------------------------------------------------------------
 
     def list_sessions(self) -> list[SessionSummary]:
         """List all sessions, newest first.
 
-        Delegates raw iteration and sorting to SessionRepository, then enriches
-        each result with Projection (cached by FileCache for performance).
+        Delegates iteration and sorting to SessionRepository, then enriches each result
+        with Projection (cached by FileCache for performance).
         """
 
         summaries = []
@@ -447,34 +497,40 @@ class SessionService:
         prompt: str,
         attachments: list[dict] | None = None,
         inline_replies: list[dict] | None = None,
+        note: str | None = None,
     ) -> None:
         """Send user prompt to SDK, injecting synthetic events where needed.
 
-        Paths: (1) attachments and/or inline replies - validates, builds content
-        blocks, injects a synthetic user event with display metadata (attachment
-        chips + quote/reply pairs) and suppresses the SDK echo; (2) internal
-        commands (/compact, /context) - injects a synthetic user event since the
-        SDK won't echo; (3) normal - sets prompt on the pipeline for result-only
-        turn injection, then queries the SDK.
+        Attachments/inline replies/a note and internal commands (/compact, /context) inject a
+        synthetic user event since the SDK won't echo them; a plain prompt just sets it on the
+        pipeline for result-only turn injection.
 
-        Raises AttachmentInvalid if any attachment fails base64 decode or
-        exceeds MAX_ATTACHMENT_BYTES.
+        `note` carries text typed alongside an AskUserQuestion/ExitPlanMode answer (`prompt` is
+        the answer markup then) - a sibling field, not concatenated into `prompt`, because the
+        transcript matches answers with an anchored pattern that any prefix/suffix would break.
+
+        Raises AttachmentInvalid if an attachment fails base64 decode or exceeds MAX_ATTACHMENT_BYTES.
         """
 
         self._logger.info("Sending query", prompt=prompt[:100], **self._log_context)
 
-        if inline_replies or attachments:
+        await self._ensure_pipeline_alive()
+        await self._ensure_stream_healthy()
+
+        note = note.strip() if note else None
+
+        if inline_replies or attachments or note:
             # Drop comments with a blank reply - they are never sent.
             replies = [r for r in (inline_replies or []) if (r.get("response") or "").strip()]
 
             attachment_meta = self._store_attachments(attachments) if attachments else []
 
             # Nothing left once blank replies are dropped.
-            if not prompt.strip() and not replies and not attachment_meta:
+            if not prompt.strip() and not replies and not attachment_meta and not note:
                 return
 
-            # Display-only event; content=prompt (never the serialized XML) so the
-            # optimistic pending turn reconciles by content. The pairs drive the placeholder.
+            # Display-only event - content=prompt (never serialized XML) so the optimistic
+            # pending turn reconciles by content.
             await self._event_pipeline.inject_event(
                 event_type=EventType.USER,
                 subtype=EventSubtype.MESSAGE,
@@ -483,24 +539,32 @@ class SessionService:
                 primary=True,
                 attachments=attachment_meta or None,
                 inline_replies=replies or None,
+                note=note,
             )
 
             # Suppress the SDK echo - the injected event is canonical (one query, one echo).
             self._event_pipeline.suppress_next_user_echo()
 
-            # Prompt verbatim, then the serialized <inline-replies> envelope when present.
-            text = prompt
+            extra_parts = []
+
+            if note:
+                extra_parts.append(note)
 
             if replies:
-                text = (prompt + "\n\n" if prompt else "") + self._serialize_inline_replies(replies)
+                extra_parts.append(self._serialize_inline_replies(replies))
+
+            text = prompt
+
+            if extra_parts:
+                text = (prompt + "\n\n" if prompt else "") + "\n\n".join(extra_parts)
 
             content_blocks = self._build_content_blocks(text, attachments or [])
+            self._arm_stall_watchdog()
             await self._sdk_client.query(content_blocks)
 
             return
 
-        # For internal commands (like /compact), SDK doesn't emit user message events.
-        # Inject one so frontend can reconcile pending messages.
+        # SDK doesn't emit user message events for internal commands like /compact.
         if INTERNAL_COMMAND_PATTERN.match(prompt):
             await self._event_pipeline.inject_event(
                 event_type=EventType.USER,
@@ -511,7 +575,167 @@ class SessionService:
             )
 
         self._event_pipeline.set_prompt(prompt)
+        self._arm_stall_watchdog()
         await self._sdk_client.query(prompt)
+
+    async def _ensure_pipeline_alive(self) -> None:
+        """Replace a dead event consumer before querying into it.
+
+        A dead pipeline still accepts prompts and runs tools, but produces nothing persisted or
+        broadcast - the reply never appears and the message is gone on reload. Only the consumer
+        is rebuilt; the runtime connection stays up, so an in-flight turn and its subagents survive.
+        """
+
+        if self._event_pipeline is None or self._event_pipeline.is_alive:
+            return
+
+        async with self._pipeline_repair_lock:
+            # Re-checked under the lock: a replacement reports not-alive for the whole duration
+            # of its own start(), so an unguarded check lets two concurrent sends build two consumers.
+            if self._event_pipeline is None or self._event_pipeline.is_alive:
+                return
+
+            previous = self._event_pipeline
+
+            # The pipeline's own id survives a projection that was never built (a consumer that
+            # died before init); rebuilding without it would skip _initialize and buffer forever.
+            session_id = previous.session_id or self.current_session_id
+
+            # A replacement consumer can't fix a runtime whose stream has ended - it would just
+            # park on the same dead stream, so reconnect instead. Safe to tear down: the sentinel
+            # is only delivered after the runtime process has already exited, with no live turn left.
+            if previous.stream_lost:
+                self._logger.error(
+                    "Runtime stream was lost - reconnecting the runtime",
+                    resume_id=session_id,
+                    **self._log_context,
+                )
+                await self.restart(session_id)
+
+                return
+
+            if session_id is None:
+                self._logger.error(
+                    "Event pipeline is not alive and has no session to resume",
+                    **self._log_context,
+                )
+
+                return
+
+            self._logger.warning(
+                "Event pipeline is not alive - rebuilding the consumer",
+                resume_id=session_id,
+                **self._log_context,
+            )
+
+            # Awaiting a task that died of an exception re-raises it, so stopping the corpse can
+            # throw - the session-stop path guards this with _dispose; this one does not.
+            try:
+                await previous.stop()
+            except Exception:
+                self._logger.exception("Previous event consumer did not stop cleanly")
+
+            # Assign before starting: _initialize calls back into _handle_init, which injects
+            # through self._event_pipeline and must reach the replacement.
+            self._event_pipeline = EventPipeline(
+                sdk_client=self._sdk_client,
+                workspace=self._workspace,
+                on_init=self._handle_init,
+                on_event=self._handle_event,
+                resume_session_id=session_id,
+            )
+
+            self._suppress_restart_divider = True
+
+            try:
+                await self._event_pipeline.start()
+            finally:
+                self._suppress_restart_divider = False
+
+    async def _ensure_stream_healthy(self) -> None:
+        """Act on the runtime's own reader state before adding another prompt to it.
+
+        Catches stalls the consumer can't see from outside, since a parked stream looks like an
+        idle one. A finished reader is terminal and triggers a reconnect; a full buffer is only
+        reported, since a momentary burst is possible and reconnecting could kill a running turn.
+        Reads another package's private state - a complement to the stall watchdog, not something
+        the session relies on; an unavailable probe means no verdict.
+        """
+
+        if self._sdk_client is None:
+            return
+
+        health = self._sdk_client.stream_health()
+
+        if health is None:
+            return
+
+        if health.reader_finished:
+            self._logger.error(
+                "Runtime stopped reading its transport - reconnecting",
+                buffered=health.buffered,
+                **self._log_context,
+            )
+            await self.restart(self.current_session_id)
+
+            return
+
+        if health.buffer_full:
+            self._logger.error(
+                "Runtime message buffer is full - events are no longer being consumed",
+                buffered=health.buffered,
+                consumers_waiting=health.consumers_waiting,
+                **self._log_context,
+            )
+
+    async def _watch_for_stalls(self) -> None:
+        """Report a runtime that goes silent while a turn is still owed an answer.
+
+        The consumer can't tell a parked stream from an idle one, so silence alone is never a
+        fault - silence with an unanswered query is. Diagnosis only, deliberately: the runtime is
+        read a whole message at a time, so an uninterrupted think is silent on the wire too, and
+        reconnecting on that would kill a turn that was never in trouble. Reported once per turn;
+        the next send re-arms it.
+        """
+
+        while True:
+            await asyncio.sleep(SESSION_STALL_CHECK_INTERVAL.total_seconds())
+
+            if self._stall_reported or self._tools_outstanding:
+                continue
+
+            silent_for = self._turn_silence_seconds()
+
+            if silent_for is None or silent_for < SESSION_STALL_TIMEOUT.total_seconds():
+                continue
+
+            self._stall_reported = True
+            self._logger.error(
+                "Runtime went silent mid-turn - no events are reaching the session",
+                silent_for_s=round(silent_for, 1),
+                **self._log_context,
+            )
+
+    def _arm_stall_watchdog(self) -> None:
+        """Mark a turn dispatched, so runtime silence from here on counts against it.
+
+        Also clears the outstanding-tool count - a turn that died mid-tool would otherwise leave
+        the watchdog disarmed for the rest of the session.
+        """
+
+        self._turn_dispatched_at = time.monotonic()
+        self._tools_outstanding = 0
+        self._stall_reported = False
+
+    def _turn_silence_seconds(self) -> float | None:
+        """Seconds since the runtime last spoke on a dispatched turn; None when none is in flight."""
+
+        if self._turn_dispatched_at is None or self._event_pipeline is None:
+            return None
+
+        last_heard = self._event_pipeline.last_message_at or self._turn_dispatched_at
+
+        return time.monotonic() - max(last_heard, self._turn_dispatched_at)
 
     @staticmethod
     def _validate_attachments(attachments: list[dict]) -> None:
@@ -551,7 +775,7 @@ class SessionService:
                     "type": a["type"],
                     "size": len(decoded),
                     "filename": stored_name,
-                }
+                },
             )
 
         return attachment_meta
@@ -559,8 +783,6 @@ class SessionService:
     async def send_and_wait(self, prompt: str) -> str:
         """Send prompt and wait for the assistant's complete response.
 
-        Subscribes to the broadcaster, sends the prompt, then collects
-        assistant text events until a result event signals turn completion.
         Used by MCP tool calls that need a synchronous response.
         """
 
@@ -663,7 +885,7 @@ class SessionService:
             quote = escape(r.get("quote") or "")
             response = escape(r.get("response") or "")
             lines.append(
-                f"  <reply><quote from={frm}>{quote}</quote><response>{response}</response></reply>"
+                f"  <reply><quote from={frm}>{quote}</quote><response>{response}</response></reply>",
             )
 
         lines.append("</inline-replies>")
@@ -673,8 +895,25 @@ class SessionService:
     # Outgoing Events
     # ----------------------------------------------------------------------------------------------
 
+    def ensure_ready(self) -> None:
+        """Raise SessionNotReady unless the event surface is live.
+
+        Broadcaster and pipeline are absent before start() and after stop(). The SSE surface -
+        subscribe() and the /api/stream route - gates here rather than repeating the null-check
+        at each site. The container advertises as running for the whole window between
+        construction and the daemon's first session request, so this is routine, not exceptional.
+        """
+
+        if self._broadcaster is None or self._event_pipeline is None:
+            raise SessionNotReady()
+
     async def subscribe(self) -> tuple[str, asyncio.Queue]:
-        """Subscribe to SSE events, replaying history to the new subscriber."""
+        """Subscribe to SSE events, replaying history to the new subscriber.
+
+        Raises SessionNotReady before start() and after stop().
+        """
+
+        self.ensure_ready()
 
         subscriber_id, queue = self._broadcaster.subscribe()
 
@@ -704,8 +943,8 @@ class SessionService:
             runtime=self._sdk_client,
         )
 
-        # Replay events into projection when session.json was not found on disk
-        # (fork copies events.jsonl but not session.json; also self-heals corruption)
+        # Replay events into projection when session.json is missing on disk (fork copies
+        # events.jsonl but not session.json; this also self-heals corruption).
         if not self._projection.loaded_from_disk:
             for event in self._event_pipeline.get_historical_events():
                 self._projection.update(event)
@@ -715,15 +954,19 @@ class SessionService:
 
         summary = self._projection.value
 
-        if summary.model:
+        # Gated on runtime support: a runtime that pins its model at construction raises on
+        # set_model, which would kill the consumer before init and drop every later event.
+        capabilities = self._sdk_client.capabilities
+
+        if summary.model and capabilities.supports_set_model_mid_session:
             await self._sdk_client.set_model(summary.model)
             self._last_known_model = summary.model
 
-        if summary.permission_mode:
+        if summary.permission_mode and capabilities.supports_set_permission_mode:
             await self._sdk_client.set_permission_mode(summary.permission_mode)
             self._last_known_permission_mode = summary.permission_mode
 
-        if summary.effort_level:
+        if summary.effort_level and capabilities.supports_set_effort_level:
             await self._sdk_client.set_effort_level(summary.effort_level)
             self._last_known_effort_level = summary.effort_level
 
@@ -735,11 +978,15 @@ class SessionService:
     async def _emit_container_restarted_if_resumed(self) -> None:
         """Mark the chat transcript with an amber divider when the session resumes with prior messages.
 
-        Fires only when historical events exist on disk (pristine session starts emit nothing).
-        First boot of a forked session carries the parent's id in `message_data` so the frontend
-        can render `Forked from <parent>`; subsequent restarts of that forked session emit without
-        the payload (rendered as plain `Restarted`).
+        Fires only when historical events exist on disk. First boot of a forked session carries
+        the parent's id in `message_data` so the frontend renders `Forked from <parent>`; later
+        restarts of that forked session emit without the payload (plain `Restarted`).
         """
+
+        # A consumer rebuild re-runs init though nothing restarted, and the divider would
+        # wrongly claim otherwise - permanently, since it's persisted.
+        if self._suppress_restart_divider:
+            return
 
         historical = self._event_pipeline.get_historical_events()
 
@@ -772,8 +1019,16 @@ class SessionService:
         self._projection.update(event)
         self._projection.schedule_save()
 
-        # Schedule debounced context usage refresh on result events
+        # A tool between start and output is working, not stalling - the runtime emits nothing for a long one.
+        if event.subtype == "tool_use":
+            self._tools_outstanding += 1
+        elif event.subtype == "tool_result":
+            self._tools_outstanding = max(0, self._tools_outstanding - 1)
+
+        # Turn answered: disarm the stall watchdog, refresh context usage (debounced).
         if event.type == "result":
+            self._turn_dispatched_at = None
+            self._tools_outstanding = 0
             self._schedule_context_refresh()
 
         # Send session prompt to Claude after compaction boundary
@@ -823,8 +1078,8 @@ class SessionService:
 
     # Hook callbacks
     # ----------------------------------------------------------------------------------------------
-    # Registered via HookCallbacks; runtime fires with typed payloads after
-    # its own delta detection, so handlers emit pipeline events unconditionally.
+    # Registered via HookCallbacks; runtime fires with typed payloads after its own delta
+    # detection, so handlers emit pipeline events unconditionally.
 
     async def _on_session_start(self) -> None:
         """Callback: mount /tmp to current session's temp directory."""

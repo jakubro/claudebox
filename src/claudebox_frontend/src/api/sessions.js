@@ -14,9 +14,18 @@ export async function listSessions() {
 }
 
 /**
- * Create a new session via the daemon.
- * @returns {Promise<{session_id: string, container_id: string}>}
+ * Fetch sessions for an explicit workspace id, bypassing the active-workspace singleton; used by cross-workspace
+ * dead-session storage GC, which must see every workspace's sessions regardless of which is active.
  */
+export async function listSessionsForWorkspace(workspaceId) {
+  const res = await fetch(`/api/workspaces/${workspaceId}/sessions`)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch sessions for workspace ${workspaceId}`)
+  }
+  return res.json()
+}
+
+/** @returns {Promise<{session_id: string, container_id: string}>} */
 export async function newSession({ signal } = {}) {
   const res = await workspaceFetch('/sessions/new', { method: 'POST', signal })
   if (!res.ok) {
@@ -26,7 +35,7 @@ export async function newSession({ signal } = {}) {
 }
 
 /**
- * Update session metadata (e.g., rename) via the daemon.
+ * Update session metadata (e.g., rename).
  * @param {string} sessionId
  * @param {Object} data - Fields to update.
  */
@@ -42,7 +51,6 @@ export async function updateSession(sessionId, data) {
 }
 
 /**
- * Resume a previous session via the daemon.
  * @param {string} sessionId
  * @returns {Promise<{session_id: string, container_id: string}>}
  */
@@ -55,7 +63,6 @@ export async function resumeSession(sessionId) {
 }
 
 /**
- * Fork a session via the daemon, optionally from a specific turn.
  * @param {string} sessionId
  * @param {string|null} [turnId] - Turn to fork from, or null/omitted for complete session fork.
  * @param {Object} [options]
@@ -101,10 +108,7 @@ export async function getToolOutput(toolUseId) {
   return res.json()
 }
 
-/**
- * Update the session prompt text.
- * @param {string|null} sessionPrompt - Prompt text, or null to clear.
- */
+/** @param {string|null} sessionPrompt - Prompt text, or null to clear. */
 export async function updateSessionPrompt(sessionPrompt) {
   const res = await containerFetch('/api/sessions/current/prompt', {
     method: 'PATCH',

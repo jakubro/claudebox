@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/workspaces/{workspace_id}")
 async def list_boards(svc: WorkspaceDep):
     """List discovered boards in the workspace."""
 
-    return {"boards": svc.board_service.list_all()}
+    return {"boards": await svc.board_service.list_all()}
 
 
 @router.get("/boards/{board_id}")

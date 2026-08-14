@@ -22,14 +22,10 @@ from claudebox.agent_session.langgraph_tools.subagent import (
 
 
 class _ToolingFakeChatModel(FakeListChatModel):
-    """FakeListChatModel that supports bind_tools (returns self).
+    """FakeListChatModel with a working bind_tools (returns self).
 
-    langchain's create_agent calls model.bind_tools(...) during graph
-    construction. The stock FakeListChatModel raises NotImplementedError on
-    that path because it has no tool-binding implementation. Returning self
-    is sufficient for the sub-agent loop to reach a terminal AIMessage on
-    the first chat-model emit (content-only responses have no tool_calls
-    so the loop ends immediately).
+    create_agent calls model.bind_tools(...) during graph construction, which stock FakeListChatModel
+    lacks; returning self lets the sub-agent loop terminate on the first content-only AIMessage.
     """
 
     def bind_tools(self, tools, **kwargs):
@@ -49,10 +45,9 @@ def _configured_ctx(tool_ctx, **overrides):
 
 
 def _patch_create_agent(monkeypatch, *, messages):
-    """Patch create_agent so each call returns a stub graph yielding `messages`.
+    """Patch create_agent to return a stub graph yielding `messages`.
 
-    Returns a `captured` dict populated with the constructor kwargs of the
-    last call so tests can assert what was passed to create_agent.
+    Returns a `captured` dict of the last call's constructor kwargs.
     """
 
     captured: dict[str, Any] = {}
@@ -154,7 +149,7 @@ class TestTaskExecution:
                     content=[
                         {"type": "text", "text": "Part A. "},
                         {"type": "text", "text": "Part B."},
-                    ]
+                    ],
                 ),
             ],
         )
@@ -182,11 +177,9 @@ class TestTaskExecution:
 
     @pytest.mark.anyio
     async def test_real_create_agent_with_fake_chat_model(self, tool_ctx):
-        """Smoke against the real langchain create_agent path.
+        """Smoke test against the real langchain create_agent path.
 
-        Uses FakeListChatModel which returns a content-only AIMessage with no
-        tool_calls - create_agent terminates immediately and the task
-        tool returns the final content unchanged.
+        FakeListChatModel returns a content-only AIMessage (no tool_calls), so create_agent terminates immediately.
         """
 
         task = make_subagent_tools(_configured_ctx(tool_ctx))[0]
@@ -221,9 +214,7 @@ class TestTaskAllowlistFiltering:
         task = make_subagent_tools(_configured_ctx(tool_ctx))[0]
         await task.ainvoke({"description": "x"})
 
-        # 9 simple-port tools (.a) + 1 task (.c, recursive) = 10 - but recursion
-        # cap permits the nested task to bind too at depth 1, so the sub-agent
-        # sees the full surface.
+        # 9 simple-port tools + 1 recursive task = 10; depth-1 cap still lets nested task bind, full surface.
         sub_tool_names = {t.name for t in captured["tools"]}
         assert "read_file" in sub_tool_names
         assert "task" in sub_tool_names
@@ -237,14 +228,9 @@ class TestTaskDepthPropagation:
         task = make_subagent_tools(_configured_ctx(tool_ctx, subagent_depth=1))[0]
         await task.ainvoke({"description": "x"})
 
-        # The bound `task` tool inside the sub-agent's tool list is created
-        # by make_subagent_tools(sub_ctx) - closed over the sub_ctx with
-        # depth=2. Confirming via the registry path: at depth 2, calling
-        # task again should still succeed (depth+1=3 is the cap).
+        # Nested `task` closes over depth=2; depth+1=3 equals the cap, so this call still succeeds.
         nested = next(t for t in captured["tools"] if t.name == "task")
 
-        # The nested task's closure carries depth=2; one more call permits
-        # (3 == cap, depth+1 would be 4 > cap -> ToolException).
         captured_inner = _patch_create_agent(monkeypatch, messages=[AIMessage(content="inner")])
         result = await nested.ainvoke({"description": "y"})
         assert result == "inner"
@@ -308,7 +294,7 @@ class TestTaskUsageBubbleUp:
                 AIMessage(
                     content="ok",
                     usage_metadata={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-                )
+                ),
             ],
         )
 
@@ -335,7 +321,7 @@ class TestAgentRegistry:
                 "zeta": AgentDefinition(name="zeta", system_prompt="z", tools=None),
                 "alpha": AgentDefinition(name="alpha", system_prompt="a", tools=None),
                 "general-purpose": GENERAL_PURPOSE,
-            }
+            },
         )
 
         assert registry.names() == ["alpha", "general-purpose", "zeta"]

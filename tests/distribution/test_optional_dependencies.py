@@ -1,12 +1,6 @@
-"""pyproject.toml provider extras drift-guard against _providers.PROVIDER_EXTRAS.
-
-Every entry in PROVIDER_EXTRAS must have a matching `[project.optional-dependencies]`
-entry in pyproject.toml whose single requirement is `langchain-<x>`, and must be
-bundled into `langgraph-all` (the extra the container agent layer preinstalls via
-`uv sync --extra langgraph-all`). Catches drift: a provider added to `_providers.py`
-without an extra, an extra missing from `langgraph-all` (so it would NOT ship in the
-image), or a core dependency silently relocated to an optional extra.
-"""
+"""Drift-guards pyproject.toml provider extras against _providers.PROVIDER_EXTRAS: each entry needs
+a single-requirement `langchain-<x>` extra, bundled into `langgraph-all`, preinstalled in the agent image;
+catches missing extras, unbundled extras, or relocated core deps."""
 
 import re
 import tomllib
@@ -57,7 +51,7 @@ class TestProviderExtrasAreDefined:
 
             if not reqs[0].startswith("langchain-"):
                 violations.append(
-                    f"extra [{extra}] must install a langchain-* package; got {reqs[0]!r}"
+                    f"extra [{extra}] must install a langchain-* package; got {reqs[0]!r}",
                 )
 
         assert not violations, "\n".join(violations)

@@ -1,6 +1,5 @@
 #!/bin/bash
-# Installs base system: system dependencies, mise runtime manager, and language runtimes
-# - Container layer rebuilt with --rebuild
+# Installs base system deps, mise, and language runtimes; reruns only on a full --rebuild.
 set -euo pipefail
 
 # Fix apt-get temp dir — /tmp is symlinked to session dir at runtime, _apt user can't traverse it

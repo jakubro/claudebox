@@ -1,11 +1,6 @@
 /** Session tree building utilities. */
 
-/**
- * Build session tree grouping children under parents.
- *
- * Filters empty sessions, groups by parent_session_id, sorts pinned first
- * then by max descendant timestamp.
- */
+/** Filters empty sessions, groups by parent_session_id, and sorts pinned first, then by max descendant timestamp. */
 export function buildSessionTree(sessions, pinnedSessions, currentSessionId) {
   const pinnedSet = new Set(pinnedSessions)
   const childrenMap = new Map()
@@ -28,7 +23,6 @@ export function buildSessionTree(sessions, pinnedSessions, currentSessionId) {
     }
   }
 
-  // Compute max timestamp across a session and all its descendants
   const getMaxTimestamp = session => {
     const own = session.updated_at || session.started_at || ''
     const children = childrenMap.get(session.session_id) || []

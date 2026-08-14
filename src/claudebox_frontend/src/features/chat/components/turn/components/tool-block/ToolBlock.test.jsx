@@ -3,8 +3,13 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import useEditorTemplate from '../../../../../../hooks/useEditorTemplate'
 import { TurnProvider } from '../../TurnContext'
+
+vi.mock('../../../../../../hooks/useEditorTemplate', () => ({
+  default: vi.fn(() => null),
+}))
 
 vi.mock('../../../../../../utils/eventProcessing', async importOriginal => {
   const actual = await importOriginal()
@@ -14,9 +19,8 @@ vi.mock('../../../../../../utils/eventProcessing', async importOriginal => {
   }
 })
 
-// useCapabilities depends on SessionData + workspace-defaults contexts; tests
-// stub it to return a permissive capability matrix so render paths gated on
-// runtime capabilities (e.g. supports_ask_user_question) light up by default.
+// useCapabilities depends on SessionData + workspace-defaults contexts; stub it to a permissive
+// matrix so paths gated on runtime capabilities (e.g. supports_ask_user_question) light up.
 vi.mock('../../../../../../hooks/useCapabilities', () => ({
   default: () => ({
     capabilities: { supports_ask_user_question: true },
@@ -33,7 +37,10 @@ vi.mock('./components/ToolBlockHeader', () => ({
       data-awaiting={props.toolStatus?.isAwaitingAnswer}
       data-was-answered={props.toolStatus?.wasAnswered}
       data-was-skipped={props.toolStatus?.wasSkipped}
+      data-is-error={props.toolStatus?.isError}
+      data-summary={props.summary || ''}
       data-answer-label={props.toolStatus?.answerLabel || ''}
+      data-editor-url={props.editorUrl || ''}
       onClick={props.onToggle}>
       {props.header}
     </div>
@@ -121,6 +128,10 @@ function rerenderToolBlock(rerender, toolBlockProps, contextOverrides = {}) {
 }
 
 describe('ToolBlock', () => {
+  afterEach(() => {
+    useEditorTemplate.mockReturnValue(null)
+  })
+
   // Read tool: collapses by default, realistic line-numbered content
   const readToolUse = {
     content: 'Read',
@@ -226,6 +237,32 @@ describe('ToolBlock', () => {
       renderToolBlock({ toolUse: readToolUse, toolResult: null })
 
       expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
+    })
+
+    it('shows expanded content for a pending Bash with a command', () => {
+      renderToolBlock({ toolUse: bashToolUse, toolResult: null })
+
+      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
+    })
+
+    it('hides expanded content for a pending Bash with no command yet', () => {
+      const streamingBashToolUse = { content: 'Bash', tool_use_id: 'tu-stream', tool_input: {} }
+      renderToolBlock({ toolUse: streamingBashToolUse, toolResult: null })
+
+      expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
+    })
+
+    it('collapses and re-expands a pending Bash block on header click', async () => {
+      const user = userEvent.setup()
+      renderToolBlock({ toolUse: bashToolUse, toolResult: null })
+
+      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
+
+      await user.click(screen.getByTestId('tool-block-header'))
+      expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
+
+      await user.click(screen.getByTestId('tool-block-header'))
+      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
     })
 
     it('shows expanded content for pending Task with nested events', () => {
@@ -449,6 +486,137 @@ describe('ToolBlock', () => {
     })
   })
 
+  describe('AskUserQuestion block chrome', () => {
+    const askToolUse = {
+      content: 'AskUserQuestion',
+      tool_use_id: 'tu-ask',
+      tool_input: {
+        questions: [{ question: 'What color?', options: ['red', 'blue'] }],
+      },
+    }
+
+    // The runtime can report the question tool as unavailable while the form was shown and
+    // answered normally, so an answered block must not inherit that failure.
+    const askErrorResult = {
+      content:
+        '<tool_use_error>Error: No such tool available: AskUserQuestion. AskUserQuestion exists but is not enabled in this context.</tool_use_error>',
+    }
+
+    it('hides the block header while a question awaits an answer', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: null })
+
+      expect(screen.getByTestId('interactive-questions')).toBeInTheDocument()
+      expect(screen.queryByTestId('tool-block-header')).not.toBeInTheDocument()
+    })
+
+    it('hides the block header when the awaiting marker is in the result', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: { content: 'Answer questions?' } })
+
+      expect(screen.queryByTestId('tool-block-header')).not.toBeInTheDocument()
+    })
+
+    it('restores the block header after the form is submitted', async () => {
+      const user = userEvent.setup()
+
+      renderToolBlock({ toolUse: askToolUse, toolResult: null }, { onFormSubmit: vi.fn() })
+      expect(screen.queryByTestId('tool-block-header')).not.toBeInTheDocument()
+
+      await user.click(screen.getByTestId('submit-answer'))
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute('data-was-answered', 'true')
+    })
+
+    it('keeps the block header for a question answered in an earlier session', () => {
+      renderToolBlock(
+        { toolUse: askToolUse, toolResult: { content: 'answers' } },
+        { hasNextUserMessage: true, nextUserMessageIsFormResponse: true },
+      )
+
+      expect(screen.getByTestId('tool-block-header')).toBeInTheDocument()
+    })
+
+    it('hides the block header when the form is disabled by pending messages', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: null }, { hasPendingMessages: true })
+
+      // Mounting already-pending never fires the skip effect's false->true edge, so the question
+      // stays unanswered and the form stays live, just disabled.
+      const questions = screen.getByTestId('interactive-questions')
+      expect(questions).toBeInTheDocument()
+      expect(questions).toHaveAttribute('data-disabled', 'true')
+      expect(screen.queryByTestId('tool-block-header')).not.toBeInTheDocument()
+    })
+
+    it('keeps the block header for a non-interactive tool', () => {
+      renderToolBlock({ toolUse: readToolUse, toolResult: readResult })
+
+      expect(screen.getByTestId('tool-block-header')).toBeInTheDocument()
+    })
+
+    it('does not show an answered question as failed when the tool call reported an error', () => {
+      renderToolBlock(
+        { toolUse: askToolUse, toolResult: askErrorResult },
+        { hasNextUserMessage: true, nextUserMessageIsFormResponse: true },
+      )
+
+      const block = screen.getByTestId('tool-block')
+      expect(block).not.toHaveClass('tool-error')
+      expect(block).toHaveAttribute('data-tool-status', 'completed')
+
+      const header = screen.getByTestId('tool-block-header')
+      expect(header).toHaveAttribute('data-is-error', 'false')
+      expect(header).toHaveAttribute('data-was-answered', 'true')
+    })
+
+    it('does not leak the raw tool failure into the answered summary tooltip', () => {
+      renderToolBlock(
+        { toolUse: askToolUse, toolResult: askErrorResult },
+        { hasNextUserMessage: true, nextUserMessageIsFormResponse: true },
+      )
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute('data-summary', '')
+    })
+
+    it('does not show an unanswered question as failed when the tool call reported an error', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: askErrorResult })
+
+      // The error is noise while the form is still the user's surface, not just once answered.
+      const block = screen.getByTestId('tool-block')
+      expect(block).not.toHaveClass('tool-error')
+      expect(block).toHaveAttribute('data-tool-status', 'pending')
+    })
+
+    it('shows a bare form with no header for a live errored question', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: askErrorResult })
+
+      expect(screen.queryByTestId('tool-block-header')).not.toBeInTheDocument()
+      expect(screen.getByTestId('interactive-questions')).toBeInTheDocument()
+    })
+
+    it('answering an error-path question restores the header with an Answered summary', async () => {
+      const user = userEvent.setup()
+
+      renderToolBlock(
+        { toolUse: askToolUse, toolResult: askErrorResult },
+        { onFormSubmit: vi.fn() },
+      )
+      expect(screen.queryByTestId('tool-block-header')).not.toBeInTheDocument()
+
+      await user.click(screen.getByTestId('submit-answer'))
+
+      const header = screen.getByTestId('tool-block-header')
+      expect(header).toHaveAttribute('data-was-answered', 'true')
+      expect(header).toHaveAttribute('data-is-error', 'false')
+    })
+
+    it('does not render expanded content (the error details) beneath a live errored form', () => {
+      // A result exists here, so only the askUserAwaiting exclusion suppresses it.
+      renderToolBlock({ toolUse: askToolUse, toolResult: askErrorResult })
+
+      expect(screen.getByTestId('interactive-questions')).toBeInTheDocument()
+      expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
+    })
+  })
+
   describe('ExitPlanMode form rendering', () => {
     const planToolUse = {
       content: 'ExitPlanMode',
@@ -582,6 +750,136 @@ describe('ToolBlock', () => {
 
       const block = screen.getByTestId('tool-block')
       expect(block).toBeInTheDocument()
+    })
+  })
+
+  describe('streaming header hold', () => {
+    it('shows only the tool name when a block is empty on first render', () => {
+      const streamingToolUse = { content: 'Bash', tool_use_id: 'tu-stream', tool_input: {} }
+      renderToolBlock({ toolUse: streamingToolUse, toolResult: null })
+
+      // Exact match - not the "Bash(command)" generic-fallback placeholder.
+      expect(screen.getByTestId('tool-block-header').textContent).toBe('Bash')
+    })
+
+    it('holds the previous header while tool_input goes empty mid-stream', async () => {
+      const { rerender } = renderToolBlock({ toolUse: bashToolUse, toolResult: bashResult })
+      expect(screen.getByTestId('tool-block-header')).toHaveTextContent('Bash(ls -la)')
+
+      await act(async () => {
+        rerenderToolBlock(rerender, {
+          toolUse: { ...bashToolUse, tool_input: {} },
+          toolResult: bashResult,
+        })
+      })
+
+      // Never flashes back to the bare tool name once a real header was shown.
+      expect(screen.getByTestId('tool-block-header')).toHaveTextContent('Bash(ls -la)')
+    })
+
+    it('adopts the computed header once input arrives', async () => {
+      const streamingToolUse = { content: 'Bash', tool_use_id: 'tu-stream', tool_input: {} }
+      const { rerender } = renderToolBlock({ toolUse: streamingToolUse, toolResult: null })
+      expect(screen.getByTestId('tool-block-header')).toHaveTextContent('Bash')
+
+      await act(async () => {
+        rerenderToolBlock(rerender, {
+          toolUse: { ...streamingToolUse, tool_input: { command: 'ls -la' } },
+          toolResult: bashResult,
+        })
+      })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveTextContent('Bash(ls -la)')
+    })
+
+    it('does not carry a held header across a different tool_use_id', async () => {
+      const { rerender } = renderToolBlock({ toolUse: bashToolUse, toolResult: bashResult })
+      expect(screen.getByTestId('tool-block-header')).toHaveTextContent('Bash(ls -la)')
+
+      await act(async () => {
+        rerenderToolBlock(rerender, {
+          toolUse: { content: 'Bash', tool_use_id: 'tu-other', tool_input: {} },
+          toolResult: null,
+        })
+      })
+
+      // Exact match - not the "Bash(command)" fallback placeholder, and not a stale hold
+      // carried over from the previous tool_use_id.
+      expect(screen.getByTestId('tool-block-header').textContent).toBe('Bash')
+    })
+  })
+
+  describe('open-in-editor URL resolution', () => {
+    const editTemplate = 'vscode://file/{path}:{line}'
+
+    it('resolves editorUrl for a Read block when a template is configured', () => {
+      useEditorTemplate.mockReturnValue(editTemplate)
+      renderToolBlock({ toolUse: readToolUse, toolResult: readResult })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-editor-url',
+        'vscode://file/%2Fsrc%2Fapp.js:1',
+      )
+    })
+
+    it('resolves editorUrl for Edit and Write blocks', () => {
+      useEditorTemplate.mockReturnValue(editTemplate)
+      const editToolUse = {
+        content: 'Edit',
+        tool_use_id: 'tu-edit',
+        tool_input: { file_path: '/src/edit.js' },
+      }
+      renderToolBlock({ toolUse: editToolUse, toolResult: { content: 'ok' } })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-editor-url',
+        'vscode://file/%2Fsrc%2Fedit.js:1',
+      )
+    })
+
+    it("uses the Read call's starting offset as the line when present", () => {
+      useEditorTemplate.mockReturnValue(editTemplate)
+      renderToolBlock({
+        toolUse: {
+          ...readToolUse,
+          tool_input: { ...readToolUse.tool_input, offset: 42 },
+        },
+        toolResult: readResult,
+      })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-editor-url',
+        'vscode://file/%2Fsrc%2Fapp.js:42',
+      )
+    })
+
+    it("ignores Edit's diff-match source_offset - the line always resolves to 1", () => {
+      useEditorTemplate.mockReturnValue(editTemplate)
+      const editToolUse = {
+        content: 'Edit',
+        tool_use_id: 'tu-edit',
+        tool_input: { file_path: '/src/edit.js' },
+        source_offset: 42,
+      }
+      renderToolBlock({ toolUse: editToolUse, toolResult: { content: 'ok' } })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-editor-url',
+        'vscode://file/%2Fsrc%2Fedit.js:1',
+      )
+    })
+
+    it('leaves editorUrl empty for a tool with no file_path', () => {
+      useEditorTemplate.mockReturnValue(editTemplate)
+      renderToolBlock({ toolUse: bashToolUse, toolResult: bashResult })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute('data-editor-url', '')
+    })
+
+    it('leaves editorUrl empty when no template is configured', () => {
+      renderToolBlock({ toolUse: readToolUse, toolResult: readResult })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute('data-editor-url', '')
     })
   })
 })

@@ -1,4 +1,4 @@
-/** Tests for aggregation.js cost aggregation. */
+/** Tests for aggregation utilities. */
 
 import { describe, expect, it } from 'vitest'
 import { aggregateCost, INTERVALS } from './aggregation'

@@ -14,7 +14,6 @@ test.describe('Connection', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Should have connected at least once
       const connectionCount = await controller.getConnectionCount()
       expect(connectionCount).toBeGreaterThanOrEqual(1)
     })
@@ -30,7 +29,7 @@ test.describe('Connection', () => {
                 session_id: 'test-session-001',
                 name: null,
                 workspace: '/home/user/project',
-                model: 'claude-sonnet-4-20250514',
+                model: 'claude-sonnet-5',
                 num_turns: 0,
                 total_cost_usd: 0,
                 total_duration_ms: 0,
@@ -51,7 +50,6 @@ test.describe('Connection', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Poll until session data is fetched
       await expect.poll(() => sessionDataFetched).toBe(true)
     })
 
@@ -62,7 +60,6 @@ test.describe('Connection', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Footer should show Ready status
       await expect(page.locator('[data-testid="footer-status"][data-status="ready"]')).toBeVisible()
       await expect(page.getByText('Ready')).toBeVisible()
     })
@@ -76,9 +73,7 @@ test.describe('Connection', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-      // Panels driven by the chat SSE stream surface the replay state.
-      // (MCP and Usage subscribe to separate streams and continue to render
-      // their own data during chat replay - they are not in scope here.)
+      // Panels on the chat SSE stream show replay state; MCP/Usage use separate streams, out of scope here.
       await page.locator('[data-testid="icon-logs"]').click()
       await expect(page.locator('[data-testid="panel-logs"]')).toContainText('Resuming...')
 
@@ -93,24 +88,20 @@ test.describe('Connection', () => {
   test.describe('Reconnection', () => {
     // SPEC: error:auto-reconnect
     test('automatically reconnects after SSE error without user interaction', async ({ page }) => {
-      // Set up controller to track connections
       const controller = await createSSEController(page)
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Initial connection count
       const initialCount = await controller.getConnectionCount()
       expect(initialCount).toBeGreaterThanOrEqual(1)
 
-      // Record timestamp before error
       const errorTime = Date.now()
 
       // Trigger error on SSE - no user interaction after this
       await controller.triggerError()
 
-      // Auto-reconnect should happen automatically (RECONNECT_BASE_DELAY ~1000ms)
-      // Poll until reconnection count increases - no clicks or interactions
+      // Auto-reconnect happens automatically (RECONNECT_BASE_DELAY ~1000ms); no clicks or interactions here.
       await expect
         .poll(() => controller.getConnectionCount(), { timeout: 5000 })
         .toBeGreaterThan(initialCount)
@@ -122,11 +113,9 @@ test.describe('Connection', () => {
 
     // SPEC: panel-session:resume
     // SPEC: panel-session:auto-refresh
-    // Tests resume API call, SSE reconnection, and chat focus after session switch
     test('session resume calls API, reconnects SSE, and focuses chat', async ({ page }) => {
       let resumeSessionCalled = false
 
-      // Set up controller first, then mockAPI with handlers
       const controller = await createSSEController(page)
       await mockAPI(page, {
         sessionsFixture: 'sessions/multiple.json',
@@ -144,10 +133,8 @@ test.describe('Connection', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Record initial SSE connection count
       const initialConnections = await controller.getConnectionCount()
 
-      // Send an event to the current session
       await controller.sendEvents([
         {
           type: 'user',
@@ -160,22 +147,16 @@ test.describe('Connection', () => {
         { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: 1705600002000 },
       ])
 
-      // Message should be visible
       await expect(page.getByText('Hello')).toBeVisible()
 
       // Sessions panel is visible by default
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
-      // Click resume on a different session
       await page.locator('[data-testid="session-resume-btn"]').first().click()
 
-      // 1. Resume API called
       await expect.poll(() => resumeSessionCalled).toBe(true)
-
-      // 2. SSE reconnects (new connection for the new session)
       await expect.poll(() => controller.getConnectionCount()).toBeGreaterThan(initialConnections)
 
-      // 3. Chat panel remains visible and focused (chat input accessible)
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="chat-input"]')).toBeVisible()
     })

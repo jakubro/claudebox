@@ -11,12 +11,6 @@ import {
 } from '../utils/notifications'
 
 /**
- * Manage desktop notifications for response completion.
- *
- * Sends browser notification when response completes and tab is not focused.
- * Updates tab title with indicator when it's user's turn.
- * Plays audio chime when sound is enabled.
- *
  * @param {object} options - Hook options
  * @param {boolean} options.isResponding - Whether Claude is currently responding
  * @param {boolean} [options.isReplaying] - Whether SSE history replay is in progress
@@ -55,7 +49,6 @@ export default function useNotifications({
       setTitleIndicator(false)
     }
 
-    // Clear indicator on any user interaction
     window.addEventListener('focus', handleInteraction)
     window.addEventListener('click', handleInteraction)
     window.addEventListener('keydown', handleInteraction)
@@ -67,26 +60,21 @@ export default function useNotifications({
     }
   }, [])
 
-  // Mark initial load complete after first real-time responding state.
-  // Replay-driven responding=true does not count - those events reflect
-  // historical activity, not the current user-facing turn.
+  // Marks initial load complete after the first real-time responding state;
+  // replay-driven responding=true doesn't count - those events are historical, not the current user-facing turn.
   useEffect(() => {
     if (isResponding && !isReplaying) {
       isInitialLoadRef.current = false
     }
   }, [isResponding, isReplaying])
 
-  // Track transition from responding to not responding
   useEffect(() => {
     const wasResponding = wasRespondingRef.current
     wasRespondingRef.current = isResponding
 
-    // Check for completion transition
     if (wasResponding && !isResponding) {
-      // Skip both indicator and notification on session resume - the responding
-      // transition during SSE replay is not an actual user-facing completion.
-      // Replay-time transitions are also caught by isReplaying since the
-      // result event arrives before replay_ended fires.
+      // Skip both indicator and notification on session resume - the responding transition during SSE replay
+      // isn't a real completion; also caught by isReplaying, since the result event beats replay_ended.
       if (isInitialLoadRef.current || isReplaying) {
         return
       }
@@ -97,12 +85,9 @@ export default function useNotifications({
       // Add tab title indicator (user's turn)
       setTitleIndicator(true)
 
-      // Only notify if tab is hidden and notifications enabled
       if (document.hidden && notificationsEnabled) {
-        // Play sound chime
         playChime()
 
-        // Show desktop notification if permission granted
         // Delay to allow pendingBatch flush (~50ms) so events contain assistant text
         if (Notification.permission === 'granted') {
           setTimeout(() => {
@@ -114,7 +99,6 @@ export default function useNotifications({
               tag: 'claude-response', // Prevents duplicate notifications
             })
 
-            // Focus window when clicked
             notification.onclick = () => {
               window.focus()
               notification.close()

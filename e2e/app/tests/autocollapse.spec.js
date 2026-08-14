@@ -132,8 +132,7 @@ test.describe('Auto-collapse turns', () => {
     )
 
     await expect(turns).toHaveCount(4)
-    // The hand-expanded turn stays open across the new turn; the previously-last
-    // turn collapses; the new turn is the only other one expanded.
+    // Hand-expanded turn stays open; old last turn collapses; new turn is the only other one expanded.
     await expect(turns.nth(0)).not.toHaveClass(/turn-collapsed/)
     await expect(turns.nth(2)).toHaveClass(/turn-collapsed/)
     await expect(turns.nth(3)).not.toHaveClass(/turn-collapsed/)

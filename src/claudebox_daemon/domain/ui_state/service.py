@@ -1,13 +1,14 @@
 """Persistent key-value store for UI state with global and per-session namespaces."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-
-from filelock import FileLock
 
 from claudebox import read_json, write_json
 from claudebox.constants import CONFIG_DIR_NAME, SESSION_MAX_AGE
 from .models import UIState
+from .._locking import locked
 from ...constants import UI_STATE_FILE
 
 
@@ -20,8 +21,10 @@ class UIStateService:
 
     VERSION = 2
 
-    def __init__(self, workspace: "RegisteredWorkspace") -> None:
+    def __init__(self, workspace: "RegisteredWorkspace", executor: ThreadPoolExecutor) -> None:
         self._state_path = workspace.path / CONFIG_DIR_NAME / UI_STATE_FILE
+        # Daemon-owned executor - keeps patch()'s locked read-modify-write off the event loop.
+        self._executor = executor
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -33,13 +36,20 @@ class UIStateService:
 
         return UIState(global_state=virtual["global"], session_state=virtual["session"])
 
-    def patch(self, session_id: str | None, **data) -> UIState:
+    async def patch(self, session_id: str | None, **data) -> UIState:
         """Apply operations to global and session-specific UI state."""
 
         if "session" in data and not session_id:
             raise ValueError("session_id required when patching session")
 
-        with FileLock(self._state_path.with_suffix(".lock")):
+        loop = asyncio.get_running_loop()
+
+        return await loop.run_in_executor(self._executor, self._patch_sync, session_id, data)
+
+    def _patch_sync(self, session_id: str | None, data: dict) -> UIState:
+        """Synchronous body of patch - runs on the daemon executor."""
+
+        with locked(self._state_path.with_suffix(".lock")):
             physical, virtual = self._load(session_id)
 
             if "global" in data:
@@ -140,7 +150,6 @@ class UIStateService:
 
                 parent[key].append(value)
             elif op == "remove":
-                # Remove first occurrence from list
                 if key in parent and isinstance(parent[key], list):
                     try:
                         parent[key].remove(value)

@@ -1,5 +1,7 @@
 /** Geometry helpers for the inline-threads overlay: highlight hit-testing, span positioning, collision. */
 
+const EDGE_PAD = 4
+
 /**
  * Whether a viewport point falls inside any client rect of the range (highlight hover/click hit-test).
  * @param {Range} range
@@ -45,6 +47,19 @@ export function isRangeVisible(range) {
   const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node
 
   return !!el && getComputedStyle(el).visibility !== 'hidden'
+}
+
+/**
+ * Clamp a box's left position within [bounds.left, bounds.right], padded by EDGE_PAD. A box wider
+ * than the bounds pins to the left edge (its anchor) rather than going negative.
+ * @param {{left: number, width: number}} box
+ * @param {{left: number, right: number}} bounds
+ * @returns {number} The clamped left position.
+ */
+export function clampHorizontal(box, bounds) {
+  const maxLeft = Math.max(bounds.left + EDGE_PAD, bounds.right - box.width - EDGE_PAD)
+
+  return Math.min(Math.max(bounds.left + EDGE_PAD, box.left), maxLeft)
 }
 
 /**

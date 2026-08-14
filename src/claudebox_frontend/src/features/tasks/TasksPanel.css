@@ -7,8 +7,7 @@
   background: var(--bg-primary);
 }
 
-/* Empty state mirrors .todos-panel.todos-empty for visual parity across panels.
-   Loading state shares the same shape — only the copy and lifecycle differ. */
+/* Empty and loading states mirror .todos-panel.todos-empty for visual parity; only copy and lifecycle differ. */
 .tasks-panel.tasks-empty,
 .tasks-panel.tasks-loading {
   justify-content: center;

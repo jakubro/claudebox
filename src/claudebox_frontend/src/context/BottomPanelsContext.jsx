@@ -14,7 +14,7 @@ import { useSessionId } from './SessionDataContext'
 const BottomPanelsContext = createContext(null)
 
 /**
- * Bottom-panel slot state per session - open set + shared strip height; hydrated/persisted via /ui-state.
+ * Hydrated and persisted via the /ui-state endpoint.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
@@ -27,20 +27,19 @@ export function BottomPanelsProvider({ children }) {
 
   const hydratedSessionRef = useRef(null)
   const saveTimeoutRef = useRef(null)
-  // Distinguishes user-initiated state changes (which must persist) from
-  // hydration-initiated state changes (which must not echo back and race
-  // the dockview layout PATCH).
+  // Distinguishes user changes (must persist) from hydration changes (must not echo back and
+  // race the dockview layout PATCH).
   const userInteractedRef = useRef(false)
 
-  // Reset the user-interaction flag whenever the active session changes -
-  // the new session needs its own interactions to trigger persistence.
+  // Resets per session so only that session's own interactions trigger persistence, not
+  // hydration echoes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is the change trigger; body only writes a ref
   useEffect(() => {
     userInteractedRef.current = false
   }, [sessionId])
 
-  // Hydrate from server once per sessionId. Welcome state (sessionId === null)
-  // skips hydration; the strip stays at defaults until a session attaches.
+  // Hydrates once per sessionId; welcome state (sessionId === null) skips it, so the strip stays
+  // at defaults.
   useEffect(() => {
     if (!sessionId || hydratedSessionRef.current === sessionId) {
       return
@@ -95,25 +94,23 @@ export function BottomPanelsProvider({ children }) {
     }
   }, [sessionId, openSet, height])
 
-  const registerBottomPanel = useCallback((panelId, side) => {
+  // Declarative on purpose: one call states everything a side owns, so a same-ids re-run
+  // produces no state change. Per-id register/unregister can't guarantee that - a
+  // remove-then-readd is a new Map identity despite unchanged content, which re-renders every
+  // consumer; if a consumer also renders the strip, that closes a loop and React aborts the tree.
+  const setBottomPanelIds = useCallback((side, panelIds) => {
     setPanelSideMap(prev => {
-      if (prev.get(panelId) === side) {
-        return prev
+      const next = new Map()
+      for (const [id, existingSide] of prev) {
+        if (existingSide !== side) {
+          next.set(id, existingSide)
+        }
       }
-      const next = new Map(prev)
-      next.set(panelId, side)
-      return next
-    })
-  }, [])
+      for (const id of panelIds) {
+        next.set(id, side)
+      }
 
-  const unregisterBottomPanel = useCallback(panelId => {
-    setPanelSideMap(prev => {
-      if (!prev.has(panelId)) {
-        return prev
-      }
-      const next = new Map(prev)
-      next.delete(panelId)
-      return next
+      return sameSideMap(prev, next) ? prev : next
     })
   }, [])
 
@@ -154,8 +151,7 @@ export function BottomPanelsProvider({ children }) {
       openSet,
       height,
       panelSideMap,
-      registerBottomPanel,
-      unregisterBottomPanel,
+      setBottomPanelIds,
       isBottomPanelId,
       togglePanel,
       closePanel,
@@ -165,8 +161,7 @@ export function BottomPanelsProvider({ children }) {
       openSet,
       height,
       panelSideMap,
-      registerBottomPanel,
-      unregisterBottomPanel,
+      setBottomPanelIds,
       isBottomPanelId,
       togglePanel,
       closePanel,
@@ -184,6 +179,20 @@ export function useBottomPanels() {
     throw new Error('useBottomPanels must be used within BottomPanelsProvider')
   }
   return context
+}
+
+/** Test whether two panel-side maps hold the same ids on the same sides. */
+function sameSideMap(a, b) {
+  if (a.size !== b.size) {
+    return false
+  }
+  for (const [id, side] of a) {
+    if (b.get(id) !== side) {
+      return false
+    }
+  }
+
+  return true
 }
 
 /** Clamp a height value to [LOGS_STRIP_MIN_HEIGHT, LOGS_STRIP_MAX_HEIGHT_RATIO * viewport]. */

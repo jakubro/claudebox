@@ -13,11 +13,7 @@ if TYPE_CHECKING:
 class Session:
     """Single session context with resolved directory and SDK paths.
 
-    Attributes:
-        workspace: The parent Workspace instance.
-        id: Unique identifier.
-        path: Session directory path under .claudebox/sessions/.
-        start_time: When the session was created.
+    ``path`` is the session directory under .claudebox/sessions/.
     """
 
     def __init__(
@@ -43,9 +39,6 @@ class Session:
         """Temporary directory for session-specific files: {session_path}/tmp/."""
 
         return self.path / "tmp"
-
-    # SDK Paths
-    # ----------------------------------------------------------------------------------------------
 
     @property
     def sdk_session_dir(self) -> Path:

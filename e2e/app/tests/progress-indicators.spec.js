@@ -17,14 +17,11 @@ test.describe('Progress Indicators', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for turn to appear
       await expect(page.locator('.turn-container').first()).toBeVisible()
 
-      // Should show "Working" indicator
       await expect(page.locator('.turn-progress-working').first()).toBeVisible()
       await expect(page.getByText('Working').first()).toBeVisible()
 
-      // Should have spinner
       await expect(page.locator('.progress-spinner').first()).toBeVisible()
     })
 
@@ -34,17 +31,14 @@ test.describe('Progress Indicators', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for spinner to appear
       const spinner = page.locator('.progress-spinner').first()
       await expect(spinner).toBeVisible()
 
-      // Verify it's animating (has animation CSS property)
       const animation = await spinner.evaluate(el => {
         const style = getComputedStyle(el)
         return style.animation || style.animationName
       })
 
-      // Should have some animation
       expect(animation).not.toBe('none')
     })
   })
@@ -56,7 +50,7 @@ test.describe('Progress Indicators', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Send a turn that's "working" (no result event)
+      // No result event, so the turn stays in the "working" state.
       await controller.sendEvents([
         {
           type: 'user',
@@ -76,15 +70,12 @@ test.describe('Progress Indicators', () => {
         },
       ])
 
-      // Wait for turn to appear
       await expect(page.locator('.turn-container').first()).toBeVisible()
 
       // Focus textarea so Ctrl+. is caught by ChatInput's onKeyDown handler
       await page.locator('[data-testid="chat-input"]').click()
-      // Trigger interrupt (Ctrl+.)
       await page.keyboard.press('Control+.')
 
-      // Should show "Stopping" indicator
       await expect(page.getByText(/Stopping/i).first()).toBeVisible()
     })
 
@@ -104,7 +95,6 @@ test.describe('Progress Indicators', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Start a turn
       await controller.sendEvents([
         {
           type: 'user',
@@ -122,15 +112,12 @@ test.describe('Progress Indicators', () => {
         },
       ])
 
-      // Wait for Working indicator
       await expect(page.locator('.turn-progress-working').first()).toBeVisible()
 
       // Focus textarea so Ctrl+. is caught by ChatInput's onKeyDown handler
       await page.locator('[data-testid="chat-input"]').click()
-      // Press Ctrl+. to interrupt
       await page.keyboard.press('Control+.')
 
-      // Poll until interrupt API is called
       await expect.poll(() => interruptCalled).toBe(true)
     })
 
@@ -141,7 +128,6 @@ test.describe('Progress Indicators', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Send a turn that's "working"
       await controller.sendEvents([
         {
           type: 'user',
@@ -159,7 +145,6 @@ test.describe('Progress Indicators', () => {
         },
       ])
 
-      // Wait for turn to appear
       await expect(page.locator('.turn-container').first()).toBeVisible()
 
       // Focus textarea so Ctrl+. is caught by ChatInput's onKeyDown handler, then interrupt

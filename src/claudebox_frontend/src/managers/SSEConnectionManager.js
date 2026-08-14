@@ -4,12 +4,8 @@ import { RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY } from '../config/timing'
 import { SSE_URL } from '../config/urls'
 
 /**
- * Connection states:
- *   'disconnected'  - initial / after explicit disconnect
- *   'connecting'    - EventSource created, waiting for open
- *   'connected'     - EventSource open, receiving events
- *   'reconnecting'  - connection lost, reconnect scheduled with backoff
- *   'error'         - permanent error (unused currently, reserved)
+ * Status values: 'disconnected', 'connecting', 'connected', 'reconnecting' (backoff scheduled),
+ * 'error' (set only when reconnect attempts are exhausted).
  */
 const VALID_STATUSES = new Set(['disconnected', 'connecting', 'connected', 'reconnecting', 'error'])
 

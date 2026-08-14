@@ -4,11 +4,6 @@ import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { deduplicateWithCounts } from '../../../../../utils/collections'
 
-/**
- * Render deduplicated system reminders in a collapsible section.
- * @param {Object} props
- * @param {string[]} [props.reminders] - Array of reminder strings to display.
- */
 export default function SystemReminders({ reminders }) {
   const [expanded, setExpanded] = useState(false)
 

@@ -1,10 +1,9 @@
-/** Pure path-highlight resolver - extracted from PathHighlighter.jsx, no React APIs. */
+/** Pure path-highlight resolver, no React APIs. */
 
 import { extractPathCandidates, resolvePathCandidate } from './pathCandidates'
 
 /**
  * Resolve every path candidate in a string, dropping unresolvable ones.
- *
  * @param {string} text
  * @param {string | null} sessionDir
  * @param {Object<string, string>} resolvedPaths - Candidate -> absolute host path.

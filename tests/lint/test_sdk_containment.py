@@ -1,9 +1,5 @@
-"""SDK containment - SdkContainmentAudit (python-guidelines-audit.py) prefix enforcement.
-
-The audit script has a hyphenated filename (not importable by name), so it is loaded
-via importlib from its path. Banned module names are passed as strings / written into
-tmp files - this test module imports no banned SDK package.
-"""
+"""SdkContainmentAudit (python-guidelines-audit.py) enforces SDK import prefix bans outside the adapter allowlists.
+Hyphenated filename requires importlib loading; this module imports none."""
 
 import importlib.util
 from pathlib import Path

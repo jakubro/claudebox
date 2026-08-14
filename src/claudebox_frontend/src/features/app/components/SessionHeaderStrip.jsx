@@ -18,14 +18,12 @@ import BoardHeaderInfo from './BoardHeaderInfo'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 /**
- * Render the session header strip - status dot, session name + Stop button on the left;
- * NewSessionSplitButton + WorkspaceSwitcher on the right. LEFT slot is empty in welcome
- * state. Reads most things from context.
+ * Session header strip - status dot, session name + Stop button on the left; NewSessionSplitButton
+ * + WorkspaceSwitcher on the right. LEFT slot is empty in welcome state; reads most state from context.
  *
  * @param {object} [props]
- * @param {object} [props.panelApi] - Dockview panel API plumbed from MainPanel; used by
- *   the strip's double-click handler to call maximizeToggle on the panel's group. Reading
- *   `panelApi?.group?.api` at call-time keeps drag/drop re-host robust.
+ * @param {object} [props.panelApi] - Dockview panel API from MainPanel; its double-click handler calls
+ *   maximizeToggle on the panel's group. Read at call-time (`panelApi?.group?.api`) for drag/drop re-host.
  */
 export default function SessionHeaderStrip({ panelApi }) {
   const { sessionId, sessionName } = useSessionData()
@@ -44,9 +42,8 @@ export default function SessionHeaderStrip({ panelApi }) {
   // Active session = whatever the URL says, falling back to the SessionDataContext value.
   const effectiveSessionId = activeSessionId ?? sessionId
   const isWelcome = !(effectiveSessionId || isCreating)
-  // Board view = URL targets a board AND the workspace context has caught up
-  // (or no workspace mismatch). Mirrors MainPanel's guard so the LEFT slot
-  // doesn't flash a stale pill while the workspace switches.
+  // Board view = URL targets a board and the workspace context has caught up; mirrors MainPanel's guard
+  // so the LEFT slot doesn't flash a stale pill while workspaces switch.
   const isBoardView = activeBoardId && (!activeWorkspaceId || activeWorkspaceId === workspaceId)
 
   // Container state: prefer eager container map, fall back to the sessions-list copy.
@@ -54,11 +51,10 @@ export default function SessionHeaderStrip({ panelApi }) {
   const effectiveContainerId =
     containerMap[effectiveSessionId] ?? sessionData?.container_id ?? containerId ?? null
   const hasContainer = effectiveContainerId != null
-  // Route the dot through the shared derivation (containerMap + sessions only,
-  // like the panel/bookmark dots) so the surfaces can't diverge. The
-  // EventsContext containerId is deliberately NOT a status source: it lingers
-  // after a panel-initiated stop and kept this dot "running" while the others
-  // cleared. The stop button still uses effectiveContainerId (hasContainer).
+  // Route the dot through the shared derivation (containerMap + sessions, like the panel/bookmark dots)
+  // so surfaces can't diverge. EventsContext containerId is excluded - it lingers after a panel-initiated
+  // stop, which would show this dot as running after others clear; the stop button still uses
+  // effectiveContainerId (hasContainer).
   const status = effectiveSessionId ? deriveSessionStatus(effectiveSessionId, sessions) : 'none'
   const isStopping = status === 'stopping'
   const statusClass = `container-status-${status}`
@@ -68,13 +64,10 @@ export default function SessionHeaderStrip({ panelApi }) {
       return
     }
     addStoppingSession(effectiveSessionId)
-    // Keep the containerMap mapping until the daemon's terminal `stopped` event
-    // clears it (ContainerStatusEffect) - dropping it here wedges "stopping".
-    // Synchronously null EventsContext.containerId, clear activeSessionId,
-    // and clear stuck creating overlay so the `isWelcome` derivation flips
-    // in one React batch. closeSSE + clearActiveSession run before the
-    // fire-and-forget deleteContainer so the UI transitions independently
-    // of the network round-trip.
+    // Keep the containerMap mapping until ContainerStatusEffect's daemon "stopped" event clears it -
+    // dropping it here wedges "stopping". closeSSE/clearActiveSession/clearCreating run synchronously
+    // before the fire-and-forget deleteContainer, so the UI transitions independently of the network
+    // round-trip.
     closeSSE?.()
     clearActiveSession?.()
     if (isCreating) {
@@ -121,10 +114,9 @@ export default function SessionHeaderStrip({ panelApi }) {
   const nameTooltip = formatSessionDirTooltip(sessionDir)
   const nameLabel = sessionName || effectiveSessionId?.slice(0, 8) || ''
 
-  // Double-click on the strip's non-interactive area toggles the main panel's
-  // maximize state (mirrors dockview tab dblclick behavior). The closest('button,
-  // a, input, [role="button"]') guard skips clicks on Stop / +/chevron / session
-  // name / workspace switcher; the decorative status dot still triggers maximize.
+  // Double-click on the strip's non-interactive area toggles the main panel's maximize state (mirrors
+  // dockview tab dblclick behavior). The closest('button, a, input, [role="button"]') guard skips
+  // clicks on Stop / +/chevron / session name / workspace switcher; the status dot still triggers it.
   const handleDoubleClick = useCallback(
     e => {
       if (e.target.closest('button, a, input, [role="button"]')) {

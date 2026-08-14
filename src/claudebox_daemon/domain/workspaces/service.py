@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from claudebox import Broadcaster, Config, get_logger, resolve_runtime_class, serialization
 from .models import RegisteredWorkspace
+from ..executors import DaemonExecutors
 
 
 if TYPE_CHECKING:
@@ -21,6 +22,7 @@ class WorkspaceService:
         workspace: RegisteredWorkspace,
         events: Broadcaster,
         proxy: "ContainerProxyClient",
+        executors: DaemonExecutors,
     ):
         """Load workspace config and initialize sub-services when the workspace dir exists."""
 
@@ -44,13 +46,15 @@ class WorkspaceService:
 
             return
 
-        self._ui_state = UIStateService(workspace)
+        self._ui_state = UIStateService(workspace, executor=executors.state)
 
         self._container_service = ContainerService(
             workspace=workspace,
             events=events,
             config=self._config,
             proxy=proxy,
+            podman_executor=executors.podman,
+            state_executor=executors.state,
         )
 
         self._session_service = SessionService(
@@ -58,6 +62,7 @@ class WorkspaceService:
             containers=self._container_service,
             events=events,
             agent=self._config.agent,
+            executor=executors.listing,
         )
 
         self._board_service = BoardService(
@@ -65,6 +70,7 @@ class WorkspaceService:
             sessions=self._session_service,
             containers=self._container_service,
             events=events,
+            executor=executors.listing,
         )
 
     # Sub-service access
@@ -101,7 +107,7 @@ class WorkspaceService:
     def _require_available(self, accessor: str) -> None:
         if not self.workspace.available:
             raise RuntimeError(
-                f"workspace {self.workspace.id!r} is unavailable; .{accessor} cannot be used"
+                f"workspace {self.workspace.id!r} is unavailable; .{accessor} cannot be used",
             )
 
     # Service

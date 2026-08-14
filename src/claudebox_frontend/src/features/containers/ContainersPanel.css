@@ -7,10 +7,8 @@
   background: var(--bg-primary);
 }
 
-/* Shared grid context — column tracks declared here so every .containers-row
-   (subgrid) lines up against the same edges. grid-auto-rows: min-content mirrors
-   .board-board in BoardTab.css; required for scrollable grid containers so rows
-   size to content rather than stretching to fill the visible area. */
+/* Shared grid context: column tracks declared here so every .containers-row (subgrid) lines up.
+   grid-auto-rows: min-content mirrors .board-board in BoardTab.css - needed for scrollable grids. */
 .containers-list {
   flex: 1;
   overflow-y: auto;
@@ -36,10 +34,8 @@
   color: var(--error, #ef4444);
 }
 
-/* Row — subgrid participant in .containers-list so columns align across all
-   rows regardless of per-cell content width. Baseline alignment so text columns
-   share a baseline with the action buttons. Card pattern shared with
-   .skills-item and .task-entry. */
+/* Row - subgrid participant in .containers-list so columns align regardless of cell content width.
+   Baseline alignment matches the action buttons; card pattern shared with .skills-item and .task-entry. */
 .containers-row {
   display: grid;
   grid-template-columns: subgrid;
@@ -61,8 +57,7 @@
   background: var(--bg-tertiary);
 }
 
-/* Current-container row — accent left border + tertiary bg, mirroring
-   .sessions-item-current. */
+/* Current-container row: accent left border + tertiary bg, mirroring .sessions-item-current. */
 .containers-row-current {
   border-left-color: var(--accent);
   background: var(--bg-tertiary);
@@ -76,23 +71,18 @@
 
 .containers-id {
   color: var(--text-primary);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
 .containers-session-id {
   color: var(--text-secondary);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
-/* Click-to-copy id cells (container id + session id) — relative positioning so
-   the "Copied!" overlay can absolute-position into the same slot, mirroring
-   `.sessions-id-clickable` / `.sessions-id-copied` in SessionItem.css. */
+/* Click-to-copy id cells: relative positioning lets the "Copied!" overlay absolute-position into
+   the same slot, mirroring `.sessions-id-clickable` / `.sessions-id-copied` in SessionItem.css. */
 .containers-id-clickable,
 .containers-session-id-clickable {
   position: relative;
@@ -137,25 +127,21 @@
 
 .containers-age {
   color: var(--text-muted);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  font-family: var(--font-mono);
 }
 
 .containers-actions {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  /* Nudge the action cluster 1px down so the icon buttons sit on the row's
-     text baseline. Paired with the matching translateY on .containers-action-btn
-     below — composite nudge keeps the cluster's wrapping (e.g. ResumeControl)
-     aligned with the per-button glyphs. */
+  /* Nudge the action cluster 1px down so icon buttons sit on the row's text baseline.
+     Paired with the matching translateY below on .containers-action-btn - keeps wrapped children
+     (e.g. ResumeControl) aligned with the per-button glyphs. */
   transform: translateY(1px);
 }
 
-/* Scope ResumeControl to the panel: its base rule (in SessionItem.css) uses
-   align-items: center, but in the containers grid we want baseline alignment
-   so the Play icon vertically aligns with the row's text baseline. */
+/* Scope ResumeControl to the panel: base rule (SessionItem.css) uses align-items: center, but here
+   we want baseline alignment so the Play icon aligns with the row's text baseline. */
 .containers-actions .sessions-resume-split {
   align-items: baseline;
 }
@@ -168,8 +154,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  /* Nudge the button itself 1px down to align with the row's text baseline —
-     paired with the matching translateY on .containers-actions. */
+  /* Nudge the button 1px down to match the row's text baseline; paired with .containers-actions' translateY. */
   transform: translateY(1px);
 }
 

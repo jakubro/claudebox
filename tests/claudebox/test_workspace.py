@@ -110,7 +110,6 @@ class TestListSessions:
 
     def test_missing_sessions_dir(self, tmp_workspace):
         ws = Workspace(start_dir=tmp_workspace)
-        # Point sessions_root to a path that doesn't exist
         ws.sessions_root = tmp_workspace / ".claudebox" / "nonexistent"
 
         sessions = list(ws.list_sessions())

@@ -5,7 +5,6 @@ import { QueueStatus } from '../../../config/schema'
 import UserMessageContent from './turn/components/user-message-content'
 
 /**
- * Render a queued or paused message bubble with action buttons.
  * @param {object} props
  * @param {object} props.item - Queue item { id, content, attachments, status }
  * @param {function} props.onEdit - Called with item id to edit.

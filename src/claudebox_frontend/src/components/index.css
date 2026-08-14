@@ -1,8 +1,9 @@
 @import "./ConfirmStopModal.css";
 @import "./CopyButton.css";
 @import "./dropdown.css";
-@import "./Markdown.css";
-@import "./MermaidDiagram.css";
+@import "./ErrorBoundary.css";
+@import "./Markdown/Markdown.css";
+@import "./Markdown/components/MermaidDiagram.css";
 @import "./NewSessionSplitButton.css";
 @import "./PanelControlBar/PanelControlBar.css";
 @import "./PanelListItem.css";

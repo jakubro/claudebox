@@ -13,10 +13,7 @@ export const CATEGORY_COLORS = Object.freeze({
   mcp: '#22c55e',
 })
 
-/**
- * Build categorized command view from server-provided categories.
- * Each entry is `{name, usage?, description?, ...}`.
- */
+/** Each entry is `{name, usage?, description?, ...}`. */
 export function categorizeCommands(commands) {
   const custom = commands?.custom || []
   const mcp = commands?.mcp || []

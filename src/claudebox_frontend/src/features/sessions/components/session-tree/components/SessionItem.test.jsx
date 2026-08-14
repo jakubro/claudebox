@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import SessionItem from './SessionItem'
 
-// Mock ContainerMapContext
 vi.mock('../../../../../context/ContainerMapContext', () => ({
   useContainerMap: () => ({
     stoppingSessions: new Set(),
@@ -14,7 +13,6 @@ vi.mock('../../../../../context/ContainerMapContext', () => ({
   }),
 }))
 
-// Mock formatters
 vi.mock('../../../../../utils/formatters', () => ({
   formatRelativeTime: ts => (ts ? 'just now' : ''),
   formatAbsoluteTime: ts => (ts ? 'Apr 25, 2026, 7:40 PM' : ''),
@@ -31,7 +29,6 @@ vi.mock('../../../../../utils/formatters', () => ({
   },
 }))
 
-// Mock useDropdown
 vi.mock('../../../../../hooks/useDropdown', () => ({
   default: () => ({
     isOpen: false,
@@ -42,7 +39,6 @@ vi.mock('../../../../../hooks/useDropdown', () => ({
   }),
 }))
 
-// Mock lucide-react
 vi.mock('lucide-react', () => ({
   Check: () => <span data-testid="icon-check">✓</span>,
   Loader2: () => <span data-testid="icon-loader">⟳</span>,
@@ -59,7 +55,7 @@ describe('SessionItem', () => {
     session_id: 'abc12345-6789-0def-ghij-klmnopqrstuv',
     session_dir: '/tmp/sessions/abc12345-6789-0def-ghij-klmnopqrstuv',
     workspace: '/home/user/project',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-5',
     name: 'Test Session',
     started_at: '2024-01-01T10:00:00Z',
     updated_at: '2024-01-01T12:00:00Z',
@@ -295,7 +291,6 @@ describe('SessionItem', () => {
     const input = screen.getByPlaceholderText('Session name...')
     await user.type(input, 'New Name{Escape}')
 
-    // Should exit edit mode without calling onRename
     expect(onRename).not.toHaveBeenCalled()
     expect(screen.queryByPlaceholderText('Session name...')).not.toBeInTheDocument()
   })
@@ -516,17 +511,14 @@ describe('SessionItem', () => {
         />,
       )
 
-      // Enter edit mode
       await user.click(screen.getByTitle('Rename session'))
       const input = screen.getByPlaceholderText('Session name...')
       await user.clear(input)
       await user.type(input, 'Button Save Name')
 
-      // Click Save button
       await user.click(screen.getByTitle('Save'))
 
       expect(onRename).toHaveBeenCalledWith('Button Save Name')
-      // Should exit edit mode
       expect(screen.queryByPlaceholderText('Session name...')).not.toBeInTheDocument()
     })
 
@@ -542,16 +534,13 @@ describe('SessionItem', () => {
         />,
       )
 
-      // Enter edit mode
       await user.click(screen.getByTitle('Rename session'))
       const input = screen.getByPlaceholderText('Session name...')
       await user.type(input, 'Should Not Save')
 
-      // Click Cancel button
       await user.click(screen.getByTitle('Cancel'))
 
       expect(onRename).not.toHaveBeenCalled()
-      // Should exit edit mode
       expect(screen.queryByPlaceholderText('Session name...')).not.toBeInTheDocument()
     })
   })
@@ -627,7 +616,6 @@ describe('SessionItem', () => {
 
       await user.click(screen.getByTitle('Rename session'))
 
-      // Pencil click entered edit mode; outer-card resume did NOT fire.
       expect(screen.getByPlaceholderText('Session name...')).toBeInTheDocument()
       expect(onResume).not.toHaveBeenCalled()
     })

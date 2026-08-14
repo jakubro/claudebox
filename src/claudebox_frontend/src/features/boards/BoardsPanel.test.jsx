@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import BoardsPanel from './BoardsPanel'
 
-// Mock lucide-react
 vi.mock('lucide-react', () => ({
   Check: () => <span data-testid="icon-check">✓</span>,
   Pencil: () => <span data-testid="icon-pencil">✎</span>,
@@ -13,13 +12,11 @@ vi.mock('lucide-react', () => ({
   X: () => <span data-testid="icon-x">✕</span>,
 }))
 
-// Mock SessionRoutingContext
 const mockRouting = { navigateToBoard: vi.fn() }
 vi.mock('../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => mockRouting,
 }))
 
-// Mock WorkspaceContext
 vi.mock('../../context/WorkspaceContext', () => ({
   useWorkspace: () => ({ workspaceId: 'test-ws' }),
 }))
@@ -32,12 +29,10 @@ vi.mock('../../context/EventsContext', () => ({
   }),
 }))
 
-// Mock boards API
 vi.mock('../../api/boards', () => ({
   renameBoard: vi.fn(),
 }))
 
-// Mock useBoardList hook
 const mockBoardList = {
   boards: [],
   loading: false,
@@ -92,18 +87,15 @@ describe('BoardsPanel', () => {
 
     render(<BoardsPanel />)
 
-    // Generic copy hides the raw err.message (e.g. "Workspace ID not set"
-    // invariant) from the user.
+    // Generic copy hides the raw err.message from the user.
     expect(screen.getByText('Failed to load boards')).toBeInTheDocument()
     expect(screen.queryByText('Network failure')).not.toBeInTheDocument()
     expect(screen.getByTestId('panel-boards')).toHaveClass('boards-error')
   })
 
   it('error state for missing workspace surfaces the same generic copy', () => {
-    // Mirrors the daemon-level "Workspace ID not set" invariant - the
-    // BoardsPanel must render the centered + italic error treatment regardless
-    // of the underlying error message. The harness only ships one workspace,
-    // so the missing-workspace state is exercised here at the unit level.
+    // Mirrors the daemon's "Workspace ID not set" invariant; the harness ships one workspace,
+    // so this is exercised at the unit level.
     mockBoardList.error = 'Workspace ID not set'
 
     render(<BoardsPanel />)

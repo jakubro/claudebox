@@ -17,23 +17,21 @@ NAME = "workspaces"
 ORDER = 120
 DESCRIPTION = "Manage registered workspaces (list|register|deregister)"
 EPILOG = """\
-examples:
+Examples:
   claudebox workspaces list                  table of all registered workspaces
   claudebox workspaces register              register cwd as a workspace
   claudebox workspaces register ~/dev/bar    register a specific path
   claudebox workspaces deregister foo        remove from the daemon's registry
 
-register creates the .workspace marker file if absent, then POSTs to the daemon.
-Re-registering an already-registered path is idempotent - surfaced as
-  ``○ already registered: <path> (id: <id>)``
-and exits 0. Basename collisions are disambiguated by the daemon via an
-8-char path-hash suffix on the id.
+Notes:
+  Register creates the `.workspace` marker file if absent, then registers with the
+  daemon. Re-registering an already-registered path is idempotent and exits 0.
+  Basename collisions are disambiguated by an 8-char path-hash suffix on the id.
 
-deregister removes the workspace from the daemon's registry. The .workspace
-marker file on disk is PRESERVED - only the daemon-side registration is
-removed.
+  Deregister removes the workspace from the daemon's registry only - the `.workspace`
+  marker file on disk is preserved.
 
-bare ``claudebox workspaces`` prints this list and exits non-zero.
+  Bare `claudebox workspaces` prints this list and exits non-zero.
 """
 
 
@@ -163,7 +161,6 @@ async def _register(client: httpx.AsyncClient, args: argparse.Namespace) -> int:
 
         return 0
 
-    # Daemon call.
     try:
         response = await client.post(
             f"{daemon_base_url()}/api/workspaces",

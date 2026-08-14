@@ -29,11 +29,9 @@ def managed(
 ) -> Callable:
     """Build an async context manager owning the session singleton.
 
-    Construction does not auto-start the session - the daemon triggers start()
-    via POST /api/sessions/new or POST /api/sessions/{id}/resume. Per-session log
-    routing wires through on_start/on_stop so the file path is known only when the
-    session resolves its own session_dir. `_server_args` (e.g. `port`) are
-    HTTP-server CLI args the lifespan forwards but the session does not accept.
+    Construction does not auto-start; the daemon triggers start() via POST /api/sessions/new or /{id}/resume.
+    Log routing wires through on_start/on_stop, since the path is known only once session_dir resolves.
+    `_server_args` (e.g. `port`) are HTTP-server CLI args the lifespan forwards but the session ignores.
     """
 
     @contextlib.asynccontextmanager

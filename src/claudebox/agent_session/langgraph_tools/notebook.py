@@ -1,6 +1,6 @@
 """Notebook tool - notebook_edit.
 
-Uses nbformat. edit_mode in {replace, insert, delete}. cell_id=None requires
+Uses nbformat. `edit_mode` is one of {replace, insert, delete}; cell_id=None requires
 edit_mode="insert" (append at end).
 """
 
@@ -24,15 +24,14 @@ def make_notebook_tools(ctx: ToolContext) -> list[BaseTool]:
     ) -> str:
         """Edit a Jupyter notebook cell.
 
-        `edit_mode`: "replace" (default - replace cell `cell_id`'s source),
-        "insert" (insert a new code cell after `cell_id`, or append at end if
-        `cell_id` is None), or "delete" (remove cell `cell_id`). Returns a
-        short status string.
+        `edit_mode`: "replace" (default, replaces `cell_id`'s source), "insert" (inserts a new
+        code cell after `cell_id`, or appends at end if `cell_id` is None), or "delete" (removes
+        `cell_id`). Returns a short status string.
         """
 
         if edit_mode not in {"replace", "insert", "delete"}:
             raise ValueError(
-                f"notebook_edit: edit_mode must be 'replace', 'insert', or 'delete'; got {edit_mode!r}"
+                f"notebook_edit: edit_mode must be 'replace', 'insert', or 'delete'; got {edit_mode!r}",
             )
 
         if cell_id is None and edit_mode != "insert":
@@ -56,8 +55,7 @@ def make_notebook_tools(ctx: ToolContext) -> list[BaseTool]:
 
             return f"Inserted code cell at {position} in {resolved}"
 
-        # Earlier guard ensures cell_id is non-None for replace / delete paths;
-        # narrow explicitly so ty's union-tracking is satisfied.
+        # cell_id is non-None here (guarded above); narrow explicitly for ty's union-tracking.
         assert cell_id is not None
         index = _find_cell_index(nb.cells, cell_id)
 

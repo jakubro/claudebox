@@ -50,7 +50,6 @@ describe('lerpColor', () => {
 
   it('returns midpoint at t=0.5', () => {
     const result = lerpColor('#000000', '#ffffff', 0.5)
-    // Each channel: round(0 + 255 * 0.5) = 128
     expect(result).toBe('#808080')
   })
 
@@ -63,7 +62,6 @@ describe('lerpColor', () => {
   })
 
   it('interpolates non-trivial colors', () => {
-    // Red to blue at midpoint should give purple-ish
     const result = lerpColor('#ff0000', '#0000ff', 0.5)
     expect(result).toBe('#800080')
   })
@@ -80,13 +78,11 @@ describe('getStalenessColor', () => {
 
   it('reaches purple waypoint at midpoint of 15s-90s', () => {
     const color = getStalenessColor(52_500) // midpoint of 15s-90s
-    // Should be exactly the warm waypoint (purple)
     expect(color).toBe('#a855f7')
   })
 
   it('transitions through warm colors between blue and amber', () => {
     const early = getStalenessColor(30_000) // 25% through
-    // Should be between blue and purple, not gray
     expect(early).not.toBe('#3b82f6')
     expect(early).not.toBe('#a855f7')
   })
@@ -98,23 +94,19 @@ describe('getStalenessColor', () => {
   it('fades toward gray beyond 90s', () => {
     const at90 = getStalenessColor(90_000)
     const at300 = getStalenessColor(300_000)
-    // Should be different from peak amber
     expect(at300).not.toBe(at90)
   })
 
   it('approaches but never reaches full gray', () => {
     const veryStale = getStalenessColor(10_000_000)
-    // Should be close to gray but not exactly
     expect(veryStale).not.toBe('#4b5563')
     expect(veryStale).not.toBe('#f59e0b')
   })
 
   it('produces monotonic color shift beyond 90s', () => {
-    // Each step should move further from amber toward gray
     const c1 = getStalenessColor(100_000)
     const c2 = getStalenessColor(200_000)
     const c3 = getStalenessColor(500_000)
-    // All should be distinct
     expect(new Set([c1, c2, c3]).size).toBe(3)
   })
 })
@@ -155,7 +147,7 @@ describe('hslToRgb', () => {
 
 describe('deriveFaviconBgColor', () => {
   it('brightens the muted green palette entry to a saturated mid-lightness green', () => {
-    // Formula: HSL L=0.36, S×1.5. Hue preserved.
+    // Formula: HSL L=0.36, S x1.5, hue preserved.
     expect(deriveFaviconBgColor('#2a4a2a')).toBe('#368236')
   })
 

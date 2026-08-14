@@ -75,7 +75,8 @@ class TestProbeContainer:
 
         assert container.failure_count == 0
         ws_svc.container_service.update.assert_awaited_once_with(
-            container, status=ContainerStatus.RUNNING
+            container,
+            status=ContainerStatus.RUNNING,
         )
 
     @pytest.mark.anyio
@@ -103,7 +104,8 @@ class TestProbeContainer:
 
         assert container.failure_count == 3
         ws_svc.container_service.update.assert_awaited_once_with(
-            container, status=ContainerStatus.CRASHED
+            container,
+            status=ContainerStatus.CRASHED,
         )
 
     @pytest.mark.anyio
@@ -151,7 +153,8 @@ class TestProbeContainer:
 
         assert container.failure_count == 0
         ws_svc.container_service.update.assert_awaited_once_with(
-            container, status=ContainerStatus.RUNNING
+            container,
+            status=ContainerStatus.RUNNING,
         )
 
     @pytest.mark.anyio
@@ -164,7 +167,9 @@ class TestProbeContainer:
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "500", request=MagicMock(), response=mock_response
+            "500",
+            request=MagicMock(),
+            response=mock_response,
         )
         monitor._service.proxy.send = AsyncMock(return_value=mock_response)
 

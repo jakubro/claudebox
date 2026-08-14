@@ -1,9 +1,7 @@
 #!/bin/bash
 # Claudebox installation script
 #
-# Usage:
-#   curl -LsSf https://raw.githubusercontent.com/jakubro/claudebox/main/bin/install.sh | bash
-#
+# Usage: curl -LsSf https://raw.githubusercontent.com/jakubro/claudebox/main/bin/install.sh | bash
 set -euo pipefail
 
 LOCK_FILE="$HOME/.claudebox/update.lock"
@@ -239,6 +237,27 @@ install_maintenance_timer() {
   print_success "Installed"
 }
 
+# Installs systemd timer that polls daemon health and restarts it when unresponsive
+install_watchdog_timer() {
+  print_header "🩺 Installing daemon watchdog timer to ~/.config/systemd/user/"
+
+  if ! command -v systemctl &>/dev/null; then
+    print_warn "systemd not available — skipping daemon watchdog"
+    print_hint "Restart manually if the daemon stops responding: claudebox daemon restart"
+    return
+  fi
+
+  mkdir -p ~/.config/systemd/user
+
+  ln -sf ~/.claudebox/lib/etc/systemd/claudebox-watchdog.service ~/.config/systemd/user/
+  ln -sf ~/.claudebox/lib/etc/systemd/claudebox-watchdog.timer ~/.config/systemd/user/
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now claudebox-watchdog.timer
+
+  print_success "Installed"
+}
+
 # --------------------------------------------------------------------------------------------------
 # Containers
 # --------------------------------------------------------------------------------------------------
@@ -261,8 +280,10 @@ build_image() {
 run_prune() {
   print_header "🧹 Pruning resources"
 
-  ~/.local/bin/claudebox prune --verbose
-  local rc=$?
+  # Guarded so `set -e` doesn't abort on a bare failing call before the warning below prints -
+  # that gap is what left the maintenance timer failing daily instead of just warning.
+  local rc=0
+  ~/.local/bin/claudebox prune --verbose || rc=$?
 
   if [[ $rc -ne 0 ]]; then
     print_warn "claudebox prune partial failures (rc=$rc) — continuing"
@@ -495,7 +516,19 @@ main() {
   REMOTE_SOURCE_PATH=https://github.com/jakubro/claudebox
   TMP_DIR=$(mktemp -d --suffix=.claudebox)
   CLAUDEBOX_BACKEND=${CLAUDEBOX_BACKEND:-}
-  COLS=150
+
+  # Render width: terminal, capped at 120, falling back to 80. Reads stdout, not stdin,
+  # so it still sees the terminal under 'curl | bash'; each guard survives strict mode.
+  COLS=$(tput cols 2>/dev/null) || COLS=""
+  if [[ ! $COLS =~ ^[0-9]+$ ]]; then
+    COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}' || true)
+  fi
+  if [[ ! $COLS =~ ^[0-9]+$ ]]; then
+    COLS=80
+  fi
+  if ((COLS > 120)); then
+    COLS=120
+  fi
 
   trap cleanup EXIT
   acquire_update_lock
@@ -542,6 +575,7 @@ BANNER
   build_frontend
   install_daemon_service
   install_maintenance_timer
+  install_watchdog_timer
 
   build_image "$@"
   run_prune
@@ -550,4 +584,7 @@ BANNER
   print_result "✓ Installation complete" "Claudebox running on https://localhost:41820"
 }
 
-main "$@"
+# Run when executed, not when sourced. BASH_SOURCE is empty under 'curl | bash'.
+if [[ -z ${BASH_SOURCE[0]:-} || ${BASH_SOURCE[0]:-} == "$0" ]]; then
+  main "$@"
+fi

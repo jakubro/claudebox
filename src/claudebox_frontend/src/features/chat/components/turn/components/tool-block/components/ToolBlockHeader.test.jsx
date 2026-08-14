@@ -230,4 +230,42 @@ describe('ToolBlockHeader', () => {
       expect(summary).toHaveTextContent('Read 10 lines')
     })
   })
+
+  describe('open-in-editor affordance', () => {
+    it('renders the affordance when editorUrl is provided', () => {
+      render(<ToolBlockHeader {...defaultProps} editorUrl="vscode://file/src/app.js:1" />)
+
+      expect(document.querySelector('.tool-open-in-editor-btn')).toBeInTheDocument()
+    })
+
+    it('does not render the affordance when editorUrl is absent', () => {
+      render(<ToolBlockHeader {...defaultProps} />)
+
+      expect(document.querySelector('.tool-open-in-editor-btn')).not.toBeInTheDocument()
+    })
+
+    it('opens the resolved URL and does not toggle the block on click', () => {
+      const onToggle = vi.fn()
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => {})
+
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          onToggle={onToggle}
+          editorUrl="vscode://file/src/app.js:1"
+        />,
+      )
+
+      fireEvent.click(document.querySelector('.tool-open-in-editor-btn'))
+
+      expect(openSpy).toHaveBeenCalledWith(
+        'vscode://file/src/app.js:1',
+        '_blank',
+        'noopener,noreferrer',
+      )
+      expect(onToggle).not.toHaveBeenCalled()
+
+      openSpy.mockRestore()
+    })
+  })
 })

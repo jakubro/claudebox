@@ -53,9 +53,7 @@ async function selectAssistantText(page, substring) {
   }, substring)
 }
 
-/** Quote a substring: select assistant text, then click the quote affordance.
- * Retries the select+click as a unit: a concurrently-settling layout can transiently clear the
- * affordance between selection and click, so re-select if it vanished. */
+/** Quote a substring: select assistant text, then click the quote affordance. Retries as a unit since a concurrently-settling layout can transiently clear the affordance. */
 async function quote(page, substring) {
   const affordance = page.locator('[data-testid="quote-affordance"]')
   await expect(async () => {
@@ -129,7 +127,6 @@ test.describe('Inline Replies (floating composer)', () => {
     await expect(page.locator('.chat-messages [data-testid="inline-thread"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="inline-replies-bar"]')).toHaveCount(0)
 
-    // The quoted span is highlighted.
     await expect.poll(() => highlightRangeCount(page)).toBe(1)
   })
 
@@ -151,7 +148,6 @@ test.describe('Inline Replies (floating composer)', () => {
 
     await page.locator('[data-testid="inline-thread-delete"]').first().click()
     await expect(page.locator('.inline-float')).toHaveCount(1)
-    // Deleting an unsent reply clears its highlight.
     await expect.poll(() => highlightRangeCount(page)).toBe(1)
   })
 
@@ -171,8 +167,7 @@ test.describe('Inline Replies (floating composer)', () => {
     await page.locator('[data-testid="inline-thread-input"]').first().fill('how big is it?')
     await page.locator('[data-testid="inline-thread-input"]').first().press('Enter')
 
-    // The POST carries the anchored pair (anchors ride to the event; the backend strips them from the
-    // Claude wire), never the placeholder text.
+    // POST carries the anchored pair; backend strips anchors from the Claude wire, never the placeholder.
     await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
     const reply = sendCalls[0].inline_replies[0]
     expect(reply).toMatchObject({
@@ -190,14 +185,71 @@ test.describe('Inline Replies (floating composer)', () => {
     await placeholderBtn.click()
     await expect(page.locator('.inline-reply-response')).toContainText('how big is it?')
 
-    // The editing float closed on send; the sent reply's highlight persists and its reply is shown
-    // read-only when its span is clicked.
+    // The editing float closed on send; the sent reply's highlight persists and shows read-only when clicked.
     await expect(page.locator('.inline-float')).toHaveCount(0)
     await expect.poll(() => highlightRangeCount(page)).toBe(1)
     await clickQuotedSpan(page, 'context window')
     const sentThread = page.locator('.inline-float [data-testid="inline-thread"].sent')
     await expect(sentThread).toContainText('how big is it?')
     await expect(page.locator('.inline-float [data-testid="inline-thread-input"]')).toHaveCount(0)
+  })
+
+  // SPEC: chat:inline-replies-editing-keys
+  test('the reply box supports the same text-editing keys as the message box', async ({ page }) => {
+    await seedAssistantTurn(page)
+    await quote(page, 'context window')
+
+    const input = page.locator('[data-testid="inline-thread-input"]').first()
+    await input.fill('hello world')
+    await input.evaluate(el => el.setSelectionRange(6, 11)) // "world"
+    await input.press('Control+,')
+    await expect(input).toHaveValue('hello <this>world</this>')
+
+    await input.fill('- item one')
+    await input.evaluate(el => el.setSelectionRange(10, 10))
+    await input.press('Shift+Enter')
+    await expect(input).toHaveValue('- item one\n- ')
+  })
+
+  // SPEC: chat:inline-replies-editing-excluded
+  test('history, stash, and slash autocomplete stay with the message box, not the reply', async ({
+    page,
+  }) => {
+    await seedAssistantTurn(page)
+    await quote(page, 'context window')
+
+    const input = page.locator('[data-testid="inline-thread-input"]').first()
+    await input.fill('/implement')
+    await expect(input).toHaveValue('/implement')
+    await expect(page.locator('.command-autocomplete')).toHaveCount(0)
+
+    // Arrow keys move the caret rather than loading composer history.
+    await input.press('ArrowUp')
+    await expect(input).toHaveValue('/implement')
+  })
+
+  // SPEC: chat:inline-replies-collapse-expands-on-send
+  test('a collapsed block in a reply is delivered in full, never as a placeholder', async ({
+    page,
+  }) => {
+    const sendCalls = []
+    await page.route('**/api/send', async route => {
+      sendCalls.push(await route.request().postDataJSON())
+      await route.fulfill({ status: 200, json: { success: true } })
+    })
+    await seedAssistantTurn(page)
+    await quote(page, 'context window')
+
+    const input = page.locator('[data-testid="inline-thread-input"]').first()
+    await input.fill('<notes>full detail here</notes>')
+    await input.evaluate(el => el.setSelectionRange(3, 3))
+    await input.press("Control+'")
+    await expect(input).toHaveValue(/<notes\.\.\.\d+>/)
+
+    await input.press('Enter')
+
+    await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
+    expect(sendCalls[0].inline_replies[0].response).toBe('<notes>full detail here</notes>')
   })
 
   // SPEC: chat:inline-replies-float
@@ -345,6 +397,58 @@ test.describe('Inline Replies (floating composer)', () => {
     await expect(page.locator('.inline-float')).toHaveCount(0)
   })
 
+  // SPEC: chat:inline-replies-float
+  // SPEC: chat:inline-replies-highlight
+  test('clicking a highlight toggles its reply box shut, and hover does not reopen it under the pointer', async ({
+    page,
+  }) => {
+    await seedAssistantTurn(page)
+
+    // Quote and type, so the empty-discard rule cannot be what closes the box.
+    await quote(page, 'context window')
+    await page.locator('[data-testid="inline-thread-input"]').first().fill('kept draft')
+    await expect(page.locator('.inline-float')).toHaveCount(1)
+
+    // The freshly-quoted float is already pinned, so the first click is the closing one.
+    await clickQuotedSpan(page, 'context window')
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+
+    // The pointer is still resting on the highlight: it must stay shut, not pop back.
+    await page.waitForTimeout(1000)
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+
+    // The quote survives a close that had text - only the box went away.
+    await expect.poll(() => highlightRangeCount(page)).toBe(1)
+
+    // Leaving and returning re-arms hover.
+    const point = await spanCenter(page, 'context window')
+    await page.mouse.move(point.x, point.y - 200)
+    await page.mouse.move(point.x, point.y)
+    await expect(page.locator('.inline-float')).toBeVisible()
+    await expect(page.locator('[data-testid="inline-thread-input"]').first()).toHaveValue(
+      'kept draft',
+    )
+  })
+
+  // SPEC: chat:inline-replies-float
+  test('clicking a highlight re-opens a closed box, and clicking again closes it', async ({
+    page,
+  }) => {
+    await seedAssistantTurn(page)
+
+    await quote(page, 'context window')
+    await page.locator('[data-testid="inline-thread-input"]').first().fill('draft')
+    await page.locator('[data-testid="inline-thread-close"]').click()
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+
+    await clickQuotedSpan(page, 'context window')
+    await expect(page.locator('.inline-float')).toHaveCount(1)
+
+    await clickQuotedSpan(page, 'context window')
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+    await expect.poll(() => highlightRangeCount(page)).toBe(1)
+  })
+
   test('the right-hand comments bar and its control-bar toggle no longer exist', async ({
     page,
   }) => {
@@ -352,5 +456,49 @@ test.describe('Inline Replies (floating composer)', () => {
 
     await expect(page.locator('[data-testid="inline-replies-bar"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="inline-replies-toggle"]')).toHaveCount(0)
+  })
+
+  // SPEC: chat:inline-replies-float-clamped
+  // SPEC: chat:inline-replies-float-uniform-width
+  test('a float quoted near the transcript edge stays fully inside it, at the same width as a mid-line float', async ({
+    page,
+  }) => {
+    const longLine =
+      'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen ' +
+      'sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour'
+    const controller = await createSSEController(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await controller.sendEvents([
+      {
+        type: 'user',
+        subtype: 'text',
+        content: 'Hello',
+        is_human: true,
+        timestamp: Date.now(),
+        turn_id: 'turn_001',
+      },
+      { type: 'assistant', subtype: 'text', content: longLine, timestamp: Date.now() + 100 },
+      { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: Date.now() + 200 },
+    ])
+    await expect(page.locator('[data-testid="message-assistant"]').first()).toContainText('one')
+    await disableAutoCollapse(page)
+
+    // Mid-line control float, for the width comparison.
+    await quote(page, 'five six seven')
+    const midFloat = page.locator('.inline-float')
+    const midBox = await midFloat.boundingBox()
+    await page.locator('[data-testid="inline-thread-close"]').click()
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+
+    // Quote through the last word so the selection ends at the rightmost rendered text, wherever the line wraps.
+    await quote(page, 'twentythree twentyfour')
+    const edgeFloat = page.locator('.inline-float')
+    const edgeBox = await edgeFloat.boundingBox()
+    const containerBox = await page.locator('.chat-messages').boundingBox()
+
+    expect(edgeBox.width).toBeCloseTo(midBox.width, 0)
+    expect(edgeBox.x + edgeBox.width).toBeLessThanOrEqual(containerBox.x + containerBox.width + 1)
+    expect(edgeBox.x).toBeGreaterThanOrEqual(containerBox.x - 1)
   })
 })

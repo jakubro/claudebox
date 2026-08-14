@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { COPY_BUTTON_FEEDBACK_MS } from '../config/timing'
 
 /**
- * Render a button that copies text to clipboard with visual confirmation.
  * @param {Object} props
  * @param {string} props.text - Text to copy to clipboard.
  * @param {string} [props.className] - Additional CSS classes.

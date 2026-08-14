@@ -16,15 +16,12 @@ test.describe('MCP Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open MCP panel via keyboard shortcut
     await page.keyboard.press('Alt+8')
 
-    // Panel should be visible
     const panel = page.locator('[data-testid="panel-mcp"]')
     await expect(panel).toBeVisible()
 
-    // the empty state renders as the panel itself with class `mcp-empty`
-    // (parity with Todos), not a descendant <p>. Assert text + class on the panel.
+    // Empty state renders as the panel itself with class `mcp-empty` (parity with Todos), not a descendant <p>.
     await expect(panel).toHaveClass(/mcp-empty/)
     await expect(panel).toContainText('No MCP servers connected')
   })
@@ -35,14 +32,11 @@ test.describe('MCP Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Open MCP panel via keyboard shortcut
     await page.keyboard.press('Alt+8')
 
-    // Panel should be visible
     const panel = page.locator('[data-testid="panel-mcp"]')
     await expect(panel).toBeVisible()
 
-    // Should show server names
     await expect(panel).toContainText('jina')
     await expect(panel).toContainText('chroma')
     await expect(panel).toContainText('octocode')
@@ -52,8 +46,7 @@ test.describe('MCP Panel', () => {
   test('status dots distinguish connected, disconnected, failed, and connecting', async ({
     page,
   }) => {
-    // Four documented status states. Mount one server in each and verify the
-    // dot's class anchors the contract for that state - CSS owns the colors.
+    // Four documented status states; mount one server per state and check the dot class - CSS owns the colors.
     await mockSSE(page, 'events/with-mcp-servers.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -70,9 +63,8 @@ test.describe('MCP Panel', () => {
     const octocode = panel.locator('.mcp-server-item', { hasText: 'octocode' })
     await expect(octocode.locator('.mcp-server-status')).toContainText('disconnected')
 
-    // Render synthetic dots for "failed" and "connecting" buckets so the
-    // CSS contract for those classes is exercised even when no fixture server
-    // is in the corresponding state. (Visual regression covers their colors.)
+    // Render synthetic dots for "failed"/"connecting" so their CSS contract is exercised even without a matching
+    // fixture server (visual regression covers the actual colors).
     const renderedClasses = await page.evaluate(() => {
       const root = document.querySelector('[data-testid="panel-mcp"]')
       const states = ['failed', 'connecting']
@@ -89,8 +81,7 @@ test.describe('MCP Panel', () => {
     })
     expect(renderedClasses.failed.hasClass).toBe(true)
     expect(renderedClasses.connecting.hasClass).toBe(true)
-    // Each must resolve to a real (non-transparent) color, proving CSS owns
-    // the contract for the class name the SPEC anchors.
+    // Each must resolve to a real, non-transparent color - CSS owns the contract the SPEC anchors.
     expect(renderedClasses.failed.bg).toMatch(/^rgb/)
     expect(renderedClasses.connecting.bg).toMatch(/^rgb/)
   })
@@ -102,23 +93,19 @@ test.describe('MCP Panel', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Get all icon buttons in the right icon strip
       const rightStrip = page.locator('.icon-strip-right')
       const icons = rightStrip.locator('.icon-btn')
 
-      // Collect data-testid values in order
       const testIds = await icons.evaluateAll(els => els.map(el => el.getAttribute('data-testid')))
 
       const usageIndex = testIds.indexOf('icon-usage')
       const mcpIndex = testIds.indexOf('icon-mcp')
       const commandsIndex = testIds.indexOf('icon-commands')
 
-      // All three icons should be present
       expect(usageIndex).toBeGreaterThanOrEqual(0)
       expect(mcpIndex).toBeGreaterThanOrEqual(0)
       expect(commandsIndex).toBeGreaterThanOrEqual(0)
 
-      // MCP should be between Usage and Commands
       expect(mcpIndex).toBeGreaterThan(usageIndex)
       expect(mcpIndex).toBeLessThan(commandsIndex)
     })
@@ -129,15 +116,13 @@ test.describe('MCP Panel', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // MCP icon button should be visible in the icon strip
       const mcpBtn = page.locator('[data-testid="icon-mcp"]')
       await expect(mcpBtn).toBeVisible()
 
-      // Button should have the Plug icon (lucide renders an SVG inside the button)
+      // Button should show the Plug icon (lucide renders an SVG, so this only proves an icon is present).
       const svg = mcpBtn.locator('svg')
       await expect(svg).toBeVisible()
 
-      // Verify tooltip includes MCP title and shortcut
       const title = await mcpBtn.getAttribute('title')
       expect(title).toBe('MCP Servers (Alt+8)')
     })
@@ -150,14 +135,11 @@ test.describe('MCP Panel', () => {
 
       const panel = page.locator('[data-testid="panel-mcp"]')
 
-      // MCP panel should not be visible initially
       await expect(panel).not.toBeVisible()
 
-      // Press Alt+8 to open MCP panel
       await page.keyboard.press('Alt+8')
       await expect(panel).toBeVisible()
 
-      // Press Alt+8 again to close MCP panel
       await page.keyboard.press('Alt+8')
       await expect(panel).not.toBeVisible()
     })
@@ -180,7 +162,6 @@ test.describe('MCP Panel', () => {
         id: 'evt_mcp_init',
       })
 
-      // Open MCP panel
       await page.keyboard.press('Alt+8')
       const panel = page.locator('.mcp-panel')
       await expect(panel).toBeVisible()
@@ -188,7 +169,6 @@ test.describe('MCP Panel', () => {
       // Wait for the server list to render (event needs a tick to propagate through batch flush)
       await expect(panel).toContainText('test-server', { timeout: 5000 })
 
-      // Disconnected server should show status text
       await expect(panel).toContainText('disconnected')
     })
   })
@@ -213,7 +193,6 @@ test.describe('MCP Panel', () => {
       const panel = page.locator('.mcp-panel')
       await expect(panel).toContainText('broken-server', { timeout: 5000 })
 
-      // Failed server should show reconnect button
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'broken-server' })
       await expect(serverItem.locator('button[title="Reconnect"]')).toBeVisible()
     })
@@ -237,7 +216,6 @@ test.describe('MCP Panel', () => {
       const panel = page.locator('.mcp-panel')
       await expect(panel).toContainText('active-server', { timeout: 5000 })
 
-      // Connected server should show disable button
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'active-server' })
       await expect(serverItem.locator('button[title="Disable"]')).toBeVisible()
     })
@@ -272,7 +250,6 @@ test.describe('MCP Panel', () => {
     test('buttons disabled and reconnect icon spins during action', async ({ page }) => {
       await mockAPI(page)
 
-      // Intercept reconnect API with a delayed response
       const cp = `/api/workspaces/test-ws/containers/test-cid`
       await page.route(`**${cp}/api/mcp/reconnect`, async route => {
         // Hold the request to keep loading state visible
@@ -302,14 +279,10 @@ test.describe('MCP Panel', () => {
       const reconnectBtn = serverItem.locator('button[title="Reconnect"]')
       const toggleBtn = serverItem.locator('.mcp-toggle-btn')
 
-      // Click reconnect to trigger loading state
       await reconnectBtn.click()
 
-      // Both buttons should be disabled during the action
       await expect(reconnectBtn).toBeDisabled()
       await expect(toggleBtn).toBeDisabled()
-
-      // Reconnect icon should have spinner class
       await expect(reconnectBtn.locator('.spinner')).toBeVisible()
     })
 
@@ -340,14 +313,11 @@ test.describe('MCP Panel', () => {
       const panel = page.locator('.mcp-panel')
       await expect(panel).toContainText('fixed-server', { timeout: 5000 })
 
-      // Initially shows failed status
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'fixed-server' })
       await expect(serverItem.locator('.mcp-status-dot.disconnected')).toBeVisible()
 
-      // Click reconnect
       await serverItem.locator('button[title="Reconnect"]').click()
 
-      // After success, status should update to connected
       await expect(serverItem.locator('.mcp-status-dot.connected')).toBeVisible()
     })
 
@@ -377,11 +347,9 @@ test.describe('MCP Panel', () => {
       const panel = page.locator('.mcp-panel')
       await expect(panel).toContainText('err-server', { timeout: 5000 })
 
-      // Click reconnect - will fail
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'err-server' })
       await serverItem.locator('button[title="Reconnect"]').click()
 
-      // Error message should appear
       const errorMsg = panel.locator('.mcp-error')
       await expect(errorMsg).toBeVisible()
       await expect(errorMsg).toContainText('Failed to reconnect')
@@ -408,7 +376,6 @@ test.describe('MCP Panel', () => {
       const panel = page.locator('.mcp-panel')
       await expect(panel).toContainText('ok-server', { timeout: 5000 })
 
-      // Connected server should NOT show reconnect button
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'ok-server' })
       await expect(serverItem.locator('button[title="Reconnect"]')).not.toBeVisible()
     })
@@ -426,10 +393,8 @@ test.describe('MCP Panel', () => {
       const mcpIcon = page.locator('[data-testid="icon-mcp"]')
       await expect(mcpIcon).toBeVisible()
 
-      // No badge initially (no MCP servers).
       await expect(mcpIcon.locator('.icon-badge')).toHaveCount(0)
 
-      // Send init event with two failed servers and one connected.
       await controller.sendEvent({
         type: 'system',
         subtype: 'init',
@@ -444,7 +409,6 @@ test.describe('MCP Panel', () => {
         id: 'evt_mcp_failed',
       })
 
-      // Badge appears with count 2 in danger variant.
       const badge = mcpIcon.locator('.icon-badge')
       await expect(badge).toBeVisible()
       await expect(badge).toHaveText('2')

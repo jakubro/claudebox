@@ -19,7 +19,7 @@ class _FakeSession:
 
 @pytest.mark.anyio
 async def test_managed_wires_renamed_log_callbacks(monkeypatch, tmp_path):
-    """managed() passes on_start/on_stop (not the old on_session_*); server args are not forwarded."""
+    """managed() passes on_start/on_stop, never on_session_start/on_session_stop or server args."""
 
     monkeypatch.setattr(session_module, "SessionService", _FakeSession)
     monkeypatch.setattr(session_module, "current", None)

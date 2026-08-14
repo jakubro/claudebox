@@ -12,17 +12,18 @@ NAME = "update"
 ORDER = 30
 DESCRIPTION = "Update Claudebox itself (re-runs install.sh)"
 EPILOG = """\
-examples:
+Examples:
   claudebox update               refresh Claudebox itself
   claudebox -v update            forward --verbose to install.sh
 
-update spawns ~/.claudebox/lib/bin/install.sh, surfaces its stdout/stderr
-live, and propagates its exit code. Concurrent invocations are blocked by
-install.sh's flock - the second invocation exits non-zero immediately.
+Notes:
+  Spawns `~/.claudebox/lib/bin/install.sh`, surfaces its output live, and propagates
+  its exit code. Concurrent invocations are blocked by install.sh's lock - the second
+  exits non-zero immediately.
 
-build vs update:
-  build  rebuilds the container image (the agent layer inside it).
-  update refreshes Claudebox's own library on the host (the install.sh path).
+Build vs update:
+  build   rebuilds the container image (the agent layer inside it)
+  update  refreshes Claudebox's own library on the host
 """
 
 

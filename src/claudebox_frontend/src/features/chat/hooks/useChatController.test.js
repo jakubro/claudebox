@@ -71,9 +71,6 @@ describe('useChatController session change scroll reset', () => {
     vi.unstubAllGlobals()
   })
 
-  /**
-   * Flush pending requestAnimationFrame callbacks.
-   */
   function flushRAF() {
     const callbacks = rafCallbacks.splice(0)
     for (const cb of callbacks) {
@@ -81,9 +78,6 @@ describe('useChatController session change scroll reset', () => {
     }
   }
 
-  /**
-   * Create default props for useChatController.
-   */
   function createProps(overrides = {}) {
     return {
       events: [],
@@ -152,7 +146,6 @@ describe('useChatController session change scroll reset', () => {
     rerender({ p: sameSessionProps })
     flushRAF()
 
-    // Autoscroll should stay disabled
     expect(result.current.scroll.isAutoScrollEnabledRef.current).toBe(false)
   })
 

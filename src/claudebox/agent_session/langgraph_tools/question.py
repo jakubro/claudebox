@@ -1,20 +1,14 @@
 """AskUserQuestion - structured Q&A via LangGraph's interrupt() primitive.
 
-The runtime projects the LangGraph interrupt into the existing
-assistant_message event with a tool_use block whose
-`name == "ask_user_question"` and `input == {questions: [...]}`. The user
-replies via the existing Claude UX path (form -> POST /api/send with
-content wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>`).
-The runtime detects the post-interrupt state, routes the next query through
-`graph.aresume(Command(resume=<wrapped-text>))`, and the @tool's
-`interrupt()` call returns that text as the tool's return value. Same wire
-format as Claude, no new endpoint, no Protocol surface change.
+The runtime projects the interrupt into the existing assistant_message event with a tool_use
+block (`name == "ask_user_question"`, `input == {questions: [...]}`). The user replies via the
+existing Claude UX path (form -> POST /api/send, content wrapped in
+`<response:AskUserQuestion>...</response:AskUserQuestion>`). The runtime then resumes via
+`graph.aresume(Command(resume=<wrapped-text>))`, and `interrupt()` returns that text as the
+tool's return value - same wire format as Claude, no new endpoint or Protocol change.
 
-Each question is a dict with the keys the frontend's
-InteractiveQuestions component reads: `header`, `question`, `options`
-(list of {label, description}), and `multiSelect` (bool). The tool input
-accepts the raw `questions` list verbatim - the frontend renders it
-identically to Claude's AskUserQuestion.
+The `questions` list passes through verbatim to the frontend's InteractiveQuestions component,
+rendered identically to Claude's AskUserQuestion (see `ask_user_question` below for field shape).
 """
 
 from typing import Any
@@ -26,11 +20,7 @@ from ._context import ToolContext
 
 
 def make_question_tools(ctx: ToolContext) -> list[BaseTool]:
-    """Bind the ask_user_question @tool function.
-
-    Closes over `ctx` to keep the signature uniform, even
-    though this tool reads nothing off the context today.
-    """
+    """Bind the ask_user_question @tool function; ctx is unused, kept only for signature uniformity."""
 
     _ = ctx  # unused; kept for the uniform make_*_tools(ctx) signature.
 
@@ -38,11 +28,9 @@ def make_question_tools(ctx: ToolContext) -> list[BaseTool]:
     def ask_user_question(questions: list[dict[str, Any]]) -> str:
         """Ask the user up to four structured questions; return their answer text.
 
-        `questions` is a list of question records. Each record carries
-        `header` (short label), `question` (the question text), `options`
-        (list of `{label, description}` choices), and `multiSelect` (bool).
-        The user submits via the interactive form; their answer arrives
-        as text wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>`.
+        `questions` is a list of records with `header` (short label), `question` (text),
+        `options` (list of `{label, description}` choices), and `multiSelect` (bool). The
+        answer arrives as text wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>`.
         """
 
         answer = interrupt({"questions": questions})

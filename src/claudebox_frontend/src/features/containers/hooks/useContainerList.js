@@ -5,7 +5,6 @@ import { listContainers } from '../../../api/containers'
 import { useDaemonStreamContext } from '../../../context/DaemonStreamContext'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 
-/** Subscribe to per-workspace /containers + container_status SSE; returns {containers, error, loading, refresh}. */
 export default function useContainerList() {
   const [containers, setContainers] = useState([])
   const [error, setError] = useState(null)
@@ -37,10 +36,7 @@ export default function useContainerList() {
     void refresh()
   }, [refresh])
 
-  // Patch row status when a container_status event arrives. The daemon stream
-  // shape is `{containerId, status}` (camelCase per useDaemonStream); the
-  // aggregator response uses snake-case `id` matching containerId - they refer
-  // to the same UUID.
+  // Daemon events use camelCase containerId; container rows use snake_case id for the same UUID - match on that.
   useEffect(() => {
     if (!lastContainerEvent) {
       return

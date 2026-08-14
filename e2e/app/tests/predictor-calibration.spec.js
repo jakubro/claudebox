@@ -2,7 +2,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { expect, test } from '@playwright/test'
+import { test } from '@playwright/test'
 import { TURN_HORIZONTAL_PADDING_PX } from '../../../src/claudebox_frontend/src/config/dimensions.js'
 import { predictTurnHeight } from '../../../src/claudebox_frontend/src/features/chat/utils/predictTurnHeight.js'
 import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
@@ -134,6 +134,60 @@ function buildFixtures() {
     }),
   )
 
+  // Bash alone - isolates PX_PER_BASH_TOOL_BLOCK from the other coefficients mixed-all blends it with.
+  for (const n of [1, 3]) {
+    const bashEvents = []
+    for (let i = 0; i < n; i++) {
+      bashEvents.push({
+        subtype: 'tool_use',
+        content: 'Bash',
+        tool_use_id: `bash-${n}-${i}`,
+        tool_name: 'Bash',
+        tool_input: { command: `echo step-${i}` },
+      })
+      bashEvents.push({
+        subtype: 'tool_result',
+        content: 'output line\n'.repeat(3),
+        tool_use_id: `bash-${n}-${i}`,
+      })
+    }
+    fxs.push(
+      fixture(`bash-${n}`, {
+        assistantEvents: [{ subtype: 'text', content: 'Running.' }, ...bashEvents],
+      }),
+    )
+  }
+
+  // Hidden ToolSearch calls must not inflate predicted height: mixes a hidden search with the
+  // tool it discovered, isolating whether predictor and renderer agree it contributes nothing.
+  fxs.push(
+    fixture('hidden-toolsearch', {
+      assistantEvents: [
+        { subtype: 'text', content: 'Looking up the right tool.' },
+        {
+          subtype: 'tool_use',
+          content: 'ToolSearch',
+          tool_use_id: 'ts-cal-1',
+          tool_name: 'ToolSearch',
+          tool_input: { query: 'select:gcal_list' },
+        },
+        {
+          subtype: 'tool_result',
+          content: '[{"name":"mcp__gcal__list_events"}]',
+          tool_use_id: 'ts-cal-1',
+        },
+        {
+          subtype: 'tool_use',
+          content: 'mcp__gcal__list_events',
+          tool_use_id: 'ts-cal-2',
+          tool_name: 'mcp__gcal__list_events',
+          tool_input: {},
+        },
+        { subtype: 'tool_result', content: '3 events', tool_use_id: 'ts-cal-2' },
+      ],
+    }),
+  )
+
   // Edge: trivially short (tests MIN floor + short user message)
   fxs.push(
     fixture('trivial-ack', {
@@ -245,6 +299,8 @@ test.describe('predictor accuracy regression', () => {
     test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px)`, async ({
       page,
     }) => {
+      // Already marginal on the 5s cap; the pinned webfont's metrics push narrow width's wrapped turns over it.
+      test.setTimeout(15000)
       await page.setViewportSize(viewport)
       await mockAPI(page)
       await mockSSEDynamic(page, () => EVENTS)
@@ -253,28 +309,33 @@ test.describe('predictor accuracy regression', () => {
       // Predictor estimates expanded heights; keep every turn expanded to match.
       await disableAutoCollapse(page)
 
-      // Force real layout on every turn - content-visibility:auto would return
-      // the 400px intrinsic for off-screen turns, masking real layout heights.
-      await page.addStyleTag({
-        content: '.turn-container { content-visibility: visible !important; }',
-      })
-
-      await expect(page.locator('[data-testid="turn-container"]')).toHaveCount(FIXTURES.length, {
-        timeout: 15000,
-      })
-      // Settle layout after style injection.
-      await page.waitForTimeout(150)
-
+      // List is windowed - sweep it fully, recording each turn's real height once it mounts near the viewport.
       const captured = await page.evaluate(
-        turnIds => {
+        async turnIds => {
           const container = document.querySelector('.chat-messages')
-          const containerWidth = container ? container.clientWidth : 0
-          return turnIds
-            .map(id => {
-              const el = document.querySelector(`[data-turn-id="${id}"]`)
-              return { turnId: id, measured: el ? el.offsetHeight : null }
-            })
-            .map(r => ({ ...r, containerWidth }))
+          const settle = () =>
+            new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+          const measured = {}
+          const step = Math.max(1, Math.floor(container.clientHeight / 2))
+
+          for (let top = 0; top <= container.scrollHeight; top += step) {
+            container.scrollTop = top
+            await settle()
+            for (const id of turnIds) {
+              if (measured[id] == null) {
+                const el = document.querySelector(`[data-turn-id="${id}"]`)
+                if (el) {
+                  measured[id] = el.offsetHeight
+                }
+              }
+            }
+          }
+
+          return turnIds.map(id => ({
+            turnId: id,
+            measured: measured[id] ?? null,
+            containerWidth: container.clientWidth,
+          }))
         },
         FIXTURES.map(f => f.turnId),
       )

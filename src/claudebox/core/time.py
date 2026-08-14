@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 
-# Format string for human-readable timestamps: YYYYMMDD-HHMMSS.
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 
 

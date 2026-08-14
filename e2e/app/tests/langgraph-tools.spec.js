@@ -13,13 +13,11 @@ test.describe('LangGraph Tools', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Tool block visible - the frontend renders LangGraph tool_use blocks
-    // identically to Claude tool_use blocks (same conversion -> projection path).
+    // LangGraph tool_use blocks render via the same conversion -> projection path as Claude's.
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
     await expect(toolBlock).toHaveAttribute('data-tool-use-id', 'tool_001')
 
-    // The tool result is delivered and the block reaches the completed state.
     const completed = page
       .locator('[data-testid="tool-block"][data-tool-status="completed"]')
       .first()

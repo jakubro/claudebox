@@ -16,10 +16,7 @@ from ._helpers import make_published_event as _make_event
 class TestCategorizeCommands:
     """Test slash command classification.
 
-    _categorize_commands is an instance method that sources skill metadata
-    from the active runtime. These bucket-classification tests construct a
-    runtime-less Projection - categorization still works with name-only
-    fallback entries.
+    _categorize_commands normally reads skill metadata from the runtime; name-only fallback still categorizes here.
     """
 
     @staticmethod
@@ -27,7 +24,8 @@ class TestCategorizeCommands:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
 
         return Projection(
-            session_id="sess-categorize", workspace=Workspace(start_dir=tmp_workspace)
+            session_id="sess-categorize",
+            workspace=Workspace(start_dir=tmp_workspace),
         )
 
     def test_builtin_command(self, tmp_workspace, monkeypatch):
@@ -38,7 +36,7 @@ class TestCategorizeCommands:
 
     def test_mcp_command(self, tmp_workspace, monkeypatch):
         result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(
-            ["mcp__slack__send"]
+            ["mcp__slack__send"],
         )
         assert result["mcp"] == [{"name": "mcp__slack__send"}]
 
@@ -48,7 +46,7 @@ class TestCategorizeCommands:
 
     def test_mixed_commands(self, tmp_workspace, monkeypatch):
         result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(
-            ["help", "mcp__jira__create", "deploy"]
+            ["help", "mcp__jira__create", "deploy"],
         )
         assert result["builtin"] == [{"name": "help"}]
         assert result["mcp"] == [{"name": "mcp__jira__create"}]
@@ -60,7 +58,7 @@ class TestCategorizeCommands:
 
     def test_all_builtin_commands_recognized(self, tmp_workspace, monkeypatch):
         result = self._projection(tmp_workspace, monkeypatch)._categorize_commands(
-            list(BUILTIN_COMMANDS)
+            list(BUILTIN_COMMANDS),
         )
         assert len(result["builtin"]) == len(BUILTIN_COMMANDS)
         assert result["custom"] == []
@@ -106,8 +104,8 @@ class TestProjectionUpdate:
 
     def test_model_updated(self, tmp_workspace, monkeypatch):
         proj = self._make_projection(tmp_workspace, monkeypatch)
-        proj.update(_make_event(model="claude-sonnet-4-6"))
-        assert proj.value.model == "claude-sonnet-4-6"
+        proj.update(_make_event(model="claude-sonnet-5"))
+        assert proj.value.model == "claude-sonnet-5"
 
     def test_cost_accumulated(self, tmp_workspace, monkeypatch):
         proj = self._make_projection(tmp_workspace, monkeypatch)
@@ -140,7 +138,7 @@ class TestProjectionUpdate:
     def test_commands_categorized(self, tmp_workspace, monkeypatch):
         proj = self._make_projection(tmp_workspace, monkeypatch)
         proj.update(
-            _make_event(message_data={"slash_commands": ["help", "mcp__jira__create", "deploy"]})
+            _make_event(message_data={"slash_commands": ["help", "mcp__jira__create", "deploy"]}),
         )
         assert proj.value.commands["builtin"] == [{"name": "help"}]  # ty: ignore[not-subscriptable]
         assert proj.value.commands["mcp"] == [{"name": "mcp__jira__create"}]  # ty: ignore[not-subscriptable]
@@ -158,11 +156,9 @@ class TestProjectionUpdate:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         ws = Workspace(start_dir=tmp_workspace)
 
-        # Create and save a projection, then reload with null accumulators
         proj = Projection("null-acc-session", ws)
         proj.save()
 
-        # Write session.json with null accumulator fields
         write_json(
             proj._path,
             {
@@ -176,7 +172,6 @@ class TestProjectionUpdate:
 
         proj2 = Projection("null-acc-session", ws)
 
-        # All three accumulators should handle None gracefully
         proj2.update(_make_event(is_human=True, content="hello"))
         assert proj2.value.num_turns == 1
 
@@ -315,7 +310,6 @@ class TestProjectionUpdateFields:
         proj = self._make_projection(tmp_workspace, monkeypatch)
         proj.update_fields(name="persisted")
 
-        # Reload from disk
         ws = Workspace(start_dir=tmp_workspace)
         proj2 = Projection("test-session", ws)
         assert proj2.value.name == "persisted"

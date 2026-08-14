@@ -2,18 +2,7 @@
 
 import { getIndicator } from '../utils/getIndicator'
 
-/**
- * Render a selectable option with radio/checkbox indicator and label.
- * @param {Object} props
- * @param {string} props.label - Option label text.
- * @param {string} [props.description] - Optional description below label.
- * @param {boolean} props.isSelected - Whether option is selected.
- * @param {boolean} props.multiSelect - Use checkbox vs radio indicator.
- * @param {boolean} [props.isOther] - Mark as "Other" option.
- * @param {boolean} [props.disabled=false] - Disable click interaction.
- * @param {Function} props.onClick - Click handler.
- * @param {React.ReactNode} [props.children] - Extra content after option.
- */
+/** @param {boolean} props.multiSelect - Use checkbox vs radio indicator. */
 export default function QuestionOption({
   label,
   description,

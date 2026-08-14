@@ -12,14 +12,9 @@ if TYPE_CHECKING:
 
 
 class SessionMutationObserver(AsyncPoller):
-    """Poll active containers for session metadata changes and broadcast updates.
-
-    Iterates all workspace registries, checking each container's session
-    updated_at timestamp. When a change is detected, emits a sessions_changed
-    event so frontends refresh. Uses the daemon's shared proxy client for HTTP requests.
+    """Poll active containers for session changes and broadcast sessions_changed events.
 
     Attributes:
-        _service: Daemon service providing access to workspaces and proxy client.
         _session_cache: Last-seen updated_at per container for change detection.
     """
 
@@ -54,11 +49,7 @@ class SessionMutationObserver(AsyncPoller):
                 )
 
     async def _check_container(self, container: Container) -> bool:
-        """Poll a container's session metadata and return True if it changed.
-
-        Calls GET /api/sessions/current and compares updated_at against the
-        cached value. Skips non-running containers and silently absorbs errors.
-        """
+        """Poll a container's session metadata; returns True if changed, False for non-running/errors."""
 
         if container.status != ContainerStatus.RUNNING or container.port <= 0:
             return False

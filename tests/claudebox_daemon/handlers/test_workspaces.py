@@ -12,7 +12,12 @@ from claudebox_daemon.domain import get_workspace
 from claudebox_daemon.handlers.workspaces import router
 
 
-def _build_app(workspace_path: str, *, agent: str = "claude"):
+def _build_app(
+    workspace_path: str,
+    *,
+    agent: str = "claude",
+    editor_url_template: str | None = None,
+):
     """Build a minimal FastAPI app with the workspaces router and a workspace stub."""
 
     app = FastAPI()
@@ -21,7 +26,7 @@ def _build_app(workspace_path: str, *, agent: str = "claude"):
     async def _fake_get_workspace(workspace_id: str):
         workspace = MagicMock()
         workspace.path = workspace_path
-        config = SimpleNamespace(agent=agent)
+        config = SimpleNamespace(agent=agent, editor_url_template=editor_url_template)
 
         return SimpleNamespace(workspace=workspace, config=config)
 
@@ -42,14 +47,14 @@ def test_session_defaults_returns_framework_constants():
     body = response.json()
     assert body["workspace"] == "/path/to/my-project"
     assert body["runtime_name"] == "Claude"
+    assert body["editor_url_template"] is None
     assert len(body["capabilities"]) == 16
     assert body["capabilities"]["supports_models"] is True
     assert body["model"] == ClaudeRuntime.DEFAULT_MODEL
     assert body["permission_mode"] == ClaudeRuntime.DEFAULT_PERMISSION_MODE
     assert body["effort_level"] == ClaudeRuntime.DEFAULT_EFFORT_LEVEL
 
-    # Available lists track the runtime catalogs so the frontend can render
-    # picker dropdowns on welcome before a container is reachable.
+    # Available lists mirror runtime catalogs so the frontend can render pickers pre-container.
     assert {m["id"] for m in body["available_models"]} == {
         m.id for m in ClaudeRuntime.AVAILABLE_MODELS
     }
@@ -84,6 +89,21 @@ def test_session_defaults_omits_catalogs_when_capability_false(monkeypatch):
     assert body["available_permission_modes"] is None
     assert body["available_effort_levels"] is None
     assert body["capabilities"]["supports_models"] is False
+
+
+def test_session_defaults_includes_editor_url_template_when_configured():
+    """The configured editor URI template passes through verbatim."""
+
+    app = _build_app(
+        "/path/to/my-project",
+        editor_url_template="jetbrains://idea/navigate/reference?path={path}",
+    )
+    response = TestClient(app).get("/api/workspaces/my-project/session-defaults")
+
+    assert response.status_code == 200
+    assert (
+        response.json()["editor_url_template"] == "jetbrains://idea/navigate/reference?path={path}"
+    )
 
 
 def test_session_defaults_resolves_per_workspace():

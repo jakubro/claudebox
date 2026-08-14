@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeToolName, ToolName } from '../../../../../../config/schema'
 import useCapabilities from '../../../../../../hooks/useCapabilities'
+import useEditorTemplate from '../../../../../../hooks/useEditorTemplate'
+import { resolveEditorUrl } from '../../../../../../utils/editorUrl'
+import { isInteractiveTool } from '../../../../../../utils/eventPredicates'
 import { processNestedEvents } from '../../../../../../utils/eventProcessing'
 import { useTurn } from '../../hooks/useTurn'
 import InteractiveQuestions from './components/interactive-questions'
@@ -27,17 +30,16 @@ import {
   hasSpecializedFormatter,
 } from './utils/toolResultFormatters'
 
+// Tools whose input carries a file_path - eligible for the "open in editor" affordance.
+const EDITOR_TOOLS = new Set([ToolName.READ, ToolName.EDIT, ToolName.WRITE])
+
 /**
- * Render a TUI-style tool use block with header, result summary, and expandable content.
  * Consumes TurnContext for turn-scoped data.
- * @param {Object} props
- * @param {Object} props.toolUse - Tool use data with content, tool_use_id, and tool_input.
- * @param {Object} [props.toolResult] - Tool result with content string.
+ * @param {Object} props.toolUse - content, tool_use_id, tool_input.
+ * @param {Object} [props.toolResult] - content string.
  * @param {Array} [props.nestedEvents] - Nested events for Task tools.
- * @param {string} [props.skillContent] - Skill content to display.
  * @param {Object} [props.todoDiff] - Todo diff for TodoWrite tool.
- * @param {boolean} [props.nested=false] - Whether this block is nested inside another.
- * @param {number} [props.blockRelativeTime] - Precomputed offset from turn start in seconds.
+ * @param {number} [props.blockRelativeTime] - Precomputed offset from turn start, in seconds.
  */
 export default function ToolBlock({
   toolUse,
@@ -48,18 +50,14 @@ export default function ToolBlock({
   nested = false,
   blockRelativeTime = null,
 }) {
-  const { hasPendingMessages, onFormSubmit, now, isActiveTurn } = useTurn()
+  const { hasPendingMessages, onFormSubmit, registerPendingForm, now, isActiveTurn } = useTurn()
   const { capabilities } = useCapabilities()
-  // Render unless the runtime explicitly opts out via supports_ask_user_question=false.
-  // Absent or undefined treated as "supported" for back-compat with fixtures and
-  // pre-init session-data races.
+  // Absent/undefined supports_ask_user_question counts as enabled - back-compat for fixtures/pre-init races.
   const askUserQuestionEnabled = capabilities?.supports_ask_user_question !== false
 
   const [showDetails, setShowDetails] = useState(null) // null = use default
 
-  // Normalise tool name so LangGraph's snake_case names (ask_user_question)
-  // resolve to the same canonical Claude form (AskUserQuestion) every
-  // downstream comparison reads. See schema.js::TOOL_NAME_ALIASES.
+  // LangGraph's snake_case maps to Claude's canonical form for comparisons (schema.js::TOOL_NAME_ALIASES).
   const toolName = normalizeToolName(toolUse?.content || 'Tool')
   const input = toolUse?.tool_input ?? {}
   const toolUseId = toolUse?.tool_use_id ?? null
@@ -67,6 +65,15 @@ export default function ToolBlock({
   const outputMode = input?.output_mode || null
   const lineOffset = toolUse?.source_offset ?? null
   const tooltip = getToolTooltip(toolName, input)
+
+  // Editor URL resolved once here, not per header/Lookups row; line hint is Read's offset input,
+  // null for Edit/Write - distinct from `lineOffset` above (diff-match line for the expanded gutter).
+  const editorTemplate = useEditorTemplate()
+  const editorLineHint = toolName === ToolName.READ ? (input?.offset ?? null) : null
+  const editorUrl =
+    EDITOR_TOOLS.has(toolName) && filePath
+      ? resolveEditorUrl(editorTemplate, { path: filePath, line: editorLineHint })
+      : null
 
   // Extract tool result state (consumes TurnContext for taskNotifications)
   const {
@@ -83,10 +90,13 @@ export default function ToolBlock({
     taskNotification,
     isTaskOutputKilled,
     isAsyncTask,
-    resultContent,
     isPending,
     jsonData,
   } = useToolResult(toolUse, toolResult, todoDiff)
+
+  // Whether a form can actually render - independent of what the runtime reported for the call.
+  const canRenderForm =
+    toolName === ToolName.ASK_USER_QUESTION && askUserQuestionEnabled && input.questions?.length > 0
 
   // Track interactive answer state (consumes TurnContext for message state)
   const {
@@ -97,13 +107,11 @@ export default function ToolBlock({
     wasAnsweredLocally,
     setWasAnsweredLocally,
     setLocalAnswerLabel,
-  } = useInteractiveState(toolName, isPending, resultContent, plan)
+  } = useInteractiveState(toolName, canRenderForm, plan)
 
-  // For AskUserQuestion awaiting response, extract questions from input.
-  // Guard against truthy non-array payloads (e.g. a JSON-encoded string emitted
-  // by an upstream serialization bug) so the InteractiveQuestions consumer
-  // never receives a non-iterable.
-  const askUserAwaiting = isAskUserAwaitingAnswer(toolName, isPending, resultContent, wasAnswered)
+  // Guards against truthy non-array `input.questions` (e.g. a JSON-encoded string from an
+  // upstream serialization bug) so InteractiveQuestions never receives a non-iterable.
+  const askUserAwaiting = isAskUserAwaitingAnswer(toolName, canRenderForm, wasAnswered)
   const pendingQuestions =
     askUserAwaiting && Array.isArray(input.questions) ? input.questions : null
 
@@ -117,6 +125,9 @@ export default function ToolBlock({
   // tool_input for unhandled tools - null for handled tools (they render their own way)
   const toolInput =
     !hasSpecializedFormatter(toolName) && Object.keys(input).length > 0 ? input : null
+
+  // Bash's command - the one payload a pending Bash shows; derived once, read at both expandability gates below.
+  const bashCommand = toolName === ToolName.BASH ? (input?.command ?? null) : null
 
   // Single-line result identical to summary - keep expandable but start collapsed
   const singleLineDuplicate = isSingleLineDuplicate(effectiveDetails, effectiveSummary)
@@ -134,6 +145,7 @@ export default function ToolBlock({
     systemReminders,
     persistedOutput,
     toolInput,
+    command: bashCommand,
   })
   // Default: collapsed for JSON, Read, Skill, answered AskUserQuestion, completed Task with nested
   const collapseByDefault = shouldStartCollapsed({
@@ -146,11 +158,22 @@ export default function ToolBlock({
   })
   const effectiveShowDetails = showDetails !== null ? showDetails : !collapseByDefault
 
-  // Format header: tool name with args - show full path when expanded for file tools
-  const header = useMemo(
-    () => buildToolHeader(toolName, input, effectiveShowDetails),
-    [toolName, input, effectiveShowDetails],
-  )
+  // Imperative handle onto the live AskUserQuestion form - see the registerPendingForm effect below.
+  const formRef = useRef(null)
+
+  // Header: tool name with args, full path when expanded for file tools; held per tool_use_id
+  // while input is empty so it never flashes the generic fallback before input arrives.
+  const hasInput = Object.keys(input).length > 0
+  const headerHoldRef = useRef({ toolUseId: null, header: null })
+  let header
+  if (hasInput) {
+    header = buildToolHeader(toolName, input, effectiveShowDetails)
+    headerHoldRef.current = { toolUseId, header }
+  } else if (headerHoldRef.current.toolUseId === toolUseId) {
+    header = headerHoldRef.current.header
+  } else {
+    header = toolName
+  }
 
   // Auto-collapse when Task completes (isPending transitions false)
   const prevPendingRef = useRef(isPending)
@@ -174,6 +197,30 @@ export default function ToolBlock({
 
   const handleToggle = () => hasExpandable && setShowDetails(!effectiveShowDetails)
 
+  // Named so the block chrome can be gated on the same condition that decides the form
+  const showQuestionForm =
+    canRenderForm && effectiveShowDetails && !(wasAnsweredLocally && hasPendingMessages)
+
+  // A live form repeats the header; every other state needs it for the summary and as the collapse target.
+  const showHeader = !(showQuestionForm && askUserAwaiting)
+
+  // Registers the live form so Enter in the composer can submit without owning selection state.
+  // Only one turn awaits an answer, so a later mount safely overwrites an earlier one.
+  useEffect(() => {
+    if (!(showQuestionForm && askUserAwaiting)) {
+      return undefined
+    }
+    registerPendingForm?.({
+      hasSelection: () => formRef.current?.hasSelection ?? false,
+      submit: () => formRef.current?.submit(),
+    })
+    return () => registerPendingForm?.(null)
+  }, [showQuestionForm, askUserAwaiting, registerPendingForm])
+
+  // Runtime tool-unavailable reports are noise here - a form (past or present) is what the user actually sees.
+  const answeredInteractive = isInteractiveTool(toolName) && wasAnswered
+  const displayIsError = effectiveIsError && !answeredInteractive && !askUserAwaiting
+
   // Block timing: live duration for pending blocks (>= 30s threshold)
   const toolUseTime = toolUse?.ts ? new Date(toolUse.ts).getTime() : null
   const toolResultTime = toolResult?.ts ? new Date(toolResult.ts).getTime() : null
@@ -192,63 +239,63 @@ export default function ToolBlock({
 
   return (
     <div
-      className={`tool-block ${nested ? 'nested' : ''} ${effectiveIsError ? 'tool-error' : ''}`}
+      className={`tool-block ${nested ? 'nested' : ''} ${displayIsError ? 'tool-error' : ''}`}
       data-testid="tool-block"
       data-tool-use-id={toolUseId}
-      data-tool-status={getToolStatus(effectiveIsPending, isAwaitingAnswer, effectiveIsError)}>
-      <ToolBlockHeader
-        header={header}
-        toolName={toolName}
-        tooltip={tooltip}
-        summary={effectiveSummary}
-        hasExpandable={hasExpandable}
-        onToggle={handleToggle}
-        toolStatus={{
-          isPending: effectiveIsPending,
-          isAwaitingAnswer,
-          wasAnswered,
-          wasSkipped,
-          isError: effectiveIsError,
-          answerLabel,
-          taskNotification,
-          isTaskOutputKilled,
-          blockDuration: effectiveIsPending ? blockDuration : null,
-          blockRelativeTime: effectiveIsPending ? null : blockRelativeTime,
-        }}
-      />
+      data-tool-status={getToolStatus(effectiveIsPending, isAwaitingAnswer, displayIsError)}>
+      {showHeader && (
+        <ToolBlockHeader
+          header={header}
+          toolName={toolName}
+          tooltip={tooltip}
+          summary={answeredInteractive ? '' : effectiveSummary}
+          hasExpandable={hasExpandable}
+          onToggle={handleToggle}
+          editorUrl={editorUrl}
+          toolStatus={{
+            isPending: effectiveIsPending,
+            isAwaitingAnswer,
+            wasAnswered,
+            wasSkipped,
+            isError: displayIsError,
+            answerLabel,
+            taskNotification,
+            isTaskOutputKilled,
+            blockDuration: effectiveIsPending ? blockDuration : null,
+            blockRelativeTime: effectiveIsPending ? null : blockRelativeTime,
+          }}
+        />
+      )}
 
-      {/* Interactive questions for AskUserQuestion - hide during pending state after local submit (Q/A bubble shows instead);
-          also gated on the runtime's supports_ask_user_question capability so non-supporting runtimes do not render the form. */}
-      {toolName === ToolName.ASK_USER_QUESTION &&
-        askUserQuestionEnabled &&
-        input.questions?.length > 0 &&
-        effectiveShowDetails &&
-        !(wasAnsweredLocally && hasPendingMessages) && (
-          <InteractiveQuestions
-            questions={input.questions}
-            disabled={wasAnswered || hasPendingMessages}
-            onSubmit={answer => {
-              setWasAnsweredLocally(true)
-              setShowDetails(false) // Auto-collapse on submit
-              onFormSubmit?.(answer)
-            }}
-          />
-        )}
+      {/* Interactive questions for AskUserQuestion - hidden during pending state after local submit (Q/A bubble shows instead) and gated on the runtime's supports_ask_user_question capability. */}
+      {showQuestionForm && (
+        <InteractiveQuestions
+          ref={formRef}
+          questions={input.questions}
+          disabled={wasAnswered || hasPendingMessages}
+          onSubmit={answer => {
+            setWasAnsweredLocally(true)
+            setShowDetails(false) // Auto-collapse on submit
+            onFormSubmit?.(answer)
+          }}
+        />
+      )}
 
-      {/* Expanded content - show for completed tools, pending Task (nested tools stream in), or unhandled tools with input */}
-      {(!isPending || toolName === ToolName.TASK || toolInput) &&
+      {/* Expanded content: completed tools, pending Task (nested streams in), unhandled tools */}
+      {/* with input, or a pending Bash with a command to show. */}
+      {(!isPending || toolName === ToolName.TASK || toolInput || bashCommand) &&
         effectiveShowDetails &&
-        !(toolName === ToolName.ASK_USER_QUESTION && wasAnswered) && (
+        !(toolName === ToolName.ASK_USER_QUESTION && (wasAnswered || askUserAwaiting)) && (
           <ToolBlockExpandedContent
             toolName={toolName}
             filePath={filePath}
             outputMode={outputMode}
+            command={bashCommand}
             contentData={{
               details: effectiveDetails,
               jsonData,
               skillContent,
               questions,
-              pendingQuestions,
               plan,
               todoData,
               taskPrompt,

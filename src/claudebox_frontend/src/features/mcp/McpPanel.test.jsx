@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockCapabilities } from '../../test-utils/mockCapabilities'
 
-// Mock useEvents with dynamic events and replay state
 let mockEvents = []
 let mockIsResuming = false
 let mockIsReplaying = false
@@ -17,7 +16,6 @@ vi.mock('../../context/EventsContext', () => ({
   }),
 }))
 
-// Mutable mock for API calls
 let mockReconnectMcpServer = vi.fn()
 let mockToggleMcpServer = vi.fn()
 
@@ -34,7 +32,6 @@ vi.mock('../../hooks/useCapabilities', () => ({
 
 import McpPanel from './McpPanel'
 
-// Helper to create init event with MCP servers
 const createInitEvent = mcpServers => ({
   type: 'system',
   subtype: 'init',

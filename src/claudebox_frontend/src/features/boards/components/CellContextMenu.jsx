@@ -3,8 +3,6 @@
 /**
  * Render a context menu anchored at viewport coords with a single archive action.
  *
- * Backdrop dismisses on click. Disabled when the cell is empty.
- *
  * @param {object} props
  * @param {{x: number, y: number}} props.pos - Anchor position in viewport coords.
  * @param {string} props.label - Button label, prefilled with state/swimlane/count.

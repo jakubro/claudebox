@@ -51,17 +51,14 @@ def _build_app(daemon: MagicMock):
             content={"error": exc.error_key, **exc.context},
         )
 
-    app.add_exception_handler(DaemonError, _handle_daemon_error)  # ty: ignore[invalid-argument-type]  # Starlette type narrows to BaseException-handler; our handler accepts the specific subclass.
+    # Starlette narrows the handler param to BaseException; ours accepts DaemonError specifically.
+    app.add_exception_handler(DaemonError, _handle_daemon_error)  # ty: ignore[invalid-argument-type]
 
     return app
 
 
 def _make_daemon(workspaces=(), *, register_returns=None, register_raises=None):
-    """Build a DaemonService stub with list_workspaces/register/deregister wired.
-
-    Uses a real DaemonService instance with bypass-init so the aggregation
-    methods (``list_workspaces_with_counts`` etc.) execute their real logic.
-    """
+    """Build a DaemonService stub via bypass-init so aggregation methods run their real logic."""
 
     daemon = DaemonService.__new__(DaemonService)
     daemon._logger = MagicMock()
@@ -197,7 +194,7 @@ class TestDeregisterWorkspace:
     def test_unknown_id_returns_404(self):
         daemon = _make_daemon()
         daemon.deregister_workspace = AsyncMock(
-            side_effect=WorkspaceNotRegistered(workspace_id="ghost")
+            side_effect=WorkspaceNotRegistered(workspace_id="ghost"),
         )
 
         client = TestClient(_build_app(daemon))
@@ -209,7 +206,7 @@ class TestDeregisterWorkspace:
         assert body["workspace_id"] == "ghost"
 
 
-# Workspace-scoped routes preserved (URLs unchanged after rebase)
+# Workspace-scoped routes
 # ----------------------------------------------------------------------------------------------
 
 
@@ -217,7 +214,7 @@ class TestWorkspaceScopedRoutesPreserved:
     """Existing /{workspace_id}/session-defaults and /{workspace_id}/commands still resolve."""
 
     def test_session_defaults_route_resolves(self, tmp_path):
-        """Verifies the rebased prefix didn't break workspace-scoped session-defaults URL."""
+        """Workspace-scoped session-defaults route resolves correctly."""
 
         from claudebox_daemon.domain import get_workspace
 
@@ -227,7 +224,7 @@ class TestWorkspaceScopedRoutesPreserved:
         async def _fake_get_workspace(workspace_id: str):
             workspace = MagicMock()
             workspace.path = tmp_path / workspace_id
-            config = SimpleNamespace(agent="claude")
+            config = SimpleNamespace(agent="claude", editor_url_template=None)
 
             return SimpleNamespace(workspace=workspace, config=config)
 
@@ -241,7 +238,7 @@ class TestWorkspaceScopedRoutesPreserved:
         assert body["workspace"] == str(tmp_path / "myproj")
 
     def test_commands_route_resolves(self, tmp_path):
-        """Verifies the rebased prefix didn't break workspace-scoped commands URL."""
+        """Workspace-scoped commands route resolves correctly."""
 
         from claudebox_daemon.domain import get_workspace
 

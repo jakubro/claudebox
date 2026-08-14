@@ -10,6 +10,7 @@
 @import "./components/WelcomeContent.css";
 
 /* Chat-level components */
+@import "./components/HistoricalTurnList.css";
 @import "./components/SettingChangeDivider.css";
 @import "./components/QueuedMessageBubble.css";
 @import "./components/RewindModal.css";
@@ -47,6 +48,7 @@
 @import "./components/turn/components/tool-block/components/interactive-questions/InteractiveQuestions.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/TodoList.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/TodosGroup.css";
+@import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/LookupsGroup.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/ToolContentRenderer.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/PersistedOutputContent.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/components/code-block/CodeBlock.css";

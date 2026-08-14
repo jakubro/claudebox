@@ -1,13 +1,8 @@
 /** Test helper - produces a RuntimeCapabilities object with overrides. */
 
 /**
- * Build a 15-flag RuntimeCapabilities dict, all True by default.
- *
- * Pass `overrides` to flip individual flags False for capability-gated
- * UI tests. Shape mirrors the backend `RuntimeCapabilities` dataclass.
- *
- * @param {Object} [overrides] - Partial flag overrides
- * @returns {Object} All 15 capability flags
+ * Build a 15-flag RuntimeCapabilities dict, all true by default; pass `overrides` to flip flags
+ * false for capability-gated UI tests. Shape mirrors the backend `RuntimeCapabilities` dataclass.
  */
 export function mockCapabilities(overrides = {}) {
   return {

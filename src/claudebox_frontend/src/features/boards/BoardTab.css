@@ -37,11 +37,8 @@
   font-size: 13px;
 }
 
-/* Board grid — single CSS grid container, grid-template-columns set inline by
-   BoardTab.jsx based on columns order and collapsedColumns state. Rows + bands
-   use display: contents so their children participate in the parent grid as
-   direct items, keeping every cell in the same column horizontally aligned
-   regardless of which row's content is widest. */
+/* grid-template-columns is set inline by BoardTab.jsx (columns order + collapsedColumns).
+   Rows/bands use display: contents so children join the grid directly, keeping cell columns aligned. */
 .board-board {
   flex: 1;
   overflow: auto;
@@ -50,9 +47,8 @@
   grid-auto-rows: min-content;
 }
 
-/* Column headers — display: contents on the row so individual headers sit on
-   the parent grid; sticky is applied per-cell since display:contents drops
-   the wrapper from the layout tree. */
+/* Row uses display: contents so headers sit on the parent grid; sticky must be applied
+   per-cell since display: contents drops the wrapper from the layout tree. */
 .board-header-row {
   display: contents;
 }
@@ -138,16 +134,14 @@
   opacity: 1;
 }
 
-/* Swimlane bands — display: contents so their children (header + cells) are
-   direct children of the parent grid. Borders are painted by the band header
-   and cells, not the band element. */
+/* display: contents makes children (header + cells) direct children of the parent grid.
+   Borders are painted by the header and cells, not the band element itself. */
 .swimlane-band {
   display: contents;
 }
 
 .swimlane-header {
-  /* Spans all grid columns so the lane name + collapse toggle stretch across
-     the full board width regardless of column count. */
+  /* Spans all grid columns so the lane name and collapse toggle stretch the full board width. */
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -198,9 +192,8 @@
   letter-spacing: normal;
 }
 
-/* swimlane-columns wrapper: display: contents so cells participate in the
-   parent grid directly. Cells inherit width from the grid track instead of
-   flex sizing, so every column has the same width across all swimlanes. */
+/* display: contents so cells join the parent grid directly instead of the wrapper. Cells
+   inherit width from the grid track (not flex sizing), so columns stay equal-width across swimlanes. */
 .swimlane-columns {
   display: contents;
 }

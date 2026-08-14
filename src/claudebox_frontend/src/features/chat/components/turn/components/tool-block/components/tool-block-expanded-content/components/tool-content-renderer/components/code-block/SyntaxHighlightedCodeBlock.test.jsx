@@ -182,4 +182,49 @@ describe('SyntaxHighlightedCodeBlock', () => {
       expect(root.style.getPropertyValue('--linenum-col-width')).toBe('4ch')
     })
   })
+
+  describe('showGutter opt-out', () => {
+    it('renders no gutter cells and no --linenum-col-width when showGutter is false', () => {
+      const code = 'line 1\nline 2'
+      const { container } = render(
+        <SyntaxHighlightedCodeBlock code={code} language="bash" showGutter={false} />,
+      )
+
+      expect(container.querySelectorAll('.code-block-gutter')).toHaveLength(0)
+      expect(container.querySelectorAll('.code-block-linenum')).toHaveLength(0)
+      const root = container.querySelector('.code-block')
+      expect(root.style.getPropertyValue('--linenum-col-width')).toBe('')
+    })
+
+    it('tags the content cell code-block-no-gutter when showGutter is false', () => {
+      const { container } = render(
+        <SyntaxHighlightedCodeBlock code="ls -la" language="bash" showGutter={false} />,
+      )
+
+      expect(
+        container.querySelector('.code-block-content.code-block-no-gutter'),
+      ).toBeInTheDocument()
+    })
+
+    it('still renders the gutter by default (showGutter omitted)', () => {
+      const { container } = render(
+        <SyntaxHighlightedCodeBlock code="const x = 1" language="javascript" />,
+      )
+
+      expect(container.querySelector('.code-block-gutter')).toBeInTheDocument()
+      expect(
+        container.querySelector('.code-block-content.code-block-no-gutter'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('re-renders when only showGutter changes (memo comparator includes it)', () => {
+      const { container, rerender } = render(
+        <SyntaxHighlightedCodeBlock code="ls -la" language="bash" showGutter />,
+      )
+      expect(container.querySelector('.code-block-gutter')).toBeInTheDocument()
+
+      rerender(<SyntaxHighlightedCodeBlock code="ls -la" language="bash" showGutter={false} />)
+      expect(container.querySelector('.code-block-gutter')).not.toBeInTheDocument()
+    })
+  })
 })

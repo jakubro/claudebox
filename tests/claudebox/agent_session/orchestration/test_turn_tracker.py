@@ -160,7 +160,6 @@ class TestResolve:
         tracker = TurnTracker()
         tracker.on_event(_make_user_message("turn-1"))
         tracker.on_inject(subtype="compact_start", is_human=False, turn_id=None)
-        # Simulate new turn arriving during compaction
         tracker.on_event(_make_user_message("turn-2"))
         event = _make_event(subtype="compact_boundary")
         # Should use turn-2 (current), so compaction lands in the new turn

@@ -15,9 +15,8 @@ if TYPE_CHECKING:
 class SessionRepository:
     """Read and update session metadata from workspace disk.
 
-    Provides the shared list/get/update operations consumed by both daemon
-    and web services. Consumer-specific enrichment (container_id, projection)
-    happens in the calling layer.
+    Shared list/get/update operations consumed by both daemon and web services; consumer-specific
+    enrichment (container_id, projection) happens in the calling layer.
     """
 
     def __init__(self, workspace: "Workspace") -> None:
@@ -52,7 +51,7 @@ class SessionRepository:
     def get(self, session_id: str) -> SessionMetadata:
         """Read session metadata from disk.
 
-        Raises SessionNotFound if session directory or session.json is missing.
+        Raises SessionNotFound if the session or its metadata file is missing.
         """
 
         session = self._workspace.find_session(session_id)
@@ -78,9 +77,8 @@ class SessionRepository:
     def update(self, session_id: str, **fields: Any) -> SessionMetadata:
         """Update session metadata fields on disk.
 
-        Reads the raw dict from disk, merges only the provided fields, writes
-        back. Unknown keys in session.json are preserved. Returns the merged
-        result as SessionMetadata.
+        Reads the raw dict, merges only the provided fields, and writes back - unknown keys in
+        session.json are preserved. Returns the merged result as SessionMetadata.
         """
 
         session = self._workspace.find_session(session_id)

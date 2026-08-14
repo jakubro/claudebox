@@ -1,11 +1,9 @@
-/** Pure badge-count aggregation - extracted from useBadgeCounts.js, no React APIs. */
+/** Pure badge-count aggregation with no React APIs, consumed by the useBadgeCounts hook. */
 
 import { TaskStatus, TodoStatus } from '../../../config/schema'
 import { extractTasks, getMcpServers } from '../../../utils/eventProcessing'
 
 /**
- * Aggregate badge counters and dot flags for the icon strip from raw context state.
- *
  * @param {{
  *   events: Array,
  *   todosBySubagent: Map,
@@ -13,7 +11,13 @@ import { extractTasks, getMcpServers } from '../../../utils/eventProcessing'
  *   stash: Array,
  *   hasUnreadErrors: boolean,
  * }} params
- * @returns {{ todoCount: number, stashCount: number, taskCount: number, mcpFailedCount: number, logsHasErrors: boolean }}
+ * @returns {{
+ *   todoCount: number,
+ *   stashCount: number,
+ *   taskCount: number,
+ *   mcpFailedCount: number,
+ *   logsHasErrors: boolean,
+ * }}
  */
 export function computeBadgeCounts({
   events,

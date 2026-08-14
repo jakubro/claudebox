@@ -5,7 +5,7 @@ import { waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { createSSEController } from '../mocks/sse.js'
 
-// ─── Event factories ──────────────────────────────────────────────────────────
+// --- Event factories ---
 
 let evtSeq = 0
 const ts = () => new Date(Date.now() + evtSeq * 100).toISOString()
@@ -98,7 +98,7 @@ function systemInit(mcpServers) {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ---
 
 const wait = ms => new Promise(r => setTimeout(r, ms))
 
@@ -157,7 +157,7 @@ async function injectClickHighlight(page) {
   })
 }
 
-// ─── Demo content ─────────────────────────────────────────────────────────────
+// --- Demo content ---
 
 const WEATHER_PY = `#!/usr/bin/env python3
 """Fetch and display weather data with colored terminal output."""
@@ -249,7 +249,7 @@ const CACHE_DIFF = `--- old
 +    cache_file = CACHE_DIR / f"{city.lower()}.json"
 +    cache_file.write_text(json.dumps(data))`
 
-// ─── Demo script ──────────────────────────────────────────────────────────────
+// --- Demo script ---
 
 test.use({
   video: { mode: 'on', size: { width: 1280, height: 720 } },
@@ -265,10 +265,9 @@ test.describe('Demo Video', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Inject click highlight overlay
     await injectClickHighlight(page)
 
-    // ─── Init: Set up MCP servers ───────────────────────────────────────────
+    // --- Init: Set up MCP servers ---
     await controller.sendEvent(
       systemInit([
         { name: 'jina', status: 'connected' },
@@ -279,7 +278,7 @@ test.describe('Demo Video', () => {
 
     await wait(1500)
 
-    // ─── Turn 1: User types and sends a message ─────────────────────────────
+    // --- Turn 1: User types and sends a message ---
     const input = page.locator('[data-testid="chat-input"]')
     await input.click()
     await page.keyboard.type('Build a CLI weather tool in Python with colored output', {
@@ -363,7 +362,7 @@ test.describe('Demo Video', () => {
     )
     await sendAndScroll(controller, page, turnResult('turn_001'), 2000)
 
-    // ─── Bookmark the first turn ────────────────────────────────────────────
+    // --- Bookmark the first turn ---
     const userMsg = page.locator('[data-testid="message-user"]').first()
     await userMsg.hover()
     await wait(500)
@@ -371,7 +370,7 @@ test.describe('Demo Video', () => {
     await bookmarkBtn.dispatchEvent('click')
     await wait(1500)
 
-    // ─── Turn 2: Second message ─────────────────────────────────────────────
+    // --- Turn 2: Second message ---
     await input.click()
     await page.keyboard.type('Add a 5-minute file cache so repeated queries are instant', {
       delay: 30,
@@ -430,8 +429,7 @@ test.describe('Demo Video', () => {
     )
     await sendAndScroll(controller, page, turnResult('turn_002'), 2000)
 
-    // ─── Show fork UI (no execution) ────────────────────────────────────────
-    // Scroll to first message to show rewind button
+    // --- Show fork UI (no execution) ---
     await userMsg.scrollIntoViewIfNeeded()
     await wait(500)
     await userMsg.hover()
@@ -452,8 +450,7 @@ test.describe('Demo Video', () => {
       await wait(2000)
     }
 
-    // ─── Re-engage autoscroll before next message ───────────────────────────
-    // Click the autoscroll/jump-to-bottom button in control bar
+    // --- Re-engage autoscroll before next message ---
     const autoscrollBtn = page.locator('button[title="Last message (Alt+End)"]')
     if (await autoscrollBtn.isVisible()) {
       await autoscrollBtn.click()
@@ -464,7 +461,7 @@ test.describe('Demo Video', () => {
       await wait(800)
     }
 
-    // ─── Turn 3: Queue messages while "responding" ──────────────────────────
+    // --- Turn 3: Queue messages while "responding" ---
     await input.click()
     await page.keyboard.type('Now add unit tests', { delay: 35 })
     await wait(400)
@@ -526,7 +523,7 @@ test.describe('Demo Video', () => {
     )
     await sendAndScroll(controller, page, turnResult('turn_003'), 2500)
 
-    // ─── Open Bookmarks panel ───────────────────────────────────────────────
+    // --- Open Bookmarks panel ---
     await page.keyboard.press('Alt+5')
     await wait(2500)
     await page.keyboard.press('Alt+5')

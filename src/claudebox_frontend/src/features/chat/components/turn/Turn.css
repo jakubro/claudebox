@@ -103,11 +103,10 @@
   border-radius: 6px;
   word-break: break-word;
   white-space: pre-wrap;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
-/* Force trailing newlines visible — pre-wrap doesn't create a line box for
-   a final \n at block boundary; zero-width space provides the needed content */
+/* pre-wrap skips a line box for a trailing \n at the block boundary - zero-width space fills it in. */
 .chat-message-user .message-content::after {
   content: "\200b";
 }
@@ -129,32 +128,10 @@
 /* Turn component */
 .turn-container {
   margin-bottom: 16px;
-  /* Skip layout and paint for off-screen turns. Median observed turn height
-     ~400px; setting this lower causes scrollbar jump as turns materialize,
-     higher wastes initial layout budget. Off-screen turns remain in the DOM
-     so browser find, selection, and print keep working.
-
-     Two-declaration cascade: Safari ≤17 + older Firefox parse-error the
-     `auto <length>` syntax and ignore that declaration entirely; the literal
-     fallback above keeps a 400px floor for them. Modern Chromium/Firefox 125+/
-     Safari 18+ promote to the `auto` variant which auto-caches the last
-     rendered size as the intrinsic estimate (residual smoothing). The
-     per-turn JS cache in useTurnHeights covers all browsers; this CSS is the
-     belt-and-suspenders layer for modern UAs. */
-  content-visibility: auto;
-  contain-intrinsic-size: 0 400px;
-  /* biome-ignore lint/suspicious/noDuplicateProperties: intentional Safari ≤17 / older Firefox cascade fallback (see comment above) */
-  contain-intrinsic-size: auto 400px;
 }
 
 .turn-container.pending {
   opacity: 0.6;
-}
-
-/* Opt-out applied by useTurnHeights warmup pass to force real layout on off-screen
-   turns so the JS cache can replace the predicted height with the measured one. */
-.turn-container.force-measure {
-  content-visibility: visible;
 }
 
 .turn {
@@ -205,6 +182,11 @@
   visibility: hidden;
   height: 0;
   overflow: hidden;
+}
+
+/* Floor height so absolutely-positioned .turn-meta buttons don't overflow an empty preview strip */
+.turn-collapsed .turn {
+  min-height: 44px;
 }
 
 .turn > .turn-content > :first-child {
@@ -274,7 +256,7 @@
 }
 
 .turn-text code {
-  font-family: monospace;
+  font-family: var(--font-mono);
   background: var(--bg-tertiary);
   padding: 2px 5px;
   border-radius: 3px;

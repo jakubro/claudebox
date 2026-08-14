@@ -26,7 +26,7 @@
   user-select: none;
   white-space: nowrap;
   z-index: 1;
-  background: #252526; /* Opaque — matches --bg-tertiary */
+  background: #252526; /* Opaque - distinct from --bg-tertiary (#2d2d30) */
   padding-left: 8px; /* Brings content flush with parent edge */
   padding-right: 12px; /* Gap between gutter and content */
 }

@@ -37,9 +37,7 @@ class LocalRuntime:
         self._registry: dict[str, _Process] = {}
         self._logger = get_logger(__name__)
 
-        # Set env var so ensure_tmp() is suppressed in this process and any
-        # child that inherits os.environ (hook callbacks run in-process via
-        # the SDK control channel, so they see this directly)
+        # Suppresses ensure_tmp() here and in inherited-env children (hooks run in-process).
         os.environ["CLAUDEBOX_NO_TMP_REMAP"] = "1"
 
     def build(self, mode: "ImageBuildMode | None" = None) -> None:
@@ -66,7 +64,7 @@ class LocalRuntime:
     ) -> str | None:
         """Spawn container_api_server.py as a subprocess on a free port."""
 
-        # config accepted for ContainerRuntimeProtocol conformance; local runtime builds no run args.
+        # config accepted for protocol conformance; local runtime builds no run args.
         port = self._find_free_port()
         backend_id = str(uuid.uuid4())
 
@@ -118,7 +116,6 @@ class LocalRuntime:
         result = []
 
         for backend_id, entry in self._registry.items():
-            # Check if process is still alive
             if entry.process.poll() is not None:
                 continue
 
@@ -132,7 +129,7 @@ class LocalRuntime:
                     "Names": [entry.name],
                     "State": "running",
                     "Labels": entry.labels,
-                }
+                },
             )
 
         return result

@@ -5,7 +5,6 @@ import { useSessionsList } from '../../../context/SessionsContext'
 import { getSettingChangeInfo, isSettingInitEvent } from '../utils/settingLabels'
 
 /**
- * Render a horizontal divider with centered label for a setting-change or container-restart event.
  * @param {Object} props
  * @param {Object} props.event - Divider event (model_changed, permission_mode_changed, effort_level_changed, or container_restarted)
  */

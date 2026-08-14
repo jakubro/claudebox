@@ -12,9 +12,9 @@ router = APIRouter(prefix="/api")
 
 @router.post("/send", response_model=None)
 async def send(svc: SessionDep, body: SendRequest):
-    """Queue a user prompt with optional attachments and inline replies for the assistant."""
+    """Queue a user prompt with optional attachments, inline replies, and a note for the assistant."""
 
-    await svc.send(body.prompt, body.attachments, body.inline_replies)
+    await svc.send(body.prompt, body.attachments, body.inline_replies, body.note)
 
     return None
 
@@ -22,6 +22,10 @@ async def send(svc: SessionDep, body: SendRequest):
 @router.get("/stream")
 async def chat_stream(svc: SessionDep):
     """Stream session events via SSE, replaying history on connect."""
+
+    # Checked here, not in subscribe(): the body is a lazy generator, so subscribe() runs after headers are sent.
+    # A raise inside subscribe() would arrive too late to become this typed response.
+    svc.ensure_ready()
 
     return BroadcastEventSourceResponse(svc)
 

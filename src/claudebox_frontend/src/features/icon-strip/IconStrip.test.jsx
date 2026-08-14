@@ -22,7 +22,6 @@ vi.mock('lucide-react', () => ({
   TrendingUp: () => <span>📈</span>,
 }))
 
-// Mock useBadgeCounts
 const mockBadgeCounts = {
   todoCount: 0,
   stashCount: 0,
@@ -35,12 +34,10 @@ vi.mock('./hooks/useBadgeCounts', () => ({
   default: () => mockBadgeCounts,
 }))
 
-// Mock BottomPanelsContext - IconStrip registers bottomPanels with the
-// context on mount.
+// Mock BottomPanelsContext - IconStrip claims the bottom slot on mount.
 vi.mock('../../context/BottomPanelsContext', () => ({
   useBottomPanels: () => ({
-    registerBottomPanel: vi.fn(),
-    unregisterBottomPanel: vi.fn(),
+    setBottomPanelIds: vi.fn(),
   }),
 }))
 

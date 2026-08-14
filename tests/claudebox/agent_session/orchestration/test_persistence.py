@@ -14,9 +14,6 @@ def _make_event(event_id: str = "e1", content: str = "hello") -> PublishedEvent:
     return make_published_event(id=event_id, content=content, primary=True, turn_id="t1")
 
 
-# --- EventLog ---
-
-
 class TestEventLog:
     """Test append-only event log backed by JSONL file."""
 
@@ -77,5 +74,5 @@ class TestEventLog:
         log = EventLog("test-session", ws)
         await log.open()
         await log.close()
-        await log.close()  # Should not raise
+        await log.close()
         assert log._file is None

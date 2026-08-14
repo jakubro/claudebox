@@ -37,7 +37,6 @@ _shared_processors = [
     structlog.processors.UnicodeDecoder(),
 ]
 
-# Configure structlog
 structlog.configure(
     processors=_shared_processors + [structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -83,7 +82,7 @@ def _configure_logging(console: bool, buffer: bool, debug: bool) -> None:
                     structlog.dev.ConsoleRenderer(
                         exception_formatter=structlog.dev.RichTracebackFormatter(
                             show_locals=False,
-                        )
+                        ),
                     ),
                 ],
             ),
@@ -113,10 +112,9 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
 
 
 def use_log_file(path: str | Path) -> None:
-    """Attach file handler and flush any buffered logs.
+    """Attach file handler and flush buffered logs.
 
-    Creates parent directories if needed. If a file handler already exists,
-    it is closed before attaching the new one.
+    Creates parent dirs, replacing any existing file handler.
     """
 
     if not _configured:
@@ -145,8 +143,8 @@ def use_rotating_log_file(
 ) -> None:
     """Attach a rotating file handler for persistent daemon-level logging.
 
-    Separate from use_log_file() (per-session) so both can coexist:
-    daemon-level rotating log + per-session append-only log.
+    Kept separate from use_log_file() (per-session) so a daemon-level rotating log and a
+    per-session append-only log can coexist.
     """
 
     if not _configured:
@@ -172,7 +170,7 @@ def use_rotating_log_file(
 def close_log_file() -> None:
     """Close file handler and re-enable memory buffering if configured.
 
-    Safe to call even if no file handler is attached.
+    Safe to call with no file handler attached.
     """
 
     if handler := _handlers.pop("file", None):

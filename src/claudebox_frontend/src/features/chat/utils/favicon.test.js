@@ -95,9 +95,7 @@ describe('drawWorkspaceBadge', () => {
 
     drawWorkspaceBadge(ctx, '#1e3a5f', { alpha: 0.25 })
 
-    // The mock records the last value assigned to globalAlpha. drawWorkspaceBadge
-    // sets it inside its save/restore window; a real ctx would roll it back, but
-    // the mock holds the in-window value.
+    // Mock's restore() is a no-op, so globalAlpha stays at the in-window value; a real ctx would roll it back.
     expect(ctx.globalAlpha).toBe(0.25)
   })
 
@@ -112,7 +110,6 @@ describe('drawWorkspaceBadge', () => {
 
 describe('setFaviconFromCanvas', () => {
   beforeEach(() => {
-    // Clear any existing favicon link
     document.head.innerHTML = ''
   })
 

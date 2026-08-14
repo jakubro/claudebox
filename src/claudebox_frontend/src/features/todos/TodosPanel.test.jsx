@@ -4,7 +4,6 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import TodosPanel from './TodosPanel'
 
-// Mock EventsContext
 const mockEventsData = {
   isResuming: false,
   isReplaying: false,
@@ -163,7 +162,6 @@ describe('TodosPanel', () => {
 
       render(<TodosPanel />)
 
-      // Unknown status should fall back to "○" icon
       const statusEl = screen.getByText('○')
       expect(statusEl).toBeInTheDocument()
     })
@@ -227,10 +225,8 @@ describe('TodosPanel', () => {
 
       const sections = screen.getAllByTestId('todo-section')
       expect(sections).toHaveLength(2)
-      // Main section first (no header)
       expect(sections[0].querySelector('[data-testid="todo-section-header"]')).toBeNull()
       expect(sections[0]).toHaveTextContent('Main task')
-      // Subagent section second (with header)
       expect(sections[1].querySelector('[data-testid="todo-section-header"]')).toBeTruthy()
       expect(sections[1]).toHaveTextContent('Sub task')
     })

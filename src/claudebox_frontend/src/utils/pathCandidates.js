@@ -19,11 +19,8 @@ const WRAP_CHARS = new Set(['`', '"', "'"])
 const PATH_ILLEGAL = /[`'"()[\]{}*?]/
 
 /**
- * Extract path candidates from a text string.
- *
  * Strips surrounding punctuation (backticks, quotes, parens, brackets, asterisks),
  * trailing line:col suffixes, rejects tokens with path-illegal characters.
- *
  * @param {string} text - Input text to scan.
  * @returns {Array<{candidate: string, start: number, end: number}>}
  */
@@ -40,12 +37,10 @@ export function extractPathCandidates(text) {
     let word = match[0]
     let start = match.index
 
-    // Skip URLs
     if (word.startsWith('http://') || word.startsWith('https://')) {
       continue
     }
 
-    // Strip leading/trailing punctuation
     const leadingMatch = word.match(LEADING_PUNCT)
     if (leadingMatch) {
       start += leadingMatch[0].length
@@ -56,7 +51,6 @@ export function extractPathCandidates(text) {
       continue
     }
 
-    // Strip leading/trailing wrapping characters (backticks, quotes)
     let ltrim = 0
     while (ltrim < word.length && WRAP_CHARS.has(word[ltrim])) {
       ltrim++
@@ -73,7 +67,6 @@ export function extractPathCandidates(text) {
       continue
     }
 
-    // Strip trailing line:col suffixes (e.g. ":3269:30" from grep output)
     word = word.replace(TRAILING_LINE_COL, '')
     if (!word) {
       continue
@@ -96,12 +89,10 @@ export function extractPathCandidates(text) {
       continue
     }
 
-    // Skip tokens containing characters illegal in filesystem paths
     if (PATH_ILLEGAL.test(word)) {
       continue
     }
 
-    // Accept if contains "/" (path separator) or has file-like extension
     const hasSlash = word.includes('/')
     const hasExtension = looksLikeFilename(word)
 
@@ -123,8 +114,8 @@ export function uniqueCandidates(extractions) {
 }
 
 /**
- * Resolve a path candidate to an absolute host path.
- * Handles /tmp -> sessionDir mapping and explicit resolved path lookup.
+ * Resolve a path candidate to an absolute host path: /tmp maps via sessionDir, else falls back to
+ * an explicit resolvedPaths lookup.
  * @param {string} candidate - Path candidate string.
  * @param {string|null} sessionDir - Host session directory for /tmp resolution.
  * @param {Object<string, string>} resolvedPaths - Map of candidate -> resolved path.

@@ -11,11 +11,6 @@ class Request:
     """Unified context for Claude Code hook execution.
 
     Combines workspace resolution, session management, and logging setup.
-
-    Attributes:
-        workspace: The resolved workspace containing the session.
-        session: The active session with its directory paths.
-        logger: Configured structlog logger for the hook.
     """
 
     def __init__(self, session_id: str, start_dir: str | Path | None = None):

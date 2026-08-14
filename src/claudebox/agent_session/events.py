@@ -1,10 +1,8 @@
 """AgentEvent - runtime-neutral event yielded by AgentSession.receive_events.
 
-`AgentEvent.payload` is a tagged union over a `Literal` `EventKind` discriminator;
-each kind carries the curated minimum field set its consumers actually read. Block-
-level kinds (text / thinking / tool_use / tool_result) flow nested inside
-``content_blocks`` lists on user / assistant message payloads - keeps wire-shape
-continuity with the JSONL replay path.
+`AgentEvent.payload` is a tagged union over the `EventKind` `Literal`, each kind carrying only the
+fields its consumers read. Block-level kinds (text/thinking/tool_use/tool_result) nest inside
+`content_blocks` lists on user/assistant payloads, keeping wire-shape continuity with JSONL replay.
 """
 
 from dataclasses import dataclass, field
@@ -60,12 +58,8 @@ class ToolResultBlock:
 
 @dataclass(frozen=True)
 class UnknownBlock:
-    """Preserve unknown SDK block classes verbatim - wire-shape continuity.
-
-    Emitted when an upstream runtime ships a block class claudebox doesn't yet
-    project to a typed dataclass. Downstream conversion still yields an Event,
-    so the user sees a generic block rather than silent data loss.
-    """
+    """Preserve an unknown SDK block class verbatim; downstream conversion still yields an Event
+    instead of silently dropping data."""
 
     class_name: str
     data: dict[str, Any]
@@ -90,16 +84,12 @@ class McpServerInit:
 class SystemInitData:
     """Recognised SDK init data fields at the pinned version, plus an `extra` passthrough.
 
-    Fields the SDK adds that claudebox does not yet consume are captured verbatim
-    into `extra` by `runtime_claude.py::_translate_sdk_message` (with a one-shot
-    warning) rather than raised on - additive SDK releases stay non-breaking,
-    mirroring `UnknownBlock`. Promote a key to a typed field here once a consumer
-    needs to read it. The promotion fields `session_id` and `model` live on
-    `SystemInitPayload` and are excluded here; the wire flatten reinjects them
-    into the dict shape for downstream consumers.
-
-    Field names match the SDK's exact emission casing (including `apiKeySource`
-    and `permissionMode` camelCase) - the shape is owned by the upstream SDK.
+    Fields the SDK adds that claudebox doesn't yet consume land in `extra` via
+    `runtime_claude.py::_translate_sdk_message` (one-shot warning, never raised) - keeps additive
+    SDK releases non-breaking, mirroring `UnknownBlock`; promote a key to a typed field once a
+    consumer needs it. `session_id`/`model` live on `SystemInitPayload` instead and get reinjected
+    here by the wire flatten. Field casing (`apiKeySource`, `permissionMode`) matches the SDK's
+    exact emission - the shape is upstream-owned, not a claudebox convention.
     """
 
     agents: list[str] = field(default_factory=list)
@@ -205,9 +195,8 @@ class CompactBoundaryPayload:
 class TaskNotificationPayload:
     """Async-subagent terminal signal - carries the SDK task_notification fields.
 
-    `status` is normalized to the claudebox notification vocabulary
-    (completed / failed / killed); `summary` is the SDK's one-line summary and
-    is later overwritten by the monitor's own output-file extraction when present.
+    `status` is normalized to the claudebox vocabulary (completed/failed/killed); `summary` is the
+    SDK's one-liner, later overwritten by the monitor's own output-file extraction when present.
     """
 
     task_id: str
@@ -232,11 +221,8 @@ EventPayload = (
 
 @dataclass(frozen=True)
 class AgentEvent:
-    """One event from the runtime's response stream.
-
-    ``kind`` discriminates the payload class; consumers use ``match evt.kind:``
-    to narrow ``evt.payload`` to the corresponding dataclass.
-    """
+    """One event from the runtime's response stream; `kind` discriminates which dataclass `payload`
+    holds."""
 
     kind: EventKind
     payload: EventPayload

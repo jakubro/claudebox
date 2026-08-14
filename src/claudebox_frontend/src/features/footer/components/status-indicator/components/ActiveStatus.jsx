@@ -5,8 +5,6 @@ import { SILENCE_THRESHOLD } from '../../../../../config/timing'
 import { formatDurationCompact } from '../../../../../utils/formatters'
 
 /**
- * Render animated status indicator with elapsed timer and silence detection.
- *
  * @param {object} props
  * @param {string} props.label - Status label text (e.g., "Working", "Submitting").
  * @param {string} props.status - Status key for data attribute.
@@ -20,16 +18,12 @@ export default function ActiveStatus({ label, status, respondingSince, lastEvent
   const [isSilent, setIsSilent] = useState(false)
 
   useEffect(() => {
-    // Elapsed timer ticks every second - runs continuously while mounted.
     const elapsedInterval = setInterval(() => {
       setElapsed(Math.floor((Date.now() - anchorTimestamp) / 1000))
     }, 1000)
 
-    // Silence detection - event-driven, not polled. Recompute immediately
-    // whenever lastEventTimestamp changes so recovery from "Waiting" -> label
-    // happens the moment a new event arrives (no up-to-one-second polling
-    // lag). When still within the threshold, schedule a one-shot trip timer
-    // for the exact moment silence begins.
+    // Event-driven, not polled: recomputes on lastEventTimestamp change (no up-to-1s lag) and
+    // schedules a one-shot timer for the exact moment silence begins.
     let tripTimer = null
     if (lastEventTimestamp) {
       const sinceLastEvent = Date.now() - lastEventTimestamp

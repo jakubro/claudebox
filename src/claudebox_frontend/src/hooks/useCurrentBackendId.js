@@ -6,15 +6,8 @@ import { useEvents } from '../context/EventsContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 
 /**
- * Fetch the active session's container record from the daemon and return its
- * `backend_id` field - the runtime container ID visible in the runtime's `ps` output.
- *
- * The lookup re-runs whenever the active workspace or container changes, and
- * whenever a `container_status` SSE event names the current container (so
- * stop/start transitions reflect in the footer without manual refresh).
- *
- * @returns {string|null} The backend_id, or null when no container is attached
- *   or the lookup is still pending / failed.
+ * Re-runs on workspace/container change or a `container_status` SSE event naming this container,
+ * so stop/start transitions reach the footer without a refresh. Null until attached and resolved.
  */
 export default function useCurrentBackendId() {
   const { containerId } = useEvents()
@@ -22,7 +15,7 @@ export default function useCurrentBackendId() {
   const { lastContainerEvent } = useDaemonStreamContext()
   const [backendId, setBackendId] = useState(null)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: lastContainerEvent is a refetch trigger - its value isn't read in the body, but it must remain a dep so container_status SSE events re-run the lookup.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unread; kept as dep to re-run on SSE events.
   useEffect(() => {
     if (!(workspaceId && containerId)) {
       setBackendId(null)

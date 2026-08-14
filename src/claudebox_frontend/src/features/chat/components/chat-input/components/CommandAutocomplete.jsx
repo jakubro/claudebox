@@ -5,11 +5,7 @@ import { CATEGORY_COLORS } from '../../../../../utils/categorize'
 import CommandDetailPanel from './CommandDetailPanel'
 
 /**
- * Render a two-panel autocomplete dropdown above the chat textarea.
- *
- * Left panel shows a filtered list of commands with keyboard navigation.
- * Right panel shows the full description of the highlighted command.
- *
+ * Left panel: filtered command list with keyboard nav; right panel: description of the highlighted command.
  * @param {object} props
  * @param {Array} props.items - Filtered command items [{name, category, usage?, description?}].
  * @param {number} props.selectedIndex - Currently highlighted item index.
@@ -18,7 +14,6 @@ import CommandDetailPanel from './CommandDetailPanel'
 export default function CommandAutocomplete({ items, selectedIndex, onSelect }) {
   const listRef = useRef(null)
 
-  // Scroll selected item into view
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional - scroll on prop change
   useEffect(() => {
     if (!listRef.current) {

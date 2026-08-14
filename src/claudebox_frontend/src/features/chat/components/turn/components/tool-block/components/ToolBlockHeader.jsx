@@ -1,28 +1,16 @@
 /** Header area for ToolBlock showing tool name, result summary, and timing. */
 
-import { Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2 } from 'lucide-react'
 import { NotificationStatus } from '../../../../../../../config/schema'
 import { formatBlockTiming } from '../../../../../../../utils/formatters'
 import { getSummaryText, getToolStatus } from '../utils/toolResultFormatters'
 
 /**
- * Render the header area of a ToolBlock with tool name, status bullet, and result summary.
- * @param {Object} props
  * @param {string} props.header - Formatted header text (e.g., 'Read(file.txt)').
- * @param {string} props.toolName - Tool name for summary computation.
- * @param {string} [props.tooltip] - Tooltip text for the tool name.
- * @param {string} props.summary - Summary text to display.
- * @param {boolean} props.hasExpandable - Whether there is expandable content.
- * @param {Function} props.onToggle - Callback when header is clicked.
+ * @param {string} [props.editorUrl] - Resolved "open in editor" URI; omit to hide the affordance.
  * @param {Object} props.toolStatus - Grouped status object.
- * @param {boolean} props.toolStatus.isPending - Whether the tool is still running.
- * @param {boolean} props.toolStatus.isAwaitingAnswer - Whether awaiting user response.
- * @param {boolean} props.toolStatus.wasAnswered - Whether user has responded.
- * @param {boolean} props.toolStatus.wasSkipped - Whether user skipped the form.
- * @param {boolean} props.toolStatus.isError - Whether the tool result is an error.
- * @param {string} [props.toolStatus.answerLabel] - Label for answered interactive tools.
  * @param {Object} [props.toolStatus.taskNotification] - Background task notification with status.
- * @param {boolean} [props.toolStatus.isTaskOutputKilled] - Whether the synchronous TaskOutput result reports killed status.
+ * @param {boolean} [props.toolStatus.isTaskOutputKilled] - Whether TaskOutput's sync result reports killed.
  * @param {number} [props.toolStatus.blockDuration] - Block duration in seconds.
  * @param {number} [props.toolStatus.blockRelativeTime] - Relative offset from turn start in seconds.
  */
@@ -33,6 +21,7 @@ export default function ToolBlockHeader({
   summary,
   hasExpandable,
   onToggle,
+  editorUrl = null,
   toolStatus,
 }) {
   const {
@@ -64,6 +53,18 @@ export default function ToolBlockHeader({
         <span className="tool-name" title={tooltip || undefined}>
           {header}
         </span>
+        {editorUrl && (
+          <button
+            type="button"
+            className="tool-open-in-editor-btn"
+            title="Open in editor"
+            onClick={e => {
+              e.stopPropagation()
+              window.open(editorUrl, '_blank', 'noopener,noreferrer')
+            }}>
+            <ExternalLink size={11} />
+          </button>
+        )}
         {timing && <span className="block-timing">{timing}</span>}
       </div>
       <div className="tool-result">

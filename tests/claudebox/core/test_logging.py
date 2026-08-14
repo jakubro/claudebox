@@ -26,7 +26,6 @@ class TestUseRotatingLogFile:
         assert len(rotating_handlers) == 1
         assert log_path.exists()
 
-        # Cleanup
         root.removeHandler(rotating_handlers[0])
         rotating_handlers[0].close()
 
@@ -46,7 +45,6 @@ class TestUseRotatingLogFile:
         assert handler.maxBytes == 5_000_000
         assert handler.backupCount == 3
 
-        # Cleanup
         root.removeHandler(handler)
         handler.close()
 
@@ -66,7 +64,6 @@ class TestUseRotatingLogFile:
         assert handler.maxBytes == 10_485_760
         assert handler.backupCount == 5
 
-        # Cleanup
         root.removeHandler(handler)
         handler.close()
 
@@ -98,7 +95,6 @@ class TestUseRotatingLogFile:
         assert len(rotating_handlers) == 1
         assert len(file_handlers) == 1
 
-        # Cleanup
         for h in rotating_handlers + file_handlers:
             root.removeHandler(h)
             h.close()
@@ -122,6 +118,5 @@ class TestUseRotatingLogFile:
         assert len(rotating_handlers) == 1
         assert Path(rotating_handlers[0].baseFilename) == path2
 
-        # Cleanup
         root.removeHandler(rotating_handlers[0])
         rotating_handlers[0].close()

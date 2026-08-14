@@ -13,8 +13,7 @@ vi.mock('../../../../../../../../../utils/eventProcessing', async importOriginal
   }
 })
 
-// useCapabilities depends on SessionData context which isn't provided here;
-// stub it so ToolBlock renders without requiring the full provider tree.
+// useCapabilities needs SessionData context, absent here; stub it so ToolBlock renders without full provider tree.
 vi.mock('../../../../../../../../../hooks/useCapabilities', () => ({
   default: () => ({
     capabilities: { supports_ask_user_question: true },

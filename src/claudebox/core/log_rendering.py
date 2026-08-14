@@ -1,4 +1,4 @@
-"""Shared structlog ConsoleRenderer with ISO8601 timestamps, used by daemon stderr and ``claudebox logs``."""
+"""Shared structlog ConsoleRenderer with ISO timestamps for daemon stderr and ``claudebox logs``."""
 
 from collections.abc import MutableMapping
 from datetime import UTC, datetime
@@ -7,8 +7,8 @@ from typing import Any
 import structlog
 
 
-# Fields produced by the SSE LogBroadcaster projection that need translation
-# back into the structlog event_dict shape ConsoleRenderer consumes.
+# Fields the SSE LogBroadcaster projection emits, translated back to the structlog event_dict
+# shape ConsoleRenderer consumes.
 _SSE_KNOWN_FIELDS = {"timestamp", "level", "logger", "message", "extra"}
 
 
@@ -20,9 +20,9 @@ _RENDERER = structlog.dev.ConsoleRenderer(
 def render_event(record: dict[str, Any]) -> str:
     """Render a structlog record dict as one line: ISO timestamp, level, logger, message, kvs.
 
-    Accepts either the on-disk JSON shape (``event``/lowercase level/flat kvs) or
-    the SSE-projected shape (``message``/uppercase level/nested ``extra``) - both
-    are normalized to the structlog event_dict ConsoleRenderer expects.
+    Accepts the on-disk JSON shape (``event``/lowercase level/flat kvs) or the SSE-projected
+    shape (``message``/uppercase level/nested ``extra``); both normalize to the event_dict shape
+    ConsoleRenderer expects.
     """
 
     return _RENDERER(None, "", _to_event_dict(record))
@@ -35,9 +35,8 @@ def format_timestamp_iso(
 ) -> MutableMapping[str, Any]:
     """Console-only structlog processor: rewrite float-epoch ``timestamp`` to ISO8601 string.
 
-    Inserted between ``remove_processors_meta`` and ``ConsoleRenderer`` in the
-    daemon's console handler chain. File handler chain is untouched so the
-    on-disk JSON contract (float epoch) is preserved.
+    Inserted between ``remove_processors_meta`` and ``ConsoleRenderer`` in the daemon's console
+    handler chain; the file handler chain is untouched, preserving the on-disk float-epoch contract.
     """
 
     ts = event_dict.get("timestamp")

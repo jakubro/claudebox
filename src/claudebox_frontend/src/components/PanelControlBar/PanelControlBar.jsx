@@ -1,9 +1,8 @@
 /** Shared 24px control bar - outer chrome for chat, board, and other panels. */
 
 /**
- * Render a horizontal control bar with shared 24px chrome.
- * Children are flex items (typically `.panel-control-group` wrappers); panels
- * fill in their own buttons styled via the shared `.panel-control-btn` class.
+ * Children are flex items (typically `.panel-control-group` wrappers).
+ * Panels fill in their own buttons, styled via the shared `.panel-control-btn` class.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Control groups (flex children).

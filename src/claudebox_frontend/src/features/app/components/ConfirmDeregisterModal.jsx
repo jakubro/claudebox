@@ -1,8 +1,6 @@
 /** Confirmation modal for deregistering a workspace. */
 
 /**
- * Confirmation modal for deregistering a workspace.
- *
  * @param {object} props
  * @param {object} props.workspace - Workspace record `{id, path}`.
  * @param {Function} props.onConfirm - Proceed with deregistration.

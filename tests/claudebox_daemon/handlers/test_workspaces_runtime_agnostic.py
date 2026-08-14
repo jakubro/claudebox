@@ -1,10 +1,4 @@
-"""Workspace defaults endpoint resolves per the workspace's configured runtime.
-
-A LangGraph workspace must return LangGraph's capability matrix + defaults,
-not Claude's. These tests gate that: capability matrix, runtime name, and
-catalog defaults all track the runtime resolved from the workspace's `agent`
-TOML key; unknown agents 422.
-"""
+"""Workspace defaults endpoint keys off `agent`: LangGraph gets its own matrix; unknown agents get HTTP 422."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -25,7 +19,7 @@ def _build_app(workspace_path: str, *, agent: str):
     async def _fake_get_workspace(workspace_id: str):
         workspace = MagicMock()
         workspace.path = workspace_path
-        config = SimpleNamespace(agent=agent)
+        config = SimpleNamespace(agent=agent, editor_url_template=None)
 
         return SimpleNamespace(workspace=workspace, config=config)
 
@@ -67,9 +61,7 @@ def test_session_defaults_langgraph_returns_langgraph_matrix():
     assert caps["supports_manual_compact"] is False
     assert caps["supports_mcp_delegation"] is False
 
-    # The default-axis fields are still serialized for axes the runtime supports
-    # (supports_models is True for LangGraph); empty string when no class-level
-    # default exists.
+    # Default-axis fields still serialize for supported axes; empty string when no default exists.
     assert body["model"] == ""
     assert body["permission_mode"] is None  # supports_permission_modes False -> omitted
     assert body["effort_level"] is None
@@ -113,7 +105,6 @@ def test_session_defaults_claude_versus_langgraph_capability_diff():
     )
 
     assert claude_body["runtime_name"] != langgraph_body["runtime_name"]
-    # supports_set_model_mid_session is a clean Claude-vs-LangGraph divergence
-    # (model bound at graph construction under LangGraph, runtime-mutable under Claude).
+    # supports_set_model_mid_session diverges: LangGraph binds at construction, Claude at runtime.
     assert claude_body["capabilities"]["supports_set_model_mid_session"] is True
     assert langgraph_body["capabilities"]["supports_set_model_mid_session"] is False

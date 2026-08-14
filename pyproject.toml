@@ -1,7 +1,7 @@
 [project]
 name = "claudebox"
 version = "1.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
   "aiofiles>=24.0",
   "argcomplete>=3.0",
@@ -16,12 +16,15 @@ dependencies = [
   "langchain-mcp-adapters>=0.2,<1",
   "langchain-ollama>=0.3,<1",
   "langgraph>=1.0,<2",
-  "langgraph-checkpoint-sqlite>=2.0,<3",
+  # Do NOT relax to >=3.0: up to 3.0.2 the saver calls Connection.is_alive, which
+  # aiosqlite 0.22 removed, and every session dies on its first turn. Fixed in 3.0.3.
+  "langgraph-checkpoint-sqlite>=3.1,<4",
   "markdownify>=0.11",
   "nbformat>=5.10",
   "pathspec>=0.12",
   "ruamel.yaml>=0.18",
   "rich>=13.0",
+  "rich-argparse>=1.6",
   "sse-starlette>=2.0",
   "structlog>=24.0",
   "uvicorn[standard]>=0.30",

@@ -5,17 +5,18 @@ import { listSessions } from '../api/sessions'
 import { getUiState, patchGlobalUiState } from '../api/uiState'
 import { PINNED_PATH, PINS_CHANGE_SIGNAL_KEY, WORKSPACE_COLOR_PATH } from '../config/storage'
 import { SESSIONS_CHANGED_DEBOUNCE_MS, SESSIONS_REFRESH_FALLBACK_MS } from '../config/timing'
+import {
+  collectLiveSessionIdsAcrossWorkspaces,
+  sweepDeadSessionStorage,
+} from '../utils/sessionStorageGc'
 import { useDaemonStreamContext } from './DaemonStreamContext'
 import { useWorkspace } from './WorkspaceContext'
 
 const SessionsContext = createContext(null)
 
 /**
- * Provide preloaded sessions list with SSE-driven refresh.
- *
- * Refetches when the daemon signals sessions_changed or container_status. A
- * low-frequency fallback poll guarantees the list still converges if a daemon
- * signal is missed or dropped.
+ * Refetches when the daemon signals sessions_changed or container_status.
+ * A low-frequency fallback poll guarantees the list still converges if a daemon signal is missed or dropped.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
@@ -36,10 +37,17 @@ export function SessionsProvider({ children }) {
     }
     try {
       const [sessionsData, uiStateData] = await Promise.all([listSessions(), getUiState()])
-      setSessions(sessionsData.sessions || [])
+      const liveSessions = sessionsData.sessions || []
+      setSessions(liveSessions)
       setPinnedSessions(uiStateData.global?.pinnedSessions || [])
       setWorkspaceColorState(uiStateData.global?.workspaceColor || null)
       setError(null)
+      // Storage keys lack a workspace segment; a session live elsewhere must count as live, or refresh deletes it.
+      const liveAcrossWorkspaces = await collectLiveSessionIdsAcrossWorkspaces(
+        workspaceId,
+        liveSessions.map(s => s.session_id),
+      )
+      sweepDeadSessionStorage(liveAcrossWorkspaces)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -61,18 +69,15 @@ export function SessionsProvider({ children }) {
     return () => clearTimeout(debounceRef.current)
   }, [sessionsChanged, containerStatus, fetchSessions])
 
-  // Defense-in-depth: the daemon signals above are the primary refresh trigger,
-  // but a dropped or missed signal would otherwise strand the list. A low-frequency
-  // poll guarantees the list eventually converges.
+  // Defense-in-depth: a dropped or missed daemon signal would strand the list without this poll.
   useEffect(() => {
     const interval = setInterval(fetchSessions, SESSIONS_REFRESH_FALLBACK_MS)
 
     return () => clearInterval(interval)
   }, [fetchSessions])
 
-  // Cross-tab pin sync: pins are optimistic UI-state with no daemon SSE signal,
-  // so mirror useBookmarks - another tab writes PINS_CHANGE_SIGNAL_KEY on toggle
-  // and this listener refetches ui-state to pick up the change.
+  // Cross-tab pin sync mirrors useBookmarks: pins are optimistic UI-state with no daemon SSE signal.
+  // Another tab writes PINS_CHANGE_SIGNAL_KEY on toggle; this listener refetches ui-state to pick it up.
   useEffect(() => {
     const handleStorage = e => {
       if (e.key === PINS_CHANGE_SIGNAL_KEY) {
@@ -93,8 +98,8 @@ export function SessionsProvider({ children }) {
     }
   }, [])
 
-  // Optimistic insert/update - used by fork to populate the panel before the
-  // sessions_changed SSE refresh lands. Replaces by session_id if present.
+  // Optimistic insert/update: fork uses this to populate the panel before the sessions_changed SSE lands.
+  // Replaces by session_id if present.
   const seedSession = useCallback(info => {
     if (!info?.session_id) {
       return
@@ -110,8 +115,7 @@ export function SessionsProvider({ children }) {
     })
   }, [])
 
-  // Toggle pin with optimistic update - fire-and-forget, no read needed.
-  // Signals other tabs via PINS_CHANGE_SIGNAL_KEY so they refetch ui-state.
+  // Optimistic, fire-and-forget pin toggle; signals other tabs via PINS_CHANGE_SIGNAL_KEY to refetch ui-state.
   const togglePin = useCallback(sessionId => {
     setPinnedSessions(prev => {
       const isPinned = prev.includes(sessionId)

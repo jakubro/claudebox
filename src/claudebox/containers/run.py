@@ -9,6 +9,9 @@ from ..constants import (
     CONTAINER_CLAUDE_JSON_MOUNT,
     CONTAINER_IMAGE_NAME,
     CONTAINER_LIB_MOUNT,
+    CONTAINER_NESTED_FUSE_DEVICE,
+    CONTAINER_NESTED_GRAPHROOT,
+    CONTAINER_NESTED_GRAPHROOT_TMPFS_SIZE,
     CONTAINER_PROFILE_MOUNT,
     CONTAINER_SESSIONS_MOUNT,
     DEFAULT_LABELS,
@@ -36,8 +39,7 @@ def run_container(
 ) -> int:
     """Run the claudebox container interactively with TUI; return its exit code.
 
-    The container is labeled ``kind={kind}`` so ``containers list`` can distinguish
-    agent sessions from interactive shells.
+    Labeled ``kind={kind}`` so ``containers list`` can distinguish agent sessions from shells.
     """
 
     args = get_container_run_args(
@@ -67,12 +69,8 @@ def get_container_run_args(
 ) -> Iterable:
     """Yield container run arguments from configuration.
 
-    Shared builder for both interactive CLI and daemon-managed containers.
-    Caller controls mode via parameters; config provides workspace-level defaults.
-
-    Arguments before the image name (podman run flags) include dedicated parameters
-    and ``run_args``.  Arguments after the image name (container CMD) come from
-    ``cmd_args``.
+    Shared by interactive CLI and daemon-managed containers; config gives defaults, caller picks mode.
+    Flags before the image come from dedicated params and ``run_args``; ``cmd_args`` becomes the container CMD.
     """
 
     if interactive:
@@ -94,6 +92,14 @@ def get_container_run_args(
 
     yield "--pids-limit"
     yield "-1"
+
+    if config.containers_nested:
+        yield "--device"
+        yield CONTAINER_NESTED_FUSE_DEVICE
+
+        # Tmpfs-mounts the inner podman graphroot so it never persists past the session.
+        yield "--tmpfs"
+        yield f"{CONTAINER_NESTED_GRAPHROOT}:size={CONTAINER_NESTED_GRAPHROOT_TMPFS_SIZE}"
 
     # Labels
 

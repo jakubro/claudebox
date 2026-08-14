@@ -8,8 +8,8 @@ const ContainerMapContext = createContext(null)
 /**
  * Provide an eagerly-populated session->container mapping.
  *
- * SessionTab reads from this map first, falling back to the sessions list
- * for page-reload scenarios where the map hasn't been populated yet.
+ * SessionTab reads this map first, falling back to the sessions list when it hasn't been
+ * populated yet (e.g. on page reload).
  *
  * @param {object} props
  * @param {React.ReactNode} props.children
@@ -42,13 +42,10 @@ export function ContainerMapProvider({ children }) {
     })
   }, [])
 
-  // Single source of truth for a session's container status. Container presence
-  // is authoritative: resolve it first (eager map, then the canonical sessions
-  // list, then `fallbackContainerId`). A session with no live container is 'none'
-  // even if the optimistic `stoppingSessions` set still holds it; 'stopping'
-  // applies only while a container is present, so status follows the list. Every
-  // status dot (panel, header, bookmarks) routes through this so the surfaces
-  // cannot diverge.
+  // Authoritative order: eager map, then sessions list, then `fallbackContainerId`. No container
+  // means 'none' even with a stale `stoppingSessions` entry (self-heals past missed "stopped"
+  // events); 'stopping' applies only while present. Every status dot (panel, header, bookmarks)
+  // routes through this so surfaces can't diverge.
   const deriveSessionStatus = useCallback(
     (sessionId, sessions = [], fallbackContainerId = null) => {
       const containerId =

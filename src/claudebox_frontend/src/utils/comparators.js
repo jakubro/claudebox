@@ -1,25 +1,10 @@
 /** Comparator factory functions for React.memo and equality checking. */
 
 /**
- * Create a props comparator for React.memo with support for custom field comparisons.
- *
- * By default, performs shallow equality (===) on all props.
- * Use specialCompare map to provide custom comparison functions for specific fields.
- *
+ * Create a props comparator for React.memo. Shallow-compares all props by default;
+ * specialCompare supplies per-field overrides.
  * @param {Object.<string, function(any, any): boolean>} specialCompare - Map of prop names to custom comparators
- * @returns {function(Object, Object): boolean} - Comparator function for React.memo
- *
- * @example
- * // Simple usage - shallow compare all props
- * export default memo(MyComponent, createPropsComparator())
- *
- * @example
- * // With custom comparison for arrays
- * export default memo(MyComponent, createPropsComparator({
- *   items: (a, b) => a.length === b.length,
- *   events: (a, b) => a.length === b.length &&
- *     (a.length === 0 || a[a.length-1].timestamp === b[b.length-1].timestamp)
- * }))
+ * @returns {function(Object, Object): boolean}
  */
 export function createPropsComparator(specialCompare = {}) {
   return (prev, next) => {
@@ -39,13 +24,7 @@ export function createPropsComparator(specialCompare = {}) {
   }
 }
 
-/**
- * Compare two ID Sets for member equality (order-independent, null-safe).
- *
- * Returns true when both are the same reference, both are null/undefined,
- * or both hold exactly the same set of ids. Designed for memo() comparators
- * where the Set identity churns per render but contents are usually stable.
- */
+/** Order-independent, null-safe Set equality, for memo() comparators where Set identity churns per render even when contents are stable. */
 export function sameIdSet(a, b) {
   if (a === b) {
     return true

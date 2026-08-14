@@ -14,15 +14,8 @@ from ..core import serialization
 class StatuslineRequest(Request):
     """Request context for statusline with model, cost, and timing data.
 
-    Attributes:
-        data: The raw statusline payload dictionary from Claude Code.
-        model: Display name of the current model (e.g., 'Claude Sonnet 4').
-        output_style: Name of the current output style (e.g., 'concise').
-        total_cost: Total cost in USD for the conversation so far.
-        conversation_duration: Total wall-clock time since conversation started.
-        api_duration: Total time spent waiting for API responses.
-        current_dir: Absolute path to the current working directory.
-        relative_dir: Current directory path relative to the workspace root.
+    ``model``/``output_style`` are display strings from Claude Code (e.g. 'Claude Sonnet 4', 'concise').
+    ``relative_dir`` is ``current_dir`` relative to the workspace root.
     """
 
     def __init__(self, data: dict):
@@ -48,8 +41,7 @@ class StatuslineRequest(Request):
 def statusline(__fn, /) -> Callable:
     """Decorator for Claude Code statusline functions.
 
-    Reads JSON from stdin, creates StatuslineRequest, calls decorated function
-    with optional 'request' kwarg, and prints returned string to stdout.
+    Reads stdin JSON, builds a StatuslineRequest, calls the function (optional 'request' kwarg), prints result.
 
     Example:
         @statusline

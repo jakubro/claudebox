@@ -4,11 +4,8 @@ import { useCallback } from 'react'
 import { interrupt } from '../api/chat'
 
 /**
- * Build a callback that drives the interrupt lifecycle and surfaces failures.
- *
- * The caller is responsible for sourcing the InteractionContext setters and
- * setting `disabled` based on the appropriate guard (e.g. `!canInterrupt`,
- * `interruptStatus === 'stopping'`, or "stop button is disabled").
+ * Caller sources the InteractionContext setters and sets `disabled` from its own guard (e.g.
+ * `!canInterrupt`, `interruptStatus === 'stopping'`, or a disabled stop button).
  *
  * @param {{
  *   startInterrupt: () => void,

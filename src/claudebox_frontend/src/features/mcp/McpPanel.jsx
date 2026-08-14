@@ -9,7 +9,6 @@ import useCapabilities from '../../hooks/useCapabilities'
 import { getMcpServers } from '../../utils/eventProcessing'
 import { statusClass } from './utils/serverStatus'
 
-/** Render panel showing MCP server status with management controls. */
 export default function McpPanel() {
   const { capabilities } = useCapabilities()
   const { events, isResuming, isReplaying } = useEvents()
@@ -67,7 +66,6 @@ export default function McpPanel() {
     [showError],
   )
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (errorTimerRef.current) {

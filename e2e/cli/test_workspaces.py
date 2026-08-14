@@ -39,7 +39,10 @@ class TestWorkspacesDaemonUnreachable:
         ],
     )
     def test_daemon_unreachable_exits_1(
-        self, args: list[str], run_claudebox, httpserver: HTTPServer
+        self,
+        args: list[str],
+        run_claudebox,
+        httpserver: HTTPServer,
     ) -> None:
         httpserver.expect_request("/api/workspaces").respond_with_data("", status=503)
         result = run_claudebox(args, timeout=15)
@@ -54,10 +57,13 @@ class TestWorkspacesRegister:
     """``register`` creates the ``.workspace`` marker before the POST."""
 
     def test_register_creates_workspace_marker(
-        self, tmp_path, run_claudebox, httpserver: HTTPServer
+        self,
+        tmp_path,
+        run_claudebox,
+        httpserver: HTTPServer,
     ) -> None:
-        # Daemon unreachable; the marker creation happens BEFORE the POST and
-        # MUST persist after the run, even though the daemon call fails.
+        # Daemon unreachable; the marker is created BEFORE the POST and persists even though
+        # the daemon call fails.
         httpserver.expect_request("/api/workspaces").respond_with_data("", status=503)
         target = tmp_path / "newproj"
         target.mkdir()
@@ -75,8 +81,8 @@ class TestRunNoAutoRegister:
     """``run`` MUST NOT register the workspace or write a ``.workspace`` marker."""
 
     def test_run_does_not_write_workspace_marker(self, tmp_path, run_claudebox) -> None:
-        # Fake podman ignores actual container semantics; the only deterministic
-        # assertion is the absence of the marker file.
+        # Fake podman ignores real container semantics, so the only deterministic assertion
+        # is the marker's absence.
         result = run_claudebox(["run"], cwd=tmp_path, timeout=30)
         assert not (tmp_path / ".workspace").exists()
         assert result.returncode is not None

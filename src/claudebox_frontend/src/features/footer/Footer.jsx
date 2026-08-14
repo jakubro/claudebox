@@ -20,10 +20,7 @@ import StatusIndicator from './components/status-indicator'
 import useClaudeStatus from './hooks/useClaudeStatus'
 
 /**
- * Render footer status bar with session metrics and controls.
- *
- * Display workspace, turns, cost, duration, context usage, model, session ID,
- * notifications toggle, and Claude API status indicator.
+ * Render footer bar: workspace, turns, cost, duration, context, model, session id, notifications, Claude status.
  */
 export default function Footer() {
   const {
@@ -70,9 +67,7 @@ export default function Footer() {
   // Bar always visible (min 2%) but percentage text shows actual value
   const { percent: contextPercent, barWidth } = computeContextBar(lastContextTokens, contextWindow)
 
-  // On welcome (no active session) workspace from sessionData is null, so fall
-  // back to the workspace path from session-defaults so the footer shows the
-  // workspace a `+`-clicked session would attach to.
+  // On welcome, workspace is null; falls back to session-defaults so footer shows what `+` would attach to.
   const effectiveWorkspace = workspace || sessionDefaults?.workspace
   const workspaceName = getWorkspaceName(effectiveWorkspace) || '-'
 

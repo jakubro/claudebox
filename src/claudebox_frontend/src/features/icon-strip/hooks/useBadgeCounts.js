@@ -6,7 +6,6 @@ import { useLogsStream } from '../../../context/LogsStreamContext'
 import { useStash } from '../../../context/StashContext'
 import { computeBadgeCounts } from '../utils/badgeCounts'
 
-/** Return badge counts and dot flags for sidebar icons from multiple contexts. */
 export default function useBadgeCounts() {
   const { events, todosBySubagent, taskNotifications } = useEvents()
   const { stash } = useStash()

@@ -7,21 +7,15 @@ from pathlib import Path
 from .logging import get_logger
 
 
+# Module-level so tests can shrink MIN_POLL_BOUND instead of waiting out the full 60s.
+MIN_POLL_BOUND = 60.0
+POLL_BOUND_INTERVAL_MULTIPLIER = 4
+
+
 class AsyncPoller(ABC):
-    """Base class for background polling tasks with start/stop lifecycle.
-
-    Subclasses implement _poll() for a single iteration. The base handles
-    task creation/cancellation, sleep interval, error isolation, and
-    structured logging.
-
-    Attributes:
-        _interval: Seconds between poll iterations.
-        _name: Human-readable name for logging.
-    """
+    """Base class for background polling tasks with start/stop lifecycle; subclasses implement _poll()."""
 
     def __init__(self, *, interval: float, name: str) -> None:
-        """Initialize poller with interval and display name."""
-
         self._logger = get_logger(__name__)
         self._interval = interval
         self._name = name
@@ -56,31 +50,23 @@ class AsyncPoller(ABC):
         """Single poll iteration. Called every interval seconds."""
 
     async def _loop(self) -> None:
-        """Run poll iterations with sleep and error isolation."""
+        """Run poll iterations with sleep, a bounded wait, and error isolation."""
+
+        poll_bound = max(MIN_POLL_BOUND, self._interval * POLL_BOUND_INTERVAL_MULTIPLIER)
 
         while True:
             await asyncio.sleep(self._interval)
 
             try:
-                await self._poll()
+                await asyncio.wait_for(self._poll(), timeout=poll_bound)
             except Exception:
                 self._logger.warning("%s poll failed", self._name, exc_info=True)
 
 
 class MtimeWatcher(AsyncPoller):
-    """Watch files for mtime changes with debounce.
-
-    General-purpose file watcher using mtime polling. Subclasses implement
-    _on_changed(path) to react to detected changes.
-
-    Attributes:
-        _debounce: Seconds to wait after detecting a change before notifying.
-        _watched: Map of file path string -> last known mtime.
-    """
+    """Watch files for mtime changes with debounce; subclasses implement _on_changed()."""
 
     def __init__(self, *, interval: float, debounce: float, name: str) -> None:
-        """Initialize watcher with poll interval and debounce delay."""
-
         super().__init__(interval=interval, name=name)
         self._debounce = debounce
         self._watched: dict[str, float] = {}

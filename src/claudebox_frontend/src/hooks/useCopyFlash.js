@@ -4,11 +4,7 @@ import { useCallback, useState } from 'react'
 import { COPY_FEEDBACK_MS } from '../config/timing'
 
 /**
- * Manage a transient copy-confirmation flag and a copy-to-clipboard handler.
- *
- * Returns `[copied, copy]` - render `copied ? 'Copied!' : ...` and call
- * `copy(text)` when the user triggers the action. The flag flips back to false
- * after `COPY_FEEDBACK_MS` (or `durationMs` when supplied).
+ * Returns `[copied, copy]`; `copied` resets after `durationMs` ms (default `COPY_FEEDBACK_MS`).
  *
  * @param {{ durationMs?: number }} [options]
  * @returns {readonly [boolean, (text: string | null | undefined) => void]}

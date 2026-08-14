@@ -26,7 +26,6 @@ class Container(DataClass):
         id: Stable auto-generated UUID. Primary key, podman container name, label value.
         backend_id: Container runtime ID from podman/docker.
         port: Host port mapped to the container's web port.
-        status: Lifecycle state.
         created_at: Timestamp when the container was registered.
         failure_count: Consecutive health check failures.
         labels: Caller-defined metadata (e.g. instance_id, channel_id).

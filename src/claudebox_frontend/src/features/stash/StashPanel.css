@@ -11,8 +11,7 @@
   gap: 8px;
 }
 
-/* Empty state mirrors .todos-panel.todos-empty for visual parity across panels.
-   Loading state shares the same shape — only the copy and lifecycle differ. */
+/* Empty state mirrors .todos-panel.todos-empty for visual parity; loading only differs in copy and lifecycle. */
 .stash-panel.stash-empty,
 .stash-panel.stash-loading {
   justify-content: center;
@@ -39,7 +38,7 @@
 
 .stash-text {
   flex: 1;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;

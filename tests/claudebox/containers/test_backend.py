@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from claudebox.constants import PODMAN_COMMAND_TIMEOUT, PODMAN_RUN_TIMEOUT
 from claudebox.containers.backend import ContainerBackend
 
 
@@ -34,6 +35,27 @@ class TestExec:
         backend._exec("ps")
         mock_print.assert_called_once_with("podman", "ps")
 
+    @patch("subprocess.run")
+    def test_no_timeout_omits_the_kwarg(self, mock_run):
+        backend = ContainerBackend("podman")
+        backend._exec("ps", check=True)
+        mock_run.assert_called_once_with(["podman", "ps"], check=True)
+
+    @patch("subprocess.run")
+    def test_timeout_expired_is_logged_with_argv_and_duration_then_reraised(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["podman", "ps"], timeout=5.0)
+        backend = ContainerBackend("podman")
+        backend._logger = MagicMock()
+
+        with pytest.raises(subprocess.TimeoutExpired):
+            backend._exec("ps", timeout=5.0)
+
+        backend._logger.warning.assert_called_once()
+        _, kwargs = backend._logger.warning.call_args
+        assert kwargs["argv"] == ["podman", "ps"]
+        assert kwargs["timeout"] == 5.0
+        assert kwargs["duration_s"] >= 0
+
 
 # --- build_image ---
 
@@ -46,7 +68,8 @@ class TestBuildImage:
         backend = ContainerBackend("podman")
         backend.build_image("--file", "Containerfile", ".")
         mock_run.assert_called_once_with(
-            ["podman", "build", "--file", "Containerfile", "."], check=True
+            ["podman", "build", "--file", "Containerfile", "."],
+            check=True,
         )
 
 
@@ -101,8 +124,17 @@ class TestRunContainer:
             backend.run_container("img", detach=True)
 
         # Verify cleanup: logs then rm --force
-        assert mock_run.call_args_list[1] == call(["podman", "logs", "abc123"], check=True)
-        assert mock_run.call_args_list[2] == call(["podman", "rm", "--force", "abc123"], check=True)
+        cmd_timeout = PODMAN_COMMAND_TIMEOUT.total_seconds()
+        assert mock_run.call_args_list[1] == call(
+            ["podman", "logs", "abc123"],
+            check=True,
+            timeout=cmd_timeout,
+        )
+        assert mock_run.call_args_list[2] == call(
+            ["podman", "rm", "--force", "abc123"],
+            check=True,
+            timeout=cmd_timeout,
+        )
 
         # Also verify cleanup commands contain expected subcommands (resilient to ordering changes)
         all_cmds = [str(c) for c in mock_run.call_args_list]
@@ -211,3 +243,81 @@ class TestListContainers:
         filter_args = [a for a in args if a.startswith("label=")]
         assert any("app=claudebox" in f for f in filter_args)
         assert any("custom=val" in f for f in filter_args)
+
+
+# --- podman subprocess timeouts ---
+
+
+class TestPodmanCommandTimeouts:
+    """Test subprocess timeout bounds on podman invocations."""
+
+    @patch("subprocess.run")
+    def test_create_network_is_bounded(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        ContainerBackend("podman").create_network("net")
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_kill_is_bounded(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        ContainerBackend("podman").kill("abc123")
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_remove_container_is_bounded(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        ContainerBackend("podman").remove_container("abc123")
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_inspect_container_is_bounded(self, mock_run):
+        mock_run.return_value = MagicMock(stdout=b"[{}]")
+        ContainerBackend("podman").inspect_container("abc123")
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_list_containers_is_bounded(self, mock_run):
+        mock_run.return_value = MagicMock(stdout=b"[]")
+        ContainerBackend("podman").list_containers()
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_print_container_logs_is_bounded(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        ContainerBackend("podman").print_container_logs("abc123")
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_detached_run_is_bounded_by_the_run_timeout(self, mock_run):
+        mock_run.return_value = MagicMock(stdout=b"abc123\n", check_returncode=MagicMock())
+        ContainerBackend("podman").run_container("img", detach=True)
+
+        assert mock_run.call_args.kwargs["timeout"] == PODMAN_RUN_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_stop_bound_exceeds_the_requested_grace_period(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        ContainerBackend("podman").stop("abc123", timeout=30)
+
+        subprocess_timeout = mock_run.call_args.kwargs["timeout"]
+        assert subprocess_timeout > 30
+        assert subprocess_timeout == 30 + PODMAN_COMMAND_TIMEOUT.total_seconds()
+
+    @patch("subprocess.run")
+    def test_non_detached_run_is_unbounded(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        ContainerBackend("podman").run_container("--interactive", "img", detach=False)
+
+        assert "timeout" not in mock_run.call_args.kwargs
+
+    @patch("subprocess.run")
+    def test_build_image_is_unbounded(self, mock_run):
+        ContainerBackend("podman").build_image("--file", "Containerfile", ".")
+
+        assert "timeout" not in mock_run.call_args.kwargs

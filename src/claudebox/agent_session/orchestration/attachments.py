@@ -21,32 +21,20 @@ MEDIA_TYPES = {
 
 @dataclass
 class AttachmentInfo:
-    """Resolved attachment with path and inferred media type.
-
-    Attributes:
-        path: Absolute path to the attachment file.
-        media_type: MIME type inferred from file extension.
-    """
+    """Resolved attachment: absolute path and inferred media type."""
 
     path: Path
     media_type: str
 
 
 class AttachmentService:
-    """Resolve and validate session attachment files.
-
-    Attributes:
-        _workspace: Workspace for resolving session directories.
-    """
+    """Resolve and validate session attachment files."""
 
     def __init__(self, workspace: Workspace):
         self._workspace = workspace
 
     def resolve(self, session_id: str, filename: str) -> AttachmentInfo:
-        """Resolve attachment path and infer media type.
-
-        Raises AttachmentNotFound if the file does not exist.
-        """
+        """Resolve attachment path and infer media type; raises AttachmentNotFound if missing."""
 
         session = self._workspace.ensure_session(session_id)
         path = session.path / SESSION_ATTACHMENTS_DIR / filename

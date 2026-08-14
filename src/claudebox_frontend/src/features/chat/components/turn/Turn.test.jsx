@@ -14,9 +14,8 @@ vi.mock('../../../../components/Markdown', () => ({
   default: ({ children }) => <div data-testid="markdown">{children}</div>,
 }))
 
-// SlashCommandToken hits SessionDataContext for command resolution; the
-// Turn test renders the component without a provider, so stub it to a
-// plain span that preserves the existing assertion contract.
+// SlashCommandToken hits SessionDataContext for command resolution; stub it to a plain span since
+// this test renders Turn without a provider.
 vi.mock('./components/user-message-content/SlashCommandToken', () => ({
   default: ({ cmd }) => <span className="slash-command">{cmd}</span>,
 }))
@@ -88,7 +87,7 @@ describe('Turn', () => {
     const xmlMessage = '<command-name>/help</command-name><command-args>topic</command-args>'
     render(<Turn userMessage={xmlMessage} events={[]} />)
 
-    // Token + args render in adjacent spans now (SlashCommandToken).
+    // Token and args render in adjacent spans (SlashCommandToken).
     expect(screen.getByText('/help')).toBeInTheDocument()
     expect(screen.getByText('topic', { exact: false })).toBeInTheDocument()
   })
@@ -120,6 +119,30 @@ describe('Turn', () => {
     render(<Turn events={events} />)
 
     expect(screen.getByTestId('tool-block')).toHaveTextContent('Bash')
+  })
+
+  it('renders no assistant message wrapper when the only block is a hidden ToolSearch call', () => {
+    const events = [
+      toolUseEvent('ToolSearch', 'ts-1', { query: 'read' }),
+      toolResultEvent('ts-1', '[]'),
+    ]
+
+    render(<Turn events={events} />)
+
+    expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
+  })
+
+  it('renders the assistant message wrapper when a visible block accompanies a hidden ToolSearch call', () => {
+    const events = [
+      toolUseEvent('ToolSearch', 'ts-1', { query: 'read' }),
+      toolResultEvent('ts-1', '[]'),
+      textEvent('Found it'),
+    ]
+
+    render(<Turn events={events} />)
+
+    expect(screen.getByTestId('message-assistant')).toBeInTheDocument()
+    expect(screen.getByTestId('markdown')).toHaveTextContent('Found it')
   })
 
   it('renders CompactionBlock for compaction events', () => {
@@ -179,9 +202,9 @@ describe('Turn', () => {
     expect(screen.getByText('Hello')).toBeInTheDocument()
   })
 
-  it('wraps content in .turn-container so the content-visibility CSS rule applies', () => {
-    // The lazy-paint claim is enforced in CSS on .turn-container - verify
-    // the wrapper class is on the rendered output so the stylesheet hits.
+  it('wraps content in .turn-container', () => {
+    // The windowed list's row measurement and jump/bookmark lookups address a turn through this
+    // wrapper, so its presence is load-bearing.
     render(<Turn userMessage="hi" events={[]} />)
     expect(document.querySelector('.turn-container')).toBeInTheDocument()
   })

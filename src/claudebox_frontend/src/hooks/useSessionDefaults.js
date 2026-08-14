@@ -2,21 +2,15 @@
 
 import { useContext, useEffect, useState } from 'react'
 import { getSessionDefaults } from '../api/workspaces'
+import { SESSION_DEFAULTS_CACHE_TTL_MS } from '../config/timing'
 import { WorkspaceContext } from '../context/WorkspaceContext'
 
 /**
- * Fetch the model / permission mode / effort level a new session in the
- * active workspace would inherit. Result is the response from
- * GET /api/workspaces/{id}/session-defaults, or null until the fetch resolves.
- *
- * Used by the footer to populate picker display values on the welcome screen
- * (before any session attaches), so the user sees what a `+`-clicked session
- * will actually use rather than `-` placeholders.
- *
- * Best-effort: a fetch error leaves the result null and the pickers fall
- * through to their existing `-` rendering. Also tolerates running outside
- * a WorkspaceProvider (returns null) so existing isolated component tests
- * that don't mount the workspace tree continue to render the footer.
+ * GET /api/workspaces/{id}/session-defaults, cached per workspace (SESSION_DEFAULTS_CACHE_TTL_MS)
+ * so concurrent mounts share one fetch; result is null until resolved. Feeds the footer picker
+ * on the welcome screen (pre-attach) so a `+`-click shows real values instead of `-` placeholders.
+ * Best-effort: fetch errors and a missing WorkspaceProvider both resolve to null, the latter so
+ * isolated component tests keep rendering the footer.
  *
  * @returns {{workspace: string, model: string, permission_mode: string, effort_level: string} | null}
  */
@@ -31,14 +25,13 @@ export default function useSessionDefaults() {
     }
 
     let cancelled = false
-    getSessionDefaults()
+    _resolveSessionDefaults(workspaceId)
       .then(data => {
         if (!cancelled) {
           setDefaults(data)
         }
       })
       .catch(err => {
-        // Best-effort - pickers fall through to their existing `-` display
         console.warn('useSessionDefaults: getSessionDefaults failed', err)
       })
 
@@ -48,4 +41,40 @@ export default function useSessionDefaults() {
   }, [workspaceId])
 
   return defaults
+}
+
+// Attached, not exported separately, so knip doesn't flag a test-only binding as unused.
+useSessionDefaults.resetCache = function resetSessionDefaultsCache() {
+  _cache = new Map()
+  _inFlight = new Map()
+}
+
+/** workspaceId -> { value, fetchedAt } */
+let _cache = new Map()
+/** workspaceId -> in-flight fetch promise, so concurrent mounts share one request. */
+let _inFlight = new Map()
+
+/** Coalesces callers onto one request; refetches once stale. Rejections aren't cached, so callers retry. */
+function _resolveSessionDefaults(workspaceId) {
+  const cached = _cache.get(workspaceId)
+  if (cached && Date.now() - cached.fetchedAt < SESSION_DEFAULTS_CACHE_TTL_MS) {
+    return Promise.resolve(cached.value)
+  }
+
+  const pending = _inFlight.get(workspaceId)
+  if (pending) {
+    return pending
+  }
+
+  const promise = getSessionDefaults()
+    .then(value => {
+      _cache.set(workspaceId, { value, fetchedAt: Date.now() })
+      return value
+    })
+    .finally(() => {
+      _inFlight.delete(workspaceId)
+    })
+
+  _inFlight.set(workspaceId, promise)
+  return promise
 }

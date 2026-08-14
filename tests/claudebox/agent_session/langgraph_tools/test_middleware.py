@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import ToolMessage
+from langchain_core.tools import ToolException
 
 from claudebox.agent_session.hooks import (
     HookCallbacks,
@@ -14,6 +15,7 @@ from claudebox.agent_session.hooks import (
 )
 from claudebox.agent_session.langgraph_tools._middleware import (
     ClaudeboxToolHookMiddleware,
+    content_reports_nonzero_exit,
 )
 
 
@@ -25,7 +27,6 @@ class _FakeRequest:
 
 
 def _make_middleware(hooks: HookCallbacks, tool_ctx) -> ClaudeboxToolHookMiddleware:
-    # Replace the ctx's hooks with a custom set per test case.
     from dataclasses import replace
 
     swap_ctx = replace(tool_ctx, hooks=hooks)
@@ -34,7 +35,10 @@ def _make_middleware(hooks: HookCallbacks, tool_ctx) -> ClaudeboxToolHookMiddlew
 
 
 def _request(
-    *, name: str = "read_file", args: dict | None = None, tool_id: str = "tool_001"
+    *,
+    name: str = "read_file",
+    args: dict | None = None,
+    tool_id: str = "tool_001",
 ) -> _FakeRequest:
     return _FakeRequest(tool_call={"name": name, "args": args or {"path": "/x"}, "id": tool_id})
 
@@ -55,7 +59,7 @@ class TestPreCallbackFires:
                 tool_use_id="tool_001",
                 tool_name="read_file",
                 tool_input={"path": "/x"},
-            )
+            ),
         )
 
     @pytest.mark.anyio
@@ -131,6 +135,61 @@ class TestPostCallbackFires:
         assert order == ["handler", "post"]
 
 
+class TestNonzeroExitCodeReportsAsError:
+    @pytest.mark.anyio
+    async def test_post_is_error_when_json_content_carries_a_nonzero_exit_code(self, tool_ctx):
+        post = AsyncMock()
+        mw = _make_middleware(HookCallbacks(on_post_tool_use=post), tool_ctx)
+
+        async def handler(_request):
+            content = '{"stdout": "", "stderr": "not found", "exit_code": 127}'
+
+            return ToolMessage(content=content, tool_call_id="tool_001")
+
+        await mw.awrap_tool_call(_request(), handler)
+
+        assert post.await_args is not None
+        assert post.await_args.args[0].is_error is True
+
+    @pytest.mark.anyio
+    async def test_post_is_not_error_when_exit_code_is_zero(self, tool_ctx):
+        post = AsyncMock()
+        mw = _make_middleware(HookCallbacks(on_post_tool_use=post), tool_ctx)
+
+        async def handler(_request):
+            content = '{"stdout": "ok", "stderr": "", "exit_code": 0}'
+
+            return ToolMessage(content=content, tool_call_id="tool_001")
+
+        await mw.awrap_tool_call(_request(), handler)
+
+        assert post.await_args is not None
+        assert post.await_args.args[0].is_error is False
+
+
+class TestContentReportsNonzeroExit:
+    def test_json_string_with_nonzero_exit_code(self):
+        assert content_reports_nonzero_exit('{"exit_code": 1}') is True
+
+    def test_json_string_with_zero_exit_code(self):
+        assert content_reports_nonzero_exit('{"exit_code": 0}') is False
+
+    def test_dict_with_nonzero_exit_code(self):
+        assert content_reports_nonzero_exit({"exit_code": 2}) is True
+
+    def test_plain_string_content_is_not_an_error(self):
+        assert content_reports_nonzero_exit("just some text") is False
+
+    def test_non_object_json_is_not_an_error(self):
+        assert content_reports_nonzero_exit("[1, 2, 3]") is False
+
+    def test_non_int_exit_code_is_not_an_error(self):
+        assert content_reports_nonzero_exit('{"exit_code": "boom"}') is False
+
+    def test_none_content_is_not_an_error(self):
+        assert content_reports_nonzero_exit(None) is False
+
+
 class TestExceptionPath:
     @pytest.mark.anyio
     async def test_post_fires_with_is_error_true_and_reraises(self, tool_ctx):
@@ -163,6 +222,53 @@ class TestExceptionPath:
 
         pre.assert_awaited_once()
         post.assert_awaited_once()
+
+
+class TestToolExceptionConverted:
+    @pytest.mark.anyio
+    async def test_tool_exception_returns_an_error_tool_message_instead_of_raising(self, tool_ctx):
+        mw = _make_middleware(HookCallbacks(), tool_ctx)
+
+        async def handler(_request):
+            raise ToolException("unknown skill 'fruit' - available: deploy, test")
+
+        result = await mw.awrap_tool_call(_request(), handler)
+
+        assert isinstance(result, ToolMessage)
+        assert result.status == "error"
+        assert result.content == "unknown skill 'fruit' - available: deploy, test"
+        assert result.tool_call_id == "tool_001"
+
+    @pytest.mark.anyio
+    async def test_post_fires_once_with_is_error_true_for_a_tool_exception(self, tool_ctx):
+        pre = AsyncMock()
+        post = AsyncMock()
+        mw = _make_middleware(HookCallbacks(on_pre_tool_use=pre, on_post_tool_use=post), tool_ctx)
+
+        async def handler(_request):
+            raise ToolException("boom")
+
+        await mw.awrap_tool_call(_request(), handler)
+
+        pre.assert_awaited_once()
+        post.assert_awaited_once()
+        assert post.await_args is not None
+        payload = post.await_args.args[0]
+        assert payload.is_error is True
+        assert payload.tool_use_result == "boom"
+
+    @pytest.mark.anyio
+    async def test_a_non_tool_exception_still_raises_and_never_becomes_a_tool_result(
+        self,
+        tool_ctx,
+    ):
+        mw = _make_middleware(HookCallbacks(), tool_ctx)
+
+        async def handler(_request):
+            raise RuntimeError("a genuine bug, not a tool-reported failure")
+
+        with pytest.raises(RuntimeError, match="genuine bug"):
+            await mw.awrap_tool_call(_request(), handler)
 
 
 class TestNoneCallbacks:

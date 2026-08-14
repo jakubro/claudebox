@@ -1,4 +1,4 @@
-/** Workspace switcher dropdown in the Dockview header tab bar. */
+/** Workspace switcher dropdown in the session header strip. */
 
 import { Check, ChevronDown, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
@@ -14,8 +14,7 @@ import { openWorkspaceInNewTab } from '../../../utils/navigation'
 import ConfirmDeregisterModal from './ConfirmDeregisterModal'
 import RegisterWorkspaceModal from './RegisterWorkspaceModal'
 
-/** Muted dark preset colors for the picker swatch + tab-bar gradient end-stop -
- * the favicon caller brightens them for visibility at favicon scale. */
+/** Muted dark preset colors for the picker swatch + tab-bar gradient end-stop - the favicon caller brightens them for visibility at favicon scale. */
 const ACCENT_PALETTE = [
   '#1e3a5f',
   '#1a4a3a',
@@ -27,7 +26,6 @@ const ACCENT_PALETTE = [
   '#5a1e1e',
 ]
 
-/** Workspace switcher dropdown for the session header strip. */
 export default function WorkspaceSwitcher() {
   const { workspaces, workspaceId, selectWorkspace, refreshWorkspaces } = useWorkspace()
   const { navigateToSession, navigateToWorkspace } = useSessionRouting()
@@ -58,8 +56,7 @@ export default function WorkspaceSwitcher() {
       if (id === workspaceId) {
         return
       }
-      // Snapshot the previous workspace's active session before we switch so
-      // the still-running toast can return to it on click.
+      // Snapshot the previous workspace's active session so the still-running toast can return to it on click.
       const prevWorkspaceId = workspaceId
       const prevSessionId = currentSessionId
       const prevSessionName = currentSessionName

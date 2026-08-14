@@ -3,13 +3,12 @@
 import PANEL_CONFIGS from '../../../config/panel'
 
 /**
- * Render a toggle button for a panel with icon and optional badge.
  * @param {object} props
  * @param {string} props.panelId - Panel identifier from PANEL_CONFIGS.
  * @param {string[]} props.activePanels - Currently active panel IDs.
  * @param {function} props.onTogglePanel - Callback to toggle panel visibility.
  * @param {number} [props.badgeCount=0] - Optional badge count to display.
- * @param {'default'|'danger'} [props.badgeVariant='default'] - Badge color variant. 'danger' renders in red - used for failure counts (e.g., failed MCP servers) where the count signals attention is required, not just work in flight.
+ * @param {'default'|'danger'} [props.badgeVariant='default'] - danger (red) = failures needing attention, not benign WIP.
  * @param {boolean} [props.hasDot=false] - Show a small dot badge (no number).
  * @param {function} [props.onIconEnter] - Mouse enter handler (floating panel).
  * @param {function} [props.onIconLeave] - Mouse leave handler (floating panel).

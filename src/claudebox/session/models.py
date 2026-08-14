@@ -10,24 +10,10 @@ from ..core.structures import DataClass
 class SessionMetadata(DataClass):
     """Base session metadata read from session.json on disk.
 
-    Contains the common fields shared by both daemon (SessionInfo) and web
-    (SessionSummary) consumers. Consumer-specific fields live in subclasses.
+    Fields shared by daemon (SessionInfo) and web (SessionSummary); consumer-specific fields live in subclasses.
 
-    Attributes:
-        session_id: Unique session identifier.
-        fork_point_cost_usd: Cost inherited from the ancestor at the fork point; 0 for
-            root sessions. Rollup consumers subtract this when summing across sibling
-            sessions to avoid double-counting the shared pre-fork transcript.
-        name: User-assigned session name.
-        model: Model used for the session.
-        started_at: Session start timestamp.
-        updated_at: Last activity timestamp.
-        num_turns: Number of conversation turns.
-        total_cost_usd: Cumulative session cost.
-        first_message: Preview of the first user message.
-        last_message: Preview of the most recent message.
-        parent_session_id: Parent session ID if forked.
-        session_dir: Claudebox session directory path on disk.
+    ``fork_point_cost_usd`` is the cost inherited from the ancestor at the fork point; 0 for root sessions.
+    Rollup consumers subtract it when summing siblings, avoiding double-counting the shared pre-fork transcript.
     """
 
     session_id: str
@@ -45,11 +31,7 @@ class SessionMetadata(DataClass):
 
 
 class SessionNotFound(Exception):
-    """Session ID does not exist on workspace disk.
-
-    Attributes:
-        session_id: The session ID that was not found.
-    """
+    """Session ID does not exist on workspace disk."""
 
     def __init__(self, session_id: str) -> None:
         super().__init__(f"Session not found: {session_id}")

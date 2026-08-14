@@ -5,19 +5,16 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from './ChatInput'
 
-// Mock useIsMobile to always return desktop
 vi.mock('../../../../hooks/useIsMobile', () => ({
   default: () => false,
 }))
 
-// Mutable mock data
 let mockInteractionData = {}
 let mockSessionData = {}
 let mockStashData = {}
 let mockDraftsData = {}
 let mockInputHistoryData = {}
 
-// Mock contexts
 vi.mock('../../../../context/InteractionContext', () => ({
   useInteraction: () => mockInteractionData,
 }))
@@ -30,7 +27,6 @@ vi.mock('../../../../context/StashContext', () => ({
   useStash: () => mockStashData,
 }))
 
-// Mock hooks
 vi.mock('./hooks/useAutocomplete', () => ({
   default: vi.fn(() => ({
     visible: false,
@@ -55,18 +51,16 @@ vi.mock('./hooks/useInputHistory', () => ({
   default: () => mockInputHistoryData,
 }))
 
-vi.mock('./hooks/useAutoPair', () => ({
-  default: () => ({ wrapSelection: vi.fn() }),
-}))
-
 vi.mock('./hooks/useBlockCollapse', () => ({
   default: () => ({
-    collapseLocal: vi.fn(),
-    collapseAll: vi.fn(),
-    expandLocal: vi.fn(),
-    expandAll: vi.fn(),
     expandBeforeSubmit: vi.fn(),
     resetCollapse: vi.fn(),
+    manager: {
+      collapseLocal: vi.fn(),
+      collapseAll: vi.fn(),
+      expandLocal: vi.fn(),
+      expandAll: vi.fn(),
+    },
   }),
 }))
 
@@ -164,7 +158,6 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} />)
 
       const textarea = screen.getByTestId('chat-input')
-      // Type text and press Enter
       await user.click(textarea)
       await user.type(textarea, 'hello')
       await user.keyboard('{Enter}')
@@ -271,7 +264,6 @@ describe('ChatInput', () => {
     })
 
     it('resets sending state after send completes', async () => {
-      // Verify the component can send again after a successful send resolves
       const user = userEvent.setup()
       render(<ChatInput {...defaultProps} />)
 
@@ -420,7 +412,7 @@ describe('ChatInput', () => {
     it('blocks send during resuming overlay', () => {
       render(<ChatInput {...defaultProps} overlayMode="resuming" />)
 
-      // Textarea is disabled so we can't type, but verify send is blocked
+      // Textarea stays enabled (always-enabled invariant); isSendBlocked suppresses send instead.
       expect(defaultProps.send).not.toHaveBeenCalled()
     })
   })
@@ -462,12 +454,10 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} />)
       const textarea = screen.getByTestId('chat-input')
 
-      // Simulate middle-click (mousedown) outside textarea
       const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
       Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
       document.dispatchEvent(mouseDownEvent)
 
-      // Simulate paste event
       const pasteEvent = createPasteEvent()
       const preventDefaultSpy = vi.spyOn(pasteEvent, 'preventDefault')
       textarea.dispatchEvent(pasteEvent)
@@ -479,12 +469,10 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} />)
       const textarea = screen.getByTestId('chat-input')
 
-      // Simulate middle-click (mousedown) inside textarea
       const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
       Object.defineProperty(mouseDownEvent, 'target', { value: textarea })
       document.dispatchEvent(mouseDownEvent)
 
-      // Simulate paste event
       const pasteEvent = createPasteEvent()
       const preventDefaultSpy = vi.spyOn(pasteEvent, 'preventDefault')
       textarea.dispatchEvent(pasteEvent)
@@ -496,7 +484,6 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} />)
       const textarea = screen.getByTestId('chat-input')
 
-      // Simulate paste without mousedown
       const pasteEvent = createPasteEvent()
       const preventDefaultSpy = vi.spyOn(pasteEvent, 'preventDefault')
       textarea.dispatchEvent(pasteEvent)
@@ -509,12 +496,11 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} />)
       const textarea = screen.getByTestId('chat-input')
 
-      // Simulate middle-click (mousedown) outside textarea
       const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
       Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
       document.dispatchEvent(mouseDownEvent)
 
-      // Simulate mouseup - rAF fires synchronously (mocked) and clears flag
+      // rAF fires synchronously (mocked) and clears the flag
       const mouseUpEvent = new MouseEvent('mouseup', { button: 1, bubbles: true })
       document.dispatchEvent(mouseUpEvent)
 
@@ -532,7 +518,6 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} />)
       const textarea = screen.getByTestId('chat-input')
 
-      // Simulate middle-click (mousedown) outside textarea
       const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
       Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
       document.dispatchEvent(mouseDownEvent)

@@ -43,9 +43,7 @@
   border-radius: 3px;
   color: var(--text-primary);
   font-size: 12px;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  font-family: var(--font-mono);
 }
 
 .register-workspace-input:focus {

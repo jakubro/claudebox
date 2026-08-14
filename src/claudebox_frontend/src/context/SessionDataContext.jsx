@@ -18,10 +18,7 @@ const SessionDataContext = createContext(null)
 const SessionActionsContext = createContext(null)
 
 /**
- * Provide session metadata from the container API.
- *
- * This is a low-frequency context - updates on connect and during polling.
- * Handles browser/tab title updates.
+ * Low-frequency context - updates on connect and during polling; also handles browser/tab title updates.
  *
  * Internally provides two contexts:
  * - SessionDataContext: read-only derived data (re-renders when session changes)
@@ -29,7 +26,7 @@ const SessionActionsContext = createContext(null)
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
- * @param {Function} props.onSessionAttach - Called with the active session id whenever it changes; used to bind the layout-save sessionId and run the one-shot per-session layout restore.
+ * @param {Function} props.onSessionAttach - Fires on session id change; binds layout-save, one-shot restore.
  * @param {Function} props.onError - Called with error message on fetch failure.
  */
 export function SessionDataProvider({ children, onSessionAttach, onError }) {
@@ -42,12 +39,10 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   const [availableModels, setAvailableModels] = useState([])
   const [availablePermissionModes, setAvailablePermissionModes] = useState([])
   const [availableEffortLevels, setAvailableEffortLevels] = useState([])
-  // Pre-session workspace from session-defaults - sole source for browser tab
-  // title before getSession() resolves on connect (SPEC §1.7 pre-init form).
+  // Pre-session workspace from session-defaults; sole source for the tab title before getSession() resolves.
   const [defaultsWorkspace, setDefaultsWorkspace] = useState(null)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(false)
-  // Welcome-screen slash-command catalog - populated from the daemon endpoint
-  // pre-session so the picker is non-empty before any container attaches.
+  // Welcome-screen catalog: populated pre-session from the daemon endpoint so the picker isn't empty.
   // Falls through to `sessionData.commands` once a session is alive.
   const workspaceCommandCatalog = useWorkspaceCommandCatalog()
   const wasRespondingRef = useRef(false)
@@ -55,20 +50,14 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   const isConnectedRef = useRef(isConnected)
   isConnectedRef.current = isConnected
 
-  // Pre-session config buffer - picker changes made before any session
-  // attaches (welcome screen) are stored here, then drained in strict order
-  // (model -> permission -> effort) once the session is ready. Latest-wins:
-  // repeated picker changes overwrite the buffered value before drain.
+  // Pre-session picker-change buffer; drained in strict order (model -> permission -> effort) once attached.
+  // Latest-wins: repeated picker changes overwrite the buffered value before drain.
   const [deferredModel, setDeferredModel] = useState(null)
   const [deferredPermissionMode, setDeferredPermissionMode] = useState(null)
   const [deferredEffortLevel, setDeferredEffortLevel] = useState(null)
   const lastSessionIdRef = useRef(null)
 
-  // Fetch session data, retrying with backoff on transient errors.
-  // Defensive merge: when the create-response seeded sessionData with
-  // synthesized defaults (e.g. effort_level="xhigh") and a subsequent partial
-  // getSession() returns null for those fields, retain the seeded non-null
-  // values so the footer doesn't regress to "-".
+  // Retains seeded non-null fields when getSession() returns null for them, avoiding a footer regression to "-".
   const refreshSession = useCallback(async () => {
     try {
       const data = await getSession()
@@ -127,7 +116,6 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     setSessionData(prev => (prev ? { ...prev, ...patch } : patch))
   }, [])
 
-  // Reload session - restart container with same session ID, then reconnect
   const reloadSession = useCallback(async () => {
     if (!sessionData?.session_id) {
       return
@@ -156,8 +144,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     [sessionData?.session_id],
   )
 
-  // Set model via API then refresh to confirm from projection.
-  // No active container (welcome screen) -> buffer; drain on session attach.
+  // Sets model via API then refreshes to confirm from projection; buffers pre-session (no container) until attach.
   const setModel = useCallback(
     newModel => {
       if (!getContainerId()) {
@@ -171,8 +158,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     [refreshSession],
   )
 
-  // Set permission mode via API then refresh to confirm from projection.
-  // No active container (welcome screen) -> buffer; drain on session attach.
+  // Sets permission mode via API then refreshes to confirm; buffers pre-session (no container) until attach.
   const setPermissionMode = useCallback(
     newPermissionMode => {
       if (!getContainerId()) {
@@ -186,8 +172,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     [refreshSession],
   )
 
-  // Set effort level via API then refresh to confirm from projection.
-  // No active container (welcome screen) -> buffer; drain on session attach.
+  // Sets effort level via API then refreshes to confirm; buffers pre-session (no container) until attach.
   const setEffortLevel = useCallback(
     newLevel => {
       if (!getContainerId()) {
@@ -210,12 +195,9 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     }
   }, [sessionData?.session_id])
 
-  // Drain pre-session config buffer when a session attaches (welcome -> chat).
-  // Strict order: model -> permission -> effort. Each await ensures the SDK
-  // applied the change before the next call. A failed call surfaces via
-  // onError and the remaining successful changes still apply; the deferred
-  // message in useChatController fires only after this drain completes
-  // because both effects key off the same session_id transition.
+  // Drains the pre-session buffer on attach, in strict order: model -> permission -> effort.
+  // Each await confirms the SDK applied one change first; a failed call surfaces via onError, others still apply.
+  // useChatController's deferred message fires only once this drain completes (same session_id transition).
   useEffect(() => {
     const previousId = lastSessionIdRef.current
     const sessionId = sessionData?.session_id
@@ -267,10 +249,8 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     onError,
   ])
 
-  // Populate available models / permission modes / effort levels from the
-  // workspace-scoped session-defaults endpoint whenever workspaceId is set.
-  // This is the single source of truth for picker dropdowns - the daemon
-  // serves the same module-level constants the container would.
+  // Populates model/permission/effort picker options from the workspace-scoped session-defaults endpoint.
+  // Single source of truth for picker dropdowns - the daemon serves the same constants the container would.
   useEffect(() => {
     if (!workspaceId) {
       return
@@ -332,9 +312,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     }
   }, [isResponding, refreshSession])
 
-  // Update browser tab title: [name] | [workspace] | Claudebox.
-  // Pre-init form falls back to session-defaults workspace so the title is
-  // populated before getSession() resolves (SPEC §1.7).
+  // Tab title: [name] | [workspace] | Claudebox; falls back to the session-defaults workspace pre-connect.
   useEffect(() => {
     const name = sessionData?.name
     const workspace = sessionData?.workspace || defaultsWorkspace
@@ -352,9 +330,8 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     document.title = parts.join(' | ')
   }, [sessionData?.name, sessionData?.workspace, defaultsWorkspace])
 
-  // Notify the dockview hook of session attach/detach so it can bind sessionIdRef
-  // (consumed by the layout-save path) and run the one-shot per-session layout
-  // restore on first attach.
+  // Notifies the dockview hook of session attach/detach so it can bind sessionIdRef (layout-save path).
+  // This also triggers the one-shot per-session layout restore on first attach.
   useEffect(() => {
     onSessionAttach?.(sessionData?.session_id ?? null)
   }, [sessionData?.session_id, onSessionAttach])

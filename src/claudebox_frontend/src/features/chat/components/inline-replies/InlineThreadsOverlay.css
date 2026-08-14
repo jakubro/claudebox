@@ -10,11 +10,13 @@
   text-underline-offset: 2px;
 }
 
-/* Floating composer: a z-axis popover pinned to its quoted span, above the transcript and below modals. */
+/* Floating composer: a z-axis popover pinned to its quoted span, above the transcript and below modals.
+   Width (not max-width) is required: an out-of-flow box with only `left` set shrink-fits to whatever
+   space remains near an edge. overlayDom.js clamps left to keep it inside the transcript. */
 .inline-float {
   position: fixed;
   z-index: 150;
-  max-width: min(560px, 90vw);
+  width: min(560px, 90vw);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   border-radius: 6px;
 }

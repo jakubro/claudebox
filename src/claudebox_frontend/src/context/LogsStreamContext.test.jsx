@@ -4,7 +4,6 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { LogsStreamProvider, useLogsStream } from './LogsStreamContext'
 
-// Mock dependencies
 vi.mock('./EventsContext', () => ({
   useEvents: () => ({ isResuming: false, isReplaying: false, containerId: 'ctr-1' }),
 }))

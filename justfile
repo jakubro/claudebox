@@ -5,11 +5,11 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 # Detect if running inside a container or not
 CONTAINER := `if [ -f /run/.containerenv ] || [ -f /.dockerenv ]; then echo 'true'; else echo 'false'; fi`
 # Container-local venv path (avoids corrupting host .venv)
-AGENT_VENV := "/tmp" / justfile_directory() / ".venv"
+CONTAINER_VENV := "/tmp" / justfile_directory() / ".venv"
 # UV env prefix: routes uv to container venv when in container; empty otherwise (uses .venv/ in cwd)
-UV_ENV := if CONTAINER == "true" { f"UV_PROJECT_ENVIRONMENT='{{ AGENT_VENV }}' VIRTUAL_ENV=" } else { "VIRTUAL_ENV=" }
+UV_ENV := if CONTAINER == "true" { f"UV_PROJECT_ENVIRONMENT='{{ CONTAINER_VENV }}' VIRTUAL_ENV=" } else { "VIRTUAL_ENV=" }
 # UV runner: auto-selects container venv
-UV_RUN := UV_ENV + " uv run"
+UV_RUN := UV_ENV + " uv run --extra dev"
 # Python runner: auto-selects container venv
 PYTHON := UV_RUN + " python -m"
 # Test runner wrapper: bounds wall-clock time and virtual memory
@@ -46,7 +46,7 @@ install-py:
 # Run Python tests
 [group('python')]
 test-py *ARGS:
-    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run python -m pytest tests/ {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-py.log
+    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run --extra dev python -m pytest tests/ {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-py.log
 
 # Run Python tests with coverage
 [group('python')]
@@ -99,13 +99,13 @@ install-e2e-app:
 # Run frontend E2E tests
 [group('e2e/app')]
 [working-directory('e2e/app')]
-test-e2e-app *ARGS:
+test-e2e-app *ARGS: build-fe
     {{ RUN_BOUNDED }} 15m 131072 -- npx playwright test -- {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-e2e-app.log
 
 # Run CLI E2E tests
 [group('e2e/cli')]
 test-e2e-cli *ARGS:
-    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run python -m pytest e2e/cli/ {{ ARGS }} 2>&1 | tee -a /tmp/claudebox--test-e2e-cli.log
+    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run --extra dev python -m pytest e2e/cli/ {{ ARGS }} 2>&1 | tee -a /tmp/claudebox--test-e2e-cli.log
 
 # Run E2E spec coverage
 [group('e2e')]
@@ -150,7 +150,7 @@ lint:
     PYTHONPATH= {{ UV_RUN }} ty check 2>&1 | tee -a /tmp/claudebox--lint.log
     {{ UV_RUN }} python scripts/python-guidelines-audit.py 2>&1 | tee -a /tmp/claudebox--lint.log
     npx biome check 2>&1 | tee -a /tmp/claudebox--lint.log
-    (node scripts/frontend-guidelines-audit.js --verbose 2>&1 || true) | tee -a /tmp/claudebox--lint.log
+    node scripts/frontend-guidelines-audit.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/spec-coverage.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     npx knip 2>&1 | tee -a /tmp/claudebox--lint.log
     npx jscpd --exitCode 1 --format python --min-tokens 100 2>&1 | tee -a /tmp/claudebox--lint.log
@@ -159,7 +159,10 @@ lint:
 # Auto-fix all code
 fix:
     rm -f /tmp/claudebox--fix.log
-    {{ UV_RUN }} ruff check --fix 2>&1 | tee -a /tmp/claudebox--fix.log
-    {{ UV_RUN }} ruff format 2>&1 | tee -a /tmp/claudebox--fix.log
+    for _ in 1 2 3 4 5; do \
+        {{ UV_RUN }} ruff check --fix 2>&1 | tee -a /tmp/claudebox--fix.log; \
+        {{ UV_RUN }} ruff format 2>&1 | tee -a /tmp/claudebox--fix.log; \
+        {{ UV_RUN }} ruff check --quiet 2>/dev/null && break; \
+    done
     PYTHONPATH= {{ UV_RUN }} ty check --fix 2>&1 | tee -a /tmp/claudebox--fix.log
     npx biome check --fix 2>&1 | tee -a /tmp/claudebox--fix.log

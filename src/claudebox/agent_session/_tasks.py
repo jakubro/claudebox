@@ -1,23 +1,20 @@
 """TaskService - in-memory agentic task list backing the LangGraph task_* tools.
 
-The LangGraph @tool wrappers (in `task_mgmt.py`) are thin (~10 line)
-delegates onto this service. Numeric per-session monotonic IDs match
-Claude's UX. State lives in memory inside the running container; resume
-rebuilds the cache by replaying the session's events.jsonl, looking for
-prior task_create / task_update / task_stop / task_output tool_use entries.
+The LangGraph @tool wrappers in `task_mgmt.py` are thin delegates onto this service. Numeric
+per-session monotonic IDs match Claude's UX.
 
-Persistence model: there is no separate tasks file. The canonical persistent
-log is events.jsonl - the same stream the frontend's `extractTasks` derives
-panel state from. The in-memory store is a fast-lookup cache for
-task_get / task_list / task_output during the running session; container
-restart triggers a rebuild from the event log.
+Persistence model: there is no separate tasks file. events.jsonl is the canonical log - the same
+stream the frontend's `extractTasks` derives panel state from. The in-memory store is a
+fast-lookup cache for task_get/task_list/task_output during the running session; a container
+restart rebuilds it by replaying prior task_create/task_update/task_stop/task_output entries.
 """
 
-import json
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
+
+from ..core.io import read_jsonl
 
 
 TaskStatus = Literal["pending", "in_progress", "completed"]
@@ -35,9 +32,8 @@ class TaskNotFound(Exception):
 class Task:
     """Single task record - immutable snapshot.
 
-    Mutations return a new Task via `dataclasses.replace`; the service swaps
-    the stored reference. Frozen prevents accidental in-place mutation by
-    callers holding a reference.
+    Mutations return a new Task via `dataclasses.replace`; the service swaps the stored
+    reference. Frozen prevents accidental in-place mutation by callers holding a reference.
     """
 
     id: int
@@ -54,9 +50,8 @@ class Task:
     def asdict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict for tool_result / API responses.
 
-        Wire-format keys are camelCase to match Claude's TaskCreate /
-        TaskUpdate result shape - the existing frontend
-        `appendTaskDiffs` / `_applyTaskResult` paths key on `activeForm`,
+        Wire-format keys are camelCase to match Claude's TaskCreate/TaskUpdate result shape - the
+        frontend's `appendTaskDiffs`/`_applyTaskResult` paths key on `activeForm`,
         `parentToolUseId`, `blockedBy`, etc.
         """
 
@@ -77,9 +72,8 @@ class Task:
 class TaskService:
     """In-memory task store backing the LangGraph task_* tool surface.
 
-    Per-session, in-container, in-process. Tool function calls go straight
-    through Python without HTTP. State is rebuildable from events.jsonl when
-    the container restarts mid-session.
+    Per-session, in-container, in-process - tool function calls go straight through Python
+    without HTTP. State is rebuildable from events.jsonl when the container restarts mid-session.
     """
 
     def __init__(self, session_id: str) -> None:
@@ -208,44 +202,30 @@ class TaskService:
     def rebuild_from_events(self, events_path: Path) -> None:
         """Replay `events.jsonl`, reconstructing the store from prior tool_use entries.
 
-        Scans the events log for task_create / task_update / task_stop /
-        task_output tool_use blocks and applies each in order. The replay
-        tolerates partial / corrupt entries by skipping unparseable lines
-        rather than failing session resume. After this call, `_next_id` is
-        positioned so the next `create()` uses an unused id.
+        After this call, `_next_id` is positioned so the next `create()` uses
+        an unused id.
         """
 
-        if not events_path.exists():
-            return
-
+        # read_jsonl handles missing/malformed lines and splits on newlines only (splitlines()
+        # would break records containing raw JSON separators); an unreadable log leaves the store empty.
         try:
-            content = events_path.read_text()
+            for data in read_jsonl(events_path):
+                if data.get("subtype") != "tool_use":
+                    continue
+
+                tool_name = data.get("tool_name") or data.get("content")
+                tool_input = data.get("tool_input") or {}
+
+                if tool_name == "task_create":
+                    self._apply_replay_create(tool_input)
+                elif tool_name == "task_update":
+                    self._apply_replay_update(tool_input)
+                elif tool_name == "task_stop":
+                    self._apply_replay_stop(tool_input)
+                elif tool_name == "task_output":
+                    self._apply_replay_output(tool_input)
         except OSError:
             return
-
-        for line in content.splitlines():
-            if not line.strip():
-                continue
-
-            try:
-                data = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-
-            if data.get("subtype") != "tool_use":
-                continue
-
-            tool_name = data.get("tool_name") or data.get("content")
-            tool_input = data.get("tool_input") or {}
-
-            if tool_name == "task_create":
-                self._apply_replay_create(tool_input)
-            elif tool_name == "task_update":
-                self._apply_replay_update(tool_input)
-            elif tool_name == "task_stop":
-                self._apply_replay_stop(tool_input)
-            elif tool_name == "task_output":
-                self._apply_replay_output(tool_input)
 
     # Replay helpers
     # ------------------------------------------------------------------

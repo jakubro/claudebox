@@ -1,14 +1,11 @@
 /** Scroll animation utilities. */
 
 /**
- * Compute the scrollTop value `scrollToEdge` would write to align `target`'s
- * edge with `container`'s viewport edge. Used by `scrollToEdge` internally
- * and by callers that need to predict the post-scroll position without
- * actually scrolling (e.g. for an at-bottom predicate).
+ * Computes the scrollTop `scrollToEdge` would write, without scrolling - used to predict the
+ * post-scroll position (e.g. an at-bottom check).
  *
- * Returns the raw computed destination - not clamped to scroll range. DOM
- * clamps scrollTop writes; callers that want the post-clamp position should
- * clamp against `[0, scrollHeight - clientHeight]` themselves.
+ * Returns the raw destination, not clamped to scroll range; callers needing the clamped value
+ * should clamp against `[0, scrollHeight - clientHeight]` themselves (DOM clamps actual writes).
  *
  * @param {HTMLElement} container
  * @param {HTMLElement} target
@@ -20,10 +17,8 @@ export function computeScrollDestination(container, target, edge = 'top') {
   const containerRect = container.getBoundingClientRect()
 
   if (edge === 'top') {
-    // Align target's top with container's top
     return targetRect.top - containerRect.top + container.scrollTop
   }
-  // Align target's bottom with container's bottom
   const targetBottom = targetRect.top + targetRect.height
   const containerBottom = containerRect.top + container.clientHeight
   return targetBottom - containerBottom + container.scrollTop
@@ -61,13 +56,12 @@ export function easeOutCubic(t) {
 }
 
 /**
- * Smooth-scroll a container to align an element, then briefly add a highlight
- * class that's removed after a timeout.
+ * Smooth-scrolls a container to align an element, then briefly adds a highlight class removed
+ * after a timeout.
  *
- * Default class `jump-highlight` and 1500ms timeout match the three call sites
- * (BookmarksPanel, TasksPanel, ChatPanel). useMessageJump uses its own
- * highlight helper to coordinate cancellation across consecutive jumps -
- * that hook is intentionally not collapsed here.
+ * Default `jump-highlight` class and 1500ms timeout match the three call sites (BookmarksPanel,
+ * TasksPanel, ChatPanel); useMessageJump keeps its own highlight helper to coordinate cancellation
+ * across consecutive jumps and is intentionally not collapsed into this one.
  *
  * @param {HTMLElement} scrollContainer
  * @param {HTMLElement} target

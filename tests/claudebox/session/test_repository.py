@@ -28,10 +28,7 @@ def repo(workspace):
 def _create_session_dir(workspace, session_id, data=None):
     """Create a session directory with optional session.json.
 
-    `fork_point_cost_usd` is auto-populated when missing - it is a required
-    field on SessionMetadata, but each individual case in this file is asserting
-    against unrelated metadata and would otherwise need the field threaded in
-    by hand.
+    `fork_point_cost_usd` auto-fills when missing - a required SessionMetadata field unrelated to most assertions.
     """
 
     sessions_root = workspace.sessions_root

@@ -13,8 +13,7 @@ export default function useAppRefs() {
   const jumpBottomRef = useRef(null)
   const newSessionRef = useRef(null)
   const newSessionInNewTabRef = useRef(null)
-  // Scroll-intent callbacks reach ChatController from sibling panels
-  // (BookmarksPanel today, TasksPanel and ChatPanel post-replay in follow-ups).
+  // Scroll-intent callbacks reach ChatController from sibling panels (BookmarksPanel currently).
   // Populated by ChatPanel after useChatController runs.
   const markUserIntentRef = useRef(null)
   const markProgrammaticScrollRef = useRef(null)

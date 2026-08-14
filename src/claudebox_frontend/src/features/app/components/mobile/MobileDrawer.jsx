@@ -15,8 +15,6 @@ import { resolveContainerId } from '../../../../utils/containerLookup'
 import SessionItem from '../../../sessions/components/session-tree/components/SessionItem'
 
 /**
- * Mobile left slide-in drawer.
- *
  * @param {object} props
  * @param {Function} props.onClose - Close the drawer.
  */

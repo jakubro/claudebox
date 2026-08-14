@@ -4,10 +4,8 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import LogsPanel from './LogsPanel'
 
-// Mock LogsStreamContext
 const mockLogsStream = {
   logs: [],
-  isLogsReplaying: false,
   connectionStatus: 'connected',
   isResuming: false,
   isSessionReplaying: false,
@@ -55,17 +53,6 @@ describe('LogsPanel', () => {
     expect(screen.getByTestId('panel-logs')).toHaveClass('logs-loading')
 
     mockLogsStream.isSessionReplaying = false
-  })
-
-  it('shows "Loading logs..." in the loading state when isLogsReplaying is true', () => {
-    mockLogsStream.isLogsReplaying = true
-
-    render(<LogsPanel />)
-
-    expect(screen.getByText('Loading logs...')).toBeDefined()
-    expect(screen.getByTestId('panel-logs')).toHaveClass('logs-loading')
-
-    mockLogsStream.isLogsReplaying = false
   })
 
   it('shows "No logs yet" in the empty state when logs are empty and connected', () => {

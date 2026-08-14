@@ -8,9 +8,10 @@ vi.mock('../api/apiClient', () => ({
   getWorkspaceId: () => 'test-workspace',
 }))
 
+import { REPLAY_DRAIN_SLICE_SIZE } from '../config/thresholds'
+import { REPLAY_DRAIN_INTERVAL_MS } from '../config/timing'
 import { EventsProvider, useEvents } from './EventsContext'
 
-// Mock EventSource class
 class MockEventSource {
   static instances = []
 
@@ -61,9 +62,7 @@ describe('EventsContext', () => {
   const wrapper = ({ children }) => <EventsProvider>{children}</EventsProvider>
   const getLatestEventSource = () => MockEventSource.instances[MockEventSource.instances.length - 1]
 
-  /**
-   * Send events through EventSource and flush the batch timer.
-   */
+  /** Sends events through EventSource and flushes the batch timer. */
   const sendAndFlush = (es, ...events) => {
     act(() => {
       es.simulateOpen()
@@ -164,17 +163,14 @@ describe('EventsContext', () => {
         es.simulateOpen()
       })
 
-      // Send 3 events rapidly
       act(() => {
         es.simulateMessage({ type: 'user', content: 'first' })
         es.simulateMessage({ type: 'assistant', content: 'second' })
         es.simulateMessage({ type: 'assistant', content: 'third' })
       })
 
-      // Events not yet in state (batching)
       expect(result.current.events).toHaveLength(0)
 
-      // After batch interval
       act(() => {
         vi.advanceTimersByTime(50)
       })
@@ -301,7 +297,7 @@ describe('EventsContext', () => {
         es,
         { type: 'assistant', content: 'response' },
         { type: 'result', success: true },
-        { type: 'result', success: true }, // Multiple results
+        { type: 'result', success: true },
       )
 
       expect(result.current.isResponding).toBe(false)
@@ -364,7 +360,7 @@ describe('EventsContext', () => {
 
       act(() => {
         es.simulateOpen()
-        es.simulateError() // Triggers reconnect timeout
+        es.simulateError()
       })
 
       const countAfterError = MockEventSource.instances.length
@@ -373,16 +369,13 @@ describe('EventsContext', () => {
         result.current.reconnectSSE()
       })
 
-      // Manual reconnect
       const countAfterReconnect = MockEventSource.instances.length
       expect(countAfterReconnect).toBe(countAfterError + 1)
 
-      // Advance past the auto-reconnect delay
       act(() => {
         vi.advanceTimersByTime(1000)
       })
 
-      // Should NOT have created another connection (timeout was cancelled)
       expect(MockEventSource.instances.length).toBe(countAfterReconnect)
     })
 
@@ -402,12 +395,10 @@ describe('EventsContext', () => {
         result.current.reconnectSSE()
       })
 
-      // Now wait for batch interval
       act(() => {
         vi.advanceTimersByTime(50)
       })
 
-      // Batch should have been cleared
       expect(result.current.events).toHaveLength(0)
     })
   })
@@ -478,7 +469,6 @@ describe('EventsContext', () => {
 
       const countAfter = MockEventSource.instances.length
 
-      // Advance well past any reconnect delay
       act(() => {
         vi.advanceTimersByTime(10000)
       })
@@ -516,12 +506,10 @@ describe('EventsContext', () => {
 
       unmount()
 
-      // Advance past reconnect delay
       act(() => {
         vi.advanceTimersByTime(1000)
       })
 
-      // Should NOT have reconnected
       expect(MockEventSource.instances.length).toBe(countAfterError)
     })
   })
@@ -734,7 +722,7 @@ describe('EventsContext', () => {
       expect(result.current.replayTotal).toBe(0)
     })
 
-    it('tracks replayProgress as pending batch length during replay', () => {
+    it('advances replayProgress as slices drain, not as events arrive', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -746,6 +734,13 @@ describe('EventsContext', () => {
       act(() => {
         es.simulateMessage({ type: 'user', content: 'msg1' })
         es.simulateMessage({ type: 'assistant', content: 'msg2' })
+      })
+
+      // Buffered but not yet materialized - progress reports what is on screen.
+      expect(result.current.replayProgress).toBe(0)
+
+      act(() => {
+        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
       })
 
       expect(result.current.replayProgress).toBe(2)
@@ -773,7 +768,7 @@ describe('EventsContext', () => {
       expect(result.current.isReplaying).toBe(false)
     })
 
-    it('flushes all accumulated events on replay_ended', () => {
+    it('materializes replayed events progressively, before replay_ended arrives', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -783,48 +778,117 @@ describe('EventsContext', () => {
       })
 
       act(() => {
-        es.simulateMessage({ type: 'user', content: 'msg1' })
+        es.simulateMessage({ type: 'user', is_human: true, content: 'msg1' })
         es.simulateMessage({ type: 'assistant', content: 'msg2' })
         es.simulateMessage({ type: 'result', success: true })
       })
 
-      // Events should not be in state.events yet (still in pending batch)
-      expect(result.current.events).toHaveLength(0)
+      act(() => {
+        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
+      })
+
+      // On screen before the server has closed the transcript - the point of draining in slices.
+      expect(result.current.events).toHaveLength(3)
+      expect(result.current.turns).toHaveLength(1)
+      expect(result.current.isReplaying).toBe(true)
 
       act(() => {
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
 
-      // All events flushed at once
       expect(result.current.events).toHaveLength(3)
-      expect(result.current.replayProgress).toBe(0)
+      expect(result.current.isReplaying).toBe(false)
     })
 
-    it('does not flush batch on timer during replay', () => {
+    it('keeps isReplaying true until the buffer finishes draining', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+      const es = getLatestEventSource()
+      const total = REPLAY_DRAIN_SLICE_SIZE + 10
+
+      act(() => {
+        es.simulateOpen()
+        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: total })
+      })
+
+      act(() => {
+        for (let i = 0; i < total; i++) {
+          es.simulateMessage({ type: 'assistant', content: `chunk-${i}` })
+        }
+        es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
+      })
+
+      // replay_ended drains one slice synchronously; a tail remains, so the overlay must not
+      // clear yet.
+      expect(result.current.events).toHaveLength(REPLAY_DRAIN_SLICE_SIZE)
+      expect(result.current.isReplaying).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
+      })
+
+      expect(result.current.events).toHaveLength(total)
+      expect(result.current.isReplaying).toBe(false)
+    })
+
+    it('keeps a live event arriving mid-drain behind the replayed history', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+      const es = getLatestEventSource()
+      const total = REPLAY_DRAIN_SLICE_SIZE + 10
+
+      act(() => {
+        es.simulateOpen()
+        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: total })
+      })
+
+      act(() => {
+        for (let i = 0; i < total; i++) {
+          es.simulateMessage({ type: 'assistant', content: `history-${i}` })
+        }
+        es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
+      })
+
+      // Transcript is closed but a tail is still draining; a live event arriving now must not
+      // overtake the queued history.
+      act(() => {
+        es.simulateMessage({ type: 'assistant', content: 'live-after-replay' })
+      })
+
+      act(() => {
+        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
+      })
+
+      const contents = result.current.events.map(e => e.content)
+      expect(contents).toHaveLength(total + 1)
+      expect(contents[contents.length - 1]).toBe('live-after-replay')
+      expect(contents.indexOf(`history-${total - 1}`)).toBeLessThan(contents.length - 1)
+    })
+
+    it('cancels an in-flight drain when the stream reconnects', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
       act(() => {
         es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 2 })
+        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 3 })
+        es.simulateMessage({ type: 'user', content: 'stale-1' })
+        es.simulateMessage({ type: 'assistant', content: 'stale-2' })
       })
 
       act(() => {
-        es.simulateMessage({ type: 'user', content: 'msg1' })
+        result.current.reconnectSSE()
       })
 
-      // Advance past normal batch interval
+      // A pending slice must not commit the previous session's events into the freshly cleared chat.
       act(() => {
-        vi.advanceTimersByTime(50)
+        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS * 4)
       })
 
-      // Events should still be pending (not flushed by timer)
       expect(result.current.events).toHaveLength(0)
-      expect(result.current.replayProgress).toBe(1)
+      expect(result.current.turns).toHaveLength(0)
+      expect(result.current.isReplaying).toBe(false)
     })
 
-    // TaskCreate / TaskUpdate populates the same todosBySubagent store as
-    // TodoWrite via appendTaskDiffs.
+    // TaskCreate/TaskUpdate populates the same todosBySubagent store as TodoWrite via appendTaskDiffs.
     it('TaskCreate populates todosBySubagent', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
@@ -863,29 +927,25 @@ describe('EventsContext', () => {
       expect(mainTodos[0].subtitle).toBe('Mirror appendTodoDiffs shape')
     })
 
-    // Streaming events buffer in a provider-level ref between flushes; only
-    // flag changes dispatch per event. state.pendingBatch stays empty during
-    // streaming; events commit only on the 50 ms flush.
-    // (input:smooth-during-response is anchored via an E2E spec; this unit
-    // test only proves the underlying batching mechanism.)
+    // Streaming events buffer in a provider ref between flushes; only flag changes dispatch per
+    // event, so events commit only when the batch timer flushes. Smooth-during-response is
+    // covered by an E2E test; this unit test only proves the batching mechanism.
     it('streaming events buffer outside reducer state between flushes', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
       act(() => {
         es.simulateOpen()
-        // Five streaming events arrive faster than the flush interval
         for (let i = 0; i < 5; i++) {
           es.simulateMessage({ type: 'assistant', content: `chunk-${i}` })
         }
       })
 
-      // Pre-flush: reducer's pendingBatch (exposed as replayProgress) is
-      // untouched; events live in the provider's ref buffer
+      // Pre-flush: reducer's pendingBatch (exposed as replayProgress) is untouched; events live
+      // in the provider's ref buffer.
       expect(result.current.replayProgress).toBe(0)
       expect(result.current.events).toHaveLength(0)
 
-      // The flush timer drains the buffer into state in one dispatch
       act(() => {
         vi.advanceTimersByTime(50)
       })
@@ -958,7 +1018,6 @@ describe('EventsContext', () => {
 
       expect(result.current.todoDiffs.size).toBe(1)
 
-      // Second TodoWrite event
       act(() => {
         es.simulateMessage({
           type: 'assistant',
@@ -1034,7 +1093,6 @@ describe('EventsContext', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
-      // First turn complete
       sendAndFlush(es, { type: 'assistant', content: 'first' }, { type: 'result', success: true })
 
       expect(result.current.isResponding).toBe(false)
@@ -1178,7 +1236,6 @@ describe('EventsContext', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
-      // First batch
       sendAndFlush(
         es,
         { type: 'user', is_human: true, content: 'First', turn_id: 't1' },
@@ -1188,7 +1245,7 @@ describe('EventsContext', () => {
       expect(result.current.turns).toHaveLength(1)
       expect(result.current.visibleEvents).toHaveLength(2)
 
-      // Second batch (no re-open needed, connection already established)
+      // Connection is already established, so no simulateOpen() call is needed here.
       act(() => {
         es.simulateMessage({ type: 'user', is_human: true, content: 'Second', turn_id: 't2' })
         es.simulateMessage({
@@ -1215,7 +1272,6 @@ describe('EventsContext', () => {
       renderHook(() => useEvents(), { wrapper })
       const es1 = getLatestEventSource()
 
-      // First error
       act(() => {
         es1.simulateOpen()
         es1.simulateError()
@@ -1225,11 +1281,9 @@ describe('EventsContext', () => {
         vi.advanceTimersByTime(1000)
       })
 
-      // Reconnected
       const es2 = getLatestEventSource()
       expect(es2).not.toBe(es1)
 
-      // Recover, then error again
       act(() => {
         es2.simulateOpen()
         es2.simulateError()
@@ -1239,7 +1293,6 @@ describe('EventsContext', () => {
         vi.advanceTimersByTime(1000)
       })
 
-      // Should reconnect again (third connection)
       expect(MockEventSource.instances.length).toBeGreaterThanOrEqual(3)
     })
 

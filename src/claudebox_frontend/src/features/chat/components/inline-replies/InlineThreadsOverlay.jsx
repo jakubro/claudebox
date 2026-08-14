@@ -1,11 +1,15 @@
 /** Span-anchored inline-replies overlay: paints durable quote highlights (CSS Custom Highlight API) and pins a floating composer to each quoted span, all owned outside the React turn tree to keep the memoized streaming render path untouched. */
 
+// audit-ignore-file: file-size
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { INLINE_REPLY_HOVER_CLOSE_MS, INLINE_REPLY_HOVER_OPEN_MS } from '../../../../config/timing'
+import { DRAG_THRESHOLD_PX } from '../../../../utils/pointer'
 import { resolveAnchor } from './anchor'
 import InlineThread from './InlineThread'
 import {
+  clampHorizontal,
   isRangeVisible,
   positionsEqual,
   rangeContainsPoint,
@@ -19,7 +23,6 @@ const HIGHLIGHTS_SUPPORTED =
 const FLOAT_GAP = 8
 
 /**
- * @param {object} props
  * @param {object} props.messagesRef - Ref to the `.chat-messages` scroll container.
  * @param {Array} props.unsent - Unsent anchored replies (editable).
  * @param {Array} props.sentThreads - Sent anchored replies (read-only), flattened across groups.
@@ -28,6 +31,7 @@ const FLOAT_GAP = 8
  * @param {function} props.onEditReply - (id, response) edit callback.
  * @param {function} props.onRemove - (id) delete callback (unsent only; clears the highlight).
  * @param {function} props.onSubmitBatch - Enter-in-box sends the whole batch.
+ * @param {boolean} props.canInterrupt - Whether Ctrl+. is allowed, shared with the composer.
  */
 export default function InlineThreadsOverlay({
   messagesRef,
@@ -38,6 +42,7 @@ export default function InlineThreadsOverlay({
   onEditReply,
   onRemove,
   onSubmitBatch,
+  canInterrupt,
 }) {
   const [hoveredId, setHoveredId] = useState(null)
   const [pinnedIds, setPinnedIds] = useState(() => new Set())
@@ -54,14 +59,19 @@ export default function InlineThreadsOverlay({
   const sentThreadsRef = useRef(sentThreads)
   const seenUnsentIdsRef = useRef(null)
   const focusIdRef = useRef(null)
+  // Reply whose hover float a click just closed; cleared once the pointer moves off it
+  const hoverSuppressedIdRef = useRef(null)
+  const pointerDownPosRef = useRef(null)
+  // Mirrored because handleClose is declared below the listener effect (dependency = TDZ)
+  const handleCloseRef = useRef(null)
 
   hoveredIdRef.current = hoveredId
   pinnedIdsRef.current = pinnedIds
   unsentRef.current = unsent
   sentThreadsRef.current = sentThreads
 
-  // Live reply lookup by id (current response text + sent flag). Used at render so a controlled reply
-  // box shows the just-typed value immediately, not the rAF-batched re-anchor cache.
+  // Live reply lookup by id (response text + sent flag), read at render so a controlled reply box
+  // shows the just-typed value immediately, not the rAF-batched re-anchor cache.
   const replyById = useMemo(() => {
     const map = new Map()
 
@@ -76,8 +86,8 @@ export default function InlineThreadsOverlay({
     return map
   }, [unsent, sentThreads])
 
-  // Re-anchoring depends on the reply SET and their spans, not the reply text - so typing a response
-  // does not re-run the (TreeWalker + highlight repaint) re-anchor pass on every keystroke.
+  // Re-anchoring depends on the reply SET and their spans, not the text - so typing a response
+  // doesn't re-run the TreeWalker + highlight repaint pass on every keystroke.
   const anchorSignal = useMemo(
     () => [...unsent, ...sentThreads].map(r => `${r.id}:${r.turnId}`).join('|'),
     [unsent, sentThreads],
@@ -202,8 +212,8 @@ export default function InlineThreadsOverlay({
     setTick(t => t + 1)
   }, [replyById])
 
-  // Floats to show: pinned + the one hover float + any source-moved reply (auto-shown so a reply whose
-  // anchor no longer resolves is never lost - it pins at its source turn's top).
+  // Floats to show: pinned + the one hover float + any source-moved reply (auto-shown so a lost
+  // anchor still pins at its source turn's top).
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick recomputes openIds off rangesByIdRef after each re-anchor
   const openIds = useMemo(() => {
     const ids = new Set(pinnedIds)
@@ -225,8 +235,8 @@ export default function InlineThreadsOverlay({
   // Null when the span is collapsed to nothing or scrolled out of the transcript viewport.
   const anchorFor = useCallback((entry, containerRect) => {
     if (entry.range) {
-      // A collapsed source turn hides its text via visibility:hidden (auto-collapse; source turns are
-      // not exempt), under which the range still reports a non-zero rect - so gate on visibility.
+      // A collapsed source turn hides text via visibility:hidden (source turns aren't exempt); the
+      // range still reports a non-zero rect there, so gate on visibility.
       if (!isRangeVisible(entry.range)) {
         return null
       }
@@ -258,6 +268,7 @@ export default function InlineThreadsOverlay({
     }
 
     const containerRect = container.getBoundingClientRect()
+    const bounds = { left: containerRect.left, right: containerRect.right }
     const boxes = []
 
     for (const id of openIds) {
@@ -275,8 +286,9 @@ export default function InlineThreadsOverlay({
 
       const el = floatRefsRef.current.get(id)
       const rect = el ? el.getBoundingClientRect() : { width: 320, height: 80 }
+      const left = clampHorizontal({ left: anchor.left, width: rect.width }, bounds)
 
-      boxes.push({ id, left: anchor.left, top: anchor.top, width: rect.width, height: rect.height })
+      boxes.push({ id, left, top: anchor.top, width: rect.width, height: rect.height })
     }
 
     const next = stackFloats(boxes, FLOAT_GAP)
@@ -397,11 +409,17 @@ export default function InlineThreadsOverlay({
         const hit = hitTest(clientX, clientY)
         container.style.cursor = hit ? 'pointer' : ''
 
+        // Off the suppressed highlight -> hover is armed again
+        if (hit !== hoverSuppressedIdRef.current) {
+          hoverSuppressedIdRef.current = null
+        }
+
         if (hit) {
           clearCloseTimer()
 
           if (
             hit !== hoveredIdRef.current &&
+            hit !== hoverSuppressedIdRef.current &&
             !pinnedIdsRef.current.has(hit) &&
             openTimerRef.current == null
           ) {
@@ -420,42 +438,65 @@ export default function InlineThreadsOverlay({
       })
     }
 
+    const onPointerDown = e => {
+      pointerDownPosRef.current = { x: e.clientX, y: e.clientY }
+    }
+
     const onClick = e => {
+      // A drag-select that merely ends on a highlight must not toggle anything
+      const down = pointerDownPosRef.current
+
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) >= DRAG_THRESHOLD_PX) {
+        return
+      }
+
       const hit = hitTest(e.clientX, e.clientY)
 
       if (hit) {
         e.stopPropagation() // don't let the transcript-background click refocus the composer
         clearOpenTimer()
         clearCloseTimer()
-        setPinnedIds(prev => {
-          const next = new Set(prev)
-          next.add(hit)
 
-          return next
-        })
+        // Compare against pinned, not visible: hover has usually already opened the box by the time
+        // the click lands, so a visibility test would close it on the first click.
+        if (pinnedIdsRef.current.has(hit)) {
+          handleCloseRef.current?.(hit) // same path as the close button, incl. empty-quote discard
+          hoverSuppressedIdRef.current = hit // pointer still rests on the span
+        } else {
+          hoverSuppressedIdRef.current = null
+          setPinnedIds(prev => {
+            const next = new Set(prev)
+            next.add(hit)
 
-        if (hoveredIdRef.current === hit) {
-          setHoveredId(null)
+            return next
+          })
+
+          if (hoveredIdRef.current === hit) {
+            setHoveredId(null)
+          }
         }
       }
     }
 
-    // Leaving the transcript entirely fires no further mousemove, so dismiss the hover float here too;
-    // the float's own mouseenter cancels this, preserving the span -> float bridge.
+    // Leaving the transcript fires no further mousemove, so dismiss the hover float here too; the
+    // float's own mouseenter cancels this, preserving the span -> float bridge.
     const onLeave = () => {
       clearOpenTimer()
       container.style.cursor = ''
+      hoverSuppressedIdRef.current = null
 
       if (hoveredIdRef.current != null && !pinnedIdsRef.current.has(hoveredIdRef.current)) {
         startCloseTimer()
       }
     }
 
+    container.addEventListener('pointerdown', onPointerDown)
     container.addEventListener('mousemove', onMove)
     container.addEventListener('click', onClick)
     container.addEventListener('mouseleave', onLeave)
 
     return () => {
+      container.removeEventListener('pointerdown', onPointerDown)
       container.removeEventListener('mousemove', onMove)
       container.removeEventListener('click', onClick)
       container.removeEventListener('mouseleave', onLeave)
@@ -528,6 +569,8 @@ export default function InlineThreadsOverlay({
     [onRemove],
   )
 
+  handleCloseRef.current = handleClose
+
   const setFloatRef = useCallback(
     id => el => {
       if (el) {
@@ -569,6 +612,7 @@ export default function InlineThreadsOverlay({
           onClose={handleClose}
           onFocus={pin}
           onSubmit={onSubmitBatch}
+          canInterrupt={canInterrupt}
         />
       </div>,
       document.body,

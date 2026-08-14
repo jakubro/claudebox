@@ -157,7 +157,7 @@ class TestSessionInfoEnvelope:
         summary = SessionSummary(
             session_id="sess-abc",
             fork_point_cost_usd=0.0,
-            model="claude-opus-4-7",
+            model="claude-opus-5",
             permission_mode="default",
             num_turns=0,
             total_cost_usd=0.0,

@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import useSelectionQuote from './hooks/useSelectionQuote'
 
 /**
- * Render a floating quote affordance at the end of the current transcript selection.
  * @param {object} props
  * @param {object} props.messagesRef - Ref to the `.chat-messages` scroll container.
  * @param {boolean} props.enabled - Whether the affordance is active (desktop, in-session).
@@ -31,8 +30,8 @@ export default function QuoteAffordance({ messagesRef, enabled, onQuote }) {
     clear()
   }
 
-  // Positioned in viewport coords (position: fixed) at the selection's bottom-right.
-  // onMouseDown preventDefault keeps the selection alive until onClick reads it.
+  // Fixed-position at the selection's bottom-right; onMouseDown's preventDefault keeps the
+  // selection alive until onClick reads it.
   return createPortal(
     <button
       type="button"

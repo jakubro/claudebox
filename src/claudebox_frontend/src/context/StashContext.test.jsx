@@ -4,7 +4,6 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StashProvider, useStash } from './StashContext'
 
-// Mock API module
 const mockGetUiState = vi.fn()
 const mockPatchSessionUiState = vi.fn()
 
@@ -13,7 +12,6 @@ vi.mock('../api/uiState', () => ({
   patchSessionUiState: (...args) => mockPatchSessionUiState(...args),
 }))
 
-// Mock SessionDataContext
 vi.mock('./SessionDataContext', () => ({
   useSessionData: () => ({ sessionId: 'test-session-123' }),
 }))
@@ -65,7 +63,6 @@ describe('useStash', () => {
       result.current.stashPush('second item')
     })
 
-    // Second item should be at front
     expect(result.current.stash).toHaveLength(2)
     expect(result.current.stash[0].text).toBe('second item')
     expect(result.current.stash[1].text).toBe('first item')

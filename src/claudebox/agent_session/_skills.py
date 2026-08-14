@@ -1,13 +1,10 @@
 """Shared skill catalog walker - filesystem discovery + YAML frontmatter parsing.
 
-Used by both ClaudeRuntime and LangGraphRuntime. The skill catalog is a
-filesystem object (`<commands_dir>/*.md` + `<skills_dir>/<name>/SKILL.md`) so
-the discovery logic is runtime-neutral; only the model dispatch differs.
+Used by both ClaudeRuntime and LangGraphRuntime; the catalog is a filesystem object
+(`<commands_dir>/*.md` + `<skills_dir>/<name>/SKILL.md`), so discovery is runtime-neutral.
 
-Walker returns Skill metadata only (per the catalogs.Skill frozen dataclass).
-The LangGraph `skill` tool re-reads the source SKILL.md at invoke time to
-project the body content as a tool result; that path is owned by
-`langgraph_tools/skill.py`, not here.
+Returns Skill metadata only (per `catalogs.Skill`); `langgraph_tools/skill.py` owns re-reading
+the source file at invoke time to project the body as a tool result.
 """
 
 from pathlib import Path
@@ -27,10 +24,9 @@ def walk_skills(
 ) -> list[Skill]:
     """Walk profile directories for skills and return parsed Skill metadata.
 
-    Defaults to in-container bind-mount paths (`claude_commands_dir()` /
-    `claude_skills_dir()`); daemon callers pass profile-relative paths
-    explicitly. Resolution happens at call time so test monkeypatching of
-    Path.home() takes effect (see GUIDELINES.md "Home-derived paths").
+    Defaults to in-container bind-mount paths (`claude_commands_dir()`/`claude_skills_dir()`);
+    daemon callers pass profile-relative paths. Resolved at call time so test monkeypatching of
+    `Path.home()` takes effect (see GUIDELINES.md "Home-derived paths").
     """
 
     commands_dir = commands_dir or claude_commands_dir()
@@ -131,14 +127,8 @@ def find_skill_source(
 ) -> Path | None:
     """Resolve `name` to its source `.md` / `SKILL.md` path on disk.
 
-    Mirrors `walk_skills` discovery rules so the LangGraph `skill` tool can
-    re-read the file at invoke time and project its body as the tool result.
-    Returns None when the name does not resolve under either directory.
-
-    Lookup precedence matches `walk_skills`'s aggregation order:
-    1. `commands_dir/*.md` (name read from frontmatter; no fallback).
-    2. `skills_dir/<subdir>/SKILL.md` (name from frontmatter, falling back to
-       the subdir name).
+    Mirrors `walk_skills`'s discovery order so the LangGraph `skill` tool can re-read the file at
+    invoke time and project its body as the tool result.
     """
 
     commands_dir = commands_dir or claude_commands_dir()
@@ -182,13 +172,8 @@ def find_skill_source(
 def extract_body(content: str) -> str:
     """Return the post-frontmatter body of a SKILL.md / command .md file.
 
-    When the content starts with `---\\n...\\n---` strip everything up to and
-    including the closing `---` plus one trailing newline. When no frontmatter
-    is present, return the content unchanged.
-
-    The LangGraph `skill` tool projects the body as its tool result; the model
-    treats it as turn-level instructions identically to Claude's slash-command
-    handling.
+    The LangGraph `skill` tool projects this as its tool result; the model treats it as turn-level
+    instructions identically to Claude's slash-command handling.
     """
 
     if not content.startswith("---"):

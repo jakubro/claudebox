@@ -62,12 +62,7 @@ class TestCapabilityDeclaration:
 
 
 class TestUnsupportedCapabilities:
-    """Protocol methods that remain unsupported under LangGraph v1.
-
-    Methods with real implementations (connect, disconnect, query, interrupt,
-    get_context_usage, receive_events, get_models, catalogs) are covered in
-    their own test modules.
-    """
+    """Protocol methods still unsupported under LangGraph v1; implemented methods have their own test modules."""
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(

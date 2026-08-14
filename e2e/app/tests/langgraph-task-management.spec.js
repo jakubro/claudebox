@@ -15,26 +15,14 @@ test.describe('LangGraph Task Management', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Each task_create renders a tool block - same conversion path as Claude's
-    // TaskCreate. The first tool_use_id matches the JSONL fixture's first block.
-    const firstToolBlock = page
-      .locator('[data-testid="tool-block"][data-tool-use-id="tool_001"]')
-      .first()
-    await expect(firstToolBlock).toBeVisible()
+    // normalizeToolName maps snake_case task_create/task_update to PascalCase, so the run collapses
+    // into one Todos group, not three tool blocks.
+    const group = page.locator('[data-testid="todos-group"]')
+    await expect(group).toBeVisible()
+    await expect(group.locator('.todo-item')).toHaveCount(2)
 
-    const secondToolBlock = page
-      .locator('[data-testid="tool-block"][data-tool-use-id="tool_002"]')
-      .first()
-    await expect(secondToolBlock).toBeVisible()
-
-    // The task_update block (tool_003) also renders to completed state - the
-    // frontend's appendTaskDiffs gate now recognises both Claude and LangGraph
-    // names via the schema.js normalizeToolName helper.
-    const updateBlock = page
-      .locator(
-        '[data-testid="tool-block"][data-tool-use-id="tool_003"][data-tool-status="completed"]',
-      )
-      .first()
-    await expect(updateBlock).toBeVisible()
+    await expect(
+      page.locator('[data-testid="tool-block"][data-tool-use-id="tool_001"]'),
+    ).toHaveCount(0)
   })
 })

@@ -1,8 +1,5 @@
-"""Tests for CallbackCatchAllAudit - ban a **kwargs catch-all alongside named callbacks.
-
-The audit script has a hyphenated filename (not importable by name), so it is loaded via
-importlib. Sample defs are written into tmp files; this test module declares no such pattern.
-"""
+"""Tests for CallbackCatchAllAudit: bans a **kwargs catch-all alongside named callbacks.
+The audit script's hyphenated filename requires loading it via importlib; samples live in tmp files."""
 
 import importlib.util
 from pathlib import Path

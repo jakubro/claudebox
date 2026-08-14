@@ -8,7 +8,6 @@ import { MobileMenuProvider } from './MobileMenuContext'
 import MobileTopBar from './MobileTopBar'
 import StatusStrip from './StatusStrip'
 
-/** Render single-column mobile layout with drawer and details sheet overlays. */
 export default function MobileLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)

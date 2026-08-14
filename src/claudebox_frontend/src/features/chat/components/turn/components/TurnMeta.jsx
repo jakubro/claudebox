@@ -4,19 +4,6 @@ import { Bookmark, ChevronDown, ChevronRight } from 'lucide-react'
 import CopyButton from '../../../../../components/CopyButton.jsx'
 import { formatDuration, formatRelativeTime } from '../../../../../utils/formatters'
 
-/**
- * Render the turn metadata row with collapse toggle, duration, timestamp, bookmark, and copy button.
- * @param {Object} props
- * @param {number} props.startTime - Turn start timestamp in ms.
- * @param {number} props.duration - Turn duration in seconds.
- * @param {boolean} props.canCollapse - Whether the turn can be collapsed.
- * @param {boolean} props.collapsed - Whether the turn is currently collapsed.
- * @param {Function} props.onToggleCollapse - Callback to toggle collapse state.
- * @param {string} props.assistantTextContent - Full assistant text for copy button.
- * @param {string} props.turnId - Turn identifier for bookmark action.
- * @param {boolean} props.isBookmarked - Whether the assistant response is bookmarked.
- * @param {Function} props.onToggleBookmark - Callback to toggle bookmark.
- */
 export default function TurnMeta({
   startTime,
   duration,

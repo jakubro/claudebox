@@ -4,14 +4,8 @@
 class DaemonError(Exception):
     """Base exception for daemon domain errors.
 
-    Subclasses define status_code and error_key as class attributes.
-    The centralized FastAPI handler reads these to build JSON responses.
-    Keyword arguments become context merged into the JSON body.
-
-    Attributes:
-        status_code: HTTP status code for the error response.
-        error_key: Machine-readable error identifier for the JSON body.
-        context: Extra key-value pairs included in the error response.
+    Subclasses set status_code and error_key; the FastAPI handler builds the JSON response
+    and merges in keyword args as context.
     """
 
     status_code: int = 500
@@ -48,6 +42,20 @@ class WorkspaceNotRegistered(DaemonError):
 
     status_code = 404
     error_key = "workspace_not_registered"
+
+
+class LockTimeout(DaemonError):
+    """A FileLock acquisition exceeded its bound rather than blocking forever."""
+
+    status_code = 423
+    error_key = "lock_timeout"
+
+
+class ListingTimeout(DaemonError):
+    """A disk listing (boards, sessions) exceeded its bound rather than blocking forever."""
+
+    status_code = 504
+    error_key = "listing_timeout"
 
 
 class ValidationError(DaemonError):

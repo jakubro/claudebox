@@ -10,9 +10,7 @@ describe('useDrafts', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Create mock textarea element.
-   */
+  /** Create mock textarea element. */
   function createMockTextarea(value = '') {
     return { value }
   }
@@ -67,7 +65,6 @@ describe('useDrafts', () => {
       { initialProps: { sessionId: 'session-1' } },
     )
 
-    // Switch to session-2
     rerender({ sessionId: 'session-2' })
 
     expect(textarea.value).toBe('session 2 draft')
@@ -102,7 +99,6 @@ describe('useDrafts', () => {
     result.current.userHasTypedRef.current = true
     textarea.value = ''
 
-    // Switch to session-2 - should NOT restore because session switch resets the flag
     rerender({ sessionId: 'session-2' })
 
     // Session switch resets userHasTypedRef, so draft IS restored
@@ -118,7 +114,6 @@ describe('useDrafts', () => {
       useDrafts('session-1', textareaRef, resizeTextarea),
     )
 
-    // Simulate user typing after initial render
     result.current.userHasTypedRef.current = true
 
     // Simulate async draft load (e.g., from another tab or delayed localStorage)
@@ -145,7 +140,6 @@ describe('useDrafts', () => {
       { initialProps: { sessionId: 'session-1' } },
     )
 
-    // Switch to session-2 - old text cleared, new draft restored
     rerender({ sessionId: 'session-2' })
 
     expect(textarea.value).toBe('session 2 draft')
@@ -156,12 +150,10 @@ describe('useDrafts', () => {
     const textareaRef = { current: textarea }
     const resizeTextarea = vi.fn()
 
-    // Start with empty localStorage
     const { result, rerender } = renderHook(() =>
       useDrafts('session-1', textareaRef, resizeTextarea),
     )
 
-    // Simulate draft being saved
     act(() => {
       result.current.saveDrafts({ current: 'loaded draft', stack: [] })
     })
@@ -222,7 +214,6 @@ describe('useDrafts', () => {
       { initialProps: { sessionId: 'session-1' } },
     )
 
-    // Switch to session-2 which has no stored draft
     rerender({ sessionId: 'session-2' })
 
     expect(textarea.value).toBe('')
@@ -242,11 +233,9 @@ describe('useDrafts', () => {
 
     expect(textarea.value).toBe('draft A')
 
-    // Switch to session-2
     rerender({ sessionId: 'session-2' })
     expect(textarea.value).toBe('draft B')
 
-    // Switch back to session-1
     rerender({ sessionId: 'session-1' })
     expect(textarea.value).toBe('draft A')
   })
@@ -256,7 +245,6 @@ describe('useDrafts', () => {
     const textareaRef = { current: null }
     const resizeTextarea = vi.fn()
 
-    // Should not throw
     expect(() => {
       renderHook(() => useDrafts('session-1', textareaRef, resizeTextarea))
     }).not.toThrow()

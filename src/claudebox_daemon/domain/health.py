@@ -19,16 +19,7 @@ if TYPE_CHECKING:
 
 
 class HealthMonitor(AsyncPoller):
-    """Poll container health endpoints and update registry status.
-
-    Iterates all workspace registries, pinging each container's /health endpoint
-    every CONTAINER_HEALTH_MONITOR_INTERVAL seconds. Tracks consecutive failures
-    and transitions containers to "crashed" after CONTAINER_HEALTH_MAX_FAILURES
-    consecutive failures. Uses the daemon's shared proxy client for HTTP requests.
-
-    Attributes:
-        _service: Daemon service providing access to workspaces and proxy client.
-    """
+    """Poll container health endpoints and update registry status."""
 
     def __init__(self, service: "DaemonService") -> None:
         super().__init__(

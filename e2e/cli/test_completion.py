@@ -1,15 +1,9 @@
 """End-to-end tests for ``claudebox`` bash tab-completion (argcomplete protocol).
 
-Drives argcomplete's completion protocol against the CLI subprocess: sets
-``_ARGCOMPLETE`` / ``COMP_LINE`` / ``COMP_POINT``, captures the completion stream
-argcomplete writes to fd 8, and asserts the offered candidates. Reuses the
-hermetic harness (bwrap + fake bins + fake daemon).
+Asserts candidates for a given COMP_LINE; the ``complete`` fixture drives argcomplete against the CLI subprocess.
 """
 
 import json
-import os
-import subprocess
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -18,9 +12,6 @@ from pytest_httpserver import HTTPServer
 
 pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])
 
-
-# argcomplete separates completion candidates on the fd-8 stream with a vertical tab.
-_ARGCOMPLETE_IFS = "\x0b"
 
 # A closed port: httpx ConnectError is the "daemon unreachable" path for the completer.
 _DEAD_DAEMON_URL = "http://127.0.0.1:1"
@@ -39,48 +30,8 @@ _VERBS = frozenset(
         "daemon",
         "containers",
         "workspaces",
-    }
+    },
 )
-
-
-@pytest.fixture
-def complete(
-    claudebox_bin: Path,
-    hermetic_home: Path,
-    fake_bins_dir: Path,
-    record_dir: Path,
-    fake_daemon: str,
-) -> Callable[..., list[str]]:
-    """Return a helper that drives argcomplete completion for a COMP_LINE and returns the candidates."""
-
-    def _complete(comp_line: str, *, daemon_url: str | None = None) -> list[str]:
-        env = {
-            **os.environ,
-            "CLAUDEBOX_TEST_HOME": str(hermetic_home),
-            "CLAUDEBOX_TEST_PATH_PREFIX": str(fake_bins_dir),
-            "CLAUDEBOX_TEST_RECORD_DIR": str(record_dir),
-            "CLAUDEBOX_DAEMON_URL": daemon_url if daemon_url is not None else fake_daemon,
-            "_ARGCOMPLETE": "1",
-            "_ARGCOMPLETE_SHELL": "bash",
-            "COMP_LINE": comp_line,
-            "COMP_POINT": str(len(comp_line)),
-            "COMP_TYPE": "9",
-        }
-
-        # argcomplete writes candidates to fd 8; route fd 8 -> the captured stdout
-        # pipe and mute the program's own stdout/stderr so only completions are read.
-        result = subprocess.run(
-            ["bash", "-c", 'exec 8>&1 1>/dev/null 2>/dev/null; exec "$@"', "_", str(claudebox_bin)],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=30,
-            check=False,
-        )
-
-        return [c for c in result.stdout.split(_ARGCOMPLETE_IFS) if c]
-
-    return _complete
 
 
 def _seed_registry(home: Path, workspace_ids: list[str]) -> None:
@@ -127,11 +78,14 @@ class TestContainerTargetCompletion:
     """``containers stop`` completes short ids across workspaces plus ``all``; degrades when down."""
 
     def test_completes_container_ids_and_all(
-        self, complete, hermetic_home: Path, httpserver: HTTPServer
+        self,
+        complete,
+        hermetic_home: Path,
+        httpserver: HTTPServer,
     ) -> None:
         _seed_registry(hermetic_home, ["ws1"])
         httpserver.expect_request("/api/workspaces/ws1/containers").respond_with_json(
-            {"containers": [{"id": "abc123456789def0"}, {"id": "0011223344556677"}]}
+            {"containers": [{"id": "abc123456789def0"}, {"id": "0011223344556677"}]},
         )
 
         candidates = set(complete("claudebox containers stop "))

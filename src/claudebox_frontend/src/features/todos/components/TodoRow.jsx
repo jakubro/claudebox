@@ -1,12 +1,7 @@
 /** Single panel row - minimal layout (icon + title; subtitle surfaced via native tooltip). */
 
 /**
- * Render one todo row in the Todos panel.
- *
- * Minimal layout: state icon + title only. The item's `subtitle`, when present,
- * surfaces as a native browser tooltip via `title=` on the row - no inline
- * visible muted line, no count badge. Blocked state is encoded in the icon
- * itself (caller passes the `⊘` glyph when blockers are unresolved).
+ * Blocked state lives in the icon glyph the caller passes - no separate blocked prop.
  *
  * @param {object} props
  * @param {object} props.todo - Todo item carrying content, status, optional subtitle.

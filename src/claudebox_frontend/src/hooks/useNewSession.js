@@ -15,14 +15,8 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { openSessionInNewTab } from '../utils/navigation'
 
 /**
- * Return an `executeNewSession` callback that creates a session in the
- * background while the SessionHeaderStrip's "Creating…" indicator (driven by
- * EventsContext.isCreating) covers the loading state. On success, sets the
- * container ID, seeds the session data, and navigates to the new session.
- *
- * Resolves to `true` on success, `false` on failure.
- *
- * @returns {{ executeNewSession: () => Promise<boolean>, executeNewSessionInNewTab: () => Promise<void>, isCreating: boolean, isCreatingInNewTab: boolean }}
+ * Creates a session in the background; SessionHeaderStrip's "Creating..." indicator is driven by
+ * EventsContext.isCreating. Resolves `true` on success, `false` on failure.
  */
 export default function useNewSession() {
   const { focusChatTab } = useAppActions()
@@ -46,28 +40,23 @@ export default function useNewSession() {
   const abortRef = useRef(null)
 
   const executeNewSession = useCallback(async () => {
-    // Prevent concurrent creation attempts
     if (creatingRef.current) {
       return false
     }
     creatingRef.current = true
     clearProgress()
 
-    // Snapshot the prior session so the still-running toast can offer a
-    // return jump if Claude was responding when the user replaced it.
+    // Snapshot the prior session so the still-running toast can offer a return jump if Claude was responding.
     const prevSessionId = currentSessionId
     const prevSessionName = currentSessionName
     const prevWasResponding = isResponding
 
-    // Abort any previous in-flight request
     abortRef.current?.abort()
     const abortController = new AbortController()
     abortRef.current = abortController
 
-    // Pre-call: drop stale sessionData. The create-response carries the full
-    // synthesized SessionInfo (workspace, session_dir, effort_level default,
-    // zeros for turn/cost stats), so we seed it post-call rather than reading
-    // stale fields from the previous session here.
+    // Drop stale sessionData now - the create response reseeds a full SessionInfo below:
+    // workspace, session_dir, effort_level, zeroed stats.
     clearSessionData()
     startCreating()
     focusChatTab()
@@ -76,8 +65,7 @@ export default function useNewSession() {
       const data = await newSession({ signal: abortController.signal })
 
       if (data?.session_id) {
-        // Seed the full SessionInfo response - populates the footer
-        // immediately (workspace, session_dir, effort_level, zeros).
+        // Seed the full SessionInfo response so the footer populates immediately.
         seedSessionData(data)
       }
       if (data?.container_id) {
@@ -137,10 +125,7 @@ export default function useNewSession() {
 
   const [isCreatingInNewTab, setIsCreatingInNewTab] = useState(false)
 
-  // Opening a session in a new browser tab must not toggle the originating
-  // tab's global EventsContext lifecycle flags - the new tab manages its own
-  // creating/resuming state when it loads. Local `isCreatingInNewTab` is
-  // sufficient to drive the trigger button's spinner.
+  // Must not toggle origin tab's global EventsContext flags - `isCreatingInNewTab` drives only this spinner.
   const executeNewSessionInNewTab = useCallback(async () => {
     setIsCreatingInNewTab(true)
     try {

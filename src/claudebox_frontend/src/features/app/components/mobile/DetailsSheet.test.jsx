@@ -18,19 +18,12 @@ const mockSessionDataCtx = {
   totalDurationMs: 65000,
   lastContextTokens: 80000,
   contextWindow: 200000,
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-5',
   effortLevel: 'high',
   permissionMode: 'auto',
 }
 vi.mock('../../../../context/SessionDataContext', () => ({
   useSessionData: () => mockSessionDataCtx,
-}))
-
-// Mock formatters
-vi.mock('../../../../utils/formatters', () => ({
-  formatDurationClock: ms =>
-    `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`,
-  getWorkspaceName: ws => (ws ? ws.split('/').pop() : null),
 }))
 
 describe('DetailsSheet', () => {
@@ -45,7 +38,7 @@ describe('DetailsSheet', () => {
     mockSessionDataCtx.totalDurationMs = 65000
     mockSessionDataCtx.lastContextTokens = 80000
     mockSessionDataCtx.contextWindow = 200000
-    mockSessionDataCtx.model = 'claude-sonnet-4-20250514'
+    mockSessionDataCtx.model = 'claude-sonnet-5'
     mockSessionDataCtx.effortLevel = 'high'
     mockSessionDataCtx.permissionMode = 'auto'
   })
@@ -85,7 +78,7 @@ describe('DetailsSheet', () => {
   it('renders formatted duration', () => {
     render(<DetailsSheet onClose={onClose} />)
 
-    expect(screen.getByText('1:05')).toBeInTheDocument()
+    expect(screen.getByText('0:01:05')).toBeInTheDocument()
   })
 
   it('renders context percentage', () => {
@@ -97,7 +90,7 @@ describe('DetailsSheet', () => {
   it('renders model name', () => {
     render(<DetailsSheet onClose={onClose} />)
 
-    expect(screen.getByText('claude-sonnet-4-20250514')).toBeInTheDocument()
+    expect(screen.getByText('claude-sonnet-5')).toBeInTheDocument()
   })
 
   it('renders effort level', () => {

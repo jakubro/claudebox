@@ -6,11 +6,7 @@ export const OPEN_TAG_RE = /<([a-zA-Z][a-zA-Z0-9_-]*)>/g
 /** Match a collapsed placeholder (with sequence number). */
 export const COLLAPSED_RE = /<([a-zA-Z][a-zA-Z0-9_-]*)\.\.\.(\d+)>/g
 
-/**
- * Find all XML blocks (open+close pairs) in value.
- *
- * Tracks nesting depth for same-name tags to find the correct closing match.
- */
+/** Finds all XML open+close tag pairs in value, tracking nesting depth for same-name tags to match the correct closing tag. */
 export function findAllBlocks(value) {
   const blocks = []
   OPEN_TAG_RE.lastIndex = 0
@@ -46,11 +42,7 @@ export function findAllBlocks(value) {
   return blocks
 }
 
-/**
- * Find the innermost XML block enclosing the cursor position.
- *
- * Returns { start, end, tagName, fullMatch } or null.
- */
+/** Finds the innermost XML block enclosing the cursor position; returns { start, end, tagName, fullMatch } or null. */
 export function findEnclosingBlock(value, cursor) {
   let best = null
   for (const block of findAllBlocks(value)) {
@@ -63,11 +55,7 @@ export function findEnclosingBlock(value, cursor) {
   return best
 }
 
-/**
- * Find the collapsed placeholder nearest to the cursor.
- *
- * Returns { start, end, tagName, placeholder } or null.
- */
+/** Finds the collapsed placeholder nearest to the cursor; returns { start, end, tagName, placeholder } or null. */
 export function findEnclosingCollapsed(value, cursor) {
   let best = null
   let bestDist = Infinity

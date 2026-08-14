@@ -4,12 +4,6 @@ import { useState } from 'react'
 import Markdown from '../../../../../components/Markdown'
 import { formatBlockTiming } from '../../../../../utils/formatters'
 
-/**
- * Render expandable thinking block with first-line preview.
- * @param {Object} props
- * @param {Object} props.event - Thinking event with content and ts.
- * @param {number} [props.blockRelativeTime] - Precomputed offset from turn start in seconds.
- */
 export default function ThinkingBlock({ event, blockRelativeTime = null }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -24,7 +18,6 @@ export default function ThinkingBlock({ event, blockRelativeTime = null }) {
 
   return (
     <div className="thinking-block">
-      {/* Clickable header area */}
       <div
         className="thinking-header-area"
         onClick={() => setExpanded(!expanded)}

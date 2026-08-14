@@ -5,10 +5,10 @@ import { MESSAGE_QUEUE_STORAGE_PREFIX as STORAGE_PREFIX } from '../../../config/
 import MessageQueueManager from '../MessageQueueManager'
 
 /**
- * Connect MessageQueueManager to React lifecycle with localStorage persistence.
  * @param {object} deps
  * @param {number} deps.resultCount - Response cycle completion counter from EventsContext.
  * @param {number} deps.compactionCount - Compaction completion counter from EventsContext.
+ * @param {boolean} deps.isLoading - True while a stored conversation is still materializing.
  * @param {string|null} deps.interruptStatus - Current interrupt status.
  * @param {string|null} deps.errorMessage - Current error message.
  * @param {string|null} deps.sessionId - Active session ID.
@@ -17,6 +17,7 @@ import MessageQueueManager from '../MessageQueueManager'
 export default function useMessageQueue({
   resultCount,
   compactionCount,
+  isLoading,
   interruptStatus,
   errorMessage,
   sessionId,
@@ -49,31 +50,43 @@ export default function useMessageQueue({
   }
   const manager = managerRef.current
 
-  // Drain on response cycle completion. resultCount increments inside the EventsContext
-  // reducer (not in a React effect), so it catches isResponding true->false transitions
-  // even when 50ms event batching collapses them into a single render.
-  const prevResultCountRef = useRef(resultCount)
-  useEffect(() => {
-    if (resultCount > prevResultCountRef.current && manager.hasQueued()) {
-      const item = manager.handleResponseCycleEnd()
-      if (item) {
-        sendFn(item.content, { attachments: item.attachments })
-      }
+  const drain = useCallback(() => {
+    if (!manager.hasQueued()) {
+      return
     }
-    prevResultCountRef.current = resultCount
-  }, [resultCount, manager, sendFn])
+    const item = manager.handleResponseCycleEnd()
+    if (item) {
+      sendFn(item.content, { attachments: item.attachments })
+    }
+  }, [manager, sendFn])
 
-  // Drain on compaction completion (compact_boundary event)
+  // Drains when a LIVE response cycle ends. Both counters increment inside the EventsContext reducer
+  // (not an effect), catching transitions that 50ms event batching would otherwise collapse.
+  // Replaying a stored conversation also climbs both counters while history loads;
+  // the loading flag separates a replayed completion from a live one.
+  // Counters stay synced during the load, so the first live completion afterwards drains exactly one item.
+  // The load-ending commit is skipped too: React batches the final replay slice with the replay-ended dispatch,
+  // so that commit's counter jump is replay-driven, not a live completion to honour.
+  const prevResultCountRef = useRef(resultCount)
   const prevCompactionCountRef = useRef(compactionCount)
+  const wasLoadingRef = useRef(isLoading)
   useEffect(() => {
-    if (compactionCount > prevCompactionCountRef.current && manager.hasQueued()) {
-      const item = manager.handleResponseCycleEnd()
-      if (item) {
-        sendFn(item.content, { attachments: item.attachments })
-      }
-    }
+    const advanced =
+      resultCount > prevResultCountRef.current || compactionCount > prevCompactionCountRef.current
+    const wasLoading = wasLoadingRef.current
+
+    prevResultCountRef.current = resultCount
     prevCompactionCountRef.current = compactionCount
-  }, [compactionCount, manager, sendFn])
+    wasLoadingRef.current = isLoading
+
+    if (isLoading || wasLoading) {
+      return
+    }
+
+    if (advanced) {
+      drain()
+    }
+  }, [resultCount, compactionCount, isLoading, drain])
 
   // Pause on interrupt
   useEffect(() => {
@@ -89,9 +102,8 @@ export default function useMessageQueue({
     }
   }, [errorMessage, manager])
 
-  // Restore from localStorage on session change (or clear if nothing stored).
-  // On fresh-session init (null->value), merge stored items with in-memory orphans
-  // that were enqueued before sessionId was available for persistence.
+  // Restores from localStorage on session change (or clears if nothing stored).
+  // On fresh-session init (null->value), merges stored items with orphans queued before sessionId existed.
   const prevSessionIdRef = useRef(sessionId)
   useEffect(() => {
     let items = []

@@ -20,10 +20,8 @@ test.describe('Thinking Blocks', () => {
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
 
-    // Header should show "Thinking"
     await expect(thinkingBlock.locator('.thinking-label')).toHaveText('Thinking')
 
-    // Preview should contain actual thinking content (truncated)
     const preview = thinkingBlock.locator('.thinking-preview')
     await expect(preview).toBeVisible()
     const previewText = await preview.textContent()
@@ -35,7 +33,6 @@ test.describe('Thinking Blocks', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Should have hollow circle bullet (○)
     const bullet = page.locator('.thinking-bullet').first()
     await expect(bullet).toBeVisible()
     await expect(bullet).toHaveText('○')
@@ -49,11 +46,9 @@ test.describe('Thinking Blocks', () => {
     const preview = page.locator('.thinking-summary').first()
     await expect(preview).toBeVisible()
 
-    // First line content present
     await expect(preview).toContainText('Let me think about how to explain this clearly')
 
-    // Claim says "truncated with ellipsis": the rendered content must end with
-    // the ellipsis character (or CSS line-clamp must be applied).
+    // Claim is "truncated with ellipsis" - accept the ellipsis char or CSS line-clamp as evidence.
     const previewText = (await preview.textContent())?.trim() ?? ''
     const overflow = await preview.evaluate(el => getComputedStyle(el).textOverflow)
     const lineClamp = await preview.evaluate(
@@ -66,8 +61,7 @@ test.describe('Thinking Blocks', () => {
       (lineClamp && lineClamp !== 'none' && lineClamp !== '')
     expect(looksTruncated, `preview text "${previewText}" must show truncation`).toBe(true)
 
-    // Claim says "no quotes" - the rendered preview must not be wrapped in
-    // matching surrounding quotes.
+    // Claim says "no quotes" - the rendered preview must not be wrapped in matching surrounding quotes.
     expect(previewText.startsWith('"') && previewText.endsWith('"')).toBe(false)
     expect(previewText.startsWith("'") && previewText.endsWith("'")).toBe(false)
   })
@@ -83,21 +77,16 @@ test.describe('Thinking Blocks', () => {
     // Initially, summary should be visible (collapsed state)
     await expect(thinkingBlock.locator('.thinking-summary')).toBeVisible()
 
-    // Click to expand
     await thinkingBlock.locator('.thinking-header-area').click()
 
-    // Summary should be replaced by full content inline
     await expect(thinkingBlock.locator('.thinking-summary')).not.toBeVisible()
     const inline = thinkingBlock.locator('.thinking-content-inline')
     await expect(inline).toBeVisible()
 
-    // Should show full thinking content
     await expect(inline).toContainText('First, I should consider')
     await expect(inline).toContainText('The key concepts are')
 
-    // Claim says "rendered as formatted Markdown" - verify the expanded body
-    // contains at least one rendered Markdown construct (paragraph, list,
-    // strong/em, or code element) rather than a single plain-text node.
+    // Claim is "rendered as formatted Markdown" - require a real node (p, list, strong/em, code), not plain text.
     const renderedNodes = await inline.evaluate(el => {
       const tags = ['P', 'UL', 'OL', 'LI', 'STRONG', 'EM', 'CODE', 'PRE', 'H1', 'H2', 'H3']
       return tags.filter(t => el.querySelector(t.toLowerCase()))
@@ -116,10 +105,8 @@ test.describe('Thinking Blocks', () => {
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
 
-    // Record the bounding box of the thinking block before expanding
     const boxBefore = await thinkingBlock.boundingBox()
 
-    // Expand
     await thinkingBlock.locator('.thinking-header-area').click()
     await expect(thinkingBlock.locator('.thinking-content-inline')).toBeVisible()
 
@@ -127,7 +114,6 @@ test.describe('Thinking Blocks', () => {
     const inlineContent = thinkingBlock.locator('.thinking-content-inline')
     const inlineBox = await inlineContent.boundingBox()
 
-    // Expanded content should start at approximately the same horizontal position
     expect(inlineBox.x).toBeGreaterThanOrEqual(boxBefore.x)
     expect(inlineBox.x).toBeLessThanOrEqual(boxBefore.x + boxBefore.width)
 
@@ -143,11 +129,9 @@ test.describe('Thinking Blocks', () => {
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
 
-    // Expand
     await thinkingBlock.locator('.thinking-header-area').click()
     await expect(thinkingBlock.locator('.thinking-content-inline')).toBeVisible()
 
-    // Collapse
     await thinkingBlock.locator('.thinking-header-area').click()
     await expect(thinkingBlock.locator('.thinking-summary')).toBeVisible()
     await expect(thinkingBlock.locator('.thinking-content-inline')).not.toBeVisible()
@@ -157,7 +141,6 @@ test.describe('Thinking Blocks', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Should have corner bracket (└)
     const corner = page.locator('.thinking-corner').first()
     await expect(corner).toBeVisible()
     await expect(corner).toHaveText('└')
@@ -171,14 +154,10 @@ test.describe('Thinking Blocks', () => {
     const preview = page.locator('.thinking-summary').first()
     await expect(preview).toBeVisible()
 
-    // Get the text content
     const text = await preview.textContent()
 
-    // Should NOT have quotes around the preview
     expect(text).not.toMatch(/^".*"$/)
     expect(text).not.toMatch(/^'.*'$/)
-
-    // Should be plain text starting with first line content
     expect(text).toContain('Let me think about')
   })
 
@@ -190,7 +169,6 @@ test.describe('Thinking Blocks', () => {
     const summary = page.locator('.thinking-summary').first()
     await expect(summary).toBeVisible()
 
-    // Check CSS for ellipsis truncation
     const overflow = await summary.evaluate(el => {
       const style = window.getComputedStyle(el)
       return {
@@ -200,7 +178,6 @@ test.describe('Thinking Blocks', () => {
       }
     })
 
-    // Should use CSS ellipsis for truncation
     expect(overflow.textOverflow).toBe('ellipsis')
   })
 
@@ -212,11 +189,9 @@ test.describe('Thinking Blocks', () => {
     const thinkingBlock = page.locator('.thinking-block').first()
     await thinkingBlock.locator('.thinking-header-area').click()
 
-    // Should show inline content
     const inlineContent = thinkingBlock.locator('.thinking-content-inline')
     await expect(inlineContent).toBeVisible()
 
-    // Content should be rendered as Markdown - verify HTML elements from Markdown rendering
     const markdownElements = await inlineContent.locator('strong, em, p, ol, li').count()
     expect(markdownElements).toBeGreaterThan(0)
   })

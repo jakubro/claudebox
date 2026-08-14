@@ -1,6 +1,5 @@
 /** Help panel displaying keyboard shortcuts. */
 
-/** Render help panel displaying keyboard shortcuts. */
 export default function HelpPanel() {
   return (
     <div className="help-panel" data-testid="panel-help">

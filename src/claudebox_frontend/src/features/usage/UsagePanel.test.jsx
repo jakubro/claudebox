@@ -1,9 +1,8 @@
-/** Tests for UsagePanel. */
+/** Tests for UsagePanel component. */
 
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock SessionsContext - UsagePanel now consumes useSessionsList
 let mockSessions = []
 vi.mock('../../context/SessionsContext', () => ({
   useSessionsList: () => ({ sessions: mockSessions }),

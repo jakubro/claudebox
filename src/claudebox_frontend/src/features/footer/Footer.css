@@ -61,7 +61,7 @@
 }
 
 .footer-session {
-  font-family: monospace;
+  font-family: var(--font-mono);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -87,7 +87,7 @@
 
 /* Backend (runtime) container ID — same font/spacing as session ID. */
 .footer-backend-id {
-  font-family: monospace;
+  font-family: var(--font-mono);
   display: flex;
   align-items: center;
   gap: 4px;

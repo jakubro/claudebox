@@ -1,12 +1,8 @@
 /** Pure helpers for rendering log-line `extra` payloads as inline pills. */
 
 /**
- * Flatten an extras object into an ordered list of `{key, value}` pill descriptors.
- *
- * Skips `exception` (rendered separately as a traceback). Plain-object values are
- * shallow-flattened one level, so `session: {id, workspace}` yields two pairs
- * keyed `session.id` and `session.workspace`. Arrays and primitives stay as-is.
- *
+ * Flattens extras into ordered `{key, value}` pill descriptors; skips `exception` (rendered separately
+ * as a traceback) and dot-joins one level of nested plain-object keys (e.g. `session.id`).
  * @param {object | null | undefined} extra - Extras payload from a log entry.
  * @returns {{key: string, value: unknown}[]} Ordered list of pill descriptors.
  */

@@ -1,20 +1,14 @@
 #!/usr/bin/env node
 /**
- * SPEC coverage calculator - parses claim markers and E2E test references.
+ * SPEC coverage calculator - parses claim markers and E2E test references. Coverage source:
+ * E2E tests under `lib/e2e/app/tests/*.spec.js` (Playwright) and `lib/e2e/cli/test_*.py`
+ * (pytest); unit tests (`*.test.js` / `*.test.jsx` / `*_test.py`) MUST NOT carry SPEC markers
+ * (GUIDELINES.md section 8) and are reported as violations if they do.
  *
- * Coverage source: E2E tests under `lib/e2e/app/tests/*.spec.js` (Playwright)
- * and `lib/e2e/cli/test_*.py` (pytest). Per GUIDELINES.md § 8, unit tests
- * (`*.test.js` / `*.test.jsx` / `*_test.py`) MUST NOT carry SPEC markers -
- * this script reports any such occurrences as violations and exits non-zero
- * so they're caught at lint time.
+ * Marker syntax: `// SPEC: scope:name` (JS Playwright) or `# SPEC: scope:name` (Python pytest).
  *
- * Marker syntax:
- *   - JavaScript Playwright: `// SPEC: scope:name`
- *   - Python pytest:         `# SPEC: scope:name`
- *
- * Limitation: coverage is documentary (comment presence), not behavioral.
- * A SPEC marker near any E2E test counts as "covered" regardless of whether
- * the test actually verifies the claimed behavior.
+ * Limitation: coverage is documentary (comment presence, not behavior) - a marker near any E2E
+ * test counts as covered regardless of whether the test verifies the claimed behavior.
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
@@ -38,9 +32,7 @@ const verbose = process.argv.includes('--verbose')
 // Single regex matches both `// SPEC:` (JS) and `# SPEC:` (Python).
 const SPEC_REGEX = /(?:\/\/|#)\s*SPEC:\s*([a-z0-9-]+:[a-z0-9-]+)/g
 
-/**
- * Extract claim IDs from SPEC.md.
- */
+/** Extract claim IDs from SPEC.md. */
 function extractSpecClaims(specContent) {
   const claimRegex = /<!-- claim:([a-z0-9-]+:[a-z0-9-]+) -->/g
   const skipRegex = /<!-- skip:claim:([a-z0-9-]+:[a-z0-9-]+) -->/g
@@ -63,9 +55,7 @@ function extractSpecClaims(specContent) {
   return { claims, skipped }
 }
 
-/**
- * Extract SPEC references from E2E test files.
- */
+/** Extract SPEC references from E2E test files. */
 function extractTestReferences(claims) {
   const references = []
 
@@ -92,9 +82,7 @@ function extractTestReferences(claims) {
   return references
 }
 
-/**
- * Collect SPEC: markers found in unit-test files.
- */
+/** Collect SPEC: markers found in unit-test files. */
 function collectUnitSpecViolations() {
   const violations = []
   for (const { dir, exts } of UNIT_DIRS) {
@@ -112,12 +100,7 @@ function collectUnitSpecViolations() {
   return violations
 }
 
-/**
- * Find test files recursively.
- *
- * If `filePrefix` is given, only files whose basename starts with it (and
- * matches one of `exts`) are returned. Otherwise any matching extension counts.
- */
+/** Find test files recursively; if `filePrefix` is given, only matching basenames count. */
 function findTestFiles(dir, exts, filePrefix = null) {
   const results = []
   try {

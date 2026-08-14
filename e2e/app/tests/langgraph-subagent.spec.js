@@ -15,14 +15,12 @@ test.describe('LangGraph Sub-agent', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // The task tool_use renders identically to any other tool_use block -
-    // the frontend conversion path is runtime-agnostic.
+    // The task tool_use renders identically to any other tool_use block - conversion path is runtime-agnostic.
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
     await expect(toolBlock).toHaveAttribute('data-tool-use-id', 'tool_001')
 
-    // The sub-agent's report comes back as the tool_result, and the block
-    // reaches completed state.
+    // The sub-agent's report comes back as the tool_result, and the block reaches completed state.
     const completed = page
       .locator('[data-testid="tool-block"][data-tool-status="completed"]')
       .first()

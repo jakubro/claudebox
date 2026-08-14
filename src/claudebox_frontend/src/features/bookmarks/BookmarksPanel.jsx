@@ -17,14 +17,11 @@ import { formatMessagePreview, formatRelativeTime } from '../../utils/formatters
 import { openSessionInNewTab } from '../../utils/navigation'
 import { computeScrollDestination, scrollAndHighlight } from '../../utils/scroll'
 
-/** Render bookmarks panel with "This session" and "All sessions" tabs. */
 export default function BookmarksPanel() {
   const { sessionId, sessionName } = useSessionData()
   const { isResponding } = useEvents()
   const { showStillRunningToast } = useStillRunningToast()
-  // Tab tracks session-state presence: "session" while a session is active,
-  // "all" while none is. Manual user clicks set the tab freely; the next
-  // session-state change re-asserts the auto-mapping (auto-switch wins).
+  // Tab mirrors session presence ("session" active, "all" none); manual clicks lose to the next auto-switch.
   const [tab, setTab] = useState(() => (sessionId ? 'session' : 'all'))
   useEffect(() => {
     setTab(sessionId ? 'session' : 'all')
@@ -35,10 +32,9 @@ export default function BookmarksPanel() {
   const { workspaceId } = useWorkspace()
   const { sessions } = useSessionsList()
   const { deriveSessionStatus } = useContainerMap()
-  const { markUserIntentRef, markProgrammaticScrollRef } = useAppActions()
+  const { markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef } = useAppActions()
 
-  // Brief visual flash on the originating item before window.open paints -
-  // confirms the click registered even though openSessionInNewTab is sync.
+  // Brief flash on click - window.open paints with no visible feedback (openSessionInNewTab is sync).
   const [openingKey, setOpeningKey] = useState(null)
 
   const handleOpenInNewTab = useCallback(
@@ -82,7 +78,6 @@ export default function BookmarksPanel() {
         result.push({ sessionId: sid, sessionName, bookmarkId, turnId, messageType, ...meta })
       }
     }
-    // Sort by timestamp descending (most recent first)
     result.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
     return result
   }, [allBookmarks, bookmarkMeta, sessions])
@@ -90,42 +85,44 @@ export default function BookmarksPanel() {
   /** Scroll to and highlight the bookmarked message element. */
   const handleSessionBookmarkClick = useCallback(
     (turnId, messageType) => {
-      const turnContainer = document.querySelector(`[data-turn-id="${turnId}"]`)
-      if (!turnContainer) {
+      // Windowed list: a far-off turn has no element yet, so hand the id to the chat panel to mount + call back.
+      const bring = scrollToTurnRef.current
+      if (!bring) {
         return
       }
-      // Target the correct element based on message type
-      let target
-      if (messageType === 'user') {
-        target = turnContainer.querySelector('[data-testid="message-user"]')
-      }
-      if (!target) {
-        target = turnContainer.querySelector('[data-testid="message-assistant"]') || turnContainer
-      }
-      const scrollContainer = document.querySelector('[data-testid="chat-messages"]')
-      if (scrollContainer) {
-        // Mirror the direction-aware gate ChatController applies to wheel/key
-        // gestures: if the post-scroll viewport will not be at-bottom, the
-        // click expresses user intent to leave the live tail - disengage
-        // autoscroll synchronously so the next streaming tick won't yank the
-        // view back. markProgrammaticScroll always brackets the smooth-scroll
-        // writes so intermediate scroll events don't spuriously re-engage.
-        const destination = computeScrollDestination(scrollContainer, target, 'top')
-        const willBeAtBottom =
-          scrollContainer.scrollHeight - destination - scrollContainer.clientHeight <=
-          AUTOSCROLL_THRESHOLD
-        if (!willBeAtBottom) {
-          markUserIntentRef.current?.()
+      bring(turnId, turnContainer => {
+        if (!turnContainer) {
+          return
         }
-        markProgrammaticScrollRef.current?.()
-        scrollAndHighlight(scrollContainer, target)
-      } else {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        target.classList.add('jump-highlight')
-        setTimeout(() => target.classList.remove('jump-highlight'), 1500)
-      }
+        let target
+        if (messageType === 'user') {
+          target = turnContainer.querySelector('[data-testid="message-user"]')
+        }
+        if (!target) {
+          target = turnContainer.querySelector('[data-testid="message-assistant"]') || turnContainer
+        }
+        const scrollContainer = document.querySelector('[data-testid="chat-messages"]')
+        if (scrollContainer) {
+          // Mirrors ChatController's autoscroll gate: disengage synchronously if the view won't
+          // end at-bottom, so the next streaming tick won't yank it back.
+          // markProgrammaticScroll brackets the write so intermediate scroll events don't re-engage it.
+          const destination = computeScrollDestination(scrollContainer, target, 'top')
+          const willBeAtBottom =
+            scrollContainer.scrollHeight - destination - scrollContainer.clientHeight <=
+            AUTOSCROLL_THRESHOLD
+          if (!willBeAtBottom) {
+            markUserIntentRef.current?.()
+          }
+          markProgrammaticScrollRef.current?.()
+          scrollAndHighlight(scrollContainer, target)
+        } else {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          target.classList.add('jump-highlight')
+          setTimeout(() => target.classList.remove('jump-highlight'), 1500)
+        }
+      })
     },
-    [markUserIntentRef, markProgrammaticScrollRef],
+    [markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef],
   )
 
   const handleAllBookmarkClick = useCallback(
@@ -137,13 +134,12 @@ export default function BookmarksPanel() {
       if (!workspaceId) {
         return
       }
-      // Snapshot prior session state for the still-running toast before
-      // navigating to the bookmarked session.
+      // Snapshot prior session before navigating - the still-running toast needs it after the switch.
       const prevId = sessionId
       const prevName = sessionName
       const prevWasResponding = isResponding
-      // URL carries the jump target via /turns/<role>-<id>; ChatPanel
-      // reads activeTurnId from routing context and scrolls after replay.
+      // URL carries the jump target via /turns/<role>-<id>; ChatPanel reads activeTurnId from
+      // routing context and scrolls after replay.
       navigateToSession(workspaceId, sid, { turnId, messageType })
       if (prevWasResponding && prevId && prevId !== sid) {
         showStillRunningToast({

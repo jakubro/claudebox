@@ -4,17 +4,10 @@ import PathHighlighter from '../../../../../../../../../../../../components/Path
 import InlineDiff from './components/InlineDiff'
 
 /**
- * Render a single line with optional gutter cells and typed styling.
- *
- * Gutter is a single sticky cell containing file and linenum spans inline.
- * This ensures the entire gutter sticks together during horizontal scroll.
- * @param {object} props
- * @param {object} props.line - Line object with type, content, lineNum, and file.
- * @param {boolean} props.hasFile - Whether file column is displayed.
- * @param {boolean} props.hasLineNum - Whether line number column is displayed.
- * @param {boolean} props.hasGutter - Whether gutter (file + lineNum) is displayed.
+ * Gutter is one sticky cell with file/linenum spans inline, so it stays together during horizontal scroll.
  * @param {string|null} [props.sessionDir] - Host session directory for /tmp/ path resolution.
  * @param {Object<string, string>} [props.resolvedPaths] - Map of candidate -> resolved path.
+ * @param {string|null} [props.editorTemplate] - "Open in editor" URI template for Alt+Click.
  */
 export default function CodeBlockLine({
   line,
@@ -23,6 +16,7 @@ export default function CodeBlockLine({
   hasGutter,
   sessionDir = null,
   resolvedPaths = {},
+  editorTemplate = null,
 }) {
   const { type, content, lineNum, file, filePath, oldLine, newLine } = line
 
@@ -61,7 +55,10 @@ export default function CodeBlockLine({
             type={type === 'diff-remove' ? 'remove' : 'add'}
           />
         ) : (
-          <PathHighlighter sessionDir={sessionDir} resolvedPaths={resolvedPaths}>
+          <PathHighlighter
+            sessionDir={sessionDir}
+            resolvedPaths={resolvedPaths}
+            editorTemplate={editorTemplate}>
             {content ?? ''}
           </PathHighlighter>
         )}

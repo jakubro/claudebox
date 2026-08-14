@@ -206,4 +206,48 @@ describe('useKeyboardShortcuts', () => {
       expect(jumpBottomRef.current).toHaveBeenCalledOnce()
     })
   })
+
+  describe('shortcut readiness marker', () => {
+    it('is absent until a listener is attached', () => {
+      expect(document.body.dataset.shortcutsReady).toBeUndefined()
+
+      renderHook(() => useKeyboardShortcuts(createProps()))
+
+      expect(document.body.dataset.shortcutsReady).toBe('true')
+    })
+
+    it('stays marked across re-subscription', () => {
+      // The effect re-subscribes on every render, so the marker is written and deleted repeatedly.
+      // It must read as continuously present - a waiter catching it off would think the shortcut is dead.
+      const { rerender } = renderHook(() => useKeyboardShortcuts(createProps()))
+
+      expect(document.body.dataset.shortcutsReady).toBe('true')
+
+      rerender()
+      expect(document.body.dataset.shortcutsReady).toBe('true')
+
+      rerender()
+      fireKey('0', { altKey: true })
+      expect(handleTogglePanel).toHaveBeenCalledWith('logs')
+      expect(document.body.dataset.shortcutsReady).toBe('true')
+    })
+
+    it('marks readiness only while shortcuts actually fire', () => {
+      const { unmount } = renderHook(() => useKeyboardShortcuts(createProps()))
+
+      // Present and the shortcut works.
+      expect(document.body.dataset.shortcutsReady).toBe('true')
+      fireKey('0', { altKey: true })
+      expect(handleTogglePanel).toHaveBeenCalledWith('logs')
+
+      unmount()
+
+      // Gone, and the shortcut no longer fires - a waiter on the marker can never be satisfied
+      // by a detached listener.
+      expect(document.body.dataset.shortcutsReady).toBeUndefined()
+      handleTogglePanel.mockClear()
+      fireKey('0', { altKey: true })
+      expect(handleTogglePanel).not.toHaveBeenCalled()
+    })
+  })
 })

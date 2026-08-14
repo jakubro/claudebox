@@ -10,8 +10,7 @@ export const MINIMAP_MOUSE_LEAVE_DELAY = 500
 export const MINIMAP_MIN_THUMB_HEIGHT = 16
 export const MINIMAP_PROXIMITY_THRESHOLD = 50
 export const FLOATING_PANEL_WIDTH = 300
-/** Per-turn intrinsic height estimate - must match Turn.css contain-intrinsic-size. */
-export const INTRINSIC_TURN_HEIGHT_PX = 400
+/** Fixed chrome of a turn, before its content is priced - see predictTurnHeight. */
 
 export const TURN_BASE_HEIGHT_PX = 80
 /** Combined horizontal inset: .chat-messages padding + .turn bubble padding. */
@@ -20,13 +19,15 @@ export const AVG_CHAR_WIDTH_PX = 8
 export const LINE_HEIGHT_PX = 18
 export const PX_PER_THINKING_BLOCK = 60
 export const PX_PER_TOOL_BLOCK = 40
+/** Bash's own Command + Result sections add chrome beyond a plain tool block. */
+export const PX_PER_BASH_TOOL_BLOCK = 200
 export const PX_PER_ATTACHMENT_ROW = 42
 export const ATTACHMENTS_PER_ROW = 3
 /** Flat height of the collapsed "Replied inline" placeholder (independent of comment count). */
 export const PX_PER_INLINE_REPLIES_PLACEHOLDER = 30
 export const TURN_MIN_PREDICTED_HEIGHT_PX = 100
-export const WARMUP_CHUNK_SIZE = 8
-export const WARMUP_MIN_IDLE_MS = 5
+// Turns mounted beyond the viewport per side - avoids scroll gaps, bounds the mounted set on large sessions.
+export const TURN_OVERSCAN = 4
 export const FLOATING_PANEL_MIN_HEIGHT = 300
 export const WIDE_FLOAT_MIN_HEIGHT_RATIO = 0.3
 export const WIDE_FLOAT_MIN_WIDTH_RATIO = 0.6

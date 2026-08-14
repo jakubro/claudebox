@@ -87,7 +87,6 @@ export async function assignTickets(boardId, tickets, { parallel = true } = {}) 
   return res.json()
 }
 
-/** Create a new swimlane. */
 export async function createSwimlane(boardId, name) {
   const res = await workspaceFetch(`/boards/${boardId}/swimlanes`, {
     method: 'POST',
@@ -100,7 +99,6 @@ export async function createSwimlane(boardId, name) {
   return res.json()
 }
 
-/** Rename an existing swimlane. */
 export async function renameSwimlane(boardId, swimlaneId, name) {
   const res = await workspaceFetch(`/boards/${boardId}/swimlanes/${swimlaneId}`, {
     method: 'PATCH',

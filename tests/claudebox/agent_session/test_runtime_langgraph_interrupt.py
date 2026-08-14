@@ -1,12 +1,11 @@
 """runtime_langgraph interrupt / resume routing tests.
 
-Covers the AskUserQuestion HITL flow: when the graph pauses at an
-`interrupt()` call inside a tool node, the runtime detects the pending
-interrupt via `aget_state` after astream_events ends, sets
-`_awaiting_resume`, and routes the next user message as
-`Command(resume=...)` instead of a fresh HumanMessage turn.
+AskUserQuestion HITL: an `interrupt()` call pauses the graph; the runtime detects it via
+`aget_state` after astream_events ends, sets `_awaiting_resume`, and routes the next message
+as `Command(resume=...)`, not a fresh HumanMessage.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -42,8 +41,7 @@ def _scripted_astream(events: list[dict]):
 
 
 def _snapshot(*, has_interrupts: bool) -> MagicMock:
-    """Build a StateSnapshot stub. When `has_interrupts`, the first task
-    exposes a non-empty `interrupts` tuple."""
+    """Build a StateSnapshot stub; when `has_interrupts`, the first task's `interrupts` tuple is non-empty."""
 
     interrupt_marker = MagicMock()
     interrupt_marker.value = {"questions": [{"question": "ok?"}]}
@@ -61,11 +59,8 @@ def _stub_graph(
     astream_events_factory=None,
     aget_state_side_effect: Exception | None = None,
 ) -> Any:
-    """Construct a graph stub with the required astream_events + aget_state.
-
-    Returned as `Any` so test-side mutation does not trip ty's narrow-on-attr
-    rule against the runtime's `_graph: Any | None` slot.
-    """
+    """Construct a graph stub with astream_events + aget_state, typed `Any` so test-side mutation
+    doesn't trip ty's narrow-on-attr check on the runtime's `_graph` slot."""
 
     graph: Any = MagicMock()
     graph.astream_events = astream_events_factory or _scripted_astream([])
@@ -102,7 +97,8 @@ class TestPendingInterruptProbe:
     async def test_returns_false_on_probe_exception(self, tmp_path):
         runtime = LangGraphRuntime(_config(tmp_path))
         runtime._graph = _stub_graph(
-            has_interrupts=False, aget_state_side_effect=RuntimeError("boom")
+            has_interrupts=False,
+            aget_state_side_effect=RuntimeError("boom"),
         )
 
         assert await runtime._has_pending_interrupt({"configurable": {}}) is False
@@ -147,7 +143,7 @@ class TestDriveTurnRoutesResume:
         runtime._awaiting_resume = True
 
         async for _ in runtime._drive_turn(
-            "<response:AskUserQuestion>A</response:AskUserQuestion>"
+            "<response:AskUserQuestion>A</response:AskUserQuestion>",
         ):
             pass
 
@@ -185,3 +181,36 @@ class TestDriveTurnRoutesResume:
         first_message = graph_input["messages"][0]
         assert isinstance(first_message, HumanMessage)
         assert first_message.content == "hello"
+
+
+class TestInterruptDropsQueuedMiddlewareEvents:
+    """An interrupted turn drops its queued events: compaction queues a boundary for the turn
+    loop to yield, but if an interrupt lands first the session emits its own boundary and
+    replaying the queued one next turn would describe a conversation it never belonged to."""
+
+    @pytest.mark.anyio
+    async def test_queued_events_do_not_survive_the_interrupt(self, tmp_path):
+        async def _cancel(_graph_input, config=None, version=None):
+            raise asyncio.CancelledError
+
+            if False:  # pragma: no cover - keeps this an async generator
+                yield None
+
+        runtime = LangGraphRuntime(_config(tmp_path))
+        runtime._graph = _stub_graph(has_interrupts=False, astream_events_factory=_cancel)
+
+        await runtime._compaction_finished(
+            pre_tokens=900,
+            post_tokens=200,
+            summary="summarised",
+            kept=[],
+        )
+
+        kinds = []
+
+        with pytest.raises(asyncio.CancelledError):
+            async for event in runtime._drive_turn("hello"):
+                kinds.append(event.kind)
+
+        assert kinds[-1] == "result"
+        assert runtime._take_pending_events() == []

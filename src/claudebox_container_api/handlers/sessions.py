@@ -13,7 +13,6 @@ router = APIRouter(prefix="/api/sessions")
 
 
 # Creation & restart
-# ----------------------------------------------------------------------------------------------
 
 
 @router.post("/new")
@@ -33,7 +32,6 @@ async def restart_session(svc: SessionDep, session_id: str):
 
 
 # Current session metadata
-# ----------------------------------------------------------------------------------------------
 
 
 @router.get("/current")
@@ -55,7 +53,7 @@ async def get_session_capabilities(svc: SessionDep):
     """Return capability matrix + runtime name + per-capability catalogs (null when flag is False)."""
 
     caps = svc.get_capabilities()
-    runtime = svc._sdk_client  # todo: private access!!
+    runtime = svc._sdk_client
 
     models = runtime.get_models() if caps.supports_models else None
     effort_levels = runtime.get_effort_levels() if caps.supports_effort_levels else None
@@ -88,7 +86,6 @@ async def update_session_prompt(svc: SessionDep, body: UpdateSessionPromptReques
 
 
 # Attachments & tool output
-# ----------------------------------------------------------------------------------------------
 
 
 @router.get("/current/attachments/{filename}")

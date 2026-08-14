@@ -5,30 +5,40 @@ import { expect } from '@playwright/test'
 /**
  * Wait for app to be ready and return the input locator.
  *
- * Waits for footer, workspace label, input field, and font loading to complete.
- * Font loading is critical for visual regression stability — without it, element
- * heights vary by a few pixels between runs.
+ * Font loading is awaited too - without it, element heights vary by a few pixels between
+ * runs, which breaks visual regression stability.
  */
 export async function waitForAppReady(page) {
   await page.waitForLoadState('domcontentloaded')
   await expect(page.locator('[data-testid="footer"]')).toBeVisible({ timeout: 15000 })
   await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
+  await waitForShortcutsReady(page)
 
   const input = page.locator('[data-testid="chat-input"]')
   await expect(input).toBeEnabled()
 
-  // Wait for all fonts to finish loading before any screenshots
   await page.evaluate(() => document.fonts.ready)
 
   return input
 }
 
 /**
- * Turn off auto-collapse so every turn renders expanded.
+ * Wait until a global keyboard shortcut will actually be received.
+ *
+ * Anything that paints (footer included) is a poor proxy: the app shell attaches its keydown
+ * listener after paint, in a gap that widens on a loaded machine. A press landing there is
+ * dropped silently with no retry, burning the whole budget on a panel that never opens.
+ * Call this before any `page.keyboard.press` of a global shortcut.
+ */
+export async function waitForShortcutsReady(page) {
+  await page.waitForSelector('body[data-shortcuts-ready="true"]', { timeout: 15000 })
+}
+
+/**
+ * Turn off auto-collapse (idempotent) so every turn renders expanded.
  *
  * Auto-collapse defaults on and collapses all turns except the last; tests that
  * assert on content inside earlier turns disable it first to see full turns.
- * Idempotent — only clicks when auto-collapse is currently on.
  */
 export async function disableAutoCollapse(page) {
   const toggle = page.locator('[data-testid="autocollapse-toggle"]')
@@ -38,11 +48,7 @@ export async function disableAutoCollapse(page) {
   }
 }
 
-/**
- * Wait for mobile layout to be ready and return the input locator.
- *
- * Waits for mobile layout root, top bar, input field, and font loading.
- */
+/** Wait for mobile layout to be ready and return the input locator. */
 export async function waitForMobileReady(page) {
   await expect(page.locator('.mobile-layout')).toBeVisible()
   await expect(page.locator('.mobile-top-bar')).toBeVisible()
@@ -55,7 +61,6 @@ export async function waitForMobileReady(page) {
   return input
 }
 
-// Panel button and content selectors
 const PANELS = {
   sessions: { button: 'button[title="Sessions (Alt+1)"]', content: '.sessions-panel' },
   todos: { button: 'button[title="Todos (Alt+2)"]', content: '.todos-panel' },
@@ -70,23 +75,18 @@ const PANELS = {
   logs: { button: 'button[title="Logs (Alt+0)"]', content: '.logs-panel' },
 }
 
-/**
- * Toggle panel (always clicks button).
- */
+/** Toggle panel (always clicks button). */
 async function togglePanel(page, panel) {
   await page.locator(panel.button).click()
 }
 
-/**
- * Open panel if not already visible.
- */
+/** Open panel if not already visible. */
 async function openPanel(page, panel) {
   const content = page.locator(panel.content)
-  // Wait for content to be attached before checking visibility
+  // If not already attached, click to open before asserting visibility
   try {
     await content.waitFor({ state: 'attached', timeout: 500 })
   } catch {
-    // Content not attached, need to click to open
     await page.locator(panel.button).click()
   }
   await expect(content).toBeVisible()
@@ -126,9 +126,8 @@ export const openSkillsPanel = page => openPanel(page, PANELS.commands)
 /**
  * Close every dockable side panel that is currently open.
  *
- * Iterates the PANELS map, checks each panel's content visibility, and clicks
- * its toggle button only when visible. State-aware (vs blind toggling) so the
- * end state is deterministic regardless of the layout's default-open set.
+ * State-aware (checks visibility before clicking) rather than blind toggling, so the end
+ * state is deterministic regardless of the layout's default-open set.
  */
 export async function closeAllSidePanels(page) {
   for (const panel of Object.values(PANELS)) {
@@ -152,10 +151,8 @@ async function parseComputedColor(locator, cssProp) {
 /**
  * Assert a CSS color property matches expected RGB channels within tolerance.
  *
- * @param {import('@playwright/test').Locator} locator - Element to check
- * @param {string} cssProp - CSS property name (e.g., 'color', 'borderLeftColor', 'backgroundColor')
+ * @param {string} cssProp - CSS property name (e.g. 'color', 'borderLeftColor', 'backgroundColor')
  * @param {object} expected - Expected RGB channels: {r, g, b} (0-255)
- * @param {number} [tolerance=50] - Allowed deviation per channel
  */
 export async function assertColor(locator, cssProp, expected, tolerance = 50) {
   const { r, g, b } = await parseComputedColor(locator, cssProp)
@@ -181,12 +178,7 @@ export async function assertColor(locator, cssProp, expected, tolerance = 50) {
   }
 }
 
-/**
- * Assert a color is red-dominant (high red, low green, low blue).
- *
- * @param {import('@playwright/test').Locator} locator - Element to check
- * @param {string} cssProp - CSS property name
- */
+/** Assert a color is red-dominant (high red, low green, low blue). */
 export async function assertRedColor(locator, cssProp) {
   const { r, g, b } = await parseComputedColor(locator, cssProp)
   expect(r, `Red channel should be dominant (>150), got ${r}`).toBeGreaterThan(150)
@@ -195,13 +187,8 @@ export async function assertRedColor(locator, cssProp) {
 }
 
 /**
- * Resolve an operation-based PATCH payload into a plain object.
- *
- * The ui-state PATCH protocol sends arrays of {op, path, value} per scope.
- * This helper converts back to a nested object for test assertions.
- *
- * @param {object} payload - PATCH payload with `global` and/or `session` arrays
- * @returns {object} Resolved payload with plain objects
+ * Resolve a ui-state PATCH payload (arrays of {op, path, value} per scope) into a nested
+ * plain object for test assertions.
  */
 export function resolveOpsPayload(payload) {
   const result = {}
@@ -221,14 +208,11 @@ export function resolveOpsPayload(payload) {
 }
 
 /**
- * Wait for a scrollable element's scrollTop to stop changing — i.e. the
- * scroll has finished animating. Polls until two consecutive reads (≥80ms
- * apart) return the same value, then returns it.
+ * Wait for a scrollable element's scrollTop to stop changing (the scroll finished
+ * animating), then return that value.
  *
- * Use this before reading scrollTop into a test-time variable that subsequent
- * assertions compare against; without it, the variable may capture an
- * in-flight position and the next user action will race the residual
- * animation.
+ * Call this before capturing scrollTop into a variable that later assertions compare against;
+ * otherwise the variable may capture an in-flight position and race the residual animation.
  */
 export async function waitForStableScroll(locator, { interval = 80, attempts = 20 } = {}) {
   let prev = await locator.evaluate(el => el.scrollTop)
@@ -244,8 +228,27 @@ export async function waitForStableScroll(locator, { interval = 80, attempts = 2
 }
 
 /**
- * Set a value at a dot-separated path in an object.
+ * Wait until a scroll container's scrollHeight stops growing (the streamed conversation has
+ * finished rendering), then return that value.
+ *
+ * Use before manipulating scroll on a freshly-loaded transcript: a scrollTop write issued
+ * while turns still stream in lands inside autoscroll's near-bottom re-engage threshold,
+ * which snaps back to the bottom and drifts the position.
  */
+export async function waitForStableScrollHeight(locator, { interval = 100, attempts = 30 } = {}) {
+  let prev = await locator.evaluate(el => el.scrollHeight)
+  for (let i = 0; i < attempts; i++) {
+    await new Promise(resolve => setTimeout(resolve, interval))
+    const curr = await locator.evaluate(el => el.scrollHeight)
+    if (curr === prev && curr > 0) {
+      return curr
+    }
+    prev = curr
+  }
+  return prev
+}
+
+/** Set a value at a dot-separated path in an object. */
 function setPath(obj, path, value) {
   const parts = path.split('.')
   let current = obj

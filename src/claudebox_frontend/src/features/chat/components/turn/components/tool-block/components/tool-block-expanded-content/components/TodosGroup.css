@@ -1,6 +1,5 @@
-/* Grid body for the grouped Todos block. Chrome (header + collapse) lives in
-   the shared ToolBlock chrome (tool-block + tool-expanded-content); this file
-   only styles the row body. */
+/* Grid body for the grouped Todos block. Chrome (header + collapse) lives in the shared ToolBlock
+   chrome (tool-block + tool-expanded-content); this file only styles the row body. */
 
 .todos-group-rows {
   display: grid;
@@ -9,9 +8,9 @@
   row-gap: 4px;
 }
 
-/* Each row's three spans (icon, title, description) lift into the parent grid
-   so columns align across rows. Overrides TodoList.css's default
-   `.todo-item { display: flex }` for rows mounted under this grid. */
+/* Each row's three spans (icon, title, description) lift into the parent grid so columns align
+   across rows; overrides TodoList.css's `.todo-item { display: flex }` default for rows under
+   this grid. */
 .todos-group-rows .todo-item {
   display: contents;
 }

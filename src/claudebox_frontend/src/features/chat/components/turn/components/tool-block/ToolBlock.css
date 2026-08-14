@@ -2,7 +2,7 @@
 /* Tool blocks - TUI style */
 .tool-block {
   margin: 10px 0;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 

@@ -1,7 +1,7 @@
 /* Compaction block */
 .compaction-block {
   margin: 4px 0;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -63,7 +63,7 @@
   font-size: 12px;
   max-height: 400px;
   overflow-y: auto;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .compaction-summary p {
@@ -85,7 +85,7 @@
 }
 
 .compaction-summary code {
-  font-family: monospace;
+  font-family: var(--font-mono);
   background: var(--bg-secondary);
   padding: 2px 5px;
   border-radius: 3px;

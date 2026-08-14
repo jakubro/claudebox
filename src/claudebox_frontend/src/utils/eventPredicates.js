@@ -1,6 +1,6 @@
 /** Reusable predicate functions for event-structure-aware conditions. */
 
-import { EventType, SdkProtocol, TaskOutputStatus, ToolName } from '../config/schema'
+import { EventType, TaskOutputStatus, ToolName } from '../config/schema'
 
 /** Test whether event is a human-authored user message. */
 export function isHumanEvent(event) {
@@ -25,16 +25,4 @@ export function isInteractiveTool(toolName) {
 /** Test whether tool result indicates an async/background task. */
 export function isAsyncTask(toolUseResult) {
   return toolUseResult?.isAsync || toolUseResult?.status === TaskOutputStatus.ASYNC_LAUNCHED
-}
-
-/**
- * Test whether an AskUserQuestion is awaiting user response.
- *
- * Checks for SDK-emitted prompt text in the result content - fragile
- * coupling to SDK output format, centralized here to limit blast radius.
- */
-export function isAwaitingAnswer(resultContent) {
-  return (
-    typeof resultContent === 'string' && resultContent.includes(SdkProtocol.AWAITING_ANSWER_TEXT)
-  )
 }

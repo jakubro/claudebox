@@ -35,11 +35,9 @@ test.describe('Usage Panel', () => {
     // Usage is hidden by default.
     await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
 
-    // Press Alt+7 to open
     await page.keyboard.press('Alt+7')
     await expect(page.locator('[data-testid="panel-usage"]')).toBeVisible()
 
-    // Press Alt+7 again to close
     await page.keyboard.press('Alt+7')
     await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
   })
@@ -101,7 +99,6 @@ test.describe('Usage Panel', () => {
 
     await openUsagePanel(page)
 
-    // All rows should show $0.00
     const costs = page.locator('.usage-cost')
     const count = await costs.count()
     for (let i = 0; i < count; i++) {
@@ -214,7 +211,6 @@ test.describe('Usage Panel', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // The usage icon button should exist with correct title and contain an SVG
     const iconBtn = page.locator('[data-testid="icon-usage"]')
     await expect(iconBtn).toBeVisible()
     await expect(iconBtn).toHaveAttribute('title', 'Usage (Alt+7)')
@@ -448,9 +444,7 @@ test.describe('Usage Panel', () => {
 
   // SPEC: panel-usage:update
   test('usage values auto-update when session cost changes via SSE', async ({ page }) => {
-    // SSE refetch chain: send -> SessionsContext.sessionsChanged -> 2 s debounce ->
-    // fetchSessions -> UsagePanel re-render. Under full-suite concurrency the
-    // total can exceed the default 5 s expect timeout; budget extra wall time.
+    // SSE refetch chain (send -> sessionsChanged -> debounce -> fetchSessions) can exceed the default 5s timeout.
     test.setTimeout(15000)
     const now = new Date()
     const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000).toISOString()
@@ -487,25 +481,20 @@ test.describe('Usage Panel', () => {
 
     await openUsagePanel(page)
 
-    // Initially should show $0.10
     const rowAll = page.locator('tr').filter({ hasText: 'All time' })
     await expect(rowAll.locator('.usage-cost')).toContainText('$0.10')
 
-    // Flip flag so subsequent fetches return updated cost
     returnUpdatedCost = true
 
-    // Send sessions_changed SSE event to trigger refetch
     await daemonSSE.sendEvent({ type: 'sessions_changed', workspace_id: 'test-ws' })
 
-    // SessionsContext refetches and UsagePanel updates
     const updatedRow = page.locator('tr').filter({ hasText: 'All time' })
     await expect(updatedRow.locator('.usage-cost')).toContainText('$0.85', { timeout: 10000 })
   })
 
   // SPEC: panel-usage:update
   test('usage panel refetches on SSE sessions_changed event', async ({ page }) => {
-    // See "usage values auto-update…" above - same SSE -> debounce -> refetch
-    // chain that can exceed the default 5 s expect window under load.
+    // Same SSE -> debounce -> refetch chain as above; can exceed the default 5s expect window under load.
     test.setTimeout(15000)
     const now = new Date()
     const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000).toISOString()
@@ -542,13 +531,10 @@ test.describe('Usage Panel', () => {
     await openUsagePanel(page)
     await expect(page.getByText('All time')).toBeVisible()
 
-    // Record initial fetch count after panel opens
     const initialCount = fetchCount
 
-    // Send SSE event to trigger refetch
     await daemonSSE.sendEvent({ type: 'sessions_changed', workspace_id: 'test-ws' })
 
-    // Verify sessions were refetched
     await expect.poll(() => fetchCount, { timeout: 10000 }).toBeGreaterThan(initialCount)
   })
 
@@ -574,10 +560,9 @@ test.describe('Usage Panel', () => {
                   started_at: recent,
                   updated_at: recent,
                 },
-                // Forked from parent at $0.30 boundary; added $0.10 of own spend.
-                // Reported total reflects everything visible in transcript ($0.40).
-                // Aggregation must subtract the snapshot so the panel attributes
-                // only the post-fork $0.10 to this session.
+                // Forked from parent at $0.30 boundary, adding $0.10 of own spend; total_cost_usd reflects
+                // everything visible in transcript ($0.40), so aggregation must subtract the fork_point
+                // snapshot to attribute only the post-fork $0.10 to this session.
                 {
                   session_id: 'fork-001',
                   container_id: DEFAULT_CONTAINER_ID,
@@ -601,8 +586,7 @@ test.describe('Usage Panel', () => {
 
     await openUsagePanel(page)
 
-    // Naive sum across siblings would be $1.40 (double-counts the shared $0.30
-    // prefix); with snapshot subtraction the total is $1.00 + $0.10 = $1.10.
+    // Naive sum would be $1.40 (double-counts the $0.30 prefix); with snapshot subtraction it is $1.10.
     const rowAll = page.locator('tr').filter({ hasText: 'All time' })
     await expect(rowAll.locator('.usage-cost')).toContainText('$1.10')
   })

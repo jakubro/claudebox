@@ -17,7 +17,7 @@ NAME = "containers"
 ORDER = 110
 DESCRIPTION = "Manage containers (list|stop|kill)"
 EPILOG = """\
-examples:
+Examples:
   claudebox containers list                  table across all workspaces
   claudebox containers stop abc123456789     SIGTERM by full id
   claudebox containers stop abc1             SIGTERM by unique prefix
@@ -25,10 +25,12 @@ examples:
   claudebox containers stop all              graceful stop every running container
   claudebox containers kill all              hard-kill every running container
 
-prefix resolution is CLI-side: an ambiguous prefix surfaces the matching rows
-in containers-list format and exits non-zero. ``all`` filters to running
-containers labeled app=claudebox and fans out via async POSTs (partial
-failures reported per-container, command exits non-zero if any failed).
+Notes:
+  Prefix resolution is CLI-side: an ambiguous prefix surfaces the matching rows in
+  containers-list format and exits non-zero.
+
+  `all` filters to running containers labeled app=claudebox and fans out concurrently.
+  Partial failures are reported per container; the command exits non-zero if any failed.
 """
 
 
@@ -70,8 +72,7 @@ def handle(args: argparse.Namespace) -> int:
 def _print_subhelp() -> None:
     """Print the containers noun-group help text - caller returns exit 2.
 
-    Uses plain ``print`` so that literal ``[id]``/``[args]`` braces survive
-    Rich's markup parsing.
+    Uses plain ``print`` so that literal ``[id]``/``[args]`` braces survive Rich's markup parsing.
     """
 
     print("usage: claudebox containers <action> [args]")
@@ -213,7 +214,7 @@ async def _stop_all(
     containers: list[dict],
     action: str,
 ) -> int:
-    """Filter to running containers and fan out via asyncio.gather (per GUIDELINES §2)."""
+    """Filter to running containers and fan out concurrently via asyncio.gather."""
 
     running = [c for c in containers if c.get("status") == "running"]
 

@@ -81,7 +81,6 @@ describe('useFavicon', () => {
 
     rerender({ isResponding: true })
 
-    // Should have generated a new favicon
     expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsBefore)
 
     vi.useRealTimers()
@@ -98,7 +97,6 @@ describe('useFavicon', () => {
 
     rerender({ isResponding: false })
 
-    // Should have generated notification favicon
     expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
@@ -113,7 +111,6 @@ describe('useFavicon', () => {
 
     rerender({ isResponding: false })
 
-    // Should have generated normal favicon
     expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
@@ -128,11 +125,9 @@ describe('useFavicon', () => {
     rerender({ isResponding: false })
     const callsAfterNotification = mockCanvas.toDataURL.mock.calls.length
 
-    // Simulate visibility change
     Object.defineProperty(document, 'hidden', { value: false })
     document.dispatchEvent(new Event('visibilitychange'))
 
-    // Should have generated a new favicon for normal state
     expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsAfterNotification)
   })
 
@@ -165,7 +160,6 @@ describe('useFavicon', () => {
     const callsWhileAnimating = mockCanvas.toDataURL.mock.calls.length
     expect(callsWhileAnimating).toBeGreaterThan(0)
 
-    // Stop responding
     rerender({ isResponding: false })
     const callsAfterStop = mockCanvas.toDataURL.mock.calls.length
 
@@ -183,10 +177,8 @@ describe('useFavicon', () => {
 
     const callsAtStart = mockCanvas.toDataURL.mock.calls.length
 
-    // Advance through animation frames
     vi.advanceTimersByTime(200)
 
-    // Should have generated multiple favicon frames
     expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsAtStart + 1)
 
     vi.useRealTimers()
@@ -206,7 +198,7 @@ describe('useFavicon', () => {
 
     // Workspace bg circle: arc at center (16,16) radius 14.
     expect(mockCtx.arc).toHaveBeenCalledWith(16, 16, 14, 0, Math.PI * 2)
-    // Dev badge: arc at (size-7, size-7, 7, 0, 2π) - 32-7 = 25.
+    // Dev badge: arc at (size-7, size-7, 7, 0, Math.PI*2) - 32-7 = 25.
     expect(mockCtx.arc).toHaveBeenCalledWith(25, 25, 7, 0, Math.PI * 2)
   })
 
@@ -221,9 +213,8 @@ describe('useFavicon', () => {
 
     renderHook(() => useFavicon({ isResponding: false }))
 
-    // deriveFaviconBgColor('#2a4a2a') = '#368236' (HSL L=0.36, S×1.5, hue preserved).
-    // The bg fillStyle assignment appears in the recorded sequence before the
-    // dev-badge orange ('#f59e0b') overrides it.
+    // deriveFaviconBgColor('#2a4a2a') = '#368236' (HSL L=0.36, S x1.5, hue preserved); bg fillStyle
+    // is assigned before the dev-badge orange ('#f59e0b') overrides it.
     expect(fillStyles).toContain('#368236')
     expect(fillStyles).not.toContain('#2a4a2a')
   })
@@ -243,7 +234,7 @@ describe('useFavicon', () => {
     // Advance through multiple breath frames so the sine sweeps a range.
     vi.advanceTimersByTime(2000)
 
-    // BREATHING_BG_PEAK_ALPHA = 0.5, breath intensity ∈ [0.5, 1.0] -> alpha ∈ [0.25, 0.5].
+    // BREATHING_BG_PEAK_ALPHA = 0.5, breath intensity in [0.5, 1.0] -> alpha in [0.25, 0.5].
     const observed = alphaValues.filter(v => v < 1)
     expect(observed.length).toBeGreaterThan(0)
     expect(Math.min(...observed)).toBeGreaterThanOrEqual(0.24)
@@ -262,7 +253,6 @@ describe('useFavicon', () => {
 
     vi.advanceTimersByTime(100)
 
-    // Unmount should not throw
     expect(() => unmount()).not.toThrow()
 
     vi.useRealTimers()

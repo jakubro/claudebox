@@ -7,16 +7,10 @@ const DEFAULT_MARGIN = 2
 const VIEWPORT_PAD = 4
 
 /**
- * Position a dropdown anchored to a trigger element. Recomputes on scroll,
- * resize, and trigger-container resize. Flips to top when there's no room
- * below the trigger, and clamps to the viewport horizontally.
+ * Flips to top when there's no room below the trigger; clamps left/right to the viewport.
  *
  * @param {object} options
- * @param {object} options.triggerRef - Ref to the trigger (e.g., chevron) element.
- * @param {object} options.contentRef - Ref to the dropdown content element.
- * @param {boolean} options.isOpen - Whether the dropdown is open.
- * @param {string} [options.alignTo='left'] - Trigger edge to align dropdown's left to.
- * @param {number} [options.margin=2] - Gap between trigger and dropdown.
+ * @param {string} [options.alignTo='left'] - Which trigger edge the dropdown's left edge aligns to.
  * @returns {{top: number|null, left: number|null, side: 'bottom'|'top'}}
  */
 export default function useDropdownPosition({

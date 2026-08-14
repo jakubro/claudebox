@@ -1,17 +1,15 @@
-"""LangGraphRuntime hook synthesis - on_session_start at connect, on_pre_compact at threshold."""
+"""LangGraphRuntime hook synthesis - on_session_start at connect, compaction start and boundary."""
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage
 
 from claudebox.agent_session.config import LangGraphAgentSessionConfig
+from claudebox.agent_session.events import CompactBoundaryPayload, TextBlock, UserMessagePayload
 from claudebox.agent_session.hooks import CompactStartPayload, HookCallbacks
-from claudebox.agent_session.runtime_langgraph import (
-    MODEL_CONTEXT_WINDOW,
-    LangGraphRuntime,
-)
+from claudebox.agent_session.orchestration.conversion import agent_event_to_events
+from claudebox.agent_session.runtime_langgraph import LangGraphRuntime
 
 
 def _ok_httpx_client() -> MagicMock:
@@ -63,7 +61,7 @@ class TestSessionStart:
     async def test_fires_after_connect(self, tmp_path):
         on_start = AsyncMock()
         runtime = LangGraphRuntime(
-            _config(tmp_path, hooks=HookCallbacks(on_session_start=on_start))
+            _config(tmp_path, hooks=HookCallbacks(on_session_start=on_start)),
         )
 
         with (
@@ -117,47 +115,83 @@ class TestSessionStart:
         assert runtime.ready.is_set()
 
 
-class TestPreCompact:
+class TestCompactionReporting:
+    """The runtime brackets each compaction the graph performs with a start and a boundary."""
+
     @pytest.mark.anyio
-    async def test_fires_when_threshold_crossed(self, tmp_path):
+    async def test_start_fires_the_pre_compact_hook(self, tmp_path):
         on_pc = AsyncMock()
         runtime = LangGraphRuntime(_config(tmp_path, hooks=HookCallbacks(on_pre_compact=on_pc)))
-        # Push used_tokens above 85% of llama3.2:3b context window (128_000).
-        runtime._used_tokens = int(MODEL_CONTEXT_WINDOW["llama3.2:3b"] * 0.9)
 
-        await runtime._maybe_fire_pre_compact()
+        await runtime._compaction_started()
 
         on_pc.assert_awaited_once_with(CompactStartPayload(trigger="context_limit"))
 
     @pytest.mark.anyio
-    async def test_below_threshold_does_not_fire(self, tmp_path):
-        on_pc = AsyncMock()
-        runtime = LangGraphRuntime(_config(tmp_path, hooks=HookCallbacks(on_pre_compact=on_pc)))
-        runtime._used_tokens = int(MODEL_CONTEXT_WINDOW["llama3.2:3b"] * 0.5)
-
-        await runtime._maybe_fire_pre_compact()
-
-        on_pc.assert_not_awaited()
-
-    @pytest.mark.anyio
-    async def test_fires_once_per_session(self, tmp_path):
-        on_pc = AsyncMock()
-        runtime = LangGraphRuntime(_config(tmp_path, hooks=HookCallbacks(on_pre_compact=on_pc)))
-        runtime._used_tokens = int(MODEL_CONTEXT_WINDOW["llama3.2:3b"] * 0.95)
-
-        await runtime._maybe_fire_pre_compact()
-        await runtime._maybe_fire_pre_compact()
-        await runtime._maybe_fire_pre_compact()
-
-        on_pc.assert_awaited_once()
-
-    @pytest.mark.anyio
-    async def test_skipped_if_callback_unregistered(self, tmp_path):
-        """No on_pre_compact callback - no crash even when threshold crossed."""
-
+    async def test_start_without_a_registered_hook_is_a_no_op(self, tmp_path):
         runtime = LangGraphRuntime(_config(tmp_path, hooks=HookCallbacks()))
-        runtime._used_tokens = int(MODEL_CONTEXT_WINDOW["llama3.2:3b"] * 0.95)
 
-        await runtime._maybe_fire_pre_compact()
+        await runtime._compaction_started()
 
-        assert runtime._fired_pre_compact is False
+        assert runtime._take_pending_events() == []
+
+    @pytest.mark.anyio
+    async def test_finish_queues_a_boundary_carrying_the_token_counts(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path))
+
+        await runtime._compaction_finished(pre_tokens=9000, post_tokens=1200, summary="", kept=[])
+
+        events = runtime._take_pending_events()
+        assert [e.kind for e in events] == ["compact_boundary"]
+        payload = events[0].payload
+        assert isinstance(payload, CompactBoundaryPayload)
+        assert (payload.trigger, payload.pre_tokens, payload.post_tokens) == (
+            "context_limit",
+            9000,
+            1200,
+        )
+
+    @pytest.mark.anyio
+    async def test_finish_queues_the_summary_after_the_boundary(self, tmp_path):
+        """The transcript reads the compacted context from what follows the boundary."""
+
+        runtime = LangGraphRuntime(_config(tmp_path))
+
+        await runtime._compaction_finished(
+            pre_tokens=9000,
+            post_tokens=1200,
+            summary="Discussed the retry policy.",
+            kept=[],
+        )
+
+        events = runtime._take_pending_events()
+        assert [e.kind for e in events] == ["compact_boundary", "user_message"]
+        assert isinstance(events[1].payload, UserMessagePayload)
+        assert events[1].payload.content == [TextBlock(text="Discussed the retry policy.")]
+
+    @pytest.mark.anyio
+    async def test_summary_converts_to_a_non_human_event(self, tmp_path):
+        """A summary read as human text would open a turn and leave the block empty."""
+
+        runtime = LangGraphRuntime(_config(tmp_path))
+
+        await runtime._compaction_finished(
+            pre_tokens=9000,
+            post_tokens=1200,
+            summary="Here is a summary of the conversation to date:\n\nRetry policy.",
+            kept=[],
+        )
+
+        summary_event = runtime._take_pending_events()[1]
+        converted = list(agent_event_to_events(summary_event))
+
+        assert [(e.subtype, e.is_human) for e in converted] == [("text", False)]
+
+    @pytest.mark.anyio
+    async def test_pending_events_are_handed_over_once(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path))
+
+        await runtime._compaction_finished(pre_tokens=10, post_tokens=5, summary="", kept=[])
+
+        assert runtime._take_pending_events() != []
+        assert runtime._take_pending_events() == []

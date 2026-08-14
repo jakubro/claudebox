@@ -65,7 +65,7 @@ def https_proxy(port: int) -> None:
 
     if not caddy.exists():
         raise FileNotFoundError(
-            f"Caddy binary not found at {caddy}. Run ~/.claudebox/lib/bin/install.sh to install it."
+            f"Caddy binary not found at {caddy}. Run ~/.claudebox/lib/bin/install.sh to install it.",
         )
 
     caddy_dir = HOST_TEMP_RUN_DIR / make_timestamped_dir_prefix()
@@ -96,8 +96,8 @@ def https_proxy(port: int) -> None:
                     }}
                     reverse_proxy localhost:{_backend_port(port)}
                 }}
-            """
-        )
+            """,
+        ),
     )
 
     proc = subprocess.Popen(

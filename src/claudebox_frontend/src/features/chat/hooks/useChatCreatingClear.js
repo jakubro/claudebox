@@ -6,14 +6,12 @@ import { CREATING_OVERLAY_TIMEOUT_MS } from '../../../config/timing'
 /**
  * Drive the auto-clear state machine for the creating overlay.
  *
- * Transitions: `idle -> waiting-disconnect (if already connected) -> waiting-connect -> clear`.
- * Skips straight to `waiting-connect` when SSE was already disconnected when
- * creation started. Once `waiting-connect` observes a reconnect, the overlay
- * clears as soon as either (a) no first message is buffered, or
- * (b) the first message is now visible as pending or delivered.
+ * Transitions: `idle -> waiting-disconnect (if connected) -> waiting-connect -> clear`. Skips to
+ * `waiting-connect` directly if SSE was already disconnected at creation. Once `waiting-connect` sees a
+ * reconnect, the overlay clears once no first message is buffered, or that message is now visible.
  *
- * Also installs a {@link CREATING_OVERLAY_TIMEOUT_MS} safety timeout: if SSE
- * never reconnects, the overlay clears anyway so the panel doesn't lock up.
+ * Also installs a {@link CREATING_OVERLAY_TIMEOUT_MS} safety timeout: if SSE never reconnects, the overlay
+ * clears anyway so the panel doesn't lock up.
  */
 export default function useChatCreatingClear({
   isCreating,

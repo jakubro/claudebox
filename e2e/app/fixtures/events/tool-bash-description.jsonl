@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"What's the default model?","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Bash","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Bash","tool_input":{"command":"grep -rn 'DEFAULT_MODEL' lib/src/claudebox/","description":"Search config for the default model"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"lib/src/claudebox/config.py:4:DEFAULT_MODEL = \"claude-opus-4-7\"","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The default model is claude-opus-4-7.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

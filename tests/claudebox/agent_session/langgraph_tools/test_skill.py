@@ -99,6 +99,40 @@ class TestSkillInvocation:
         assert result == "audit cmd body"
 
 
+class TestDisableModelInvocation:
+    def test_model_call_refused_when_disable_model_invocation_set(
+        self,
+        tool_ctx,
+        monkeypatch,
+        tmp_path,
+    ):
+        _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
+        target = skills_dir / "scope" / "SKILL.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "---\ndescription: scope-desc\ndisable-model-invocation: true\n---\nbody",
+            encoding="utf-8",
+        )
+
+        skill_tool = make_skill_tools(tool_ctx)[0]
+
+        with pytest.raises(ToolException, match="disable-model-invocation"):
+            skill_tool.invoke({"name": "scope"})
+
+    def test_model_call_allowed_when_disable_model_invocation_unset(
+        self,
+        tool_ctx,
+        monkeypatch,
+        tmp_path,
+    ):
+        _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
+        _seed_skill(skills_dir, "refine", "refine body")
+
+        skill_tool = make_skill_tools(tool_ctx)[0]
+
+        assert skill_tool.invoke({"name": "refine"}) == "refine body"
+
+
 class TestUnknownName:
     def test_raises_tool_exception_with_available_list(self, tool_ctx, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)

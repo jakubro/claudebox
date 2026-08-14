@@ -5,18 +5,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 /**
- * Render a tab `<div>` and centralise the cross-tab affordances:
- *
- *  - Right-click context menu rendered via portal, with outside-click and
- *    Escape closing. Items are produced by `getContextMenuItems`, which
- *    receives an api object so menu actions can call `startRename()` or
- *    `closeContextMenu()` without consumers wiring the state themselves.
- *  - Inline rename input: state, focus, Enter/Escape, blur-cancels.
- *  - Optional close button rendered when `isCloseable` is true.
- *  - Optional pin indicator rendered when `isPinned` is true.
- *
- * Variant-specific leading content (icons, container dots, spinners) goes in
- * `children` so consumers stay declarative.
+ * Tab `<div>` with shared cross-tab behavior: portal context menu (`getContextMenuItems` gets a
+ * `{startRename, closeContextMenu}` api so its actions don't need to wire that state themselves),
+ * inline rename (Enter/Escape/blur-cancel), optional close button, optional pin indicator.
  *
  * @param {object} props
  * @param {string} props.className - className for the outer tab div.

@@ -15,13 +15,12 @@ from claudebox.agent_session.runtime_langgraph import (
 
 
 def _config(
-    tmp_path: Path, *, model: str | None = "ollama:llama3.2:3b", ollama="http://127.0.0.1:11434"
+    tmp_path: Path,
+    *,
+    model: str | None = "ollama:llama3.2:3b",
+    ollama="http://127.0.0.1:11434",
 ):
-    # Tests pass models in the explicit `provider:model_id` form. The
-    # runtime parser rejects bare model ids (no colon) so workspace TOML
-    # mistakes fail loudly at session start; Ollama model ids themselves
-    # contain colons (`llama3.2:3b`) so the only valid form is the explicit
-    # `ollama:llama3.2:3b`.
+    # Explicit `provider:model_id` form required - Ollama ids themselves contain colons (e.g. `llama3.2:3b`).
     return LangGraphAgentSessionConfig(
         runtime="langgraph",
         model=model,
@@ -62,7 +61,7 @@ class TestGetModels:
                 {"name": "llama3.2:3b"},
                 {"name": "qwen2.5:7b"},
                 {"name": "phi3.5:3.8b"},
-            ]
+            ],
         }
 
         with patch(
@@ -123,17 +122,14 @@ class TestEmptyCatalogs:
     """get_skills/effort_levels/permission_modes return [] under LangGraph v1."""
 
     def test_get_skills_returns_isolated_dirs(self, tmp_path):
-        """LangGraph's get_skills walks the same SKILL.md catalog Claude does.
-
-        Passing isolated dirs proves the runtime delegates to the shared
-        `walk_skills` helper rather than returning an always-empty stub.
-        """
+        """get_skills delegates to the shared walk_skills helper, not an always-empty stub."""
 
         cmds = tmp_path / "commands"
         skills_dir = tmp_path / "skills"
         (skills_dir / "alpha").mkdir(parents=True)
         (skills_dir / "alpha" / "SKILL.md").write_text(
-            "---\ndescription: a\n---\nbody", encoding="utf-8"
+            "---\ndescription: a\n---\nbody",
+            encoding="utf-8",
         )
 
         skills = LangGraphRuntime.get_skills(commands_dir=cmds, skills_dir=skills_dir)

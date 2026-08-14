@@ -132,8 +132,7 @@ describe('MinimapController', () => {
       containerEl.scrollTop = 500
       controller.attach(containerEl, mapEl)
 
-      // top = (500 / 2000) * 400 = 100
-      // height = (500 / 2000) * 400 = 100
+      // top = height = (500 / 2000) * 400 = 100
       expect(onViewportChange).toHaveBeenCalledWith({ top: 100, height: 100 })
     })
 
@@ -269,8 +268,7 @@ describe('MinimapController', () => {
 
       controller.startDrag({ clientY: 200 })
 
-      // ratio = (200 - 0) / 400 = 0.5
-      // scrollTop = 0.5 * (2000 - 500) = 750
+      // ratio = (200 - 0) / 400 = 0.5; scrollTop = 0.5 * (2000 - 500) = 750
       expect(containerEl.scrollTop).toBe(750)
     })
 
@@ -434,8 +432,7 @@ describe('MinimapController', () => {
       mapEl.clientHeight = 800
       resizeObserverInstances[0].trigger()
 
-      // top = (500 / 4000) * 800 = 100
-      // height = (800 / 4000) * 800 = 160
+      // top = (500 / 4000) * 800 = 100; height = (800 / 4000) * 800 = 160
       expect(onViewportChange).toHaveBeenCalledWith({ top: 100, height: 160 })
     })
   })
@@ -452,9 +449,8 @@ describe('MinimapController', () => {
   })
 
   describe('viewport sizing (logical scrollHeight for jitter resistance)', () => {
-    // SIZE uses the logical denominator so the thumb HEIGHT does not jitter
-    // as off-screen turns toggle between intrinsic 400px placeholders and
-    // real heights (content-visibility:auto behavior).
+    // SIZE uses the logical denominator so thumb HEIGHT doesn't jitter when windowed turns mount and unmount,
+    // moving the container's own scrollHeight even though the conversation hasn't changed.
 
     it('thumb height uses getLogicalScrollHeight when supplied', () => {
       containerEl.scrollTop = 600
@@ -502,11 +498,9 @@ describe('MinimapController', () => {
   })
 
   describe('viewport positioning (native scrollHeight for accuracy)', () => {
-    // POSITION uses native scrollHeight. The browser caps scrollTop at
-    // (nativeScrollHeight - clientHeight); any logical estimate that
-    // undercounts native (container padding, per-turn margins, non-turn
-    // siblings on long sessions) would let the ratio exceed 1 and push the
-    // thumb past mapHeight.
+    // POSITION uses native scrollHeight - it caps scrollTop at (nativeScrollHeight - clientHeight);
+    // a logical estimate that undercounts native (padding, margins, non-turn siblings) would push the ratio past 1
+    // and the thumb past mapHeight.
 
     it('thumb top is 0 when scrollTop is 0', () => {
       containerEl.scrollHeight = 100000
@@ -519,8 +513,7 @@ describe('MinimapController', () => {
     })
 
     it('thumb bottom lands at mapHeight at max scroll even when logical undercounts native', () => {
-      // Reproduces production divergence: per-turn margins + container padding
-      // push native scrollHeight above the logical sum on long sessions.
+      // Production divergence: per-turn margins + padding push native scrollHeight above the logical sum.
       containerEl.scrollHeight = 100000 // native (truth)
       containerEl.clientHeight = 200
       containerEl.scrollTop = 99800 // browser cap = nativeScrollHeight - clientHeight

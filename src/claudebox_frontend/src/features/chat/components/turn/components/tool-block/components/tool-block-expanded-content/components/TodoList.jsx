@@ -18,17 +18,13 @@ const STATUS_CLASSES = {
 }
 
 /**
- * Render a diff view of todo items, showing only changed items with status icons.
- * Items carrying a `subtitle` render a muted second line; items with unresolved
- * `blockedBy` deps render with the ⊘ icon (the status class stays as the item's
- * actual status; only the icon swaps).
- * @param {Object} props
+ * Items carrying a `subtitle` render a muted second line; items with unresolved `blockedBy` deps
+ * render with the ⊘ icon (the status class stays as the item's actual status; only the icon swaps).
  * @param {Array} [props.todos] - Fallback todo list when no diff is available.
  * @param {Object} [props.todoDiff] - Diff object with completed, started, added, and removed arrays.
  */
 export default function TodoList({ todos, todoDiff }) {
-  // Build list of changed items to display
-  // Order: completed first, then started (in_progress), then added (pending)
+  // Build list of changed items to display, ordered: completed, then started (in_progress), then added (pending)
   const changedItems = []
 
   if (todoDiff) {

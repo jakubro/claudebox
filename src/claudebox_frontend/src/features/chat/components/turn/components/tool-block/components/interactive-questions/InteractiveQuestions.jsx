@@ -1,26 +1,21 @@
 /** Interactive question form for AskUserQuestion tool. */
 
 import { Send } from 'lucide-react'
-import { useState } from 'react'
+import { forwardRef, useCallback, useImperativeHandle, useState } from 'react'
 import QuestionCard from '../QuestionCard'
 import QuestionOption from './components/QuestionOption'
 import { hasAnySelection, nextOtherSelected, nextSelections } from './utils/selectionState'
 import { formatQuestionXml } from './utils/serializers'
 
 /**
- * Render question cards with single/multi-select options and "Other" text input.
- * @param {Object} props
- * @param {Array} props.questions - Questions with options to display.
+ * Exposes `{ hasSelection, submit }` via ref so the composer's Enter key can submit without owning form state.
  * @param {Function} props.onSubmit - Callback with XML response string.
- * @param {boolean} [props.disabled=false] - Disable interactions after submission.
  * @param {string} [props.responseTag='AskUserQuestion'] - XML wrapper tag name.
  */
-export default function InteractiveQuestions({
-  questions,
-  onSubmit,
-  disabled = false,
-  responseTag = 'AskUserQuestion',
-}) {
+const InteractiveQuestions = forwardRef(function InteractiveQuestions(
+  { questions, onSubmit, disabled = false, responseTag = 'AskUserQuestion' },
+  ref,
+) {
   // Track selections: { questionIndex: selectedOptionIndex | Set<number> for multiSelect }
   const [selections, setSelections] = useState(() => {
     const initial = {}
@@ -62,7 +57,7 @@ export default function InteractiveQuestions({
     setOtherTexts(prev => ({ ...prev, [qIndex]: text }))
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (disabled) {
       return
     }
@@ -77,7 +72,7 @@ export default function InteractiveQuestions({
       const xmlContent = xmlParts.join('\n')
       onSubmit(`<response:${responseTag}>\n${xmlContent}\n</response:${responseTag}>`)
     }
-  }
+  }, [disabled, questions, selections, otherSelected, otherTexts, responseTag, onSubmit])
 
   // Handle Shift+Enter in "Other" textarea
   const handleOtherKeyDown = e => {
@@ -90,6 +85,11 @@ export default function InteractiveQuestions({
 
   // Check if any selection made (preserve whitespace - check length, not trim)
   const hasSelection = hasAnySelection(questions, selections, otherSelected, otherTexts)
+
+  useImperativeHandle(ref, () => ({ hasSelection, submit: handleSubmit }), [
+    hasSelection,
+    handleSubmit,
+  ])
 
   // Show form in disabled state after submit (selections stay visible/highlighted)
   return (
@@ -156,4 +156,6 @@ export default function InteractiveQuestions({
       )}
     </div>
   )
-}
+})
+
+export default InteractiveQuestions

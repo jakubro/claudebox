@@ -5,13 +5,10 @@ import CodeBlockLine from './CodeBlockLine'
 import { computeColumnWidths } from './utils/columnWidths'
 
 /**
- * Render a code block with optional sticky gutter columns.
- * @param {object} props
- * @param {Array} props.lines - Array of line objects to render.
- * @param {string} [props.className] - Optional CSS class name.
  * @param {string|null} [props.fileColMaxWidth] - Max width constraint for file column.
  * @param {string|null} [props.sessionDir] - Host session directory for /tmp/ path resolution.
  * @param {Object<string, string>} [props.resolvedPaths] - Map of candidate -> resolved path.
+ * @param {string|null} [props.editorTemplate] - "Open in editor" URI template for Alt+Click.
  */
 export default function CodeBlock({
   lines,
@@ -19,8 +16,8 @@ export default function CodeBlock({
   fileColMaxWidth = null,
   sessionDir = null,
   resolvedPaths = {},
+  editorTemplate = null,
 }) {
-  // Calculate max widths for consistent column alignment
   // Hook must be called unconditionally (before early return)
   const { maxFileLen, maxLineNumLen } = useMemo(() => computeColumnWidths(lines), [lines])
 
@@ -53,6 +50,7 @@ export default function CodeBlock({
           hasGutter={hasGutter}
           sessionDir={sessionDir}
           resolvedPaths={resolvedPaths}
+          editorTemplate={editorTemplate}
         />
       ))}
     </div>

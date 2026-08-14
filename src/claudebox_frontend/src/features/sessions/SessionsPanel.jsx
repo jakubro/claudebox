@@ -18,7 +18,6 @@ import { openSessionInNewTab } from '../../utils/navigation'
 import SessionTree, { SessionTreeProvider } from './components/session-tree'
 import { buildSessionTree } from './utils/sessionTree'
 
-/** Render sessions panel showing past sessions with resume action. */
 export default function SessionsPanel() {
   const { sessionId: currentSessionId, sessionName: currentSessionName } = useSessionData()
   const { refreshSession } = useSessionActions()
@@ -43,8 +42,7 @@ export default function SessionsPanel() {
 
   const executeResume = useCallback(
     sessionId => {
-      // Snapshot prior session state BEFORE navigation so the toast can ask
-      // the user to return if Claude was responding when we replaced.
+      // Snapshot prior session before navigating so the toast can ask the user to return if still responding.
       const prevId = currentSessionId
       const prevName = currentSessionName
       const prevWasResponding = isResponding
@@ -97,9 +95,8 @@ export default function SessionsPanel() {
       deleteContainer(containerId).catch(err =>
         console.debug('SessionsPanel: deleteContainer failed', err),
       )
-      // Keep the containerMap mapping until the daemon's terminal `stopped`
-      // event clears it (ContainerStatusEffect) - dropping it here breaks the
-      // containerId->sessionId resolution and wedges the stopping indicator.
+      // Keep containerMap until the daemon's terminal `stopped` event clears it (ContainerStatusEffect) -
+      // dropping it here breaks containerId->sessionId resolution and wedges the stopping indicator.
       refresh()
     },
     [containerMap, sessions, addStoppingSession, refresh],
@@ -132,7 +129,6 @@ export default function SessionsPanel() {
     [sessions, pinnedSessions, currentSessionId],
   )
 
-  // Track expanded state for sessions with children
   const [expandedSessions, setExpandedSessions] = useState(new Set())
   const manuallyCollapsedRef = useRef(new Set())
 

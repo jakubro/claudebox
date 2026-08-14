@@ -1,11 +1,23 @@
 /** Tests for PathHighlighter component. */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import PathHighlighter from './PathHighlighter'
 
 const SESSION_DIR = '/home/user/.claudebox/sessions/abc123'
+const EDITOR_TEMPLATE = 'vscode://file/{path}:{line}'
+
+/** Stub navigator.clipboard.writeText and return the mock. */
+function stubClipboard() {
+  const mockWriteText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: mockWriteText },
+    writable: true,
+    configurable: true,
+  })
+  return mockWriteText
+}
 
 describe('PathHighlighter', () => {
   describe('/tmp path highlighting', () => {
@@ -174,8 +186,102 @@ describe('PathHighlighter', () => {
         </PathHighlighter>,
       )
 
-      // Element children are not processed (only string children are)
       expect(screen.getByTestId('child')).toHaveTextContent('/tmp/inside-element')
+    })
+  })
+
+  describe('Alt+Click opens in editor', () => {
+    const resolved = { 'config.toml': '/home/user/project/config.toml' }
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('plain click copies and flashes; Alt+Click does neither', () => {
+      const mockWriteText = stubClipboard()
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => {})
+
+      render(
+        <PathHighlighter resolvedPaths={resolved} editorTemplate={EDITOR_TEMPLATE}>
+          Edit config.toml
+        </PathHighlighter>,
+      )
+      const path = screen.getByText('config.toml')
+
+      fireEvent.click(path, { altKey: true })
+      expect(mockWriteText).not.toHaveBeenCalled()
+      expect(path).not.toHaveClass('copied')
+      expect(openSpy).toHaveBeenCalledOnce()
+
+      fireEvent.click(path)
+      expect(mockWriteText).toHaveBeenCalledWith('/home/user/project/config.toml')
+      expect(path).toHaveClass('copied')
+    })
+
+    it('resolves the URI for the resolved absolute path, not the displayed candidate', () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => {})
+
+      render(
+        <PathHighlighter resolvedPaths={resolved} editorTemplate={EDITOR_TEMPLATE}>
+          Edit config.toml
+        </PathHighlighter>,
+      )
+      fireEvent.click(screen.getByText('config.toml'), { altKey: true })
+
+      expect(openSpy).toHaveBeenCalledWith(
+        'vscode://file/%2Fhome%2Fuser%2Fproject%2Fconfig.toml:1',
+        '_blank',
+        'noopener,noreferrer',
+      )
+    })
+
+    it('encodes a resolved path containing a space, even though the candidate token has none', () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => {})
+      const spacedResolved = { 'notes.md': '/home/user/my project/notes.md' }
+
+      render(
+        <PathHighlighter resolvedPaths={spacedResolved} editorTemplate={EDITOR_TEMPLATE}>
+          See notes.md
+        </PathHighlighter>,
+      )
+      fireEvent.click(screen.getByText('notes.md'), { altKey: true })
+
+      expect(openSpy).toHaveBeenCalledWith(
+        'vscode://file/%2Fhome%2Fuser%2Fmy%20project%2Fnotes.md:1',
+        '_blank',
+        'noopener,noreferrer',
+      )
+    })
+
+    it('Alt+Click with no template copies, matching plain click', () => {
+      const mockWriteText = stubClipboard()
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => {})
+
+      render(<PathHighlighter resolvedPaths={resolved}>Edit config.toml</PathHighlighter>)
+      const path = screen.getByText('config.toml')
+      fireEvent.click(path, { altKey: true })
+
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(mockWriteText).toHaveBeenCalledWith('/home/user/project/config.toml')
+      expect(path).toHaveClass('copied')
+    })
+
+    it('tooltip includes the Alt+Click hint only when a template is configured', () => {
+      const { rerender } = render(
+        <PathHighlighter resolvedPaths={resolved} editorTemplate={EDITOR_TEMPLATE}>
+          Edit config.toml
+        </PathHighlighter>,
+      )
+      expect(screen.getByText('config.toml')).toHaveAttribute(
+        'title',
+        '/home/user/project/config.toml\nAlt+Click to open in editor',
+      )
+
+      rerender(<PathHighlighter resolvedPaths={resolved}>Edit config.toml</PathHighlighter>)
+      expect(screen.getByText('config.toml')).toHaveAttribute(
+        'title',
+        '/home/user/project/config.toml',
+      )
     })
   })
 })

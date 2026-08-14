@@ -49,7 +49,10 @@ class TestBash:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=["bash"], returncode=0, stdout="", stderr=""
+                args=["bash"],
+                returncode=0,
+                stdout="",
+                stderr="",
             )
             bash.invoke({"command": "true", "timeout_seconds": 9999})
 
@@ -65,3 +68,17 @@ class TestBash:
 
         assert "truncated at 100 KB" in result["stdout"]
         assert len(result["stdout"]) < 200 * 1024
+
+    def test_description_accepted_without_affecting_execution_or_result(self, tool_ctx):
+        bash = _bash(tool_ctx)
+
+        result = bash.invoke({"command": "echo hello", "description": "Greet the user"})
+
+        assert result["stdout"].strip() == "hello"
+        assert result["exit_code"] == 0
+        assert "description" not in result
+
+    def test_description_in_tool_schema(self, tool_ctx):
+        bash = _bash(tool_ctx)
+
+        assert "description" in bash.args

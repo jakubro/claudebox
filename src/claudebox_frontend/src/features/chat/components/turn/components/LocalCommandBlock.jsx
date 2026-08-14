@@ -3,12 +3,6 @@
 import { ChevronDown, ChevronRight, Terminal } from 'lucide-react'
 import { useState } from 'react'
 
-/**
- * Display collapsible command output with toggle header and styled content.
- * @param {object} props
- * @param {'stdout'|'stderr'} props.type - Output stream type.
- * @param {string} props.content - Command output content.
- */
 export default function LocalCommandBlock({ type, content }) {
   const [expanded, setExpanded] = useState(true)
   const isStderr = type === 'stderr'

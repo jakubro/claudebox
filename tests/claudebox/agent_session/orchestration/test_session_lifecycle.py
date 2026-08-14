@@ -1,10 +1,12 @@
 """Tests for claudebox.agent_session.orchestration.session - send and stop lifecycle."""
 
+import asyncio
 import base64
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from claudebox.agent_session.orchestration.errors import SessionNotReady
 from claudebox.agent_session.orchestration.session import SessionService
 
 
@@ -25,6 +27,9 @@ def _wire_send_dependencies(session, tmp_workspace, *, with_base_session=True):
     session._sdk_client = MagicMock()
     session._sdk_client.query = AsyncMock()
 
+    # No verdict from the health probe - a bare MagicMock reads as finished and reconnects mid-test.
+    session._sdk_client.stream_health = MagicMock(return_value=None)
+
     session._event_pipeline = MagicMock()
     session._event_pipeline.inject_event = AsyncMock()
     session._event_pipeline.suppress_next_user_echo = MagicMock()
@@ -38,6 +43,25 @@ def _wire_send_dependencies(session, tmp_workspace, *, with_base_session=True):
         session._base_session = mock_base_session
 
 
+def _wire_broadcast_surface(session, *, subscriber=None):
+    """Attach the components stop() disposes, so subscribe() and stop() both run against a started shape."""
+
+    session._broadcaster = MagicMock()
+    session._broadcaster.subscribe.return_value = subscriber or ("sub-0", asyncio.Queue())
+    session._broadcaster.replay_to = AsyncMock()
+
+    session._event_pipeline = MagicMock()
+    session._event_pipeline.stop = AsyncMock()
+    session._event_pipeline.get_events.return_value = []
+
+    session._sdk_client = MagicMock()
+    session._sdk_client.disconnect = AsyncMock()
+    session._projection = MagicMock(flush=AsyncMock())
+    session._tool_output = MagicMock()
+    session._attachment_service = MagicMock()
+    session._summary_cache = MagicMock()
+
+
 # --- send ---
 
 
@@ -46,8 +70,6 @@ class TestSendWithAttachments:
 
     @pytest.mark.anyio
     async def test_attachments_suppress_next_user_echo(self, tmp_workspace):
-        """When attachments are present, pipeline.suppress_next_user_echo is called."""
-
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
 
@@ -61,7 +83,7 @@ class TestSendWithAttachments:
 
         await session.send("Describe this image", attachments=attachments)
 
-        session._event_pipeline.suppress_next_user_echo.assert_called_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.suppress_next_user_echo.assert_called_once()  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_attachments_inject_synthetic_user_event(self, tmp_workspace):
@@ -80,8 +102,8 @@ class TestSendWithAttachments:
 
         await session.send("Summarize this", attachments=attachments)
 
-        session._event_pipeline.inject_event.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
-        kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.inject_event.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]
         assert kwargs["event_type"] == "user"
         assert kwargs["is_human"] is True
         assert kwargs["content"] == "Summarize this"
@@ -105,8 +127,8 @@ class TestSendWithAttachments:
 
         await session.send("What is this?", attachments=attachments)
 
-        session._sdk_client.query.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
-        blocks = session._sdk_client.query.call_args.args[0]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._sdk_client.query.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        blocks = session._sdk_client.query.call_args.args[0]  # ty: ignore[unresolved-attribute]
         assert isinstance(blocks, list)
 
     @pytest.mark.anyio
@@ -126,7 +148,7 @@ class TestSendWithAttachments:
 
         await session.send("Read this", attachments=attachments)
 
-        session._event_pipeline.set_prompt.assert_not_called()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.set_prompt.assert_not_called()  # ty: ignore[unresolved-attribute]
 
 
 class TestSendWithoutAttachments:
@@ -134,14 +156,12 @@ class TestSendWithoutAttachments:
 
     @pytest.mark.anyio
     async def test_no_attachments_no_suppress(self, tmp_workspace):
-        """Plain text message must not call suppress_next_user_echo."""
-
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
 
         await session.send("Hello, Claude")
 
-        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_no_attachments_sets_prompt_and_queries(self, tmp_workspace):
@@ -152,8 +172,8 @@ class TestSendWithoutAttachments:
 
         await session.send("What time is it?")
 
-        session._event_pipeline.set_prompt.assert_called_once_with("What time is it?")  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
-        session._sdk_client.query.assert_awaited_once_with("What time is it?")  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.set_prompt.assert_called_once_with("What time is it?")  # ty: ignore[unresolved-attribute]
+        session._sdk_client.query.assert_awaited_once_with("What time is it?")  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_empty_attachments_treated_as_no_attachments(self, tmp_workspace):
@@ -164,8 +184,8 @@ class TestSendWithoutAttachments:
 
         await session.send("Hi", attachments=[])
 
-        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
-        session._event_pipeline.set_prompt.assert_called_once_with("Hi")  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.set_prompt.assert_called_once_with("Hi")  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_none_attachments_treated_as_no_attachments(self, tmp_workspace):
@@ -176,8 +196,8 @@ class TestSendWithoutAttachments:
 
         await session.send("Hey", attachments=None)
 
-        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
-        session._event_pipeline.set_prompt.assert_called_once_with("Hey")  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_args, etc.) on test-replaced method.
+        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.set_prompt.assert_called_once_with("Hey")  # ty: ignore[unresolved-attribute]
 
 
 # --- send_and_wait ---
@@ -188,8 +208,6 @@ class TestSendAndWait:
 
     @pytest.mark.anyio
     async def test_collects_assistant_chunks(self, tmp_workspace):
-        """Concatenates assistant text events into a single response."""
-
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
 
@@ -200,7 +218,7 @@ class TestSendAndWait:
                 {"type": "assistant", "content": "Hello"},
                 {"type": "assistant", "content": " world"},
                 {"type": "result"},
-            ]
+            ],
         )
         broadcaster.subscribe.return_value = ("sub-1", queue)
         broadcaster.unsubscribe = MagicMock()
@@ -213,8 +231,6 @@ class TestSendAndWait:
 
     @pytest.mark.anyio
     async def test_returns_no_response_when_empty(self, tmp_workspace):
-        """Returns 'No response' when no assistant text events before result."""
-
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
 
@@ -244,7 +260,7 @@ class TestSendAndWait:
                 {"type": "user", "content": "echo"},
                 {"type": "assistant", "content": "Answer"},
                 {"type": "result"},
-            ]
+            ],
         )
         broadcaster.subscribe.return_value = ("sub-1", queue)
         broadcaster.unsubscribe = MagicMock()
@@ -319,13 +335,10 @@ class TestStopDisposalOrdering:
 
     @pytest.mark.anyio
     async def test_pipeline_stopped_before_client_disconnected(self, tmp_workspace):
-        """Pipeline task is cancelled and pipeline is stopped before SDK client is disconnected."""
-
         session = _make_session(tmp_workspace)
 
         call_order = []
 
-        # Track disposal ordering via side effects
         mock_pipeline_task = MagicMock()
         mock_pipeline_task.cancel = MagicMock(
             side_effect=lambda: call_order.append("pipeline_task.cancel"),
@@ -357,7 +370,6 @@ class TestStopDisposalOrdering:
             side_effect=lambda: call_order.append("client.disconnect"),
         )
 
-        # Patch _dispose to track calls in order
         original_dispose = session._dispose
         dispose_calls = []
 
@@ -365,7 +377,7 @@ class TestStopDisposalOrdering:
             dispose_calls.append((member, method))
             await original_dispose(member, method)
 
-        session._dispose = tracking_dispose  # ty: ignore[invalid-assignment]  # Test wrapper structurally replaces the real _dispose method.
+        session._dispose = tracking_dispose  # ty: ignore[invalid-assignment]
         session._event_pipeline = mock_pipeline
         session._sdk_client = mock_client
         session._broadcaster = MagicMock()
@@ -376,12 +388,11 @@ class TestStopDisposalOrdering:
 
         await session.stop()
 
-        # Verify ordering: pipeline.stop comes before client.disconnect
         assert call_order.index("pipeline.stop") < call_order.index("client.disconnect")
 
     @pytest.mark.anyio
     async def test_dispose_sequence_matches_expected_order(self, tmp_workspace):
-        """stop() calls _dispose in the documented order: tasks first, then components."""
+        """stop() calls _dispose in order: tasks first, then components."""
 
         session = _make_session(tmp_workspace)
 
@@ -392,11 +403,12 @@ class TestStopDisposalOrdering:
             # Skip actual disposal to avoid needing real objects
             setattr(session, member, None)
 
-        session._dispose = tracking_dispose  # ty: ignore[invalid-assignment]  # Test wrapper structurally replaces the real _dispose method.
+        session._dispose = tracking_dispose  # ty: ignore[invalid-assignment]
 
         await session.stop()
 
         assert dispose_calls == [
+            ("_stall_watchdog_task", "cancel"),
             ("_pipeline_task", "cancel"),
             ("_client_task", "cancel"),
             ("_event_pipeline", "stop"),
@@ -413,7 +425,6 @@ class TestStopIdempotent:
 
         session = _make_session(tmp_workspace)
 
-        # Wire up disposable mocks for first stop
         session._event_pipeline = MagicMock()
         session._event_pipeline.stop = AsyncMock()
         session._sdk_client = MagicMock()
@@ -430,8 +441,6 @@ class TestStopIdempotent:
 
     @pytest.mark.anyio
     async def test_stop_on_fresh_session_does_not_raise(self, tmp_workspace):
-        """stop() on a session that was never started is safe."""
-
         session = _make_session(tmp_workspace)
 
         await session.stop()
@@ -474,3 +483,64 @@ class TestUnsubscribeAfterStop:
         assert session._broadcaster is None
         result = await session.unsubscribe("never-existed")
         assert result is None
+
+
+# --- subscribe before start / after stop ---
+
+
+class TestSubscribeReadiness:
+    """subscribe() reports a typed not-ready state instead of dereferencing an absent broadcaster."""
+
+    @pytest.mark.anyio
+    async def test_subscribe_on_fresh_session_raises_not_ready(self, tmp_workspace):
+        """Every container passes through this window: advertised as running, session not yet started."""
+
+        session = _make_session(tmp_workspace)
+
+        assert session._broadcaster is None
+
+        with pytest.raises(SessionNotReady):
+            await session.subscribe()
+
+    @pytest.mark.anyio
+    async def test_subscribe_after_stop_raises_not_ready(self, tmp_workspace):
+        """The post-stop window reports the same typed state as the pre-start one."""
+
+        session = _make_session(tmp_workspace)
+        _wire_broadcast_surface(session)
+
+        await session.stop()
+
+        with pytest.raises(SessionNotReady):
+            await session.subscribe()
+
+    @pytest.mark.anyio
+    async def test_subscribe_while_started_replays_history(self, tmp_workspace):
+        """The guard leaves the started path intact - subscriber and queue come back, history replays."""
+
+        session = _make_session(tmp_workspace)
+        queue = asyncio.Queue()
+        _wire_broadcast_surface(session, subscriber=("sub-1", queue))
+
+        subscriber_id, returned = await session.subscribe()
+
+        assert subscriber_id == "sub-1"
+        assert returned is queue
+        session._broadcaster.replay_to.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_ensure_ready_tracks_the_session_lifecycle(self, tmp_workspace):
+        """Not ready before start, ready while started, not ready again after stop."""
+
+        session = _make_session(tmp_workspace)
+
+        with pytest.raises(SessionNotReady):
+            session.ensure_ready()
+
+        _wire_broadcast_surface(session)
+        session.ensure_ready()
+
+        await session.stop()
+
+        with pytest.raises(SessionNotReady):
+            session.ensure_ready()

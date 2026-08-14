@@ -12,8 +12,10 @@ import {
   extractTasks,
   extractThinkingFromText,
   getAskUserFingerprint,
+  hasVisibleBlock,
   INITIAL_TURN_GROUPING_STATE,
   indexEvents,
+  isHiddenToolSearch,
   isInterruptAck,
   isVisibleEvent,
   processEvents,
@@ -363,10 +365,8 @@ describe('processEvents', () => {
   })
 
   it('attaches skill markdown when a tool_result intervenes between Skill tool_use and skill content', () => {
-    // Live SDK sequence: Skill tool_use -> user/tool_result echo -> user/text body
-    // (the actual markdown). The intervening tool_result must NOT clear the
-    // skill-tracking state, otherwise the markdown leaks as a standalone bubble
-    // inside the assistant turn.
+    // Live SDK sequence: Skill tool_use -> tool_result echo -> user/text body. The intervening
+    // tool_result must not clear skill-tracking state, or the markdown leaks as a standalone bubble.
     const events = [
       { subtype: 'tool_use', content: 'Skill', tool_use_id: 'skill_1' },
       {
@@ -381,8 +381,7 @@ describe('processEvents', () => {
 
     const blocks = processEvents(events)
 
-    // Only the Skill tool block - the user/text body must be folded inside
-    // its skillContent, not produce a separate text block.
+    // Only the Skill tool block - the user/text body folds into skillContent, not a separate text block.
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('tool')
     expect(blocks[0].toolUse.content).toBe('Skill')
@@ -390,15 +389,9 @@ describe('processEvents', () => {
   })
 
   it('folds skill markdown across the full live turn slice (assistant text -> tool_use -> tool_result -> user/text body -> assistant text)', () => {
-    // Mirrors the exact event ordering observed in the leak repro session:
-    // ~/.claudebox/sessions/20260506-140144--de83121b/events.jsonl L636-L640.
-    // The key invariants:
-    //   1. The leading assistant/text resets the skill tracker - but L637's
-    //      tool_use sets it again immediately.
-    //   2. The intervening user/tool_result must NOT reset the tracker.
-    //   3. The trailing assistant/text after the user/text body is unaffected
-    //      because skill suppression already paired the tracker by then.
-    // If any of these break, the user/text body leaks as a standalone bubble.
+    // Mirrors a real SDK event ordering. Key invariants: the leading assistant/text resets the
+    // skill tracker but the following tool_use sets it again; the intervening user/tool_result
+    // must not reset it. If any invariant breaks, the user/text body leaks as a standalone bubble.
     const skillBody =
       'Base directory for this skill: /root/.claude/skills/multi-agent\n\n<interpretation>...</interpretation>'
     const events = [
@@ -422,8 +415,7 @@ describe('processEvents', () => {
 
     const blocks = processEvents(events)
 
-    // Three blocks: leading assistant text, Skill tool block (skill body folded
-    // inside), trailing assistant text. NO standalone text block for the body.
+    // Three blocks: leading assistant text, Skill tool block (body folded inside), trailing assistant text.
     expect(blocks).toHaveLength(3)
     expect(blocks[0].type).toBe('text')
     expect(blocks[0].event.content).toBe('Invoke /multi-agent…')
@@ -567,7 +559,7 @@ describe('processEvents', () => {
   })
 
   it('does not create blocks for model_changed events (handled via turn.settingChanges)', () => {
-    const events = [{ type: 'system', subtype: 'model_changed', model: 'claude-opus-4-6' }]
+    const events = [{ type: 'system', subtype: 'model_changed', model: 'claude-opus-5' }]
 
     const blocks = processEvents(events)
 
@@ -830,6 +822,100 @@ describe('processNestedEvents', () => {
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].toolResult).toBeUndefined()
+  })
+
+  it('hides a successful nested ToolSearch call', () => {
+    const events = [
+      { subtype: 'tool_use', content: 'ToolSearch', tool_use_id: 'ts_1' },
+      { subtype: 'tool_result', tool_use_id: 'ts_1' },
+      { subtype: 'tool_use', content: 'Bash', tool_use_id: 'tu_1' },
+    ]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].toolUse.content).toBe('Bash')
+  })
+
+  it('keeps an errored nested ToolSearch call visible', () => {
+    const events = [
+      { subtype: 'tool_use', content: 'ToolSearch', tool_use_id: 'ts_1' },
+      { subtype: 'tool_result', tool_use_id: 'ts_1', is_error: true },
+    ]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].toolUse.content).toBe('ToolSearch')
+  })
+})
+
+describe('isHiddenToolSearch', () => {
+  it('hides a successful ToolSearch call', () => {
+    const toolUse = { content: 'ToolSearch' }
+    const toolResult = { is_error: false }
+
+    expect(isHiddenToolSearch(toolUse, toolResult)).toBe(true)
+  })
+
+  it('hides a still-pending ToolSearch call (no result yet)', () => {
+    expect(isHiddenToolSearch({ content: 'ToolSearch' }, null)).toBe(true)
+  })
+
+  it('keeps an errored ToolSearch call visible', () => {
+    const toolUse = { content: 'ToolSearch' }
+    const toolResult = { is_error: true }
+
+    expect(isHiddenToolSearch(toolUse, toolResult)).toBe(false)
+  })
+
+  it('hides the LangGraph snake_case tool_search alias identically', () => {
+    expect(isHiddenToolSearch({ content: 'tool_search' }, null)).toBe(true)
+  })
+
+  it('never hides an unrelated tool', () => {
+    const toolUse = { content: 'Bash' }
+
+    expect(isHiddenToolSearch(toolUse, null)).toBe(false)
+    expect(isHiddenToolSearch(toolUse, { is_error: true })).toBe(false)
+  })
+})
+
+describe('hasVisibleBlock', () => {
+  it('is false when every block is a hidden ToolSearch call', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'ToolSearch' }, toolResult: { is_error: false } },
+      { type: 'tool', toolUse: { content: 'tool_search' }, toolResult: null },
+    ]
+
+    expect(hasVisibleBlock(blocks)).toBe(false)
+  })
+
+  it('is true when a non-tool block is present alongside a hidden ToolSearch call', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'ToolSearch' }, toolResult: { is_error: false } },
+      { type: 'text', event: { content: 'done' } },
+    ]
+
+    expect(hasVisibleBlock(blocks)).toBe(true)
+  })
+
+  it('is true when a failed ToolSearch call is present', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'ToolSearch' }, toolResult: { is_error: true } },
+    ]
+
+    expect(hasVisibleBlock(blocks)).toBe(true)
+  })
+
+  it('is true when a non-ToolSearch tool block is present', () => {
+    const blocks = [{ type: 'tool', toolUse: { content: 'Bash' }, toolResult: null }]
+
+    expect(hasVisibleBlock(blocks)).toBe(true)
+  })
+
+  it('is false for an empty block list', () => {
+    expect(hasVisibleBlock([])).toBe(false)
   })
 })
 
@@ -1189,7 +1275,7 @@ describe('processEvents - model-set echo filtering', () => {
         type: 'user',
         is_human: false,
         subtype: 'text',
-        content: '<local-command-stdout>Set model to claude-opus-4-6</local-command-stdout>',
+        content: '<local-command-stdout>Set model to claude-opus-5</local-command-stdout>',
       },
     ]
 
@@ -1269,7 +1355,7 @@ describe('isVisibleEvent', () => {
 
   it('passes through system model_changed events', () => {
     expect(
-      isVisibleEvent({ type: 'system', subtype: 'model_changed', model: 'claude-opus-4-6' }),
+      isVisibleEvent({ type: 'system', subtype: 'model_changed', model: 'claude-opus-5' }),
     ).toBe(true)
   })
 
@@ -1464,8 +1550,8 @@ describe('appendTurns', () => {
       {
         type: 'system',
         subtype: 'model_changed',
-        model: 'claude-opus-4-6',
-        previous_model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-opus-5',
+        previous_model: 'claude-sonnet-5',
       },
     ])
 
@@ -1513,7 +1599,7 @@ describe('appendTurns', () => {
     ])
 
     const { turns: t2 } = appendTurns(t1, s1, [
-      { type: 'system', subtype: 'model_changed', model: 'claude-opus-4-6' },
+      { type: 'system', subtype: 'model_changed', model: 'claude-opus-5' },
     ])
 
     expect(t2[0].settingChanges).toHaveLength(0)
@@ -1584,8 +1670,7 @@ describe('appendTurns', () => {
   })
 
   it('places auto-compaction events in new assistant turn, not previous', () => {
-    // Simulates the real SDK event sequence for auto-compaction:
-    // previous turn ends, compact_start fires before user message echo
+    // Simulates real SDK auto-compaction: previous turn ends, compact_start fires before the user message echo.
     const { turns: t1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
       { type: 'user', is_human: true, turn_id: 'turn-prev', content: 'Previous message' },
       { type: 'assistant', subtype: 'text', content: 'Previous response' },
@@ -1647,7 +1732,7 @@ describe('appendTurns', () => {
 
   it('drops setting change when no current turn exists', () => {
     const { turns } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'system', subtype: 'model_changed', model: 'claude-opus-4-6' },
+      { type: 'system', subtype: 'model_changed', model: 'claude-opus-5' },
     ])
 
     expect(turns).toHaveLength(0)
@@ -2478,8 +2563,7 @@ describe('computeDuplicateAskUserIds', () => {
 
     it('treats stringified questions like an empty fingerprint (groups with other empties)', () => {
       const stringified = '[{"header":"Approach"}]'
-      // Two malformed events both fingerprint to '' and both errored - the
-      // first becomes a duplicate of the second.
+      // Two malformed events both fingerprint to '' and are errored - the first becomes a duplicate of the second.
       const turns = [
         makeTurn([askEvent('tu-1', stringified), errorResult('tu-1')]),
         makeTurn([askEvent('tu-2', stringified)]),
@@ -2487,8 +2571,7 @@ describe('computeDuplicateAskUserIds', () => {
 
       const ids = computeDuplicateAskUserIds(turns)
 
-      // Both share the empty fingerprint; tu-1 errored, tu-2 follows -> tu-1
-      // gets hidden as a duplicate (same as the well-formed case).
+      // Both share the empty fingerprint; tu-1 errored, tu-2 follows, so tu-1 is hidden as a duplicate.
       expect(ids.has('tu-1')).toBe(true)
       expect(ids.has('tu-2')).toBe(false)
     })

@@ -106,7 +106,9 @@ class TestJ2ModelNotPulled:
         response_500 = MagicMock()
         response_500.status_code = 500
         response_500.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Server error", request=MagicMock(), response=response_500
+            "Server error",
+            request=MagicMock(),
+            response=response_500,
         )
 
         client_mock = _httpx_client_mock()
@@ -174,8 +176,7 @@ class TestJ6SummarizationMiddleware:
         ):
             await runtime.connect()
 
-        # Middleware list non-empty and contains SummarizationMiddleware.
-        # Order: ClaudeboxToolHookMiddleware (outermost) -> SummarizationMiddleware.
+        # Order: ClaudeboxToolHookMiddleware outermost, then SummarizationMiddleware; list must be non-empty.
         from langchain.agents.middleware import SummarizationMiddleware
 
         assert captured_middleware

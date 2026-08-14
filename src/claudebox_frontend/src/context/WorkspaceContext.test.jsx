@@ -28,7 +28,6 @@ describe('useWorkspace', () => {
         delete mockLocalStorage[key]
       }),
     })
-    // Clear stored values
     for (const key of Object.keys(mockLocalStorage)) {
       delete mockLocalStorage[key]
     }

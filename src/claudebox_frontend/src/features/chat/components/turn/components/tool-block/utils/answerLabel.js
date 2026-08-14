@@ -1,8 +1,6 @@
 /** Pure parser for ExitPlanMode answer labels - no React APIs. */
 
 /**
- * Map an `<answer>...</answer>`-wrapped XML response to a display label.
- *
  * @param {string | null | undefined} message - User-submitted XML string.
  * @returns {'Approved' | 'Rejected' | null}
  */

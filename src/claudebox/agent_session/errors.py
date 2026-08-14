@@ -8,16 +8,16 @@ class UnknownRuntime(Exception):
 class ProviderError(Exception):
     """Base for typed provider-layer failures.
 
-    Container-API handlers map any `isinstance(exc, ProviderError)` to a typed
-    HTTP response. Concrete subclasses populate the diagnostic context.
+    Container-API handlers map any `isinstance(exc, ProviderError)` to a typed HTTP response;
+    concrete subclasses populate the diagnostic context.
     """
 
 
 class ProviderPackageMissing(ProviderError):
     """init_chat_model raised ImportError - provider package not installed.
 
-    Carries the provider name + a `pip install ...` hint the handler surfaces
-    in the HTTP 422 body so the user sees the exact remediation command.
+    Carries the provider name and a `pip install ...` hint that the handler surfaces in the HTTP
+    422 body, so the user sees the exact remediation command.
     """
 
     def __init__(self, provider: str, install_hint: str) -> None:
@@ -45,10 +45,8 @@ class OllamaModelNotPulled(ProviderError):
 class OpenAICompatibleUnreachable(ProviderError):
     """OpenAI-compatible /v1/models probe failed at the configured base_url.
 
-    Distinct exception class from OllamaUnreachable so the diagnostic message
-    references the OpenAI-compatible base_url specifically (vLLM, LM Studio,
-    llama.cpp, etc.), not Ollama. Users debugging a local OpenAI-compatible
-    server see the right context.
+    Distinct from `OllamaUnreachable` so the diagnostic message names the right backend (vLLM, LM
+    Studio, llama.cpp, etc.) instead of Ollama, giving users the right debugging context.
     """
 
     def __init__(self, url: str) -> None:

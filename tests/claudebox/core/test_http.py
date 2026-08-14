@@ -131,7 +131,7 @@ class TestProxyStreamingResponse:
         async for _ in resp.body_iterator:
             pass
 
-        upstream.aclose.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        upstream.aclose.assert_awaited_once()  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_closes_upstream_on_connect_error(self):
@@ -148,7 +148,7 @@ class TestProxyStreamingResponse:
         async for _ in resp.body_iterator:
             pass
 
-        upstream.aclose.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        upstream.aclose.assert_awaited_once()
 
     @pytest.mark.anyio
     async def test_closes_upstream_on_remote_protocol_error(self):
@@ -165,7 +165,7 @@ class TestProxyStreamingResponse:
         async for _ in resp.body_iterator:
             pass
 
-        upstream.aclose.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        upstream.aclose.assert_awaited_once()
 
 
 # --- ProxyBufferedResponse ---
@@ -205,7 +205,7 @@ class TestProxyBufferedResponse:
         with pytest.raises(httpx.ReadError):
             await ProxyBufferedResponse.from_upstream(upstream)
 
-        upstream.aclose.assert_awaited_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        upstream.aclose.assert_awaited_once()
 
 
 # --- ProxyClient._request_headers ---
@@ -226,7 +226,7 @@ class TestRequestHeaders:
                 "authorization": "Bearer token",
                 "content-type": "application/json",
                 "x-custom": "foo",
-            }
+            },
         )
         headers = ProxyClient._request_headers(req)
         assert headers["authorization"] == "Bearer token"
@@ -267,7 +267,7 @@ class TestResponseHeaders:
                 "content-type": "application/json",
                 "x-custom": "bar",
                 "content-length": "10",
-            }
+            },
         )
         headers = ProxyClient._response_headers(resp)
         assert headers["content-type"] == "application/json"
@@ -290,7 +290,7 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         mock_send = AsyncMock(return_value=upstream)
-        client._client.send = mock_send  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        client._client.send = mock_send  # ty: ignore[invalid-assignment]
 
         request = _make_starlette_request(method="POST", body=b'{"prompt":"hi"}')
         resp = await client.forward(request, path="/v1/chat")
@@ -305,8 +305,8 @@ class TestProxyClientForward:
             content=b'{"result": "ok"}',
         )
         # Make it behave like a streamed response (send with stream=True)
-        upstream.aread = AsyncMock(return_value=b'{"result": "ok"}')  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
-        upstream.aclose = AsyncMock()  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        upstream.aread = AsyncMock(return_value=b'{"result": "ok"}')  # ty: ignore[invalid-assignment]
+        upstream.aclose = AsyncMock()  # ty: ignore[invalid-assignment]
         upstream_mock = MagicMock(spec=httpx.Response)
         upstream_mock.status_code = 200
         upstream_mock.headers = httpx.Headers({"content-type": "application/json"})
@@ -314,7 +314,7 @@ class TestProxyClientForward:
         upstream_mock.aclose = AsyncMock()
 
         client = ProxyClient(base_url="http://upstream")
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
 
         request = _make_starlette_request(method="GET")
         resp = await client.forward(request, path="/v1/models")
@@ -333,8 +333,8 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         build_spy = MagicMock(wraps=client._client.build_request)
-        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]  # MagicMock spy structurally replaces real method for the test.
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]
+        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
 
         request = _make_starlette_request(query_string="foo=bar&baz=1")
         await client.forward(request, path="/api")
@@ -353,8 +353,8 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         build_spy = MagicMock(wraps=client._client.build_request)
-        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]  # MagicMock spy structurally replaces real method for the test.
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]
+        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
 
         request = _make_starlette_request(method="PUT", body=b"payload")
         await client.forward(request, path="/resource")
@@ -374,8 +374,8 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         build_spy = MagicMock(wraps=client._client.build_request)
-        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]  # MagicMock spy structurally replaces real method for the test.
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]
+        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
 
         request = _make_starlette_request(method="GET", body=b"")
         await client.forward(request, path="/endpoint")
@@ -394,6 +394,6 @@ class TestProxyClientClose:
     @pytest.mark.anyio
     async def test_close_delegates_to_httpx(self):
         client = ProxyClient(base_url="http://upstream")
-        client._client.aclose = AsyncMock()  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        client._client.aclose = AsyncMock()  # ty: ignore[invalid-assignment]
         await client.close()
-        client._client.aclose.assert_awaited_once()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        client._client.aclose.assert_awaited_once()  # ty: ignore[unresolved-attribute]

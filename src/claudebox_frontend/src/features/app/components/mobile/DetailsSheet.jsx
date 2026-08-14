@@ -6,7 +6,6 @@ import { computeContextBar } from '../../../../utils/contextBar'
 import { formatDurationClock, getWorkspaceName } from '../../../../utils/formatters'
 
 /**
- * Render session metadata sheet below top bar.
  * @param {object} props
  * @param {Function} props.onClose - Close the sheet.
  */

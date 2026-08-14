@@ -7,9 +7,7 @@ import useDropdown from '../hooks/useDropdown'
 import useDropdownPosition from '../hooks/useDropdownPosition'
 
 /**
- * Render the resume split-button: Play (current tab), chevron (dropdown with
- * "Open session" / "Open in new browser tab"). Click Play with Alt or
- * middle-click also opens in a new tab.
+ * Click Play with Alt or middle-click also opens in a new tab.
  *
  * @param {object} props
  * @param {() => void} props.onResume - Called for in-tab resume.

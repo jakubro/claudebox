@@ -8,12 +8,7 @@ from claudebox import DataClass
 
 @dataclass
 class RegisteredWorkspace(DataClass):
-    """A workspace registered with the daemon.
-
-    Attributes:
-        path: Absolute path to the workspace root directory.
-        id: Short identifier derived from workspace directory name.
-    """
+    """A workspace registered with the daemon; id is derived from the directory name."""
 
     id: str
     path: Path

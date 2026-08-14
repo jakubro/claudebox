@@ -3,7 +3,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock hooks
 let mockSessionId = 'test-session'
 let mockAllBookmarks = {}
 let mockBookmarkMeta = {}
@@ -15,6 +14,7 @@ let mockSessions = []
 vi.mock('../../context/AppActionsContext', () => ({
   useAppActions: () => ({
     markUserIntentRef: { current: null },
+    scrollToTurnRef: { current: null },
     markProgrammaticScrollRef: { current: null },
   }),
 }))
@@ -193,9 +193,7 @@ describe('BookmarksPanel', () => {
 
     render(<BookmarksPanel />)
 
-    // "This session" tab should show count 2
     expect(screen.getByText('2')).toBeInTheDocument()
-    // "All sessions" tab should show count 3
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
@@ -282,14 +280,12 @@ describe('BookmarksPanel', () => {
     })
 
     it('auto-switch overrides a manual click on the next session-state change', () => {
-      // Active session, user picks "All sessions" manually.
       mockSessionId = 'sess-A'
       const { rerender } = render(<BookmarksPanel />)
       fireEvent.click(screen.getByText('All sessions'))
       const allTab = screen.getByText('All sessions').closest('button, [role="button"], div')
       expect(allTab.className).toMatch(/active/)
 
-      // Session changes - auto-switch wins, tab returns to "This session".
       mockSessionId = 'sess-B'
       rerender(<BookmarksPanel />)
 

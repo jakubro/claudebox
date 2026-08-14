@@ -1,9 +1,12 @@
-/** Partition turn blocks into singletons + grouped runs of task-list tool blocks. */
+/** Partition turn blocks into singletons, grouped Todos runs, and a gathered Lookups group. */
 
-import { BlockType, ToolName } from '../../../../../config/schema'
+import { isLookupsGroupingEnabled } from '../../../../../config/features'
+import { BlockType, normalizeToolName, ToolName } from '../../../../../config/schema'
+import { getToolConfig } from '../../../../../config/toolRegistry'
+import { isHiddenToolSearch } from '../../../../../utils/eventProcessing'
 
-// Task-list tool families that participate in the grouped Todos run. TaskOutput
-// + the bare `Task` tool break the run (they render as ordinary blocks).
+// Task-list families in the grouped Todos run; TaskOutput and the bare Task tool are excluded
+// so they render as ordinary blocks and break the run.
 const TASK_LIST_TOOLS = new Set([
   ToolName.TASK_CREATE,
   ToolName.TASK_UPDATE,
@@ -11,29 +14,31 @@ const TASK_LIST_TOOLS = new Set([
   ToolName.TASK_GET,
 ])
 
-// Mutation tools (within TASK_LIST_TOOLS) that actually produce rows in the
-// grouped Todos view. A run composed entirely of inspection tools
-// (TaskList / TaskGet) demotes to per-block singles so the per-block ToolBlock
-// dispatch can render each inspection's payload.
+// Mutation tools that make a run render as the grouped Todos view; inspection-only runs
+// (TaskList/TaskGet, no mutation) demote to per-block singles.
 const TASK_MUTATION_TOOLS = new Set([ToolName.TASK_CREATE, ToolName.TASK_UPDATE])
 
 /**
- * Partition `blocks` into segments: single passes for non-task-list blocks +
- * grouped runs for consecutive task-list tool blocks within one subagent
- * partition. Singletons in the task-list set still render as a group when they
- * are mutations; inspection-only runs (TaskList / TaskGet without any mutation)
- * demote to per-block segments.
+ * Partitions blocks into segments: consecutive task-list tool blocks within one subagent
+ * partition form a `'todos-group'`, unless the run is inspection-only (TaskList/TaskGet with no
+ * mutation), which demotes to per-block `'single'` segments. A second pass then gathers every
+ * read-only `'single'` into one trailing `'lookups-group'` (see `gatherLookups`). Tool names are
+ * normalised so LangGraph's snake_case names classify like their PascalCase equivalents.
  *
  * @param {Array<object>} blocks - Processed event blocks (TurnBlockList input).
- * @returns {Array<{kind: 'single', block: object, index: number} | {kind: 'todos-group', blocks: Array<object>}>}
+ * @returns {Array<{kind: 'single', block: object, index: number} | {kind: 'todos-group', blocks: Array<object>} | {kind: 'lookups-group', entries: Array<object>}>}
  */
 export function groupBlocks(blocks) {
   const segments = []
   let run = null
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
+    if (block.type === BlockType.TOOL && isHiddenToolSearch(block.toolUse, block.toolResult)) {
+      continue
+    }
     const tu = block.type === BlockType.TOOL ? block.toolUse : null
-    const isListTool = !!tu && TASK_LIST_TOOLS.has(tu.content)
+    const toolName = tu ? normalizeToolName(tu.content) : null
+    const isListTool = !!tu && TASK_LIST_TOOLS.has(toolName)
     if (isListTool) {
       const partition = tu.parent_tool_use_id ?? null
       if (run && run.partition === partition) {
@@ -56,14 +61,12 @@ export function groupBlocks(blocks) {
   if (run) {
     flushRun(run, segments)
   }
-  return segments
+  return gatherLookups(segments)
 }
 
 /**
- * Flush an in-flight run: emit a `'todos-group'` segment when the run contains
- * at least one TaskCreate / TaskUpdate, otherwise demote each block to a
- * `'single'` segment (inspection-only runs render per-block so their payload
- * stays visible in the chat).
+ * Flushes a run: emits a `'todos-group'` if it contains a mutation, else demotes each
+ * block to `'single'` so inspection-only payloads stay visible.
  */
 function flushRun(run, segments) {
   if (run.entries.some(e => isMutation(e.block))) {
@@ -76,5 +79,37 @@ function flushRun(run, segments) {
 }
 
 function isMutation(block) {
-  return TASK_MUTATION_TOOLS.has(block.toolUse?.content)
+  return TASK_MUTATION_TOOLS.has(normalizeToolName(block.toolUse?.content))
+}
+
+/**
+ * Second pass: gathers every read-only `'single'` segment into a trailing `'lookups-group'`,
+ * preserving call order (segments already in a `'todos-group'` aren't candidates). Returns
+ * `segments` unchanged below a two-entry threshold.
+ *
+ * @param {Array<object>} segments - Output of the positional pass above.
+ * @returns {Array<object>}
+ */
+function gatherLookups(segments) {
+  if (!isLookupsGroupingEnabled()) {
+    return segments
+  }
+
+  const kept = []
+  const lookups = []
+  for (const segment of segments) {
+    const isReadOnlySingle =
+      segment.kind === 'single' &&
+      segment.block.type === BlockType.TOOL &&
+      getToolConfig(segment.block.toolUse?.content).category === 'read-only'
+    if (isReadOnlySingle) {
+      lookups.push(segment)
+    } else {
+      kept.push(segment)
+    }
+  }
+  if (lookups.length < 2) {
+    return segments
+  }
+  return [...kept, { kind: 'lookups-group', entries: lookups }]
 }

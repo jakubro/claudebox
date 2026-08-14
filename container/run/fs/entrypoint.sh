@@ -1,7 +1,6 @@
 #!/bin/bash
-# Container entrypoint
-# - Launches agent:           ./entrypoint.sh OR ./entrypoint.sh -- [<arg>...]
-# - Launches custom command:  ./entrypoint.sh <cmd> [<arg>...]
+# Launches agent: ./entrypoint.sh OR ./entrypoint.sh -- [<arg>...]
+# Launches custom command: ./entrypoint.sh <cmd> [<arg>...]
 set -euo pipefail
 
 # Executes profile hook once container starts

@@ -6,16 +6,13 @@ import {
   findEnclosingCollapsed,
 } from '../../../../utils/xmlBlocks'
 
-/**
- * Manage collapse/expand operations for XML blocks in textarea content.
- *
- * All operations are pure text transformations: take value + cursor position,
- * return transformed value + new cursor. No React or DOM dependencies.
- */
+// Shared (not per-instance) so ids stay unique if collapsed text is copy-pasted between boxes.
+let globalCounter = 0
+
+/** Pure text transforms - value + cursor in, new value + cursor out. No React or DOM deps. */
 export default class BlockCollapseManager {
   constructor() {
     this._collapsed = new Map()
-    this._counter = 0
   }
 
   /** Whether any blocks are currently collapsed. */
@@ -35,7 +32,7 @@ export default class BlockCollapseManager {
       return null
     }
 
-    const id = ++this._counter
+    const id = ++globalCounter
     const placeholder = `<${block.tagName}...${id}>`
     this._collapsed.set(placeholder, block.fullMatch)
 
@@ -59,7 +56,7 @@ export default class BlockCollapseManager {
       )
       const assignments = innermost.map(m => ({
         ...m,
-        id: ++this._counter,
+        id: ++globalCounter,
       }))
       for (let i = assignments.length - 1; i >= 0; i--) {
         const m = assignments[i]
@@ -120,9 +117,13 @@ export default class BlockCollapseManager {
     return this.expandAll(value)
   }
 
-  /** Reset all collapse state. */
+  /** Reset this instance's collapse state. Never touches the shared id counter. */
   reset() {
     this._collapsed.clear()
-    this._counter = 0
   }
+}
+
+// Test-only; attached (not exported) so knip doesn't flag a test-only binding as unused.
+BlockCollapseManager.resetGlobalCounterForTests = function resetGlobalCounterForTests() {
+  globalCounter = 0
 }

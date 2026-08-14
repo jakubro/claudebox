@@ -56,7 +56,6 @@ describe('detectLanguageFromContent', () => {
   })
 
   it('returns a language for code-like content', () => {
-    // hljs auto-detection isn't always accurate, but should return something for code
     const code = `
 function helloWorld() {
   console.log("Hello, World!");
@@ -144,8 +143,7 @@ describe('detectLanguage', () => {
 
 Some **bold** text and a [link](url).
 `
-    // Without checkMarkdown, hljs may not detect markdown with high confidence
-    // With checkMarkdown (heuristics), our detection kicks in
+    // hljs alone may not detect markdown with confidence; checkMarkdown's heuristics catch it
     expect(detectLanguage(md, null, true)).toBe('markdown')
   })
 

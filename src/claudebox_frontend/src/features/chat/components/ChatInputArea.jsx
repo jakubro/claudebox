@@ -8,10 +8,10 @@ const NOOP = () => {}
 /**
  * Render the chat composer with welcome-state masking applied.
  *
- * On welcome (no active session), every interactive callback is replaced with
- * a no-op and `deferSend` routes to the welcome bridge so the first submitted
- * message buffers into the new-session bootstrap. On an active session, every
- * action prop forwards to the real ChatPanel handlers.
+ * On welcome (no active session), every interactive callback is replaced with a no-op and
+ * `deferSend` routes to the welcome bridge so the first submitted message buffers into the
+ * new-session bootstrap. On an active session, every action prop forwards to the real ChatPanel
+ * handlers.
  *
  * @param {object} props
  * @param {boolean} props.isWelcome - True before any session attaches.

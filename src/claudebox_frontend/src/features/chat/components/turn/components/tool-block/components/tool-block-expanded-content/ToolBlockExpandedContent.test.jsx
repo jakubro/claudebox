@@ -30,6 +30,14 @@ vi.mock('./components/PersistedOutputContent', () => ({
   ),
 }))
 
+vi.mock('./components/tool-content-renderer/components/code-block', () => ({
+  SyntaxHighlightedCodeBlock: ({ code, language, showGutter }) => (
+    <div data-testid="syntax-code-block" data-language={language} data-show-gutter={showGutter}>
+      {code}
+    </div>
+  ),
+}))
+
 vi.mock('@uiw/react-json-view', () => ({
   default: ({ value }) => <div data-testid="json-view">{JSON.stringify(value)}</div>,
 }))
@@ -68,7 +76,6 @@ describe('ToolBlockExpandedContent', () => {
     jsonData: null,
     skillContent: null,
     questions: null,
-    pendingQuestions: false,
     plan: null,
     todoData: null,
     taskPrompt: null,
@@ -201,7 +208,7 @@ describe('ToolBlockExpandedContent', () => {
     expect(screen.queryByTestId('nested-tool')).not.toBeInTheDocument()
   })
 
-  it('renders QuestionsDisplay when questions exist and not pending', () => {
+  it('renders QuestionsDisplay when questions exist', () => {
     const questions = [
       { header: 'Auth', question: 'Which method?', options: [{ label: 'OAuth' }] },
       { header: 'DB', question: 'Which database?', options: [{ label: 'Postgres' }] },
@@ -209,24 +216,13 @@ describe('ToolBlockExpandedContent', () => {
 
     renderExpanded({
       ...defaultProps,
-      contentData: { ...defaultContentData, questions, pendingQuestions: false },
+      contentData: { ...defaultContentData, questions },
     })
 
     // Real QuestionsDisplay renders QuestionCard with header and question text
     expect(screen.getByText('Auth')).toBeInTheDocument()
     expect(screen.getByText('Which method?')).toBeInTheDocument()
     expect(screen.getByText('DB')).toBeInTheDocument()
-  })
-
-  it('does not render QuestionsDisplay when questions are pending', () => {
-    const questions = [{ header: 'Auth', question: 'Which method?', options: [{ label: 'OAuth' }] }]
-
-    renderExpanded({
-      ...defaultProps,
-      contentData: { ...defaultContentData, questions, pendingQuestions: true },
-    })
-
-    expect(screen.queryByText('Which method?')).not.toBeInTheDocument()
   })
 
   it('does not render QuestionsDisplay when questions is empty', () => {
@@ -410,5 +406,83 @@ describe('ToolBlockExpandedContent', () => {
     })
 
     expect(screen.queryByTestId('json-view')).not.toBeInTheDocument()
+  })
+
+  describe('Bash Command / Result sections', () => {
+    const bashProps = { ...defaultProps, toolName: 'Bash', command: 'ls -la' }
+
+    it('renders the full command in a Command section, shell-highlighted', () => {
+      renderExpanded(bashProps)
+
+      expect(screen.getByText('Command')).toBeInTheDocument()
+      const code = screen.getByTestId('syntax-code-block')
+      expect(code).toHaveTextContent('ls -la')
+      expect(code).toHaveAttribute('data-language', 'bash')
+    })
+
+    it('opts the Command section out of the line-number gutter', () => {
+      renderExpanded(bashProps)
+
+      expect(screen.getByTestId('syntax-code-block')).toHaveAttribute('data-show-gutter', 'false')
+    })
+
+    it('does not render a Command section for non-Bash tools', () => {
+      renderExpanded({ ...defaultProps, command: 'ls -la' })
+
+      expect(screen.queryByText('Command')).not.toBeInTheDocument()
+    })
+
+    it('does not render a Command section for Bash with no command', () => {
+      renderExpanded({ ...defaultProps, toolName: 'Bash', command: null })
+
+      expect(screen.queryByText('Command')).not.toBeInTheDocument()
+    })
+
+    it('wraps Bash output in a Result section', () => {
+      renderExpanded({
+        ...bashProps,
+        contentData: { ...defaultContentData, details: '4 lines output' },
+      })
+
+      expect(screen.getByText('Result')).toBeInTheDocument()
+      expect(document.querySelector('.tool-result-section')).toBeInTheDocument()
+    })
+
+    it('omits the Result section entirely when Bash output is empty', () => {
+      renderExpanded({ ...bashProps, contentData: { ...defaultContentData, details: '' } })
+
+      expect(screen.queryByText('Result')).not.toBeInTheDocument()
+      expect(document.querySelector('.tool-result-section')).not.toBeInTheDocument()
+    })
+
+    it('shows the Command section with no Result section while the command is still pending', () => {
+      renderExpanded({ ...bashProps, contentData: { ...defaultContentData, details: null } })
+
+      expect(screen.getByText('Command')).toBeInTheDocument()
+      expect(screen.queryByText('Result')).not.toBeInTheDocument()
+    })
+
+    it('still omits the generic Input section for Bash', () => {
+      renderExpanded({
+        ...bashProps,
+        contentData: { ...defaultContentData, details: 'output' },
+      })
+
+      expect(screen.queryByText('Input')).not.toBeInTheDocument()
+    })
+
+    it('positions the Command section above the Result section', () => {
+      renderExpanded({
+        ...bashProps,
+        contentData: { ...defaultContentData, details: 'output' },
+      })
+
+      const expandedContent = document.querySelector('.tool-expanded-content')
+      const commandSection = expandedContent.querySelector('.tool-command-section')
+      const resultSection = expandedContent.querySelector('.tool-result-section')
+      expect(commandSection.compareDocumentPosition(resultSection)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+    })
   })
 })

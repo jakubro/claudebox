@@ -49,8 +49,8 @@ export default function useDockviewLayout() {
       initialRestoreRef.current = sidePanel.restoreFromServer(null).then(({ loaded }) => {
         if (loaded) {
           updateActivePanels()
-          // fromJSON restore creates groups via its own lifecycle - re-apply
-          // the data-main-group marker so MainPanel.css hides the tab bar.
+          // fromJSON restore creates groups via its own lifecycle - re-apply the marker so
+          // MainPanel.css hides the tab bar.
           applyMainGroupMarker(api)
         } else if (api.panels.length === 0) {
           // fromJSON.clear() may have destroyed panels before the restore failed - rebuild
@@ -58,10 +58,8 @@ export default function useDockviewLayout() {
         }
       })
 
-      // onDidAddGroup fires on fromJSON deserialization, drag-creates-new-group,
-      // and programmatic createGroup. Re-apply the data-main-group marker so
-      // returning users (who load via restoreFromServer + fromJSON, bypassing
-      // buildDefaultLayout) see the main panel without a tab bar at first paint.
+      // onDidAddGroup fires on fromJSON deserialization, drag-create, and programmatic createGroup -
+      // re-apply the data-main-group marker so returning users see the main panel without a tab bar.
       api.onDidAddGroup(() => {
         applyMainGroupMarker(api)
       })
@@ -105,8 +103,8 @@ export default function useDockviewLayout() {
     sidePanelRef.current?.close(panelId)
   }, [])
 
-  // Guard flag shared with AppActionsContext - prevents scroll callbacks from
-  // clobbering saved position when setActive() triggers a browser scroll reset.
+  // Guard flag shared with AppActionsContext - prevents scroll callbacks from clobbering saved
+  // position when setActive() triggers a browser scroll reset.
   const panelSwitchingRef = useRef(false)
 
   const focusChatTab = useCallback(() => {
@@ -120,8 +118,7 @@ export default function useDockviewLayout() {
       if (messagesEl && savedScrollTop > 0) {
         messagesEl.scrollTop = savedScrollTop
       }
-      // Defer focus to second rAF so it runs after dockview's internal
-      // post-layout focus management settles.
+      // Defer focus to second rAF so it runs after dockview's internal post-layout focus management settles.
       requestAnimationFrame(() => {
         document.querySelector('.chat-input textarea')?.focus({ preventScroll: true })
         panelSwitchingRef.current = false
@@ -130,10 +127,8 @@ export default function useDockviewLayout() {
   }, [])
 
   /**
-   * Bind sessionIdRef and run the one-shot per-tab session-specific layout
-   * restore the first time a real session attaches. The save path inside
-   * onDidLayoutChange consults sessionIdRef to know which session to PATCH
-   * on layout changes, so this binding is required for layout persistence.
+   * Bind sessionIdRef and run the one-shot per-tab layout restore on first session attach; the
+   * onDidLayoutChange save path reads sessionIdRef to know which session to PATCH.
    */
   const onSessionAttach = useCallback(async sessionId => {
     const api = apiRef.current
@@ -165,7 +160,6 @@ export default function useDockviewLayout() {
     sidePanelRef.current?.exitMaximize()
   }, [])
 
-  // Cleanup save timeout on unmount
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {

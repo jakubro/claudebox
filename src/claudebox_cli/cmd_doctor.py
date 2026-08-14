@@ -11,31 +11,29 @@ import httpx
 from rich.console import Console
 
 from claudebox import Config
-from claudebox.constants import (
-    DAEMON_PORT,
-    WORKSPACE_MARKER,
-    daemon_base_url,
-    global_config_dir,
-    profile_dir,
-)
+from claudebox.constants import DAEMON_PORT, WORKSPACE_MARKER, daemon_base_url, global_config_dir
 
 
 NAME = "doctor"
 ORDER = 80
 DESCRIPTION = "Diagnose environment"
 EPILOG = """\
-examples:
+Examples:
   claudebox doctor               run all environment checks
   claudebox -v doctor            show the probe command behind each check
 
-doctor runs these checks in order, printing one row each:
-  runtime, runtime info, uv, daemon http, daemon unit, ~/.claudebox/lib,
-  profile, workspace (.workspace marker), permissions, disk (/tmp free)
+Checks (in order, one row each):
+  runtime, runtime info, uv, daemon http, daemon unit, watchdog timer,
+  ~/.claudebox/lib, profile, workspace (.workspace marker), permissions,
+  disk (/tmp free)
 
-icons:
-  ✓ pass    ✗ fail    ○ informational (no profile, no workspace marker)
+Icons:
+  ✓  the check passed
+  ✗  the check failed
+  ○  informational only (no profile configured, no workspace marker)
 
-exit code is 1 if any check failed, 0 otherwise.
+Notes:
+  Exit code is 1 if any check failed, 0 otherwise.
 """
 
 
@@ -45,8 +43,7 @@ _SUBPROCESS_TIMEOUT_SECONDS = 5
 _DISK_MIN_BYTES = 1 * 1024**3  # 1 GiB threshold for /tmp disk check
 
 
-# Doctor writes informational output to stdout so `claudebox doctor` is pipeable;
-# the framework's shared ``console`` targets stderr (for status output).
+# Doctor writes to stdout so it stays pipeable; the shared console targets stderr for status output.
 _stdout = Console()
 
 
@@ -61,19 +58,20 @@ class _CheckResult:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run the 9 ordered environment checks and aggregate exit code."""
+    """Run the 11 ordered environment checks and aggregate exit code."""
 
     verbose: bool = args.verbose
-    backend = Config.load().backend
+    config = Config.load()
 
     results = [
-        _check_runtime_version(backend),
-        _check_runtime_info(backend),
+        _check_runtime_version(config.backend),
+        _check_runtime_info(config.backend),
         _check_uv(),
         _check_daemon_http(),
         _check_daemon_unit(),
+        _check_watchdog_timer(),
         _check_claudebox_lib(),
-        _check_profile(),
+        _check_profile(config.profile),
         _check_workspace_marker(),
         _check_permissions(),
         _check_disk(),
@@ -175,6 +173,18 @@ def _check_daemon_unit() -> _CheckResult:
     return _CheckResult("✓", "daemon unit", "claudebox-daemon.service enabled", command)
 
 
+def _check_watchdog_timer() -> _CheckResult:
+    """systemd --user timer installed and enabled for the daemon watchdog."""
+
+    command = "systemctl --user is-enabled claudebox-watchdog.timer"
+    output = _run_capture(["systemctl", "--user", "is-enabled", "claudebox-watchdog.timer"])
+
+    if output is None or output.strip() != "enabled":
+        return _CheckResult("✗", "watchdog timer", "not enabled", command)
+
+    return _CheckResult("✓", "watchdog timer", "claudebox-watchdog.timer enabled", command)
+
+
 def _check_claudebox_lib() -> _CheckResult:
     """``~/.claudebox/lib`` is a reachable symlink or a git checkout."""
 
@@ -194,20 +204,31 @@ def _check_claudebox_lib() -> _CheckResult:
         return _CheckResult("✗", "~/.claudebox/lib", "missing or invalid", command)
 
 
-def _check_profile() -> _CheckResult:
-    """``~/.claudebox/profile`` is informational (○) when absent, ✓ when readable."""
+def _check_profile(profile: Path | None) -> _CheckResult:
+    """Configured profile is informational when absent, success when a readable directory, failure otherwise."""
 
-    profile = profile_dir()
+    if profile is None:
+        return _CheckResult("○", "profile", "no profile configured", "read Config.load().profile")
+
     command = f"inspect {profile}"
 
-    if profile.exists() and os.access(profile, os.R_OK):
-        return _CheckResult("✓", "profile", str(profile), command)
+    if not profile.exists():
+        reason = "missing"
+    elif not profile.is_dir():
+        reason = "not a directory"
+    elif not os.access(profile, os.R_OK):
+        reason = "not readable"
+    else:
+        reason = None
 
-    return _CheckResult("○", "profile", "no profile configured", command)
+    if reason:
+        return _CheckResult("✗", "profile", f"{profile} ({reason})", command)
+
+    return _CheckResult("✓", "profile", str(profile), command)
 
 
 def _check_workspace_marker() -> _CheckResult:
-    """``.workspace`` walk-up from cwd - informational (○) when not found."""
+    """``.workspace`` walk-up from cwd - informational when not found."""
 
     cwd = Path.cwd()
     command = f"walk-up {WORKSPACE_MARKER} from {cwd}"

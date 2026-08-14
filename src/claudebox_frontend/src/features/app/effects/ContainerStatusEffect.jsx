@@ -7,13 +7,8 @@ import { useSessionsList } from '../../../context/SessionsContext'
 import { resolveSessionIdFromContainer } from '../../../utils/containerLookup'
 
 /**
- * React to daemon container_status events to maintain the stopping sessions set.
- *
- * On "stopping": resolve containerId -> sessionId, cache the mapping, and mark as stopping.
- * On "stopped": use cached mapping (avoids race with sessions refetch), remove from stopping
- * set and clean up container mapping.
- *
- * Renders nothing - exists solely for cross-tab stopping state coordination.
+ * On "stopping": resolve containerId -> sessionId, cache it, and mark as stopping. On "stopped":
+ * use the cached mapping (avoids a race with the sessions refetch), then clear stopping/mapping.
  */
 export default function ContainerStatusEffect() {
   const { lastContainerEvent } = useDaemonStreamContext()
@@ -26,8 +21,8 @@ export default function ContainerStatusEffect() {
   } = useContainerMap()
   const { sessions } = useSessionsList()
 
-  // Cache containerId -> sessionId from "stopping" events so "stopped" lookups
-  // survive the sessions refetch race (backend clears container_id before broadcasting "stopped")
+  // Cache containerId -> sessionId from "stopping" events so "stopped" lookups survive the sessions
+  // refetch race (backend clears container_id before broadcasting "stopped").
   const stoppingCacheRef = useRef(new Map())
 
   useEffect(() => {
@@ -38,7 +33,6 @@ export default function ContainerStatusEffect() {
     const { containerId, status } = lastContainerEvent
 
     if (status === 'stopping') {
-      // Resolve containerId -> sessionId and cache for the subsequent "stopped" event
       const sessionId = resolveSessionIdFromContainer(containerId, containerMap, sessions)
 
       if (sessionId) {
@@ -46,7 +40,6 @@ export default function ContainerStatusEffect() {
         addStoppingSession(sessionId)
       }
     } else if (status === 'stopped') {
-      // Use cached mapping first - the live sources may already be stale
       const sessionId =
         stoppingCacheRef.current.get(containerId) ??
         resolveSessionIdFromContainer(containerId, containerMap, sessions)
@@ -66,10 +59,9 @@ export default function ContainerStatusEffect() {
     removeSessionContainer,
   ])
 
-  // Self-heal from the authoritative sessions list: when the refreshed list shows
-  // a stopping session with no live container, drop the transient stopping hint
-  // (and any stale eager mapping) so status settles to gray. Covers the cases the
-  // SSE "stopped" handler above can miss (its cached containerId -> sessionId map).
+  // Self-heal from the authoritative sessions list: when a stopping session shows no live container,
+  // drop the transient stopping hint and stale eager mapping so status settles to gray - covers
+  // cases the SSE "stopped" handler above can miss.
   useEffect(() => {
     if (stoppingSessions.size === 0) {
       return

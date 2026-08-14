@@ -3,6 +3,7 @@
 import JsonView from '@uiw/react-json-view'
 import { darkTheme } from '@uiw/react-json-view/dark'
 import { useMemo } from 'react'
+import CopyButton from '../../../../../../../../components/CopyButton.jsx'
 import Markdown from '../../../../../../../../components/Markdown'
 import { computeTimingOffsets } from '../../../../../../../../utils/eventProcessing'
 import { hasDiffItems } from '../../../../../../../../utils/todoDiff'
@@ -17,28 +18,16 @@ import TaskPrompt from './components/TaskPrompt'
 import TaskResult from './components/TaskResult'
 import TodoList from './components/TodoList'
 import ToolContentRenderer from './components/tool-content-renderer'
+import { SyntaxHighlightedCodeBlock } from './components/tool-content-renderer/components/code-block'
 
 /**
- * Render the expanded content section of a ToolBlock.
- * Consumes TurnContext for turnStartTime, now, isActiveTurn, todoDiffs.
- * @param {Object} props
+ * Consumes TurnContext for turnStartTime.
  * @param {string} props.toolName - Name of the tool (e.g., 'Task', 'Read').
- * @param {string} [props.filePath] - File path for file-based tools.
- * @param {string} [props.outputMode] - Output mode for content renderer.
+ * @param {string} [props.command] - Raw Bash command, rendered in its own Command section.
  * @param {Object} props.contentData - Grouped content data object.
- * @param {string} [props.contentData.details] - Details or result text to display.
- * @param {Object} [props.contentData.jsonData] - JSON data to render in a viewer.
- * @param {string} [props.contentData.skillContent] - Skill markdown content.
- * @param {Array} [props.contentData.questions] - Answered questions to display.
- * @param {Array} [props.contentData.pendingQuestions] - Questions awaiting user response.
- * @param {string} [props.contentData.plan] - Plan markdown content.
- * @param {Array} [props.contentData.todoData] - Todo items to display.
- * @param {string} [props.contentData.taskPrompt] - Task prompt text.
- * @param {Array} [props.contentData.systemReminders] - System reminder strings.
  * @param {Object} [props.contentData.persistedOutput] - Persisted output info with fileSize and previewSize.
  * @param {Object} [props.toolInput] - Raw tool input for unhandled tools (null for handled tools).
  * @param {Array} props.nestedBlocks - Array of nested tool use/result pairs.
- * @param {Object} [props.todoDiff] - Diff object for todo changes.
  * @param {string} [props.toolUseId] - Tool use ID for persisted output lookup.
  * @param {number} [props.lineOffset] - Starting line number for Edit tool diffs.
  */
@@ -46,6 +35,7 @@ export default function ToolBlockExpandedContent({
   toolName,
   filePath,
   outputMode = null,
+  command = null,
   contentData,
   toolInput = null,
   nestedBlocks,
@@ -60,7 +50,6 @@ export default function ToolBlockExpandedContent({
     jsonData,
     skillContent,
     questions,
-    pendingQuestions,
     plan,
     todoData,
     taskPrompt,
@@ -69,8 +58,9 @@ export default function ToolBlockExpandedContent({
   } = contentData
 
   const hasNested = nestedBlocks.length > 0
-  const showQuestions = questions && questions.length > 0 && !pendingQuestions
+  const showQuestions = questions && questions.length > 0
   const isTask = toolName === 'Task'
+  const isBash = toolName === 'Bash'
 
   // Precompute threshold-filtered timing offsets for nested blocks
   const nestedOffsets = useMemo(() => {
@@ -108,7 +98,19 @@ export default function ToolBlockExpandedContent({
         </CollapsibleSection>
       )}
 
-      {/* Non-Task output: collapsible Output wrapper for unhandled tools, plain for handled */}
+      {/* Bash: purpose-built Command section, not the generic Input dump above (toolInput stays null for Bash). */}
+      {isBash && command && (
+        <CollapsibleSection label="Command" defaultExpanded className="tool-command-section">
+          <div className="tool-details-wrapper">
+            <CopyButton text={command} className="tool-copy-btn" title="Copy command" size={12} />
+            <div className="tool-details">
+              <SyntaxHighlightedCodeBlock code={command} language="bash" showGutter={false} />
+            </div>
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Non-Task output: collapsible Output/Result wrapper for unhandled tools and Bash, plain for other handled tools */}
       {(() => {
         const outputContent = (
           <>
@@ -134,6 +136,13 @@ export default function ToolBlockExpandedContent({
             )}
           </>
         )
+        if (isBash) {
+          return details ? (
+            <CollapsibleSection label="Result" defaultExpanded className="tool-result-section">
+              {outputContent}
+            </CollapsibleSection>
+          ) : null
+        }
         if (toolInput && (details || jsonData)) {
           return (
             <CollapsibleSection label="Output" defaultExpanded className="tool-output-section">
@@ -177,9 +186,7 @@ export default function ToolBlockExpandedContent({
         </div>
       )}
 
-      {/* TaskCreate / TaskUpdate route to the same TodoList renderer fed by
-          appendTaskDiffs; their formatters do not populate todoData, so a
-          non-empty todoDiff also gates rendering. */}
+      {/* TaskCreate / TaskUpdate route to the same TodoList renderer fed by appendTaskDiffs; their formatters do not populate todoData, so a non-empty todoDiff also gates rendering. */}
       {((todoData && todoData.length > 0) || hasDiffItems(todoDiff)) && (
         <TodoList todos={todoData} todoDiff={todoDiff} />
       )}

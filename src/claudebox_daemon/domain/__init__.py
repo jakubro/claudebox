@@ -24,10 +24,7 @@ current: DaemonService | None = None
 
 @contextlib.asynccontextmanager
 async def managed():
-    """Create, start, yield, and stop the daemon service.
-
-    Sets the package-level singleton (domain.current) for handler access.
-    """
+    """Create, start, yield, and stop the daemon service, setting domain.current for handler access."""
 
     global current
 

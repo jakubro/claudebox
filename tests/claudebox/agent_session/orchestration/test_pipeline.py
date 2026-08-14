@@ -161,12 +161,7 @@ class TestEchoSuppressionInRun:
 
     @staticmethod
     def _patch_pipeline_for_run(pipeline, messages):
-        """Prepare a pipeline to execute _run() with a controlled message sequence.
-
-        Sets up the SDK client mock so that ``receive_events`` yields *messages*
-        exactly once (one full response cycle), then a second call stops the loop.
-        This mirrors real behaviour where _run() loops over response cycles.
-        """
+        """Make ``receive_events`` yield *messages* once, then stop the loop on the next call."""
 
         from claudebox.agent_session.runtime_claude import ClaudeRuntime
 
@@ -180,7 +175,6 @@ class TestEchoSuppressionInRun:
                 for m in messages:
                     yield ClaudeRuntime._translate_sdk_message(m)
             else:
-                # Second iteration: stop the loop
                 pipeline._running = False
 
                 return
@@ -201,8 +195,7 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # The user message should have been suppressed - on_event never called
-        pipeline._on_event.assert_not_called()  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        pipeline._on_event.assert_not_called()  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_flag_resets_after_suppression(self):
@@ -229,9 +222,8 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # msg1 suppressed, msg2 forwarded - on_event should have been called
-        assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-        forwarded_types = [call.args[0].type for call in pipeline._on_event.call_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]
+        forwarded_types = [call.args[0].type for call in pipeline._on_event.call_args_list]  # ty: ignore[unresolved-attribute]
         assert "user" in forwarded_types
 
     @pytest.mark.anyio
@@ -251,9 +243,8 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # Assistant message must not be suppressed
-        assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-        forwarded_types = [call.args[0].type for call in pipeline._on_event.call_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]
+        forwarded_types = [call.args[0].type for call in pipeline._on_event.call_args_list]  # ty: ignore[unresolved-attribute]
         assert "assistant" in forwarded_types
         # Flag still True because no UserMessage arrived to consume it
         assert pipeline._suppress_user_echo is True
@@ -272,8 +263,7 @@ class TestEchoSuppressionInRun:
 
         await pipeline._run()
 
-        # tool_use_result messages bypass suppression - should be forwarded
-        assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        assert pipeline._on_event.call_count >= 1  # ty: ignore[unresolved-attribute]
         # Flag should still be True (not consumed by a tool result message)
         assert pipeline._suppress_user_echo is True
 
@@ -303,15 +293,15 @@ class TestPromptCleanupOnError:
             pipeline._running = False
 
             raise RuntimeError("SDK error 2")
-            yield  # noqa: unreachable - makes this an async generator for async for
+            yield  # unreachable - makes this an async generator for async for
 
         pipeline._running = True
         pipeline._sdk_client.ready = asyncio.Event()
         pipeline._sdk_client.ready.set()
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
-            _error_then_stop  # Test coroutine structurally replaces the SDK receive method.
+            _error_then_stop
         )
-        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]
 
         await pipeline._run()
 
@@ -326,9 +316,8 @@ class TestCompactBoundaryFallbackOnError:
 
     @pytest.mark.anyio
     async def test_emits_boundary_when_compacting(self):
-        """If _turn_tracker.is_compacting is True when the loop errors, a synthetic
-        compact_boundary is injected before the system/error event so the frontend
-        clears its compaction state cleanly."""
+        """A loop error while compacting injects a synthetic compact_boundary
+        before the error event, so the frontend still clears its compaction state."""
 
         pipeline = _make_pipeline()
         pipeline._turn_tracker = MagicMock(is_compacting=True)
@@ -345,21 +334,19 @@ class TestCompactBoundaryFallbackOnError:
             pipeline._running = False
 
             return
-            yield  # noqa: unreachable - keeps this an async generator
+            yield  # unreachable - keeps this an async generator
 
         pipeline._running = True
         pipeline._sdk_client.ready = asyncio.Event()
         pipeline._sdk_client.ready.set()
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
-            _error_then_stop  # Test coroutine structurally replaces the SDK receive method.
+            _error_then_stop
         )
-        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]
 
         await pipeline._run()
 
-        # Boundary emitted before the error event - order matters so the frontend
-        # unsticks isCompacting before rendering the error.
-        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]
         assert injected[0]["subtype"] == "compact_boundary"
         assert injected[0]["message_data"]["compact_metadata"]["status"] == "error"
         assert injected[1]["subtype"] == "error"
@@ -383,19 +370,19 @@ class TestCompactBoundaryFallbackOnError:
             pipeline._running = False
 
             return
-            yield  # noqa: unreachable
+            yield  # unreachable
 
         pipeline._running = True
         pipeline._sdk_client.ready = asyncio.Event()
         pipeline._sdk_client.ready.set()
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
-            _error_then_stop  # Test coroutine structurally replaces the SDK receive method.
+            _error_then_stop
         )
-        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]  # AsyncMock structurally replaces real method for the test.
+        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]
 
         await pipeline._run()
 
-        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]
         assert all(c["subtype"] != "compact_boundary" for c in injected)
         assert any(c["subtype"] == "error" for c in injected)
 
@@ -412,7 +399,7 @@ class TestCompactBoundaryNormalPath:
 
         # Seed a compaction in flight through the real turn tracker.
         pipeline._turn_tracker.on_event(
-            AgentEvent(kind="user_message", payload=UserMessagePayload(uuid="t1", content=""))
+            AgentEvent(kind="user_message", payload=UserMessagePayload(uuid="t1", content="")),
         )
         pipeline._turn_tracker.on_inject(subtype="compact_start", is_human=False, turn_id=None)
         assert pipeline._turn_tracker.is_compacting is True
@@ -430,7 +417,7 @@ class TestCompactBoundaryNormalPath:
         pipeline._sdk_client.ready = asyncio.Event()
         pipeline._sdk_client.ready.set()
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
-            _yield_boundary_then_stop  # Test async-gen structurally replaces the SDK receive method.
+            _yield_boundary_then_stop
         )
 
         await pipeline._run()
@@ -454,7 +441,9 @@ class TestTaskNotificationNormalPath:
         notification = AgentEvent(
             kind="task_notification",
             payload=TaskNotificationPayload(
-                task_id="agent_abc", status="completed", summary="Done"
+                task_id="agent_abc",
+                status="completed",
+                summary="Done",
             ),
         )
 

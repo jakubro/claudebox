@@ -1,12 +1,12 @@
 /** Context for stable session tree state shared across recursive SessionTree nodes. */
 
+// audit-ignore-file: excessive-props
+
 import { createContext, useMemo } from 'react'
 
 export const SessionTreeContext = createContext(null)
 
 /**
- * Provide stable session tree state for recursive SessionTree nodes.
- *
  * @param {object} props
  * @param {React.ReactNode} props.children
  * @param {Map} props.childrenMap - Map of parent session ID to child sessions.

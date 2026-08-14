@@ -38,7 +38,6 @@ const ICONS = {
 }
 
 /**
- * Render a panel tab with icon, title, and close button.
  * @param {Object} props
  * @param {Object} props.api - Dockview panel API object.
  */
@@ -52,11 +51,9 @@ export default function IconTab({ api }) {
   const boardId = isBoardTab ? api.id.replace('board:', '') : null
   const Icon = isFileTab ? FileText : isBoardTab ? BoardIcon : ICONS[api.id]
 
-  // Track title in state to trigger re-render when it changes
   const [title, setTitle] = useState(api.title)
 
   useEffect(() => {
-    // Subscribe to title changes
     const disposable = api.onDidTitleChange(() => {
       setTitle(api.title)
     })
@@ -73,7 +70,6 @@ export default function IconTab({ api }) {
   }
 
   const handleMouseDown = e => {
-    // Middle-click (button 1) closes the tab
     if (e.button === 1) {
       e.preventDefault()
       e.stopPropagation()

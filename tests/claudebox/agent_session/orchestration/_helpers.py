@@ -6,11 +6,7 @@ from claudebox.agent_session.orchestration.models import PublishedEvent
 
 
 def make_published_event(**overrides) -> PublishedEvent:
-    """Create a minimal PublishedEvent with sensible defaults.
-
-    Override any field via keyword arguments. Default type is "assistant"
-    with subtype "text" - pass type="system" for system events.
-    """
+    """Minimal PublishedEvent with sensible defaults (type=assistant/subtype=text), overridable via kwargs."""
 
     defaults = {
         "type": "assistant",
@@ -25,4 +21,4 @@ def make_published_event(**overrides) -> PublishedEvent:
     }
     defaults.update(overrides)
 
-    return PublishedEvent(**defaults)  # ty: ignore[invalid-argument-type]  # Dynamic kwargs from heterogeneous defaults dict; ty can't narrow per-field types here.
+    return PublishedEvent(**defaults)  # ty: ignore[invalid-argument-type]  # kwargs merge defeats field narrowing.

@@ -5,16 +5,14 @@ import { useCallback, useState } from 'react'
 import { updateSession } from '../../../../../api/sessions'
 
 /**
- * Inline editor for renaming a session.
- * Renders either the rename (pencil) button or the full edit-mode UI
- * (input + save/cancel). When editing, the parent should hide the rest
- * of the left control group since the edit UI replaces it entirely.
+ * Renders either the rename (pencil) button or the full edit-mode UI (input + save/cancel).
+ * The parent should hide the rest of the left control group while editing, since the edit UI replaces it entirely.
  *
  * @param {Object} props
  * @param {string} props.sessionId - ID of the session to rename
  * @param {string|null} props.sessionName - Current session name
  * @param {Function} props.onSaved - Callback after successful save, receiving the new name (string or null)
- * @param {Function} props.children - Render function receiving { isEditing, renameButton }
+ * @param {Function} props.children - Render function receiving { renameButton }
  */
 export default function SessionNameEditor({ sessionId, sessionName, onSaved, children }) {
   const [isEditing, setIsEditing] = useState(false)

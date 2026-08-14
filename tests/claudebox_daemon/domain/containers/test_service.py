@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.containers.service - container lifecycle."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +33,8 @@ def _make_service(tmp_path: Path) -> tuple[ContainerService, MagicMock]:
     )
 
     proxy = MagicMock()
-    svc = ContainerService(ws, events, config, proxy)
+    executor = ThreadPoolExecutor(max_workers=2)
+    svc = ContainerService(ws, events, config, proxy, executor, executor)
     # Mock the container runtime backend to prevent real subprocess calls
     svc._runtime._backend = MagicMock()
 
@@ -113,7 +116,7 @@ class TestSyncState:
                 "Id": "backend-1",
                 "State": "running",
                 "Labels": {"claudebox-id": "c1", "claudebox-workspace": "test-ws"},
-            }
+            },
         ]
         svc._runtime._backend.get_host_port.return_value = 9090
 
@@ -139,7 +142,7 @@ class TestSyncState:
                 "Id": "new-b",
                 "State": "running",
                 "Labels": {"claudebox-id": "c1", "claudebox-workspace": "test-ws"},
-            }
+            },
         ]
         svc._runtime._backend.get_host_port.return_value = 8080
 
@@ -174,7 +177,7 @@ class TestSyncState:
                 "Id": "backend-1",
                 "State": "running",
                 "Labels": {"claudebox-id": "c1", "claudebox-workspace": "other-ws"},
-            }
+            },
         ]
 
         await svc.sync_state()
@@ -185,12 +188,23 @@ class TestSyncState:
     async def test_ignores_container_without_id_label(self, tmp_path):
         svc, _ = _make_service(tmp_path)
         svc._runtime._backend.list_containers.return_value = [
-            {"Id": "backend-1", "State": "running", "Labels": {}}
+            {"Id": "backend-1", "State": "running", "Labels": {}},
         ]
 
         await svc.sync_state()
 
         assert len(svc._containers) == 0
+
+    @pytest.mark.anyio
+    async def test_podman_dispatch_never_touches_the_default_executor(self, tmp_path):
+        """Podman dispatch never touches the default pool, so a wedged call can't starve it."""
+
+        svc, _ = _make_service(tmp_path)
+        svc._runtime._backend.list_containers.return_value = []
+
+        await svc.sync_state()
+
+        assert asyncio.get_running_loop()._default_executor is None  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_handles_backend_error(self, tmp_path):
@@ -206,7 +220,6 @@ class TestSyncState:
         # Should not crash - graceful fallback
         await svc.sync_state()
 
-        # Containers unchanged
         assert svc._containers["c1"].status == ContainerStatus.RUNNING
 
     @pytest.mark.anyio
@@ -217,7 +230,7 @@ class TestSyncState:
                 "Id": "backend-1",
                 "State": "running",
                 "Labels": {"claudebox-id": "c1", "claudebox-workspace": "test-ws"},
-            }
+            },
         ]
         svc._runtime._backend.get_host_port.side_effect = RuntimeError("no port")
 
@@ -266,7 +279,6 @@ class TestCreate:
 
         container = await svc.create()
 
-        # Podman container name should be the UUID id
         call_args = svc._runtime._backend.run_container.call_args[0]
         name_idx = list(call_args).index("--name")
         podman_name = call_args[name_idx + 1]
@@ -322,6 +334,35 @@ class TestUpdate:
 
         with pytest.raises(TypeError):
             await svc.update(c, bogus_field=1)
+
+    @pytest.mark.anyio
+    async def test_an_unchanged_field_writes_nothing(self, tmp_path, monkeypatch):
+        """A healthy probe re-reports the same status every few seconds; each rewrite took a lock."""
+
+        svc, _ = _make_service(tmp_path)
+        c = Container(id="c1", backend_id="b1", port=8080, status=ContainerStatus.RUNNING)
+        svc._containers["c1"] = c
+        writes = []
+        monkeypatch.setattr(svc, "save", AsyncMock(side_effect=lambda: writes.append(1)))
+
+        for _ in range(5):
+            await svc.update(c, status=ContainerStatus.RUNNING)
+
+        assert writes == []
+
+    @pytest.mark.anyio
+    async def test_a_changed_field_still_writes(self, tmp_path, monkeypatch):
+        svc, _ = _make_service(tmp_path)
+        c = Container(id="c1", backend_id="b1", port=8080, status=ContainerStatus.RUNNING)
+        svc._containers["c1"] = c
+        writes = []
+        monkeypatch.setattr(svc, "save", AsyncMock(side_effect=lambda: writes.append(1)))
+
+        await svc.update(c, session_id="sess-1")
+        await svc.update(c, session_id="sess-1")
+
+        assert c.session_id == "sess-1"
+        assert len(writes) == 1
 
 
 # --- remove ---

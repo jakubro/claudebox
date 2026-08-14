@@ -1,47 +1,44 @@
 /** Jump navigation between human messages in the chat scroll container. */
 
 import { useCallback, useRef } from 'react'
-import { MESSAGE_JUMP_HIGHLIGHT_MS, MESSAGE_JUMP_SCROLL_MS } from '../../../config/timing'
-import { scrollToEdge } from '../../../utils/scroll'
+import { MESSAGE_JUMP_HIGHLIGHT_MS } from '../../../config/timing'
+import { jumpTargets } from '../utils/jumpTargets'
+import { findTurnRow, MOUNT_FRAMES, pollFrames } from '../utils/mountTurn'
 
 const HIGHLIGHT_CLASS = 'jump-highlight'
+
+/** Ignore sub-pixel and near-edge offsets when deciding what is above/below. */
+const EDGE_EPSILON_PX = 10
 
 /**
  * Provide jump navigation callbacks between human messages in chat.
  *
- * Each jump picks an autoscroll engagement transition based on where it lands:
- * off-bottom jumps raise user intent (autoscroll disengages so streamed
- * content does not yank the view back); at-bottom jumps mark a return to the
- * bottom (autoscroll re-engages so the next streamed token keeps the view at
- * the bottom).
+ * Targets are resolved from the virtualizer's measurements rather than mounted elements: with the
+ * turn list windowed, a turn outside the viewport has no DOM, so a geometry sweep over
+ * `[data-testid="message-user"]` would only see turns already on screen, stalling upward jumps at
+ * the window edge. Measurements cover every turn, mounted or not.
+ *
+ * Each jump picks an autoscroll engagement transition based on where it lands: off-bottom jumps
+ * raise user intent (autoscroll disengages so streamed content doesn't yank the view back);
+ * at-bottom jumps mark a return to the bottom (autoscroll re-engages for the next streamed token).
  *
  * @param {object} messagesRef - Ref to the chat-messages scroll container.
- * @param {function} [markProgrammaticScroll] - Optional callback invoked
- *   before each scroll write so the controller treats the scroll as
- *   programmatic (does not raise user-intent in the onScroll handler).
- * @param {function} [markUserIntent] - Optional callback fired before an
- *   off-bottom jump so autoscroll disengages.
- * @param {function} [markReturnedToBottom] - Optional callback fired before
- *   an at-bottom jump so autoscroll re-engages.
+ * @param {function} [markProgrammaticScroll] - Brackets scroll writes so they
+ *   do not raise user-intent in the onScroll handler.
+ * @param {function} [markUserIntent] - Fired before an off-bottom jump.
+ * @param {function} [markReturnedToBottom] - Fired before an at-bottom jump.
+ * @param {object} [virtualizerRef] - Ref holding the turn virtualizer.
  */
 export default function useMessageJump(
   messagesRef,
   markProgrammaticScroll,
   markUserIntent,
   markReturnedToBottom,
+  virtualizerRef,
 ) {
   const highlightTimeoutRef = useRef(null)
 
-  const getMessageElements = useCallback(() => {
-    const container = messagesRef.current
-    if (!container) {
-      return []
-    }
-    return Array.from(container.querySelectorAll('[data-testid="message-user"]'))
-  }, [messagesRef])
-
   const highlightElement = useCallback(el => {
-    // Clear any pending highlight
     if (highlightTimeoutRef.current) {
       const prev = highlightTimeoutRef.current
       prev.el.classList.remove(HIGHLIGHT_CLASS)
@@ -56,70 +53,91 @@ export default function useMessageJump(
     highlightTimeoutRef.current = { el, timer }
   }, [])
 
+  /** Highlight a turn's user message, falling back to the turn itself. */
+  const highlightTurn = useCallback(
+    el => {
+      const target = el?.querySelector('[data-testid="message-user"]') || el
+      if (target) {
+        highlightElement(target)
+      }
+    },
+    [highlightElement],
+  )
+
+  /** Scroll a turn index to the top of the viewport and highlight it once mounted. */
+  const goToIndex = useCallback(
+    index => {
+      const virtualizer = virtualizerRef?.current
+      markUserIntent?.()
+      markProgrammaticScroll?.()
+      virtualizer.scrollToIndex(index, { align: 'start' })
+      // The turn may be windowed out and only mount on a later frame, so highlighting on the next
+      // frame alone would usually find nothing.
+      pollFrames(MOUNT_FRAMES, () => findTurnRow(index), highlightTurn)
+    },
+    [virtualizerRef, markProgrammaticScroll, markUserIntent, highlightTurn],
+  )
+
+  /** Land on an already-mounted turn (the active one) and highlight it. */
+  const goToElement = useCallback(
+    (container, target, engage) => {
+      engage()
+      markProgrammaticScroll?.()
+      container.scrollTop = target.start
+      highlightTurn(target.el)
+    },
+    [markProgrammaticScroll, highlightTurn],
+  )
+
   const jumpPrev = useCallback(() => {
     const container = messagesRef.current
     if (!container) {
       return
     }
-    const elements = getMessageElements()
-    if (elements.length === 0) {
+
+    const cutoff = container.scrollTop - EDGE_EPSILON_PX
+    const target = [...jumpTargets(container, virtualizerRef)].reverse().find(t => t.start < cutoff)
+    if (target?.el) {
+      goToElement(container, target, () => markUserIntent?.())
+      return
+    }
+    if (target) {
+      goToIndex(target.index)
       return
     }
 
-    const containerRect = container.getBoundingClientRect()
-    const containerTop = containerRect.top
-
-    // Find last message whose top is above viewport (must be at least 10px above)
-    for (let i = elements.length - 1; i >= 0; i--) {
-      const rect = elements[i].getBoundingClientRect()
-      if (rect.top < containerTop - 10) {
-        markUserIntent?.()
-        markProgrammaticScroll?.()
-        scrollToEdge(container, elements[i], 'top', MESSAGE_JUMP_SCROLL_MS)
-        highlightElement(elements[i])
-        return
-      }
-    }
-
-    // No message above viewport
+    // Nothing above the viewport - settle at the very top.
     markUserIntent?.()
     markProgrammaticScroll?.()
     container.scrollTop = 0
-  }, [messagesRef, getMessageElements, highlightElement, markProgrammaticScroll, markUserIntent])
+  }, [messagesRef, virtualizerRef, goToIndex, goToElement, markProgrammaticScroll, markUserIntent])
 
   const jumpNext = useCallback(() => {
     const container = messagesRef.current
     if (!container) {
       return
     }
-    const elements = getMessageElements()
-    if (elements.length === 0) {
+
+    const cutoff = container.scrollTop + EDGE_EPSILON_PX
+    const target = jumpTargets(container, virtualizerRef).find(t => t.start > cutoff)
+    if (target?.el) {
+      goToElement(container, target, () => markUserIntent?.())
+      return
+    }
+    if (target) {
+      goToIndex(target.index)
       return
     }
 
-    const containerRect = container.getBoundingClientRect()
-    const containerBottom = containerRect.bottom
-
-    // Find first message whose top is below viewport (with 10px margin) - mid-list landing.
-    for (let i = 0; i < elements.length; i++) {
-      const rect = elements[i].getBoundingClientRect()
-      if (rect.top > containerBottom - 10) {
-        markUserIntent?.()
-        markProgrammaticScroll?.()
-        scrollToEdge(container, elements[i], 'top', MESSAGE_JUMP_SCROLL_MS)
-        highlightElement(elements[i])
-        return
-      }
-    }
-
-    // No message below viewport - lands at bottom, re-engage autoscroll.
+    // Past the last historical turn - the active turn lives at the bottom, so landing there re-engages autoscroll.
     markReturnedToBottom?.()
     markProgrammaticScroll?.()
     container.scrollTop = container.scrollHeight
   }, [
     messagesRef,
-    getMessageElements,
-    highlightElement,
+    virtualizerRef,
+    goToIndex,
+    goToElement,
     markProgrammaticScroll,
     markUserIntent,
     markReturnedToBottom,

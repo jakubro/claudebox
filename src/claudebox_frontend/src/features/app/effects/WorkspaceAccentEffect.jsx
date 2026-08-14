@@ -9,13 +9,7 @@ import { deriveHoverColor } from '../../../utils/color'
 const VAR_ACCENT_TAB_BG = '--accent-tab-bg'
 const VAR_ACCENT_HOVER = '--accent-hover'
 
-/**
- * Apply workspace accent color as CSS variables on the dockview theme element.
- *
- * Sets --accent-tab-bg (consumed by a :has()-scoped CSS rule in App.css that
- * targets only the center group tab bar) and --accent-hover for header button
- * hover states. Renders nothing.
- */
+/** Sets --accent-tab-bg (App.css :has()-scoped rule, center tab bar) and --accent-hover for header hovers. */
 export default function WorkspaceAccentEffect() {
   const { workspaceColor } = useSessionsList()
 

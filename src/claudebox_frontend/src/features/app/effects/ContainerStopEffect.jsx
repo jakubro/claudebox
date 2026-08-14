@@ -8,20 +8,10 @@ import { useSessionsList } from '../../../context/SessionsContext'
 import { resolveSessionIdFromContainer } from '../../../utils/containerLookup'
 
 /**
- * Watch for the active container disappearing and gracefully disconnect SSE
- * before the TCP connection drops.
- *
- * Prevents the error cascade ("Session load failed", "Connection lost") that
- * occurs when a container is intentionally stopped. Uses two sources to decide
- * whether the container is alive:
- * - sessions list (refreshed on daemon container_status events)
- * - containerMap (populated eagerly by useNewSession on creation)
- *
- * The sessions list alone is unreliable: newly-created sessions may not appear
- * in it for seconds (daemon doesn't emit sessions_changed for container-level
- * session creation). containerMap closes that gap.
- *
- * Renders nothing - exists solely to coordinate context transitions.
+ * Prevents the error cascade ("Session load failed", "Connection lost") when a container is intentionally stopped.
+ * Alive-ness comes from two sources: the sessions list (refreshed on daemon container_status events) and
+ * containerMap (populated eagerly by useNewSession on creation); the list alone lags newly-created sessions
+ * for seconds since the daemon doesn't emit sessions_changed for container-level creation.
  */
 export default function ContainerStopEffect() {
   const { sessions } = useSessionsList()
@@ -30,7 +20,6 @@ export default function ContainerStopEffect() {
   const { clearSessionData } = useSessionActions()
 
   useEffect(() => {
-    // No active container - nothing to disconnect
     if (!(containerId && isConnected)) {
       return
     }
@@ -45,9 +34,7 @@ export default function ContainerStopEffect() {
       return
     }
 
-    // Active container is alive if either source resolves it to a session.
-    // containerMap is populated eagerly by useNewSession - reliable for
-    // recently-created containers that haven't appeared in sessions yet.
+    // Either source resolving the container to a session means it's alive.
     if (!resolveSessionIdFromContainer(containerId, containerMap, sessions)) {
       disconnectSSE()
       clearSessionData()

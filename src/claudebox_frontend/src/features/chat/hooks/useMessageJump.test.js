@@ -5,42 +5,62 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import useMessageJump from './useMessageJump'
 
 /**
- * Create a mock scrollable container with message elements.
+ * Build a scroll container plus a virtualizer stub covering every turn.
  *
- * Uses real DOM elements because the hook calls querySelectorAll.
+ * Targets come from virtualizer measurements, not mounted elements, so an unmounted turn is still addressable.
+ * Turn rows are still created for turns the test mounts, since the highlight lands on a real element.
  */
-function createMockContainer(options = {}) {
+function createHarness(options = {}) {
   const {
-    containerTop = 0,
-    containerHeight = 500,
     scrollTop = 0,
     scrollHeight = 2000,
-    messages = [],
+    clientHeight = 500,
+    // One entry per turn, in scroll-axis order.
+    measurements = [],
+    mountedIndexes = [],
   } = options
 
   const container = document.createElement('div')
   container.scrollTop = scrollTop
-  container.getBoundingClientRect = () => ({
-    top: containerTop,
-    bottom: containerTop + containerHeight,
-    height: containerHeight,
-  })
-
-  // jsdom doesn't compute layout - override read-only geometry
   Object.defineProperty(container, 'scrollHeight', { get: () => scrollHeight })
-  Object.defineProperty(container, 'clientHeight', { get: () => containerHeight })
+  Object.defineProperty(container, 'clientHeight', { get: () => clientHeight })
+  document.body.appendChild(container)
 
-  for (const msg of messages) {
-    const el = document.createElement('div')
-    el.setAttribute('data-testid', 'message-user')
-    el.getBoundingClientRect = () => ({
-      top: msg.top,
-      height: msg.height || 40,
-    })
-    container.appendChild(el)
+  // Mounted rows carry their virtual index - how a jump resolves its target, since a turn need not have an id.
+  for (const index of mountedIndexes) {
+    const row = document.createElement('div')
+    row.className = 'historical-turn-row'
+    row.setAttribute('data-index', String(index))
+    const userEl = document.createElement('div')
+    userEl.setAttribute('data-testid', 'message-user')
+    row.appendChild(userEl)
+    container.appendChild(row)
   }
 
-  return { container, messagesRef: { current: container } }
+  const virtualizer = {
+    measurementsCache: measurements.map((m, index) => ({
+      index,
+      key: `turn-${index}`,
+      start: m.start,
+      size: m.size ?? 100,
+    })),
+    scrollToIndex: vi.fn(),
+    options: { getItemKey: index => `turn-${index}` },
+  }
+
+  return {
+    container,
+    messagesRef: { current: container },
+    virtualizerRef: { current: virtualizer },
+    scrollToIndex: virtualizer.scrollToIndex,
+  }
+}
+
+/** Render the hook with the harness, filling optional callbacks. */
+function renderJump(h, { onProgrammatic, onIntent, onBottom } = {}) {
+  return renderHook(() =>
+    useMessageJump(h.messagesRef, onProgrammatic, onIntent, onBottom, h.virtualizerRef),
+  )
 }
 
 describe('useMessageJump', () => {
@@ -56,415 +76,194 @@ describe('useMessageJump', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    document.body.innerHTML = ''
   })
 
+  // The mount wait chains several frames, each scheduling the next, so drain until the queue stops refilling.
+  const flushRaf = () => {
+    act(() => {
+      for (let i = 0; i < 10 && rafCallbacks.length; i++) {
+        for (const cb of rafCallbacks.splice(0)) {
+          cb()
+        }
+      }
+    })
+  }
+
   describe('jumpPrev', () => {
-    it('scrolls to the last message above the viewport', () => {
-      const { messagesRef } = createMockContainer({
-        containerTop: 200,
-        containerHeight: 500,
-        messages: [
-          { top: 50 }, // above viewport (50 < 200 - 10)
-          { top: 100 }, // above viewport (100 < 190)
-          { top: 300 }, // inside viewport
-        ],
+    it('targets the last turn starting above the viewport', () => {
+      const h = createHarness({
+        scrollTop: 900,
+        measurements: [{ start: 0 }, { start: 400 }, { start: 800 }, { start: 1200 }],
       })
+      const { result } = renderJump(h)
 
-      const { result } = renderHook(() => useMessageJump(messagesRef))
+      act(() => result.current.jumpPrev())
 
-      act(() => {
-        result.current.jumpPrev()
-      })
-
-      // scrollToEdge uses rAF
-      expect(rafCallbacks.length).toBeGreaterThan(0)
+      expect(h.scrollToIndex).toHaveBeenCalledWith(2, { align: 'start' })
     })
 
-    it('highlights the jumped-to message', () => {
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 200,
-        containerHeight: 500,
-        messages: [{ top: 50 }, { top: 300 }],
+    // Measurement-based targeting's point: this turn is far above the window, has no element, yet is reachable.
+    it('reaches a turn that is not mounted', () => {
+      const h = createHarness({
+        scrollTop: 5000,
+        measurements: [{ start: 0 }, { start: 4000 }, { start: 8000 }],
+        mountedIndexes: [],
       })
+      const { result } = renderJump(h)
 
-      const { result } = renderHook(() => useMessageJump(messagesRef))
+      act(() => result.current.jumpPrev())
 
-      act(() => {
-        result.current.jumpPrev()
+      expect(h.scrollToIndex).toHaveBeenCalledWith(1, { align: 'start' })
+    })
+
+    it('scrolls to the very top when nothing starts above the viewport', () => {
+      const h = createHarness({ scrollTop: 0, measurements: [{ start: 0 }, { start: 400 }] })
+      const { result } = renderJump(h)
+
+      act(() => result.current.jumpPrev())
+
+      expect(h.scrollToIndex).not.toHaveBeenCalled()
+      expect(h.container.scrollTop).toBe(0)
+    })
+
+    it('highlights the jumped-to message once it mounts', () => {
+      const h = createHarness({
+        scrollTop: 900,
+        measurements: [{ start: 0 }, { start: 800 }],
+        mountedIndexes: [1],
       })
+      const { result } = renderJump(h)
 
-      const target = container.querySelectorAll('[data-testid="message-user"]')[0]
+      act(() => result.current.jumpPrev())
+      flushRaf()
+
+      const target = h.container.querySelector(
+        '.historical-turn-row[data-index="1"] [data-testid="message-user"]',
+      )
       expect(target.classList.contains('jump-highlight')).toBe(true)
-    })
-
-    it('scrolls to top when no messages are above viewport', () => {
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        scrollTop: 200,
-        messages: [{ top: 100 }, { top: 300 }],
-      })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpPrev()
-      })
-
-      expect(container.scrollTop).toBe(0)
-    })
-
-    it('does nothing with no message elements', () => {
-      const { messagesRef } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        messages: [],
-      })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpPrev()
-      })
-
-      expect(rafCallbacks.length).toBe(0)
     })
   })
 
   describe('jumpNext', () => {
-    it('scrolls to the first message below the viewport', () => {
-      const { messagesRef } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        messages: [
-          { top: 100 }, // inside viewport
-          { top: 300 }, // inside viewport
-          { top: 600 }, // below viewport (600 > 500 - 10)
-        ],
+    it('targets the first turn starting below the viewport', () => {
+      const h = createHarness({
+        scrollTop: 400,
+        measurements: [{ start: 0 }, { start: 400 }, { start: 800 }, { start: 1200 }],
       })
+      const { result } = renderJump(h)
 
-      const { result } = renderHook(() => useMessageJump(messagesRef))
+      act(() => result.current.jumpNext())
 
-      act(() => {
-        result.current.jumpNext()
-      })
-
-      expect(rafCallbacks.length).toBeGreaterThan(0)
+      expect(h.scrollToIndex).toHaveBeenCalledWith(2, { align: 'start' })
     })
 
-    it('highlights the jumped-to message', () => {
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        messages: [{ top: 100 }, { top: 600 }],
-      })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpNext()
-      })
-
-      const target = container.querySelectorAll('[data-testid="message-user"]')[1]
-      expect(target.classList.contains('jump-highlight')).toBe(true)
-    })
-
-    it('scrolls to bottom when no messages are below viewport', () => {
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        scrollTop: 0,
+    it('falls through to the bottom when nothing starts below the viewport', () => {
+      const h = createHarness({
+        scrollTop: 1500,
         scrollHeight: 2000,
-        messages: [{ top: 100 }, { top: 300 }],
+        measurements: [{ start: 0 }, { start: 400 }],
       })
+      const { result } = renderJump(h)
 
-      const { result } = renderHook(() => useMessageJump(messagesRef))
+      act(() => result.current.jumpNext())
 
-      act(() => {
-        result.current.jumpNext()
-      })
-
-      expect(container.scrollTop).toBe(2000)
-    })
-  })
-
-  describe('jumpTop', () => {
-    it('sets scrollTop to 0', () => {
-      const { messagesRef, container } = createMockContainer({ scrollTop: 500 })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpTop()
-      })
-
-      expect(container.scrollTop).toBe(0)
-    })
-  })
-
-  describe('jumpBottom', () => {
-    it('sets scrollTop to scrollHeight', () => {
-      const { messagesRef, container } = createMockContainer({
-        scrollTop: 0,
-        scrollHeight: 2000,
-      })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpBottom()
-      })
-
-      expect(container.scrollTop).toBe(2000)
+      expect(h.scrollToIndex).not.toHaveBeenCalled()
+      expect(h.container.scrollTop).toBe(2000)
     })
   })
 
   describe('highlight lifecycle', () => {
-    it('removes highlight class after timeout', () => {
+    it('removes the highlight after the timeout', () => {
       vi.useFakeTimers()
-
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 200,
-        containerHeight: 500,
-        messages: [{ top: 50 }],
+      // useFakeTimers replaces rAF too; restore the capturing stub so the highlight callback stays observable.
+      vi.stubGlobal('requestAnimationFrame', cb => {
+        rafCallbacks.push(cb)
+        return rafCallbacks.length
       })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpPrev()
+      const h = createHarness({
+        scrollTop: 900,
+        measurements: [{ start: 0 }, { start: 800 }],
+        mountedIndexes: [1],
       })
+      const { result } = renderJump(h)
 
-      const target = container.querySelectorAll('[data-testid="message-user"]')[0]
+      act(() => result.current.jumpPrev())
+      flushRaf()
+      const target = h.container.querySelector(
+        '.historical-turn-row[data-index="1"] [data-testid="message-user"]',
+      )
       expect(target.classList.contains('jump-highlight')).toBe(true)
 
-      act(() => {
-        vi.advanceTimersByTime(1500)
-      })
+      act(() => vi.advanceTimersByTime(2000))
 
       expect(target.classList.contains('jump-highlight')).toBe(false)
-
       vi.useRealTimers()
-    })
-
-    it('clears previous highlight when new jump fires before timeout', () => {
-      vi.useFakeTimers()
-
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 300,
-        containerHeight: 500,
-        messages: [{ top: 50 }, { top: 150 }],
-      })
-
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      act(() => {
-        result.current.jumpPrev()
-      })
-
-      const msg0 = container.querySelectorAll('[data-testid="message-user"]')[0]
-      const msg1 = container.querySelectorAll('[data-testid="message-user"]')[1]
-      expect(msg1.classList.contains('jump-highlight')).toBe(true)
-
-      // Move msg1 into viewport so msg0 becomes the only target above
-      msg1.getBoundingClientRect = () => ({ top: 350, height: 40 })
-
-      act(() => {
-        result.current.jumpPrev()
-      })
-
-      expect(msg1.classList.contains('jump-highlight')).toBe(false)
-      expect(msg0.classList.contains('jump-highlight')).toBe(true)
-
-      vi.useRealTimers()
-    })
-  })
-
-  describe('null ref safety', () => {
-    it('jumpPrev does not throw with null ref', () => {
-      const messagesRef = { current: null }
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      expect(() => {
-        act(() => {
-          result.current.jumpPrev()
-        })
-      }).not.toThrow()
-    })
-
-    it('jumpNext does not throw with null ref', () => {
-      const messagesRef = { current: null }
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      expect(() => {
-        act(() => {
-          result.current.jumpNext()
-        })
-      }).not.toThrow()
-    })
-
-    it('jumpTop does not throw with null ref', () => {
-      const messagesRef = { current: null }
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      expect(() => {
-        act(() => {
-          result.current.jumpTop()
-        })
-      }).not.toThrow()
-    })
-
-    it('jumpBottom does not throw with null ref', () => {
-      const messagesRef = { current: null }
-      const { result } = renderHook(() => useMessageJump(messagesRef))
-
-      expect(() => {
-        act(() => {
-          result.current.jumpBottom()
-        })
-      }).not.toThrow()
     })
   })
 
   describe('autoscroll engagement transitions', () => {
-    // Order-capturing factory so each test asserts the temporal ordering of
-    // intent/returned/programmatic relative to the scroll write itself - not
-    // just "was called".
-    function withOrder() {
-      const order = []
-      const tag = name =>
-        vi.fn(() => {
-          order.push(name)
-        })
-      return {
-        order,
-        markUserIntent: tag('intent'),
-        markReturnedToBottom: tag('returned'),
-        markProgrammaticScroll: tag('programmatic'),
-      }
-    }
+    it('jumpPrev raises user intent and brackets the scroll write', () => {
+      const onIntent = vi.fn()
+      const onProgrammatic = vi.fn()
+      const h = createHarness({ scrollTop: 900, measurements: [{ start: 0 }, { start: 800 }] })
+      const { result } = renderJump(h, { onIntent, onProgrammatic })
 
-    function attachScrollSpy(container, order) {
-      let scrollTopBacking = container.scrollTop
-      Object.defineProperty(container, 'scrollTop', {
-        configurable: true,
-        get: () => scrollTopBacking,
-        set: v => {
-          scrollTopBacking = v
-          order.push('scroll')
-        },
-      })
-    }
+      act(() => result.current.jumpPrev())
 
-    it('jumpPrev calls markUserIntent + markProgrammaticScroll before scroll', () => {
-      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 200,
-        containerHeight: 500,
-        messages: [{ top: 50 }, { top: 300 }],
-      })
-      attachScrollSpy(container, order)
-
-      const { result } = renderHook(() =>
-        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
-      )
-
-      act(() => {
-        result.current.jumpPrev()
-      })
-
-      expect(markUserIntent).toHaveBeenCalledOnce()
-      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
-      expect(markReturnedToBottom).not.toHaveBeenCalled()
-      expect(order.indexOf('intent')).toBeLessThan(order.indexOf('programmatic'))
-      // scrollToEdge uses rAF so no scroll write occurs synchronously here -
-      // the ordering invariant is intent < programmatic, both before any later
-      // rAF callback runs.
+      expect(onIntent).toHaveBeenCalled()
+      expect(onProgrammatic).toHaveBeenCalled()
     })
 
-    it('jumpTop calls markUserIntent + markProgrammaticScroll before scroll', () => {
-      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
-      const { messagesRef, container } = createMockContainer({ scrollTop: 500 })
-      attachScrollSpy(container, order)
-
-      const { result } = renderHook(() =>
-        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
-      )
-
-      act(() => {
-        result.current.jumpTop()
+    it('jumpNext mid-list raises user intent', () => {
+      const onIntent = vi.fn()
+      const onProgrammatic = vi.fn()
+      const h = createHarness({
+        scrollTop: 0,
+        measurements: [{ start: 0 }, { start: 400 }, { start: 800 }],
       })
+      const { result } = renderJump(h, { onIntent, onProgrammatic })
 
-      expect(markUserIntent).toHaveBeenCalledOnce()
-      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
-      expect(markReturnedToBottom).not.toHaveBeenCalled()
-      expect(order).toEqual(['intent', 'programmatic', 'scroll'])
+      act(() => result.current.jumpNext())
+
+      expect(onIntent).toHaveBeenCalled()
+      expect(onProgrammatic).toHaveBeenCalled()
     })
 
-    it('jumpBottom calls markReturnedToBottom + markProgrammaticScroll before scroll', () => {
-      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
-      const { messagesRef, container } = createMockContainer({ scrollTop: 0, scrollHeight: 2000 })
-      attachScrollSpy(container, order)
+    it('jumpNext fall-through re-engages autoscroll instead', () => {
+      const onIntent = vi.fn()
+      const onBottom = vi.fn()
+      const onProgrammatic = vi.fn()
+      const h = createHarness({ scrollTop: 1500, measurements: [{ start: 0 }, { start: 400 }] })
+      const { result } = renderJump(h, { onIntent, onProgrammatic, onBottom })
 
-      const { result } = renderHook(() =>
-        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
-      )
+      act(() => result.current.jumpNext())
 
-      act(() => {
-        result.current.jumpBottom()
-      })
-
-      expect(markReturnedToBottom).toHaveBeenCalledOnce()
-      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
-      expect(markUserIntent).not.toHaveBeenCalled()
-      expect(order).toEqual(['returned', 'programmatic', 'scroll'])
+      expect(onBottom).toHaveBeenCalled()
+      expect(onIntent).not.toHaveBeenCalled()
+      expect(onProgrammatic).toHaveBeenCalled()
     })
 
-    it('jumpNext mid-list (target inside viewport-below) calls markUserIntent + markProgrammaticScroll', () => {
-      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        messages: [{ top: 100 }, { top: 600 }],
-      })
-      attachScrollSpy(container, order)
+    it('jumpBottom re-engages autoscroll', () => {
+      const onBottom = vi.fn()
+      const h = createHarness({ scrollTop: 0, scrollHeight: 3000, measurements: [{ start: 0 }] })
+      const { result } = renderJump(h, { onBottom })
 
-      const { result } = renderHook(() =>
-        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
-      )
+      act(() => result.current.jumpBottom())
 
-      act(() => {
-        result.current.jumpNext()
-      })
-
-      expect(markUserIntent).toHaveBeenCalledOnce()
-      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
-      expect(markReturnedToBottom).not.toHaveBeenCalled()
-      expect(order.indexOf('intent')).toBeLessThan(order.indexOf('programmatic'))
+      expect(onBottom).toHaveBeenCalled()
+      expect(h.container.scrollTop).toBe(3000)
     })
 
-    it('jumpNext fall-through (no message below viewport) calls markReturnedToBottom + markProgrammaticScroll', () => {
-      const { order, markUserIntent, markReturnedToBottom, markProgrammaticScroll } = withOrder()
-      const { messagesRef, container } = createMockContainer({
-        containerTop: 0,
-        containerHeight: 500,
-        scrollHeight: 2000,
-        messages: [{ top: 100 }, { top: 300 }],
-      })
-      attachScrollSpy(container, order)
+    it('jumpTop raises user intent', () => {
+      const onIntent = vi.fn()
+      const h = createHarness({ scrollTop: 900, measurements: [{ start: 0 }] })
+      const { result } = renderJump(h, { onIntent })
 
-      const { result } = renderHook(() =>
-        useMessageJump(messagesRef, markProgrammaticScroll, markUserIntent, markReturnedToBottom),
-      )
+      act(() => result.current.jumpTop())
 
-      act(() => {
-        result.current.jumpNext()
-      })
-
-      expect(markReturnedToBottom).toHaveBeenCalledOnce()
-      expect(markProgrammaticScroll).toHaveBeenCalledOnce()
-      expect(markUserIntent).not.toHaveBeenCalled()
-      expect(order).toEqual(['returned', 'programmatic', 'scroll'])
+      expect(onIntent).toHaveBeenCalled()
+      expect(h.container.scrollTop).toBe(0)
     })
   })
 })

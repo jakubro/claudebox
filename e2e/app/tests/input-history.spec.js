@@ -1,8 +1,9 @@
 /** E2E tests for input history navigation, draft preservation, cursor position, and persistence. */
 
 import { expect, test } from '@playwright/test'
+import { MAX_INPUT_HISTORY_ENTRIES } from '../../../src/claudebox_frontend/src/config/thresholds.js'
 import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
+import { DEFAULT_SESSION_ID, DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
 test.describe('Input History', () => {
@@ -19,7 +20,6 @@ test.describe('Input History', () => {
     test('Up arrow at position 0 navigates to previous message', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit messages to populate history
       await input.fill('First message')
       await input.press('Enter')
       await expect(input).toHaveValue('')
@@ -28,12 +28,10 @@ test.describe('Input History', () => {
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate up (cursor at 0)
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Second message')
 
-      // Navigate up again
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('First message')
@@ -43,18 +41,15 @@ test.describe('Input History', () => {
     test('Up arrow mid-text does not navigate', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit message to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Type new text (cursor at end)
       await input.fill('Current text')
 
-      // Press Up without moving cursor to start
+      // Unlike the position-0 case above, the cursor stays mid-text, so Up must not navigate.
       await input.press('ArrowUp')
 
-      // Should not navigate (cursor not at 0)
       await expect(input).toHaveValue('Current text')
     })
 
@@ -63,7 +58,6 @@ test.describe('Input History', () => {
     test('Down arrow at end navigates to next message', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit messages
       await input.fill('Old message')
       await input.press('Enter')
       await expect(input).toHaveValue('')
@@ -72,14 +66,12 @@ test.describe('Input History', () => {
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Go to oldest
       await input.press('Home')
       await input.press('ArrowUp')
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Old message')
 
-      // Navigate down (cursor at end)
       await input.press('End')
       await input.press('ArrowDown')
       await expect(input).toHaveValue('New message')
@@ -89,23 +81,18 @@ test.describe('Input History', () => {
     test('Down arrow mid-text does not navigate', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate into history
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('History item')
 
-      // Move cursor to middle (simulate by just verifying down doesn't work when not at end)
-      await input.press('Home') // Cursor at start, not at end
-
-      // Press Down - should not work because cursor not at end
+      // Approximates a mid-text cursor by simply not being at the end; Down should decline to navigate.
+      await input.press('Home')
       await input.press('ArrowDown')
 
-      // Should still show history item (Down didn't trigger)
       await expect(input).toHaveValue('History item')
     })
   })
@@ -116,20 +103,16 @@ test.describe('Input History', () => {
     test('current draft preserved on Up navigation', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Type a draft
       await input.fill('My draft text')
 
-      // Navigate up
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('History item')
 
-      // Navigate down to return to draft
       await input.press('End')
       await input.press('ArrowDown')
       await expect(input).toHaveValue('My draft text')
@@ -139,20 +122,17 @@ test.describe('Input History', () => {
     test('draft saved to localStorage', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Type a draft
       await input.fill('Draft to save')
 
-      // Navigate into history (triggers draft save)
+      // Navigating into history triggers a draft save.
       await input.press('Home')
       await input.press('ArrowUp')
 
-      // Poll until draft is saved to localStorage (key format: draft:${sessionId})
-      // handleInput saves current text to drafts.current on every keystroke
+      // handleInput persists drafts.current under key draft:${sessionId} on every keystroke.
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -175,16 +155,13 @@ test.describe('Input History', () => {
     test('cursor at beginning after Up navigation', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit message to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate up
       await input.press('ArrowUp')
       await expect(input).toHaveValue('History item')
 
-      // Check cursor position is at beginning (0)
       const cursorPos = await input.evaluate(el => el.selectionStart)
       expect(cursorPos).toBe(0)
     })
@@ -193,25 +170,22 @@ test.describe('Input History', () => {
     test('cursor at end after Down navigation', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit messages
       await input.fill('First')
       await input.press('Enter')
       await input.fill('Second')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate up twice to get to oldest
       await input.press('ArrowUp')
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('First')
 
-      // Navigate down
       await input.press('End')
       await input.press('ArrowDown')
       await expect(input).toHaveValue('Second')
 
-      // Check cursor position is at end (setCursorToEnd in navigateDown)
+      // setCursorToEnd in navigateDown places the cursor at the end.
       const cursorPos = await input.evaluate(el => el.selectionStart)
       expect(cursorPos).toBe('Second'.length)
     })
@@ -220,14 +194,13 @@ test.describe('Input History', () => {
     test('Up arrow at END of text also navigates', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit message to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate up from END position (cursor at end by default after fill)
+      // After fill(''), End leaves the cursor at position 0 (empty string).
       await input.fill('')
-      await input.press('End') // Cursor at end of empty = position 0
+      await input.press('End')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('History item')
     })
@@ -236,23 +209,19 @@ test.describe('Input History', () => {
     test('Down arrow at END of text also navigates', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit messages
       await input.fill('First')
       await input.press('Enter')
       await input.fill('Second')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate up to get into history
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Second')
 
-      // Move cursor to end and press Down
       await input.press('End')
       await input.press('ArrowDown')
 
-      // Should navigate forward (either back to empty or to draft)
-      // Since we entered history with empty input, down should go back to empty
+      // Entered history with an empty draft, so Down goes back to that empty draft.
       await expect(input).toHaveValue('')
     })
   })
@@ -262,15 +231,13 @@ test.describe('Input History', () => {
     test('Down from non-empty pushes to draft stack', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Type text (no history needed)
+      // No history entries needed for this path.
       await input.fill('My draft')
 
-      // Press Down - should push to draft stack and clear
       await input.press('End')
       await input.press('ArrowDown')
       await expect(input).toHaveValue('')
 
-      // Verify draft was saved to stack in localStorage
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -291,7 +258,6 @@ test.describe('Input History', () => {
     test('Up pops from draft stack (LIFO)', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Push multiple drafts to stack
       await input.fill('Draft A')
       await input.press('End')
       await input.press('ArrowDown')
@@ -302,11 +268,9 @@ test.describe('Input History', () => {
       await input.press('ArrowDown')
       await expect(input).toHaveValue('')
 
-      // Press Up - should pop Draft B (LIFO)
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Draft B')
 
-      // Press Up again after moving cursor - should pop Draft A
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Draft A')
@@ -316,20 +280,16 @@ test.describe('Input History', () => {
     test('draft preserved through Up into history then Down', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit to have history
       await input.fill('History item')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Type a draft
       await input.fill('My preserved draft')
 
-      // Navigate Up into history
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('History item')
 
-      // Navigate Down - should recover the draft
       await input.press('End')
       await input.press('ArrowDown')
       await expect(input).toHaveValue('My preserved draft')
@@ -343,7 +303,6 @@ test.describe('Input History', () => {
     }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit messages to populate history
       await input.fill('Original message')
       await input.press('Enter')
       await expect(input).toHaveValue('')
@@ -352,20 +311,16 @@ test.describe('Input History', () => {
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Navigate up to most recent history item
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Second message')
 
-      // Edit the history item
       await input.fill('Edited message')
 
-      // Navigate away (down to draft)
       await input.press('End')
       await input.press('ArrowDown')
       await expect(input).toHaveValue('')
 
-      // Navigate back up - edit should be preserved
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Edited message')
@@ -377,12 +332,11 @@ test.describe('Input History', () => {
     test('history persists across page reload', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit a message
       await input.fill('Persisted message')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Poll until message is saved to localStorage (key format: inputHistory:{sessionId})
+      // Message is saved to localStorage under key inputHistory:{sessionId}.
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -397,18 +351,17 @@ test.describe('Input History', () => {
         })
         .toBe(true)
 
-      // Reload page
       await page.reload()
       await waitForAppReady(page)
 
-      // Poll until history is loaded from localStorage and navigable
+      // Polls because history loads from localStorage asynchronously after the reload.
       await expect
         .poll(async () => {
           await input.focus()
           await input.press('Home')
           await input.press('ArrowUp')
           const value = await input.inputValue()
-          // Reset if not yet loaded - press Down to return to draft
+          // Not yet loaded: press Down to return to the draft and retry.
           if (value !== 'Persisted message') {
             await input.press('End')
             await input.press('ArrowDown')
@@ -421,32 +374,71 @@ test.describe('Input History', () => {
     test('history cleared on session switch via localStorage', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Submit a message
       await input.fill('Session A message')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Verify history exists
       await input.press('Home')
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Session A message')
 
-      // Clear localStorage to simulate session switch
+      // Clearing localStorage simulates a session switch.
       await page.evaluate(() => {
         localStorage.clear()
       })
 
-      // Reload with empty fixture so bootstrap from events has no user messages
+      // Empty fixture keeps event-bootstrap from reintroducing user messages.
       await mockSSE(page, 'events/empty.jsonl')
       await page.reload()
       await waitForAppReady(page)
 
-      // Navigate up - should not find previous history
       await input.press('Home')
       await input.press('ArrowUp')
 
-      // Input should still be empty (no history)
       await expect(input).toHaveValue('')
+    })
+
+    // SPEC: input:history-retention-bound
+    test('history retains only the most recent entries once the cap is exceeded', async ({
+      page,
+    }) => {
+      const storageKey = `inputHistory:${DEFAULT_SESSION_ID}`
+
+      // Seed localStorage at the retention cap before the app loads.
+      await page.evaluate(
+        ({ key, count }) => {
+          const seeded = Array.from({ length: count }, (_, i) => `entry-${i}`)
+          localStorage.setItem(key, JSON.stringify(seeded))
+        },
+        { key: storageKey, count: MAX_INPUT_HISTORY_ENTRIES },
+      )
+      await page.reload()
+      await waitForAppReady(page)
+
+      const input = page.locator('[data-testid="chat-input"]')
+
+      // Push one more entry past the cap.
+      await input.fill('newest message')
+      await input.press('Enter')
+      await expect(input).toHaveValue('')
+
+      // The write evicts the oldest entry and keeps the count at the cap.
+      await expect
+        .poll(() =>
+          page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]').length, storageKey),
+        )
+        .toBe(MAX_INPUT_HISTORY_ENTRIES)
+      const persisted = await page.evaluate(
+        key => JSON.parse(localStorage.getItem(key)),
+        storageKey,
+      )
+      expect(persisted).not.toContain('entry-0')
+      expect(persisted.at(-1)).toBe('newest message')
+
+      // Reachable via Up arrow - the newest entry is what the user sees first.
+      await input.press('Home')
+      await input.press('ArrowUp')
+      await expect(input).toHaveValue('newest message')
     })
   })
 
@@ -457,19 +449,16 @@ test.describe('Input History', () => {
       await page.goto(DEFAULT_SESSION_URL)
       const input = await waitForAppReady(page)
 
-      // Submit a message to populate history
       await input.fill('First message')
       await input.press('Enter')
       await expect(input).toHaveValue('')
 
-      // Type new text and select all
       await input.fill('new text')
       await page.keyboard.press('Control+a')
 
-      // Move cursor to position 0 (selection still active)
+      // History must not activate because text is selected.
       await input.press('ArrowUp')
 
-      // History should NOT activate because text is selected
       await expect(input).toHaveValue('new text')
     })
   })

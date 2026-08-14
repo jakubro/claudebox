@@ -1,10 +1,9 @@
 /** Text-quote anchoring: locate a quoted span within a turn across markdown re-render and reload, using the turn's RENDERED text (canonicalTurnText, not raw markdown) as the coordinate space so highlight offsets survive re-renders. */
 
-// Quotable text = assistant/user prose and code, tool output (`.tool-details`), and expanded thinking
-// (`.thinking-content-inline`). Excluded: code-block line-number gutters (`user-select: none`, so a real
-// selection never includes them - keeping canonicalTurnText in sync with `range.toString()`), SVG/image
-// media (e.g. Mermaid labels), copy buttons, system-reminder chrome, and any button. Shared with
-// useSelectionQuote so the selection gate and the anchor coordinate space stay in lockstep.
+// Quotable text: assistant/user prose/code, tool output (`.tool-details`), and expanded thinking
+// (`.thinking-content-inline`). Excluded: code-block gutters (`user-select: none`, matching
+// `range.toString()`), SVG/image media, copy buttons, system-reminder chrome, any button.
+// Shared with useSelectionQuote so the selection gate and anchor coordinate space stay in lockstep.
 export const INCLUDE_SELECTOR =
   '.turn-text, .message-content, .tool-details, .thinking-content-inline'
 export const EXCLUDE_SELECTOR =
@@ -58,8 +57,8 @@ export function captureAnchor(range, roleEl) {
   const { text, nodes } = canonicalTurnText(roleEl)
   const mapped = _offsetOf(nodes, range.startContainer, range.startOffset)
 
-  // Prefer the mapped start; fall back to a text search when the start node is
-  // outside the canonical set (e.g. selection began in chrome).
+  // Prefers the mapped start; falls back to a text search when the start node is outside the
+  // canonical set (e.g. selection began in chrome).
   const offset = mapped != null ? mapped : text.indexOf(quote)
 
   if (offset < 0) {
@@ -79,7 +78,7 @@ export function captureAnchor(range, roleEl) {
  *
  * Tries the fully-qualified `prefix+quote+suffix` first (unique wins, else offset-nearest),
  * then relaxes to one-sided context, then a bare quote match. Returns null when the quote text
- * is gone entirely (source content changed) so the caller can pin a "source moved" thread.
+ * is gone entirely so the caller can pin a "source moved" thread.
  * @param {{ quote: string, prefix: string, suffix: string, offset: number }} anchor
  * @param {HTMLElement} roleEl
  * @returns {Range|null}

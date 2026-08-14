@@ -38,7 +38,8 @@ class TestParseFrontmatter:
 
     def test_usage_includes_argument_hint_when_present(self):
         skill = parse_frontmatter(
-            "---\nname: foo\nargument-hint: <topic>\n---\nbody", fallback_name=None
+            "---\nname: foo\nargument-hint: <topic>\n---\nbody",
+            fallback_name=None,
         )
 
         assert skill is not None

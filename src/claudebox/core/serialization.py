@@ -56,9 +56,8 @@ def load(fp: Any, **kwargs) -> Any:
 def serialize(obj: Any, *, _seen: set | None = None) -> Any:
     """Recursively convert an object tree into JSON-safe primitives.
 
-    Handles asdict(), dataclasses, datetime/date/time, Decimal, Path, Enum,
-    and nested dicts/lists/sets/tuples. Circular references resolve to None.
-    Returns the original object unchanged for already-serializable primitives.
+    Handles asdict(), dataclasses, datetime/date/time, Decimal, Path, Enum, and nested containers.
+    Circular references resolve to None; already-serializable objects pass through unchanged.
     """
 
     if obj is None:
@@ -102,8 +101,8 @@ def serialize(obj: Any, *, _seen: set | None = None) -> Any:
 def deserialize(node: Any, cls: type | types.UnionType | None) -> Any:
     """Recursively transform a JSON-loaded value into the desired type.
 
-    Handles primitives (passthrough), 1-param collections (list, set, frozenset, tuple),
-    dict[K, V], and dataclasses (fields resolved via type hints). Unknown types pass through.
+    Handles primitives (passthrough), collections (list/set/frozenset/tuple), and dict[K, V].
+    Dataclass fields resolve via type hints; unknown types pass through unchanged.
     """
 
     if node is None or cls is None:

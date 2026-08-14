@@ -50,8 +50,7 @@
   opacity: 0.5;
 }
 
-/* Chevron gets symmetric horizontal padding so the icon centers in its
-   hover-bg rectangle (was asymmetric `padding-left: 2px; padding-right: 4px`). */
+/* Symmetric horizontal padding keeps the icon centered in the hover-bg rectangle. */
 .new-session-split-chevron {
   padding-left: 3px;
   padding-right: 3px;

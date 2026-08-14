@@ -1,9 +1,7 @@
-/* Main panel — fills its dockview group, stacks SessionHeaderStrip on top of body.
- * The SessionHeaderStrip serves as the panel's chrome; the dockview tab bar
- * for the main panel's group is hidden via the data-main-group attribute that
- * default-layout.js (and the onDidAddGroup listener in useDockviewLayout.js)
- * sets imperatively at panel-creation time, so the hide takes effect at first
- * paint with no :has() selector race. */
+/* Main panel - fills its dockview group, stacks SessionHeaderStrip on top of body. SessionHeaderStrip
+ * is the panel's chrome; the main panel group's dockview tab bar is hidden via the data-main-group
+ * attribute, set imperatively by default-layout.js (and useDockviewLayout.js's onDidAddGroup
+ * listener) at panel-creation time, so the hide takes effect at first paint with no :has() race. */
 
 .dockview-theme-dark .dv-groupview[data-main-group="true"] > .dv-tabs-and-actions-container {
   display: none;

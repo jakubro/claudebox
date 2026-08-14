@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import useComposerMaxHeight from './useComposerMaxHeight'
 
-/** Manage textarea auto-resize with scroll compensation for chat input. */
 export default function useTextareaResize(
   textareaRef,
   panelRef,
@@ -13,7 +12,6 @@ export default function useTextareaResize(
   const maxTextareaHeight = useComposerMaxHeight(panelRef)
   const prevTextareaHeightRef = useRef(0)
 
-  // Resize textarea to fit content with scroll compensation
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current
     const chatEl = messagesRef.current
@@ -26,7 +24,6 @@ export default function useTextareaResize(
     const newHeight = Math.min(textarea.scrollHeight, maxTextareaHeight)
     textarea.style.height = `${newHeight}px`
 
-    // Enable internal scroll when at max height
     textarea.style.overflowY = newHeight >= maxTextareaHeight ? 'auto' : 'hidden'
 
     // Compensate chat scroll so content stays visible as textarea grows/shrinks

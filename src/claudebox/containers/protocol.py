@@ -41,8 +41,7 @@ class ContainerRuntimeProtocol(Protocol):
     ) -> str | None:
         """Spawn a container, returning backend ID if detached.
 
-        ``config`` overrides the runtime's captured config for this launch so
-        run args reflect the current workspace settings.
+        ``config`` overrides the runtime's captured config so run args reflect the current workspace settings.
         """
 
         ...

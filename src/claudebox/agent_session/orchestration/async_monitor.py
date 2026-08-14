@@ -19,17 +19,7 @@ class OnMonitorEvent(Protocol):
 
 
 class AsyncTaskMonitor:
-    """Tail async task output file and emit transformed events.
-
-    Monitors output file written by background Task agents, transforms each line
-    to Event format, and calls on_event callback to inject into parent session.
-
-    Attributes:
-        agent_id: Background task agent ID for correlation.
-        output_file: Path to the task output file being monitored.
-        parent_tool_use_id: Tool use ID of the parent Task block.
-        on_event: Callback for delivering parsed events.
-    """
+    """Tail async task output file and emit transformed events."""
 
     def __init__(
         self,
@@ -49,13 +39,7 @@ class AsyncTaskMonitor:
         self._running = False
 
     async def run(self) -> None:
-        """Tail output file and emit events until stopped.
-
-        Waits for the output file to exist, then continuously reads new lines
-        from the configured byte offset. Each valid JSON line is parsed and
-        converted to Event objects via dict_message_to_events, then passed to
-        the on_event callback.
-        """
+        """Tail output file and emit events until stopped."""
 
         self._running = True
         self._logger.info(
@@ -64,7 +48,6 @@ class AsyncTaskMonitor:
             offset=self._offset,
         )
 
-        # Wait for file to exist
         while self._running and not self.output_file.exists():
             await asyncio.sleep(0.1)
 

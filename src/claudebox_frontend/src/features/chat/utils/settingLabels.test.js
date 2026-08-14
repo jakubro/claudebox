@@ -4,10 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { getSettingChangeInfo, isSettingInitEvent } from './settingLabels'
 
 const models = [
-  { id: 'claude-opus-4-8', name: 'Opus 4.8' },
-  { id: 'claude-opus-4-6', name: 'Opus 4.6' },
-  { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6' },
-  { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5' },
+  { id: 'claude-opus-5', name: 'Opus 5' },
+  { id: 'claude-sonnet-5', name: 'Sonnet 5' },
 ]
 
 const permissionModes = [
@@ -22,11 +20,11 @@ const permissionModes = [
 describe('getSettingChangeInfo', () => {
   it('returns model display name for known model', () => {
     const result = getSettingChangeInfo(
-      { subtype: 'model_changed', model: 'claude-opus-4-6' },
+      { subtype: 'model_changed', model: 'claude-opus-5' },
       { models },
     )
 
-    expect(result.label).toBe('Opus 4.6')
+    expect(result.label).toBe('Opus 5')
     expect(result.color).toBe('#8888bb')
   })
 
@@ -41,11 +39,11 @@ describe('getSettingChangeInfo', () => {
 
   it('falls back to raw id for an orphaned 1M-suffixed model absent from the catalog', () => {
     const result = getSettingChangeInfo(
-      { subtype: 'model_changed', model: 'claude-opus-4-6[1m]' },
+      { subtype: 'model_changed', model: 'claude-opus-5[1m]' },
       { models },
     )
 
-    expect(result.label).toBe('claude-opus-4-6[1m]')
+    expect(result.label).toBe('claude-opus-5[1m]')
   })
 
   it('returns permission mode display name for bypass', () => {
@@ -143,10 +141,10 @@ describe('getSettingChangeInfo', () => {
   it('falls back to id when no metadata provided', () => {
     const result = getSettingChangeInfo({
       subtype: 'model_changed',
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-5',
     })
 
-    expect(result.label).toBe('claude-opus-4-6')
+    expect(result.label).toBe('claude-opus-5')
   })
 
   it('returns "Restarted" label for a plain container_restarted event', () => {
@@ -194,7 +192,7 @@ describe('isSettingInitEvent', () => {
 
   it('returns false for model_changed with a previous_model', () => {
     expect(
-      isSettingInitEvent({ subtype: 'model_changed', previous_model: 'claude-sonnet-4-6' }),
+      isSettingInitEvent({ subtype: 'model_changed', previous_model: 'claude-sonnet-5' }),
     ).toBe(false)
   })
 

@@ -19,7 +19,6 @@ test.describe('Optional Features', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Code block should render
       await expect(page.locator('pre code').first()).toBeVisible()
     })
 
@@ -30,7 +29,6 @@ test.describe('Optional Features', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Inline code should render
       await expect(page.locator('code').first()).toBeVisible()
     })
 
@@ -41,11 +39,9 @@ test.describe('Optional Features', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Unordered list should render
       await expect(page.locator('ul').first()).toBeVisible()
       await expect(page.locator('li').first()).toBeVisible()
 
-      // Link should render as anchor tag
       const link = page.locator('a[href="https://anthropic.com"]')
       await expect(link).toBeVisible()
       await expect(link).toContainText('Anthropic')
@@ -53,9 +49,7 @@ test.describe('Optional Features', () => {
 
     // SPEC: chat:markdown
     test('renders LaTeX math via KaTeX', async ({ page }) => {
-      // Claim names "LaTeX math" as part of the markdown contract. Inject an
-      // assistant message containing inline + display math and verify the
-      // KaTeX-rendered output appears in the DOM (not the raw $...$ source).
+      // Verifies KaTeX renders $-delimited math into DOM markup rather than raw text.
       const controller = await createSSEController(page)
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
@@ -80,8 +74,6 @@ test.describe('Optional Features', () => {
         { type: 'result', subtype: 'success', turn_id: 'turn_latex', timestamp: ts + 200 },
       ])
 
-      // KaTeX renders into spans with class .katex when math is processed by
-      // the markdown pipeline. Presence proves LaTeX is being rendered.
       await expect(page.locator('.katex').first()).toBeVisible()
       // Raw $-delimited source must not survive into the rendered output.
       await expect(page.getByText(/\$e\^/).first()).toHaveCount(0)
@@ -98,7 +90,6 @@ test.describe('Optional Features', () => {
 
       await openHelpPanel(page)
 
-      // Help panel should contain multiple keyboard shortcuts tables
       const helpPanel = page.locator('[data-testid="panel-help"]')
       await expect(helpPanel.getByText('Send message')).toBeVisible()
 
@@ -117,7 +108,6 @@ test.describe('Optional Features', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Context bar should show percentage
       const contextBar = page.locator('[data-testid="footer-context"]')
       await expect(contextBar).toBeVisible()
       await expect(contextBar).not.toBeEmpty()
@@ -144,16 +134,13 @@ test.describe('Optional Features', () => {
 
       await openSessionsPanel(page)
 
-      // Assert edit/rename button exists and click it
       const renameBtn = page.locator('.sessions-edit-btn').first()
       await expect(renameBtn).toBeVisible()
       await renameBtn.click()
 
-      // Type new name and confirm
       await page.keyboard.type('New Name')
       await page.keyboard.press('Enter')
 
-      // Verify rename API was called
       await expect.poll(() => renameCalled).toBe(true)
     })
 
@@ -169,15 +156,12 @@ test.describe('Optional Features', () => {
       const renameBtn = page.locator('.sessions-edit-btn').first()
       await renameBtn.click()
 
-      // Type a name
       await page.keyboard.type('Should not save')
 
-      // Click cancel button (✕)
       const cancelBtn = page.locator('.sessions-edit-cancel')
       await expect(cancelBtn).toBeVisible()
       await cancelBtn.click()
 
-      // Edit input should disappear
       await expect(page.locator('.sessions-edit-input')).not.toBeVisible()
     })
 
@@ -195,10 +179,8 @@ test.describe('Optional Features', () => {
 
       await page.keyboard.type('Should not save')
 
-      // Click elsewhere to cancel
       await page.locator('.sessions-panel').click({ position: { x: 10, y: 10 } })
 
-      // Edit input should disappear
       await expect(page.locator('.sessions-edit-input')).not.toBeVisible()
     })
 
@@ -222,12 +204,10 @@ test.describe('Optional Features', () => {
 
       await openSessionsPanel(page)
 
-      // Click resume on non-current session
       const resumeBtn = page.locator('[data-testid="session-resume-btn"]').first()
       await expect(resumeBtn).toBeVisible()
       await resumeBtn.click()
 
-      // Poll until resume API is called
       await expect.poll(() => resumeCalled).toBe(true)
     })
   })

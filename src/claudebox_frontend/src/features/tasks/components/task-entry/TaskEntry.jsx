@@ -5,11 +5,9 @@ import { getStalenessColor } from '../../../../utils/color'
 import { formatDuration } from '../../../../utils/formatters'
 
 /**
- * Render a single task entry with description, duration, and staleness color.
  * @param {object} props
  * @param {object} props.task - Task object with id, description, status, startTime, endTime, lastEventTime.
  * @param {number} props.now - Current timestamp for live duration and staleness calculation.
- * @param {function} props.onClick - Callback when entry is clicked.
  */
 export default function TaskEntry({ task, now, onClick }) {
   const duration =

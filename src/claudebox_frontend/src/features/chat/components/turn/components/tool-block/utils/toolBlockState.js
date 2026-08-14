@@ -1,30 +1,18 @@
 /** Predicates for ToolBlock display state - extracted from ToolBlock.jsx, no React APIs. */
 
-import { SdkProtocol, ToolName } from '../../../../../../../config/schema'
+import { ToolName } from '../../../../../../../config/schema'
 import { shouldCollapseByDefault } from './toolResultFormatters'
 
-/**
- * AskUserQuestion is awaiting an answer when the tool is pending or its result still
- * carries the awaiting marker, and the user has not yet answered.
- */
-export function isAskUserAwaitingAnswer(toolName, isPending, resultContent, wasAnswered) {
-  return (
-    toolName === ToolName.ASK_USER_QUESTION &&
-    (isPending || resultContent.includes(SdkProtocol.AWAITING_ANSWER_TEXT)) &&
-    !wasAnswered
-  )
+/** AskUserQuestion is awaiting an answer when a form is the surface: a form can render and the question is unanswered - independent of what the runtime reported. */
+export function isAskUserAwaitingAnswer(toolName, canRenderForm, wasAnswered) {
+  return toolName === ToolName.ASK_USER_QUESTION && canRenderForm && !wasAnswered
 }
 
-/**
- * ExitPlanMode is awaiting an answer when a plan is present and unanswered.
- */
 export function isPlanAwaitingAnswer(toolName, plan, wasAnswered) {
   return toolName === ToolName.EXIT_PLAN_MODE && plan && !wasAnswered
 }
 
-/**
- * Single-line result identical to the summary - keep expandable but start collapsed.
- */
+/** Single-line result identical to the summary - keep expandable but start collapsed. */
 export function isSingleLineDuplicate(effectiveDetails, effectiveSummary) {
   return (
     effectiveDetails &&
@@ -33,12 +21,7 @@ export function isSingleLineDuplicate(effectiveDetails, effectiveSummary) {
   )
 }
 
-/**
- * Whether the block has any payload worth expanding.
- *
- * @param {object} parts - Possible content payloads.
- * @returns {boolean}
- */
+/** Whether the block has any payload worth expanding. */
 export function hasExpandableContent({
   effectiveDetails,
   jsonData,
@@ -52,6 +35,7 @@ export function hasExpandableContent({
   systemReminders,
   persistedOutput,
   toolInput,
+  command,
 }) {
   return Boolean(
     effectiveDetails ||
@@ -65,13 +49,12 @@ export function hasExpandableContent({
       taskPrompt ||
       systemReminders ||
       persistedOutput ||
-      toolInput,
+      toolInput ||
+      command,
   )
 }
 
-/**
- * Default-collapsed state for the block: dupe-of-summary or per-tool defaults.
- */
+/** Default-collapsed state for the block: dupe-of-summary or per-tool defaults. */
 export function shouldStartCollapsed({
   toolName,
   singleLineDuplicate,
@@ -86,9 +69,7 @@ export function shouldStartCollapsed({
   )
 }
 
-/**
- * Live duration in seconds for a still-pending block, only after >= 30s.
- */
+/** Live duration in seconds for a still-pending block, only after >= 30s. */
 export function computeLiveBlockDuration({
   isAsyncTask,
   toolUseTime,

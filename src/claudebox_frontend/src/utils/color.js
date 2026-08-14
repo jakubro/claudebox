@@ -76,12 +76,7 @@ export function hslToRgb(h, s, l) {
   return [Math.round((rn + m) * 255), Math.round((gn + m) * 255), Math.round((bn + m) * 255)]
 }
 
-/**
- * Derive a lighter hover color from a hex accent by boosting each channel.
- *
- * Adds a fixed offset to each RGB channel for a subtle brightening effect.
- * Clamps at 255 to stay within valid color range.
- */
+/** Derive a lighter hover color from a hex accent by boosting each channel. */
 export function deriveHoverColor(hex) {
   const r = Math.min(255, Number.parseInt(hex.slice(1, 3), 16) + 30)
   const g = Math.min(255, Number.parseInt(hex.slice(3, 5), 16) + 30)
@@ -90,15 +85,8 @@ export function deriveHoverColor(hex) {
 }
 
 /**
- * Derive a favicon-bg color from a workspace accent: brighten in HSL space.
- *
- * Preserves hue, sets lightness to a fixed target, and amplifies saturation
- * so the workspace identity reads at favicon scale where the muted source
- * loses its hue. Example: `#2a4a2a` (dark green) -> `#368236` (saturated
- * green at moderate lightness).
- *
- * The picker palette and tab-bar gradient consume the raw accent. The
- * favicon caller is the only consumer of this brightener.
+ * Derive a favicon-bg color from a workspace accent: preserve hue, boost saturation so it reads at favicon scale.
+ * Only the favicon uses this - picker palette and tab-bar gradient use the raw accent.
  */
 export function deriveFaviconBgColor(hex) {
   const [r, g, b] = hexToRgb(hex)
@@ -120,10 +108,7 @@ export function lerpColor(a, b, t) {
   )
 }
 
-/**
- * Calculate context bar color using exponential curve.
- * Blue for most values, shifts quickly to yellow near 90%, orange near 100%.
- */
+/** Calculate context bar color using an exponential curve (blue -> yellow near 90% -> orange near 100%). */
 export function getContextBarColor(percent) {
   // Exponential curve with power of 8: stays blue until ~85%, then shifts quickly
   const t = Math.min(1, percent / 100)
@@ -141,11 +126,8 @@ export function getContextBarColor(percent) {
 }
 
 /**
- * Compute border color for a running task based on staleness.
- *
- * Gradient: blue (<=15s) -> purple -> amber (90s) -> fading toward gray (90s+).
- * Routes through purple waypoint to follow warm hue path (avoids gray zone
- * that RGB lerp produces between complementary blue and amber).
+ * Border color for a running task by staleness: blue (<=15s) -> purple -> amber (90s) -> gray beyond.
+ * Routes through purple to avoid the gray zone a direct blue-amber RGB lerp would produce.
  */
 export function getStalenessColor(stalenessMs) {
   if (stalenessMs <= STALENESS_FRESH_PEAK_MS) {

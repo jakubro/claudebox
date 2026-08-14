@@ -15,16 +15,12 @@ test.describe('LangGraph AskUserQuestion', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // The ask_user_question tool block renders identically to Claude's
-    // AskUserQuestion - the frontend normalises the tool name via the
-    // TOOL_NAME_ALIASES map and the existing InteractiveQuestions form
-    // appears with the questions extracted from tool_input.
+    // ask_user_question normalises to Claude's AskUserQuestion via the TOOL_NAME_ALIASES map.
     const toolBlock = page
       .locator('[data-testid="tool-block"][data-tool-use-id="tool_001"]')
       .first()
     await expect(toolBlock).toBeVisible()
 
-    // The interactive form surface is present.
     const form = page.locator('.tool-questions-interactive').first()
     await expect(form).toBeVisible()
   })

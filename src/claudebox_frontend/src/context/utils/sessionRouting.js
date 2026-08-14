@@ -3,9 +3,9 @@
 /**
  * Parse hash into workspace and optional session/board IDs and per-viewer params.
  *
- * Session route may carry an optional `/turns/<role>-<turnId>` segment where
- * role is `u` (user message) or `a` (assistant message). The segment serializes
- * a paused-at-turn reading position; absence means "at bottom, autoscroll engaged".
+ * Session route may carry an optional `/turns/<role>-<turnId>` segment (`u` = user, `a` =
+ * assistant) that serializes a paused-at-turn reading position; absence means "at bottom,
+ * autoscroll engaged".
  *
  * @param {string} hash - Window location hash.
  * @returns {{ workspaceId: string, sessionId: string | null, boardId: string | null, turnId: string | null, messageType: 'user' | 'assistant' | null, density: 'comfortable' | 'terse' } | null}
@@ -47,8 +47,8 @@ export function parseHash(hash) {
 }
 
 /**
- * Build the `/turns/<role>-<turnId>` segment for a URL. Returns empty string when
- * either input is missing - a bare session URL means "at bottom, autoscroll engaged".
+ * Build the `/turns/<role>-<turnId>` segment for a URL; empty string when either input is
+ * missing - a bare session URL means "at bottom, autoscroll engaged".
  *
  * @param {string | null | undefined} turnId
  * @param {'user' | 'assistant' | null | undefined} messageType

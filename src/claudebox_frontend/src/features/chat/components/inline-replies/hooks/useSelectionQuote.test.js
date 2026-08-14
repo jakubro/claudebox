@@ -23,8 +23,7 @@ function rangeOver(textNode, quote) {
   const range = document.createRange()
   range.setStart(textNode, start)
   range.setEnd(textNode, start + quote.length)
-  // jsdom Range lacks getBoundingClientRect (real browsers provide it);
-  // shim it so the affordance can compute its position.
+  // jsdom Range lacks getBoundingClientRect - shim it so the affordance can compute its position.
   range.getBoundingClientRect = () => ({ right: 100, bottom: 50 })
   return range
 }
@@ -121,6 +120,35 @@ describe('useSelectionQuote', () => {
     fireSelectionChange()
 
     expect(result.current.affordance).toBeNull()
+  })
+
+  it('clamps the affordance so it stays inside the transcript bounds', () => {
+    const container = buildTranscript()
+    container.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 600 })
+    const target = container.querySelector('#target').firstChild
+    const range = rangeOver(target, 'context window')
+    // Selection ends 10px from the transcript's right edge - the button would overflow it.
+    range.getBoundingClientRect = () => ({ right: 390, bottom: 50 })
+    mockSelection({ text: 'context window', node: target, range })
+
+    const { result } = renderHook(() => useSelectionQuote({ current: container }, true))
+    fireSelectionChange()
+
+    expect(result.current.affordance.left).toBe(370) // min(390, 400 - 26 - 4)
+  })
+
+  it('leaves a mid-line affordance at its unclamped position', () => {
+    const container = buildTranscript()
+    container.getBoundingClientRect = () => ({ left: 0, right: 800, top: 0, bottom: 600 })
+    const target = container.querySelector('#target').firstChild
+    const range = rangeOver(target, 'context window')
+    range.getBoundingClientRect = () => ({ right: 200, bottom: 50 })
+    mockSelection({ text: 'context window', node: target, range })
+
+    const { result } = renderHook(() => useSelectionQuote({ current: container }, true))
+    fireSelectionChange()
+
+    expect(result.current.affordance.left).toBe(200)
   })
 
   it('does not track when disabled', () => {

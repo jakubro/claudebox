@@ -13,9 +13,7 @@ import {
 } from '../config/schema'
 import { isAsyncTask, isHumanEvent } from './eventPredicates'
 
-/**
- * Initial state for incremental turn grouping across batches.
- */
+/** Initial state for incremental turn grouping across batches. */
 export const INITIAL_TURN_GROUPING_STATE = {
   currentTurnIndex: null,
   compactionStartTurnIndex: null,
@@ -35,10 +33,7 @@ const THINKING_XML_PATTERN = /<thinking>[\s\S]*?<\/thinking>/
 /** Pattern matching the async-task completion notification injected as a user message. */
 const TASK_NOTIFICATION_PATTERN = /^\s*<task-notification[\s>]/
 
-/**
- * Compute threshold-filtered timing offsets for a list of event timestamps.
- * Returns an array of (offset in seconds | null) - null when delta from last shown is below threshold.
- */
+/** Compute threshold-filtered timing offsets; null when the delta from the last shown offset is below threshold. */
 export function computeTimingOffsets(eventTimestamps, turnStartTime, threshold = 30) {
   if (!turnStartTime) {
     return eventTimestamps.map(() => null)
@@ -57,10 +52,7 @@ export function computeTimingOffsets(eventTimestamps, turnStartTime, threshold =
   })
 }
 
-/**
- * Index events for fast lookup during block creation.
- * First pass of event processing - builds indexes for tool results, nested events, etc.
- */
+/** Index events for fast lookup during block creation - first pass of event processing. */
 export function indexEvents(events) {
   const toolResults = new Map()
   const nestedEvents = new Map()
@@ -116,10 +108,7 @@ export function indexEvents(events) {
   return { toolResults, nestedEvents, skillContent, compactionSummary, hasCompactBoundary }
 }
 
-/**
- * Extract `<thinking>` XML blocks from text content into ordered segments.
- * Returns array of {type: 'thinking'|'text', content} segments preserving order.
- */
+/** Extract `<thinking>` XML blocks from text into ordered {type, content} segments. */
 export function extractThinkingFromText(content) {
   const pattern = /<thinking>([\s\S]*?)<\/thinking>/g
   const segments = []
@@ -146,13 +135,8 @@ export function extractThinkingFromText(content) {
 }
 
 /**
- * Process events into renderable blocks.
- * Pairs tool_use with corresponding tool_result.
- * Groups nested subagent events under parent Task.
- * Attaches skill markdown to Skill tool blocks.
- * Pairs compact_start with compact_boundary for progress indication.
- * Extracts embedded `<thinking>` XML from assistant text into separate thinking blocks.
- * @param {Array} events - Events to process.
+ * Process events into renderable blocks: pairs tool_use/result, groups nested Task events,
+ * skill markdown, and compaction start/boundary; extracts embedded thinking XML.
  */
 export function processEvents(events) {
   const blocks = []
@@ -161,8 +145,7 @@ export function processEvents(events) {
 
   // Second pass: create renderable blocks (skip nested events, skill markdown, and compaction summaries)
   for (const event of events) {
-    // Skip events that belong to a parent - they're rendered nested under Task block
-    // Check both locations (see indexEvents for explanation)
+    // Skip events that belong to a parent - rendered nested under the Task block
     const parentId = event.parent_tool_use_id
     if (parentId) {
       continue
@@ -233,18 +216,14 @@ export function processEvents(events) {
       const summary = compactionSummary.get(event.id)
       blocks.push({ type: BlockType.COMPACTION, event, summary, isCompacting: false })
     }
-    // tool_result handled via pairing above
-    // model_changed / permission_mode_changed handled via turn.settingChanges (rendered outside turn bubble)
+    // tool_result is paired above; model_changed/permission_mode_changed render via
+    // turn.settingChanges, not here.
   }
 
   return blocks
 }
 
-/**
- * Process nested events into tool blocks for rendering.
- * Used for subagent (Task) nested tool calls.
- * Skips human-marked events (Task prompts) - they're internal, not shown.
- */
+/** Process nested (subagent Task) events into tool blocks; skips human-marked events (Task prompts). */
 export function processNestedEvents(events) {
   if (!events) {
     return []
@@ -274,6 +253,9 @@ export function processNestedEvents(events) {
     if (event.subtype === EventSubtype.TOOL_USE) {
       const toolUseId = event.tool_use_id
       const result = toolUseId ? toolResults.get(toolUseId) : null
+      if (isHiddenToolSearch(event, result)) {
+        continue
+      }
       blocks.push({ toolUse: event, toolResult: result })
     }
   }
@@ -281,9 +263,7 @@ export function processNestedEvents(events) {
   return blocks
 }
 
-/**
- * Test whether event is an SDK interrupt acknowledgment.
- */
+/** Test whether event is an SDK interrupt acknowledgment. */
 export function isInterruptAck(event) {
   return (
     event.type === EventType.USER &&
@@ -301,10 +281,8 @@ export function isVisibleEvent(event) {
   ) {
     return false
   }
-  // Async-task completion is shown via the typed system/task_notification event (Tasks
-  // panel + Tool block); the SDK also injects the same completion as a user message
-  // carrying <task-notification> markup. Hide that echo - matched regardless of the
-  // stored human flag so sessions recorded before the typed event existed stay clean on reload.
+  // Async-task completion shows via the typed task_notification event; hide the SDK's echoed
+  // <task-notification> user message too, regardless of is_human, so older sessions stay clean.
   if (
     event.type === EventType.USER &&
     typeof event.content === 'string' &&
@@ -343,7 +321,6 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
     return turns[idx]
   }
 
-  // Flush buffered compaction events into the target turn
   function flushCompaction(targetIdx) {
     if (pendingCompactionEvents.length === 0) {
       return
@@ -368,19 +345,19 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
           [],
           event.attachments || null,
           event.inline_replies || null,
+          event.note || null,
         ),
       )
       cloned.add(currentTurnIndex)
     } else if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.INTERRUPT_SENT) {
-      // Skip if this turn already completed successfully - the interrupt arrived after
-      // the result and shouldn't mark the finished turn as interrupted
+      // Skip if the turn already completed - a late-arriving interrupt shouldn't mark it interrupted.
       const alreadyCompleted = event.turn_id && turnResults[event.turn_id] === 'success'
       if (!alreadyCompleted && currentTurnIndex != null) {
         cloneTurn(currentTurnIndex).interrupted = true
       }
     } else if (isSettingChangeOrRestart(event)) {
-      // Setting-change and container-restart dividers stored separately, rendered outside turn bubbles.
-      // Skip setting-change initialization events (no previous value); container_restarted always renders.
+      // Setting-change/restart dividers render outside turn bubbles; skip init events (no
+      // previous value) - container_restarted always renders.
       if (!isSettingInit(event) && currentTurnIndex != null) {
         cloneTurn(currentTurnIndex).settingChanges.push(event)
       }
@@ -417,15 +394,14 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
         } else {
           turns.push(createTurn(event.turn_id, null, [event]))
           cloned.add(turns.length - 1)
-          // Don't update currentTurnIndex - orphan turns match groupIntoTurns behavior
+          // Don't update currentTurnIndex - orphan turns stay unselected as current
         }
       }
     }
   }
 
-  // Flush remaining compaction events so in-progress compaction blocks render.
-  // The events stay in the turn for the next batch - when compact_boundary arrives,
-  // eventsToBlocks suppresses the compact_start block and shows the completed one.
+  // Flush remaining compaction events so in-progress compaction blocks render; they stay in the
+  // turn for the next batch, where the completed block replaces the compact_start spinner.
   if (pendingCompactionEvents.length > 0 && currentTurnIndex != null) {
     flushCompaction(currentTurnIndex)
   }
@@ -440,10 +416,7 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
   }
 }
 
-/**
- * Append result events from a batch to existing turn results map.
- * Returns original reference if no new results found.
- */
+/** Append result events from a batch to the turn results map; returns the original reference if none are new. */
 export function appendTurnResults(existing, newEvents) {
   let updated = null
   for (const e of newEvents) {
@@ -457,10 +430,7 @@ export function appendTurnResults(existing, newEvents) {
   return updated || existing
 }
 
-/**
- * Append task notifications from new visible events to existing notifications map.
- * Returns original reference if no new notifications found.
- */
+/** Append task notifications from new visible events; returns the original reference if none are new. */
 export function appendTaskNotifications(existing, newVisibleEvents) {
   let notifications
 
@@ -485,14 +455,8 @@ export function appendTaskNotifications(existing, newVisibleEvents) {
 }
 
 /**
- * Append todo diffs from new events to existing diffs map.
- * Tracks per-subagent previous state so each subagent's diff is computed against its own history.
- * Handles cleanup for both sync tasks (tool_result) and async tasks (task_notification).
- * @param {Map} existing - Existing todoDiffs map (toolUseId -> diff).
- * @param {Map} previousTodosBySubagent - Map of subagentKey -> previous todos array.
- * @param {Map} asyncTaskIdMap - Map of asyncTaskId (agentId) -> tool_use_id for async correlation.
- * @param {Array} newEvents - New events to process.
- * @returns {{ diffs: Map, previousTodosBySubagent: Map, asyncTaskIdMap: Map }}
+ * Append todo diffs from new events; tracks per-subagent previous state and cleans up completed
+ * sync (tool_result) and async (task_notification) tasks; asyncTaskIdMap maps agentId -> tool_use_id.
  */
 export function appendTodoDiffs(existing, previousTodosBySubagent, asyncTaskIdMap, newEvents) {
   let diffs = null
@@ -556,22 +520,10 @@ export function appendTodoDiffs(existing, previousTodosBySubagent, asyncTaskIdMa
 }
 
 /**
- * Append task diffs from TaskCreate / TaskUpdate events.
- *
- * Mirrors appendTodoDiffs but for the Task tracker family.
- * TaskCreate adds an item; TaskUpdate mutates an item by taskId. Both feed the
- * same todoDiffs + todosBySubagent stores so the panel and in-chat block stay
- * source-agnostic.
- *
- * @param {Map} existing - Existing todoDiffs map (toolUseId -> diff).
- * @param {Map} previousTodosBySubagent - Map of subagentKey -> current todos array.
- * @param {Map} taskIdMap - Map of taskId -> { subagentKey, index } binding for
- *   updates. Populated from TaskCreate tool_result.
- * @param {Map} pendingCreatesMap - Map of tool_use_id -> pending TaskCreate
- *   metadata, used to bind the taskId returned by the tool_result back to a
- *   subagent + list-position.
- * @param {Array} newEvents - New events to process.
- * @returns {{ diffs: Map, previousTodosBySubagent: Map, taskIdMap: Map, pendingCreatesMap: Map }}
+ * Append task diffs from TaskCreate/TaskUpdate events; mirrors appendTodoDiffs for the Task family
+ * (TaskCreate adds an item, TaskUpdate mutates one by taskId) so panel and in-chat views share state.
+ * taskIdMap holds taskId -> {subagentKey, index}; pendingCreatesMap binds a pending TaskCreate's
+ * tool_use_id to that position until its result returns the real taskId.
  */
 export function appendTaskDiffs(
   existing,
@@ -675,11 +627,8 @@ function _applyTaskResult(ctx, event) {
   _ensurePendingMap(ctx)
   ctx.pendingMap.delete(event.tool_use_id)
 
-  // Back-patch _taskId onto the bound item so the in-chat grouped renderer can
-  // dedup by identity (one row per _taskId within the run). Mutation is safe:
-  // _applyTaskCreate pushed the SAME item reference to both
-  // ctx.prevMap[subagentKey] and ctx.diffs.get(creatingToolUseId).added[0], so
-  // mutating in place propagates to both consumers.
+  // Back-patch _taskId onto the bound item so the renderer can dedup by identity; safe because
+  // _applyTaskCreate pushed the same item reference into both ctx.prevMap and diffs.added.
   const item = (ctx.prevMap.get(pending.subagentKey) || [])[pending.index]
   if (item) {
     item._taskId = taskIdStr
@@ -688,10 +637,7 @@ function _applyTaskResult(ctx, event) {
 
 /** Compose the updated task item by merging the existing record with the patch. */
 function _mergeTaskUpdate(current, taskId, newStatus, addBlockedBy) {
-  // _taskId carries from `current` when present (set by _applyTaskResult once
-  // the numeric id binds), otherwise from `taskId` itself (the TaskUpdate
-  // payload's taskId, stringified). Preserving it on the merged record keeps
-  // dedup-by-identity working through update cycles.
+  // _taskId carries from current (via _applyTaskResult) else from taskId, for dedup-by-identity across updates.
   const taskIdStr = current?._taskId || (taskId != null ? String(taskId) : null)
   return {
     content: current?.content || `Task #${taskId ?? '?'}`,
@@ -714,8 +660,7 @@ function _classifyTaskUpdateDiff(updated, newStatus, addBlockedBy) {
   } else if (newStatus === 'completed') {
     diff.completed.push(updated)
   } else if (addBlockedBy && addBlockedBy.length > 0) {
-    // Pure blocked-by update - surface via added bucket so TodoList shows
-    // the chip without misclassifying the transition.
+    // Pure blocked-by update: surface via added bucket so TodoList shows the chip without misclassifying it.
     diff.added.push(updated)
   }
   return diff
@@ -742,10 +687,7 @@ function _ensurePendingMap(ctx) {
   }
 }
 
-/**
- * Append subagent labels from Task tool_use events.
- * Maps parent_tool_use_id -> Task description for panel section headers.
- */
+/** Append subagent labels from Task tool_use events; maps parent_tool_use_id -> Task description. */
 export function appendSubagentLabels(existing, newEvents) {
   let labels = null
   for (const event of newEvents) {
@@ -763,10 +705,7 @@ export function appendSubagentLabels(existing, newEvents) {
   return labels || existing
 }
 
-/**
- * Extract task information from events for Tasks panel display.
- * Returns array of task objects with id, description, status, timestamps.
- */
+/** Extract task info from events for Tasks panel display (id, description, status, timestamps). */
 export function extractTasks(events, taskNotifications) {
   const tasks = []
   const toolResults = new Map()
@@ -839,11 +778,8 @@ export function extractTasks(events, taskNotifications) {
 }
 
 /**
- * Generate a fingerprint for AskUserQuestion matching across turns.
- * Uses question headers (stable short labels) for fuzzy matching that survives SDK text reformatting.
- * Truthy non-array inputs (e.g. a JSON-encoded string persisted by an upstream
- * serialization bug) skip the fingerprint and emit a single warn so the
- * malformed payload is visible without crashing the chat render.
+ * Fingerprint AskUserQuestion for cross-turn matching via question headers (stable short labels),
+ * which survives SDK text reformatting; a non-array input skips the fingerprint and warns once.
  */
 export function getAskUserFingerprint(questions) {
   if (questions == null) {
@@ -865,9 +801,8 @@ export function getAskUserFingerprint(questions) {
 }
 
 /**
- * Compute set of AskUserQuestion tool_use_ids to hide across all turns.
- * Hides errored (is_error=true) attempts when a later same-fingerprint sibling exists.
- * Successfully answered questions are never hidden.
+ * AskUserQuestion tool_use_ids to hide: errored attempts with a later same-fingerprint sibling;
+ * answered questions are never hidden.
  */
 export function computeDuplicateAskUserIds(turns) {
   const ids = new Set()
@@ -912,8 +847,27 @@ export function computeDuplicateAskUserIds(turns) {
 }
 
 /**
- * Extract MCP servers from init events.
+ * True for a ToolSearch/tool_search tool_use/tool_result pair that hasn't failed - hidden entirely
+ * so it never flashes visible before disappearing; an errored result stays visible like any failure.
  */
+export function isHiddenToolSearch(toolUse, toolResult) {
+  if (normalizeToolName(toolUse?.content) !== ToolName.TOOL_SEARCH) {
+    return false
+  }
+  return !(toolResult && toolResult.is_error)
+}
+
+/**
+ * True when `blocks` has at least one block that isn't a hidden ToolSearch call; a turn whose only
+ * content is hidden calls renders no header/footer chrome, not an empty shell.
+ */
+export function hasVisibleBlock(blocks) {
+  return blocks.some(
+    block => block.type !== BlockType.TOOL || !isHiddenToolSearch(block.toolUse, block.toolResult),
+  )
+}
+
+/** Extract MCP servers from init events. */
 export function getMcpServers(events) {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i]
@@ -925,10 +879,16 @@ export function getMcpServers(events) {
 }
 
 // Private helpers
-// ------------------------------------------------------------------------
 
 /** Create a turn object. */
-function createTurn(turn_id, userMessage, events, attachments = null, inlineReplies = null) {
+function createTurn(
+  turn_id,
+  userMessage,
+  events,
+  attachments = null,
+  inlineReplies = null,
+  note = null,
+) {
   return {
     turn_id,
     userMessage,
@@ -937,6 +897,7 @@ function createTurn(turn_id, userMessage, events, attachments = null, inlineRepl
     interrupted: false,
     attachments,
     inlineReplies,
+    note,
   }
 }
 
@@ -982,10 +943,7 @@ function computeSingleDiff(previousTodos, currentTodos) {
   return { completed, started, added, removed }
 }
 
-/**
- * Resolve async task_ids from an event into tool_use_ids via the asyncMap.
- * Returns array of tool_use_ids that should be cleaned up from the subagent todo map.
- */
+/** Resolve async task_ids from an event into tool_use_ids to clean up from the subagent todo map. */
 function _resolveAsyncTaskIds(event, asyncMap) {
   if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.TASK_NOTIFICATION) {
     const taskId = event.message_data?.task_id

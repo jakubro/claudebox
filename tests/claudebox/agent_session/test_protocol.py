@@ -1,9 +1,6 @@
 """Structural Protocol satisfaction tests for AgentSession.
 
-The static type checker (`ty`, run by `just lint`) is the primary structural
-validator: the seam `_sdk_client: AgentSession = ClaudeRuntime(...)` in
-`container_api/session/session.py` only type-checks if `ClaudeRuntime`
-structurally satisfies the Protocol. These runtime tests are defense-in-depth.
+`ty` is the primary validator via `_sdk_client: AgentSession = ClaudeRuntime(...)`; this is defense-in-depth.
 """
 
 import inspect
@@ -51,12 +48,7 @@ def test_agent_session_protocol_declares_expected_methods():
 
 
 def test_claude_runtime_method_coverage():
-    """Every Protocol method exists on ClaudeRuntime with correct async-ness.
-
-    The static type checker enforces structural assignment compatibility from
-    ClaudeRuntime to AgentSession; this signature-aware check catches a method
-    renamed without Protocol update or one declared with the wrong async-ness.
-    """
+    """Every Protocol method exists on ClaudeRuntime with the correct async-ness (catches drift from a rename)."""
 
     for name in PROTOCOL_COROUTINE_METHODS:
         method = getattr(ClaudeRuntime, name, None)

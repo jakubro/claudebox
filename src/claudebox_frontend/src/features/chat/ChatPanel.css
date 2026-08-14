@@ -51,9 +51,17 @@
   background: var(--bg-primary);
 }
 
+/* The overlay is inset 1px at the top and left so the panel's frame borders stay visible. Content
+   scrolling underneath would show through that 1px strip, so the transcript is hidden outright,
+   not merely covered. */
+.chat-replay-overlay ~ .chat-messages {
+  visibility: hidden;
+}
+
 .chat-replay-overlay ~ .chat-messages .chat-overlay-hoist {
   position: relative;
   z-index: 11;
+  visibility: visible;
 }
 
 .chat-replay-status-text {

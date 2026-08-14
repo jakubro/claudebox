@@ -61,10 +61,9 @@ export function getSettingChangeInfo(
 }
 
 /**
- * Whether a divider event represents the session's initial value, i.e. set
- * during bootstrap rather than by user action. Setting-change events with no
- * `previous_*` field are init; lifecycle events (e.g. container_restarted)
- * have no init concept and always render.
+ * True when a divider event is the session's initial value (set at bootstrap, not by the user):
+ * setting-change events with no `previous_*` field are init. Lifecycle events like
+ * container_restarted have no init concept and always render.
  */
 export function isSettingInitEvent(event) {
   if (event.subtype === EventSubtype.MODEL_CHANGED) {

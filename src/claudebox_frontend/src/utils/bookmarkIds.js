@@ -1,7 +1,6 @@
 /** Bookmark ID parsing for the turnId:messageType format. */
 
 /**
- * Parse a bookmark ID into turn ID and message type.
  * @param {string} bookmarkId - ID in format "turnId:user" or "turnId:assistant".
  * @returns {{ turnId: string, messageType: string }}
  */

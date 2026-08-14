@@ -4,7 +4,6 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import StatusStrip from './StatusStrip'
 
-// Mock contexts
 const mockEventsCtx = { connectionStatus: 'connected' }
 vi.mock('../../../../context/EventsContext', () => ({
   useEvents: () => mockEventsCtx,
@@ -15,9 +14,8 @@ vi.mock('../../../../context/SessionDataContext', () => ({
   useSessionData: () => mockSessionDataCtx,
 }))
 
-// Mock the color utility but keep a handle on the real implementation for the
-// real-progression test below - verifies actual color shifts, not just that the
-// component pipes a mocked return value through.
+// Mock the color utility but keep a handle on the real implementation for the real-progression test
+// below - verifies actual color shifts, not that the component pipes a mocked value through.
 const mockGetContextBarColor = vi.fn(() => '#22c55e')
 vi.mock('../../../../utils/color', () => ({
   getContextBarColor: (...args) => mockGetContextBarColor(...args),
@@ -89,9 +87,6 @@ describe('StatusStrip', () => {
   })
 
   it('fill bar color shifts with usage level (real progression)', async () => {
-    // Pull in the real getContextBarColor and route the mock to it. This
-    // exercises the actual color-shift behavior rather than asserting that a
-    // pre-baked mock value is piped through (which would be tautological).
     const { getContextBarColor: real } = await vi.importActual('../../../../utils/color')
     mockGetContextBarColor.mockImplementation(real)
 
@@ -111,8 +106,8 @@ describe('StatusStrip', () => {
       unmount()
     }
 
-    // jsdom normalizes inline `style.background` to rgb(...) form regardless
-    // of input. Parse the channels and assert the actual color shift instead.
+    // jsdom normalizes inline `style.background` to rgb(...) regardless of input - parse the
+    // channels and assert the actual color shift instead.
     const rgbOf = c =>
       c
         .match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)

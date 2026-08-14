@@ -5,7 +5,6 @@ import { useSessionData } from '../../../../context/SessionDataContext'
 import { getContextBarColor } from '../../../../utils/color'
 import { computeContextBar } from '../../../../utils/contextBar'
 
-/** Render thin status bar with connection indicator and context usage. */
 export default function StatusStrip() {
   const { connectionStatus } = useEvents()
   const { lastContextTokens, contextWindow } = useSessionData()

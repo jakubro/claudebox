@@ -4,8 +4,6 @@ import { useEffect } from 'react'
 import { HELP_OVERLAY_KEY } from '../../../config/layout'
 
 /**
- * Register global keydown listeners for panel toggles, navigation, and session creation.
- *
  * @param {object} params
  * @param {Function} params.handleTogglePanel - Toggle a side panel by ID.
  * @param {Function} params.focusChatTab - Focus the chat panel.
@@ -108,7 +106,15 @@ export default function useKeyboardShortcuts({
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    // Published only while a listener is attached, so a test can wait for the shortcut to be live
+    // rather than for an earlier paint. Reset every render (not latched) - the effect re-subscribes
+    // each render and the swap is synchronous, so the flag never blinks off.
+    document.body.dataset.shortcutsReady = 'true'
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      delete document.body.dataset.shortcutsReady
+    }
   }, [
     handleTogglePanel,
     focusChatTab,

@@ -1,8 +1,7 @@
 /** Pure transform of status.claude.com payload - extracted from useClaudeStatus.js. */
 
 /**
- * Reduce the upstream status payload to the indicator + display description
- * the footer renders. Appends the first incident name when present.
+ * Reduces the status payload to {indicator, description}; appends the first incident name when present.
  *
  * @param {{ status?: {indicator?: string, description?: string}, incidents?: Array<{name?: string}> }} data
  * @returns {{ indicator: string, description: string }}

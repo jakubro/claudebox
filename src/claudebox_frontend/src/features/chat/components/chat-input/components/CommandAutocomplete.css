@@ -46,7 +46,7 @@
 }
 
 .autocomplete-name {
-  font-family: monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   color: var(--text-primary);
   overflow: hidden;
@@ -73,7 +73,7 @@
 }
 
 .autocomplete-detail-usage {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
   margin-bottom: 8px;

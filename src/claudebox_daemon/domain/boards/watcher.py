@@ -11,13 +11,7 @@ from ...constants import BOARD_WATCHER_DEBOUNCE_DELAY, BOARD_WATCHER_POLL_INTERV
 class BoardWatcher(MtimeWatcher):
     """Watch board.yaml files for changes via mtime polling.
 
-    Uses polling instead of inotify for reliability across filesystems
-    (NFS, container mounts, watcher limit exhaustion).
-
-    Attributes:
-        _workspace_id: Workspace ID for SSE event scoping.
-        _workspace_root: Absolute path to workspace root.
-        _events: Broadcaster for pushing board_update events.
+    Uses polling instead of inotify for reliability across filesystems (NFS, container mounts, watcher limits).
     """
 
     def __init__(

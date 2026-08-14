@@ -1,7 +1,14 @@
 /** One inline-reply thread - the body of a floating composer: quoted-source attribution + reply field (or read-only when sent). */
 
+// audit-ignore-file: excessive-props
+
 import { Trash2, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
+import { useInteraction } from '../../../../context/InteractionContext'
+import useInterruptHandler from '../../../../hooks/useInterruptHandler'
+import BlockCollapseManager from '../chat-input/BlockCollapseManager'
+import useTextEditingKeys from '../chat-input/hooks/useTextEditingKeys'
 
 /**
  * Render an inline-reply thread inside a floating composer.
@@ -16,6 +23,7 @@ import { useEffect, useRef } from 'react'
  * @param {function} [props.onClose] - Called (id) when the close button is pressed.
  * @param {function} [props.onFocus] - Called (id) when the reply field gains focus (pins the float).
  * @param {function} [props.onSubmit] - Called on Enter to send the whole batch (unsent only).
+ * @param {boolean} [props.canInterrupt] - Whether Ctrl+. is currently allowed (mirrors the composer's gate).
  */
 export default function InlineThread({
   reply,
@@ -28,12 +36,61 @@ export default function InlineThread({
   onClose,
   onFocus,
   onSubmit,
+  canInterrupt,
 }) {
   const textareaRef = useRef(null)
 
-  // Controlled autoresize: grow with content up to the shared composer cap, then scroll internally.
+  // Mirrors ChatInput's interrupt handler; InteractionContext is ambient, no prop-threading beyond canInterrupt.
+  const { interruptStatus, startInterrupt, completeInterrupt, setError } = useInteraction()
+  const handleInterrupt = useInterruptHandler({
+    startInterrupt,
+    completeInterrupt,
+    setError,
+    disabled: !canInterrupt || interruptStatus === 'stopping',
+  })
+
+  // Own collapse state, but placeholder ids share BlockCollapseManager's module-level counter,
+  // so ids never collide across boxes.
+  const collapseManagerRef = useRef(null)
+  if (!collapseManagerRef.current) {
+    collapseManagerRef.current = new BlockCollapseManager()
+  }
+
+  // A programmatic edit writes the pending selection here; the layout effect below applies it after React commits.
+  const pendingSelectionRef = useRef(null)
+
+  const getState = useCallback(
+    () => ({
+      value: reply.response,
+      selStart: textareaRef.current?.selectionStart ?? 0,
+      selEnd: textareaRef.current?.selectionEnd ?? 0,
+    }),
+    [reply.response],
+  )
+
+  const applyResult = useCallback(
+    result => {
+      onEdit(reply.id, result.value)
+      if (result.selStart !== undefined) {
+        pendingSelectionRef.current = { selStart: result.selStart, selEnd: result.selEnd }
+      }
+    },
+    [onEdit, reply.id],
+  )
+
+  // handleInterrupt already gates via `disabled` above, so useTextEditingKeys' own canInterrupt gate
+  // stays at its permissive default.
+  const { handleKeyDown: handleSharedKeyDown } = useTextEditingKeys({
+    getState,
+    applyResult,
+    collapseManager: collapseManagerRef.current,
+    onInterrupt: handleInterrupt,
+  })
+
+  // Layout effect must run before the selection-restore effect below, or its height/scrollTop reset
+  // undoes setSelectionRange's scroll-into-view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reply.response drives the autoresize measure
-  useEffect(() => {
+  useLayoutEffect(() => {
     const ta = textareaRef.current
 
     if (!ta) {
@@ -46,6 +103,17 @@ export default function InlineThread({
     ta.style.overflowY = next >= maxHeight ? 'auto' : 'hidden'
   }, [reply.response, maxHeight])
 
+  // No dep array: runs every render, but the ref gate makes it a no-op except right after a key handler
+  // sets a pending selection. Keying off reply.response would stomp the caret on unrelated re-renders.
+  useLayoutEffect(() => {
+    const pending = pendingSelectionRef.current
+    if (!pending) {
+      return
+    }
+    pendingSelectionRef.current = null
+    textareaRef.current?.setSelectionRange(pending.selStart, pending.selEnd)
+  })
+
   // A freshly-quoted reply focuses immediately, without scrolling its just-positioned float into view.
   useEffect(() => {
     if (autoFocus) {
@@ -54,9 +122,19 @@ export default function InlineThread({
   }, [autoFocus])
 
   function handleKeyDown(e) {
-    // Enter sends the batch; Shift+Enter inserts a newline (default textarea behavior).
+    if (handleSharedKeyDown(e)) {
+      return
+    }
+
+    // Enter sends the batch; Ctrl+Enter also works (existing behavior, not tightened here).
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      // Expand collapsed blocks first - a sent reply must never carry a placeholder. flushSync
+      // commits onEdit's state update before the synchronous onSubmit call below reads it.
+      const expanded = collapseManagerRef.current.expandBeforeSubmit(reply.response)
+      if (expanded.value !== reply.response) {
+        flushSync(() => onEdit(reply.id, expanded.value))
+      }
       onSubmit?.()
     }
   }

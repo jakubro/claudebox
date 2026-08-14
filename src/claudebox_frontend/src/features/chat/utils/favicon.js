@@ -28,16 +28,14 @@ const GRADIENT_SEGMENTS = 30
 export const NOTIFICATION_OFFSET = 0.25 // Shift notification gradient (reddish at upper-left)
 export const NORMAL_OFFSET = 0.35 // Shift normal gradient (gray at lower-left)
 
-// Workspace badge geometry - centered circle inscribed in the canvas with a
-// 2 px transparent margin on every side. C-arc renders on top.
+// Workspace badge geometry: a centered circle inscribed in the canvas with a 2px margin; the C-arc renders on top.
 const BADGE_MARGIN = 2
 const BADGE_CENTER = FAVICON_SIZE / 2
 const BADGE_RADIUS = FAVICON_SIZE / 2 - BADGE_MARGIN
 
 /** Workspace bg alpha during notification state (constant dim). */
 export const NOTIFICATION_BG_ALPHA = 0.5
-/** Workspace bg alpha at peak breath during processing - multiplied by the
- * breath intensity ∈ [0.5, 1.0] so the effective range is [0.25, 0.5]. */
+/** Workspace bg alpha at peak breath during processing - multiplied by the breath intensity in [0.5, 1.0] so the effective range is [0.25, 0.5]. */
 export const BREATHING_BG_PEAK_ALPHA = 0.5
 
 export function getColorFromPalette(colors, progress) {
@@ -53,9 +51,8 @@ export function getColorFromPalette(colors, progress) {
 /**
  * Draw C-shaped favicon with static gradient along the arc.
  *
- * Caller is responsible for clearing / preparing the canvas - this function
- * composes on top of whatever the canvas currently holds so a workspace-color
- * background can render underneath the arc.
+ * Caller clears/prepares the canvas - this composes on top of whatever it holds, so a
+ * workspace-color background can render underneath the arc.
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {string[]} colors - Gradient palette.
@@ -87,12 +84,11 @@ export function drawGradientFavicon(ctx, colors, offset = 0) {
 }
 
 /**
- * Compute the breath-cycle intensity for a phase ∈ [0, 1].
+ * Compute the breath-cycle intensity for a phase in [0, 1].
  *
- * Sine wave clamped at BREATH_MIN_INTENSITY so the favicon never fades to
- * the idle look. Returns a value in [BREATH_MIN_INTENSITY, 1]. Exposed for
- * callers that want to pulse other elements (workspace bg alpha) in sync
- * with the C-arc breath.
+ * Sine wave clamped at BREATH_MIN_INTENSITY so the favicon never fades to the idle look; returns
+ * a value in [BREATH_MIN_INTENSITY, 1]. Exposed so callers can pulse other elements (workspace
+ * bg alpha) in sync with the C-arc breath.
  *
  * @param {number} breathPhase - Phase of breath cycle (0-1).
  */
@@ -102,10 +98,7 @@ export function computeBreathIntensity(breathPhase) {
 }
 
 /**
- * Draw C-shaped favicon with breathing effect.
- *
- * Fades between white and gradient colors using sine wave.
- * Frame timing irregularities feel organic rather than broken.
+ * Fades white to gradient on a sine wave, so timing jitter feels organic rather than broken.
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} breathPhase - Phase of breath cycle (0-1).
  */
@@ -119,12 +112,9 @@ export function drawBreathingFavicon(ctx, breathPhase) {
 /**
  * Draw a workspace-tinted circle inscribed in the favicon canvas.
  *
- * Renders a centered disc with a 2 px transparent margin so the disc is
- * inscribed inside the favicon edges. Caller draws the C-arc on top
- * separately; the alpha option scopes only this draw so the arc keeps its
- * own opacity.
- *
- * Caller skips the call when `color` is falsy. Coexists with `drawDevBadge`.
+ * Renders a centered disc with a 2px margin so it's inscribed inside the favicon edges; the
+ * caller draws the C-arc on top separately, and the alpha option scopes only this draw so the
+ * arc keeps its own opacity. Caller skips the call when `color` is falsy; coexists with `drawDevBadge`.
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {string} color - Hex color in `#rrggbb` form (trusted, no validation).

@@ -118,7 +118,7 @@ class TestSerializeInlineReplies:
 
     def test_single_reply(self):
         xml = SessionService._serialize_inline_replies(
-            [{"quote": "context window", "from": "assistant", "response": "how big?"}]
+            [{"quote": "context window", "from": "assistant", "response": "how big?"}],
         )
 
         assert xml == (
@@ -130,7 +130,7 @@ class TestSerializeInlineReplies:
 
     def test_escapes_inner_text_only(self):
         xml = SessionService._serialize_inline_replies(
-            [{"quote": "a < b & c", "from": "user", "response": "x > y"}]
+            [{"quote": "a < b & c", "from": "user", "response": "x > y"}],
         )
 
         assert "a &lt; b &amp; c" in xml
@@ -141,7 +141,7 @@ class TestSerializeInlineReplies:
             [
                 {"quote": "q1", "from": "assistant", "response": "r1"},
                 {"quote": "q2", "from": "user", "response": "r2"},
-            ]
+            ],
         )
 
         assert xml.count("<reply>") == 2
@@ -149,8 +149,7 @@ class TestSerializeInlineReplies:
         assert 'from="user"' in xml
 
     def test_strips_anchor_fields_from_the_wire(self):
-        # Anchor fields ride on the display event + reload but must never reach the
-        # model - the from/quote/response allowlist keeps them structurally invisible.
+        # Anchor fields ride the display event/reload but never reach the model - the allowlist strips them.
         xml = SessionService._serialize_inline_replies(
             [
                 {
@@ -161,8 +160,8 @@ class TestSerializeInlineReplies:
                     "prefix": "the runtime embeds ",
                     "suffix": " in the Model",
                     "offset": 19,
-                }
-            ]
+                },
+            ],
         )
 
         for anchor_token in ("t-42", "turnId", "prefix", "suffix", "offset", "the runtime embeds"):

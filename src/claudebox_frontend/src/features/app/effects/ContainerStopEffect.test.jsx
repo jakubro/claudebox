@@ -3,7 +3,6 @@
 import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock context hooks
 const mockDisconnectSSE = vi.fn()
 const mockClearSessionData = vi.fn()
 let mockContainerId = 'ctr-1'
@@ -35,7 +34,6 @@ vi.mock('../../../context/ContainerMapContext', () => ({
   useContainerMap: () => ({ containerMap: mockContainerMap }),
 }))
 
-// Import after mocks
 import ContainerStopEffect from './ContainerStopEffect'
 
 describe('ContainerStopEffect', () => {

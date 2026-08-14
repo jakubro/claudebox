@@ -1,17 +1,15 @@
 """Claudebox Daemon entry point."""
 
-import argparse
-
-from claudebox import HelpFormatter, cli, epilog
+from claudebox import HelpFormatter, LazyEpilogParser, cli, epilog
 from claudebox.constants import DAEMON_PORT
 from claudebox_daemon import run_daemon
 
 
-parser = argparse.ArgumentParser(
+parser = LazyEpilogParser(
     prog="claudeboxd",
     formatter_class=HelpFormatter,
     description="""Claudebox daemon: web UI, session management, multi-workspace orchestration.""",
-    epilog=epilog(),
+    epilog_factory=epilog,
 )
 
 parser.add_argument(
@@ -19,7 +17,7 @@ parser.add_argument(
     "--port",
     type=int,
     default=DAEMON_PORT,
-    help="Daemon port",
+    help="Daemon port (default: %(default)s)",
 )
 
 parser.add_argument(

@@ -46,18 +46,13 @@ describe('computeFlatDropIndex', () => {
   })
 
   it('__unsorted__ swimlane: ticket without swimlane treated as unsorted', () => {
-    const col = [
-      { path: 'a' }, // no swimlane
-      { path: 'fe', swimlane: 'frontend' },
-      { path: 'b' }, // no swimlane
-    ]
+    const col = [{ path: 'a' }, { path: 'fe', swimlane: 'frontend' }, { path: 'b' }]
     expect(computeFlatDropIndex(col, '__unsorted__', 'a')).toBe(0)
     expect(computeFlatDropIndex(col, '__unsorted__', 'b')).toBe(2)
   })
 
   it('over-ticket lane mismatch -> returns null', () => {
-    // Asking for a flat index against the wrong lane (the over-ticket isn't
-    // in that lane's filtered view). findIndex returns -1 -> null.
+    // The over-ticket isn't in the requested lane's filtered view.
     const col = [{ path: 'fe', swimlane: 'frontend' }]
     expect(computeFlatDropIndex(col, 'backend', 'fe')).toBeNull()
   })

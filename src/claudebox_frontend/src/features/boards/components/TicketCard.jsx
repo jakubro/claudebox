@@ -61,8 +61,7 @@ export default function TicketCard({
     [ticket.path, onToggleSelect],
   )
 
-  // Live session status from the shared derivation: 'running' | 'stopping' | 'none'.
-  // Mapped to the card's dot/label vocabulary (none -> gray "stopped").
+  // Mapped to the card's dot/label vocabulary: 'none' status shows as gray "stopped".
   const sessionStatus = ticket.session ? deriveSessionStatus(ticket.session, sessions) : null
   const statusClass =
     sessionStatus === 'running' ? 'running' : sessionStatus === 'stopping' ? 'stopping' : 'stopped'

@@ -45,10 +45,6 @@ def _translate(msg) -> AgentEvent:
     return evt
 
 
-# Per-kind translation
-# --------------------------------------------------------------------------------------------------
-
-
 def test_translate_system_message():
     """System message -> kind='system_init' with typed SystemInitPayload."""
 
@@ -142,7 +138,6 @@ class TestAskUserQuestionInputValidation:
         assert block.input["questions"] == []
 
     def test_string_parsing_to_non_list_drops_field(self):
-        # A string that parses but yields a non-list (e.g. an object).
         block = self._translate_tool_use({"questions": '{"header": "Approach"}'})
 
         assert block.input["questions"] == []
@@ -153,10 +148,10 @@ class TestAskUserQuestionInputValidation:
         assert block.input["questions"] == []
 
     def test_other_tools_pass_through_unchanged(self):
-        # Validator registry only intercepts AskUserQuestion - other tools'
-        # input.questions (if such a field even existed) flows unmodified.
+        # Validator registry only intercepts AskUserQuestion; other tools' input flows unmodified.
         block = self._translate_tool_use(
-            {"command": "ls", "questions": "passes through"}, name="Bash"
+            {"command": "ls", "questions": "passes through"},
+            name="Bash",
         )
 
         assert block.input == {"command": "ls", "questions": "passes through"}
@@ -267,7 +262,7 @@ def test_translate_task_notification_status_map():
         SystemMessage(
             subtype="task_notification",
             data={"task_id": "a1", "status": "stopped", "output_file": "", "summary": ""},
-        )
+        ),
     )
     assert isinstance(stopped.payload, TaskNotificationPayload)
     assert stopped.payload.status == "killed"
@@ -276,7 +271,7 @@ def test_translate_task_notification_status_map():
         SystemMessage(
             subtype="task_notification",
             data={"task_id": "a2", "status": "failed", "output_file": "", "summary": ""},
-        )
+        ),
     )
     assert isinstance(failed.payload, TaskNotificationPayload)
     assert failed.payload.status == "failed"
@@ -294,10 +289,6 @@ def test_agent_event_payload_is_sdk_free():
         assert type(block).__module__.startswith("claudebox.")
 
 
-# Match-narrowing
-# --------------------------------------------------------------------------------------------------
-
-
 def test_match_kind_narrows_payload_type():
     """``match evt.kind:`` narrows ``evt.payload`` to the corresponding dataclass type."""
 
@@ -307,14 +298,10 @@ def test_match_kind_narrows_payload_type():
     match evt.kind:
         case "system_init":
             assert isinstance(evt.payload, SystemInitPayload)
-            session_id = evt.payload.session_id  # typed attribute access
+            session_id = evt.payload.session_id
             assert session_id == "abc"
         case _:
             raise AssertionError(f"unexpected kind {evt.kind}")
-
-
-# Per-block-type construction
-# --------------------------------------------------------------------------------------------------
 
 
 def test_text_block_construction():
@@ -339,14 +326,6 @@ def test_tool_result_block_construction():
     assert block.tool_use_id == "tu1"
     assert block.content == "ok"
     assert block.is_error is None
-
-
-# Dict-shape round trip - JSONL replay compatibility
-# --------------------------------------------------------------------------------------------------
-
-
-# Unknown classes - fail-loud for messages, preserve-with-warning for blocks
-# --------------------------------------------------------------------------------------------------
 
 
 @dataclasses.dataclass
@@ -408,15 +387,10 @@ def test_unknown_block_round_trips_through_conversion():
         "data": {"text": "raw", "meta": {}},
     }
 
-    # End-to-end through conversion: typed payload -> dict shape -> Event.
     dict_msg = _typed_payload_to_dict_message(evt)
     events = list(dict_message_to_events(dict_msg))
     assert len(events) == 1
     assert events[0].subtype == "unknown"
-
-
-# Typed payload shapes - SystemInitData closure + ResultUsage
-# --------------------------------------------------------------------------------------------------
 
 
 def test_claude_init_translates_to_typed_init_data():
@@ -534,7 +508,7 @@ def test_conversion_flattens_typed_payloads_for_wire_compat():
     result_dict = _typed_payload_to_dict_message(result_evt)
     assert result_dict["message"]["usage"] == {"used_tokens": 320, "max_tokens": 128_000}
 
-    # Usage None -> key omitted (was already optional pre-fix).
+    # Usage None -> key omitted.
     result_no_usage_evt = AgentEvent(
         kind="result",
         payload=ResultPayload(subtype="success", result="done"),
@@ -574,15 +548,9 @@ def test_typed_payload_asdict_round_trip_assistant():
     # Top-level shape matches what dict_message_to_events would read.
     assert payload_dict["model"] == "claude"
     assert isinstance(payload_dict["content"], list)
-    # ContentBlock dataclasses asdict to bare-key dicts; the JSONL contract gets
-    # the ``type`` discriminator reinjected by conversion._block_to_dict on the
-    # live path. The asdict shape captures every field downstream needs.
+    # asdict yields bare-key dicts; _block_to_dict reinjects the ``type`` discriminator on the live path.
     assert payload_dict["content"][0] == {"text": "hello"}
     assert payload_dict["content"][1] == {"id": "tu1", "name": "Bash", "input": {"command": "ls"}}
-
-
-# Rate-limit event
-# --------------------------------------------------------------------------------------------------
 
 
 def test_translate_rate_limit_event():
@@ -630,7 +598,10 @@ def test_compact_boundary_projects_to_system_subtype():
     full = AgentEvent(
         kind="compact_boundary",
         payload=CompactBoundaryPayload(
-            trigger="context_limit", pre_tokens=128000, post_tokens=40000, duration_ms=1200
+            trigger="context_limit",
+            pre_tokens=128000,
+            post_tokens=40000,
+            duration_ms=1200,
         ),
     )
     events = list(agent_event_to_events(full))
@@ -648,7 +619,6 @@ def test_compact_boundary_projects_to_system_subtype():
     minimal = AgentEvent(kind="compact_boundary", payload=CompactBoundaryPayload(trigger="manual"))
     minimal_events = list(agent_event_to_events(minimal))
 
-    # Optional fields omitted entirely, never emitted as null.
     assert minimal_events[0].raw["message"]["data"]["compact_metadata"] == {"trigger": "manual"}
 
 
@@ -678,5 +648,4 @@ def test_task_notification_projects_to_system_subtype():
     )
     minimal_events = list(agent_event_to_events(minimal))
 
-    # summary omitted entirely when None.
     assert minimal_events[0].raw["message"]["data"] == {"task_id": "a1", "status": "killed"}

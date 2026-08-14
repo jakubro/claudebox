@@ -3,8 +3,7 @@
 import { useCallback, useRef } from 'react'
 import BlockCollapseManager from '../BlockCollapseManager'
 
-/** Manage collapse/expand operations for XML blocks in a textarea via BlockCollapseManager. */
-export default function useBlockCollapse(resizeTextarea) {
+export default function useBlockCollapse() {
   const managerRef = useRef(null)
   if (!managerRef.current) {
     managerRef.current = new BlockCollapseManager()
@@ -12,45 +11,31 @@ export default function useBlockCollapse(resizeTextarea) {
   const manager = managerRef.current
 
   const collapseLocal = useCallback(
-    textarea => {
-      const result = manager.collapseLocal(textarea.value, textarea.selectionStart)
-      if (result) {
-        textarea.value = result.value
-        textarea.selectionStart = textarea.selectionEnd = result.cursor
-        resizeTextarea()
-      }
-    },
-    [resizeTextarea, manager],
+    textarea => _applyAtCursor(textarea, manager.collapseLocal.bind(manager)),
+    [manager],
   )
 
   const collapseAll = useCallback(
     textarea => {
       const result = manager.collapseAll(textarea.value)
       textarea.value = result.value
-      resizeTextarea()
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
     },
-    [resizeTextarea, manager],
+    [manager],
   )
 
   const expandLocal = useCallback(
-    textarea => {
-      const result = manager.expandLocal(textarea.value, textarea.selectionStart)
-      if (result) {
-        textarea.value = result.value
-        textarea.selectionStart = textarea.selectionEnd = result.cursor
-        resizeTextarea()
-      }
-    },
-    [resizeTextarea, manager],
+    textarea => _applyAtCursor(textarea, manager.expandLocal.bind(manager)),
+    [manager],
   )
 
   const expandAll = useCallback(
     textarea => {
       const result = manager.expandAll(textarea.value)
       textarea.value = result.value
-      resizeTextarea()
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
     },
-    [resizeTextarea, manager],
+    [manager],
   )
 
   const expandBeforeSubmit = useCallback(
@@ -65,5 +50,23 @@ export default function useBlockCollapse(resizeTextarea) {
     manager.reset()
   }, [manager])
 
-  return { collapseLocal, collapseAll, expandLocal, expandAll, expandBeforeSubmit, resetCollapse }
+  return {
+    collapseLocal,
+    collapseAll,
+    expandLocal,
+    expandAll,
+    expandBeforeSubmit,
+    resetCollapse,
+    manager,
+  }
+}
+
+/** Apply a cursor-scoped manager result to the textarea; no-op if cursor isn't on a matching block. */
+function _applyAtCursor(textarea, managerFn) {
+  const result = managerFn(textarea.value, textarea.selectionStart)
+  if (result) {
+    textarea.value = result.value
+    textarea.selectionStart = textarea.selectionEnd = result.cursor
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  }
 }

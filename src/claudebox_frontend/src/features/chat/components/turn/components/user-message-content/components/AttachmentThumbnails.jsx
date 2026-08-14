@@ -7,15 +7,9 @@ import { containerUrl } from '../../../../../../../api/apiClient'
 import { formatFileSize } from '../../../../../../../utils/formatters'
 
 /**
- * Display attachment thumbnails with image previews or file badges.
- * Clicking an image thumbnail opens a fullscreen zoom overlay.
- *
- * Supports two data shapes:
- * - Pending messages: {name, type, data} where data is base64 (rendered as data URL)
- * - Event-based: {name, type, size, filename} where filename references stored file (rendered via API)
- *
- * @param {object} props
- * @param {Array} props.attachments - Array of attachment metadata objects.
+ * Supports two shapes: pending messages `{name, type, data}` (base64, rendered as a data URL)
+ * and event-based `{name, type, size, filename}` (filename resolved via the API).
+ * @param {Array<object>} props.attachments - Attachments in either data shape above.
  */
 export default function AttachmentThumbnails({ attachments }) {
   const [zoomedSrc, setZoomedSrc] = useState(null)
@@ -78,8 +72,7 @@ export default function AttachmentThumbnails({ attachments }) {
           </div>
         ))}
       </div>
-      {/* Portal the zoom overlay to body so it escapes ancestor `content-visibility`/
-          paint-containment (otherwise the fixed overlay is clipped to the turn box). */}
+      {/* Portal the zoom overlay to body so it escapes the turn's containment (otherwise the fixed overlay is clipped to the turn box). */}
       {zoomedSrc &&
         createPortal(
           <div className="attachment-zoom-overlay" onClick={handleBackdropClick}>

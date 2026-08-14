@@ -16,7 +16,6 @@ test.describe('Mobile Layout', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForMobileReady(page)
 
-    // Mobile shell is mounted; desktop dockview is not.
     await expect(page.locator('.mobile-layout')).toBeVisible()
     await expect(page.locator('.dockview-theme-dark')).toHaveCount(0)
   })
@@ -28,8 +27,7 @@ test.describe('Mobile Layout', () => {
 
     await expect(page.locator('.mobile-layout')).toBeVisible()
 
-    // Detection is device-class based now, not viewport-width based:
-    // resizing the window must NOT flip the layout.
+    // Detection is device-class based, not viewport-width based, so resizing must not flip the layout.
     await page.setViewportSize({ width: 1280, height: 800 })
 
     await expect(page.locator('.mobile-layout')).toBeVisible()
@@ -81,14 +79,12 @@ test.describe('Mobile Layout', () => {
     const drawer = page.locator('.mobile-drawer')
     await expect(drawer).toBeVisible()
 
-    // Drawer fills the viewport - width and height equal viewport dimensions
-    // (allowing a 1px rounding tolerance).
+    // Drawer fills the viewport - width and height equal viewport dimensions (1px rounding tolerance).
     const viewport = page.viewportSize()
     const box = await drawer.boundingBox()
     expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1)
     expect(box.height).toBeGreaterThanOrEqual(viewport.height - 1)
 
-    // X close button at top-left dismisses the drawer.
     await page.locator('.mobile-drawer button[title="Close menu"]').click()
     await expect(drawer).toHaveCount(0)
   })
@@ -161,7 +157,7 @@ test.describe('Mobile Layout', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForMobileReady(page)
 
-    // Idle state - send button rendered, no stop button.
+    // Idle: send button rendered, no stop button.
     await expect(page.locator('[data-testid="mobile-send-btn"]')).toHaveCount(1)
     await expect(page.locator('[data-testid="chat-input-stop-btn"]')).toHaveCount(0)
 
@@ -268,7 +264,7 @@ test.describe('Mobile Layout', () => {
               name: null,
               workspace: '/home/user/project',
               permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               num_turns: 0,
               total_cost_usd: 0,
               total_duration_ms: 0,
@@ -304,7 +300,7 @@ test.describe('Mobile Layout', () => {
               name: null,
               workspace: '/home/user/project',
               permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               num_turns: 0,
               total_cost_usd: 0,
               total_duration_ms: 0,
@@ -331,8 +327,7 @@ test.describe('Mobile Layout', () => {
 
   // SPEC: mobile:status-context-color
   test('status fill color shifts as context fills up', async ({ page }) => {
-    // Two-phase: low context produces one color, high context produces a different
-    // color via getContextBarColor - assert distinctness rather than exact codes.
+    // Low vs. high context yield different colors via getContextBarColor; assert distinctness, not exact codes.
     await mockAPI(page, {
       handlers: {
         getSessionStatus: async route => {
@@ -342,7 +337,7 @@ test.describe('Mobile Layout', () => {
               name: null,
               workspace: '/home/user/project',
               permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               num_turns: 0,
               total_cost_usd: 0,
               total_duration_ms: 0,
@@ -379,7 +374,7 @@ test.describe('Mobile Layout', () => {
               name: null,
               workspace: '/home/user/project',
               permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-4-6',
+              model: 'claude-sonnet-5',
               num_turns: 0,
               total_cost_usd: 0,
               total_duration_ms: 0,
@@ -418,14 +413,12 @@ test.describe('Mobile Layout', () => {
     const drawer = page.locator('.mobile-drawer')
     await expect(drawer).toBeVisible()
 
-    // Mobile drawer mounts the same SessionItem the desktop tree uses, with isMobile.
-    // Fixture sessions/multiple.json carries 3 sessions (001 no-name, 002 "Feature
-    // Implementation", 003 no-name).
+    // Drawer mounts the same SessionItem as the desktop tree, with isMobile set.
+    // Fixture has 3 sessions: 001 and 003 unnamed, 002 named "Feature Implementation".
     const items = drawer.locator('.mobile-drawer-sessions .sessions-item.sessions-item-mobile')
     await expect(items).toHaveCount(3)
 
-    // Rich content: status dot on every row; sessions-id contains the 8-char prefix
-    // for each (positional ordered match - first 2 rows render 'test-ses').
+    // sessions-id shows the 8-char prefix per row, in order - first 2 rows render 'test-ses'.
     await expect(items.locator('.container-status-dot')).toHaveCount(3)
     await expect(items.locator('.sessions-id')).toContainText(['test-ses', 'test-ses'])
     // Only test-session-002 has a name -> exactly one .sessions-name node exists.
@@ -449,9 +442,7 @@ test.describe('Mobile Layout', () => {
       .first()
     await target.click()
 
-    // Drawer closed.
     await expect(page.locator('.mobile-drawer')).toHaveCount(0)
-    // URL updated to target session id.
     await expect.poll(() => page.url(), { timeout: 4000 }).toContain('test-session-002')
   })
 
@@ -543,8 +534,7 @@ test.describe('Mobile Layout', () => {
 
   // SPEC: mobile:drawer-workspaces-multi
   test('workspace switcher renders the list when multiple workspaces exist', async ({ page }) => {
-    // Override the workspaces endpoint to return two workspaces. Outer beforeEach
-    // already registered the default - the latest matching route handler wins.
+    // Overrides the outer beforeEach's single-workspace route; the latest matching handler wins.
     await page.route('**/api/workspaces', async route => {
       await route.fulfill({
         json: {

@@ -1,0 +1,9 @@
+[Unit]
+Description=Claudebox Daemon Health Watchdog Timer
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+
+[Install]
+WantedBy=timers.target

@@ -67,8 +67,7 @@ def remove_path(path: str | Path) -> None:
 def make_temp_dir(**kwargs) -> Iterator[Path]:
     """Create a temporary directory that auto-cleans on exit.
 
-    If 'dir' is provided, it is created if it doesn't exist.
-    Additional kwargs are forwarded to tempfile.TemporaryDirectory.
+    Creates `dir` first if missing, then forwards remaining kwargs to tempfile.TemporaryDirectory.
     """
 
     parent = kwargs.get("dir")
@@ -81,7 +80,6 @@ def make_temp_dir(**kwargs) -> Iterator[Path]:
 
 
 # Gitignore-aware walking
-# ------------------------------------------------------------------------------------------
 
 
 def find_files(path: str | Path, filename: str, **kwargs) -> Iterator[Path]:
@@ -101,10 +99,9 @@ def walk_filtered(
 ) -> Iterator[Path]:
     """Walk directory tree, pruning paths matched by ignore files.
 
-    Reads ignore files (default: `.gitignore`) at each directory level and
-    compiles their patterns into PathSpec matchers. Directories matched by any
-    spec are never descended into. Each spec matches paths relative to its own
-    directory, mirroring how git and ripgrep handle nested ignore files.
+    Reads ignore files (default `.gitignore`) at each directory level and compiles them into
+    PathSpec matchers; directories matched by any spec are never descended into. Each spec
+    matches paths relative to its own directory, mirroring git/ripgrep's nested-ignore handling.
     """
 
     path = Path(path).resolve()
@@ -133,7 +130,6 @@ def _walk_filtered(
 ) -> Iterator[Path]:
     """Recursively walk, collecting ignore specs per level."""
 
-    # Build specs for this level: parent specs + any new ignore files here
     specs = specs + _collect_ignore_specs(cwd, ignore_filenames=ignore_filenames)
 
     try:

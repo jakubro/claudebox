@@ -92,18 +92,17 @@ class TestRenderLine:
         assert result == line.rstrip("\n")
 
     def test_warning_level_emits_color_under_force_color(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """ConsoleRenderer tints the warning level token red/yellow under FORCE_COLOR."""
 
-        import json
         import os
 
         monkeypatch.setenv("FORCE_COLOR", "1")
         os.environ.pop("NO_COLOR", None)
 
-        # Reload the renderer module so the structlog ConsoleRenderer rebuilds
-        # against the active color environment.
+        # Reload so ConsoleRenderer rebuilds against the active color environment.
         import importlib
 
         import claudebox.core.log_rendering as lr
@@ -125,7 +124,6 @@ class TestStreamEndMessage:
     """``_stream_end_message`` distinguishes clean EOF, HTTP errors, and connection errors."""
 
     def test_clean_eof_dim(self) -> None:
-        import httpx
 
         from claudebox_cli.cmd_logs import _stream_end_message
 
@@ -142,7 +140,9 @@ class TestStreamEndMessage:
         request = httpx.Request("GET", "https://localhost/api/logs")
         response = httpx.Response(500, request=request, text="SessionNotReady")
         exc = httpx.HTTPStatusError(
-            "Server error '500 Internal Server Error'", request=request, response=response
+            "Server error '500 Internal Server Error'",
+            request=request,
+            response=response,
         )
 
         out = _stream_end_message({"id": "7a7e25af-xyz"}, exc)

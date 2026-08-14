@@ -74,6 +74,10 @@ backend = "podman"
 [network]
 mode = "slirp4netns:allow_host_loopback=true"
 
+# Agent can run/build its own containers inside the session (rootless, invisible outside it). Off by default.
+[containers]
+nested = true
+
 # Environment variables passed to the container
 [env]
 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1
@@ -316,7 +320,7 @@ Add a `[langgraph]` block to `settings.toml` (global `~/.claudebox/settings.toml
 agent = "langgraph"
 
 [langgraph]
-model = "anthropic:claude-sonnet-4-5"   # "provider:model-id" form
+model = "anthropic:claude-sonnet-5"   # "provider:model-id" form
 
 [langgraph.ollama]
 base_url = "http://host.containers.internal:11434"   # Ollama on the host
@@ -326,7 +330,7 @@ The model id follows LangChain's `init_chat_model` convention. Common providers:
 
 | Provider | Env var | `model =` |
 |---|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` | `"anthropic:claude-sonnet-4-5"` |
+| Anthropic | `ANTHROPIC_API_KEY` | `"anthropic:claude-sonnet-5"` |
 | OpenAI | `OPENAI_API_KEY` | `"openai:gpt-4o"` |
 | Google Gemini | `GOOGLE_API_KEY` | `"google_genai:gemini-2.5-pro"` |
 | Groq | `GROQ_API_KEY` | `"groq:llama-3.3-70b-versatile"` |
@@ -491,6 +495,7 @@ flowchart LR
 | Container fails to start                 | `claudebox --verbose` to see the full `podman run` command; check logs                                                                                        |
 | Stale containers / disk pressure         | `claudebox prune` (or `claudebox -v prune` for per-item output)                                                                                               |
 | Need daemon/container logs               | `journalctl --user -u claudebox-daemon.service -f` (systemd) or `~/.claudebox/logs/`                                                                          |
+| Browser find (Cmd-F/Ctrl-F) misses older messages, or Print/Save-as-PDF only captures part of the conversation | Expected. The chat builds only the turns near the viewport so long sessions stay fast, and the browser can only search or print what is currently built. Scroll to the region first, or use the minimap and Alt+Up/Down to navigate. |
 
 ## Security
 
@@ -519,7 +524,7 @@ Coding conventions, testing patterns, and the development workflow are documente
 
 ```bash
 # Stop and disable systemd units
-systemctl --user disable --now claudebox-daemon.service claudebox-maintenance.timer
+systemctl --user disable --now claudebox-daemon.service claudebox-maintenance.timer claudebox-watchdog.timer
 rm -f ~/.config/systemd/user/claudebox-*
 systemctl --user daemon-reload
 

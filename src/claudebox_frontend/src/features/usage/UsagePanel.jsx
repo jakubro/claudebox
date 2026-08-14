@@ -5,7 +5,6 @@ import { useSessionsList } from '../../context/SessionsContext'
 import { formatCost } from '../../utils/formatters'
 import { aggregateCost, INTERVALS } from './utils/aggregation'
 
-/** Render usage panel consuming shared sessions from SessionsContext. */
 export default function UsagePanel() {
   const { sessions } = useSessionsList()
 

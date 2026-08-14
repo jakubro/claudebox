@@ -1,14 +1,11 @@
 """Agent registry - named AgentDefinitions for sub-agent dispatch.
 
-Runtime-neutral catalog the LangGraph `task` tool reads for `agent_type`
-lookup; a future change will parse workspace CLAUDE.md / profile-level
-definitions for cross-runtime parity. v1 ships one hardcoded
-`general-purpose` entry so the surface lights up without yet binding to
-workspace fixtures.
+Runtime-neutral catalog the LangGraph `task` tool reads for `agent_type` lookup. Ships one
+hardcoded `general-purpose` entry; workspace-level CLAUDE.md/profile definitions are not yet
+parsed.
 
-The dataclasses are intentionally minimal: a name, a system prompt, and an
-optional allowlist of tool names. The allowlist is interpreted by the
-caller (LangGraph filters the sub-agent's bound tool list after the
+The dataclasses are intentionally minimal: name, system prompt, and an optional tool-name
+allowlist, interpreted by the caller (LangGraph filters the sub-agent's bound tools after the
 recursive `make_tools(sub_ctx)`); `None` means "every tool the parent has".
 """
 
@@ -17,10 +14,9 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AgentDefinition:
-    """Named sub-agent profile: system prompt + tool allowlist.
+    """Named sub-agent profile: system prompt plus tool allowlist.
 
-    `tools` is an allowlist of tool names. `None` means the sub-agent
-    inherits the parent's full toolset; an empty list grants no tools.
+    `tools=None` inherits the parent's full toolset; an empty list grants none.
     """
 
     name: str

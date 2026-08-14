@@ -7,7 +7,6 @@ import { pathResolutionManager } from '../managers/PathResolutionManager'
 const EMPTY = {}
 
 /**
- * Resolve path candidates to absolute host paths via container API, with caching.
  * @param {string[]} candidates - Unique candidate path strings to resolve.
  * @returns {Object<string, string>} Map of candidate -> resolved absolute path.
  */
@@ -35,7 +34,6 @@ export default function usePathResolution(candidates) {
     const currentCandidates = candidatesRef.current
     const { resolved, unresolved } = pathResolutionManager.lookup(currentCandidates)
 
-    // Set cached hits immediately
     if (Object.keys(resolved).length > 0) {
       setResolvedPaths(resolved)
     }

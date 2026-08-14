@@ -7,14 +7,9 @@ import useCapabilities from '../../../hooks/useCapabilities'
 import useDropdown from '../../../hooks/useDropdown'
 
 /**
- * Render a footer dropdown for selecting the effort level.
- *
- * Available levels come from SessionDataContext (fetched once on connect).
- * All values shown on all models - the SDK handles compatibility.
- *
- * Optimistically updates on selection; confirmed by next session refresh.
- * On welcome (no active session), `defaultValue` populates the display so
- * the picker shows what a new session would inherit.
+ * Effort level dropdown: levels load once from SessionDataContext on connect; all values show on every
+ * model since the SDK handles compatibility. Updates optimistically on selection, confirmed by the next
+ * refresh. `defaultValue` previews what a new session would inherit (e.g. on welcome).
  *
  * @param {object} props
  * @param {string|null} props.currentEffortLevel - Currently active effort level.

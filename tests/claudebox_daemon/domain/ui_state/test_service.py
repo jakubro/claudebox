@@ -1,11 +1,17 @@
 """Tests for claudebox_daemon.domain.ui_state.service - persistent UI state store."""
 
+import asyncio
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+from filelock import FileLock
 
 from claudebox.core.io import write_json
+from claudebox_daemon.domain.errors import LockTimeout
 from claudebox_daemon.domain.ui_state.service import UIStateService
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 
@@ -19,7 +25,7 @@ def _make_service(tmp_path: Path) -> UIStateService:
     ws = RegisteredWorkspace(id="test-ws", path=tmp_path)
     (tmp_path / ".claudebox").mkdir(parents=True, exist_ok=True)
 
-    return UIStateService(ws)
+    return UIStateService(ws, executor=ThreadPoolExecutor(max_workers=1))
 
 
 # --- _apply_operations ---
@@ -31,7 +37,8 @@ class TestApplyOperations:
     def test_set(self):
         state = {}
         result = UIStateService._apply_operations(
-            state, [{"op": "set", "path": "theme", "value": "dark"}]
+            state,
+            [{"op": "set", "path": "theme", "value": "dark"}],
         )
         assert result["theme"] == "dark"
         assert "updated_at" in result
@@ -49,56 +56,64 @@ class TestApplyOperations:
     def test_add_creates_list(self):
         state = {}
         result = UIStateService._apply_operations(
-            state, [{"op": "add", "path": "tags", "value": "a"}]
+            state,
+            [{"op": "add", "path": "tags", "value": "a"}],
         )
         assert result["tags"] == ["a"]
 
     def test_add_deduplicates(self):
         state = {"tags": ["a"]}
         result = UIStateService._apply_operations(
-            state, [{"op": "add", "path": "tags", "value": "a"}]
+            state,
+            [{"op": "add", "path": "tags", "value": "a"}],
         )
         assert result["tags"] == ["a"]
 
     def test_add_new_value(self):
         state = {"tags": ["a"]}
         result = UIStateService._apply_operations(
-            state, [{"op": "add", "path": "tags", "value": "b"}]
+            state,
+            [{"op": "add", "path": "tags", "value": "b"}],
         )
         assert result["tags"] == ["a", "b"]
 
     def test_append_allows_duplicates(self):
         state = {"items": ["a"]}
         result = UIStateService._apply_operations(
-            state, [{"op": "append", "path": "items", "value": "a"}]
+            state,
+            [{"op": "append", "path": "items", "value": "a"}],
         )
         assert result["items"] == ["a", "a"]
 
     def test_append_creates_list(self):
         state = {}
         result = UIStateService._apply_operations(
-            state, [{"op": "append", "path": "items", "value": "x"}]
+            state,
+            [{"op": "append", "path": "items", "value": "x"}],
         )
         assert result["items"] == ["x"]
 
     def test_remove_from_list(self):
         state = {"tags": ["a", "b", "c"]}
         result = UIStateService._apply_operations(
-            state, [{"op": "remove", "path": "tags", "value": "b"}]
+            state,
+            [{"op": "remove", "path": "tags", "value": "b"}],
         )
         assert result["tags"] == ["a", "c"]
 
     def test_remove_missing_value_noop(self):
         state = {"tags": ["a"]}
         result = UIStateService._apply_operations(
-            state, [{"op": "remove", "path": "tags", "value": "z"}]
+            state,
+            [{"op": "remove", "path": "tags", "value": "z"}],
         )
         assert result["tags"] == ["a"]
 
     def test_remove_missing_key_noop(self):
         state = {}
         result = UIStateService._apply_operations(
-            state, [{"op": "remove", "path": "missing", "value": "x"}]
+            state,
+            [{"op": "remove", "path": "missing", "value": "x"}],
         )
         assert "missing" not in result
 
@@ -232,38 +247,74 @@ class TestGetPatch:
         result = svc.get()
         assert result.asdict() == {"global": {}, "session": {}}
 
-    def test_patch_global(self, tmp_path):
+    @pytest.mark.anyio
+    async def test_patch_global(self, tmp_path):
         svc = _make_service(tmp_path)
-        result = svc.patch(None, **{"global": [{"op": "set", "path": "theme", "value": "dark"}]})
+        result = await svc.patch(
+            None,
+            **{"global": [{"op": "set", "path": "theme", "value": "dark"}]},
+        )
         assert result.global_state["theme"] == "dark"
 
-    def test_patch_session(self, tmp_path):
+    @pytest.mark.anyio
+    async def test_patch_session(self, tmp_path):
         svc = _make_service(tmp_path)
-        result = svc.patch(
+        result = await svc.patch(
             "s1",
             **{"session": [{"op": "set", "path": "sidebar", "value": "open"}]},
         )
         assert result.session_state["sidebar"] == "open"
 
-    def test_patch_session_without_id_raises(self, tmp_path):
+    @pytest.mark.anyio
+    async def test_patch_session_without_id_raises(self, tmp_path):
         svc = _make_service(tmp_path)
 
         with pytest.raises(ValueError, match="session_id required"):
-            svc.patch(None, **{"session": [{"op": "set", "path": "x", "value": 1}]})
+            await svc.patch(None, **{"session": [{"op": "set", "path": "x", "value": 1}]})
 
-    def test_patch_persists(self, tmp_path):
+    @pytest.mark.anyio
+    async def test_patch_persists(self, tmp_path):
         svc = _make_service(tmp_path)
-        svc.patch(None, **{"global": [{"op": "set", "path": "theme", "value": "dark"}]})
+        await svc.patch(None, **{"global": [{"op": "set", "path": "theme", "value": "dark"}]})
 
         # Fresh service reads from file
         svc2 = _make_service(tmp_path)
         result = svc2.get()
         assert result.global_state["theme"] == "dark"
 
-    def test_latest_session_inheritance(self, tmp_path):
+    @pytest.mark.anyio
+    async def test_latest_session_inheritance(self, tmp_path):
         svc = _make_service(tmp_path)
-        svc.patch("s1", **{"session": [{"op": "set", "path": "layout", "value": "wide"}]})
+        await svc.patch("s1", **{"session": [{"op": "set", "path": "layout", "value": "wide"}]})
 
         # Get without session_id returns latest
         result = svc.get()
         assert result.session_state["layout"] == "wide"
+
+    @pytest.mark.anyio
+    async def test_patch_runs_on_the_daemon_executor_not_the_default_pool(self, tmp_path):
+        svc = _make_service(tmp_path)
+
+        await svc.patch(None, **{"global": [{"op": "set", "path": "theme", "value": "dark"}]})
+
+        assert asyncio.get_running_loop()._default_executor is None  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_patch_raises_lock_timeout_when_contended(self, tmp_path):
+        svc = _make_service(tmp_path)
+        holder = FileLock(svc._state_path.with_suffix(".lock"))
+        holder.acquire()
+
+        try:
+            with patch("claudebox_daemon.domain._locking.FILE_LOCK_TIMEOUT_SECONDS", 0.2):
+                started = time.monotonic()
+
+                with pytest.raises(LockTimeout) as exc_info:
+                    await svc.patch(None, **{"global": [{"op": "set", "path": "x", "value": 1}]})
+
+                elapsed = time.monotonic() - started
+        finally:
+            holder.release()
+
+        assert elapsed < 5.0
+        assert exc_info.value.context["path"] == str(svc._state_path.with_suffix(".lock"))

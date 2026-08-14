@@ -3,20 +3,13 @@
 import { DRAG_THRESHOLD_PX } from '../../../utils/pointer'
 
 /**
- * Restore focus to the chat textarea when a click resolves to an empty area of
- * the messages container - but only when it was a clean click, not a drag-select.
- *
- * Skipped when any of:
- *  - the pointer travelled >= {@link DRAG_THRESHOLD_PX} between down and up
- *    (the user was drag-selecting text);
- *  - a live text selection is in progress;
- *  - the click landed on a turn descendant or any interactive child
- *    (button, link, input, textarea, select, [role="button"], [contenteditable]);
- *  - the textarea is missing or already focused.
+ * Skipped when: the pointer travelled >= {@link DRAG_THRESHOLD_PX} between down and up (a
+ * drag-select); a text selection is active; the click landed on a turn or interactive descendant
+ * (see selector below); or the textarea is missing or already focused.
  *
  * @param {PointerEvent} e - The click event.
- * @param {{x: number, y: number} | null} downPos - The pointer-down coordinates
- *   captured by the matching `pointerdown` handler.
+ * @param {{x: number, y: number} | null} downPos - Pointer-down coords from the matching
+ *   `pointerdown` handler.
  */
 export function tryRefocusChatTextarea(e, downPos) {
   if (downPos) {

@@ -32,11 +32,12 @@ import WorkspaceResetEffect from './effects/WorkspaceResetEffect'
  * @param {React.RefObject} props.jumpRefs.bottom - Jump-to-bottom callback ref.
  * @param {object} props.panelCallbacks - Panel-level action callbacks.
  * @param {Function} props.panelCallbacks.onFocusChat - Focus the chat panel textarea.
- * @param {React.RefObject} props.panelCallbacks.panelSwitchingRef - Guard flag for scroll protection during panel activation.
+ * @param {React.RefObject} props.panelCallbacks.panelSwitchingRef - Scroll guard during panel activation.
  * @param {Function} props.panelCallbacks.onMaximizeToggle - Toggle panel group maximize.
  * @param {boolean} props.panelCallbacks.isMaximized - Whether a dockview group is currently maximized.
  * @param {Function} props.panelCallbacks.onClosePanel - Close a panel by ID.
- * @param {Function} props.panelCallbacks.onSessionAttach - Bind sessionIdRef and run the one-shot session-specific layout restore (consumed by SessionDataBridge).
+ * @param {Function} props.panelCallbacks.onSessionAttach - Bind sessionIdRef and run the one-shot
+ *   session layout restore (consumed by SessionDataBridge).
  * @param {object} props.newSessionRefs - Refs for new-session callbacks (populated inside provider tree).
  * @param {React.RefObject} props.newSessionRefs.newSession - Create new session in current tab.
  * @param {React.RefObject} props.newSessionRefs.newSessionInNewTab - Create new session in new browser tab.

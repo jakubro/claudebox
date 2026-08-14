@@ -6,12 +6,10 @@ import { useTurn } from '../../../hooks/useTurn'
 import { extractToolResult } from '../utils/toolResultFormatters'
 
 /**
- * Extract and compute tool result state from raw tool use and result data.
  * Consumes TurnContext for taskNotifications.
  * @param {Object} toolUse - Tool use data with content, tool_use_id, and tool_input.
  * @param {Object} [toolResult] - Tool result with content string.
  * @param {Object} [todoDiff] - Todo diff for TodoWrite tool.
- * @returns {Object} Computed tool result state.
  */
 export default function useToolResult(toolUse, toolResult, todoDiff) {
   const { taskNotifications } = useTurn()

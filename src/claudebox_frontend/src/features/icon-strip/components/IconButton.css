@@ -65,9 +65,7 @@
   text-align: center;
 }
 
-/* Danger variant — used for failure counts (e.g., MCP servers that failed
-   to connect) where the count signals attention is required. Red overrides
-   the default accent background but keeps the same shape and size. */
+/* Danger variant - used for failure counts (e.g. failed MCP servers); red keeps the same shape and size. */
 .icon-badge.icon-badge-danger {
   background: #f44336;
   color: #fff;

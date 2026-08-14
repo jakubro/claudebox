@@ -141,7 +141,6 @@ export default function SwimlaneBand({
     [boardId, lane.id, swimlaneIds, refresh],
   )
 
-  // Collect all tickets in this swimlane across all columns
   const laneTickets = useMemo(
     () => getLaneTickets(allTickets, lane.id, isUnsorted, swimlaneIds),
     [allTickets, lane.id, isUnsorted, swimlaneIds],

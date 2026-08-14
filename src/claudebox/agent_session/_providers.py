@@ -1,26 +1,10 @@
 """Universal-provider plumbing for LangGraphRuntime.
 
-Holds the parse-time provider identity, install-hint surface, per-provider
-probe + catalog strategy registry, the curated context-window + price tables,
-and their lookup helpers. See ARCHITECTURE.md section 1.4 for the design.
+Holds the parse-time provider identity, install-hint surface, per-provider probe/catalog
+strategy registry, and the curated context-window + price tables (see ARCHITECTURE.md 1.4).
 
-Surface:
-
-- `ProviderSpec` dataclass + `parse()` classmethod.
-- `PROVIDER_EXTRAS` map + `install_hint(provider)` helper.
-- `ProviderStrategy` + `PROVIDER_STRATEGIES` registry + per-provider probe /
-  catalog functions.
-- `MODEL_CONTEXT_WINDOW` per-model token table + `lookup_context_window(spec,
-  override)` helper.
-- `PRICE_PER_MTOK` per-model USD-per-million-token table + `lookup_price(spec,
-  overrides)` helper. Unknown models resolve to `None` price so the frontend
-  hides the cost row; Ollama rows are zero (local compute carries no real
-  USD).
-
-This module imports `httpx` only - NO `langchain_*` packages. The ast-grep
-prefix-pattern rule that bounds provider-package containment is therefore
-unaffected: provider-package lazy loading happens inside `init_chat_model`
-at runtime, never at `_providers.py` import time.
+Imports `httpx` only, no `langchain_*` packages, so provider-package lazy loading stays inside
+`init_chat_model` at runtime rather than happening here at import time.
 """
 
 from collections.abc import Callable
@@ -37,20 +21,15 @@ from .errors import OllamaModelNotPulled, OllamaUnreachable, OpenAICompatibleUnr
 class ProviderSpec:
     """Parsed provider identity for a workspace's model selection.
 
-    Built ONCE in `LangGraphRuntime.__init__()` from the workspace TOML's
-    `[langgraph] model = "provider:model"` value plus the per-provider kwargs
-    composed by `SessionService.start()` from `[langgraph.<provider>]`.
+    Built once in `LangGraphRuntime.__init__()` from the workspace TOML's `[langgraph] model =
+    "provider:model"` plus per-provider kwargs from `SessionService.start()`'s `[langgraph.<provider>]`.
 
     Attributes:
-        provider: Bare provider name as init_chat_model expects ("anthropic",
-            "openai", "ollama", "google_genai", ...).
-        model_id: Bare model id with no provider prefix ("claude-sonnet-4-5",
-            "llama3.2:3b", "gpt-4o", ...).
-        full_id: Composite "provider:model_id" forwarded to init_chat_model.
-            Equals raw_model passed to parse().
-        kwargs: Forwarded verbatim to init_chat_model. Only the keys the
-            provider's Chat<X> constructor accepts make sense; unknown keys
-            raise at provider init.
+        provider: Bare provider name as init_chat_model expects (e.g. "anthropic", "ollama").
+        model_id: Bare model id with no provider prefix (e.g. "claude-opus-5", "llama3.2:3b").
+        full_id: Composite "provider:model_id" forwarded to init_chat_model; equals raw_model
+            passed to parse().
+        kwargs: Forwarded verbatim to init_chat_model; unrecognized keys raise at provider init.
     """
 
     provider: str
@@ -62,10 +41,8 @@ class ProviderSpec:
     def parse(cls, raw_model: str, kwargs: dict[str, Any]) -> Self:
         """Parse a `provider:model_id` string into a frozen ProviderSpec.
 
-        Requires the explicit `provider:model` form. Bare strings (no colon)
-        and malformed inputs raise ValueError so workspace TOML mistakes
-        surface immediately at session start instead of failing at
-        init_chat_model time.
+        Requires the explicit `provider:model` form; bare strings or malformed input raise
+        ValueError so workspace TOML mistakes surface at session start, not at init_chat_model time.
         """
 
         provider, separator, model_id = raw_model.partition(":")
@@ -80,27 +57,21 @@ class ProviderSpec:
 class ProviderStrategy:
     """Per-provider connect-time probe + catalog enumeration handlers.
 
-    Both fields are optional. A `None` `probe` means the provider has no
-    connect-time pre-flight (cloud providers like Anthropic / OpenAI / Google
-    surface auth/network errors naturally on the first `query()`). A `None`
-    `fetch_catalog` means `get_models()` returns `[]` for the provider - the
-    workspace TOML's `[langgraph] model = "..."` is the only source of the
-    active model id; the frontend's model picker shows an empty list.
+    Both fields are optional. `probe=None` means no connect-time pre-flight (cloud providers like
+    Anthropic/OpenAI/Google surface auth/network errors on the first `query()`). `fetch_catalog=None`
+    means `get_models()` returns `[]` - the workspace TOML's `[langgraph] model = "..."` stays the
+    only source of the active model id, and the frontend's picker shows an empty list.
 
-    ONE registry, no if/elif chains in `connect()` or `get_models()`. Adding
-    a new provider with custom probe/catalog = adding a registry entry. No
-    new runtime method, no edit to `connect()` body, no if/elif extension.
+    Adding a provider means adding a registry entry, not a new method or an if/elif chain in
+    `connect()` / `get_models()`.
     """
 
     probe: Callable[[ProviderSpec], None] | None = None
     fetch_catalog: Callable[[ProviderSpec], list[Model]] | None = None
 
 
-# Per-model context-window table. LangChain doesn't expose context_window
-# uniformly across providers, so a hardcoded registry is the realistic v1
-# design. Lookup keyed by bare `model_id` (no provider prefix). Unknown
-# models fall back to `"default"`; workspaces with `max_tokens_override`
-# short-circuit the lookup via `lookup_context_window`.
+# Per-model context-window table, keyed by bare `model_id` - LangChain doesn't expose this
+# uniformly across providers, so this table is the source of truth (see `lookup_context_window`).
 MODEL_CONTEXT_WINDOW: dict[str, int] = {
     # Ollama
     "llama3.2:1b": 128_000,
@@ -113,10 +84,12 @@ MODEL_CONTEXT_WINDOW: dict[str, int] = {
     "qwen2.5:32b": 32_768,
     "mistral:7b": 32_768,
     "phi3.5:3.8b": 128_000,
-    # Anthropic
-    "claude-opus-4-8": 1_000_000,
-    "claude-sonnet-4-5": 200_000,
+    # Anthropic - dated id and alias both resolve to the same window
+    "claude-fable-5": 1_000_000,
+    "claude-opus-5": 1_000_000,
+    "claude-sonnet-5": 1_000_000,
     "claude-haiku-4-5-20251001": 200_000,
+    "claude-haiku-4-5": 200_000,
     # OpenAI
     "gpt-4o": 128_000,
     "gpt-4o-mini": 128_000,
@@ -144,15 +117,9 @@ MODEL_CONTEXT_WINDOW: dict[str, int] = {
 }
 
 
-# Per-model USD-per-million-token price table. Lookup keyed by bare
-# `model_id` (no provider prefix). Unknown models resolve to `None` via
-# `lookup_price` so `_accumulate_usage` returns `None` and the projection's
-# `total_cost_usd` stays unset for the turn (frontend hides the cost row).
-# Ollama rows are explicitly zero - local compute carries no real USD, but
-# zero is a deliberate "in the table" signal distinct from "missing".
-# Maintenance: cloud rates need periodic updates on each provider's
-# pricing-change cadence; each update is a small change touching only this
-# dict.
+# Per-model USD-per-million-token price table, keyed by bare `model_id` (see `lookup_price` for
+# fallback handling). Ollama rows are explicitly zero - local compute has no real USD, but zero is
+# a deliberate "in the table" signal distinct from "missing"; cloud rates need periodic updates.
 PRICE_PER_MTOK: dict[str, dict[str, float]] = {
     # Ollama (local compute, no real USD - explicit zero rows)
     "llama3.2:1b": {"input": 0.0, "output": 0.0},
@@ -165,10 +132,12 @@ PRICE_PER_MTOK: dict[str, dict[str, float]] = {
     "qwen2.5:32b": {"input": 0.0, "output": 0.0},
     "mistral:7b": {"input": 0.0, "output": 0.0},
     "phi3.5:3.8b": {"input": 0.0, "output": 0.0},
-    # Anthropic
-    "claude-opus-4-8": {"input": 15.0, "output": 75.0},
-    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},
+    # Anthropic - dated id and alias both resolve to the same rates
+    "claude-fable-5": {"input": 10.0, "output": 50.0},
+    "claude-opus-5": {"input": 5.0, "output": 25.0},
+    "claude-sonnet-5": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
     # OpenAI
     "gpt-4o": {"input": 2.50, "output": 10.0},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
@@ -192,14 +161,10 @@ PRICE_PER_MTOK: dict[str, dict[str, float]] = {
 }
 
 
-# Maps each init_chat_model provider id to its `[project.optional-dependencies]`
-# extra in `pyproject.toml` (note the underscored ids google_genai / mistralai map
-# to the short extra names google / mistral). Every extra here is bundled into
-# `langgraph-all`, which the container agent layer preinstalls
-# (`uv sync --extra langgraph-all`), so provider selection is config-only with no
-# in-container install step. `install_hint` surfaces should-never-fire remediation
-# through `ProviderPackageMissing`. Ollama is omitted - `langchain-ollama` is a core
-# dependency, so its package is never missing.
+# Maps each init_chat_model provider id to its `[project.optional-dependencies]` extra in
+# `pyproject.toml` (underscored ids google_genai/mistralai map to short names google/mistral).
+# Every extra here is bundled into `langgraph-all`, preinstalled in the agent image, so provider
+# selection is config-only. Ollama is omitted - `langchain-ollama` is a core dependency, never missing.
 PROVIDER_EXTRAS: dict[str, str] = {
     "anthropic": "anthropic",
     "openai": "openai",
@@ -221,11 +186,9 @@ PROVIDER_EXTRAS: dict[str, str] = {
 def install_hint(provider: str) -> str:
     """Return should-never-fire remediation for a missing provider package.
 
-    All curated providers ship preinstalled in the agent image via the
-    `langgraph-all` extra, so this only surfaces if a running image predates the
-    provider - the remediation is an image rebuild. Unknown providers get the
-    bare `langchain-<provider>` package name (underscores translated to hyphens,
-    LangChain's package-naming convention) to add to `langgraph-all` first.
+    Curated providers ship preinstalled via the `langgraph-all` extra, so this only surfaces if a
+    running image predates the provider (remediation: rebuild). Unknown providers get the bare
+    `langchain-<provider>` name (underscores to hyphens, LangChain's naming convention) to add first.
     """
 
     if provider in PROVIDER_EXTRAS:
@@ -245,11 +208,10 @@ def install_hint(provider: str) -> str:
 def lookup_context_window(spec: ProviderSpec, override: int | None) -> int:
     """Return the per-model context-window in tokens.
 
-    Workspace `[langgraph] max_tokens_override = N` short-circuits the table
-    lookup so users running a model outside `MODEL_CONTEXT_WINDOW` can pin
-    the right ceiling without code changes. Unknown models fall back to
-    `MODEL_CONTEXT_WINDOW["default"]`. Lookup uses `spec.model_id` - the
-    prefix-strip happened at parse time, never at lookup time.
+    Workspace `[langgraph] max_tokens_override = N` short-circuits the table lookup so users on a
+    model outside `MODEL_CONTEXT_WINDOW` can pin the ceiling without code changes. Unknown models
+    fall back to `MODEL_CONTEXT_WINDOW["default"]`; lookup uses `spec.model_id` since the prefix
+    was already stripped at parse time.
     """
 
     if override is not None:
@@ -259,16 +221,15 @@ def lookup_context_window(spec: ProviderSpec, override: int | None) -> int:
 
 
 def lookup_price(
-    spec: ProviderSpec, overrides: dict[str, dict[str, float]]
+    spec: ProviderSpec,
+    overrides: dict[str, dict[str, float]],
 ) -> dict[str, float] | None:
     """Return the per-million-token USD rates for a model, or `None` if unknown.
 
-    Workspace `[langgraph.cost]` overrides take precedence over the curated
-    `PRICE_PER_MTOK` table so users can pin USD for models the curated
-    table doesn't carry. Lookup uses `spec.model_id`. Unknown models with
-    no override resolve to `None`; callers (`_accumulate_usage`) translate
-    that to a `None` per-turn cost so the projection skips the update and
-    the frontend hides the cost row.
+    Workspace `[langgraph.cost]` overrides take precedence over the curated `PRICE_PER_MTOK` table
+    so users can pin USD for models it doesn't carry. Unknown models with no override resolve to
+    `None`; callers (`_accumulate_usage`) turn that into a `None` per-turn cost so the projection
+    skips the update and the frontend hides the cost row.
     """
 
     return overrides.get(spec.model_id) or PRICE_PER_MTOK.get(spec.model_id)
@@ -277,14 +238,12 @@ def lookup_price(
 def _probe_ollama(spec: ProviderSpec) -> None:
     """Probe Ollama /api/version + /api/show in one connect-time pass.
 
-    Runs reachability (GET /api/version) then model-pulled (POST /api/show)
-    checks against the configured `base_url`. No-op when `base_url` is
-    absent: init_chat_model uses its own default in that case and any
-    failure surfaces at first query().
+    Runs reachability (GET /api/version) then model-pulled (POST /api/show) against the
+    configured `base_url`. No-op when `base_url` is absent - init_chat_model uses its own default
+    and any failure surfaces at first query().
 
     Raises:
-        OllamaUnreachable: /api/version fails or /api/show returns 5xx /
-            connect / timeout.
+        OllamaUnreachable: /api/version fails, or /api/show returns 5xx/connect/timeout.
         OllamaModelNotPulled: /api/show returns 404.
     """
 
@@ -320,16 +279,14 @@ def _probe_ollama(spec: ProviderSpec) -> None:
 def _probe_openai_compatible(spec: ProviderSpec) -> None:
     """Probe OpenAI-compatible /v1/models endpoint.
 
-    Opt-in via `spec.kwargs.get("probe_on_connect", False)` because local
-    OpenAI-compatible servers (vLLM, LM Studio, llama.cpp) may not be up
-    at session-create time. When `base_url` is absent OR `probe_on_connect`
-    is false, the probe is a no-op (errors surface at first query()).
+    Opt-in via `spec.kwargs.get("probe_on_connect", False)` because local OpenAI-compatible
+    servers (vLLM, LM Studio, llama.cpp) may not be up at session-create time. No-op when
+    `base_url` is absent or `probe_on_connect` is false (errors then surface at first query()).
 
     Raises:
-        OpenAICompatibleUnreachable: /v1/models GET fails (carries the
-            base_url specifically - distinct from OllamaUnreachable so
-            users debugging a vLLM / LM Studio / llama.cpp server see the
-            right diagnostic context).
+        OpenAICompatibleUnreachable: /v1/models GET fails; carries base_url specifically,
+            distinct from OllamaUnreachable, so debugging a vLLM/LM Studio/llama.cpp server gets
+            the right diagnostic context.
     """
 
     base_url = spec.kwargs.get("base_url")
@@ -353,11 +310,10 @@ def _probe_openai_compatible(spec: ProviderSpec) -> None:
 def _fetch_ollama_catalog(spec: ProviderSpec) -> list[Model]:
     """Fetch the Ollama tag catalog via /api/tags.
 
-    Degrades to `[]` when `base_url` is absent or the endpoint errors. The
-    connect-time probe (`_probe_ollama`) already raises typed exceptions
-    for the session-create path, so this catalog call only fails-silently
-    when invoked post-connect against a transiently-down server (the UI
-    asking for a fresh picker).
+    Degrades to `[]` when `base_url` is absent or the endpoint errors. The connect-time probe
+    (`_probe_ollama`) already raises typed exceptions for the session-create path, so this call
+    fails-silently only when invoked post-connect against a transiently-down server (a
+    fresh-picker request from the UI).
     """
 
     base_url = spec.kwargs.get("base_url")
@@ -388,7 +344,7 @@ def _fetch_ollama_catalog(spec: ProviderSpec) -> list[Model]:
                 id=tag_name,
                 name=tag_name,
                 context_window=MODEL_CONTEXT_WINDOW.get(tag_name, MODEL_CONTEXT_WINDOW["default"]),
-            )
+            ),
         )
 
     return models
@@ -397,10 +353,9 @@ def _fetch_ollama_catalog(spec: ProviderSpec) -> list[Model]:
 def _fetch_openai_catalog(spec: ProviderSpec) -> list[Model]:
     """Fetch the OpenAI-compatible model catalog via /v1/models.
 
-    Degrades to `[]` when `base_url` is absent or the endpoint errors -
-    cloud OpenAI deployments use the default openai.com base_url which
-    requires an API key for /v1/models; the UI degrades gracefully and the
-    workspace TOML's `[langgraph] model = "..."` is the authoritative
+    Degrades to `[]` when `base_url` is absent or the endpoint errors - cloud OpenAI deployments
+    use the default openai.com base_url, which requires an API key for /v1/models. The UI
+    degrades gracefully; the workspace TOML's `[langgraph] model = "..."` stays the authoritative
     source of the active model id.
     """
 
@@ -432,16 +387,14 @@ def _fetch_openai_catalog(spec: ProviderSpec) -> list[Model]:
                 id=model_id,
                 name=model_id,
                 context_window=MODEL_CONTEXT_WINDOW.get(model_id, MODEL_CONTEXT_WINDOW["default"]),
-            )
+            ),
         )
 
     return models
 
 
-# Cloud providers (anthropic, google_genai, groq, mistralai, ...) have no
-# entry; DEFAULT_STRATEGY (no probe, no catalog) applies via `.get()`
-# fallback at the dispatch sites in runtime_langgraph.connect() and
-# runtime_langgraph.get_models().
+# Cloud providers (anthropic, google_genai, groq, mistralai, ...) have no entry - DEFAULT_STRATEGY
+# (no probe, no catalog) applies via `.get()` fallback in runtime_langgraph.connect()/get_models().
 PROVIDER_STRATEGIES: dict[str, ProviderStrategy] = {
     "ollama": ProviderStrategy(probe=_probe_ollama, fetch_catalog=_fetch_ollama_catalog),
     "openai": ProviderStrategy(

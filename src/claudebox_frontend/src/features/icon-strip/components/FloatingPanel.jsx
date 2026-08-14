@@ -12,12 +12,9 @@ import { components } from '../../../config/layout'
 import { WIDE_FLOATING_PANELS } from '../../../config/panel'
 
 /**
- * Render a panel component as a positioned floating overlay anchored to an icon button.
- *
- * Vertical position is clamped to the icon strip's bounding rect so the panel
- * never overflows above or below the strip. Wide panels (logs, containers)
- * use larger minimum dimensions because their content benefits from extra
- * horizontal/vertical space.
+ * Vertical position is clamped to the icon strip's bounding rect so the panel never
+ * overflows above or below the strip. Wide panels (logs, containers) use larger minimum
+ * dimensions because their content benefits from extra space.
  *
  * @param {object} props
  * @param {string|null} props.panelId - Which panel to render, or null to hide.
@@ -40,7 +37,6 @@ export default function FloatingPanel({
   const [clampedTop, setClampedTop] = useState(null)
   const [resizeTick, setResizeTick] = useState(0)
 
-  // Escape key dismisses the floating panel
   useEffect(() => {
     if (!panelId) {
       return
@@ -61,9 +57,7 @@ export default function FloatingPanel({
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // Clamp vertical position to icon strip bounds after render (pre-paint).
-  // panelId and resizeTick are intentional re-trigger deps even though the
-  // effect body doesn't read them directly.
+  // Clamps position after render (pre-paint); panelId/resizeTick retrigger it without being read in the body.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on panel switch and window resize
   useLayoutEffect(() => {
     if (!(panelRef.current && anchorRect)) {
@@ -89,7 +83,6 @@ export default function FloatingPanel({
     return null
   }
 
-  // Wide panels (logs, containers) get larger minimum dimensions
   const isWide = WIDE_FLOATING_PANELS.has(panelId)
   let width = FLOATING_PANEL_WIDTH
   let minHeight = FLOATING_PANEL_MIN_HEIGHT

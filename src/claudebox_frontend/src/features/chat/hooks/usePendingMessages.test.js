@@ -38,7 +38,6 @@ describe('usePendingMessages', () => {
       initialProps: { events: EMPTY_EVENTS },
     })
 
-    // Add a pending message
     act(() => {
       vi.setSystemTime(1000)
       result.current.addPendingMessage('test message')
@@ -55,7 +54,6 @@ describe('usePendingMessages', () => {
     const events = [{ type: 'user', is_human: true, content: 'test message', timestamp: 1100 }]
     rerender({ events })
 
-    // Should be filtered out
     expect(result.current.showPendingMessages).toHaveLength(0)
   })
 
@@ -91,7 +89,6 @@ describe('usePendingMessages', () => {
       result.current.addPendingMessage('/help')
     })
 
-    // Advance time
     act(() => {
       vi.setSystemTime(1200)
     })
@@ -122,9 +119,8 @@ describe('usePendingMessages', () => {
     expect(result.current.showPendingMessages[0].content).toBe('message 2')
   })
 
-  // Note: MIN_PENDING_DISPLAY_MS anti-flicker check exists in showPendingMessages useMemo,
-  // but the useEffect that clears pending messages runs afterward and removes messages
-  // immediately upon SSE delivery regardless of display time. This is current behavior.
+  // MIN_PENDING_DISPLAY_MS anti-flicker applies only in showPendingMessages; the clearing useEffect
+  // removes messages immediately on SSE delivery regardless of display time.
 
   it('returns empty array when no pending messages', () => {
     const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS))
@@ -142,7 +138,6 @@ describe('usePendingMessages', () => {
       result.current.addPendingMessage('test')
     })
 
-    // Advance time
     act(() => {
       vi.setSystemTime(1200)
     })
@@ -151,7 +146,7 @@ describe('usePendingMessages', () => {
     const events = [{ type: 'user', is_human: false, content: 'test', timestamp: 1100 }]
     rerender({ events })
 
-    // Should still show - non-human events don't clear pending
+    // Non-human events don't clear pending
     expect(result.current.showPendingMessages).toHaveLength(1)
   })
 
@@ -170,7 +165,6 @@ describe('usePendingMessages', () => {
       result.current.addPendingMessage('test')
     })
 
-    // Advance time
     act(() => {
       vi.setSystemTime(1200)
     })
@@ -243,7 +237,6 @@ describe('usePendingMessages', () => {
 
     expect(result.current.showPendingMessages).toHaveLength(1)
 
-    // Switch to different session
     rerender({ events: EMPTY_EVENTS, sessionId: 'session-2' })
 
     expect(result.current.showPendingMessages).toHaveLength(0)

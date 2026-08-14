@@ -56,10 +56,7 @@ const MOCK_BOARD_DETAIL = {
   },
 }
 
-/**
- * Mock board API endpoints on the page.
- * @param {import('@playwright/test').Page} page - Playwright page.
- */
+// Mocks the board list/detail/move/delete/swimlane API endpoints on the page.
 async function mockBoardsAPI(page) {
   // GET /api/workspaces/{ws}/boards
   await page.route(`**${WS_PREFIX}/boards`, async route => {
@@ -142,11 +139,9 @@ test.describe('Boards Panel', () => {
     const panel = page.locator('[data-testid="panel-boards"]')
     await expect(panel).toBeVisible()
 
-    // Two boards listed
     const items = panel.locator('.boards-item')
     await expect(items).toHaveCount(2)
 
-    // Board names visible
     await expect(items.nth(0).locator('.boards-item-name')).toContainText('sprint-1')
     await expect(items.nth(1).locator('.boards-item-name')).toContainText('backlog')
   })
@@ -166,7 +161,6 @@ test.describe('Boards Panel', () => {
 
   test('shows empty state when no boards', async ({ page }) => {
     // SPEC: panel-boards:empty
-    // Override with empty boards response
     await page.route(`**${WS_PREFIX}/boards`, async route => {
       await route.fulfill({ json: { boards: [] } })
     })
@@ -198,9 +192,7 @@ test.describe('Boards Panel', () => {
     await page.goto('/')
 
     const panel = page.locator('[data-testid="panel-boards"]')
-    // Pre-workspace state must not surface raw API invariants like
-    // "Workspace ID not set" - the panel renders neutral loading content
-    // until workspaceId is populated.
+    // Pre-workspace state must never leak raw API errors like "Workspace ID not set" - it shows loading instead.
     await expect(panel).not.toContainText('Workspace ID not set')
   })
 
@@ -215,8 +207,7 @@ test.describe('Boards Panel', () => {
     await expect(boardsIcon).toBeVisible()
     await expect(bookmarksIcon).toBeVisible()
 
-    // Boards must sit BELOW Bookmarks in the strip (claim names the relative
-    // position). Compare bounding boxes to anchor the position contract.
+    // Boards must sit below Bookmarks in the strip; compare bounding boxes to anchor the position contract.
     const { y: boardsY } = await boardsIcon.boundingBox()
     const { y: bookmarksY } = await bookmarksIcon.boundingBox()
     expect(boardsY).toBeGreaterThan(bookmarksY)
@@ -243,7 +234,7 @@ test.describe('Boards Panel', () => {
     const panel = page.locator('[data-testid="panel-boards"]')
     await expect(panel.locator('.boards-item')).toHaveCount(2)
 
-    // No dedicated header row anymore - refresh moved to a meta-item at end of list.
+    // Refresh lives in a meta-item at the end of the list, not a dedicated header row.
     await expect(panel.locator('.boards-panel-header')).toHaveCount(0)
 
     const meta = panel.locator('[data-testid="boards-refresh-meta"]')
@@ -271,18 +262,16 @@ test.describe('Board Tab', () => {
 
     await openBoardsPanel(page)
 
-    // Click the first board
     const panel = page.locator('[data-testid="panel-boards"]')
     await panel.locator('.boards-item').first().click()
 
-    // Board renders inside the main panel content slot.
     const board = page.locator('[data-testid="main-panel-content"][data-mode="board"] .board-tab')
     await expect(board).toBeVisible()
 
-    // URL hash now carries the boards segment.
+    // URL hash carries the boards segment.
     expect(await page.evaluate(() => window.location.hash)).toMatch(/\/boards\/[^/]+$/)
 
-    // Main-area header LEFT slot now shows the board name, replacing the session trio.
+    // Main-area header LEFT slot shows the board name, not the session trio.
     await expect(page.locator('[data-testid="board-header"]')).toBeVisible()
     await expect(page.locator('[data-testid="session-header-status-dot"]')).not.toBeVisible()
   })
@@ -305,10 +294,7 @@ test.describe('Board Tab', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Check column headers - non-terminal columns show the full label;
-    // terminal columns (Done, Rejected, Def. Rejected) are collapsed by
-    // default and show only the first grapheme of their state label
-    // (D, R, D).
+    // Terminal columns (Done, Rejected, Def. Rejected) collapse by default to their label's first grapheme.
     const headers = board.locator('.board-col-header')
     await expect(headers).toHaveCount(6)
     await expect(headers.nth(0)).toContainText('Backlog')
@@ -354,11 +340,9 @@ test.describe('Board Tab', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Should render ticket cards
     const tickets = board.locator('.ticket-card')
     await expect(tickets.first()).toBeVisible()
 
-    // Verify ticket titles render
     await expect(board.getByText('Setup infra')).toBeVisible()
     await expect(board.getByText('Boards')).toBeVisible()
     await expect(board.getByText('Polish UI')).toBeVisible()
@@ -380,14 +364,13 @@ test.describe('Board Tab', () => {
 
     const headers = page.locator('.board-col-header')
 
-    // Done, Rejected, Def. Rejected should have collapsed class
-    // AND each must render the ▸ chevron glyph the claim names
+    // Done, Rejected, Def. Rejected should have the collapsed class and show the collapsed chevron glyph.
     for (const i of [3, 4, 5]) {
       await expect(headers.nth(i)).toHaveClass(/collapsed/)
       await expect(headers.nth(i).locator('.board-col-chevron')).toHaveText('▸')
     }
 
-    // Backlog, In Progress, Review should NOT be collapsed AND show ▾ instead.
+    // Backlog, In Progress, Review should not be collapsed and show the expanded chevron instead.
     for (const i of [0, 1, 2]) {
       await expect(headers.nth(i)).not.toHaveClass(/collapsed/)
       await expect(headers.nth(i).locator('.board-col-chevron')).toHaveText('▾')
@@ -407,11 +390,9 @@ test.describe('Board Tab', () => {
     const doneHeader = page.locator('.board-col-header').nth(3)
     await expect(doneHeader).toHaveClass(/collapsed/)
 
-    // Click to expand
     await doneHeader.locator('.board-col-toggle').click()
     await expect(doneHeader).not.toHaveClass(/collapsed/)
 
-    // Click again to collapse
     await doneHeader.locator('.board-col-toggle').click()
     await expect(doneHeader).toHaveClass(/collapsed/)
   })
@@ -477,9 +458,7 @@ test.describe('Board Tab', () => {
     await expect(dot).toBeVisible()
     await expect(polishCard.locator('.ticket-session-id')).toBeVisible()
 
-    // Dot must carry one of the documented state classes - running or
-    // stopped - which CSS owns the green/gray mapping for. Class names
-    // anchor the color contract; visual regression covers the pixels.
+    // Dot must carry a documented state class; CSS owns the color mapping, visual regression covers pixels.
     const cls = await dot.getAttribute('class')
     expect(cls).toMatch(/\b(running|stopped|stopping|no-container)\b/)
   })
@@ -502,22 +481,18 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Click a ticket card
     await page.getByText('Setup infra').click()
 
-    // Detail overlay should appear
     const overlay = page.locator('.ticket-detail-panel')
     await expect(overlay).toBeVisible()
 
-    // Title
     await expect(overlay.locator('.ticket-detail-title')).toContainText('Setup infra')
 
     // Metadata - claim enumerates three rows, each with named labels and values.
     await expect(overlay.locator('.ticket-detail-meta')).toBeVisible()
     const rows = overlay.locator('.ticket-meta-row')
     await expect(rows).toHaveCount(3)
-    // Each row must surface its label (Status, Swimlane, Session) so the
-    // claim's "metadata" content is verified, not just row cardinality.
+    // Each row must show its label (Status, Swimlane, Session) so "metadata" is verified beyond row count.
     const rowsText = (await rows.allTextContents()).join(' | ')
     expect(rowsText).toMatch(/Status/)
     expect(rowsText).toMatch(/Swimlane/)
@@ -528,8 +503,7 @@ test.describe('Board Tab', () => {
     // SPEC: board:detail-loading
     await mockSSE(page)
 
-    // Delay the content endpoint so the in-flight loading state is observable
-    // instead of resolving instantly (which would skip the loading UI).
+    // Delay the content endpoint so the in-flight loading state is observable instead of resolving instantly.
     await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
       await new Promise(resolve => setTimeout(resolve, 800))
       await route.fulfill({ body: '# Setup infra\n\nDelayed body.' })
@@ -588,7 +562,6 @@ test.describe('Board Tab', () => {
     await page.getByText('Setup infra').click()
     await expect(page.locator('.ticket-detail-panel')).toBeVisible()
 
-    // Close with X button
     await page.locator('.ticket-detail-close').click()
     await expect(page.locator('.ticket-detail-panel')).not.toBeVisible()
   })
@@ -610,7 +583,6 @@ test.describe('Board Tab', () => {
     await page.getByText('Setup infra').click()
     await expect(page.locator('.ticket-detail-panel')).toBeVisible()
 
-    // Click backdrop
     await page.locator('.ticket-detail-backdrop').click({ position: { x: 5, y: 5 } })
     await expect(page.locator('.ticket-detail-panel')).not.toBeVisible()
   })
@@ -628,15 +600,12 @@ test.describe('Board Tab', () => {
 
     const board = page.locator('.board-board')
 
-    // Ctrl+click first ticket - should add selected class
     await board.getByText('Setup infra').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(1)
 
-    // Ctrl+click second ticket
     await board.getByText('Boards').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(2)
 
-    // Ctrl+click first again to deselect
     await board.getByText('Setup infra').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(1)
   })
@@ -665,15 +634,12 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click on a ticket in Backlog
     await page.getByText('Setup infra').click({ button: 'right' })
 
-    // Context menu should appear with Archive option
     const menu = page.locator('.ticket-context-menu')
     await expect(menu).toBeVisible()
     await expect(menu.getByText('Archive ticket')).toBeVisible()
 
-    // Click Archive ticket
     await menu.getByText('Archive ticket').click()
     await expect.poll(() => archiveRequested, { timeout: 3000 }).toBe(true)
   })
@@ -688,11 +654,9 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click on "Frontend" swimlane header
     const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
     await frontendHeader.click({ button: 'right' })
 
-    // Context menu appears with all options
     const menu = page.locator('.swimlane-context-menu')
     await expect(menu).toBeVisible()
     await expect(menu.getByText('Rename')).toBeVisible()
@@ -743,7 +707,6 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click Frontend header -> Delete
     const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
     await frontendHeader.click({ button: 'right' })
     await page.locator('.swimlane-context-menu').getByText('Delete').click()
@@ -773,7 +736,6 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click Frontend -> Move down
     const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
     await frontendHeader.click({ button: 'right' })
     await page.locator('.swimlane-context-menu').getByText('Move down').click()
@@ -790,11 +752,9 @@ test.describe('Board Tab', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Right-click on Unsorted swimlane header
     const unsortedHeader = page.locator('.swimlane-header.unsorted')
     await unsortedHeader.click({ button: 'right' })
 
-    // Context menu should NOT appear
     await expect(page.locator('.swimlane-context-menu')).not.toBeVisible()
   })
 })
@@ -806,7 +766,6 @@ test.describe('Board States', () => {
 
   test('shows loading state while board loads', async ({ page }) => {
     // SPEC: board:loading
-    // Delay the board detail response
     await page.route(`**${WS_PREFIX}/boards`, async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({ json: MOCK_BOARDS })
@@ -828,7 +787,6 @@ test.describe('Board States', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Loading state should be visible
     await expect(page.locator('.board-loading')).toBeVisible()
     await expect(page.locator('.board-loading')).toContainText('Loading board')
   })
@@ -868,7 +826,6 @@ test.describe('Board States', () => {
     await page.route(
       new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
       async route => {
-        // Return null/empty - no board data
         await route.fulfill({ json: null })
       },
     )
@@ -887,7 +844,6 @@ test.describe('Board States', () => {
 
   test('board shows loading placeholder in panel', async ({ page }) => {
     // SPEC: panel-boards:loading
-    // Delay the boards list response
     await page.route(`**${WS_PREFIX}/boards`, async route => {
       if (route.request().method() === 'GET') {
         await new Promise(r => setTimeout(r, 2000))
@@ -954,14 +910,11 @@ test.describe('Board SSE Updates', () => {
     await openBoardsPanel(page)
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
 
-    // Wait for initial board load
     await expect(page.locator('.board-board')).toBeVisible()
     const initialCount = boardFetchCount
 
-    // Send SSE sessions_changed event
     await daemonSSE.sendEvent({ type: 'sessions_changed', workspace_id: DEFAULT_WORKSPACE_ID })
 
-    // Board should refetch
     await expect.poll(() => boardFetchCount, { timeout: 5000 }).toBeGreaterThan(initialCount)
   })
 
@@ -995,10 +948,8 @@ test.describe('Board SSE Updates', () => {
     await expect(page.locator('.board-board')).toBeVisible()
     const initialCount = boardFetchCount
 
-    // Send SSE container_status event
     await daemonSSE.sendContainerStatus('container-123', 'running')
 
-    // Board should refetch
     await expect.poll(() => boardFetchCount, { timeout: 5000 }).toBeGreaterThan(initialCount)
   })
 
@@ -1050,7 +1001,6 @@ test.describe('Board SSE Updates', () => {
     })
     await page.mouse.up()
 
-    // Verify move API was called with column change
     await expect.poll(() => movePayload, { timeout: 5000 }).toBeTruthy()
     expect(movePayload.column).toBe('in-progress')
   })
@@ -1098,7 +1048,6 @@ test.describe('Board SSE Updates', () => {
     })
     await page.mouse.up()
 
-    // Verify move API was called with swimlane change
     await expect.poll(() => movePayload, { timeout: 5000 }).toBeTruthy()
     expect(movePayload.swimlane).toBe('backend')
   })
@@ -1126,9 +1075,7 @@ test.describe('Board SSE Updates', () => {
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
     await expect(page.locator('.board-board')).toBeVisible()
 
-    // Drop "Setup infra" onto another ticket in the SAME backlog/Frontend cell to
-    // exercise intra-cell reorder; the second card in the cell receives the drop
-    // and `move` should be called with an explicit `index` field.
+    // Drops "Setup infra" onto a same-cell ticket to exercise reorder; move must carry an explicit index.
     const sourceCard = page.locator('.ticket-card', { hasText: 'Setup infra' })
     await expect(sourceCard).toBeVisible()
 
@@ -1138,9 +1085,7 @@ test.describe('Board SSE Updates', () => {
       .locator('.board-cell')
       .first()
       .locator('.ticket-card')
-    // dnd-kit collision detection in headless needs the pointer to dwell over the
-    // target ticket so `over.id` resolves to the ticket rather than the enclosing
-    // cell. Brief waits between transitions let React/dnd-kit settle each frame.
+    // Headless dnd-kit needs the pointer to dwell over the ticket, not the cell; brief waits let it settle.
     const targetCard =
       (await cards.count()) < 2
         ? page
@@ -1161,10 +1106,7 @@ test.describe('Board SSE Updates', () => {
     await page.waitForTimeout(50)
     await page.mouse.up()
 
-    // Either path should result in a move call with an explicit index field -
-    // proving that drop-on-ticket forwards a position rather than always
-    // appending. (Index value depends on which ticket received the drop;
-    // here we assert only that the field was forwarded as a number.)
+    // Either path yields a move call with an explicit numeric index, proving drop-on-ticket forwards a position.
     await expect.poll(() => movePayload, { timeout: 5000 }).toBeTruthy()
     expect(typeof movePayload.index).toBe('number')
   })
@@ -1186,12 +1128,10 @@ test.describe('Board SSE Updates', () => {
     await expect(page.locator('.ticket-card').first()).toBeVisible()
     expect(page.url()).not.toContain('density=terse')
 
-    // Click the density toggle in the board control bar.
     const toggle = page.locator('.panel-control-bar .panel-control-btn').first()
     await toggle.click()
 
-    // After toggle: URL gains density=terse, cells render inline ticket-ID
-    // links instead of cards.
+    // After toggle, the URL gains density=terse and cells render inline ticket-ID links instead of cards.
     await expect.poll(() => page.url(), { timeout: 3000 }).toContain('density=terse')
     await expect(page.locator('.ticket-link').first()).toBeVisible()
     await expect(page.locator('.ticket-card')).toHaveCount(0)
@@ -1218,25 +1158,20 @@ test.describe('Board SSE Updates', () => {
 
     const cardBox = await card.boundingBox()
 
-    // No drag overlay before drag
     await expect(page.locator('.ticket-card.drag-overlay')).toHaveCount(0)
 
-    // Start drag
     await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2)
     await page.mouse.down()
     await page.mouse.move(cardBox.x + cardBox.width / 2 + 20, cardBox.y + cardBox.height / 2 + 20, {
       steps: 5,
     })
 
-    // Drag overlay should appear with the ticket title
     const overlay = page.locator('.ticket-card.drag-overlay')
     await expect(overlay).toBeVisible()
     await expect(overlay).toContainText('Setup infra')
 
-    // Release
     await page.mouse.up()
 
-    // Overlay should disappear after drop
     await expect(page.locator('.ticket-card.drag-overlay')).toHaveCount(0)
   })
 })
@@ -1251,8 +1186,7 @@ test.describe('Boards Panel - board item interactions', () => {
   test('pencil icon opens inline rename input with Save and Cancel', async ({ page }) => {
     await mockSSE(page)
     let renameCalledWith = null
-    // Register the PATCH handler BEFORE navigating so it wins over the catch-all
-    // GET handler from mockBoardsAPI on the same URL.
+    // Registered before navigating so it wins over mockBoardsAPI's catch-all GET handler on the same URL.
     await page.route(
       new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
       async route => {
@@ -1368,14 +1302,8 @@ test.describe('Board cell context menu', () => {
     await mockBoardsAPI(page)
   })
 
-  /**
-   * Dispatch a contextmenu event directly on a cell DOM node - avoids the
-   * TicketCard child whose own contextmenu handler stops propagation.
-   *
-   * @param {import('@playwright/test').Page} page
-   * @param {number} bandIndex - Which swimlane band to target (0=Frontend, 1=Backend, 2=Unsorted).
-   * @param {number} cellIndex - Column index within the band (0=backlog, 1=in-progress, ...).
-   */
+  // Dispatches contextmenu directly on the cell node since TicketCard's own handler stops propagation.
+  // bandIndex: 0=Frontend, 1=Backend, 2=Unsorted; cellIndex: 0=backlog, 1=in-progress, ...
   async function rightClickCell(page, bandIndex, cellIndex) {
     return page.evaluate(
       ({ bandIndex, cellIndex }) => {
@@ -1430,7 +1358,7 @@ test.describe('Board cell context menu', () => {
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
     await expect(page.locator('.board-board')).toBeVisible()
 
-    // Frontend swimlane × Review column (index 2) - empty in the fixture.
+    // Frontend swimlane x Review column (index 2) - empty in the fixture.
     await rightClickCell(page, 0, 2)
 
     const menuButton = page.locator('.swimlane-context-menu button')
@@ -1461,8 +1389,7 @@ test.describe('Board cell context menu', () => {
 test.describe('Board bulk-aware drag', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
-    // Provide a board fixture with 4 backlog tickets (3 frontend + 1 backend),
-    // so we can test selection vs unselected drag with deterministic targets.
+    // Board fixture has 4 backlog tickets (3 frontend + 1 backend) for deterministic select-vs-unselected targets.
     const BULK_BOARD = {
       ...MOCK_BOARD_DETAIL,
       states: MOCK_BOARD_DETAIL.states.map(s =>
@@ -1503,9 +1430,7 @@ test.describe('Board bulk-aware drag', () => {
   test('dragging a selected ticket carries every selected ticket; dragging unselected moves only that one', async ({
     page,
   }) => {
-    // Two phases of multi-step drag-and-drop + per-phase assertion poll.
-    // The default 5 s test timeout is too tight when both phases run plus the
-    // serialized assign() call ahead of each move dispatch.
+    // Two-phase drag-and-drop; default 5s timeout is too tight since assign() serializes ahead of each move.
     test.setTimeout(30000)
     const moves = []
     // Register first so it wins over any earlier registration.
@@ -1535,7 +1460,6 @@ test.describe('Board bulk-aware drag', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Ctrl+click to multi-select T1, T2, T3 (frontend backlog).
     await board.getByText('T1').click({ modifiers: ['Control'] })
     await board.getByText('T2').click({ modifiers: ['Control'] })
     await board.getByText('T3').click({ modifiers: ['Control'] })
@@ -1559,9 +1483,7 @@ test.describe('Board bulk-aware drag', () => {
     })
     await page.mouse.up()
 
-    // All three selected tickets should move (move API called 3x). Bulk-move
-    // dispatches 3 PATCH requests; poll with a generous timeout because the
-    // assign() shared-session call serializes ahead of each move.
+    // Expect 3 PATCH calls; poll generously since assign()'s shared-session call serializes ahead of each move.
     await expect.poll(() => moves.length, { timeout: 15000 }).toBe(3)
     const movedPaths = moves.map(m => m.ticketPath).sort()
     expect(movedPaths).toEqual([
@@ -1570,18 +1492,14 @@ test.describe('Board bulk-aware drag', () => {
       'docs/tickets/active/t3.md',
     ])
 
-    // ── Phase 2: fresh select-three, drag UNSELECTED 4th ──
-    // Clear move log and reset selection in-place (avoid full reload which
-    // breaks SSE wiring under the mocked route).
+    // Phase 2 drags unselected T4; state resets in place since a reload would break the mocked SSE wiring.
     moves.length = 0
-    // Toggle off all selection by Ctrl+clicking each selected ticket.
     await board.getByText('T1').click({ modifiers: ['Control'] })
     await board.getByText('T2').click({ modifiers: ['Control'] })
     await board.getByText('T3').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(0)
 
-    // Re-select T1, T2, T3 (now in their post-drag positions but selection by
-    // path still works regardless of column).
+    // Re-selects T1-T3 in their post-drag positions; selection is tracked by path, so column doesn't matter.
     await board.getByText('T1').click({ modifiers: ['Control'] })
     await board.getByText('T2').click({ modifiers: ['Control'] })
     await board.getByText('T3').click({ modifiers: ['Control'] })
@@ -1610,8 +1528,7 @@ test.describe('Board bulk-aware drag', () => {
 })
 
 test.describe('Board cross-lane bulk + column-header drop', () => {
-  // Board fixture with tickets distributed across two swimlanes so we can
-  // exercise multi-lane selection and cross-lane preservation.
+  // Board fixture spreads tickets across two swimlanes for multi-lane selection and cross-lane preservation.
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
     const CROSS_LANE_BOARD = {
@@ -1673,10 +1590,7 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
     await board.getByText('T3').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(2)
 
-    // Drag T1 (in frontend) onto the backend swimlane's in-progress cell.
-    // Even though the cell drop target lane is "backend", cross-lane bulk
-    // preservation should keep T3 in backend AND keep T1 in frontend; only
-    // the column changes for both.
+    // Drags T1 (frontend) onto the backend in-progress cell; each ticket should keep its origin swimlane.
     const dragCard = page.locator('.ticket-card', { hasText: 'T1' })
     const backendBand = page.locator('.swimlane-band').nth(1)
     const inProgressCell = backendBand.locator('.board-cell').nth(1)
@@ -1695,8 +1609,7 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
 
     await expect.poll(() => moves.length, { timeout: 5000 }).toBe(2)
 
-    // Both tickets must land in in-progress with their ORIGIN swimlane
-    // intact: no `swimlane` field set on the move call (undefined -> preserved).
+    // Both land in in-progress with origin swimlane intact: an absent swimlane field means preserved.
     const byPath = Object.fromEntries(moves.map(m => [m.ticketPath, m.body]))
     expect(byPath['docs/tickets/active/t1.md']).toEqual({ column: 'in-progress' })
     expect(byPath['docs/tickets/active/t3.md']).toEqual({ column: 'in-progress' })
@@ -1800,14 +1713,12 @@ test.describe('Board column rename', () => {
     await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
     await expect(page.locator('.board-board')).toBeVisible()
 
-    // Double-click the Backlog header to open rename input.
     const backlogHeader = page.locator('.board-col-header').first()
     await backlogHeader.dblclick()
 
     const input = page.locator('.board-col-name-input')
     await expect(input).toBeVisible()
 
-    // Type new label, press Enter to submit.
     await input.fill('To Do')
     await input.press('Enter')
 
@@ -1844,8 +1755,7 @@ test.describe('Board bulk shared session', () => {
         }
       },
     )
-    // Re-register move handler in this test to ensure it wins over the
-    // beforeEach handler (route ordering affects the URL with encoded slashes).
+    // Re-registered so it wins over the beforeEach handler; ordering matters with encoded slashes in the URL.
     await page.route(
       new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
       async route => {
@@ -1875,8 +1785,7 @@ test.describe('Board bulk shared session', () => {
     await expect(board.getByText('Setup infra')).toBeVisible()
     await expect(board.getByText('Boards')).toBeVisible()
 
-    // Select two backlog tickets (Setup infra + Boards) and bulk-drag
-    // the first to In Progress.
+    // Selects two backlog tickets (Setup infra + Boards) and bulk-drags the first to In Progress.
     await board.getByText('Setup infra').click({ modifiers: ['Control'] })
     await board.getByText('Boards').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(2)
@@ -1897,8 +1806,7 @@ test.describe('Board bulk shared session', () => {
     })
     await page.mouse.up()
 
-    // A single shared assign call covers all moved tickets, with parallel:false
-    // signalling the backend to spawn ONE shared session.
+    // A single shared assign call covers all moved tickets; parallel:false tells the backend to spawn one session.
     await expect.poll(() => assignBody, { timeout: 5000 }).toBeTruthy()
     expect(assignBody.parallel).toBe(false)
     expect(assignBody.tickets.sort()).toEqual([
@@ -1917,10 +1825,7 @@ test.describe('Board prompt sequence', () => {
   test('move into active column triggers assign with prompt sequence config in board', async ({
     page,
   }) => {
-    // Board has prompt.sequence configured - backend uses it to build first
-    // user messages with {ticket} substitution. From the FE side, the verifiable
-    // signal is the assign call carrying the right tickets so the backend can
-    // use the sequence; we keep the prompt on the board fixture.
+    // Board has prompt.sequence; backend expands {ticket} server-side, so we verify via the assign ticket paths.
     const PROMPT_BOARD = {
       ...MOCK_BOARD_DETAIL,
       states: MOCK_BOARD_DETAIL.states.map(s =>
@@ -1984,8 +1889,7 @@ test.describe('Board prompt sequence', () => {
     })
     await page.mouse.up()
 
-    // Assign call sent with the ticket path; backend will expand prompt.sequence
-    // server-side using {ticket} -> ticket path.
+    // Assign call carries the ticket path; backend expands prompt.sequence server-side via {ticket} -> path.
     await expect.poll(() => assignBody, { timeout: 5000 }).toBeTruthy()
     expect(assignBody.tickets).toEqual(['docs/tickets/active/setup.md'])
   })
@@ -2008,14 +1912,10 @@ test.describe('Boards Deep Link', () => {
     // Footer renders -> app initialized with the workspace context selected.
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-    // Workspace was auto-selected from URL; verify via WorkspaceContext state.
     await expect
       .poll(async () =>
         page.evaluate(() => {
-          // Workspace selection is reflected in title attr of footer-workspace
-          // and in the boards panel's workspaceId-bound renders. The most direct
-          // signal is the board tab opening - which only happens once
-          // workspaceId === activeWorkspaceId.
+          // Board tab appearing is the clearest signal: it renders once workspaceId === activeWorkspaceId.
           return document.querySelector('.board-tab') !== null
         }),
       )
@@ -2060,9 +1960,7 @@ test.describe('Board column reorder + context menu', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Every non-collapsed column header renders the grip-handle span. Wait
-    // for the collapsed-by-default state to settle on terminal columns
-    // before asserting count equality.
+    // Every non-collapsed header renders a grip-handle span; poll since terminal columns collapse async.
     const handles = board.locator('.board-col-header:not(.collapsed) .board-drag-handle')
     await expect(handles).not.toHaveCount(0)
     await expect
@@ -2124,7 +2022,6 @@ test.describe('Board column reorder + context menu', () => {
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
 
-    // Right-click In Progress -> Move left swaps it with Backlog.
     const inProgressHeader = board.locator('.board-col-header').filter({ hasText: 'In Progress' })
     await inProgressHeader.click({ button: 'right' })
     await page.locator('.swimlane-context-menu').getByText('Move left').click()

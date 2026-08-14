@@ -1,10 +1,11 @@
 """Board service - board CRUD, ticket move, assign, archive."""
 
+import asyncio
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from claudebox import Broadcaster, find_files, get_logger
+from claudebox import Broadcaster, SingleFlight, find_files, get_logger
 from claudebox.extensions.tickets import (
     add_swimlane,
     archive_ticket,
@@ -23,7 +24,9 @@ from claudebox.extensions.tickets import (
 from .errors import BoardNotFound, TicketNotFound
 from .models import Board, BoardState, BoardSummary, BoardUpdateEvent, Swimlane
 from .watcher import BoardWatcher
-from ...constants import BOARD_FILENAME
+from ..errors import ListingTimeout
+from ..executors import Admission, ObservedPool, tracked
+from ...constants import BOARD_FILENAME, DISK_LISTING_TIMEOUT
 
 
 if TYPE_CHECKING:
@@ -33,18 +36,7 @@ if TYPE_CHECKING:
 
 
 class BoardService:
-    """Manage boards within a single workspace.
-
-    Discovers board.yaml files, provides CRUD operations on tickets and swimlanes,
-    and orchestrates session assignment for tickets.
-
-    Attributes:
-        _workspace: The registered workspace this service is scoped to.
-        _events: Broadcaster for publishing board events.
-        _sessions: Session service for creating sessions during assignment.
-        _watcher: File watcher for board.yaml changes.
-        _boards: Cached map of board_id -> yaml_path for discovered boards.
-    """
+    """Manage boards within a single workspace."""
 
     def __init__(
         self,
@@ -52,6 +44,7 @@ class BoardService:
         sessions: "SessionService",
         containers: "ContainerService",
         events: Broadcaster,
+        executor: ObservedPool,
     ) -> None:
         self._logger = get_logger(__name__)
 
@@ -59,6 +52,10 @@ class BoardService:
         self._sessions = sessions
         self._containers = containers
         self._events = events
+        # Daemon-owned executor - _discover()'s walk must not block other daemon-side work.
+        self._executor = executor
+        self._listing_flight = SingleFlight()
+        self._admission = Admission()
 
         self._watcher = BoardWatcher(
             workspace_id=workspace.id,
@@ -93,8 +90,40 @@ class BoardService:
     # Board Discovery
     # ----------------------------------------------------------------------------------------------
 
-    def list_all(self) -> list[BoardSummary]:
-        """List all discovered boards in the workspace."""
+    async def list_all(self) -> list[BoardSummary]:
+        """List all discovered boards in the workspace.
+
+        Bounded by DISK_LISTING_TIMEOUT so a hung filesystem call (e.g. a dead network mount)
+        doesn't tie up a worker forever. Concurrent callers share one walk.
+        """
+
+        try:
+            return await asyncio.wait_for(
+                self._listing_flight.run(self._dispatch_walk),
+                timeout=DISK_LISTING_TIMEOUT.total_seconds(),
+            )
+        except TimeoutError as exc:
+            self._logger.warning(
+                "board_listing_timed_out",
+                timeout=DISK_LISTING_TIMEOUT.total_seconds(),
+                walk_started=self._admission.started,
+                queued_seconds=round(self._admission.queued_seconds, 3),
+                pool=self._executor.stats().asdict(),
+                **self._log_context,
+            )
+
+            raise ListingTimeout(workspace=str(self._workspace.path)) from exc
+
+    def _dispatch_walk(self):
+        """Submit the workspace walk, recording when a worker picks it up."""
+
+        loop = asyncio.get_running_loop()
+        walk, self._admission = tracked(self._list_all_sync)
+
+        return loop.run_in_executor(self._executor, walk)
+
+    def _list_all_sync(self) -> list[BoardSummary]:
+        """Synchronous body of list_all - runs on the daemon executor."""
 
         self._discover()
         root = Path(self._workspace.path)
@@ -102,10 +131,7 @@ class BoardService:
         return [board_summary(path, root) for path in self._boards.values()]
 
     def get(self, board_id: str) -> Board:
-        """Get full board state by ID.
-
-        Raises BoardNotFound if board_id doesn't match a discovered board.
-        """
+        """Get full board state by ID. Raises BoardNotFound if not found."""
 
         yaml_path = self._resolve(board_id)
         root = Path(self._workspace.path)
@@ -130,8 +156,7 @@ class BoardService:
         yaml_path = self._resolve(board_id)
         board_dir = yaml_path.parent.resolve()
         root = Path(self._workspace.path).resolve()
-        # ticket_path resolves relative to board.yaml's parent; the is_relative_to
-        # guard rejects relative segments that escape workspace root.
+        # ticket_path resolves relative to board.yaml's parent; is_relative_to rejects escapes.
         abs_path = (board_dir / ticket_path).resolve()
 
         if not abs_path.is_relative_to(root):
@@ -177,7 +202,6 @@ class BoardService:
         board = parse_board(yaml_path, root)
         prompt_sequence = board.prompt.get("sequence") or []
 
-        # Find the active state for auto-move on assign
         active_state = next((s for s in board.states if s.active), None)
 
         results = []
@@ -191,12 +215,10 @@ class BoardService:
                 if active_state:
                     move_ticket(yaml_path, ticket_path, column=active_state.id)
 
-                # Send prompt sequence to the new session
                 await self._send_prompt_sequence(result, prompt_sequence, [ticket_path])
 
                 results.append({"ticket_path": ticket_path, "session_id": result.session_id})
         else:
-            # Shared: one session for all tickets.
             result = await self._sessions.create()
 
             for ticket_path in ticket_paths:
@@ -299,13 +321,11 @@ class BoardService:
 
         for template in prompt_sequence:
             if single:
-                # Single ticket: substituted as the path, preserving the
-                # original ``/implement <path>`` shape.
+                # Single ticket: substitutes the path, preserving ``/implement <path>`` shape.
                 message = template.replace("{ticket}", ticket_paths[0])
             else:
-                # Multi-ticket: newline-prefixed list (``/implement\n<p1>\n<p2>``),
-                # matching how a human would batch-list tickets. Strip whitespace
-                # before ``{ticket}`` so the list starts on its own line.
+                # Multi-ticket: newline-prefixed list like a human batch-listing tickets; strips
+                # whitespace before ``{ticket}`` so the list starts on its own line.
                 ticket_ref = "\n" + "\n".join(ticket_paths)
                 message = re.sub(r"[ \t]*\{ticket\}", ticket_ref, template)
 

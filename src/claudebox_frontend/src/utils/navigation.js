@@ -3,11 +3,10 @@
 import { buildTurnSegment } from '../context/utils/sessionRouting'
 
 /**
- * Open a session in a new browser tab via deep-link hash URL.
- *
  * @param {string} workspaceId
  * @param {string} sessionId
- * @param {{ turnId?: string, messageType?: 'user' | 'assistant' }} [options] - Optional jump target appended as `/turns/<role>-<turnId>`.
+ * @param {{ turnId?: string, messageType?: 'user' | 'assistant' }} [options] - Optional jump
+ *   target appended as `/turns/<role>-<turnId>`.
  */
 export function openSessionInNewTab(workspaceId, sessionId, options) {
   const turnSegment = buildTurnSegment(options?.turnId, options?.messageType)
@@ -17,7 +16,6 @@ export function openSessionInNewTab(workspaceId, sessionId, options) {
   )
 }
 
-/** Open a board in a new browser tab via deep-link hash URL. */
 export function openBoardInNewTab(workspaceId, boardId) {
   window.open(
     `${location.pathname}${location.search}#/workspaces/${workspaceId}/boards/${boardId}`,
@@ -25,7 +23,6 @@ export function openBoardInNewTab(workspaceId, boardId) {
   )
 }
 
-/** Open a workspace in a new browser tab via deep-link hash URL. */
 export function openWorkspaceInNewTab(workspaceId) {
   window.open(`${location.pathname}${location.search}#/workspaces/${workspaceId}`, '_blank')
 }

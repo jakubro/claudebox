@@ -284,7 +284,9 @@ The center area of the workspace shows a single **main panel** whose content is 
 - A details block appears as an expandable section the reader can open and close <!-- claim:chat:html-details-toggle -->
 - Unsafe HTML in a message never runs: scripts, inline event handlers, and javascript: links are removed, and embedded frames and standalone vector graphics do not appear <!-- claim:chat:html-safe -->
 - A link in a message opens in a new tab without giving the opened page access back to the app <!-- claim:chat:html-link-safe -->
-- Large sessions with many turns stay responsive: off-screen turns skip rendering work while remaining findable by browser find and selectable across the boundary <!-- claim:chat:lazy-paint -->
+- Large sessions with many turns stay responsive: only the turns near the viewport are built, so opening and scrolling a long conversation costs the same whether it holds twenty turns or a thousand <!-- claim:chat:virtualized-render -->
+- Turns outside the viewport are not present in the page, so the browser's own find-on-page and Print/Save-as-PDF reach only the turns currently on screen; scrolling to a turn brings it back <!-- claim:chat:offscreen-turns-absent -->
+- A session with a long history stays usable while it loads: the tab keeps responding, the page stays put, and the message box accepts typing throughout <!-- claim:chat:replay-stays-responsive -->
 
 **Turn Progress Indicators:**
 
@@ -307,9 +309,11 @@ The center area of the workspace shows a single **main panel** whose content is 
 | Auto-resize         | Textarea grows with content, capped at roughly ⅓ of panel height             | <!-- claim:input:autoresize -->
 | Scroll compensation | Chat scroll adjusts when textarea shrinks (if not autoscrolling)             | <!-- claim:input:scroll-compensation -->
 | Draft persistence   | Draft saved automatically per session                                        | <!-- claim:input:draft-save -->
+| Editing shortcuts persist | Text shaped with a composer editing shortcut (tag-wrap, block collapse/expand, bracket auto-pair) is saved and restored exactly like typed text | <!-- claim:input:editing-keys-persist -->
 | Draft restoration   | Only restored when textarea is empty (prevents overwriting user input)       | <!-- claim:input:draft-restore -->
 | Draft flush         | Page close triggers immediate save of current draft                          | <!-- claim:input:draft-flush -->
 | History             | Up/Down arrows navigate submitted messages; edits update item in-place; persists across page reloads | <!-- claim:input:history-nav -->
+| History retention   | History keeps only a bounded number of the most recent entries; once the limit is reached, the oldest entries drop as new ones are added | <!-- claim:input:history-retention-bound -->
 | Draft stack         | Down pushes to stack; Up navigates through drafts then history (non-destructive); edits update in-place; submit from draft removes it from stack and adds to history | <!-- claim:input:draft-stack -->
 | Selection wrap       | Typing `'`, `"`, `` ` ``, `(`, `[`, or `{` with text selected wraps selection with matching pair; no effect without selection | <!-- claim:input:selection-wrap -->
 | Placeholder         | No visible placeholder text                                                  | <!-- claim:input:placeholder -->
@@ -394,6 +398,7 @@ Control bar at top of Chat panel with two groups: <!-- claim:chat:control-bar --
 - Click turn header to collapse/expand <!-- claim:turn:collapsible -->
 - Collapsed: full user message + assistant first line + status + metadata <!-- claim:turn:collapsed-content -->
 - Collapsed preview strips markdown to plain text (no raw `**bold**`, `# headers`, etc.) <!-- claim:turn:preview-strip-markdown -->
+- When a reply's visible content is only code, only a table, or only an image, the collapsed preview shows the first line of that content instead, and the turn keeps its normal collapsed height <!-- claim:turn:collapsed-preview-fallback -->
 - Collapsed content remains searchable via browser Ctrl+F <!-- claim:turn:collapse-css -->
 - With auto-collapse on, only the last turn stays expanded; turning it off expands every collapsed turn, and when a new turn arrives the previously-last turn collapses; a turn you expand by hand stays open as new turns arrive, until you collapse it by hand or turn auto-collapse off and back on <!-- claim:chat:turn-autocollapse-behavior -->
 
@@ -504,7 +509,7 @@ Copying a user message transforms special content to readable form:
 | Content | Copied as |
 |---------|-----------|
 | Slash command | `/command args` | <!-- claim:chat:copy-slash-command -->
-| Question response | Q/A text only | <!-- claim:chat:copy-askuser -->
+| Question response | Q/A text only, plus any note it was sent with | <!-- claim:chat:copy-askuser -->
 | Command output | Output text only | <!-- claim:chat:copy-stdout -->
 | Arbitrary XML | Unchanged | <!-- claim:chat:copy-arbitrary-xml -->
 
@@ -514,7 +519,8 @@ Mermaid code blocks render as visual diagrams: <!-- claim:chat:mermaid -->
 
 - ` ```mermaid ` blocks render as SVG diagrams instead of code text <!-- claim:chat:mermaid-render -->
 - Toggle button switches between diagram and syntax-highlighted source <!-- claim:chat:mermaid-toggle -->
-- Invalid mermaid syntax silently falls back to syntax-highlighted code block <!-- claim:chat:mermaid-fallback -->
+- Invalid mermaid syntax falls back to a syntax-highlighted code block <!-- claim:chat:mermaid-fallback -->
+- A diagram that cannot be drawn shows a failure notice above its source, naming the reason <!-- claim:chat:mermaid-failure-notice -->
 - Click diagram to open zoom overlay for inspecting complex diagrams <!-- claim:chat:mermaid-zoom -->
 - Escape or backdrop click closes zoom overlay <!-- claim:chat:mermaid-zoom-close -->
 - Diagram colors match dark theme palette <!-- claim:chat:mermaid-theme -->
@@ -543,7 +549,7 @@ Queue messages for sequential delivery while Claude is responding:
 - Queued messages appear as dimmed inline bubbles below the current response <!-- claim:chat:queue-bubble -->
 - Queued bubbles show send now (⇒), edit (✎), and cancel (✕) buttons on hover <!-- claim:chat:queue-actions -->
 - Send now sends a queued message immediately, skipping queue order <!-- claim:chat:queue-send-now -->
-- Queue drains FIFO — each response completion or compaction boundary auto-sends the next queued message <!-- claim:chat:queue-drain -->
+- Queue drains FIFO — each completed reply or compaction boundary auto-sends the next queued message; replies replayed while a conversation is still loading do not <!-- claim:chat:queue-drain -->
 - Interrupt pauses all queued messages (won't auto-send) <!-- claim:chat:queue-pause-interrupt -->
 - Error pauses all queued messages <!-- claim:chat:queue-pause-error -->
 - Paused bubbles show re-queue (▶) and cancel (✕) buttons <!-- claim:chat:queue-pause-actions -->
@@ -563,8 +569,13 @@ Quote any part of a turn - prose, code, tool output, or a thinking block - write
 - Unsent replies accumulate, each editable in the reply box beside its quoted span; a reply can be deleted, which clears its highlight; the unsent replies and their highlights are restored after a page reload or a return to the session <!-- claim:chat:inline-replies-buffer -->
 - Sending delivers one turn that may also carry the composer message and any attachments; each sent reply's highlight stays on its quoted span and its reply is shown read-only when the span is hovered or clicked; the send-turn shows a compact "Replied inline - N comments" placeholder that expands in place to reveal each quote and its reply; comments left with a blank reply are omitted; a reply-only send with an empty composer shows only the placeholder, with no empty message box above it <!-- claim:chat:inline-replies-send -->
 - The placeholder is display-only: its wording never appears as raw text in the transcript, and it is the quote-and-reply pairs, not the placeholder, that reach the assistant <!-- claim:chat:inline-replies-placeholder-only -->
-- The quoted span shows a dotted underline over a subtle fill and stays highlighted for the rest of the session and across reload; hovering a highlighted span briefly shows its reply beside the span - read-only once sent, still editable while unsent - and clicking the span keeps that reply box open until its close button is pressed; sent highlights and their replies are permanent <!-- claim:chat:inline-replies-highlight -->
-- Each reply box opens beside its highlighted span and stays beside it as the transcript scrolls; several reply boxes can be open at once without overlapping one another; hovering a highlight shows its box briefly, clicking keeps the box open, and pressing its close button dismisses it - closing a box whose reply is still empty discards the quote and its highlight <!-- claim:chat:inline-replies-float -->
+- The quoted span shows a dotted underline over a subtle fill and stays highlighted for the rest of the session and across reload; hovering a highlighted span briefly shows its reply beside the span - read-only once sent, still editable while unsent - and clicking the span opens that reply box and clicking it again closes it; sent highlights and their replies are permanent <!-- claim:chat:inline-replies-highlight -->
+- Each reply box opens beside its highlighted span and stays beside it as the transcript scrolls; several reply boxes can be open at once without overlapping one another; hovering a highlight shows its box briefly, clicking the highlight opens the box and clicking it again closes it, and its close button also dismisses it - closing a box whose reply is still empty discards the quote and its highlight <!-- claim:chat:inline-replies-float -->
+- A reply box opened near the edge of the conversation slides inward to stay fully visible instead of narrowing <!-- claim:chat:inline-replies-float-clamped -->
+- Reply boxes are the same width wherever their quote sits <!-- claim:chat:inline-replies-float-uniform-width -->
+- The reply box supports the same text-editing keys as the message box: wrapping a selection, continuing a markdown list on a new line, indenting and dedenting, collapsing and expanding a block of text, auto-pairing quotes and brackets, and interrupting a response - each behaves exactly as it does in the message box <!-- claim:chat:inline-replies-editing-keys -->
+- Message history, stash, and slash-command autocomplete stay with the message box; arrow keys in a reply box move the caret instead <!-- claim:chat:inline-replies-editing-excluded -->
+- A collapsed block of text left in a reply is delivered in full when sent, never as its collapsed placeholder <!-- claim:chat:inline-replies-collapse-expands-on-send -->
 
 ---
 
@@ -605,7 +616,7 @@ Each block shows inline timing information in the header line: <!-- claim:tool:b
 | Read            | `Read(filename)`               | Line count; warning if present           | <!-- claim:tool:read -->
 | Edit            | `Edit(filename)`               | Diff summary ("+N, -M")                  | <!-- claim:tool:edit -->
 | Write           | `Write(filename)`              | "Wrote N lines"                          | <!-- claim:tool:write -->
-| Bash            | `Bash(command)`                | Line count, output preview (single-line), or "Done" (empty) | <!-- claim:tool:bash -->
+| Bash            | `Bash(description)`, falling back to `Bash(command)` when none was given | Line count, output preview (single-line), or "Done" (empty) | <!-- claim:tool:bash -->
 | Grep            | `Grep(pattern)` or `Grep(pattern:path)` | Context-aware count (see below)          | <!-- claim:tool:grep -->
 | Glob            | `Glob(pattern)`                | File count                               | <!-- claim:tool:glob -->
 | Task            | `Task(description)`            | Status/first line                        | <!-- claim:tool:task -->
@@ -614,7 +625,7 @@ Each block shows inline timing information in the header line: <!-- claim:tool:b
 | WebSearch       | `WebSearch(query)`             | First line of result                     | <!-- claim:tool:websearch -->
 | TodoWrite       | `TodoWrite`                    | Diff counts: `●2 ◐1 ○3 ✕1`               | <!-- claim:tool:todowrite -->
 | MCPSearch       | `MCPSearch`                    | "Tool loaded" or "Found N tools"         | <!-- claim:tool:mcpsearch -->
-| AskUserQuestion | `AskUserQuestion(N questions)` | Question count                           | <!-- claim:tool:askuser -->
+| AskUserQuestion (once answered) | `AskUserQuestion(N questions)` | Question count           | <!-- claim:tool:askuser -->
 | ExitPlanMode    | `ExitPlanMode(title)`          | Plan title (first heading, truncated if long) | <!-- claim:tool:exitplan -->
 | TaskOutput      | `TaskOutput(task_id)`          | Status: Running/Completed/Failed/Timeout/Killed | <!-- claim:tool:taskoutput -->
 
@@ -659,6 +670,11 @@ Visual styling for expanded Grep output: <!-- claim:tool:grep-visual -->
 - Expanded: header shows full path instead of filename <!-- claim:tool:file-expanded -->
 - `/tmp` paths highlighted across all content (tool output, messages, code blocks); click copies path <!-- claim:tool:tmp-path-highlighting -->
 - General file paths highlighted when resolved to unique workspace match; click copies absolute path <!-- claim:tool:general-path-highlighting -->
+- Alt+Click a highlighted path to open it in your editor instead of copying it <!-- claim:tool:path-alt-click-opens-editor -->
+- With no editor configured, Alt+Click copies the path like an ordinary click <!-- claim:tool:path-alt-click-fallback -->
+- File tool blocks offer a control that opens the file in your editor <!-- claim:tool:file-open-in-editor -->
+- With no editor configured, no such control appears <!-- claim:tool:file-open-in-editor-unconfigured -->
+- The control opens the file at the read's starting line when one is known <!-- claim:tool:file-open-in-editor-line -->
 
 ### 4.3 Interactive Tools
 
@@ -671,12 +687,18 @@ Visual styling for expanded Grep output: <!-- claim:tool:grep-visual -->
 - Submit button disabled until user makes a selection <!-- claim:tool:askuser-submit-disabled -->
 - Selecting "Other" option auto-focuses the text input <!-- claim:tool:askuser-other-focus -->
 - Submit sends answer <!-- claim:tool:askuser-submit -->
+- Alongside your choices you can type a message; sending delivers both as one turn, together with any attachments and any inline replies you have waiting <!-- claim:tool:askuser-note -->
 - User's selection shown immediately after submit <!-- claim:tool:askuser-optimistic -->
+- The answer and the message it was sent with are both shown in the transcript <!-- claim:tool:askuser-note-shown -->
 - After submit, highlight what was answered (selected option or custom text) <!-- claim:tool:askuser-highlight-answer -->
 - Tool block collapses after submitting response <!-- claim:tool:askuser-collapse-after-submit -->
 - Q/A visual separation: visually distinguish questions from answers, separate pairs <!-- claim:tool:askuser-qa-separation -->
 - Previously answered questions show read-only "Answered" display <!-- claim:tool:askuser-answered -->
 - Form disabled when follow-up human message exists in conversation <!-- claim:tool:askuser-disable-after-reply -->
+- While a question awaits an answer, only the form appears; no block header above it <!-- claim:tool:askuser-form-only -->
+- Answered questions show no error styling, even when the question tool reported a failure <!-- claim:tool:askuser-answered-not-error -->
+- With a choice made, sending from the message box submits the answer and the message together; with no choice made, sending leaves the question unanswered and delivers the message on its own <!-- claim:tool:askuser-disable-on-send -->
+- A question awaiting an answer shows its form with no error styling, even when the question tool reported a failure <!-- claim:tool:askuser-live-form-not-error -->
 
 **ExitPlanMode:**
 
@@ -732,10 +754,10 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 
 ### 4.5 Expandable Content
 
-- Click tool header to expand/collapse <!-- claim:tool:expand-click -->
+- Click tool header to expand/collapse, wherever a header is shown <!-- claim:tool:expand-click -->
 - Collapsible content based on content length <!-- claim:tool:expand-threshold -->
 - Default collapsed: JSON, Read, Grep, Skill, WebSearch, WebFetch, TodoWrite, TaskOutput, completed Task with nested <!-- claim:tool:expand-default-collapsed -->
-- Default expanded: AskUserQuestion, ExitPlanMode <!-- claim:tool:expand-default-expanded -->
+- Default expanded: ExitPlanMode; a question awaiting an answer shows its form immediately <!-- claim:tool:expand-default-expanded -->
 
 ### 4.6 Thinking Blocks
 
@@ -754,8 +776,12 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 
 ### 4.8 Tool Input Display
 
-- Hover on tool header shows full input as tooltip (always available) <!-- claim:tool:input-hover -->
-- Bash tool: single-line command shown in header only (no duplicate input section when expanded) <!-- claim:tool:input-bash-dedup -->
+- Hover on tool header shows full input as tooltip, wherever a header is shown <!-- claim:tool:input-hover -->
+- Bash tool: the command appears in the header (or its description, when given) and, expanded, in its own "Command" section above the output <!-- claim:tool:input-bash-dedup -->
+- Bash header shows the description of what the command does, falling back to the command itself when none was given <!-- claim:tool:bash-header-description -->
+- Expanding a Bash block shows the full command in its own section above the output <!-- claim:tool:bash-command-section -->
+- A Bash block shows its command while the command is still running <!-- claim:tool:bash-command-while-running -->
+- A Bash block's command is shown without line numbers <!-- claim:tool:bash-command-no-linenums -->
 - Unhandled tools (no specialized formatter) show tool input as collapsible "Input" section in expanded content <!-- claim:tool:input-unhandled-section -->
 - Input section rendered above tool output <!-- claim:tool:input-above-output -->
 - Input section expanded by default when tool block is expanded <!-- claim:tool:input-default-expanded -->
@@ -763,6 +789,7 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 - Input section is omitted when the tool input is empty (`{}`) <!-- claim:tool:input-empty-hidden -->
 - Handled tools (Read, Edit, Write, Bash, Grep, Glob, Task, etc.) use their specialized formatters and omit the generic input section <!-- claim:tool:input-handled-skip -->
 - Unhandled tools wrap output in collapsible "Output" section (symmetric with "Input" section) <!-- claim:tool:output-unhandled-section -->
+- A Bash block's command and its output are shown in the same fixed-width type as other code, on a single surface <!-- claim:tool:bash-code-surface -->
 
 ### 4.9 Todos Details
 
@@ -779,6 +806,19 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 
 - Task prompt expanded by default for running tasks; auto-collapses when task completes; past completed tasks show collapsed with truncated first-line preview <!-- claim:tool:task-prompt-collapsed -->
 - Click prompt header to reveal full multi-line prompt text <!-- claim:tool:task-prompt-content -->
+
+### 4.9.1 Lookups Details
+
+- A turn's file reads, searches, and other read-only calls appear together in a single "Lookups" panel placed after the turn's last block <!-- claim:tool:lookups-block-grouped -->
+- A single lookup in a turn appears as an ordinary block, in place <!-- claim:tool:lookups-block-threshold -->
+- The "Lookups" panel uses the standard tool-block chrome: a header line showing the label `Lookups` and a summary line showing a count for each kind of call it holds; the panel opens collapsed and clicking the header reveals the row body <!-- claim:tool:lookups-block-collapsed -->
+- Each row expands on its own, showing that call's output the same way it would as a standalone block <!-- claim:tool:lookups-block-rows -->
+- Rows appear in the order the calls happened <!-- claim:tool:lookups-block-order -->
+- A subagent's own lookups stay inside its Task block, not pulled into the turn's "Lookups" panel <!-- claim:tool:lookups-block-nested-excluded -->
+
+### 4.9.2 Tool-Schema Search
+
+- A tool-schema search is not shown in the conversation unless it failed <!-- claim:tool:toolsearch-hidden -->
 
 ### 4.10 Task Block Behavior
 
@@ -1326,6 +1366,10 @@ Dropdown for switching Claude's reasoning effort level at runtime: <!-- claim:fo
 - All live panels show "Resuming..." during replay <!-- claim:error:resuming-panels -->
 - Session automatically recovers after a service restart; shows "Session reconnect failed" on failure <!-- claim:error:daemon-restart-recovery -->
 
+### 11.3 Render Failure Containment
+
+- When part of the app stops responding, that part shows an error state with a retry control, and the rest of the app keeps working <!-- claim:error:render-containment -->
+
 ---
 
 ## 11. Performance Requirements
@@ -1501,7 +1545,6 @@ Real-time log viewer:
 - Log levels color-coded (debug, info, warning, error, critical) <!-- claim:panel-log:colors -->
 - Auto-scroll to latest; respects user scroll position <!-- claim:panel-log:autoscroll -->
 - No container: "No active session" <!-- claim:panel-log:no-container -->
-- Loading state: "Loading logs..." <!-- claim:panel-log:loading -->
 - Connecting state: "Connecting..." <!-- claim:panel-log:connecting -->
 - Empty state: "No logs yet" <!-- claim:panel-log:empty -->
 - Resume state: "Resuming..." <!-- claim:panel-log:resume -->
@@ -1584,7 +1627,7 @@ When resuming an existing session: <!-- claim:container:resume-overlay -->
 | Progress bar | Determinate (fills as events replay) | <!-- claim:container:resume-progress -->
 | Phase 1 | "Starting session...", "Resuming session..." | <!-- claim:container:resume-daemon-phase -->
 | Phase 2 | Replay progress: "Replaying events (X/Y)..." | <!-- claim:container:resume-replay-phase -->
-| Textarea | Stays usable and focused during resume; Enter queues the typed message, which auto-sends as soon as replay completes | <!-- claim:container:resume-textarea-stays-enabled -->
+| Textarea | Stays usable and focused during resume; a message typed while the conversation is still loading stays in the composer, ready to send once the conversation is on screen | <!-- claim:container:resume-textarea-stays-enabled -->
 
 ### 19.7.5 Containers Panel
 
@@ -1616,6 +1659,11 @@ A bottom-slot panel listing every container the app knows about, across all regi
 - Chat input anchored to the bottom of the chat panel, visually indistinguishable from the active-session input (full panel width, same surrounding controls); submitting Enter creates a new session and sends the typed message as its first message <!-- claim:container:welcome-input -->
 - Picker changes (model, permission mode, effort level) made on the welcome screen apply to the next session created from that welcome view; only the latest value per picker is applied; pickers display the chosen values immediately <!-- claim:input:welcome-config-buffer -->
 - Keyboard shortcuts reference card listing key bindings (Alt+N, Alt+Shift+N, Alt+arrows, Alt+C, Alt+1..9, Alt+?) <!-- claim:container:welcome-shortcuts -->
+
+### 19.9 Nested Containers
+
+- A workspace may opt in so the agent can run and build its own containers inside its session <!-- claim:container:nested-opt-in -->
+- Containers the agent runs stay invisible to the host and to other sessions, and disappear when the session ends <!-- claim:container:nested-isolation -->
 
 ---
 
@@ -1731,6 +1779,8 @@ Running `claudebox version` prints a multi-line block: the package version, the 
 
 Running `claudebox doctor` runs an ordered set of environment checks and prints a result row per check; the command exits non-zero if any check failed <!-- claim:cli:doctor -->
 
+The profile check names the profile from your settings; when that profile cannot be read, the check fails <!-- claim:cli:doctor:profile -->
+
 ### 21.7 Update
 
 Running `claudebox update` refreshes Claudebox itself:
@@ -1751,6 +1801,7 @@ Running `claudebox logs` tails the daemon log:
 - Running `logs all` interleaves daemon and container output; every line is prefixed with its source <!-- claim:cli:logs-all -->
 - `logs` shows each record on one line with a date and time, the log level, the logger name, and any extra fields; the on-disk log file is unchanged <!-- claim:cli:logs:rendering -->
 - `logs all` shows what the agent and the container API write, interleaved in time order with each line marked `agent` or `api` <!-- claim:cli:logs:multiplex -->
+- `logs all` picks up containers that start while it is already running; a short notice names the container when it starts streaming and when it stops <!-- claim:cli:logs-live-discovery -->
 - When a container log stream ends, the message says why — exit, connection error, or server error — instead of a bare "stream ended" notice <!-- claim:cli:logs:eof-cause -->
 
 ### 21.10 Status
@@ -1788,6 +1839,10 @@ Bash tab-completion is opt-in; once enabled, pressing Tab offers context-appropr
 - Completing a container target offers container ids across all workspaces plus `all`, falling back to `all` when the daemon is unreachable <!-- claim:cli:completion:container-ids -->
 - Completing a workspace to deregister offers the registered workspace ids without contacting the daemon <!-- claim:cli:completion:workspace-ids -->
 
+### 21.14 Help
+
+Command help is colourised - usage, section headings, verb names, option flags and their defaults - and falls back to plain text when colour is unavailable, staying readable and greppable when piped <!-- claim:cli:help-rendering -->
+
 ---
 
 ## 22. Multi-Runtime Support
@@ -1796,11 +1851,12 @@ Workspaces choose their agent runtime via the `agent` field in `.claudebox/setti
 
 ### 22.1 LangGraph Workspaces
 
-- LangGraph workspaces have file-system, shell, search, web, and notebook tools available; the model invokes them and their results appear as tool-use blocks identically to Claude workspaces <!-- claim:langgraph:file-tools -->
+- LangGraph workspaces have file-system, shell, search, web, and notebook tools available; the model invokes them and their results appear as tool-use blocks identically to Claude workspaces. Unlike Claude workspaces, there is no per-action approval step or permission mode - the container is the isolation boundary for the whole tool surface <!-- claim:langgraph:file-tools -->
 - LangGraph workspaces can spawn sub-agents for focused tasks; the sub-agent runs to completion and its final report appears as a tool result in the parent's chat <!-- claim:langgraph:subagent -->
 - LangGraph workspaces have agentic task-list tools (create / get / list / output / stop / update); task state appears in the tasks panel and as in-chat task blocks identically to Claude workspaces <!-- claim:langgraph:task-management -->
 - LangGraph workspaces can ask the user structured questions through the interactive Q&A form; the user's selections return to the model as the next message identically to Claude workspaces <!-- claim:langgraph:ask-user-question -->
 - LangGraph workspaces discover workspace skills and invoke them by name; the skill body appears as turn-level instructions identically to Claude workspaces, and the slash-command autocomplete plus skills panel surface them on the welcome screen <!-- claim:langgraph:skill -->
-- LangGraph workspaces have a tool-search meta-tool the model invokes for self-discovery; matching tools appear in the tool result with their name and a short description <!-- claim:langgraph:tool-search -->
+- LangGraph workspaces route a typed `/<skill>` command directly to that skill instead of sending it as plain text; the transcript shows the message exactly as typed, and the skill's effect shows up as an ordinary reply with no tool-use block <!-- claim:langgraph:skill-routing -->
+- LangGraph workspaces have a tool-search meta-tool the model invokes for self-discovery; the conversation shows the search only when it fails, with what was searched for and what came back <!-- claim:langgraph:tool-search -->
 - LangGraph workspaces connect to MCP servers declared per-workspace; the model can list and read their resources and invoke their tools identically to Claude workspaces, and one misbehaving server does not prevent the others from working <!-- claim:langgraph:mcp -->
 - LangGraph workspaces talk to the model provider declared in their `[langgraph] model = "provider:model"` workspace setting; the runtime identity pill displays "LangGraph" and the assistant turn appears identically regardless of which provider answers <!-- claim:langgraph:universal-provider-support -->

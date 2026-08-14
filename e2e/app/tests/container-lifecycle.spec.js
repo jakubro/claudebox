@@ -31,16 +31,13 @@ test.describe('Container Lifecycle', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Create two new sessions
     await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect.poll(() => containerIds.size).toBeGreaterThanOrEqual(1)
-    // Store the first new session id count
     const firstCount = containerIds.size
 
     await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect.poll(() => containerIds.size).toBeGreaterThan(firstCount)
 
-    // Each creation produced a unique container ID
     expect(containerIds.size).toBeGreaterThanOrEqual(2)
   })
 
@@ -150,16 +147,13 @@ test.describe('Container Lifecycle', () => {
     await waitForAppReady(page)
 
     await openSessionsPanel(page)
-    // Verify container status dots are rendered in the sessions panel
     const dots = page.locator('.sessions-panel .container-status-dot')
     await expect(dots.first()).toBeVisible()
-    // At least 4 dots should be rendered (one per session)
     expect(await dots.count()).toBeGreaterThanOrEqual(4)
   })
 
   test('daemon monitors container health (sessions list reflects status)', async ({ page }) => {
-    // Health monitoring is daemon-side behavior; frontend shows the result via sessions list.
-    // We verify that session rows display the container_id-derived status.
+    // Health monitoring is daemon-side; this only verifies the frontend renders sessions-list status.
     await mockAPI(page)
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
@@ -216,9 +210,7 @@ test.describe('Container Status Indicators', () => {
 
   // SPEC: container:tab-dot
   test('session tab shows amber dot while container is stopping', async ({ page }) => {
-    // Stand up a session whose container is in the stopping state and assert
-    // the tab dot reflects it (covers the amber branch of the green/amber/gray
-    // contract).
+    // Covers the amber branch of the green/amber/gray dot-state contract.
     await mockAPI(page)
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
@@ -238,8 +230,7 @@ test.describe('Container Status Indicators', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Force the session into "stopping" state via the container map. The
-    // header-strip dot watches that map and should swap to the stopping class.
+    // The header-strip dot watches the container map and swaps to the stopping class.
     await page.evaluate(sid => {
       window.dispatchEvent(
         new CustomEvent('claudebox:test:set-container-state', {
@@ -251,9 +242,7 @@ test.describe('Container Status Indicators', () => {
     const dot = page.locator(
       '[data-testid="session-header-strip"] [data-testid="session-header-status-dot"]',
     )
-    // Some builds may not expose the test event hook - fall back to a soft
-    // pass if the data-status never flips (visible only in builds with the
-    // hook). The dot-states class contract is verified by other tests.
+    // Some builds skip the test event hook; falls back to a soft pass since dot-states covers the contract.
     try {
       await expect(dot).toHaveAttribute('data-status', 'stopping', { timeout: 1500 })
     } catch {
@@ -321,9 +310,7 @@ test.describe('Container Status Indicators', () => {
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
         const base = loadFixture('sessions/default.json').sessions[0]
-        // num_turns > 0 keeps the row visible after the active session deselects
-        // to welcome on stop (hide-empty otherwise hides a 0-turn stopped session),
-        // isolating this test to status-dot fidelity rather than list visibility.
+        // num_turns > 0 keeps the row visible after deselect-to-welcome (hide-empty hides 0-turn stopped rows).
         await route.fulfill({
           json: {
             sessions: [
@@ -335,9 +322,8 @@ test.describe('Container Status Indicators', () => {
         await route.fallback()
       }
     })
-    // The composite DELETE initiates the stop; the container stays in the sessions
-    // list through the STOPPING grace period (stop_container keeps it registered)
-    // and leaves only once the terminal stopped -> remove sequence completes below.
+    // The composite DELETE starts the stop; stop_container keeps it registered through the STOPPING grace period,
+    // leaving the list only once the terminal stopped -> remove sequence below completes.
     await page.route(
       `**/api/workspaces/${DEFAULT_WORKSPACE_ID}/containers/${DEFAULT_CONTAINER_ID}`,
       async route => {
@@ -364,9 +350,8 @@ test.describe('Container Status Indicators', () => {
     await expect(headerDot).toHaveAttribute('data-status', 'stopping')
     await expect(panelDot).toHaveClass(/container-status-stopping/)
 
-    // Daemon broadcasts the terminal stopping -> stopped transition; remove() then
-    // drops the container from the registry and re-signals (SessionsChangedEvent),
-    // so the list refetches without it and status is authoritative.
+    // Daemon broadcasts the stopping -> stopped transition; remove() drops the container from the registry
+    // and re-signals (SessionsChangedEvent) so the list refetches without it - status stays authoritative.
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopping')
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopped')
     stopped = true
@@ -382,9 +367,7 @@ test.describe('Container Status Indicators', () => {
   test('CSS rules render distinct, non-equal colors for each documented dot state', async ({
     page,
   }) => {
-    // Mount a real dot for each documented state and read its computed
-    // background color; verify the running/stopping/gray buckets resolve to
-    // distinct colors (anchors the class->color contract end-to-end).
+    // Mounts a real dot per documented state and reads its computed color, anchoring the class->color contract.
     await mockAPI(page)
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -421,7 +404,7 @@ test.describe('Container Status Indicators', () => {
     expect(colors['container-status-running']).not.toBe(colors['container-status-none'])
     expect(colors['container-status-stopping']).not.toBe(colors['container-status-none'])
 
-    // Original existence assertion preserved as a sanity check.
+    // Sanity check: each documented state must have a real CSS rule, not just a computed fallback color.
     const allStates = Object.keys(colors)
     const foundStates = await page.evaluate(states => {
       const found = new Set()
@@ -454,7 +437,7 @@ test.describe('Session Creation Overlay', () => {
   // SPEC: container:creation-textarea
   // SPEC: container:creation-messages-inline
   test('shows creation overlay with header-strip Creating… and progress', async ({ page }) => {
-    // Delay the newSession response so we can observe the overlay
+    // Delay the newSession response so we can observe the overlay.
     let resolveNewSession
     const newSessionPromise = new Promise(resolve => {
       resolveNewSession = resolve
@@ -474,38 +457,32 @@ test.describe('Session Creation Overlay', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Click new session
     await page.locator('[data-testid="header-new-session-btn"]').click()
 
     await expect(page.locator('[data-testid="session-header-strip"]')).toContainText('Creating')
     await expect(page.locator('.session-header-strip-spinner')).toBeVisible()
 
-    // Creation overlay with indeterminate progress bar
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
     await expect(page.locator('.chat-replay-progress-bar.indeterminate')).toBeVisible()
 
-    // Send daemon progress events - should appear as status text
     await daemon.sendProgress('Creating container')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Creating container')
 
     await daemon.sendProgress('Waiting for container')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Waiting for container')
 
-    // Textarea should be visible and editable during creation
     const input = page.locator('[data-testid="chat-input"]')
     await expect(input).toBeVisible()
     await input.fill('type-ahead message')
     await expect(input).toHaveValue('type-ahead message')
 
-    // Sending should be blocked while container is being created - pressing Enter
-    // should NOT trigger a send API call
+    // Sending must be blocked while the container is being created.
     let sendCalled = false
     await page.route('**/api/send', async route => {
       sendCalled = true
       await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
     })
     await input.press('Enter')
-    // Verify no send API call fires (poll briefly to confirm it stays false)
     await expect
       .poll(() => sendCalled, {
         timeout: 1000,
@@ -513,7 +490,6 @@ test.describe('Session Creation Overlay', () => {
       })
       .toBe(false)
 
-    // Resolve the API call
     resolveNewSession()
   })
 
@@ -535,9 +511,7 @@ test.describe('Session Creation Overlay', () => {
 
     await page.locator('[data-testid="header-new-session-btn"]').click()
 
-    // After success, "Creating..." tab should be gone
     await expect(page.locator('.session-tab:has-text("Creating...")')).not.toBeVisible()
-    // URL should contain the new session ID
     await expect.poll(() => page.url()).toContain('created-ok')
   })
 
@@ -556,11 +530,9 @@ test.describe('Session Creation Overlay', () => {
 
     await page.locator('[data-testid="header-new-session-btn"]').click()
 
-    // Provisional tab should disappear
     await expect(page.locator('.session-tab:has-text("Creating...")')).not.toBeVisible()
-    // URL should NOT contain any new session
     expect(page.url()).not.toContain('pending-')
-    // Error indication should be visible (footer error status or error notification)
+    // Either the footer error status or an error notification counts as the error indication.
     const footerError = page.locator('[data-testid="footer-status"][data-status="error"]')
     const errorText = page.locator('.footer-error, [data-status="error"]')
     await expect(footerError.or(errorText).first()).toBeVisible({ timeout: 5000 })
@@ -574,31 +546,81 @@ test.describe('Session Resume Overlay', () => {
   // SPEC: container:resume-replay-phase
   // SPEC: container:resume-textarea-stays-enabled
   test('shows resume overlay with progress; textarea stays enabled', async ({ page }) => {
-    // Use resuming.jsonl fixture which stays in resuming state (replay_started without replay_ended)
+    // resuming.jsonl stays in the resuming state: replay_started without replay_ended.
     await mockSSE(page, 'events/resuming.jsonl')
     await mockAPI(page)
+
+    const sends = []
+    page.on('request', request => {
+      if (request.method() === 'POST' && request.url().includes('/api/send')) {
+        sends.push(request.url())
+      }
+    })
+
     await page.goto(DEFAULT_SESSION_URL)
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-    // Overlay should be visible (stuck in resuming state)
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
-    // Progress bar visible and determinate (replay has count)
+    // Determinate, since replay carries a count (unlike the indeterminate creation-phase bar).
     const progressBar = page.locator('.chat-replay-progress-bar')
     await expect(progressBar).toBeVisible()
     await expect(progressBar).not.toHaveClass(/indeterminate/)
 
-    // Status shows replay progress (Phase 2: replay)
     await expect(page.locator('.chat-replay-status-text')).toContainText('Replaying events')
 
-    // Textarea stays enabled per the always-enabled invariant - submit is a
-    // no-op until replay completes (typed text is held locally).
-    await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
+    // Textarea stays enabled per the always-enabled invariant.
+    const input = page.locator('[data-testid="chat-input"]')
+    await expect(input).toBeEnabled()
+
+    // A message typed while still loading stays in the composer; Enter shows the text but sends nothing yet.
+    await input.fill('typed while the conversation was loading')
+    await input.press('Enter')
+
+    await expect(input).toHaveValue('typed while the conversation was loading')
+    expect(sends).toHaveLength(0)
+  })
+
+  // SPEC: chat:replay-stays-responsive
+  test('history materializes while the transcript is still loading', async ({ page }) => {
+    await mockAPI(page)
+    await mockSSE(page, 'events/long-conversation.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+
+    // Turns reach the page while the overlay is still up - the drain is sliced, not committed in one batch.
+    await page.waitForFunction(
+      () =>
+        !!document.querySelector('.chat-replay-overlay') &&
+        document.querySelectorAll('[data-testid="turn-container"]').length > 0,
+      null,
+      { timeout: 4000 },
+    )
+  })
+
+  // SPEC: chat:replay-stays-responsive
+  test('slicing the load changes timing only, never turn order', async ({ page }) => {
+    await mockAPI(page)
+    await mockSSE(page, 'events/long-conversation.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await expect(page.locator('.chat-replay-overlay')).not.toBeVisible()
+
+    // The list is windowed: assert order over turns actually built - last fixture message shows last at bottom.
+    const userMessages = page.locator('[data-testid="message-user"]')
+    await expect(userMessages.first()).toBeVisible()
+    await expect(userMessages.last()).toContainText('Thanks for all the help!')
+
+    // The earliest turn is reachable by scrolling back to the top.
+    await page.evaluate(() => {
+      document.querySelector('.chat-messages').scrollTop = 0
+    })
+    await expect(page.locator('[data-testid="message-user"]').first()).toContainText('Hello')
   })
 
   // SPEC: container:resume-daemon-phase
   test('resume shows daemon phase progress before replay', async ({ page }) => {
-    // Use a delayed new-session to observe daemon progress phase (simulates resume)
+    // Delayed new-session lets us observe the daemon progress phase that precedes resume.
     let resolveNewSession
     const newSessionPromise = new Promise(resolve => {
       resolveNewSession = resolve
@@ -618,11 +640,10 @@ test.describe('Session Resume Overlay', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Click new session to trigger overlay
     await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
-    // Daemon phase progress messages (Phase 1)
+    // Daemon phase progress messages (Phase 1, before replay).
     await daemon.sendProgress('Creating container')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Creating container')
 
@@ -639,9 +660,7 @@ test.describe('Session Resume Overlay', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Overlay should NOT be visible (replay completed)
     await expect(page.locator('.chat-replay-overlay')).not.toBeVisible()
-    // Input should be enabled
     await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
   })
 })
@@ -656,22 +675,18 @@ test.describe('Welcome State', () => {
     await mockAPI(page)
     await mockSSE(page)
 
-    // Navigate to workspace without a specific session
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-    // Welcome content should be visible with workspace identity
     const welcome = page.locator('[data-testid="welcome-page"]')
     await expect(welcome).toBeVisible()
     await expect(welcome.locator('.welcome-name')).toContainText(DEFAULT_WORKSPACE_ID)
     await expect(welcome.locator('.welcome-path')).toContainText('/home/user/project')
-    // ChatInput is rendered as a sibling of the welcome content, hoisted in the
-    // chat panel so the same instance persists across welcome->chat transitions.
+    // ChatInput is a sibling of welcome content, hoisted in the chat panel so one instance persists across views.
     await expect(
       page.locator('[data-testid="panel-chat"] [data-testid="chat-input"]'),
     ).toBeVisible()
 
-    // Keyboard shortcuts reference card
     const shortcuts = page.locator('[data-testid="welcome-shortcuts"]')
     await expect(shortcuts).toBeVisible()
     await expect(shortcuts).toContainText('Alt+1')
@@ -685,14 +700,12 @@ test.describe('Welcome State', () => {
     await mockAPI(page)
     await mockSSE(page)
 
-    // Navigate to workspace without a specific session - welcome state
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-    // Workspace, model, effort, permission pickers must reflect the
-    // session-defaults endpoint response - never "-".
+    // Workspace, model, effort, permission pickers must reflect the session-defaults endpoint response, never "-".
     await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
-    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 4.8')
+    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 5')
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
     await expect(page.locator('[data-testid="footer-permission-mode-picker"]')).toContainText(
       'Default',
@@ -729,28 +742,24 @@ test.describe('Welcome State', () => {
       await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
     })
 
-    // Welcome state - pickers should be ready before the user toggles them.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
 
-    // Change effort to Max on welcome - buffers (no container yet).
+    // No container exists yet on welcome, so this change buffers instead of calling the API.
     await page.locator('[data-testid="footer-effort"]').click()
     await page.locator('[data-testid="effort-dropdown"]').getByText('Max').click()
 
     // Optimistic update - picker shows Max immediately.
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('Max')
 
-    // Buffer must NOT call the effort-level endpoint while the welcome screen
-    // has no active container.
     expect(setEffortBody).toBeNull()
 
-    // Submit a message - triggers new session creation, which attaches a session.
+    // Submitting a message triggers new session creation, which attaches a session.
     const input = page.locator('[data-testid="chat-input"]')
     await input.fill('Hello')
     await input.press('Enter')
 
-    // New session was created and the buffered effort change was drained to
-    // the API after attach.
+    // The buffered effort change drains to the API once the session attaches.
     await expect.poll(() => newSessionCalled).toBe(true)
     await expect.poll(() => setEffortBody).toEqual({ effort_level: 'max' })
   })
@@ -763,11 +772,9 @@ test.describe('Daemon SSE Stream', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await expect(page.locator('[data-testid="footer"]')).toBeVisible()
 
-    // Verify daemon SSE instance was created by checking the browser global
     const hasDaemon = await page.evaluate(() => window.__daemonSSEInstance !== null)
     expect(hasDaemon).toBe(true)
 
-    // Verify URL
     const daemonUrl = await page.evaluate(() => window.__daemonSSEInstance?.url)
     expect(daemonUrl).toContain('/api/daemon/stream')
   })
@@ -795,7 +802,6 @@ test.describe('Daemon SSE Stream', () => {
     await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
-    // Progress events streamed via daemon SSE
     await daemon.sendProgress('Creating container')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Creating container')
 
@@ -808,15 +814,13 @@ test.describe('Daemon SSE Stream', () => {
 
 test.describe('Container Stop - Graceful Disconnect', () => {
   // SPEC: error:graceful-disconnect
-  // When active container disappears from sessions list,
-  // ContainerStopEffect disconnects SSE gracefully - no error flash in footer
+  // ContainerStopEffect disconnects SSE gracefully when the container drops from sessions - no error flash.
   test('footer shows clean state when container stops (no error flash)', async ({ page }) => {
     let includeContainer = true
 
     await createSSEController(page)
     await mockAPI(page)
 
-    // Override sessions endpoint to control container_id presence
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
         const base = loadFixture('sessions/default.json').sessions[0]
@@ -830,29 +834,21 @@ test.describe('Container Stop - Graceful Disconnect', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Confirm footer shows ready state
     await expect(page.locator('[data-testid="footer-status"][data-status="ready"]')).toBeVisible()
 
-    // Simulate container disappearing from sessions list (daemon removed it)
+    // Simulates the daemon removing the container from the sessions list.
     includeContainer = false
 
-    // Send a daemon container_status event to trigger sessions refetch
-    // (ContainerStopEffect reacts to sessions list changes)
-    // Force a sessions list refetch by navigating - or directly call via page.evaluate
-    // Since we can't easily trigger DaemonStreamContext from outside, trigger a refetch
-    // by clicking refresh in the sessions panel
+    // DaemonStreamContext isn't reachable from the test; use the panel's refresh button to trigger the refetch.
     await openSessionsPanel(page)
     const refreshBtn = page.locator('[data-testid="session-refresh-btn"]')
     await refreshBtn.click()
 
-    // After refetch, ContainerStopEffect should detect container gone and disconnect gracefully.
-    // Footer should NOT show "Connection lost" error - it should show disconnected or ready.
-    // The key assertion: error status should NOT appear.
+    // ContainerStopEffect detects the container is gone and disconnects gracefully - no "Connection lost" error.
     await expect(
       page.locator('[data-testid="footer-status"][data-status="error"]'),
     ).not.toBeVisible({ timeout: 3000 })
 
-    // Should not show "Connection lost" text
     await expect(page.getByText('Connection lost')).not.toBeVisible({ timeout: 1000 })
   })
 })
@@ -862,7 +858,6 @@ test.describe('Kill Container Button', () => {
   // SPEC: panel-session:kill-container
   test('kill button visible for sessions with running container', async ({ page }) => {
     await mockAPI(page)
-    // Override sessions to have one with container and one without
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
         const base = loadFixture('sessions/default.json').sessions[0]
@@ -889,7 +884,6 @@ test.describe('Kill Container Button', () => {
 
     await openSessionsPanel(page)
 
-    // Session with container should show kill button
     const killBtns = page.locator('[data-testid="session-kill-btn"]')
     await expect(killBtns).toHaveCount(1)
     await expect(killBtns.first()).toHaveAttribute('title', 'Stop container')
@@ -906,7 +900,6 @@ test.describe('Kill Container Button', () => {
         },
       },
     })
-    // Override sessions to include container_id
     await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
       if (route.request().method() === 'GET') {
         const base = loadFixture('sessions/default.json').sessions[0]
@@ -923,10 +916,8 @@ test.describe('Kill Container Button', () => {
 
     await openSessionsPanel(page)
 
-    // Click kill button
     await page.locator('[data-testid="session-kill-btn"]').click()
 
-    // DELETE API should have been called with the container ID
     await expect.poll(() => deleteUrl).toBeTruthy()
     expect(deleteUrl).toContain(DEFAULT_CONTAINER_ID)
   })

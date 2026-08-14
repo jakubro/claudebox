@@ -54,8 +54,8 @@
   margin-top: 0;
 }
 
-/* Reset browser defaults on pre/code inside tool details — prevents margin/padding stacking
-   with .tool-details padding and normalizes SyntaxHighlighter typography to match table-based CodeBlock */
+/* Reset browser defaults on pre/code inside tool details - prevents margin/padding stacking with
+   .tool-details padding and normalizes SyntaxHighlighter typography to match table-based CodeBlock */
 .tool-details pre,
 .tool-details code {
   margin: 0;

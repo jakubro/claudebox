@@ -22,11 +22,6 @@ import {
   WHITE_GRADIENT,
 } from '../utils/favicon'
 
-/**
- * Manage dynamic favicon animation based on response status.
- * @param {object} params
- * @param {boolean} params.isResponding - Whether Claude is currently responding.
- */
 export default function useFavicon({ isResponding }) {
   const { workspaceColor } = useSessionsList()
   const wasRespondingRef = useRef(false)
@@ -34,7 +29,6 @@ export default function useFavicon({ isResponding }) {
   const canvasRef = useRef(null)
   const stateRef = useRef('normal')
 
-  // Initialize canvas
   useEffect(() => {
     canvasRef.current = createFaviconCanvas()
 
@@ -52,15 +46,12 @@ export default function useFavicon({ isResponding }) {
       return
     }
 
-    // Clear any existing animation
     if (animationRef.current) {
       clearInterval(animationRef.current)
       animationRef.current = null
     }
 
-    // Render order in every branch: tinted bg (if applicable) -> C-arc -> dev dot.
-    // Workspace bg paints first so the C-arc and dev dot compose on top of it.
-    // The DEV dot and workspace bg coexist on the canvas.
+    // Render order in every branch: bg (if set) -> arc -> dev dot; bg paints first so arc/dot compose on top.
     const renderWorkspaceBg = ({ alpha = 1 } = {}) => {
       if (workspaceColor) {
         drawWorkspaceBadge(ctx, deriveFaviconBgColor(workspaceColor), { alpha })
@@ -68,9 +59,8 @@ export default function useFavicon({ isResponding }) {
     }
 
     if (isResponding) {
-      // Processing: breathing animation. CYCLE_COLORS drives the C-arc
-      // regardless of workspace color so processing keeps its chromatic
-      // breath identity. Workspace bg alpha pulses in sync with the arc.
+      // CYCLE_COLORS drives the C-arc regardless of workspace color, keeping a consistent breath color.
+      // Workspace bg alpha pulses in sync with the arc's breath phase.
       stateRef.current = 'processing'
       const startTime = Date.now()
       const animate = () => {
@@ -90,13 +80,11 @@ export default function useFavicon({ isResponding }) {
       ctx.clearRect(0, 0, FAVICON_SIZE, FAVICON_SIZE)
       renderWorkspaceBg({ alpha: isNotification ? NOTIFICATION_BG_ALPHA : 1 })
       if (isNotification) {
-        // NOTIFICATION_COLORS keep the arc orange on top of the dimmed
-        // workspace bg so the notification signal stays legible.
+        // Keeps the arc orange on top of the dimmed workspace bg so the notification signal stays legible.
         stateRef.current = 'notification'
         drawGradientFavicon(ctx, NOTIFICATION_COLORS, NOTIFICATION_OFFSET)
       } else {
-        // Normal arc renders white on top of the workspace bg (when set), or
-        // the NORMAL_COLORS gradient on a transparent canvas (when not set).
+        // White over the workspace bg if set, else the NORMAL_COLORS gradient on a transparent canvas.
         stateRef.current = 'normal'
         drawGradientFavicon(ctx, workspaceColor ? WHITE_GRADIENT : NORMAL_COLORS, NORMAL_OFFSET)
       }

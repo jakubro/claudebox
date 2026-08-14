@@ -2,6 +2,7 @@
 
 import IconTab from '../features/app/components/IconTab'
 import MainPanel from '../features/app/components/MainPanel'
+import withPanelBoundary from '../features/app/components/withPanelBoundary'
 import BoardsPanel from '../features/boards'
 import BookmarksPanel from '../features/bookmarks'
 import ContainersPanel from '../features/containers'
@@ -18,29 +19,28 @@ import { DEFAULT_PANEL_HEIGHT, DEFAULT_PANEL_WIDTH } from './dimensions'
 
 export const HELP_OVERLAY_KEY = '?'
 
+// Each panel wraps in an ErrorBoundary: a render error shows a retryable fallback, not a full unmount.
 export const components = {
-  main: MainPanel,
-  commands: SkillsPanel,
-  todos: TodosPanel,
-  stash: StashPanel,
-  mcp: McpPanel,
-  tasks: TasksPanel,
-  sessions: SessionsPanel,
-  boards: BoardsPanel,
-  help: HelpPanel,
-  usage: UsagePanel,
-  logs: LogsPanel,
-  bookmarks: BookmarksPanel,
-  containers: ContainersPanel,
+  main: withPanelBoundary(MainPanel, 'main'),
+  commands: withPanelBoundary(SkillsPanel, 'commands'),
+  todos: withPanelBoundary(TodosPanel, 'todos'),
+  stash: withPanelBoundary(StashPanel, 'stash'),
+  mcp: withPanelBoundary(McpPanel, 'mcp'),
+  tasks: withPanelBoundary(TasksPanel, 'tasks'),
+  sessions: withPanelBoundary(SessionsPanel, 'sessions'),
+  boards: withPanelBoundary(BoardsPanel, 'boards'),
+  help: withPanelBoundary(HelpPanel, 'help'),
+  usage: withPanelBoundary(UsagePanel, 'usage'),
+  logs: withPanelBoundary(LogsPanel, 'logs'),
+  bookmarks: withPanelBoundary(BookmarksPanel, 'bookmarks'),
+  containers: withPanelBoundary(ContainersPanel, 'containers'),
 }
 
 export const tabComponents = {
   icon: IconTab,
 }
 
-// Track which side each panel belongs to. Logs is intentionally absent -
-// it lives in the full-viewport-width strip below the main row, not in any
-// dockview side group.
+// Side each panel belongs to. Logs is absent - it lives in the full-width strip, not a dockview side group.
 export const PANEL_SIDES = {
   sessions: 'left',
   bookmarks: 'right',

@@ -21,14 +21,9 @@ export function hasDiffItems(diff) {
 }
 
 /**
- * Resolve whether an item is currently blocked, against a frozen set of items
- * (the in-chat grouped Todos block's merged-run set). Returns true iff:
- *   1. item.blockedBy is non-empty, AND
- *   2. at least one blocker (matched by _taskId) is present in `runItems`
- *      with a non-terminal status.
- *
- * Cross-run blockers (taskIds not present in `runItems`) are treated as
- * resolved - keeps the in-chat group self-contained as a frozen snapshot.
+ * True iff item.blockedBy is non-empty and a blocker (matched by _taskId) in `runItems` has a
+ * non-terminal status; blockers absent from `runItems` count as resolved so the frozen in-chat
+ * snapshot stays self-contained.
  *
  * @param {object} item - Task item with optional blockedBy + _taskId fields.
  * @param {Array<object>} runItems - The set of items the renderer dedup'd by _taskId for this run.
@@ -56,10 +51,9 @@ export function deriveBlockedFlag_run(item, runItems) {
 }
 
 /**
- * Resolve whether an item is currently blocked, against a live partition set
- * (the panel's cumulative todosBySubagent for the same subagentKey). Same
- * semantics as deriveBlockedFlag_run but operates on the live snapshot rather
- * than a frozen run.
+ * Resolves whether an item is blocked against a live partition set (the panel's cumulative
+ * todosBySubagent for the subagentKey); same semantics as deriveBlockedFlag_run but on the live
+ * snapshot rather than a frozen run.
  *
  * @param {object} item - Task item with optional blockedBy + _taskId fields.
  * @param {Array<object>} partitionItems - Cumulative items for the subagent partition.
@@ -69,10 +63,9 @@ export function deriveBlockedFlag_live(item, partitionItems) {
 }
 
 /**
- * Walk a run's task blocks in order, collect items from each block's diff
- * buckets, and produce a deduped list - latest item per `_taskId` wins.
- * Items without `_taskId` (TaskCreate diffs emitted before tool_result, or
- * replay races) fall back to content-equality merging.
+ * Walks a run's task blocks in order, collecting items from each diff bucket into a deduped list
+ * where the latest item per `_taskId` wins; items without `_taskId` (TaskCreate diffs emitted
+ * before tool_result, or replay races) fall back to content-equality merging.
  *
  * @param {Array<{toolUseId: string}>} taskBlocks - The run's task-list tool blocks, in order.
  * @param {Map<string, object>} todoDiffs - todoDiffs map (toolUseId -> diff).
@@ -82,8 +75,7 @@ export function mergeRunItems(taskBlocks, todoDiffs) {
   if (!(todoDiffs && taskBlocks?.length)) {
     return []
   }
-  // Tracks insertion order so the merged output preserves first-seen order
-  // for items that update later in the run.
+  // Tracks insertion order so the merged output preserves first-seen order for items updated later in the run.
   const order = []
   const byKey = new Map()
 
@@ -92,8 +84,7 @@ export function mergeRunItems(taskBlocks, todoDiffs) {
     if (!diff) {
       continue
     }
-    // Apply the bucket-implied status before merging - completed/started come
-    // through the diff classifier (see appendTaskDiffs in eventProcessing.js).
+    // Bucket-implied status applies before merging; completed/started come from appendTaskDiffs's diff classifier.
     const buckets = [
       { items: diff.completed, status: 'completed' },
       { items: diff.started, status: 'in_progress' },
@@ -102,10 +93,8 @@ export function mergeRunItems(taskBlocks, todoDiffs) {
     ]
     for (const { items, status } of buckets) {
       for (const item of items || []) {
-        // If the diff's bucket-derived status differs from the item's own
-        // status field (e.g. a TaskUpdate to in_progress lands the item in
-        // .started while the item's own .status reads 'in_progress'), prefer
-        // the item's status; the diff buckets are for classification only.
+        // item.status wins over the bucket-derived one (e.g. TaskUpdate landing in .started) -
+        // buckets just classify.
         const effective = item.status || status
         const key = item._taskId != null ? `id:${item._taskId}` : `c:${item.content || ''}`
         if (!byKey.has(key)) {
@@ -120,10 +109,9 @@ export function mergeRunItems(taskBlocks, todoDiffs) {
 }
 
 /**
- * Compute per-bucket counts (header) and row order (rendering) for a merged
- * item set. Blocked items count toward the dedicated `blocked` bucket in the
- * header but stay in their actual-status bucket in `rowGroups` so the
- * strikethrough/dim treatment still applies.
+ * Computes per-bucket counts (header) and row order (rendering) for a merged item set; blocked
+ * items count toward the header's `blocked` bucket but stay in their actual-status bucket in
+ * `rowGroups` so strikethrough/dim treatment still applies.
  *
  * @param {Array<object>} items - The merged item set (output of mergeRunItems).
  * @returns {{ counts: object, rowGroups: Array<object> }}

@@ -33,7 +33,7 @@ const THRESHOLD_CONST_NAMES =
 // Inline suppression: // audit-ignore: rule1, rule2
 const AUDIT_IGNORE_RE = /\/\/\s*audit-ignore:\s*(.+)/
 
-// ─── File Discovery ──────────────────────────────────────────────────────────
+// --- File Discovery ---
 
 /** Find all source files recursively, excluding node_modules. */
 function findSourceFiles(dir, { includeTests = false } = {}) {
@@ -67,10 +67,7 @@ function findByExt(dir, extRe) {
   return results
 }
 
-/**
- * Classify a file by its location in the source tree.
- * Path segments determine type - hooks/ and utils/ detected at any depth.
- */
+/** Classify a file by its source-tree location; hooks/ and utils/ match at any nesting depth. */
 function classify(filePath) {
   const rel = relative(SRC, filePath)
   const name = basename(filePath)
@@ -86,8 +83,8 @@ function classify(filePath) {
   if (segments[0] === 'api') {
     return 'api'
   }
-  if (segments[0] === 'constants') {
-    return 'constants'
+  if (segments[0] === 'config') {
+    return 'config'
   }
 
   // Barrel files - index.js at any level
@@ -104,9 +101,9 @@ function classify(filePath) {
     return 'util'
   }
 
-  // Shared components
-  if (rel.startsWith('shared/components/')) {
-    return 'component'
+  // Cross-feature components - .jsx are components, .js are modules (schemas, config)
+  if (segments[0] === 'components') {
+    return filePath.endsWith('.jsx') ? 'component' : 'module'
   }
 
   // Feature files - .jsx are components, .js are modules (config, controllers)
@@ -121,10 +118,8 @@ function classify(filePath) {
 }
 
 /**
- * Extract inline audit-ignore directives from file content.
- * Returns a Map of line number -> Set of suppressed rule names.
- * Supports: // audit-ignore: rule1, rule2
- * Placed on the line above, or same line as the violation.
+ * Extract inline audit-ignore directives (`// audit-ignore: rule1, rule2`, placed above or on
+ * the violation line) into a Map of line number -> Set of suppressed rule names.
  */
 function extractIgnores(lines) {
   const ignores = new Map()
@@ -145,9 +140,8 @@ function extractIgnores(lines) {
 }
 
 /**
- * Extract file-level audit-ignore directive.
- * A comment at the top of the file (after JSDoc) that suppresses rules for the whole file.
- * Format: // audit-ignore-file: rule1, rule2
+ * Extract the file-level audit-ignore directive (`// audit-ignore-file: rule1, rule2`)
+ * from the first 10 lines.
  */
 function extractFileIgnores(lines) {
   const fileIgnoreRe = /\/\/\s*audit-ignore-file:\s*(.+)/
@@ -160,13 +154,9 @@ function extractFileIgnores(lines) {
   return new Set()
 }
 
-// ─── Checks ──────────────────────────────────────────────────────────────────
+// --- Checks ---
 
-/**
- * Check file line count against threshold for its type.
- * Rules: components <=200, hooks <=200, contexts <=150.
- * Blank lines excluded - they improve legibility and shouldn't penalize.
- */
+/** Check non-blank line count against the type's threshold constant; blank lines never count against it. */
 function checkFileSize(_filePath, lines, type) {
   const violations = []
   const thresholds = {
@@ -187,14 +177,10 @@ function checkFileSize(_filePath, lines, type) {
   return violations
 }
 
-/**
- * Check for misplaced constants - behavioral/config constants outside constants/.
- * Only exempt: constants/ itself (where they belong).
- * All other file types are checked - utils, managers, modules included.
- */
+/** Flag behavioral/config ALL_CAPS constants outside constants/; config, barrel, and other types are exempt. */
 function checkMisplacedConstants(_filePath, lines, type) {
   const violations = []
-  if (type === 'constants' || type === 'barrel' || type === 'other') {
+  if (type === 'config' || type === 'barrel' || type === 'other') {
     return violations
   }
 
@@ -217,10 +203,7 @@ function checkMisplacedConstants(_filePath, lines, type) {
   return violations
 }
 
-/**
- * Check for multiple exported component definitions in a single .jsx file.
- * Private helper components (non-exported, <=30 lines) are tolerated.
- */
+/** Flag a .jsx file exporting multiple components; non-exported helpers under 30 body lines are tolerated. */
 function checkMultipleComponents(filePath, lines, type) {
   const violations = []
   if (type !== 'component' || !filePath.endsWith('.jsx')) {
@@ -277,10 +260,7 @@ function checkMultipleComponents(filePath, lines, type) {
   return violations
 }
 
-/**
- * Check for non-component function exports from .jsx files.
- * Utility functions should not be exported from component files.
- */
+/** Flag non-default function/const exports from .jsx files - utilities belong in utils/, not component files. */
 function checkUtilityExportsFromComponents(filePath, lines, type) {
   const violations = []
   if (type !== 'component' || !filePath.endsWith('.jsx')) {
@@ -314,20 +294,12 @@ function checkUtilityExportsFromComponents(filePath, lines, type) {
 
 // React API references that mark a function as React-coupled (hook or renderer).
 const REACT_API_RE =
-  /\b(?:useState|useEffect|useCallback|useRef|useMemo|useReducer|useContext|useLayoutEffect|useImperativeHandle|forwardRef|memo)\b|<[A-Za-z]/
+  /\b(?:useState|useEffect|useCallback|useRef|useMemo|useReducer|useContext|useLayoutEffect|useImperativeHandle|forwardRef|memo|Children|cloneElement|isValidElement|createElement)\b|<[A-Za-z]/
 
 /**
- * Check for module-level pure helpers in hooks/ or *.jsx files.
- *
- * Companion to `utility-export-from-component`: that rule flags exported
- * helpers; this one flags non-exported module-level helpers whose body has
- * zero React-API references - they belong in a co-located utils/ file per
- * GUIDELINES §6 ("Always extract pure functions").
- *
- * Skipped patterns are documented in GUIDELINES §6 "Do NOT extract":
- * closure-bound helpers (declared inside hook bodies, not module-level -
- * naturally excluded), React-coupled renderers (caught via REACT_API_RE),
- * tightly-bound constants (this rule only matches functions).
+ * Flag non-exported module-level helpers with zero React-API references (GUIDELINES section 6,
+ * "Always extract pure functions"). Companion to `utility-export-from-component`, which covers
+ * exported helpers. Closure-bound helpers, React-coupled renderers, and constants are excluded.
  */
 function checkPureModuleHelpers(filePath, lines, type) {
   const violations = []
@@ -402,10 +374,7 @@ function checkFileLevelJSDoc(_filePath, content, type) {
   return violations
 }
 
-/**
- * Check for missing blank line after file-level JSDoc.
- * Section 9: blank line required between file comment and imports.
- */
+/** Check for a blank line after file-level JSDoc (GUIDELINES section 9 requires one before imports). */
 function checkJSDocBlankLine(_filePath, content, type) {
   const violations = []
   if (type === 'other' || type === 'barrel') {
@@ -430,10 +399,7 @@ function checkJSDocBlankLine(_filePath, content, type) {
   return violations
 }
 
-/**
- * Check for missing @param on component JSDoc.
- * Components with props should document them with @param.
- */
+/** Flag component JSDoc missing @param when the component takes a destructured props object. */
 function checkComponentParamDocs(filePath, lines, type) {
   const violations = []
   if (type !== 'component' || !filePath.endsWith('.jsx')) {
@@ -446,13 +412,11 @@ function checkComponentParamDocs(filePath, lines, type) {
       continue
     }
 
-    // Check if it has props (destructured object param)
     const hasProps = /\(\s*\{/.test(lines[i])
     if (!hasProps) {
       continue
     }
 
-    // Look backwards for JSDoc
     let jsdocBlock = ''
     for (let j = i - 1; j >= Math.max(0, i - 20); j--) {
       if (lines[j].includes('*/')) {
@@ -481,7 +445,6 @@ function checkComponentParamDocs(filePath, lines, type) {
   return violations
 }
 
-/** Check for component signatures with too many props. */
 function checkPropsCount(filePath, content, type) {
   const violations = []
   if (type !== 'component' || !filePath.endsWith('.jsx')) {
@@ -516,10 +479,7 @@ function checkPropsCount(filePath, content, type) {
   return violations
 }
 
-/**
- * Check for arrow function component exports in .jsx files.
- * Guidelines require function declarations for components.
- */
+/** Flag arrow-function component exports in .jsx - GUIDELINES require function declarations. */
 function checkArrowComponents(filePath, lines, type) {
   const violations = []
   if (type !== 'component' || !filePath.endsWith('.jsx')) {
@@ -541,9 +501,8 @@ function checkArrowComponents(filePath, lines, type) {
 }
 
 /**
- * Check for React concerns in utils/ files.
- * Guidelines: "if it needs React, it's a hook" and "never import React in utils/".
- * Flags both explicit React imports and .jsx extension (JSX = React concern).
+ * Flag React concerns in utils/ files (GUIDELINES: "if it needs React, it's a hook") -
+ * catches both explicit React imports and .jsx extension.
  */
 function checkReactInUtils(filePath, lines, type) {
   const violations = []
@@ -575,16 +534,9 @@ function checkReactInUtils(filePath, lines, type) {
 }
 
 /**
- * Check that panel-root state classes follow the `.{panel}-{loading|empty|error}` triplet.
- *
- * GUIDELINES.md §6: panels expose state via the canonical `.{panel}-loading / -empty / -error`
- * class triplet. Only the states a panel actually renders need classes - but where a state IS
- * rendered, the class name MUST match the triplet pattern. The class prefix MUST match the
- * panel's own root class (kebab-case slug derived from the file basename minus `Panel.jsx`).
- *
- * Targets only `*Panel.jsx` files. Looks for `className="X-panel X-state"` patterns; if the
- * second class is `X-loading|X-empty|X-error`, the prefix must match. Otherwise warns about
- * a state-suffixed class with the wrong prefix or mismatched panel slug.
+ * Check `*Panel.jsx` files for the canonical `.{panel}-{loading|empty|error}` class triplet
+ * (GUIDELINES section 6): only rendered states need a class, but where one exists its prefix
+ * must match the panel's own root class (kebab-case slug from the basename minus `Panel.jsx`).
  */
 function checkPanelStateClassTriplet(filePath, content, type) {
   const violations = []
@@ -596,8 +548,7 @@ function checkPanelStateClassTriplet(filePath, content, type) {
     return violations
   }
 
-  // Slug: PascalCase basename minus "Panel.jsx" -> kebab-case.
-  // e.g. SessionsPanel.jsx -> sessions, McpPanel.jsx -> mcp.
+  // Slug: PascalCase basename minus "Panel.jsx" -> kebab-case, e.g. SessionsPanel.jsx -> sessions.
   const stem = name.slice(0, -'Panel.jsx'.length)
   const expectedSlug = stem
     .replace(/([a-z])([A-Z])/g, '$1-$2')
@@ -636,8 +587,7 @@ function checkPanelStateClassTriplet(filePath, content, type) {
 }
 
 /**
- * Check for CSS imports directly in component .jsx files.
- * CSS must flow through the cascade orchestrator (index.css -> main.css).
+ * Flag direct CSS imports in .jsx components - CSS must flow through index.css -> main.css.
  * Exempt: main.jsx (entry point), third-party CSS from node_modules.
  */
 function checkCSSImportInComponent(filePath, lines, _type) {
@@ -674,11 +624,9 @@ function checkCSSImportInComponent(filePath, lines, _type) {
 }
 
 /**
- * A1. Check for temporal references in comments.
- * GUIDELINES.md preamble: "Comments describe current state, not change history.
- * No 'was:', 'moved from', 'previously', 'renamed from'."
- *
- * Walks lines tracking block-comment state; only inspects comment text.
+ * Flag temporal references in comments (GUIDELINES preamble: describe current state, not
+ * history - no "was:", "moved from", "previously", "renamed from"). Tracks block-comment
+ * state across lines so only comment text is inspected.
  */
 function checkTemporalReferences(filePath, lines, _type) {
   const violations = []
@@ -730,10 +678,7 @@ function checkTemporalReferences(filePath, lines, _type) {
   return violations
 }
 
-/**
- * A3. Check for CSS-in-JS library imports.
- * GUIDELINES.md §6 Styling: "🚫 Never CSS-in-JS, CSS modules, or Tailwind".
- */
+/** Flag CSS-in-JS library imports (GUIDELINES section 6 Styling bans CSS-in-JS, CSS modules, Tailwind). */
 function checkCssInJsImport(filePath, lines, _type) {
   const violations = []
   if (!/\.(jsx?|tsx?)$/.test(filePath)) {
@@ -757,10 +702,7 @@ function checkCssInJsImport(filePath, lines, _type) {
   return violations
 }
 
-/**
- * A4. Check for Tailwind imports / directives.
- * GUIDELINES.md §6 Styling: "🚫 Never CSS-in-JS, CSS modules, or Tailwind".
- */
+/** Flag Tailwind imports / directives (GUIDELINES section 6 Styling bans Tailwind). */
 function checkNoTailwind(filePath, content, _type) {
   const violations = []
 
@@ -796,10 +738,7 @@ function checkNoTailwind(filePath, content, _type) {
   return violations
 }
 
-/**
- * A6. Check for Unicode-ellipsis "Loading…" copy.
- * GUIDELINES.md §6 Loading copy: "Loading copy is `'Loading...'` (3 ASCII dots)".
- */
+/** Flag "Loading" copy using the Unicode ellipsis instead of three ASCII dots (GUIDELINES section 6). */
 function checkLoadingCopy(filePath, lines, _type) {
   const violations = []
   if (!/\.(jsx?|tsx?)$/.test(filePath)) {
@@ -820,9 +759,8 @@ function checkLoadingCopy(filePath, lines, _type) {
 }
 
 /**
- * A7. Check for hook names containing AND.
- * GUIDELINES.md §6 Hook Scope: "if the name needs 'and' to describe it, split it".
- * Detects PascalCase `And` segment in `use*` hook names.
+ * Flag `use*` hook names containing a PascalCase `And` segment (GUIDELINES section 6 Hook Scope:
+ * "if the name needs 'and' to describe it, split it").
  */
 function checkHookAndTest(_filePath, lines, type) {
   const violations = []
@@ -849,10 +787,7 @@ function checkHookAndTest(_filePath, lines, type) {
   return violations
 }
 
-/**
- * A8. Check for >1 class declaration per .js file (managers/services/controllers).
- * GUIDELINES.md §6 File Boundaries: "✅ one class per `.js` file (managers, controllers, services)".
- */
+/** Flag >1 class per coordination-module .js file (GUIDELINES section 6: one class per file). */
 function checkOneClassPerJsModule(filePath, content, type) {
   const violations = []
   if (!filePath.endsWith('.js')) {
@@ -882,11 +817,8 @@ function checkOneClassPerJsModule(filePath, content, type) {
 }
 
 /**
- * B1. Check feature barrel index.js follows the canonical re-export shape.
- * GUIDELINES.md §6 Directory Architecture: "index.js - Barrel re-export of root component".
- *
- * Body must reduce to a single `export { default } from './XPanel'` (with optional
- * file-level JSDoc and trailing semicolon/whitespace).
+ * Check that a feature barrel index.js reduces to a single `export { default } from './XPanel'`
+ * (with optional file-level JSDoc and trailing semicolon/whitespace) per GUIDELINES section 6.
  */
 function checkBarrelIndexPattern(filePath, content, _type) {
   const violations = []
@@ -913,10 +845,7 @@ function checkBarrelIndexPattern(filePath, content, _type) {
   return violations
 }
 
-/**
- * B3. Check that the file-level JSDoc spans a single line.
- * GUIDELINES.md §10 JS Conventions: "Single line at top of file".
- */
+/** Check that the file-level JSDoc spans a single line (GUIDELINES section 10 JS Conventions). */
 function checkFileJsdocSingleLine(filePath, content, _type) {
   const violations = []
   if (!/\.(jsx?|tsx?)$/.test(filePath)) {
@@ -942,11 +871,8 @@ function checkFileJsdocSingleLine(filePath, content, _type) {
 }
 
 /**
- * B4. Check component prop names follow the `on*` convention for callback props.
- * GUIDELINES.md §6 Component Patterns: "use `handle*` for internal handlers, `on*` for callback props".
- *
- * Inspects the destructured props of `function Comp({ ... })` and flags any prop
- * starting with `handle*` (callback props should be `on*`).
+ * Flag destructured props starting with `handle*` in `function Comp({ ... })` signatures -
+ * GUIDELINES section 6 reserves `handle*` for internal handlers, `on*` for callback props.
  */
 function checkHandlerPropNaming(_filePath, content, type) {
   const violations = []
@@ -980,11 +906,8 @@ function checkHandlerPropNaming(_filePath, content, type) {
 }
 
 /**
- * B5. Check for URL literals embedded in component files.
- * GUIDELINES.md §6 Constants: "🚫 Never put size limits, URLs, or behavioral thresholds in component files".
- *
- * Catches `https?://` literals in component .jsx that aren't in comments. Excludes
- * the `xmlns="http://www.w3.org/2000/svg"` attribute (SVG namespace, not behavioral).
+ * Flag non-comment `https?://` literals in component .jsx files (GUIDELINES section 6 Constants:
+ * URLs belong in config/, not components). Excludes the SVG `xmlns` namespace attribute.
  */
 function checkUrlLiteralInComponent(_filePath, content, type) {
   const violations = []
@@ -1014,12 +937,7 @@ function checkUrlLiteralInComponent(_filePath, content, type) {
   return violations
 }
 
-/**
- * B6. Check that CSS class selectors use kebab-case.
- * GUIDELINES.md §6 Styling: "Plain CSS files with kebab-case class names".
- *
- * Scans .css files for class selectors containing uppercase letters.
- */
+/** Flag .css class selectors containing uppercase letters (GUIDELINES section 6: kebab-case only). */
 function checkKebabCaseCss(filePath, content, _type) {
   const violations = []
   if (!filePath.endsWith('.css')) {
@@ -1030,8 +948,7 @@ function checkKebabCaseCss(filePath, content, _type) {
   const stripped = content.replace(/\/\*[\s\S]*?\*\//g, '')
   const lines = stripped.split('\n')
 
-  // Match `.someName` only when preceded by a non-name character (selector context),
-  // not e.g. inside `.5em` numeric literal or `var(--foo)` CSS-variable usage.
+  // Match `.someName` only in selector context, not inside `.5em` or `var(--foo)` literals.
   const classSelRe = /(?<![a-zA-Z0-9_-])\.([a-zA-Z][a-zA-Z0-9_-]*)/g
 
   for (let i = 0; i < lines.length; i++) {
@@ -1049,12 +966,9 @@ function checkKebabCaseCss(filePath, content, _type) {
   return violations
 }
 
-// ─── Cross-File Checks ───────────────────────────────────────────────────────
+// --- Cross-File Checks ---
 
-/**
- * A2. Detect any CSS Module file under src/.
- * GUIDELINES.md §6 Styling: "🚫 Never CSS-in-JS, CSS modules, or Tailwind".
- */
+/** Detect any `.module.css` file under src/ (GUIDELINES section 6 Styling bans CSS modules). */
 function checkNoCssModules(cssFiles) {
   const violations = []
   for (const file of cssFiles) {
@@ -1069,10 +983,7 @@ function checkNoCssModules(cssFiles) {
   return violations
 }
 
-/**
- * A5. Detect any `styles/` directory under src/.
- * GUIDELINES.md §6 Styling: "🚫 Never put component styles in a separate `styles/` directory".
- */
+/** Detect any `styles/` directory under src/ - CSS must co-locate with its component (section 6). */
 function checkNoStylesDirectory(cssFiles, allSourceFiles) {
   const violations = []
   const seen = new Set()
@@ -1092,10 +1003,7 @@ function checkNoStylesDirectory(cssFiles, allSourceFiles) {
   return violations
 }
 
-/**
- * A9. Detect orphaned test files - every `*.test.{js,jsx}` should have a sibling source file.
- * GUIDELINES.md §7 Testing: "Test files co-located: `Component.test.jsx` alongside `Component.jsx`".
- */
+/** Detect `*.test.{js,jsx}` files with no co-located source sibling (GUIDELINES section 7 Testing). */
 function checkOrphanedTestFiles(testFiles, sourceFiles) {
   const violations = []
   const sourceSet = new Set(sourceFiles)
@@ -1117,11 +1025,8 @@ function checkOrphanedTestFiles(testFiles, sourceFiles) {
 }
 
 /**
- * B2. Detect CSS files without a sibling component .jsx of the same basename.
- * GUIDELINES.md §6 Styling: "✅ Always co-locate CSS with its component - `{Component}.css` next to `{Component}.jsx`".
- *
- * Exemptions: `index.css` (barrel imports), `main.css` (cascade orchestrator),
- * `App.css` (app-feature foundation), CSS in non-feature top-level dirs (config/, etc.).
+ * Detect PascalCase CSS files with no sibling `.jsx` of the same basename (GUIDELINES section 6:
+ * CSS co-locates with its component). Exempt: `index.css`, `main.css`, and non-feature dirs.
  */
 function checkCssWithoutComponentSibling(cssFiles, sourceFiles) {
   const violations = []
@@ -1133,7 +1038,7 @@ function checkCssWithoutComponentSibling(cssFiles, sourceFiles) {
       continue
     }
     if (name.endsWith('.module.css')) {
-      continue // already flagged by A2
+      continue // already flagged by the CSS Modules check
     }
     const rel = relative(SRC, cssFile)
     if (!(rel.startsWith('features/') || rel.startsWith('components/'))) {
@@ -1161,9 +1066,8 @@ function checkCssWithoutComponentSibling(cssFiles, sourceFiles) {
 }
 
 /**
- * Check for generic utils buried in feature directories.
- * A feature util that imports nothing from its own feature tree is generic -
- * it belongs in shared/utils/ where it's discoverable and reusable.
+ * Flag a feature util with no imports from its own feature tree - such generic utils belong
+ * in utils/ where they're discoverable and reusable.
  */
 function checkBuriedGenericUtils(allFiles, allContents) {
   const violations = []
@@ -1212,8 +1116,7 @@ function checkBuriedGenericUtils(allFiles, allContents) {
     }
   }
 
-  // For each candidate, check if any file outside the feature imports it.
-  // If only its own feature imports it, it's feature-private - not a candidate for promotion.
+  // A candidate only qualifies if some file outside its own feature also imports it.
   for (const { file, rel, featurePrefix } of candidates) {
     const utilStem = relative(SRC, file).replace(/\.js$/, '')
     let hasExternalConsumer = false
@@ -1261,9 +1164,8 @@ function checkBuriedGenericUtils(allFiles, allContents) {
 }
 
 /**
- * Check for cross-feature imports.
- * Features can only import from: own internals, shared/, context/, constants/, api/.
- * Exception: features/app/ can import from all features (it's the layout shell).
+ * Flag a feature importing another feature's internals; features may only import their own
+ * internals, shared/, context/, constants/, api/. Exception: features/app/, the layout shell.
  */
 function checkCrossFeatureImports(allFiles, allContents) {
   const violations = []
@@ -1317,13 +1219,12 @@ function checkCrossFeatureImports(allFiles, allContents) {
 }
 
 /**
- * Check feature import sources against the import rules table.
- * Features (non-app) can import from: own internals, shared/, context/, constants/, api/.
- * Anything else (managers/, other features, etc.) is a violation.
+ * Flag a non-app feature importing outside its own internals, components/, hooks/, utils/,
+ * config/, context/, or api/ - e.g. managers/, which only the app feature may import.
  */
 function checkImportSources(allFiles, allContents) {
   const violations = []
-  const allowedRoots = new Set(['shared', 'context', 'constants', 'api'])
+  const allowedRoots = new Set(['components', 'hooks', 'utils', 'config', 'context', 'api'])
 
   for (let i = 0; i < allFiles.length; i++) {
     const filePath = allFiles[i]
@@ -1378,15 +1279,61 @@ function checkImportSources(allFiles, allContents) {
   return violations
 }
 
-// ─── Runner ──────────────────────────────────────────────────────────────────
+// --- Runner ---
+
+// Audit-ignore directives for every scanned file, keyed by SRC-relative path.
+const ignoreIndex = new Map()
+
+/** Record one file's inline and file-level audit-ignore directives. */
+function indexIgnores(filePath, content) {
+  const lines = content.split('\n')
+
+  ignoreIndex.set(relative(SRC, filePath), {
+    fileRules: extractFileIgnores(lines),
+    lineRules: extractIgnores(lines),
+  })
+}
+
+// Violations silenced by audit-ignore directives, retained so the report can count them.
+const suppressedViolations = []
+
+/**
+ * Return the violations that survive their file's audit-ignore directives; every suppression
+ * path (per-file, CSS, test, cross-file) runs through here so nothing vanishes silently.
+ */
+function applyIgnores(violations) {
+  const kept = []
+
+  for (const v of violations) {
+    if (isSuppressed(v)) {
+      suppressedViolations.push(v)
+    } else {
+      kept.push(v)
+    }
+  }
+
+  return kept
+}
+
+/** Report whether a violation is silenced by its own file's audit-ignore directives. */
+function isSuppressed(v) {
+  const entry = ignoreIndex.get(v.file)
+
+  if (!entry) {
+    return false
+  }
+  if (entry.fileRules.has(v.rule)) {
+    return true
+  }
+
+  return Boolean(v.line && entry.lineRules.get(v.line)?.has(v.rule))
+}
 
 /** Run all per-file checks and return violations, applying inline ignores. */
 function auditFile(filePath, content) {
   const lines = content.split('\n')
   const type = classify(filePath)
   const rel = relative(SRC, filePath)
-  const lineIgnores = extractIgnores(lines)
-  const fileIgnores = extractFileIgnores(lines)
 
   const violations = [
     ...checkFileSize(filePath, lines, type),
@@ -1414,22 +1361,10 @@ function auditFile(filePath, content) {
     ...checkUrlLiteralInComponent(filePath, content, type),
   ]
 
-  return violations
-    .filter(v => {
-      // File-level suppression
-      if (fileIgnores.has(v.rule)) {
-        return false
-      }
-      // Line-level suppression
-      if (v.line && lineIgnores.has(v.line) && lineIgnores.get(v.line).has(v.rule)) {
-        return false
-      }
-      return true
-    })
-    .map(v => ({ file: rel, ...v }))
+  return applyIgnores(violations.map(v => ({ file: rel, ...v })))
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// --- Main ---
 
 const sourceFiles = findSourceFiles(SRC)
 const testFiles = findSourceFiles(SRC, { includeTests: true }).filter(f =>
@@ -1441,6 +1376,7 @@ const allViolations = []
 // Per-file checks on source files
 const sourceContents = sourceFiles.map(f => readFileSync(f, 'utf-8'))
 for (let i = 0; i < sourceFiles.length; i++) {
+  indexIgnores(sourceFiles[i], sourceContents[i])
   allViolations.push(...auditFile(sourceFiles[i], sourceContents[i]))
 }
 
@@ -1448,47 +1384,43 @@ for (let i = 0; i < sourceFiles.length; i++) {
 for (const testFile of testFiles) {
   const content = readFileSync(testFile, 'utf-8')
   const rel = relative(SRC, testFile)
-  const lines = content.split('\n')
-  const fileIgnores = extractFileIgnores(lines)
+  indexIgnores(testFile, content)
 
   const jsdocViolations = checkFileLevelJSDoc(testFile, content, 'test')
   const blankLineViolations = checkJSDocBlankLine(testFile, content, 'test')
 
   allViolations.push(
-    ...[...jsdocViolations, ...blankLineViolations]
-      .filter(v => !fileIgnores.has(v.rule))
-      .map(v => ({ file: rel, ...v })),
+    ...applyIgnores([...jsdocViolations, ...blankLineViolations].map(v => ({ file: rel, ...v }))),
   )
 }
-
-// Cross-file checks (not suppressible per-line - use audit-ignore-file)
-allViolations.push(...checkBuriedGenericUtils(sourceFiles, sourceContents))
-allViolations.push(...checkCrossFeatureImports(sourceFiles, sourceContents))
-allViolations.push(...checkImportSources(sourceFiles, sourceContents))
 
 // CSS file walk (.css extension is outside findSourceFiles default).
 const cssFiles = findByExt(SRC, /\.css$/)
 const cssContents = cssFiles.map(f => readFileSync(f, 'utf-8'))
 for (let i = 0; i < cssFiles.length; i++) {
   // Per-file CSS checks (kebab-case-css, no-tailwind for @tailwind directive)
-  const lines = cssContents[i].split('\n')
-  const fileIgnores = extractFileIgnores(lines)
+  indexIgnores(cssFiles[i], cssContents[i])
   const cssViolations = [
     ...checkKebabCaseCss(cssFiles[i], cssContents[i], 'css'),
     ...checkNoTailwind(cssFiles[i], cssContents[i], 'css'),
   ]
   allViolations.push(
-    ...cssViolations
-      .filter(v => !fileIgnores.has(v.rule))
-      .map(v => ({ file: relative(SRC, cssFiles[i]), ...v })),
+    ...applyIgnores(cssViolations.map(v => ({ file: relative(SRC, cssFiles[i]), ...v }))),
   )
 }
 
-// Cross-file CSS-aware checks
-allViolations.push(...checkNoCssModules(cssFiles))
-allViolations.push(...checkNoStylesDirectory(cssFiles, sourceFiles))
-allViolations.push(...checkCssWithoutComponentSibling(cssFiles, sourceFiles))
-allViolations.push(...checkOrphanedTestFiles(testFiles, sourceFiles))
+// Cross-file checks run last, after every file's audit-ignore comments are already registered.
+allViolations.push(
+  ...applyIgnores([
+    ...checkBuriedGenericUtils(sourceFiles, sourceContents),
+    ...checkCrossFeatureImports(sourceFiles, sourceContents),
+    ...checkImportSources(sourceFiles, sourceContents),
+    ...checkNoCssModules(cssFiles),
+    ...checkNoStylesDirectory(cssFiles, sourceFiles),
+    ...checkCssWithoutComponentSibling(cssFiles, sourceFiles),
+    ...checkOrphanedTestFiles(testFiles, sourceFiles),
+  ]),
+)
 
 // Group by rule
 const byRule = new Map()
@@ -1570,10 +1502,21 @@ const ruleOrder = [
 let totalViolations = 0
 const ruleSummary = []
 
+const ignoredByRule = new Map()
+for (const v of suppressedViolations) {
+  ignoredByRule.set(v.rule, (ignoredByRule.get(v.rule) ?? 0) + 1)
+}
+const ignoredFiles = new Set(suppressedViolations.map(v => v.file))
+
 for (const rule of ruleOrder) {
   const violations = byRule.get(rule) || []
   totalViolations += violations.length
-  ruleSummary.push({ rule, label: ruleLabels[rule], count: violations.length })
+  ruleSummary.push({
+    rule,
+    label: ruleLabels[rule],
+    count: violations.length,
+    ignored: ignoredByRule.get(rule) ?? 0,
+  })
 }
 
 // Output - summary first, details in verbose
@@ -1581,15 +1524,19 @@ console.log(`\n${'='.repeat(60)}`)
 console.log('GUIDELINES AUDIT REPORT')
 console.log('='.repeat(60))
 console.log(`\nTotal violations:  ${totalViolations}`)
+console.log(
+  `Ignored:           ${suppressedViolations.length} in ${ignoredFiles.size} ${ignoredFiles.size === 1 ? 'file' : 'files'}`,
+)
 console.log(`Files scanned:     ${sourceFiles.length + testFiles.length}`)
 
 console.log(`\n${'-'.repeat(60)}`)
 console.log('BY RULE')
 console.log('-'.repeat(60))
 
-for (const { label, count } of ruleSummary) {
+for (const { label, count, ignored } of ruleSummary) {
   const status = count === 0 ? '✓' : String(count)
-  console.log(`  ${label.padEnd(38)} ${status.padStart(4)}`)
+  const note = ignored ? `  (${ignored} ignored)` : ''
+  console.log(`  ${label.padEnd(38)} ${status.padStart(4)}${note}`)
 }
 
 if (verbose) {

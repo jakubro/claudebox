@@ -1,5 +1,10 @@
 /* User message content styles */
 
+/* Note typed alongside an AskUserQuestion/ExitPlanMode answer, above the answer card */
+.message-note {
+  margin: 0 0 4px;
+}
+
 /* Local command output blocks */
 .message-content-with-commands {
   display: flex;
@@ -10,8 +15,7 @@
   border-radius: 6px;
 }
 
-/* Slash commands — bold for both recognised and unrecognised; resolved
-   gets a dotted underline + pointer cursor (hover card affordance). */
+/* Slash commands: bold always; resolved adds a dotted underline + pointer cursor (hover card affordance). */
 .slash-command {
   display: inline;
   font-weight: 700;

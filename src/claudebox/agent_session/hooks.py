@@ -25,20 +25,15 @@ class PreToolUsePayload:
 class PostToolUsePayload:
     """Snapshot of a tool invocation after execution completes.
 
-    ``is_error`` is True for both runtime-detected failures (Claude SDK's
-    PostToolUseFailure event; LangGraph's ToolMessage.status == "error" or an
-    exception propagated through the handler) and tool-reported errors.
-    A single callback observes both success and failure; consumers branch on
-    ``is_error`` rather than registering a second callback.
+    ``is_error`` covers runtime-detected failures (Claude SDK PostToolUseFailure; LangGraph
+    ToolMessage.status == "error" or a propagated exception) and tool-reported errors.
+    One callback observes both outcomes; consumers branch on ``is_error`` instead of a second callback.
 
-    ``tool_use_result`` carries whatever the runtime surfaced - typically the
-    tool's text response, optionally a structured dict for tools that return
-    one, and None when the runtime gave no payload (timeouts, abort).
+    ``tool_use_result`` carries whatever the runtime surfaced: typically the tool's text response,
+    optionally a structured dict, and None when the runtime gave no payload (timeouts, abort).
 
-    ``duration_ms`` is wall-clock from PreToolUse to PostToolUse in the
-    Claude SDK path and from handler enter to handler return in the LangGraph
-    middleware path. Falls back to 0 only when the pre-side observer was
-    unregistered (impossible under normal wiring).
+    ``duration_ms`` is wall-clock from PreToolUse to PostToolUse (Claude SDK) or handler enter to
+    return (LangGraph); falls back to 0 only if the pre-side observer was unregistered (should not happen).
     """
 
     tool_use_id: str

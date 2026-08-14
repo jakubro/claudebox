@@ -6,7 +6,6 @@ import SessionItem from './components/SessionItem'
 import { useSessionTree } from './hooks/useSessionTree'
 
 /**
- * Render a session node and recursively render its children.
  * @param {object} props
  * @param {object} props.session - Session object to display.
  * @param {number} props.depth - Nesting depth for indentation.
@@ -32,7 +31,6 @@ export default function SessionTree({ session, depth, isLastChild = true, contin
   const isExpanded = expandedSessions.has(session.session_id)
   const sessionId = session.session_id
 
-  // Build CSS classes for tree line rendering
   const gutterClasses = ['sessions-tree-gutter']
   if (depth === 0) {
     gutterClasses.push('sessions-tree-gutter-root')
@@ -43,9 +41,8 @@ export default function SessionTree({ session, depth, isLastChild = true, contin
 
   const childContinuations = [...continuations, depth > 0 && !isLastChild]
 
-  // Bind the row's session_id into each callback once. Memoized so memo'd
-  // SessionItem can bail out across parent re-renders - bare inline arrows
-  // would defeat the bail-out by re-identifying every render.
+  // Bind session_id into each callback once, memoized so memo'd SessionItem can bail out across parent
+  // re-renders; bare inline arrows would defeat that by re-identifying every render.
   const handleToggleExpanded = useCallback(
     () => onToggleExpanded(sessionId),
     [onToggleExpanded, sessionId],

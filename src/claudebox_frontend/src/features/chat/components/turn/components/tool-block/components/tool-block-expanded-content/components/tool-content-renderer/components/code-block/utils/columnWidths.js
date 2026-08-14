@@ -1,8 +1,6 @@
 /** Pure max-finding loop for CodeBlock gutter sizing - no React APIs. */
 
 /**
- * Compute the widest file label and line-number widths in a set of code lines.
- *
  * @param {Array<{file?: string, lineNum?: number | null}> | null | undefined} lines
  * @returns {{ maxFileLen: number, maxLineNumLen: number }}
  */

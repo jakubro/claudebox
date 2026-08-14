@@ -77,7 +77,7 @@ class TestGrep:
                     "A": 2,
                     "glob": "*.py",
                     "output_mode": "count",
-                }
+                },
             )
 
         argv = mock_run.call_args.args[0]
@@ -104,3 +104,25 @@ class TestGrep:
 
         assert "truncated at 100 KB" in result
         assert len(result) < 200 * 1024
+
+    def test_no_matches_returns_empty_output_not_an_error(self, tool_ctx):
+        _, grep = _tools(tool_ctx)
+        fake = subprocess.CompletedProcess(args=["rg"], returncode=1, stdout="", stderr="")
+
+        with patch("subprocess.run", return_value=fake):
+            result = grep.invoke({"pattern": "nowhere"})
+
+        assert result == ""
+
+    def test_bad_pattern_surfaces_stderr_instead_of_a_silent_empty_result(self, tool_ctx):
+        _, grep = _tools(tool_ctx)
+        fake = subprocess.CompletedProcess(
+            args=["rg"],
+            returncode=2,
+            stdout="",
+            stderr="regex parse error: unclosed group",
+        )
+
+        with patch("subprocess.run", return_value=fake):
+            with pytest.raises(Exception, match="unclosed group"):
+                grep.invoke({"pattern": "(unclosed"})

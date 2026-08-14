@@ -1,11 +1,11 @@
 /** Connection status indicator for footer. */
 
+// audit-ignore-file: excessive-props
+
 import { ConnectionStatus, InterruptStatus } from '../../../../config/schema'
 import ActiveStatus from './components/ActiveStatus'
 
 /**
- * Render connection status indicator showing current state.
- *
  * @param {object} props
  * @param {string} props.connectionStatus - WebSocket connection state.
  * @param {string|null} props.connectionError - Connection error message.
@@ -56,8 +56,7 @@ export default function StatusIndicator({
     )
   }
 
-  // Forking state - ranks above creating because fork-here reuses the current
-  // tab and must show feedback before the new session takes over.
+  // Forking outranks creating: fork-here reuses the tab and must show feedback before the new session takes over.
   if (isForking) {
     return (
       <>
@@ -75,7 +74,6 @@ export default function StatusIndicator({
     )
   }
 
-  // Creating session state
   if (isCreating) {
     return (
       <>
@@ -170,7 +168,6 @@ export default function StatusIndicator({
       )
     }
 
-    // Working state (Claude responding or awaiting response)
     if (isResponding || isAwaitingResponse) {
       return (
         <ActiveStatus
@@ -187,7 +184,6 @@ export default function StatusIndicator({
       return <ActiveStatus label="Submitting" status="submitting" />
     }
 
-    // Ready state (idle)
     return (
       <>
         <span

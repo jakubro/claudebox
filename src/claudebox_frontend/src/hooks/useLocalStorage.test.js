@@ -145,6 +145,30 @@ describe('useLocalStorage', () => {
 
     expect(localStorage.getItem('test-key')).toBeNull()
   })
+
+  it('a quota-exceeded write does not throw out of update() or leave state stale', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true })
+
+    const { result } = renderHook(() => useLocalStorage('test-key', 'initial'))
+
+    expect(() => {
+      act(() => {
+        result.current[1]('too-big-to-store')
+      })
+    }).not.toThrow()
+
+    // React state still reflects the update - only persistence degraded.
+    expect(result.current[0]).toBe('too-big-to-store')
+    expect(warnSpy).toHaveBeenCalled()
+    expect(fetch).toHaveBeenCalledWith('/api/daemon/report', expect.any(Object))
+
+    setItemSpy.mockRestore()
+    warnSpy.mockRestore()
+  })
 })
 
 describe('useLocalStorage debounce', () => {
@@ -166,10 +190,7 @@ describe('useLocalStorage debounce', () => {
       result.current[1]('debounced-value')
     })
 
-    // State updates immediately
     expect(result.current[0]).toBe('debounced-value')
-
-    // But localStorage is not written yet
     expect(localStorage.getItem('debounce-key')).toBeNull()
   })
 
@@ -182,10 +203,8 @@ describe('useLocalStorage debounce', () => {
       result.current[1]('delayed-value')
     })
 
-    // Not written yet
     expect(localStorage.getItem('debounce-key')).toBeNull()
 
-    // Advance past debounce delay
     act(() => {
       vi.advanceTimersByTime(300)
     })
@@ -257,7 +276,6 @@ describe('useLocalStorage debounce', () => {
       result.current[1]('value-a')
     })
 
-    // Flush immediately
     act(() => {
       result.current[2]()
     })
@@ -277,12 +295,38 @@ describe('useLocalStorage debounce', () => {
     expect(JSON.parse(localStorage.getItem('debounce-key'))).toBe('value-b')
   })
 
+  it('flush() does not throw when the pending write exceeds quota', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true })
+
+    const { result } = renderHook(() =>
+      useLocalStorage('debounce-key', 'initial', { debounceMs: 500 }),
+    )
+
+    act(() => {
+      result.current[1]('too-big-to-store')
+    })
+
+    // beforeunload wires flush directly as the event handler - it must never throw.
+    expect(() => {
+      act(() => {
+        result.current[2]()
+      })
+    }).not.toThrow()
+    expect(warnSpy).toHaveBeenCalled()
+
+    setItemSpy.mockRestore()
+    warnSpy.mockRestore()
+  })
+
   it('flush() is a no-op when there is no pending value', () => {
     const { result } = renderHook(() =>
       useLocalStorage('debounce-key', 'initial', { debounceMs: 500 }),
     )
 
-    // Call flush with nothing pending - should not throw or write
     act(() => {
       result.current[2]()
     })
@@ -299,15 +343,12 @@ describe('useLocalStorage debounce', () => {
       result.current[1]('unmount-value')
     })
 
-    // Unmount before timeout fires
     unmount()
 
-    // Advance timers - timeout should have been cleared
     act(() => {
       vi.advanceTimersByTime(1000)
     })
 
-    // Value should not have been written
     expect(localStorage.getItem('debounce-key')).toBeNull()
   })
 
@@ -320,7 +361,6 @@ describe('useLocalStorage debounce', () => {
       result.current[1]('immediate-value')
     })
 
-    // Written immediately with no delay
     expect(JSON.parse(localStorage.getItem('immediate-key'))).toBe('immediate-value')
   })
 })

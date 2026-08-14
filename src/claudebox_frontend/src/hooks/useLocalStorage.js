@@ -1,8 +1,8 @@
 /** Generic localStorage hook with debouncing and scoped keys. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { reportError } from '../api/errorReport'
 
-/** Manage localStorage state with debounced persistence and scoped keys. */
 export default function useLocalStorage(key, defaultValue, options = {}) {
   const {
     debounceMs = 0,
@@ -21,31 +21,37 @@ export default function useLocalStorage(key, defaultValue, options = {}) {
       return stored ? JSON.parse(stored) : defaultValue
     } catch (e) {
       console.warn('useLocalStorage: Failed to parse stored value, removing', e)
-      localStorage.removeItem(key)
+      _tryRemove(key)
       return defaultValue
     }
   })
 
   const timeoutRef = useRef(null)
   const pendingValueRef = useRef(null)
+  // Set by update(); null after the key-change effect, whose value is already on disk.
+  const toPersistRef = useRef(null)
 
-  // Persist to localStorage
+  // Persist to localStorage. Never throws - a failed write (e.g. quota) just warns.
   const persist = useCallback(
     newValue => {
       if (!key) {
         return
       }
-      if (isEmpty(newValue)) {
-        localStorage.removeItem(key)
-      } else {
-        localStorage.setItem(key, JSON.stringify(newValue))
+      try {
+        if (isEmpty(newValue)) {
+          localStorage.removeItem(key)
+        } else {
+          localStorage.setItem(key, JSON.stringify(newValue))
+        }
+      } catch (e) {
+        console.warn('useLocalStorage: Failed to persist value - storage may be full', e)
+        reportError({ kind: 'persistence-failure', message: `${key}: ${e?.message}` })
       }
       pendingValueRef.current = null
     },
     [key, isEmpty],
   )
 
-  // Flush any pending debounced write immediately
   const flush = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current)
@@ -56,31 +62,38 @@ export default function useLocalStorage(key, defaultValue, options = {}) {
     }
   }, [persist])
 
-  // Update state and persist (with optional debounce)
-  const update = useCallback(
-    newValueOrFn => {
-      setValue(prev => {
-        const newValue = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn
+  // Update stays pure; persistence runs in the effect below, never during React's render phase.
+  const update = useCallback(newValueOrFn => {
+    setValue(prev => {
+      const newValue = typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn
+      toPersistRef.current = { value: newValue }
+      return newValue
+    })
+  }, [])
 
-        if (debounceMs > 0) {
-          pendingValueRef.current = newValue
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current)
-          }
-          timeoutRef.current = setTimeout(() => persist(newValue), debounceMs)
-        } else {
-          persist(newValue)
-        }
+  // Persist only for update()-driven changes; toPersistRef is null after the key-change effect.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: value retriggers after update() sets toPersistRef.
+  useEffect(() => {
+    if (toPersistRef.current === null) {
+      return
+    }
+    const newValue = toPersistRef.current.value
+    toPersistRef.current = null
 
-        return newValue
-      })
-    },
-    [debounceMs, persist],
-  )
+    if (debounceMs > 0) {
+      pendingValueRef.current = newValue
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      timeoutRef.current = setTimeout(() => persist(newValue), debounceMs)
+    } else {
+      persist(newValue)
+    }
+  }, [value, debounceMs, persist])
 
   // Reload when key changes - clear immediately to prevent stale data
   useEffect(() => {
-    setValue(defaultValue) // Clear immediately on key change
+    setValue(defaultValue)
     if (!key) {
       return
     }
@@ -91,11 +104,10 @@ export default function useLocalStorage(key, defaultValue, options = {}) {
       }
     } catch (e) {
       console.warn('useLocalStorage: Failed to parse stored value on key change, removing', e)
-      localStorage.removeItem(key)
+      _tryRemove(key)
     }
   }, [key, defaultValue])
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (timeoutRef.current) {
@@ -105,4 +117,13 @@ export default function useLocalStorage(key, defaultValue, options = {}) {
   }, [])
 
   return [value, update, flush]
+}
+
+/** Remove a key, swallowing a storage error rather than compounding a parse failure. */
+function _tryRemove(key) {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // Storage inaccessible - state already resets to defaultValue at the call site.
+  }
 }

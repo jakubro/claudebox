@@ -17,7 +17,7 @@
   color: var(--text-muted);
   cursor: pointer;
   font-size: 11px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   text-align: left;
 }
 
@@ -67,8 +67,7 @@
 /* Force sans-serif for expanded content with turn-text */
 .collapsible-content,
 .collapsible-content p {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Task activity section — nested blocks have own styling, strip content box */
@@ -76,4 +75,13 @@
   background: transparent;
   padding: 0;
   margin-left: 0;
+}
+
+/* Bash Command/Result - code surface like Edit, not prose: strip content box, restore monospace */
+.tool-command-section .collapsible-content,
+.tool-result-section .collapsible-content {
+  background: transparent;
+  padding: 0;
+  margin-left: 0;
+  font-family: var(--font-mono);
 }

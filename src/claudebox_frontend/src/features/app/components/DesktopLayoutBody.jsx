@@ -1,5 +1,7 @@
 /** App-container body - rendered inside AppProviders so children can consume provider-scoped contexts. */
 
+// audit-ignore-file: excessive-props
+
 import { DockviewReact } from 'dockview-react'
 import { useCallback, useMemo } from 'react'
 import { components, tabComponents } from '../../../config/layout'
@@ -31,6 +33,23 @@ import StillRunningToastSlot from './StillRunningToastSlot'
  * @param {boolean} props.showHelpOverlay - Help overlay visibility.
  * @param {Function} props.setShowHelpOverlay - Help overlay setter.
  */
+// Hoisted for stable identity - inline literals would retrigger the effect that claims the bottom
+// slot, re-rendering this component.
+const LEFT_PANELS = ['sessions']
+const LEFT_BOTTOM_PANELS = ['containers']
+const RIGHT_PANELS = [
+  'todos',
+  'stash',
+  'tasks',
+  'bookmarks',
+  'boards',
+  'usage',
+  'mcp',
+  'commands',
+  'help',
+]
+const RIGHT_BOTTOM_PANELS = ['logs']
+
 export default function DesktopLayoutBody({
   onReady,
   activePanels,
@@ -99,8 +118,8 @@ export default function DesktopLayoutBody({
     <div className="app-container">
       <IconStrip
         position="left"
-        panels={['sessions']}
-        bottomPanels={['containers']}
+        panels={LEFT_PANELS}
+        bottomPanels={LEFT_BOTTOM_PANELS}
         activePanels={augmentedActivePanels}
         onTogglePanel={handleTogglePanel}
         onIconEnter={handleIconEnter}
@@ -116,18 +135,8 @@ export default function DesktopLayoutBody({
       </div>
       <IconStrip
         position="right"
-        panels={[
-          'todos',
-          'stash',
-          'tasks',
-          'bookmarks',
-          'boards',
-          'usage',
-          'mcp',
-          'commands',
-          'help',
-        ]}
-        bottomPanels={['logs']}
+        panels={RIGHT_PANELS}
+        bottomPanels={RIGHT_BOTTOM_PANELS}
         activePanels={augmentedActivePanels}
         onTogglePanel={handleTogglePanel}
         onIconEnter={handleIconEnter}

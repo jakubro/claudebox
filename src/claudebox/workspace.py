@@ -21,12 +21,7 @@ if TYPE_CHECKING:
 
 
 class Workspace:
-    """Resolved workspace with session directory access.
-
-    Attributes:
-        path: The resolved workspace root directory path.
-        sessions_root: The sessions directory path (.claudebox/sessions/).
-    """
+    """Resolved workspace: `path` is the workspace root; `sessions_root` is `.claudebox/sessions/`."""
 
     def __init__(self, start_dir: str | Path | None = None):
         """Initialize workspace from start_dir or CLAUDEBOX_PWD, finding .workspace marker."""
@@ -81,7 +76,6 @@ class Workspace:
         return Session(session_id, workspace=self)
 
     # Ignore Patterns
-    # ----------------------------------------------------------------------------------------------
 
     def collect_ignore_patterns(self) -> list[str]:
         """Collect ignore patterns from .ignore file in workspace."""
@@ -101,7 +95,6 @@ class Workspace:
         return PathSpec.from_lines("gitignore", patterns)
 
     # SDK Paths
-    # ----------------------------------------------------------------------------------------------
 
     @property
     def sdk_projects_root(self) -> Path:

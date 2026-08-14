@@ -4,7 +4,6 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InteractionProvider, useInteraction } from './InteractionContext'
 
-// Mock dependencies
 vi.mock('../api/chat', () => ({
   sendMessage: vi.fn(),
 }))
@@ -131,7 +130,6 @@ describe('useInteraction', () => {
 
     expect(result.current.interruptStatus).toBe('stopped')
 
-    // Simulate result event arriving (turn complete)
     mockEventsData = {
       events: [{ type: 'result', timestamp: Date.now() }],
       isResponding: false,
@@ -155,7 +153,6 @@ describe('useInteraction', () => {
 
     expect(result.current.interruptStatus).toBe('stopped')
 
-    // Simulate assistant events arriving without result event
     mockEventsData = {
       events: [{ type: 'assistant', timestamp: Date.now() }],
       isResponding: true,
@@ -166,7 +163,7 @@ describe('useInteraction', () => {
       vi.advanceTimersByTime(1000)
     })
 
-    // Should still be stopped (no result event yet)
+    // No result event yet - stays 'stopped'.
     expect(result.current.interruptStatus).toBe('stopped')
   })
 
@@ -239,7 +236,6 @@ describe('useInteraction', () => {
         submitPromise = result.current.submitPrompt('test')
       })
 
-      // While request is in flight
       expect(result.current.isSubmitting).toBe(true)
 
       await act(async () => {
@@ -264,7 +260,6 @@ describe('useInteraction', () => {
 
       expect(result.current.isAwaitingResponse).toBe(true)
 
-      // Simulate an assistant event arriving with timestamp after submission
       mockEventsData = {
         events: [{ type: 'assistant', content: 'response', timestamp: 2000 }],
         isResponding: true,
@@ -307,7 +302,6 @@ describe('useInteraction', () => {
 
       expect(result.current.isAwaitingResponse).toBe(true)
 
-      // Event with timestamp before submission
       mockEventsData = {
         events: [{ type: 'assistant', content: 'old', timestamp: 1000 }],
         isResponding: true,

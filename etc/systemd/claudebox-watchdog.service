@@ -1,0 +1,6 @@
+[Unit]
+Description=Claudebox Daemon Health Watchdog
+
+[Service]
+Type=oneshot
+ExecStart=%h/.claudebox/lib/bin/claudebox_watchdog.sh

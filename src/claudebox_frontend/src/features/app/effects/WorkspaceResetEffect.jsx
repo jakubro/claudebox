@@ -7,13 +7,7 @@ import { useSessionRouting } from '../../../context/SessionRoutingContext'
 import { useStash } from '../../../context/StashContext'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 
-/**
- * Reset all workspace-scoped state when the active workspace changes.
- *
- * Renders nothing - exists solely to coordinate context resets.
- * Placed inside all providers so it can access every context.
- * Skips initial mount via ref tracking.
- */
+/** Placed inside all providers so it can access every workspace-scoped context. */
 export default function WorkspaceResetEffect() {
   const { workspaceId } = useWorkspace()
   const { reconnectSSE } = useEvents()
@@ -24,7 +18,6 @@ export default function WorkspaceResetEffect() {
 
   useEffect(() => {
     if (prevRef.current && prevRef.current !== workspaceId && workspaceId) {
-      // Workspace changed - full reset
       navigateToWorkspace(workspaceId)
       clearSessionData()
       clearStash()

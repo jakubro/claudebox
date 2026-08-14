@@ -3,11 +3,8 @@
 import useCapabilities from '../../../hooks/useCapabilities'
 
 /**
- * Render the active runtime's display name with leading separator.
- *
- * Renders nothing during the capability-data race so the footer doesn't
- * flash an empty pill (and doesn't leave a doubled separator) before
- * the runtime resolves.
+ * Runtime name pill with leading separator; renders nothing during the capability-data race so
+ * the footer doesn't flash an empty pill or a doubled separator before the runtime resolves.
  */
 export default function RuntimeIdentityPill() {
   const { runtimeName } = useCapabilities()

@@ -7,8 +7,7 @@
   background: var(--bg-primary);
 }
 
-/* Empty state mirrors .todos-panel.todos-empty for visual parity across panels.
-   Loading state shares the same shape — only the copy and lifecycle differ. */
+/* Empty state mirrors .todos-panel.todos-empty for visual parity; loading only differs in copy and lifecycle. */
 .skills-panel.skills-empty,
 .skills-panel.skills-loading {
   justify-content: center;
@@ -55,7 +54,7 @@
 }
 
 .skills-item-usage {
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .skills-item-description {

@@ -37,11 +37,6 @@ import {
 import { normalizeToolName, ToolName } from './schema'
 
 /**
- * Per-tool rendering configuration.
- *
- * Each entry defines how a tool's results are extracted, displayed,
- * collapsed, and copied. Adding a new tool = adding one entry here.
- *
  * Properties:
  * - formatter: (input, content, options?) => { summary, isError, details, ... } | null (use default)
  * - headerFormatter: (name, input, isExpanded?) => string | null (use default)
@@ -50,6 +45,7 @@ import { normalizeToolName, ToolName } from './schema'
  * - renderer: 'syntax-or-code' | 'code' | 'markdown' | 'default'
  * - codeParser: 'readWrite' | 'grep' | 'edit' | null
  * - copyableExtractor: (details) => string | null (return details as-is)
+ * - category: 'read-only' | 'default' - read-only calls gather into the turn's Lookups panel
  */
 export const TOOL_REGISTRY = {
   [ToolName.READ]: {
@@ -60,6 +56,7 @@ export const TOOL_REGISTRY = {
     renderer: 'syntax-or-code',
     codeParser: 'readWrite',
     copyableExtractor: extractCodeFromReadOutput,
+    category: 'read-only',
   },
   [ToolName.WRITE]: {
     formatter: formatWriteResult,
@@ -69,6 +66,7 @@ export const TOOL_REGISTRY = {
     renderer: 'syntax-or-code',
     codeParser: 'readWrite',
     copyableExtractor: extractCodeFromReadOutput,
+    category: 'default',
   },
   [ToolName.EDIT]: {
     formatter: formatEditResult,
@@ -78,6 +76,7 @@ export const TOOL_REGISTRY = {
     renderer: 'code',
     codeParser: 'edit',
     copyableExtractor: extractEditCopyableText,
+    category: 'default',
   },
   [ToolName.BASH]: {
     formatter: formatBashResult,
@@ -87,6 +86,8 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    // Bash(ls) vs Bash(rm -rf) look alike unparsed, so Bash is never read-only.
+    category: 'default',
   },
   [ToolName.GREP]: {
     formatter: formatGrepResult,
@@ -105,6 +106,7 @@ export const TOOL_REGISTRY = {
     renderer: 'code',
     codeParser: 'grep',
     copyableExtractor: null,
+    category: 'read-only',
   },
   [ToolName.GLOB]: {
     formatter: formatGlobResult,
@@ -114,6 +116,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'read-only',
   },
   [ToolName.TASK]: {
     formatter: formatTaskResult,
@@ -123,6 +126,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
   },
   [ToolName.SKILL]: {
     formatter: formatSkillResult,
@@ -132,6 +136,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
   },
   [ToolName.ASK_USER_QUESTION]: {
     formatter: formatAskUserQuestionResult,
@@ -144,6 +149,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
   },
   [ToolName.EXIT_PLAN_MODE]: {
     formatter: formatExitPlanModeResult,
@@ -153,6 +159,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
   },
   [ToolName.TODO_WRITE]: {
     formatter: formatTodoWriteResult,
@@ -162,6 +169,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
   },
   [ToolName.TASK_CREATE]: {
     formatter: formatTodoWriteResult,
@@ -171,6 +179,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
   },
   [ToolName.TASK_UPDATE]: {
     formatter: formatTodoWriteResult,
@@ -180,6 +189,27 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'default',
+  },
+  [ToolName.TASK_LIST]: {
+    formatter: defaultFormatter,
+    headerFormatter: defaultHeaderFormatter,
+    collapseByDefault: false,
+    tooltip: null,
+    renderer: 'default',
+    codeParser: null,
+    copyableExtractor: null,
+    category: 'read-only',
+  },
+  [ToolName.TASK_GET]: {
+    formatter: defaultFormatter,
+    headerFormatter: defaultHeaderFormatter,
+    collapseByDefault: false,
+    tooltip: null,
+    renderer: 'default',
+    codeParser: null,
+    copyableExtractor: null,
+    category: 'read-only',
   },
   [ToolName.TASK_OUTPUT]: {
     formatter: formatTaskOutputResult,
@@ -189,6 +219,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'read-only',
   },
   [ToolName.WEB_SEARCH]: {
     formatter: null,
@@ -198,6 +229,7 @@ export const TOOL_REGISTRY = {
     renderer: 'markdown',
     codeParser: null,
     copyableExtractor: null,
+    category: 'read-only',
   },
   [ToolName.WEB_FETCH]: {
     formatter: null,
@@ -207,6 +239,7 @@ export const TOOL_REGISTRY = {
     renderer: 'markdown',
     codeParser: null,
     copyableExtractor: null,
+    category: 'read-only',
   },
   [ToolName.MCP_SEARCH]: {
     formatter: formatMcpSearchResult,
@@ -216,6 +249,7 @@ export const TOOL_REGISTRY = {
     renderer: 'default',
     codeParser: null,
     copyableExtractor: null,
+    category: 'read-only',
   },
 }
 
@@ -227,13 +261,10 @@ const DEFAULT_TOOL_CONFIG = {
   renderer: 'default',
   codeParser: null,
   copyableExtractor: null,
+  category: 'default',
 }
 
-/**
- * Look up tool config, falling back to defaults for unknown tools.
- * Normalises the tool name first so LangGraph snake_case names (task_create, ...)
- * resolve to the same registry entry as their Claude PascalCase equivalents.
- */
+/** Falls back to defaults for unknown tools; normalises the name first so LangGraph snake_case aliases resolve to their Claude PascalCase equivalents. */
 export function getToolConfig(toolName) {
   return TOOL_REGISTRY[normalizeToolName(toolName)] ?? DEFAULT_TOOL_CONFIG
 }

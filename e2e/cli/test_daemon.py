@@ -1,7 +1,6 @@
 """End-to-end behavioral tests for ``claudebox daemon`` noun-group.
 
-Real-binary surfaces: raw-print sub-help, status rendering against fake systemctl,
-and Traceback-absence when systemctl rejects a lifecycle action.
+Real-binary surfaces: raw-print sub-help, fake-systemctl status, and traceback-absence on failure.
 """
 
 import pytest
@@ -25,7 +24,7 @@ class TestDaemonBareInvocation:
 
 # SPEC: cli:daemon
 class TestDaemonStatus:
-    """``claudebox daemon status`` reports daemon state (always exits 0 — a query)."""
+    """``claudebox daemon status`` reports daemon state (always exits 0 - a query)."""
 
     def test_status_reports_running_or_not(self, run_claudebox) -> None:
         result = run_claudebox(["daemon", "status"], timeout=15)
@@ -37,11 +36,9 @@ class TestDaemonStatus:
 
 # SPEC: cli:daemon
 class TestDaemonAction:
-    """Lifecycle verbs surface systemctl failure cleanly — no Python traceback."""
+    """Lifecycle verbs surface systemctl failure cleanly - no Python traceback."""
 
     def test_action_no_python_traceback_on_systemctl_failure(self, run_claudebox) -> None:
-        # Fake systemctl returns exit 0 for stop/start/restart but the daemon never
-        # came up under fake systemctl. The contract: no traceback regardless of
-        # systemctl's response.
+        # Fake systemctl exits 0 for stop/start/restart though the daemon never comes up; no traceback regardless.
         result = run_claudebox(["daemon", "stop"], timeout=15)
         assert "Traceback" not in result.stderr

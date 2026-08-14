@@ -1,12 +1,8 @@
 """Inline-snapshot per verb's --help output (all 12 verbs, including stubs).
 
-These snapshots are populated via ``pytest --inline-snapshot=create``; they
-lock the surface so accidental help-text drift surfaces as a test diff. The
-top-level ``install:`` footer (branch/commit/path) is normalized before
-comparison so snapshots stay stable across environments.
+Populated via ``pytest --inline-snapshot=create``; the ``install:`` footer is normalized so text stays stable.
 """
 
-import argparse
 import re
 
 import pytest
@@ -40,8 +36,7 @@ _VERBS = [
 def _capture_help(verb: str | None, capsys: pytest.CaptureFixture[str]) -> str:
     """Invoke --help for the verb (or top-level if None) and capture stdout.
 
-    Normalizes the top-level ``install:`` footer (branch/commit/path) so
-    snapshots stay stable across environments.
+    Normalizes the ``install:`` footer (branch/commit/path) so snapshots stay stable across environments.
     """
 
     args = ["--help"] if verb is None else [verb, "--help"]
@@ -63,20 +58,6 @@ def test_top_level_help(capsys: pytest.CaptureFixture[str]) -> None:
 
     for verb in _VERBS:
         assert verb in output
-
-
-@pytest.mark.parametrize("verb", _VERBS)
-def test_verb_help_contains_description(verb: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """Every verb's --help prints its description."""
-
-    subparsers_action = next(
-        a for a in parser._actions if isinstance(a, argparse._SubParsersAction)
-    )
-    sub = subparsers_action.choices[verb]
-    expected = sub.description
-
-    output = _capture_help(verb, capsys)
-    assert expected in output
 
 
 class TestRunHelp:
@@ -102,11 +83,11 @@ class TestSnapshots:
 
     def test_top_level_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help(None, capsys) == snapshot("""\
-usage: claudebox [-h] [-v] <command> ...
+Usage: claudebox [-h] [-v] <command> ...
 
 Run AI coding agents in a containerized dev environment.
 
-positional arguments:
+Positional Arguments:
   <command>
     run          Launch agent session in container
     build        Build container image
@@ -121,9 +102,9 @@ positional arguments:
     containers   Manage containers (list|stop|kill)
     workspaces   Manage registered workspaces (list|register|deregister)
 
-options:
+Options:
   -h, --help     show this help message and exit
-  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help) (default: False)
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 run "claudebox <command> --help" for command-specific help
 
@@ -136,14 +117,14 @@ install:
 
     def test_run_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("run", capsys) == snapshot("""\
-usage: claudebox run [-h] [-v] ...
+Usage: claudebox run [-h] [-v] ...
 
 Launch agent session in container
 
-positional arguments:
+Positional Arguments:
   agent_args     Arguments forwarded to the agent (place after `--`)
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -152,25 +133,25 @@ examples:
   claudebox run -- --resume      resume the most recent agent conversation
   claudebox run -- -p "prompt"   run a non-interactive prompt through the agent
 
-passing extra arguments:
-  Arguments after "--" are forwarded to the agent wrapper inside the container.
+arguments:
+  Everything after `--` is forwarded to the agent wrapper inside the container.
 
-project detection:
-  Walks up the directory tree looking for a .workspace marker to find the
-  project root. Falls back to cwd when no marker is present (no error, no
-  prompt, no auto-registration with the daemon).
+notes:
+  The project root is found by walking up for a `.workspace` marker, falling back to
+  the current directory when there is none - no error, no prompt, and no automatic
+  registration with the daemon.
 """)
 
     def test_build_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("build", capsys) == snapshot("""\
-usage: claudebox build [-h] [-v] [--layer {all,agent}]
+Usage: claudebox build [-h] [-v] [--layer {all,agent}]
 
 Build container image
 
-options:
+Options:
   -h, --help           show this help message and exit
   -v, --verbose        Increase output verbosity (verb-dependent - see per-verb help)
-  --layer {all,agent}  Which image layer to rebuild (default: cached build) (default: None)
+  --layer {all,agent}  Which image layer to rebuild (default: cached build)
 
 examples:
   claudebox build                cached build (reuses all layers)
@@ -180,11 +161,11 @@ examples:
 
     def test_shell_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("shell", capsys) == snapshot("""\
-usage: claudebox shell [-h] [-v]
+Usage: claudebox shell [-h] [-v]
 
 Open bash shell in fresh container
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -194,11 +175,11 @@ examples:
 
     def test_prune_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("prune", capsys) == snapshot("""\
-usage: claudebox prune [-h] [-v]
+Usage: claudebox prune [-h] [-v]
 
 Remove stopped containers, dangling images, stale dirs
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -206,22 +187,23 @@ examples:
   claudebox prune                summary count only
   claudebox -v prune             list each removed item
 
-prune removes:
-  - stale session and temp directories under ~/.claudebox and /tmp
-  - dangling claudebox container images
-  - stopped claudebox containers (typically none under auto-removal)
+removes:
+  stale session and temp directories under ~/.claudebox and /tmp
+  dangling claudebox container images
+  stopped claudebox containers (typically none under auto-removal)
 
-partial failure: each removal is independent; a failure in one category does
-not abort the rest. Command exits non-zero if any item failed.
+notes:
+  Each removal is independent: a failure in one category does not abort the rest.
+  The command exits non-zero if any item failed.
 """)
 
     def test_version_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("version", capsys) == snapshot("""\
-usage: claudebox version [-h] [-v]
+Usage: claudebox version [-h] [-v]
 
 Print version
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -231,11 +213,11 @@ examples:
 
     def test_doctor_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("doctor", capsys) == snapshot("""\
-usage: claudebox doctor [-h] [-v]
+Usage: claudebox doctor [-h] [-v]
 
 Diagnose environment
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -243,23 +225,27 @@ examples:
   claudebox doctor               run all environment checks
   claudebox -v doctor            show the probe command behind each check
 
-doctor runs these checks in order, printing one row each:
-  runtime, runtime info, uv, daemon http, daemon unit, ~/.claudebox/lib,
-  profile, workspace (.workspace marker), permissions, disk (/tmp free)
+checks (in order, one row each):
+  runtime, runtime info, uv, daemon http, daemon unit, watchdog timer,
+  ~/.claudebox/lib, profile, workspace (.workspace marker), permissions,
+  disk (/tmp free)
 
 icons:
-  ✓ pass    ✗ fail    ○ informational (no profile, no workspace marker)
+  ✓  the check passed
+  ✗  the check failed
+  ○  informational only (no profile configured, no workspace marker)
 
-exit code is 1 if any check failed, 0 otherwise.
+notes:
+  Exit code is 1 if any check failed, 0 otherwise.
 """)
 
     def test_update_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("update", capsys) == snapshot("""\
-usage: claudebox update [-h] [-v]
+Usage: claudebox update [-h] [-v]
 
 Update Claudebox itself (re-runs install.sh)
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -267,29 +253,30 @@ examples:
   claudebox update               refresh Claudebox itself
   claudebox -v update            forward --verbose to install.sh
 
-update spawns ~/.claudebox/lib/bin/install.sh, surfaces its stdout/stderr
-live, and propagates its exit code. Concurrent invocations are blocked by
-install.sh's flock - the second invocation exits non-zero immediately.
+notes:
+  Spawns `~/.claudebox/lib/bin/install.sh`, surfaces its output live, and propagates
+  its exit code. Concurrent invocations are blocked by install.sh's lock - the second
+  exits non-zero immediately.
 
 build vs update:
-  build  rebuilds the container image (the agent layer inside it).
-  update refreshes Claudebox's own library on the host (the install.sh path).
+  build   rebuilds the container image (the agent layer inside it)
+  update  refreshes Claudebox's own library on the host
 """)
 
     def test_logs_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("logs", capsys) == snapshot("""\
-usage: claudebox logs [-h] [-v] [--tail TAIL] [--no-follow] [{daemon,all}]
+Usage: claudebox logs [-h] [-v] [--tail TAIL] [--no-follow] [{daemon,all}]
 
 Stream logs (daemon | all)
 
-positional arguments:
-  {daemon,all}   Log source (default: daemon) (default: daemon)
+Positional Arguments:
+  {daemon,all}   Log source (default: daemon)
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
-  --tail TAIL    Number of trailing lines to backfill before following (default: 100) (default: 100)
-  --no-follow    Print the backfilled lines and exit instead of following (default: False)
+  --tail TAIL    Number of trailing lines to backfill before following (default: 100)
+  --no-follow    Print the backfilled lines and exit instead of following
 
 examples:
   claudebox logs                    tail daemon log, then follow
@@ -299,33 +286,36 @@ examples:
   claudebox logs all                multiplex daemon log + every container's stream
   claudebox logs all --no-follow    backfill across daemon + containers, then exit
 
-prefixing on the ``all`` target:
+prefixes (on the `all` target):
   [daemon]            cyan prefix for daemon-log lines
   [container <id>]    magenta prefix for container lines (12-char short id)
 
-logs reads ``~/.claudebox/logs/daemon-<port>.log``. When the daemon is not
-running, the backfill prints and the command exits (no live follow).
-When the log file is missing entirely, the command prints
-``no daemon logs available`` and exits 0.
+notes:
+  Reads `~/.claudebox/logs/daemon-<port>.log`. When the daemon is not running, the
+  backfill prints and the command exits without following. When the log file is
+  missing entirely, `no daemon logs available` prints and the command exits 0.
 
-each record is rendered on one line with an ISO8601 date+time, the level,
-the logger name, and any extra fields. Errors appear red, warnings yellow,
-regular lines default (suppressed under ``NO_COLOR`` or non-TTY).
+  Each record occupies exactly one line: date and time, level, logger name, and any
+  extra fields. Errors appear red, warnings yellow, regular lines default; colour is
+  suppressed under NO_COLOR or when output is not a terminal.
+
+  On the `all` target, containers that start later are picked up while running, and a
+  short notice names each container as it starts and stops streaming.
 """)
 
     def test_workspaces_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("workspaces", capsys) == snapshot("""\
-usage: claudebox workspaces [-h] [-v] <action> ...
+Usage: claudebox workspaces [-h] [-v] <action> ...
 
 Manage registered workspaces (list|register|deregister)
 
-positional arguments:
+Positional Arguments:
   <action>
     list         Enumerate registered workspaces
     register     Register a workspace (defaults to cwd); creates .workspace marker if missing
     deregister   Remove a workspace from the daemon's registry (.workspace marker preserved)
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -335,32 +325,30 @@ examples:
   claudebox workspaces register ~/dev/bar    register a specific path
   claudebox workspaces deregister foo        remove from the daemon's registry
 
-register creates the .workspace marker file if absent, then POSTs to the daemon.
-Re-registering an already-registered path is idempotent - surfaced as
-  ``○ already registered: <path> (id: <id>)``
-and exits 0. Basename collisions are disambiguated by the daemon via an
-8-char path-hash suffix on the id.
+notes:
+  Register creates the `.workspace` marker file if absent, then registers with the
+  daemon. Re-registering an already-registered path is idempotent and exits 0.
+  Basename collisions are disambiguated by an 8-char path-hash suffix on the id.
 
-deregister removes the workspace from the daemon's registry. The .workspace
-marker file on disk is PRESERVED - only the daemon-side registration is
-removed.
+  Deregister removes the workspace from the daemon's registry only - the `.workspace`
+  marker file on disk is preserved.
 
-bare ``claudebox workspaces`` prints this list and exits non-zero.
+  Bare `claudebox workspaces` prints this list and exits non-zero.
 """)
 
     def test_containers_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("containers", capsys) == snapshot("""\
-usage: claudebox containers [-h] [-v] <action> ...
+Usage: claudebox containers [-h] [-v] <action> ...
 
 Manage containers (list|stop|kill)
 
-positional arguments:
+Positional Arguments:
   <action>
     list         Enumerate all containers across all workspaces
     stop         SIGTERM a container (10s grace) - accepts <id>, prefix, or all
     kill         SIGKILL a container immediately - accepts <id>, prefix, or all
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -372,49 +360,53 @@ examples:
   claudebox containers stop all              graceful stop every running container
   claudebox containers kill all              hard-kill every running container
 
-prefix resolution is CLI-side: an ambiguous prefix surfaces the matching rows
-in containers-list format and exits non-zero. ``all`` filters to running
-containers labeled app=claudebox and fans out via async POSTs (partial
-failures reported per-container, command exits non-zero if any failed).
+notes:
+  Prefix resolution is CLI-side: an ambiguous prefix surfaces the matching rows in
+  containers-list format and exits non-zero.
+
+  `all` filters to running containers labeled app=claudebox and fans out concurrently.
+  Partial failures are reported per container; the command exits non-zero if any failed.
 """)
 
     def test_status_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("status", capsys) == snapshot("""\
-usage: claudebox status [-h] [-v]
+Usage: claudebox status [-h] [-v]
 
 Show daemon + containers + workspace state
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
 examples:
   claudebox status               three rows: DAEMON, CONTAINERS, WORKSPACE
 
-DAEMON     running/stopped, with pid + uptime when running.
-CONTAINERS aggregate counts across all registered workspaces.
-WORKSPACE  resolved workspace for cwd (walks up for .workspace) plus
-           registration state (id, or 'not yet registered').
+rows:
+  DAEMON      running or stopped, with pid + uptime when running
+  CONTAINERS  aggregate counts across all registered workspaces
+  WORKSPACE   resolved workspace for the current directory, plus its registration
+              state (its id, or `not yet registered`)
 
-degraded mode: when the daemon is not running, CONTAINERS falls back to
-direct runtime queries and WORKSPACE reads ~/.claudebox/daemon.json
-directly. Exit code is always 0 - status is a query.
+notes:
+  When the daemon is not running, CONTAINERS falls back to direct runtime queries and
+  WORKSPACE reads `~/.claudebox/daemon.json` directly. Exit code is always 0 - status
+  is a query.
 """)
 
     def test_daemon_help_snapshot(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert _capture_help("daemon", capsys) == snapshot("""\
-usage: claudebox daemon [-h] [-v] <action> ...
+Usage: claudebox daemon [-h] [-v] <action> ...
 
 Manage host daemon (start|stop|restart|status)
 
-positional arguments:
+Positional Arguments:
   <action>
     start        Start the host daemon
     stop         Stop the host daemon
     restart      Restart the host daemon
     status       Show daemon state
 
-options:
+Options:
   -h, --help     show this help message and exit
   -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
 
@@ -424,6 +416,8 @@ examples:
   claudebox daemon restart       atomic restart (no-downtime when possible)
   claudebox daemon status        one-line state with pid + uptime
 
-actions are systemd --user wrappers around `claudebox-daemon.service`.
-Bare `claudebox daemon` prints this list and exits non-zero.
+notes:
+  Actions are systemd --user wrappers around `claudebox-daemon.service`.
+
+  Bare `claudebox daemon` prints this list and exits non-zero.
 """)

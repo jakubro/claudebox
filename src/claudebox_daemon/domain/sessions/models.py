@@ -19,10 +19,8 @@ class SessionProgressEvent(DataClass):
 class SessionsChangedEvent(DataClass):
     """Lightweight signal broadcast via SSE when the sessions list changes.
 
-    Attributes:
-        container_id: When set, scopes the event to a specific container.
-            Present for mutation-triggered changes, absent for explicit
-            operations (create, resume, fork, update).
+    container_id scopes the event to one container for mutation-triggered changes;
+    it is absent for explicit operations (create, resume, fork, update).
     """
 
     workspace_id: str
@@ -32,14 +30,7 @@ class SessionsChangedEvent(DataClass):
 
 @dataclass
 class SessionInfo(SessionMetadata):
-    """Session metadata extended with daemon-specific container state.
-
-    Attributes:
-        container_id: ID of the container currently serving this session.
-        workspace: Path to the workspace root.
-        permission_mode: Active permission mode for this session.
-        effort_level: Active effort level for this session.
-    """
+    """Session metadata extended with daemon-specific container state."""
 
     container_id: str | None = None
     workspace: str | None = None

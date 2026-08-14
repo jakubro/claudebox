@@ -1,13 +1,9 @@
 """Message conversion - dict-shaped runtime payloads to Events to serialized dicts.
 
-Two entry points produce the same ``Iterator[Event]`` output:
-
-- ``dict_message_to_events`` consumes the persisted JSONL replay shape (raw dicts).
-- ``agent_event_to_events`` consumes the live typed ``AgentEvent`` from
-  ``ClaudeRuntime._translate_sdk_message``; it projects the typed payload back
-  to the dict shape and delegates to ``dict_message_to_events``, so both paths
-  converge on a single block-walk implementation and the JSONL contract stays
-  byte-identical across the typed-payload migration.
+`dict_message_to_events` consumes the persisted JSONL replay shape (raw dicts); `agent_event_to_events`
+projects the live typed `AgentEvent` from `ClaudeRuntime._translate_sdk_message` back to that dict
+shape and delegates to it, so both paths share one block-walk implementation and stay byte-identical
+with the JSONL contract.
 """
 
 import dataclasses
@@ -45,31 +41,22 @@ _TYPED_KIND_TO_DICT_TYPE = {
 }
 
 
-# Synthetic user markers - runtime wraps these in user messages but they originate
-# from the system (compaction preamble, local command output, task-completion
-# notifications, hook context). Matched by prefix against stripped content to
-# reclassify as non-human events.
+# Runtime wraps system-originated content (compaction preamble, local command output, task
+# notifications, hook context) in user messages; matched by prefix to reclassify as non-human events.
 _SYNTHETIC_USER_MARKERS = (
     "This session is being continued from a previous conversation",
     "<local-command-stdout>",
     "<local-command-stderr>",
-    # Async-task completion also arrives as a typed system/task_notification event (the
-    # completion signal driving the Tasks panel); this user-message echo is reclassified
-    # for display only - never re-parsed into a second system event.
+    # Task-notification echoes are reclassified for display only, never re-parsed into a second
+    # system event - the real completion signal is the typed system/task_notification event.
     "<task-notification>",
     "<system-reminder>",
 )
 
 
 def dict_message_to_events(data: dict) -> Iterator[Event]:
-    """Convert message dict to Event objects.
-
-    Handles both SDK messages (converted via dataclasses.asdict()) and raw
-    JSONL messages from persisted session files. Supports system, result,
-    user, and assistant message types with various content structures.
-    A single message may yield multiple events when it contains block-based
-    content (e.g., text + tool_use blocks).
-    """
+    """Convert a message dict (SDK or persisted JSONL replay entry) to Event objects, yielding
+    multiple events for block-based content (e.g., text + tool_use blocks)."""
 
     msg_type = data.get("type", "unknown")
     message = data.get("message", {})
@@ -150,12 +137,8 @@ def dict_message_to_events(data: dict) -> Iterator[Event]:
 
 
 def agent_event_to_events(evt: AgentEvent) -> Iterator[Event]:
-    """Yield pipeline Events from a typed AgentEvent (live runtime path).
-
-    Projects the typed payload back to the dict shape ``dict_message_to_events``
-    consumes - keeping a single block-walk implementation and the JSONL replay
-    contract byte-identical across the typed-payload migration.
-    """
+    """Yield pipeline Events from a typed AgentEvent (live runtime path), by projecting it to the
+    dict shape `dict_message_to_events` consumes."""
 
     return dict_message_to_events(_typed_payload_to_dict_message(evt))
 
@@ -167,13 +150,11 @@ def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
     payload = evt.payload
 
     if isinstance(payload, SystemInitPayload):
-        # Reinject session_id + model into the data dict - frontend reads
-        # `message_data.model` and the promoted `event.model` field via
-        # to_published_event. D3α-permitted wire-shape redundancy.
+        # Reinject session_id + model - frontend reads message_data.model and the promoted event.model field.
         data_dict = dataclasses.asdict(payload.data)
 
-        # `extra` holds unconsumed SDK init keys - omit when empty so the common-case
-        # wire shape is unchanged; surface it only when the SDK sent new keys.
+        # `extra` holds unconsumed SDK init keys; omit when empty so the common-case wire shape is
+        # unchanged, and surface it only when the SDK sent new keys.
         if not data_dict.get("extra"):
             data_dict.pop("extra", None)
 
@@ -396,19 +377,13 @@ def to_published_event(
     turn_id: str,
     **kwargs,
 ) -> PublishedEvent:
-    """Convert Event to PublishedEvent with promoted fields.
-
-    Enriches the base Event with an ID, timestamp, and turn association.
-    Promotes useful fields from the raw message/block dicts to top-level
-    attributes (tool_use_id, tool_name, cost_usd, model, etc.) for easier
-    access and querying.
-    """
+    """Convert Event to PublishedEvent, promoting fields from the raw message/block dicts to
+    top-level attributes (tool_use_id, tool_name, cost_usd, model, etc.) for easier querying."""
 
     fields = {}
     block = event.raw.get("block") if event.raw else None
     message = event.raw.get("message") if event.raw else None
 
-    # Promote block fields
     if isinstance(block, dict):
         if event.subtype == "tool_use":
             fields["tool_use_id"] = block.get("id")
@@ -426,7 +401,6 @@ def to_published_event(
         if isinstance(res, dict):
             fields["tool_use_result"] = res
 
-    # Promote message fields
     if isinstance(message, dict):
         if event.type == "result":
             cost = message.get("total_cost_usd")
@@ -447,8 +421,8 @@ def to_published_event(
 
                 fields["message_data"] = data
 
-        # Promote parent_tool_use_id for foreground (sync) tasks.
-        # Async tasks already receive it via kwargs from the task manager.
+        # Promote parent_tool_use_id for foreground (sync) tasks; async tasks already receive it via
+        # kwargs from the task manager.
         if "parent_tool_use_id" not in kwargs:
             ptui = message.get("parent_tool_use_id")
 

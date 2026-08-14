@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { getToolConfig } from '../../../../../../../../../../../../config/toolRegistry'
 import { useSessionDir } from '../../../../../../../../../../../../context/SessionDataContext'
+import useEditorTemplate from '../../../../../../../../../../../../hooks/useEditorTemplate'
 import usePathResolution from '../../../../../../../../../../../../hooks/usePathResolution'
 import {
   extractPathCandidates,
@@ -25,14 +26,12 @@ const CODE_PARSERS = {
 }
 
 /**
- * @param {object} props
- * @param {string} props.toolName - Tool name (Read, Write, Grep, Edit).
- * @param {string} props.details - Raw output string from the tool.
  * @param {string} [props.outputMode] - Output mode for Grep tool parsing.
  * @param {number} [props.lineOffset] - Starting line number for Edit tool diffs.
  */
 export default function ToolCodeBlock({ toolName, details, outputMode = null, lineOffset = null }) {
   const sessionDir = useSessionDir()
+  const editorTemplate = useEditorTemplate()
   const [showFullPaths, setShowFullPaths] = useState(false)
 
   const candidates = useMemo(
@@ -79,6 +78,7 @@ export default function ToolCodeBlock({ toolName, details, outputMode = null, li
         fileColMaxWidth={showFullPaths ? '40cqi' : '20ch'}
         sessionDir={sessionDir}
         resolvedPaths={resolvedPaths}
+        editorTemplate={editorTemplate}
       />
     </div>
   )

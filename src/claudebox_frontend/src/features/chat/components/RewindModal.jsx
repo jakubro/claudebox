@@ -30,7 +30,6 @@ const FALLBACK_TEXT = {
 }
 
 /**
- * Render confirmation modal for conversation rewind with mode-aware text.
  * @param {Object} props
  * @param {string} [props.mode] - Fork mode: fork-here or fork-browser-tab.
  * @param {boolean} [props.forkAll] - Whether rewinding the entire session (no truncation).

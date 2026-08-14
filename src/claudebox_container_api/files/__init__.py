@@ -28,11 +28,13 @@ def managed(workspace: Workspace) -> Callable:
     async def handler(*_args, **_kwargs):
         global current
 
-        current = FileService(workspace)
+        service = FileService(workspace)
+        current = service
 
         try:
             yield
         finally:
             current = None
+            service.close()
 
     return handler

@@ -1,11 +1,17 @@
 /** Tests for useChatKeyboard hook - keyboard shortcut dispatch. */
 
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { mockCapabilities } from '../../../../../test-utils/mockCapabilities'
+import useAutocomplete from './useAutocomplete'
 import useChatKeyboard from './useChatKeyboard'
 
 vi.mock('../../../../../api/chat', () => ({
   interrupt: vi.fn(),
+}))
+
+vi.mock('../../../../../hooks/useCapabilities', () => ({
+  default: () => ({ capabilities: mockCapabilities(), runtimeName: 'Claude' }),
 }))
 
 /** Build a stub params object with a real textarea attached to the document. */
@@ -13,8 +19,6 @@ function setup() {
   const textarea = document.createElement('textarea')
   document.body.appendChild(textarea)
   textarea.focus()
-
-  const resizeTextarea = vi.fn()
 
   const params = {
     textareaRef: { current: textarea },
@@ -35,7 +39,6 @@ function setup() {
     stashPop: vi.fn(),
     clearPendingInsert: vi.fn(),
     saveDrafts: vi.fn(),
-    resizeTextarea,
     navigateUp: vi.fn(() => false),
     navigateDown: vi.fn(() => false),
     collapseLocal: vi.fn(),
@@ -47,7 +50,7 @@ function setup() {
   }
 
   const cleanup = () => document.body.removeChild(textarea)
-  return { textarea, params, resizeTextarea, cleanup }
+  return { textarea, params, cleanup }
 }
 
 /** Build a fake KeyboardEvent stub with preventDefault tracking. */
@@ -83,7 +86,7 @@ function readState(textarea) {
 
 describe('useChatKeyboard - Tab/Shift+Tab', () => {
   it('Tab inserts 2 spaces at caret in content zone (no selection)', () => {
-    const { textarea, params, resizeTextarea, cleanup } = setup()
+    const { textarea, params, cleanup } = setup()
     const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello world', 5)
@@ -98,7 +101,6 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
       end: 7,
       focused: true,
     })
-    expect(resizeTextarea).toHaveBeenCalled()
     cleanup()
   })
 
@@ -219,7 +221,9 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab is no-op on unindented line (preventDefault still called, value unchanged)', () => {
-    const { textarea, params, resizeTextarea, cleanup } = setup()
+    const { textarea, params, cleanup } = setup()
+    const inputSpy = vi.fn()
+    textarea.addEventListener('input', inputSpy)
     const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello', 0)
@@ -228,8 +232,8 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
 
     expect(e.preventDefault).toHaveBeenCalled()
     expect(readState(textarea)).toMatchObject({ value: 'hello', start: 0, end: 0 })
-    // No-op shouldn't fire input event or trigger resize.
-    expect(resizeTextarea).not.toHaveBeenCalled()
+    // No-op shouldn't dispatch an input event.
+    expect(inputSpy).not.toHaveBeenCalled()
     cleanup()
   })
 
@@ -262,7 +266,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
     cleanup()
   })
 
-  it('Tab dispatches input event so drafts/autocomplete observers refresh', () => {
+  it('Tab dispatches exactly one input event so drafts/autocomplete observers refresh', () => {
     const { textarea, params, cleanup } = setup()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
@@ -271,7 +275,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
     setTextarea(textarea, 'hello', 0)
     result.current.handleKeyDown(keyEvent('Tab'))
 
-    expect(inputSpy).toHaveBeenCalled()
+    expect(inputSpy).toHaveBeenCalledTimes(1)
     cleanup()
   })
 })
@@ -494,7 +498,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
 
   // Input event firing - drafts/autocomplete observers must refresh.
 
-  it('Shift+Enter dispatches input event', () => {
+  it('Shift+Enter dispatches exactly one input event', () => {
     const { textarea, params, cleanup } = setup()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
@@ -503,7 +507,118 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
     setTextarea(textarea, 'hello', 5)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
 
-    expect(inputSpy).toHaveBeenCalled()
+    expect(inputSpy).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+})
+
+describe('useChatKeyboard - Ctrl+, wrap in tags', () => {
+  it('wraps the selection and dispatches exactly one input event', () => {
+    const { textarea, params, cleanup } = setup()
+    const inputSpy = vi.fn()
+    textarea.addEventListener('input', inputSpy)
+    const { result } = renderHook(() => useChatKeyboard(params))
+
+    setTextarea(textarea, 'hello world', 6, 11)
+    result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
+
+    expect(textarea.value).toBe('hello <this>world</this>')
+    expect(inputSpy).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+
+  it('wraps at the caret with no selection and still dispatches once', () => {
+    const { textarea, params, cleanup } = setup()
+    const inputSpy = vi.fn()
+    textarea.addEventListener('input', inputSpy)
+    const { result } = renderHook(() => useChatKeyboard(params))
+
+    setTextarea(textarea, 'hello', 5)
+    result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
+
+    expect(textarea.value).toBe('hello<this></this>')
+    expect(inputSpy).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+})
+
+describe('useChatKeyboard - Ctrl+S stash', () => {
+  it('clears the textarea, saves an empty draft, and dispatches exactly one input event', () => {
+    const { textarea, params, cleanup } = setup()
+    const inputSpy = vi.fn()
+    textarea.addEventListener('input', inputSpy)
+    const { result } = renderHook(() => useChatKeyboard(params))
+
+    setTextarea(textarea, 'stash me', 8)
+    result.current.handleKeyDown(keyEvent('s', { ctrlKey: true }))
+
+    expect(params.stashPush).toHaveBeenCalledWith('stash me')
+    expect(textarea.value).toBe('')
+    expect(params.saveDrafts).toHaveBeenCalledWith({ current: '', stack: [] })
+    expect(inputSpy).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+
+  it('is a no-op on an empty textarea and dispatches nothing', () => {
+    const { textarea, params, cleanup } = setup()
+    const inputSpy = vi.fn()
+    textarea.addEventListener('input', inputSpy)
+    const { result } = renderHook(() => useChatKeyboard(params))
+
+    setTextarea(textarea, '', 0)
+    result.current.handleKeyDown(keyEvent('s', { ctrlKey: true }))
+
+    expect(params.stashPush).not.toHaveBeenCalled()
+    expect(inputSpy).not.toHaveBeenCalled()
+    cleanup()
+  })
+})
+
+// useAutocomplete listens for the same input event, so its caret-position rule applies here too.
+describe('useChatKeyboard - picker consequence of dispatching', () => {
+  const dictCommands = { custom: [{ name: 'implement', description: 'Implement a ticket' }] }
+
+  it('an editing key that leaves the caret inside a leading command opens the picker', () => {
+    const { textarea, params, cleanup } = setup()
+    const { result } = renderHook(() => useChatKeyboard(params))
+    const { result: autocomplete } = renderHook(() =>
+      useAutocomplete({ current: textarea }, dictCommands),
+    )
+
+    // Wrapping stays inside "implement", so the leading command is still intact.
+    setTextarea(textarea, '/implement', 1, 5)
+    expect(autocomplete.current.visible).toBe(false)
+
+    act(() => {
+      result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
+    })
+
+    expect(textarea.value).toBe('/<this>impl</this>ement')
+    expect(autocomplete.current.visible).toBe(true)
+    cleanup()
+  })
+
+  it('an editing key that moves the caret out of the leading command closes the picker', () => {
+    const { textarea, params, cleanup } = setup()
+    const { result } = renderHook(() => useChatKeyboard(params))
+    const { result: autocomplete } = renderHook(() =>
+      useAutocomplete({ current: textarea }, dictCommands),
+    )
+
+    setTextarea(textarea, '/implement extra', 1, 1)
+    act(() => {
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(autocomplete.current.visible).toBe(true)
+
+    // Wrap "extra", well past the leading command's end - caret lands outside it.
+    setTextarea(textarea, '/implement extra', 11, 16)
+    act(() => {
+      result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
+    })
+
+    expect(textarea.value).toBe('/implement <this>extra</this>')
+    expect(autocomplete.current.visible).toBe(false)
     cleanup()
   })
 })

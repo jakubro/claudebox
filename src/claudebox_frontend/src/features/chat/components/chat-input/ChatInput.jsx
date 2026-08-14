@@ -1,7 +1,10 @@
 /** Chat input textarea with history, drafts, keyboard shortcuts, and attachment support. */
 
+// audit-ignore-file: file-size, excessive-props
+
 import { Square } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { DRAFT_STORAGE_PREFIX } from '../../../../config/storage'
 import { useInteraction } from '../../../../context/InteractionContext'
 import { useSessionData } from '../../../../context/SessionDataContext'
 import { useStash } from '../../../../context/StashContext'
@@ -11,7 +14,6 @@ import AttachmentPreview from './components/AttachmentPreview'
 import CommandAutocomplete from './components/CommandAutocomplete'
 import useAttachments from './hooks/useAttachments'
 import useAutocomplete from './hooks/useAutocomplete'
-import useAutoPair from './hooks/useAutoPair'
 import useBlockCollapse from './hooks/useBlockCollapse'
 import useChatKeyboard from './hooks/useChatKeyboard'
 import useDrafts from './hooks/useDrafts'
@@ -19,25 +21,22 @@ import useInputHistory from './hooks/useInputHistory'
 import useTextareaResize from './hooks/useTextareaResize'
 
 /**
- * Render chat input textarea with submit, interrupt, stash, queue, and attachment support.
- * @param {Object} props
- * @param {boolean} props.isConnected - Whether WebSocket is connected
- * @param {boolean} props.canInterrupt - Whether interrupt is allowed
- * @param {Object} props.refs - Grouped refs from the chat panel.
- * @param {Object} props.refs.panel - Ref to chat panel container.
- * @param {Object} props.refs.messages - Ref to messages container.
- * @param {Object} props.refs.autoScrollEnabled - Ref tracking auto-scroll state.
- * @param {Object} props.refs.events - Ref to events array.
- * @param {boolean} props.hasEvents - Stable boolean signaling that the events
- *   array has at least one element; flips false->true on the first SSE event
- *   per session and stays stable thereafter (does not churn per token).
- * @param {Function} props.send - Shared send callback (from useSendMessage)
- * @param {Function} props.enqueueMessage - Queue a message for later sending
- * @param {Function} props.deferSend - Defer a message for auto-send when session creation completes.
- * @param {Object} props.queueEdit - Queue editing state.
- * @param {Object|null} props.queueEdit.item - Queue item being edited (load into textarea).
- * @param {Function} props.queueEdit.clear - Clear editing state after loading.
- * @param {'creating'|'resuming'|null} props.overlayMode - Overlay state: 'creating' allows typing, 'resuming' disables input.
+ * @param {boolean} props.isConnected - Whether the WebSocket is connected.
+ * @param {boolean} props.canInterrupt - Whether interrupt is allowed.
+ * @param {object} props.refs - Grouped refs from the chat panel.
+ * @param {object} props.refs.panel - Ref to the chat panel container.
+ * @param {object} props.refs.messages - Ref to the messages container.
+ * @param {object} props.refs.autoScrollEnabled - Ref tracking auto-scroll state.
+ * @param {object} props.refs.events - Ref to the events array.
+ * @param {object} props.refs.pendingForm - Ref to the active turn's live AskUserQuestion form, if any.
+ * @param {boolean} props.hasEvents - Stable: flips false->true on the first SSE event, then holds (no per-token churn).
+ * @param {Function} props.send - Shared send callback (from useSendMessage).
+ * @param {Function} props.enqueueMessage - Queue a message for later sending.
+ * @param {Function} props.deferSend - Defers a message to auto-send once session creation completes.
+ * @param {object} props.queueEdit - Queue editing state.
+ * @param {object|null} props.queueEdit.item - Queue item being edited (loaded into the textarea).
+ * @param {Function} props.queueEdit.clear - Clears editing state after loading.
+ * @param {'creating'|'resuming'|null} props.overlayMode - 'creating' allows typing; 'resuming' disables input.
  */
 function ChatInput({
   isConnected,
@@ -58,15 +57,14 @@ function ChatInput({
     autoScrollEnabled: autoScrollEnabledRef,
     events: eventsRef,
     composerHandle,
+    pendingForm: pendingFormRef,
   } = refs || {}
   const { item: editingQueueItem, clear: clearEditingQueueItem } = queueEdit || {}
 
-  // Overlay-derived state. The textarea itself is never disabled (always-
-  // enabled invariant) - these flags gate the submit path only.
+  // Overlay-derived state: textarea stays always-enabled; these flags only gate the submit path.
   const isSendBlocked = overlayMode === 'resuming'
   const isCreating = overlayMode === 'creating'
 
-  // Refs
   const textareaRef = useRef(null)
 
   // Fallback refs if not provided (during transition or testing)
@@ -79,9 +77,7 @@ function ChatInput({
 
   const isMobile = useIsMobile()
 
-  // DEV-only render counter for measurement (tree-shaken in production builds).
-  // Counts function-component invocations (renders). Test harness reads via
-  // window.__cb_test_hooks?.chatInputRenderCount.
+  // DEV-only render counter, tree-shaken in prod; test harness reads window.__cb_test_hooks?.chatInputRenderCount.
   const renderCountRef = useRef(0)
   renderCountRef.current += 1
   useEffect(() => {
@@ -103,9 +99,8 @@ function ChatInput({
     isAwaitingResponse,
   } = useInteraction()
 
-  // Mobile send button morphs into a stop button while a response is in flight.
-  // `isResponding` arrives as a prop from ChatPanel so we don't subscribe ChatInput
-  // to EventsContext (avoids per-token re-renders on keystroke-hot path).
+  // Mobile send button morphs into stop while responding; isResponding is a prop (not context) to
+  // avoid per-token re-renders on the keystroke-hot path.
   const showStopButton = isMobile && (isResponding || isSubmitting || isAwaitingResponse)
   const stopButtonDisabled = !showStopButton || interruptStatus === 'stopping'
   const handleStopButtonInterrupt = useInterruptHandler({
@@ -115,11 +110,9 @@ function ChatInput({
     disabled: stopButtonDisabled,
   })
 
-  // Local state
   const [sending, setSending] = useState(false)
   const [hasContent, setHasContent] = useState(false)
 
-  // Hooks - owned by ChatInput
   const { resizeTextarea } = useTextareaResize(
     textareaRef,
     effectivePanelRef,
@@ -129,13 +122,8 @@ function ChatInput({
 
   const { drafts, saveDrafts, userHasTypedRef } = useDrafts(sessionId, textareaRef, resizeTextarea)
 
-  // Live drafts ref - single source of truth for InputHistoryManager. The React
-  // `drafts` state lags behind keystrokes because persistDraftDirect bypasses
-  // setValue (per-keystroke render budget). Sync the ref from React state ONLY
-  // when React-state identity changes (session load, explicit saveDrafts) -
-  // never blindly per render, which would clobber a fresher direct-write before
-  // React has caught up. saveDraftsAndRef updates both in lockstep so
-  // navigate-down push / submit / in-place edit stay coherent.
+  // draftsRef is InputHistoryManager's source of truth - React `drafts` lags since persistDraftDirect
+  // bypasses setValue. Synced on identity change only, never per render (would clobber a fresher write).
   const draftsRef = useRef(drafts)
   const lastReactDraftsRef = useRef(drafts)
   if (lastReactDraftsRef.current !== drafts) {
@@ -170,13 +158,10 @@ function ChatInput({
     resizeTextarea,
   )
 
-  const { wrapSelection } = useAutoPair(resizeTextarea)
-  const { collapseLocal, collapseAll, expandLocal, expandAll, expandBeforeSubmit, resetCollapse } =
-    useBlockCollapse(resizeTextarea)
+  const { expandBeforeSubmit, resetCollapse, manager: collapseManager } = useBlockCollapse()
 
   const autocomplete = useAutocomplete(textareaRef, commands)
 
-  // Attachments hook
   const {
     attachments,
     setAttachments,
@@ -236,8 +221,8 @@ function ChatInput({
     return input
   }, [peekInput, commitInput])
 
-  // Imperative handle for an external submit (the inline-replies bar Send): peek +
-  // clear the composer, tolerating an empty composer so a replies-only batch still sends.
+  // Imperative handle for an external submit (inline-replies bar Send): peek + clear, tolerating
+  // an empty composer so a replies-only batch still sends.
   const extractOrEmpty = useCallback(() => {
     const input = peekInput()
     if (input) {
@@ -257,7 +242,6 @@ function ChatInput({
     }
   }, [composerHandle, extractOrEmpty])
 
-  // Keyboard + action handlers
   const { handleKeyDown, handleSubmit } = useChatKeyboard({
     textareaRef,
     peekInput,
@@ -268,6 +252,7 @@ function ChatInput({
     enqueueMessage,
     deferSend,
     hasBufferedReplies,
+    pendingFormRef,
     isCreating,
     canInterrupt,
     interruptStatus,
@@ -278,37 +263,22 @@ function ChatInput({
     stashPop,
     clearPendingInsert,
     saveDrafts,
-    resizeTextarea,
     navigateUp,
     navigateDown,
-    collapseLocal,
-    collapseAll,
-    expandLocal,
-    expandAll,
-    wrapSelection,
+    collapseManager,
     isMobile,
   })
 
-  // Composer focus invariant: textarea is always focused when the chat tab is
-  // active. Mount-autofocus runs unconditionally on desktop; mobile skips it
-  // to avoid an unsolicited OS keyboard popup. Subsequent state transitions
-  // are handled by the sessionId/overlayMode effect below and the dockview-
-  // reparent safety net (MutationObserver). The disabled gate on the textarea
-  // is removed (always enabled) - submit-time guards live in `peekInput`.
+  // Composer focus invariant: stays focused while the chat tab is active. Desktop autofocuses on
+  // mount (mobile skips it to avoid an OS keyboard popup); never disabled - guards live in `peekInput`.
   useEffect(() => {
     if (!isMobile && textareaRef.current) {
       textareaRef.current.focus()
     }
   }, [isMobile])
 
-  // Safety net: re-focus after dockview DOM moves. Dockview moves the React
-  // portal's DOM subtree between containers (e.g., on replaceSessionTab or
-  // navigateToSession), which removes and re-adds the same textarea element,
-  // destroying focus without triggering React unmount. With the always-focused
-  // composer invariant and ChatInput hoisted out of the dockview subtree, this
-  // observer should not fire under normal operation - it remains as a last
-  // line of defence for residual dockview reparent races. Keystrokes typed
-  // during the debounce gap are buffered and replayed into the textarea.
+  // Safety net: dockview moves the portal's DOM subtree between containers (e.g. replaceSessionTab,
+  // navigateToSession), destroying focus without an unmount. Keystrokes during the gap are buffered and replayed.
   useEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) {
@@ -385,10 +355,8 @@ function ChatInput({
     }
   }, [isConnected])
 
-  // Restore focus after session change or when the create overlay clears -
-  // defer to second rAF so dockview's internal post-layout focus management
-  // settles. Mobile skips refocus to avoid keyboard-popup hostility. The deps
-  // are reactive triggers (the body itself does not read sessionId/overlayMode).
+  // Restore focus after a session change or the create-overlay clears - deferred to a second rAF so
+  // dockview's post-layout focus settles. Mobile skips this; deps below are reactive triggers only.
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId and overlayMode are intentional reactive triggers
   useEffect(() => {
     if (isMobile || !textareaRef.current) {
@@ -401,7 +369,6 @@ function ChatInput({
     })
   }, [sessionId, overlayMode, isMobile])
 
-  // Handle pending insert from stash
   useEffect(() => {
     if (pendingInsert && textareaRef.current) {
       const currentInput = textareaRef.current.value
@@ -416,7 +383,6 @@ function ChatInput({
     }
   }, [pendingInsert, clearPendingInsert, addToHistory, saveDrafts, resetIndex, resizeTextarea])
 
-  // Handle editing a queued message - load content into textarea
   useEffect(() => {
     if (editingQueueItem && textareaRef.current) {
       textareaRef.current.value = editingQueueItem.content
@@ -428,19 +394,16 @@ function ChatInput({
     }
   }, [editingQueueItem, clearEditingQueueItem, resizeTextarea, setAttachments])
 
-  // Per-keystroke localStorage write that bypasses useLocalStorage's setValue
-  // (avoids a state-update render per char). The state copy in `drafts` only
-  // matters at mount/session-change for restore; subsequent writes can persist
-  // directly to localStorage without re-rendering ChatInput.
+  // Per-keystroke localStorage write bypassing useLocalStorage's setValue (avoids a render per
+  // char); `drafts` state only matters at mount/session-change for restore.
   const persistDraftDirect = useCallback(
     value => {
-      // Sync ref first - useInputHistory's manager reads via draftsRef on each
-      // navigation, so this must reflect the typed value before any Up/Down.
+      // Sync ref first - useInputHistory reads draftsRef on navigation and needs the typed value before Up/Down.
       draftsRef.current = value
       if (!sessionId) {
         return
       }
-      const key = `draft:${sessionId}`
+      const key = `${DRAFT_STORAGE_PREFIX}${sessionId}`
       const isEmpty = !value.current && (!value.stack || value.stack.length === 0)
       try {
         if (isEmpty) {
@@ -455,10 +418,8 @@ function ChatInput({
     [sessionId],
   )
 
-  // Input handler. Reads drafts.stack via ref so callback identity stays stable
-  // across keystrokes. Persists drafts directly to localStorage (no state
-  // round-trip), keeping ChatInput render count at ~1 per keystroke
-  // (target: < 1.5 per char).
+  // Reads drafts.stack via ref so callback identity stays stable across keystrokes, persisting
+  // directly to localStorage (no state round-trip) to keep ChatInput near 1 render per keystroke.
   const handleInput = useCallback(
     e => {
       userHasTypedRef.current = true
@@ -502,8 +463,7 @@ function ChatInput({
         />
       )}
       <div className={`chat-input-row${isMobile ? ' mobile' : ''}`}>
-        {/* Decorative compositor-driven border shimmer / working cue (pure CSS,
-            rotated on the GPU); non-interactive, behind the textarea. */}
+        {/* Decorative compositor-driven border shimmer (pure CSS, GPU-rotated); non-interactive, behind the textarea. */}
         <div className="textarea-border-overlay" aria-hidden="true" />
         <textarea
           ref={textareaRef}

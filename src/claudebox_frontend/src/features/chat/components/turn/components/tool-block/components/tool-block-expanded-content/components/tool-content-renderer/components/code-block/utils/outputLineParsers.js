@@ -3,9 +3,6 @@
 import { getBasename } from '../../../../../../../../../../../../../utils/formatters'
 import { parseGrepLine } from '../../../../../../../../../../../../../utils/parsers'
 
-/**
- * Parse Read/Write tool output into CodeBlock lines.
- */
 export function parseReadWriteLines(details) {
   return details.split('\n').map(line => {
     const match = line.match(/^\s*(\d+)[\u2192\u2502\t](.*)$/)
@@ -16,9 +13,6 @@ export function parseReadWriteLines(details) {
   })
 }
 
-/**
- * Parse Grep tool output into CodeBlock lines with mode metadata.
- */
 export function parseGrepLines(details, outputMode, showFullPaths) {
   const rawLines = details.split('\n')
   let parsed = rawLines.map(line => parseGrepLine(line, outputMode))
@@ -53,12 +47,7 @@ export function parseGrepLines(details, outputMode, showFullPaths) {
   return { lines, isMultiFile, isFilesOnly }
 }
 
-/**
- * Parse Edit tool diff output into CodeBlock lines.
- *
- * Paired diff lines include oldLine/newLine for inline diff rendering.
- * Sequential line numbers track old-side position through the diff.
- */
+/** Paired diff lines include oldLine/newLine for inline diff rendering; sequential line numbers track old-side position through the diff. */
 export function parseEditLines(details, startLine = 1) {
   const rawLines = details.split('\n')
   const result = []

@@ -17,7 +17,7 @@ export default function useChatController({ events, contextRefs }) {
 
   const { sessionId } = useSessionData()
   const { reloadSession } = useSessionActions()
-  const { resultCount, compactionCount, isCreating } = useEvents()
+  const { resultCount, compactionCount, isCreating, isReplaying, isResuming } = useEvents()
   const {
     interruptStatus,
     startSubmitting,
@@ -27,8 +27,7 @@ export default function useChatController({ events, contextRefs }) {
     errorMessage,
   } = useInteraction()
 
-  // Reactive autoscroll-enabled state - drives aria-pressed bindings in
-  // ChatControlBar. Synced from controller via onAutoScrollChange callback.
+  // Drives aria-pressed bindings in ChatControlBar; synced from controller via onAutoScrollChange.
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true)
 
   // Controller instance (stable across renders)
@@ -53,19 +52,15 @@ export default function useChatController({ events, contextRefs }) {
         }
       },
     })
-    // Dev-only test hook - exposes the controller to repro/verify scripts that
-    // need to read isAutoScrollEnabled directly. Intentionally guarded by
-    // import.meta.env.DEV so production bundles never expose it.
+    // Exposed for repro/verify scripts reading isAutoScrollEnabled directly; DEV-gated out of prod.
     if (import.meta.env.DEV && typeof window !== 'undefined') {
       window.__chat_controller__ = controllerRef.current
     }
   }
   const controller = controllerRef.current
 
-  // Initialize controller with DOM elements and ResizeObserver. Re-runs when
-  // sessionId or isCreating changes - covers the welcome->chat transition where
-  // .chat-messages mounts only after isWelcome flips to false (so messagesRef
-  // is null on first effect run during welcome state).
+  // Re-runs on sessionId/isCreating: covers the welcome->chat transition, where .chat-messages
+  // mounts only after isWelcome flips false (messagesRef is null on the first welcome-state run).
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId/isCreating proxy the chat-messages mount transition
   useEffect(() => {
     if (!messagesRef.current) {
@@ -84,8 +79,7 @@ export default function useChatController({ events, contextRefs }) {
     // Attach ResizeObserver for scroll preservation across layout changes
     controller.attachResizeObserver(messagesRef.current, contextRefs)
 
-    // Attach passive input listeners (wheel/touch/keydown) for user-intent
-    // detection. Intent-driven autoscroll disengage runs independently of
+    // Passive wheel/touch/keydown listeners for user-intent detection; runs independently of
     // streaming-driven height changes.
     controller.attachInputListeners(messagesRef.current)
 
@@ -109,19 +103,23 @@ export default function useChatController({ events, contextRefs }) {
     onContainerGone: reloadSession,
   })
 
+  // Spans the resume click through the last replayed turn materializing; isCreating is excluded
+  // since a fresh session also replays empty boundaries, which would race the deferred first message.
+  const isLoadingSession = isResuming || isReplaying
+
   // Message queue (drain, pause, lifecycle)
   const { queueItems, enqueueMessage, editQueuedItem, cancelQueuedItem, requeueItem, sendNowItem } =
     useMessageQueue({
       resultCount,
       compactionCount,
+      isLoading: isLoadingSession,
       interruptStatus,
       errorMessage,
       sessionId,
       sendFn: send,
     })
 
-  // Deferred send - holds the first message submitted during session creation.
-  // Auto-fires send() when isCreating clears (session ready).
+  // Holds the first message submitted during session creation; auto-fires send() once isCreating clears.
   const [deferredSend, setDeferredSend] = useState(null)
 
   // Use ref to check current deferred state without stale closures
@@ -141,10 +139,8 @@ export default function useChatController({ events, contextRefs }) {
     [enqueueMessage],
   )
 
-  // Auto-send deferred message when BOTH conditions are met:
-  // 1. isCreating has cleared (session init complete)
-  // 2. sessionId is available (can send)
-  // Preserves deferredSend through the null->realId sessionId transition.
+  // Fires once isCreating clears and sessionId is available; preserves deferredSend through the
+  // null->realId sessionId transition.
   const prevIsCreatingRef = useRef(isCreating)
   useEffect(() => {
     prevIsCreatingRef.current = isCreating
@@ -158,9 +154,8 @@ export default function useChatController({ events, contextRefs }) {
     }
   }, [isCreating, deferredSend, sessionId, send])
 
-  // Clear deferred send on actual session switch (both old and new non-null),
-  // but not during creation - the provisional->real ID transition must preserve
-  // the deferred message for auto-fire.
+  // Clears deferred send on an actual session switch (old and new both non-null), but not during
+  // creation - the provisional->real ID transition must preserve it for auto-fire.
   const prevSessionIdForClearRef = useRef(sessionId)
   useEffect(() => {
     const prev = prevSessionIdForClearRef.current
@@ -191,22 +186,20 @@ export default function useChatController({ events, contextRefs }) {
     controller.scrollToBottom()
   }, [controller])
 
-  // Bracket external scroll writes (e.g. useMessageJump's scrollToEdge) so
-  // they are classified as programmatic and don't raise user intent.
+  // Brackets external scroll writes (e.g. useMessageJump's scrollToEdge) so they're classified as
+  // programmatic, not user intent.
   const markProgrammaticScroll = useCallback(() => {
     controller.markProgrammaticScroll()
   }, [controller])
 
-  // Raise user intent from cross-panel callers (e.g. BookmarksPanel bookmark
-  // click that lands the viewport not-at-bottom). Mirrors the direction-aware
-  // gate that input listeners apply before reaching the controller.
+  // For cross-panel callers (e.g. BookmarksPanel bookmark click landing not-at-bottom); mirrors the
+  // direction-aware gate input listeners apply before reaching the controller.
   const markUserIntent = useCallback(() => {
     controller.markUserIntent()
   }, [controller])
 
-  // Symmetric helper for callers that land the viewport at the bottom
-  // (jumpBottom, jumpNext fall-through, future bookmark click that resolves
-  // at-bottom). Clears latched intent and re-engages autoscroll.
+  // For callers landing the viewport at the bottom (jumpBottom, jumpNext fall-through); clears
+  // latched intent and re-engages autoscroll.
   const markReturnedToBottom = useCallback(() => {
     controller.markReturnedToBottom()
   }, [controller])

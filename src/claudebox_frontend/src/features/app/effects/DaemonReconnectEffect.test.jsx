@@ -4,8 +4,6 @@ import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DaemonReconnectEffect from './DaemonReconnectEffect'
 
-// --- Mock all context hooks used by DaemonReconnectEffect ---
-
 const mockDaemonStream = { daemonReconnected: 0 }
 vi.mock('../../../context/DaemonStreamContext', () => ({
   useDaemonStreamContext: () => mockDaemonStream,
@@ -43,7 +41,6 @@ vi.mock('../../../context/InteractionContext', () => ({
   useInteraction: () => mockInteraction,
 }))
 
-// Mock API modules
 const mockSetContainerId = vi.fn()
 vi.mock('../../../api/apiClient', () => ({
   setContainerId: (...args) => mockSetContainerId(...args),
@@ -57,7 +54,6 @@ vi.mock('../../../api/sessions', () => ({
 describe('DaemonReconnectEffect', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset to default state
     mockDaemonStream.daemonReconnected = 0
     mockRouting.activeSessionId = 'sess-1'
     mockEvents.containerId = 'ctr-1'
@@ -69,10 +65,7 @@ describe('DaemonReconnectEffect', () => {
     vi.restoreAllMocks()
   })
 
-  /**
-   * Helper: render the effect, then re-render with incremented daemonReconnected.
-   * Returns the rerender function for further updates.
-   */
+  /** Render the effect, then re-render with incremented daemonReconnected. */
   function renderAndReconnect(overrides = {}) {
     // Apply overrides before initial render
     Object.assign(mockDaemonStream, overrides.daemon || {})
@@ -81,10 +74,7 @@ describe('DaemonReconnectEffect', () => {
 
     const { rerender } = render(<DaemonReconnectEffect />)
 
-    // Simulate daemon reconnection by incrementing the counter
     mockDaemonStream.daemonReconnected = (overrides.daemon?.daemonReconnected || 0) + 1
-
-    // Re-render to trigger the useEffect
     rerender(<DaemonReconnectEffect />)
 
     return { rerender }
@@ -98,12 +88,10 @@ describe('DaemonReconnectEffect', () => {
       events: { ...mockEvents, containerId: null, isConnected: false },
     })
 
-    // Should call resume to recover
     await vi.waitFor(() => {
       expect(mockResumeSession).toHaveBeenCalledWith('sess-1')
     })
 
-    // Should set fresh container and reconnect SSE
     expect(mockSetContainerId).toHaveBeenCalledWith('fresh-ctr')
     expect(mockEvents.notifyContainerChanged).toHaveBeenCalled()
     expect(mockEvents.reconnectSSE).toHaveBeenCalled()
@@ -122,8 +110,7 @@ describe('DaemonReconnectEffect', () => {
   })
 
   it('fires recovery only when daemonReconnected increments', () => {
-    // Container SSE alive - but we want to check the detection mechanism
-    // First render: daemonReconnected=0 - should not trigger any action
+    // Container SSE alive; first render (daemonReconnected=0) should trigger nothing.
     const { rerender } = render(<DaemonReconnectEffect />)
 
     expect(mockResumeSession).not.toHaveBeenCalled()
@@ -133,24 +120,18 @@ describe('DaemonReconnectEffect', () => {
     rerender(<DaemonReconnectEffect />)
     expect(mockEvents.startResume).not.toHaveBeenCalled()
 
-    // Increment daemonReconnected - triggers the effect
-    // (skips because container SSE survived, but the effect IS triggered)
+    // Increment triggers the effect, which skips resume because container SSE survived.
     mockDaemonStream.daemonReconnected = 1
     rerender(<DaemonReconnectEffect />)
 
-    // The effect ran (detected the increment) but skipped resume because SSE survived.
-    // Verify no resume call was made (skip path). The key assertion is that
-    // the effect did NOT call startResume - proving detection works but skip logic applies.
     expect(mockResumeSession).not.toHaveBeenCalled()
   })
 
   it('skips re-resume if container SSE survived the daemon restart', () => {
-    // Container SSE is still alive (containerId set, isConnected true)
     renderAndReconnect({
       events: { ...mockEvents, containerId: 'ctr-1', isConnected: true },
     })
 
-    // Should NOT call resume or startResume - container survived
     expect(mockEvents.startResume).not.toHaveBeenCalled()
     expect(mockResumeSession).not.toHaveBeenCalled()
     expect(mockEvents.reconnectSSE).not.toHaveBeenCalled()
@@ -188,9 +169,7 @@ describe('DaemonReconnectEffect', () => {
       expect(mockInteraction.setError).toHaveBeenCalledWith('Session reconnect failed')
     })
 
-    // Resume overlay should be cleared on error
     expect(mockEvents.clearResume).toHaveBeenCalled()
-    // SSE should NOT be reconnected on error
     expect(mockEvents.reconnectSSE).not.toHaveBeenCalled()
   })
 

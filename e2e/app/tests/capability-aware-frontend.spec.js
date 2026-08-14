@@ -98,8 +98,7 @@ test.describe('Capability-Aware Frontend', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The MCP panel may not be open by default, but its content must be absent
-      // even if a side panel toggle reveals it. Assert the panel content is not in DOM.
+      // Asserts DOM absence, not just visibility, since the panel may not be open by default.
       await expect(page.locator('[data-testid="panel-mcp"]')).toHaveCount(0)
     })
 
@@ -120,9 +119,7 @@ test.describe('Capability-Aware Frontend', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The "Compacting conversation..." spinner is gated on the runtime
-      // firing pre-compact lifecycle hooks; with the flag false the
-      // indicator stays out of the DOM even if stale state tried to render.
+      // The spinner is gated on the runtime firing pre-compact lifecycle hooks.
       await expect(page.getByText('Compacting conversation')).toHaveCount(0)
     })
 
@@ -179,8 +176,7 @@ test.describe('Capability-Aware Frontend', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // The "worked for ..." marker should not appear; vacuous when no completed
-      // turn exists in the empty session but enforces the gate contract.
+      // Vacuous in the empty session (no completed turn), but still enforces the gate contract.
       await expect(page.getByText(/worked for/)).toHaveCount(0)
     })
 
@@ -240,7 +236,6 @@ test.describe('Capability-Aware Frontend', () => {
       const textarea = page.locator('textarea').first()
       await textarea.click()
       await textarea.fill('/')
-      // No autocomplete dropdown should appear under the chat input.
       await expect(page.locator('.autocomplete-dropdown, [class*="autocomplete"]')).toHaveCount(0)
     })
 

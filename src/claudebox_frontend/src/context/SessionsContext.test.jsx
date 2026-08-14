@@ -12,11 +12,13 @@ vi.mock('./WorkspaceContext', () => ({ useWorkspace: () => mockWorkspaceCtx }))
 const mockDaemonCtx = { sessionsChanged: 0, containerStatus: 0 }
 vi.mock('./DaemonStreamContext', () => ({ useDaemonStreamContext: () => mockDaemonCtx }))
 
-vi.mock('../api/sessions', () => ({ listSessions: vi.fn() }))
+vi.mock('../api/sessions', () => ({ listSessions: vi.fn(), listSessionsForWorkspace: vi.fn() }))
 vi.mock('../api/uiState', () => ({ getUiState: vi.fn(), patchGlobalUiState: vi.fn() }))
+vi.mock('../api/workspaces', () => ({ listWorkspaces: vi.fn() }))
 
-import { listSessions } from '../api/sessions'
+import { listSessions, listSessionsForWorkspace } from '../api/sessions'
 import { getUiState, patchGlobalUiState } from '../api/uiState'
+import { listWorkspaces } from '../api/workspaces'
 import { SessionsProvider, useSessionsList } from './SessionsContext'
 
 function TestConsumer() {
@@ -58,11 +60,14 @@ function renderWithProvider() {
 describe('SessionsContext', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mockWorkspaceCtx.workspaceId = 'ws-1'
     mockDaemonCtx.sessionsChanged = 0
     mockDaemonCtx.containerStatus = 0
     listSessions.mockResolvedValue({ sessions: [{ session_id: 's1' }] })
     getUiState.mockResolvedValue({ global: { pinnedSessions: [], workspaceColor: null } })
+    listWorkspaces.mockRejectedValue(new Error('not registered in this test'))
+    listSessionsForWorkspace.mockRejectedValue(new Error('not registered in this test'))
   })
 
   it('fetches sessions on mount and renders them', async () => {
@@ -129,13 +134,11 @@ describe('SessionsContext', () => {
       expect(screen.getByTestId('loading').textContent).toBe('false')
     })
 
-    // Pin first
     await user.click(screen.getByTestId('pin'))
     await waitFor(() => {
       expect(screen.getByTestId('pinned').textContent).toBe('["s1"]')
     })
 
-    // Unpin
     await user.click(screen.getByTestId('pin'))
     await waitFor(() => {
       expect(screen.getByTestId('pinned').textContent).toBe('[]')
@@ -224,19 +227,57 @@ describe('SessionsContext', () => {
       expect(screen.getByTestId('loading').textContent).toBe('false')
     })
 
-    // Set a color first
     await user.click(screen.getByTestId('set-color'))
     await waitFor(() => {
       expect(screen.getByTestId('color').textContent).toBe('#ff0000')
     })
 
-    // Clear it
     await user.click(screen.getByTestId('clear-color'))
 
     await waitFor(() => {
       expect(screen.getByTestId('color').textContent).toBe('none')
     })
     expect(patchGlobalUiState).toHaveBeenCalledWith([{ op: 'unset', path: 'workspaceColor' }])
+  })
+
+  it('sweeps dead-session storage keys after a successful fetch, leaving live ones alone', async () => {
+    localStorage.setItem('draft:s1', '{"current":"still here"}')
+    localStorage.setItem('draft:long-gone', '{}')
+
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(localStorage.getItem('draft:long-gone')).toBeNull()
+    })
+    expect(localStorage.getItem('draft:s1')).toBe('{"current":"still here"}')
+  })
+
+  it('does not sweep storage when the fetch fails', async () => {
+    listSessions.mockRejectedValue(new Error('Network error'))
+    localStorage.setItem('draft:orphan', '{}')
+
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('error').textContent).toBe('Network error')
+    })
+    expect(localStorage.getItem('draft:orphan')).toBe('{}')
+  })
+
+  it('does not sweep a session that is live in another workspace', async () => {
+    listWorkspaces.mockResolvedValue([{ id: 'ws-1' }, { id: 'ws-2' }])
+    listSessionsForWorkspace.mockResolvedValue({ sessions: [{ session_id: 'other-ws-session' }] })
+    localStorage.setItem('draft:s1', '{"current":"still here"}')
+    localStorage.setItem('draft:other-ws-session', '{"current":"alive in ws-2"}')
+    localStorage.setItem('draft:truly-dead', '{}')
+
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(localStorage.getItem('draft:truly-dead')).toBeNull()
+    })
+    expect(localStorage.getItem('draft:s1')).toBe('{"current":"still here"}')
+    expect(localStorage.getItem('draft:other-ws-session')).toBe('{"current":"alive in ws-2"}')
   })
 
   it('useSessionsList throws outside provider', () => {

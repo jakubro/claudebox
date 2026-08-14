@@ -16,9 +16,6 @@ export function buildDiffSummary(addedCount, removedCount) {
   return 'No changes'
 }
 
-/**
- * Generate a unified diff between old and new strings using jsdiff.
- */
 export function generateDiff(oldStr, newStr) {
   const changes = diffLines(oldStr, newStr)
 
@@ -40,7 +37,6 @@ export function generateDiff(oldStr, newStr) {
         lines.push(`- ${line}`)
       }
     } else {
-      // Context lines (unchanged)
       for (const line of changeLines) {
         lines.push(`  ${line}`)
       }

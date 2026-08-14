@@ -30,7 +30,7 @@ class TestAskUserQuestion:
                 "question": "Which mode?",
                 "options": [{"label": "A", "description": "alpha"}],
                 "multiSelect": False,
-            }
+            },
         ]
 
         ask.invoke({"questions": questions})
@@ -49,8 +49,7 @@ class TestAskUserQuestion:
         assert result == "the user's answer text"
 
     def test_stringifies_non_string_interrupt_value(self, tool_ctx, monkeypatch):
-        """Resume may surface a non-string when called via Command(resume=...);
-        the tool coerces to str so the model always sees text."""
+        """Resume via Command(resume=...) may surface a non-string; the tool coerces to str."""
 
         monkeypatch.setattr(
             "claudebox.agent_session.langgraph_tools.question.interrupt",

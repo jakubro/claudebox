@@ -5,9 +5,8 @@ import { listBoards } from '../../../api/boards'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 
 /**
- * Manage board list discovery state. Gates the API call on workspaceId
- * presence so the apiClient's "Workspace ID not set" invariant never
- * surfaces to the user (panel renders normal loading state pre-workspace).
+ * Manage board list discovery state, gating the API call on workspaceId so the apiClient's
+ * "Workspace ID not set" invariant never surfaces (panel shows normal loading pre-workspace).
  *
  * @returns {object} Board list state and actions.
  */

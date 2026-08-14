@@ -19,7 +19,6 @@ test.describe('Slash Commands', () => {
     await input.click()
     await page.keyboard.type('/')
 
-    // Tribute.js autocomplete dropdown should appear
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
   })
 
@@ -28,7 +27,7 @@ test.describe('Slash Commands', () => {
     const input = page.locator('[data-testid="chat-input"]')
     await input.fill('some text /')
 
-    // Autocomplete should NOT appear (trigger only at position 0)
+    // Trigger only fires at position 0.
     await expect(page.locator('[data-testid="command-autocomplete"]')).not.toBeVisible()
   })
 
@@ -38,10 +37,9 @@ test.describe('Slash Commands', () => {
     await input.click()
     await page.keyboard.type('/')
 
-    // Wait for autocomplete to appear
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
 
-    // Should show commands from status fixture (/help, /clear, /compact)
+    // Commands come from the status fixture (/help, /clear, /compact).
     await expect(page.locator('[data-testid="command-autocomplete"]')).toContainText('/help')
     await expect(page.locator('[data-testid="command-autocomplete"]')).toContainText('/clear')
   })
@@ -56,7 +54,7 @@ test.describe('Slash Commands', () => {
     await input.click()
     await page.keyboard.type('/')
 
-    // Picker should appear and show entries from the workspace catalog mock
+    // Entries come from the workspace catalog mock.
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
     await expect(page.locator('[data-testid="command-autocomplete"]')).toContainText('/help')
   })
@@ -65,12 +63,9 @@ test.describe('Slash Commands', () => {
   test('fuzzy matches commands', async ({ page }) => {
     const input = page.locator('[data-testid="chat-input"]')
     await input.click()
-    await page.keyboard.type('/hel') // partial match for /help
+    await page.keyboard.type('/hel')
 
-    // Wait for autocomplete to appear
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
-
-    // Should show /help (partial match)
     await expect(page.locator('[data-testid="command-autocomplete"]')).toContainText('/help')
 
     // Case-insensitive: clear and type uppercase
@@ -89,22 +84,17 @@ test.describe('Slash Commands', () => {
     await input.click()
     await page.keyboard.type('/')
 
-    // Wait for autocomplete to appear
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
-
-    // Select first command by pressing Enter
     await page.keyboard.press('Enter')
 
-    // Input should contain the selected command
     await expect(input).toHaveValue(/^\/\w+/)
 
-    // Caret should sit immediately after the inserted command + trailing space
+    // Caret sits immediately after the inserted command + trailing space.
     const value = await input.inputValue()
     const expected = value.indexOf(' ') + 1
     const caret = await input.evaluate(el => el.selectionStart)
     expect(caret).toBe(expected)
 
-    // Autocomplete should close
     await expect(page.locator('[data-testid="command-autocomplete"]')).not.toBeVisible()
   })
 
@@ -114,13 +104,9 @@ test.describe('Slash Commands', () => {
     await input.click()
     await page.keyboard.type('/')
 
-    // Wait for autocomplete to appear
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
-
-    // Click on first menu item
     await page.locator('[data-testid="command-autocomplete"] .autocomplete-item').first().click()
 
-    // Input should contain the selected command
     await expect(input).toHaveValue(/^\/\w+/)
   })
 })
@@ -134,7 +120,6 @@ test.describe('Slash Commands - Message Styling', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Find the turn containing /help
     const turn = page.locator('.turn-container').first()
     await expect(turn).toBeVisible()
 
@@ -145,7 +130,6 @@ test.describe('Slash Commands - Message Styling', () => {
     // Bold weight regardless of resolved/unresolved
     const fontWeight = await helpToken.evaluate(el => getComputedStyle(el).fontWeight)
     expect(Number(fontWeight)).toBeGreaterThanOrEqual(700)
-    // Token has either resolved or unresolved variant class
     await expect(helpToken).toHaveClass(/slash-command\s+(resolved|unresolved)/)
   })
 

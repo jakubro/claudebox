@@ -212,9 +212,7 @@ describe('MiniMap', () => {
         { turn_id: '3', userMessage: null, events: [{ type: 'assistant' }] },
       ]
       const turnHeights = { 1: 200, 2: 500, 3: 300 }
-      // Turn 1: user msg is 40px of 200px total (20%)
-      // Turn 2: user msg is 400px of 500px total (80%)
-      // Turn 3: no user message
+      // Turn 1: 40/200 = 20%; Turn 2: 400/500 = 80%; Turn 3: no user message
       const userMessageHeights = { 1: 40, 2: 400, 3: 0 }
       render(
         <MiniMap
@@ -318,7 +316,6 @@ describe('MiniMap', () => {
         />,
       )
 
-      // rAF should have been called (from the effect)
       expect(rAFSpy).toHaveBeenCalled()
 
       rAFSpy.mockRestore()
@@ -358,7 +355,6 @@ describe('MiniMap', () => {
       )
 
       const minimap = screen.getByTestId('minimap')
-      // Simulate getBoundingClientRect on the minimap element itself
       minimap.getBoundingClientRect = () => ({
         top: 0,
         height: 400,
@@ -415,7 +411,6 @@ describe('MiniMap', () => {
         width: 20,
       })
 
-      // fireEvent triggers React's onPointerDown handler which calls handleDrag
       fireEvent.pointerDown(minimap, { clientY: 200 })
 
       // handleDrag sets container.scrollTop directly based on ratio
@@ -462,19 +457,16 @@ describe('MiniMap', () => {
 
       const minimap = screen.getByTestId('minimap')
 
-      // Initially not visible
       expect(minimap).not.toHaveClass('visible')
 
       // Simulate pointer near right edge (within 50px of right boundary at 500)
       const pointerMoveHandler = addEventListenerCalls.pointermove?.[0]
       expect(pointerMoveHandler).toBeDefined()
 
-      // Wrap in act() - showMinimap calls setVisible (state update)
       act(() => {
         pointerMoveHandler({ clientX: 470 }) // 30px from right edge (< 50)
       })
 
-      // Should now have visible class
       expect(minimap).toHaveClass('visible')
     })
 
@@ -517,7 +509,6 @@ describe('MiniMap', () => {
 
       const minimap = screen.getByTestId('minimap')
 
-      // Show via proximity - wrap in act() for state update
       const pointerMoveHandler = addEventListenerCalls.pointermove?.[0]
       act(() => {
         pointerMoveHandler({ clientX: 470 })

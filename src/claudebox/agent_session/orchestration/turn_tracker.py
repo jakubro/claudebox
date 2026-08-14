@@ -7,13 +7,8 @@ from ..events import AgentEvent, UserMessagePayload
 class TurnTracker:
     """Track conversation turn IDs and handle compaction boundary assignment.
 
-    Encapsulates the state machine for turn_id resolution: which turn_id an event
-    belongs to. For compaction events, compact_start captures the pre-compaction turn
-    (via on_inject) while compact_boundary uses the current turn (which has advanced
-    to the new turn by the time the boundary arrives).
-
-    Attributes:
-        current: Current turn_id for use by nested event processors.
+    compact_start captures the pre-compaction turn (via on_inject); compact_boundary uses the current
+    turn, which has already advanced by the time the boundary arrives.
     """
 
     def __init__(self):

@@ -47,11 +47,9 @@ class TestContainersTarget:
         assert args.target == target
 
     def test_list_does_not_take_target(self) -> None:
-        # list parses cleanly with no target.
         args = parser.parse_args(["containers", "list"])
         assert args.action == "list"
 
-        # Extra positional after list is rejected.
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["containers", "list", "extra"])
 

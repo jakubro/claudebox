@@ -16,7 +16,6 @@ const STATE_ORDER = {
 function ContainersPanel() {
   const { containers, error, loading } = useContainerList()
 
-  // Sort by state group, then newest first within each group.
   const sorted = useMemo(() => {
     return [...containers].sort((a, b) => {
       const stateA = STATE_ORDER[a.status] ?? 99

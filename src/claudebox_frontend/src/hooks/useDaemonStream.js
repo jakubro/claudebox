@@ -5,14 +5,9 @@ import { DAEMON_STREAM_URL } from '../config/urls'
 import useSSE from './useSSE'
 
 /**
- * Subscribe to daemon-level SSE and expose event signals.
- *
- * `sessionsChanged` and `containerStatus` are monotonic counters that increment
- * on each respective event - consumers use them as useEffect dependencies to
- * trigger refetches without needing the event payload.
- *
- * `daemonReconnected` increments each time the daemon SSE transitions from
- * disconnected to connected (excluding the initial connection).
+ * `sessionsChanged`/`containerStatus` are monotonic counters bumped per event, so consumers can
+ * use them as effect deps to trigger refetches without the payload. `daemonReconnected` bumps on
+ * each disconnected -> connected transition, excluding the initial connect.
  *
  * @returns {{ progressMessage: string|null, sessionsChanged: number, lastSessionsChangedContainerId: string|null, containerStatus: number, lastContainerEvent: object|null, daemonConnected: boolean, daemonReconnected: number }}
  */
@@ -54,7 +49,6 @@ export default function useDaemonStream() {
 
   const daemonConnected = connectionStatus === 'connected'
 
-  // Detect reconnection (non-initial connected transition)
   useEffect(() => {
     const prev = prevStatusRef.current
     prevStatusRef.current = connectionStatus

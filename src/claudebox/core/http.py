@@ -68,10 +68,7 @@ class ProxyBufferedResponse(Response):
 
 
 class ProxyClient:
-    """HTTP reverse proxy that routes to streaming or buffered responses.
-
-    Routes to SSE streaming or buffered pass-through based on upstream content-type.
-    """
+    """HTTP reverse proxy that routes to SSE streaming or buffered pass-through by content-type."""
 
     def __init__(self, **kwargs) -> None:
         kwargs.setdefault("transport", httpx.AsyncHTTPTransport(retries=1))
@@ -110,7 +107,7 @@ class ProxyClient:
 
     @classmethod
     def _response_headers(cls, response: httpx.Response) -> dict[str, str]:
-        """Strip content-length, transfer-encoding, and content-encoding from an upstream response."""
+        """Strip content-length, transfer-encoding, and content-encoding headers."""
 
         return {
             key: val
@@ -181,10 +178,7 @@ def http_serve(
     dev: bool = False,
     reload_dirs: list[str | Path] | None = None,
 ) -> None:
-    """Launch uvicorn with shared defaults, enabling hot-reload when dev is True.
-
-    Reload is suppressed when CLAUDEBOX_NO_RELOAD=1 even in dev mode.
-    """
+    """Launch uvicorn with hot-reload when dev=True, unless CLAUDEBOX_NO_RELOAD=1."""
 
     reload = dev and os.environ.get("CLAUDEBOX_NO_RELOAD") != "1"
 

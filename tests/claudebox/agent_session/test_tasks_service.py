@@ -182,6 +182,27 @@ class TestRebuildFromEvents:
 
         assert service.list() == []
 
+    def test_record_with_a_raw_line_separator_survives(self, service, tmp_path):
+        # U+2028 is legal raw inside a JSON string and breaks str.splitlines(); escaped for ASCII.
+        subject = "deploy\u2028the thing"
+        path = tmp_path / "events.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "subtype": "tool_use",
+                    "tool_name": "task_create",
+                    "tool_input": {"subject": subject},
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        service.rebuild_from_events(path)
+
+        assert [t.subject for t in service.list()] == [subject]
+
     def test_malformed_lines_skipped(self, service, tmp_path):
         path = tmp_path / "events.jsonl"
         path.write_text(
@@ -191,9 +212,9 @@ class TestRebuildFromEvents:
                     "subtype": "tool_use",
                     "tool_name": "task_create",
                     "tool_input": {"subject": "ok"},
-                }
+                },
             )
-            + "\n"
+            + "\n",
         )
 
         service.rebuild_from_events(path)
@@ -256,7 +277,6 @@ class TestRebuildFromEvents:
             ],
         )
 
-        # Should not raise even though id 5 was never created.
         service.rebuild_from_events(path)
 
         assert service.list() == []

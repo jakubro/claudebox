@@ -47,8 +47,7 @@ describe('computeScrollDestination', () => {
 
   it('aligns target bottom with container bottom', () => {
     const container = createMockContainer({ scrollTop: 0, clientHeight: 500 })
-    // target.bottom = -100 + 800 = 700; container.bottom = 0 + 500 = 500
-    // destination = 700 - 500 + 0 = 200
+    // target.bottom = -100 + 800 = 700; container.bottom = 0 + 500 = 500; destination = 700 - 500 + 0 = 200
     const target = createMockTarget({ top: -100, height: 800 })
 
     expect(computeScrollDestination(container, target, 'bottom')).toBe(200)
@@ -122,7 +121,6 @@ describe('scrollToEdge', () => {
 
     scrollToEdge(container, target, 'top', 150)
 
-    // Run animation to completion
     const now = performance.now()
     rafCallbacks[0](now + 150)
 
@@ -131,14 +129,12 @@ describe('scrollToEdge', () => {
 
   it('scrolls to align target bottom with container bottom', () => {
     const container = createMockContainer({ scrollTop: 0, clientHeight: 500 })
-    // Target at top: -100, height: 800 -> bottom at 700
-    // Container bottom = 0 + 500 = 500
-    // Destination = 700 - 500 + 0 = 200
+    // Target at top: -100, height: 800 -> bottom at 700; container bottom = 0 + 500 = 500;
+    // destination = 700 - 500 + 0 = 200
     const target = createMockTarget({ top: -100, height: 800 })
 
     scrollToEdge(container, target, 'bottom', 150)
 
-    // Run animation to completion
     const now = performance.now()
     rafCallbacks[0](now + 150)
 
@@ -146,9 +142,6 @@ describe('scrollToEdge', () => {
   })
 })
 
-/**
- * Create a mock scrollable container.
- */
 function createMockContainer(options = {}) {
   const { scrollTop = 0, clientHeight = 500 } = options
   return {
@@ -158,9 +151,6 @@ function createMockContainer(options = {}) {
   }
 }
 
-/**
- * Create a mock target element.
- */
 function createMockTarget(options = {}) {
   const { top = 0, height = 100 } = options
   return {

@@ -72,10 +72,8 @@ describe('patchUiState', () => {
   it('swallows errors silently', async () => {
     mockWorkspaceFetch.mockRejectedValue(new Error('Network'))
 
-    // Should not throw
     patchUiState(null, { global: [] })
 
-    // Wait for promise to settle
     await vi.waitFor(() => {
       expect(mockWorkspaceFetch).toHaveBeenCalledOnce()
     })

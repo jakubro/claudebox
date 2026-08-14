@@ -2,13 +2,7 @@
 
 import { getToolConfig } from '../../../../../../../../../../../config/toolRegistry'
 
-/**
- * Extract copyable text from tool output by stripping line numbers and formatting.
- *
- * @param {string} toolName - Read, Write, Edit, etc.
- * @param {string} details - Raw tool output to process.
- * @returns {string} Clean text suitable for clipboard copying.
- */
+/** @param {string} toolName - Read, Write, Edit, etc. */
 export function getCopyableText(toolName, details) {
   const config = getToolConfig(toolName)
   if (config.copyableExtractor) {

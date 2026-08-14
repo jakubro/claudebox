@@ -3,10 +3,8 @@
 import { unescapeXml } from './xml'
 
 /**
- * Walk `<local-command-stdout|stderr>` blocks in `message`, returning interleaved
- * typed segments. Returns null when no blocks are present so callers can branch
- * on absence without re-running the regex.
- *
+ * Walk `<local-command-stdout|stderr>` blocks in `message` into interleaved segments; returns null
+ * (not []) when none are present, so callers can branch on absence without re-running the regex.
  * Segment shape: { type: 'text' | 'stdout' | 'stderr', content: string }
  */
 export function parseLocalCommandSegments(message) {
@@ -40,11 +38,7 @@ export function parseLocalCommandSegments(message) {
   return segments
 }
 
-/**
- * Parse local command output and structured responses from user messages.
- *
- * Returns array of segments: { type: 'text' | 'stdout' | 'stderr' | 'qa', content: string, questions?: [] }
- */
+/** Returns array of segments: { type: 'text' | 'stdout' | 'stderr' | 'qa', content: string, questions?: [] } */
 export function parseLocalCommandOutput(message) {
   if (!message) {
     return []
@@ -72,11 +66,7 @@ export function parseLocalCommandOutput(message) {
   return [{ type: 'text', content: message }]
 }
 
-/**
- * Parse structured Q/A XML from response:AskUserQuestion format.
- *
- * Returns array of { header, text, answers[] } or null if not valid XML.
- */
+/** Parses structured Q/A XML from response:AskUserQuestion format; returns array of { header, text, answers[] } or null if not valid XML. */
 export function parseStructuredQA(content) {
   const questions = []
   const questionPattern = /<question\s+header="([^"]*)"\s+text="([^"]*)">([\s\S]*?)<\/question>/g
@@ -105,17 +95,12 @@ export function parseStructuredQA(content) {
 }
 
 /**
- * Parse grep line and return structured data for rendering.
- *
- * Handles two formats:
- * - With file path: file:linenum:content or file:linenum-content (directory search)
- * - Without file path: linenum:content or linenum-content (single file search)
- *
- * When outputMode is 'files_with_matches', skip line:content parsing since
- * output is just file paths (which may contain patterns like -51- in filenames).
+ * Handles file:linenum:content / file:linenum-content (directory search, with path) and
+ * linenum:content / linenum-content (single-file search, without).
+ * In 'files_with_matches' mode, skips line:content parsing since output is bare file paths
+ * (may contain misleading patterns like -51-).
  */
 export function parseGrepLine(line, outputMode = null) {
-  // Normalize trailing whitespace/carriage returns
   line = line.trimEnd()
 
   if (line === '--') {
@@ -169,10 +154,7 @@ export function parseGrepLine(line, outputMode = null) {
   return { type: 'plain', content: line }
 }
 
-/**
- * Parse persisted output wrapper from tool result.
- * Returns { isPersisted, filePath, fileSize, preview, originalContent } or null if not persisted.
- */
+/** Returns { isPersisted, filePath, fileSize, preview, originalContent } parsed from a persisted-output wrapper, or null if not persisted. */
 export function parsePersistedOutput(content) {
   const match = content.match(/<persisted-output>([\s\S]*?)<\/persisted-output>/)
   if (!match) {
@@ -203,9 +185,6 @@ export function parsePersistedOutput(content) {
   }
 }
 
-/**
- * Parse slash command XML tags from user message.
- */
 export function parseSlashCommand(content) {
   const match = content.match(
     /<command-name>([^<]+)<\/command-name>(?:\s*<command-args>([\s\S]*?)<\/command-args>)?/,

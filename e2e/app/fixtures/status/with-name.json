@@ -2,7 +2,7 @@
   "session_id": "test-session-001",
   "name": "My Custom Session",
   "workspace": "/home/user/project",
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-5",
   "num_turns": 3,
   "total_cost_usd": 0.08,
   "total_duration_ms": 5000,

@@ -74,7 +74,8 @@ class TestResultUsage:
 class TestResultPayloadWithUsage:
     def test_carries_typed_usage(self):
         payload = ResultPayload(
-            subtype="success", usage=ResultUsage(used_tokens=10, max_tokens=100)
+            subtype="success",
+            usage=ResultUsage(used_tokens=10, max_tokens=100),
         )
 
         assert payload.usage is not None

@@ -15,7 +15,6 @@ const FILTERS = [
   { id: 'all', label: 'All' },
 ]
 
-/** Render tasks panel showing Task tool invocations with status and navigation. */
 export default function TasksPanel() {
   const { events, taskNotifications, isResuming, isReplaying } = useEvents()
   const { focusChatTab } = useAppActions()
@@ -54,7 +53,6 @@ export default function TasksPanel() {
   const handleTaskClick = useCallback(
     taskId => {
       focusChatTab()
-      // Find element by data attribute and scroll to it
       requestAnimationFrame(() => {
         const el = document.querySelector(`[data-tool-use-id="${taskId}"]`)
         if (el) {

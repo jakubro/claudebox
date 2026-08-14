@@ -12,7 +12,7 @@ def _config(**overrides) -> ClaudeAgentSessionConfig:
 
     defaults: dict = {
         "runtime": "claude",
-        "model": "claude-opus-4-8",
+        "model": "claude-opus-5",
         "permission_mode": "default",
         "effort_level": "xhigh",
         "cwd": "/workspace",
@@ -26,10 +26,6 @@ def _config(**overrides) -> ClaudeAgentSessionConfig:
     defaults.update(overrides)
 
     return ClaudeAgentSessionConfig(**defaults)
-
-
-# _build_sdk_options
-# --------------------------------------------------------------------------------------------------
 
 
 class TestBuildSdkOptions:
@@ -63,7 +59,7 @@ class TestBuildSdkOptions:
         """session-id is set when resume_session_id is None."""
 
         opts = ClaudeRuntime._build_sdk_options(
-            _config(session_id="abc-123", resume_session_id=None)
+            _config(session_id="abc-123", resume_session_id=None),
         )
         assert opts.extra_args.get("session-id") == "abc-123"
         assert "resume" not in opts.extra_args
@@ -72,7 +68,7 @@ class TestBuildSdkOptions:
         """resume takes precedence; session-id not set."""
 
         opts = ClaudeRuntime._build_sdk_options(
-            _config(session_id="abc-123", resume_session_id="def-456")
+            _config(session_id="abc-123", resume_session_id="def-456"),
         )
         assert opts.extra_args.get("resume") == "def-456"
         assert "session-id" not in opts.extra_args
@@ -94,10 +90,6 @@ class TestBuildSdkOptions:
 
         opts = ClaudeRuntime._build_sdk_options(_config(sdk_passthrough={"custom-flag": "x"}))
         assert opts.extra_args.get("custom-flag") == "x"
-
-
-# capabilities + runtime_name (concrete on ClaudeRuntime)
-# --------------------------------------------------------------------------------------------------
 
 
 class TestCapabilitiesAndRuntimeName:
@@ -123,7 +115,7 @@ class TestCapabilitiesAndRuntimeName:
             assert getattr(caps, field_name) is True, f"{field_name} should be True"
 
     def test_capability_field_names_drop_catalog_suffix(self):
-        """Decision 19: catalog flags do NOT carry _catalog suffix."""
+        """Capability field names omit the _catalog suffix."""
 
         expected_no_catalog = {
             "supports_models",

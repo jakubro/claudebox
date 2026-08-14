@@ -6,13 +6,9 @@ import CopyButton from '../../../../../../../../../components/CopyButton.jsx'
 import Markdown from '../../../../../../../../../components/Markdown'
 
 /**
- * Render a collapsible section with toggle header and expandable content.
- * @param {Object} props
  * @param {string} props.label - Section label (e.g., "Prompt", "Result").
  * @param {string} [props.content] - Text content to display as Markdown.
- * @param {boolean} [props.defaultExpanded=false] - Whether to start expanded.
  * @param {boolean} [props.showCopy=false] - Show copy button when using content prop.
- * @param {string} [props.className] - Additional CSS class for the wrapper.
  * @param {React.ReactNode} [props.children] - Custom content (alternative to content prop).
  */
 export default function CollapsibleSection({

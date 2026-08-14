@@ -7,11 +7,8 @@ import { useSessionActions, useSessionData } from '../../../../context/SessionDa
 import useDropdown from '../../../../hooks/useDropdown'
 
 /**
- * Render session prompt button with dropdown textarea editor.
- *
- * Content is saved on close (click-outside or Escape). When content is set,
- * the button shows a blue badge. The prompt persists in session.json and is
- * sent to Claude after each compaction.
+ * Saved on close (click-outside or Escape); a blue badge shows when content is set.
+ * Persists in session.json and is sent to Claude after each compaction.
  *
  * @param {object} props
  * @param {boolean} props.disabled - True when button should be inactive.
@@ -24,7 +21,6 @@ export default function SessionPromptEditor({ disabled }) {
   const draftRef = useRef(null)
   const wasOpenRef = useRef(false)
 
-  // Seed draft and focus textarea when dropdown opens
   useEffect(() => {
     if (isOpen && textareaRef.current) {
       textareaRef.current.value = sessionPrompt || ''
@@ -33,8 +29,7 @@ export default function SessionPromptEditor({ disabled }) {
     }
   }, [isOpen, sessionPrompt])
 
-  // Save on close (transition from open -> closed).
-  // Textarea is already unmounted at this point, so read from draftRef.
+  // Save on close (open -> closed); textarea is already unmounted, so read from draftRef.
   useEffect(() => {
     if (wasOpenRef.current && !isOpen) {
       const value = draftRef.current?.trim() || null

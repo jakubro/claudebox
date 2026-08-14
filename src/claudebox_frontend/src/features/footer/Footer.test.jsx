@@ -7,7 +7,6 @@ import Footer from './Footer'
 
 // Real formatDurationClock - pure function, no side effects
 
-// Default data factories for each context
 function defaultEventsData(overrides = {}) {
   return {
     connectionStatus: 'connected',
@@ -70,11 +69,8 @@ vi.mock('../../context/InteractionContext', () => ({
   useInteraction: () => mockInteractionData,
 }))
 
-// Footer's useCurrentBackendId hook touches WorkspaceContext and
-// DaemonStreamContext. Mock both so Footer can mount.
-// WorkspaceContext export is also consumed directly by useSessionDefaults
-// via useContext(WorkspaceContext) - re-export the createContext object so
-// the import resolves.
+// useCurrentBackendId needs WorkspaceContext + DaemonStreamContext to let Footer mount; useSessionDefaults
+// also reads WorkspaceContext directly via useContext, so re-export the real createContext object here.
 vi.mock('../../context/WorkspaceContext', async () => {
   const { createContext } = await import('react')
   return {
@@ -257,7 +253,6 @@ describe('Footer', () => {
 
     render(<Footer />)
     const toggle = screen.getByTestId('footer-notifications-toggle')
-    // Disabled: title says "disabled"
     expect(toggle).toHaveAttribute('title', 'Notifications - disabled')
 
     await user.click(toggle)
@@ -353,7 +348,7 @@ describe('Footer empty/new session state', () => {
     return {
       sessionId: 'new-sess-x',
       workspace: '/w/proj',
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5',
       effortLevel: 'medium',
       permissionMode: 'plan',
       sessionDir: '/tmp/sessions/new-sess-x',
@@ -371,7 +366,7 @@ describe('Footer empty/new session state', () => {
     mockSessionDataCtx = newEmptySessionData()
     render(<Footer />)
     expect(screen.getByText('proj')).toBeInTheDocument()
-    expect(screen.getByText('claude-opus-4-8')).toBeInTheDocument()
+    expect(screen.getByText('claude-opus-5')).toBeInTheDocument()
     // Footer shows only the first '-'-delimited fragment of the session id.
     expect(screen.getByText('new')).toBeInTheDocument()
     expect(screen.getByTestId('footer-permission-mode-picker')).toHaveAttribute(

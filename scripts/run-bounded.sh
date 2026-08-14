@@ -11,8 +11,7 @@ shift 2
 
 MEM_BYTES=$((MEM_LIMIT_MB * 1024 * 1024))
 
-# timeout: SIGTERM at <time>, SIGKILL 10s later if the process ignores TERM.
-# prlimit --as: virtual memory cap (RLIMIT_AS), inherited by all children.
+# timeout sends SIGTERM at <time>, SIGKILL 10s later; prlimit --as caps virtual memory (RLIMIT_AS).
 exec \
   timeout --kill-after=10s --signal=TERM "$TIME_LIMIT" \
   prlimit --as="$MEM_BYTES" -- \

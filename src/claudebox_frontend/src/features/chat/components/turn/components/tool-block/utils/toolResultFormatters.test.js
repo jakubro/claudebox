@@ -65,8 +65,18 @@ describe('generateJsonSummary', () => {
 })
 
 describe('buildToolHeader', () => {
-  it('Bash: shows command', () => {
+  it('Bash: shows description when present', () => {
+    expect(buildToolHeader('Bash', { command: 'ls -la', description: 'List files' })).toBe(
+      'Bash(List files)',
+    )
+  })
+
+  it('Bash: falls back to command when no description', () => {
     expect(buildToolHeader('Bash', { command: 'ls -la' })).toBe('Bash(ls -la)')
+  })
+
+  it('Bash: falls back to placeholder when neither is present', () => {
+    expect(buildToolHeader('Bash', {})).toBe('Bash(command)')
   })
 
   it('Read: shows filename', () => {
@@ -593,9 +603,7 @@ Multiple lines</persisted-output>`
   })
 
   describe('Task tool - background tasks', () => {
-    // Background task detection lives in ToolBlock.jsx via structured
-    // tool_use_result data; extractToolResult handles plain-text fallbacks only.
-    // These tests verify that async launch text falls through to normal handling.
+    // Background task detection lives in ToolBlock.jsx (structured data); this is the plain-text fallback.
 
     it('treats async launch message as regular text (structured data handled in ToolBlock)', () => {
       const content =
@@ -606,7 +614,7 @@ Multiple lines</persisted-output>`
       expect(result.summary).toBe('Async agent launched successfully.')
       expect(result.isError).toBe(false)
       expect(result.taskPrompt).toBe('Research X')
-      // backgroundTask is NOT extracted from text anymore
+      // backgroundTask is not extracted from text
       expect(result.backgroundTask).toBeUndefined()
     })
 

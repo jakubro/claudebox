@@ -5,12 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import StashPanel from './StashPanel'
 
-// Mock lucide-react
 vi.mock('lucide-react', () => ({
   CornerRightUp: () => <span data-testid="icon-pop">↗</span>,
 }))
 
-// Mock CopyButton - capture props for testing
 const mockCopyButtonProps = { text: null }
 vi.mock('../../components/CopyButton', () => ({
   default: ({ text }) => {
@@ -23,13 +21,11 @@ vi.mock('../../components/CopyButton', () => ({
   },
 }))
 
-// Mock EventsContext
 const mockEventsData = { isResuming: false, isReplaying: false }
 vi.mock('../../context/EventsContext', () => ({
   useEvents: () => mockEventsData,
 }))
 
-// Mock StashContext
 const mockStashData = {
   stash: [],
   stashRemove: vi.fn(),

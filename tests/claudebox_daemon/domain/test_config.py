@@ -1,13 +1,15 @@
 """Tests for claudebox_daemon.domain.config - DaemonConfig persistence and workspace management."""
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from filelock import FileLock
 
 from claudebox_daemon.domain.config import DaemonConfig
-from claudebox_daemon.domain.errors import WorkspaceNotRegistered
+from claudebox_daemon.domain.errors import LockTimeout, WorkspaceNotRegistered
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 
 
@@ -101,12 +103,34 @@ class TestDaemonConfigPersistence:
         config = DaemonConfig.load(tmp_path / "missing.json")
         assert config.workspaces == []
 
+    def test_save_raises_lock_timeout_when_contended(self, tmp_path):
+        """A held lock produces a bounded, typed error instead of blocking forever."""
+
+        config_path = tmp_path / "daemon.json"
+        config = DaemonConfig(path=config_path, workspaces=[])
+
+        holder = FileLock(config_path.with_suffix(".lock"))
+        holder.acquire()
+
+        try:
+            with patch("claudebox_daemon.domain._locking.FILE_LOCK_TIMEOUT_SECONDS", 0.2):
+                started = time.monotonic()
+
+                with pytest.raises(LockTimeout) as exc_info:
+                    config.save()
+
+                elapsed = time.monotonic() - started
+        finally:
+            holder.release()
+
+        assert elapsed < 5.0
+        assert exc_info.value.context["path"] == str(config_path.with_suffix(".lock"))
+
     def test_save_and_load_roundtrip(self, tmp_path):
         config_path = tmp_path / "daemon.json"
         config = DaemonConfig(path=config_path, workspaces=[])
         config.register_workspace(tmp_path / "project-a")
 
-        # Reload from disk
         loaded = DaemonConfig.load(config_path)
         assert len(loaded.workspaces) == 1
         assert loaded.workspaces[0].id == "project-a"

@@ -23,10 +23,7 @@ const SHORTCUTS = [
 ]
 
 /**
- * Render workspace identity and keyboard shortcuts in the chat-history slot
- * when no session is active. The composer is rendered by ChatPanel directly
- * (hoisted out of the welcome/chat conditional) so it lives in identical DOM
- * position across both states.
+ * Composer renders via ChatPanel, hoisted outside the welcome/chat conditional, for identical DOM position.
  */
 export default function WelcomeContent() {
   const { workspaceId, workspaces } = useWorkspace()

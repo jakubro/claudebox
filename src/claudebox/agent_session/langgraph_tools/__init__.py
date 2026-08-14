@@ -1,9 +1,8 @@
 """LangGraph tool surface - public aggregator over per-subscope tool factories.
 
-Runtime-private sub-package. `runtime_langgraph.connect()` calls
-`make_tools(ctx)` exactly once, after the chat model is built and ToolContext
-is populated. The aggregator binds every family's `@tool`-decorated functions
-into the create_agent tool list.
+Runtime-private sub-package. `runtime_langgraph.connect()` calls `make_tools(ctx)` exactly once,
+after the chat model is built and ToolContext is populated, binding every family's
+`@tool`-decorated functions into the create_agent tool list.
 
 Modules (extended as later subscopes ship):
 - filesystem / search / shell / notebook / web -- simple ports
@@ -29,7 +28,7 @@ from .question import make_question_tools
 from .search import make_search_tools
 from .shell import make_shell_tools
 from .skill import make_skill_tools
-from .subagent import make_subagent_tools
+from .subagent import SUBAGENT_RUN_TAG, make_subagent_tools
 from .task_mgmt import make_task_mgmt_tools
 from .web import make_web_tools
 
@@ -55,4 +54,4 @@ def make_tools(ctx: ToolContext) -> list[BaseTool]:
     ]
 
 
-__all__ = ["ToolCatalog", "ToolContext", "make_tools"]
+__all__ = ["SUBAGENT_RUN_TAG", "ToolCatalog", "ToolContext", "make_tools"]

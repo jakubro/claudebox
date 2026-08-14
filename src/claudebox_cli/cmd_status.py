@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from claudebox import Config, ContainerRuntime, console
+from claudebox import Config, console
 from claudebox.constants import (
     WORKSPACE_MARKER,
     daemon_base_url,
@@ -23,17 +23,19 @@ NAME = "status"
 ORDER = 70
 DESCRIPTION = "Show daemon + containers + workspace state"
 EPILOG = """\
-examples:
+Examples:
   claudebox status               three rows: DAEMON, CONTAINERS, WORKSPACE
 
-DAEMON     running/stopped, with pid + uptime when running.
-CONTAINERS aggregate counts across all registered workspaces.
-WORKSPACE  resolved workspace for cwd (walks up for .workspace) plus
-           registration state (id, or 'not yet registered').
+Rows:
+  DAEMON      running or stopped, with pid + uptime when running
+  CONTAINERS  aggregate counts across all registered workspaces
+  WORKSPACE   resolved workspace for the current directory, plus its registration
+              state (its id, or `not yet registered`)
 
-degraded mode: when the daemon is not running, CONTAINERS falls back to
-direct runtime queries and WORKSPACE reads ~/.claudebox/daemon.json
-directly. Exit code is always 0 - status is a query.
+Notes:
+  When the daemon is not running, CONTAINERS falls back to direct runtime queries and
+  WORKSPACE reads `~/.claudebox/daemon.json` directly. Exit code is always 0 - status
+  is a query.
 """
 
 
@@ -268,6 +270,9 @@ def _list_registered_workspace_ids() -> list[str]:
 
 def _containers_via_runtime() -> tuple[int, int]:
     """Direct ``ContainerRuntime.list_containers`` query; degrade to (0, 0) on any error."""
+
+    # Deferred: pulls structlog and the container backend, which the cold path must not pay for.
+    from claudebox import ContainerRuntime
 
     try:
         config = Config.load()

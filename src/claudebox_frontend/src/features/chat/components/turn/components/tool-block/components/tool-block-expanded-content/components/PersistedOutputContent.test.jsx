@@ -129,8 +129,7 @@ describe('PersistedOutputContent', () => {
 
     fireEvent.click(screen.getByTitle('Show full output'))
 
-    // API error status resolves without content property, so fullContent.content
-    // is undefined and component falls back to showing preview
+    // Error status has no content property, so fullContent.content is undefined - falls back to preview.
     await waitFor(() => {
       expect(screen.getByText('preview content here')).toBeInTheDocument()
     })

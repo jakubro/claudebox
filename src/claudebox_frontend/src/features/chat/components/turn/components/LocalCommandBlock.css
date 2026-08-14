@@ -35,13 +35,13 @@
 }
 
 .local-command-label {
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .local-command-content {
   margin: 0;
   padding: 8px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;

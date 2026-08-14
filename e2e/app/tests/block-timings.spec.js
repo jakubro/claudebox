@@ -14,7 +14,9 @@ test.describe('Block Timings', () => {
   // SPEC: tool:timing-tool
   // SPEC: tool:timing-offset
   test('completed tool blocks show relative offset from turn start', async ({ page }) => {
-    await mockSSE(page, 'events/block-timings.jsonl')
+    // Read + Edit (not Read + Grep): two read-only calls would collapse into one Lookups panel -
+    // see Lookups Details in tools-display.spec.js for that behavior.
+    await mockSSE(page, 'events/block-timings-standalone-tools.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
@@ -26,7 +28,7 @@ test.describe('Block Timings', () => {
     await expect(firstTiming).toBeVisible()
     await expect(firstTiming).toHaveText('@ +1m 8s')
 
-    // Grep - result 102s after first assistant event
+    // Edit - result 102s after first assistant event
     const secondTiming = toolBlocks.nth(1).locator('.block-timing')
     await expect(secondTiming).toBeVisible()
     await expect(secondTiming).toHaveText('@ +1m 42s')
@@ -56,12 +58,10 @@ test.describe('Block Timings', () => {
     const fontSize = await timing.evaluate(el => getComputedStyle(el).fontSize)
     expect(Number.parseInt(fontSize, 10)).toBeLessThanOrEqual(11)
 
-    // Muted color: dim/gray text (not full white or bright)
     const color = await timing.evaluate(el => getComputedStyle(el).color)
     const colorMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
     expect(colorMatch, 'Expected valid color value').toBeTruthy()
     const [, r, g, b] = colorMatch.map(Number)
-    // Muted means not fully bright - all channels should be below 200 (dimmed text)
     expect(Math.max(r, g, b), 'Expected muted (non-bright) color').toBeLessThan(200)
   })
 
@@ -74,7 +74,6 @@ test.describe('Block Timings', () => {
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
 
-    // Background async task should have no block-timing element
     await expect(toolBlock.locator('.block-timing')).toHaveCount(0)
   })
 
@@ -88,7 +87,6 @@ test.describe('Block Timings', () => {
     const timing = page.locator('.block-timing')
     await expect(timing).toBeVisible()
 
-    // Capture initial duration text and verify it ticks
     const initialText = await timing.textContent()
     expect(initialText).toBeTruthy()
     await expect.poll(async () => timing.textContent()).not.toBe(initialText)
@@ -127,7 +125,6 @@ test.describe('Block Timings', () => {
       },
     ])
 
-    // Pending tool should be visible
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
 

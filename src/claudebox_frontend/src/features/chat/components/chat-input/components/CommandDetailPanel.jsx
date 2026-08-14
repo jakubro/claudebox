@@ -1,14 +1,8 @@
 /** Command detail block - usage, description, and metadata for a single slash command. */
 
 /**
- * Render the description / usage / metadata section for a slash command.
- * Returns `null` when the command has no description (consumer suppresses
- * the surrounding container).
- *
- * Reused by the chat-input autocomplete dropdown's right panel and the
- * user-message hover card. CSS classes (`.autocomplete-detail*`) are shared
- * via `CommandAutocomplete.css`.
- *
+ * Returns `null` when the command has no description (consumer suppresses the surrounding container).
+ * Reused by the autocomplete dropdown's right panel and hover card; CSS shared via `CommandAutocomplete.css`.
  * @param {object} props
  * @param {object} props.command - `{name, usage?, description?, model?, effort?, context?}`.
  */

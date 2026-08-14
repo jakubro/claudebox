@@ -1,13 +1,21 @@
 /**
- * Cascade orchestrator — deterministic import order for all styles.
- *
- * App foundation first, then shared, then features in stable order.
- * Each feature's index.css is the public entry point to its private styles/.
- * 🚫 Never import feature CSS directly from components.
+ * Cascade orchestrator - deterministic import order: app foundation, then shared, then features.
+ * Each feature's index.css is its public entry point - never import feature CSS from components.
  */
 
 /* Vendor CSS */
 @import "katex/dist/katex.min.css";
+
+/* Pinned webfonts - self-hosted so text renders identically everywhere, including the visual-regression suite.
+   Weights cover every font-weight used across the app's CSS. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/jetbrains-mono/700.css";
 
 /* App foundation — variables, resets, layout, theme */
 @import "./features/app/index.css";

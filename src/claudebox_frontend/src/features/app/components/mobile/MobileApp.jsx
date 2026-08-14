@@ -6,7 +6,6 @@ import AppProviders from '../../AppProviders'
 import useAppRefs from '../../hooks/useAppRefs'
 import MobileLayout from './MobileLayout'
 
-/** Render mobile layout inside shared providers with no-op panel callbacks. */
 export default function MobileApp() {
   const { jumpRefs, newSessionRefs, scrollIntentRefs } = useAppRefs()
   const panelSwitchingRef = useRef(false)

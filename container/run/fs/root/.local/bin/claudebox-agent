@@ -38,16 +38,8 @@ execute-claude() {
   local agent
 
   if [[ ${CLAUDEBOX_WEB:-0} == 1 ]] && [[ ${__CLAUDEBOX_AGENT_NONINTERACTIVE__:-0} == 0 ]]; then
-    agent=~/.claudebox/lib/src/container_api_server.py
-
-    # Dev mode: sync dependencies before launch (keep langgraph provider extras
-    # so a hot-reload sync does not prune the preinstalled provider packages).
-    if [[ ${CLAUDEBOX_DEV:-0} == 1 ]]; then
-      (
-        export UV_PROJECT_ENVIRONMENT=/opt/claudebox/.venv
-        uv sync --directory ~/.claudebox/lib --extra langgraph-all
-      )
-    fi
+    agent=$(get-web-server)
+    sync-dev-dependencies
   else
     agent=claude
   fi
@@ -71,13 +63,82 @@ execute-claude() {
   "${cmd[@]}"
 }
 
+# Executes LangGraph agent
+execute-langgraph() {
+  # LangGraph runs in-process and ships no terminal interface, so web mode is the only
+  # surface it has. Refusing here keeps the failure legible - the alternative is a
+  # container that exits before the API server ever binds a port.
+  if [[ ${CLAUDEBOX_WEB:-0} != 1 ]]; then
+    echo "error: langgraph has no interactive session - it runs in web mode only" >&2
+    echo "  -> open the workspace in the web UI, or set agent = \"claude\" to get a terminal" >&2
+
+    return 1
+  fi
+
+  sync-dev-dependencies
+
+  local args=()
+
+  # Custom system prompt, compiled from the langgraph-native prompt file. The Claude persona
+  # is written against features langgraph does not have, so it gets its own entrypoint file
+  # rather than a shared one.
+  if ! item-in-array "--system-prompt" "$@"; then
+    local prompt
+    prompt="$(get-agent-prompt langgraph)"
+
+    if [[ -n $prompt ]]; then
+      args+=(--system-prompt "$prompt")
+    fi
+  fi
+
+  local agent_cmd
+  agent_cmd=$(get-agent-cmd "$(get-web-server)")
+
+  local cmd=(
+    /bin/bash -c "$agent_cmd" --
+      "${args[@]}"
+      "$@"
+  )
+
+  # Verbose mode - the compiled prompt is redacted, same as the claude path
+  if [[ ${CLAUDEBOX_VERBOSE:-0} == 1 ]]; then
+    string-replace "${cmd[*]}" "${prompt:-}" "[[prompt]]"
+  fi
+
+  # Launch the container API server
+  "${cmd[@]}"
+}
+
 # --------------------------------------------------------------------------------------------------
 # Agent
 # --------------------------------------------------------------------------------------------------
 
-# Compiles prompt starting at entrypoint prompt file
+# Prints the server that serves web mode, whichever agent is driving it
+get-web-server() {
+  echo ~/.claudebox/lib/src/container_api_server.py
+}
+
+# Syncs dependencies in dev mode, keeping langgraph provider extras so a hot-reload sync
+# does not prune the preinstalled provider packages
+sync-dev-dependencies() {
+  if [[ ${CLAUDEBOX_DEV:-0} != 1 ]]; then
+    return 0
+  fi
+
+  (
+    export UV_PROJECT_ENVIRONMENT=/opt/claudebox/.venv
+    uv sync --directory ~/.claudebox/lib --extra langgraph-all
+  )
+}
+
+# Compiles prompt starting at the entrypoint prompt file for agent $1 (default: claude)
 get-agent-prompt() {
+  local agent=${1:-claude}
   local prompt_file=~/.claudebox/profile/prompt.md
+
+  if [[ $agent != claude ]]; then
+    prompt_file=~/.claudebox/profile/prompt.${agent}.md
+  fi
 
   if [[ -e $prompt_file ]]; then
     ~/.local/bin/claudebox-prompt "$prompt_file"
@@ -185,8 +246,12 @@ main() {
       execute-claude "$@"
       ;;
 
+    langgraph)
+      execute-langgraph "$@"
+      ;;
+
     *)
-      echo "Usage: $0 claude [<arg>...]"
+      echo "Usage: $0 {claude|langgraph} [<arg>...]"
       exit 1
       ;;
   esac

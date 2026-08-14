@@ -13,12 +13,7 @@ _KEY_TO_FIELD = invert(_FIELD_TO_KEY)
 
 @dataclass
 class UIState(DataClass):
-    """Global and session-scoped UI state.
-
-    Attributes:
-        global_state: Workspace-wide UI preferences.
-        session_state: Per-session UI preferences.
-    """
+    """Global and session-scoped UI state."""
 
     global_state: dict
     session_state: dict

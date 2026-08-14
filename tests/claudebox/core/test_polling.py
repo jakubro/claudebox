@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +25,20 @@ class _StubPoller(AsyncPoller):
 
         if self._fail_at is not None and self.poll_count == self._fail_at:
             raise RuntimeError("deliberate failure")
+
+
+class _HangingPoller(AsyncPoller):
+    """Poller whose first _poll() call hangs forever."""
+
+    def __init__(self, *, interval: float = 0.01) -> None:
+        super().__init__(interval=interval, name="hanging-poller")
+        self.poll_count = 0
+
+    async def _poll(self) -> None:
+        self.poll_count += 1
+
+        if self.poll_count == 1:
+            await asyncio.Event().wait()  # never set - simulates an unbounded network call
 
 
 class TestAsyncPoller:
@@ -57,6 +72,19 @@ class TestAsyncPoller:
         await asyncio.sleep(0.05)
         await poller.stop()
 
+        assert poller.poll_count >= 2
+
+    @pytest.mark.anyio
+    async def test_a_parked_poll_does_not_kill_the_loop(self) -> None:
+        """A parked _poll() call is cut off by the bound; the loop keeps polling."""
+
+        with patch("claudebox.core.polling.MIN_POLL_BOUND", 0.03):
+            poller = _HangingPoller(interval=0.01)
+            await poller.start()
+            await asyncio.sleep(0.2)
+            await poller.stop()
+
+        # The first (hanging) call plus at least one that ran after the bound cut it off.
         assert poller.poll_count >= 2
 
 

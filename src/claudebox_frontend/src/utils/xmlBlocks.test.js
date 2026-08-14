@@ -25,7 +25,6 @@ describe('findAllBlocks', () => {
     expect(blocks).toHaveLength(2)
     // Outer block found first (regex matches first <div> at index 0)
     expect(blocks[0]).toMatchObject({ tagName: 'div', fullMatch: '<div><div>inner</div></div>' })
-    // Inner block found second
     expect(blocks[1]).toMatchObject({ tagName: 'div', fullMatch: '<div>inner</div>' })
   })
 

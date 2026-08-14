@@ -4,17 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import SSEConnectionManager from '../managers/SSEConnectionManager'
 
 /**
- * Hook that owns an SSEConnectionManager instance, exposing connection
- * status as React state and forwarding SSE messages to a caller-supplied
- * callback. Recreates the manager when the URL changes (e.g., container switch).
- * Only connects when url is non-null; disconnects on unmount.
+ * Recreates the manager on `url` change (container switch); connects while non-null, disconnects on unmount.
  *
  * @param {object} options
  * @param {function} options.onMessage - Called with the raw MessageEvent on each SSE message.
- * @param {string|null} [options.url] - SSE endpoint URL. Null means disconnected.
- * @param {number}   [options.baseDelay] - Base reconnect delay in ms.
- * @param {number}   [options.maxDelay] - Max reconnect delay cap in ms.
- * @param {number}   [options.maxAttempts] - Max consecutive reconnect attempts before giving up.
  * @param {function} [options.onReconnectExhausted] - Called when maxAttempts reached.
  * @returns {{ connectionStatus: string, connectionError: string|null, reconnectSSE: function, disconnectSSE: function, closeSSE: function }}
  */
@@ -36,7 +29,6 @@ export default function useSSE({
   const onReconnectExhaustedRef = useRef(onReconnectExhausted)
   onReconnectExhaustedRef.current = onReconnectExhausted
 
-  // Create/recreate manager when URL changes, connect when URL is non-null
   useEffect(() => {
     if (!url) {
       // No URL - permanently close any existing manager

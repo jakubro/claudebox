@@ -50,7 +50,7 @@ class TestTaskCreate:
         _, tools = _tools(tool_ctx)
 
         result = tools["task_create"].invoke(
-            {"subject": "Audit", "description": "d", "activeForm": "Auditing"}
+            {"subject": "Audit", "description": "d", "activeForm": "Auditing"},
         )
 
         assert result["task"]["id"] == 1
@@ -172,7 +172,7 @@ class TestTaskUpdate:
                 "subject": "new subject",
                 "description": "added context",
                 "activeForm": "Working",
-            }
+            },
         )
 
         assert result["task"]["subject"] == "new subject"

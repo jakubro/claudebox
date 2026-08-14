@@ -8,9 +8,8 @@
   background: var(--bg-primary);
 }
 
-/* Canonical empty/loading shape — referenced by GUIDELINES.md §6 as the precedent
-   for every panel's `.{panel}-empty` / `.{panel}-loading` shape.
-   Loading state shares the same shape — only the copy and lifecycle differ. */
+/* Canonical empty/loading shape - GUIDELINES.md section 6 precedent for every panel's
+   `.{panel}-empty` / `.{panel}-loading` shape; loading only differs in copy and lifecycle. */
 .todos-panel.todos-empty,
 .todos-panel.todos-loading {
   display: flex;

@@ -9,7 +9,7 @@ NAME = "version"
 ORDER = 90
 DESCRIPTION = "Print version"
 EPILOG = """\
-examples:
+Examples:
   claudebox version              print version, branch, commit, install path, python
 """
 

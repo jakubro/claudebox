@@ -3,7 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SidePanelManager from './SidePanelManager'
 
-// Mock the API modules
 vi.mock('../api/uiState', () => ({
   getUiState: vi.fn(),
 }))
@@ -45,7 +44,7 @@ describe('SidePanelManager', () => {
 
   describe('toggle', () => {
     it('opens panel when closed', () => {
-      mockApi.getPanel.mockReturnValue(null) // Panel doesn't exist
+      mockApi.getPanel.mockReturnValue(null)
 
       manager.toggle('todos')
 
@@ -95,7 +94,6 @@ describe('SidePanelManager', () => {
 
       manager.toggle('todos')
 
-      // Width should be captured before close
       expect(manager.state.right.width).toBe(200)
     })
 
@@ -106,23 +104,19 @@ describe('SidePanelManager', () => {
 
       manager.toggle('todos')
 
-      // requestAnimationFrame callback should restore width
       const rafCallback = vi.mocked(globalThis.requestAnimationFrame).mock.calls[0][0]
       rafCallback()
 
-      // Should have set size on the new panel's group
       expect(mockApi.addPanel).toHaveBeenCalled()
     })
 
     it('preserves width when reopening after all panels on side closed', () => {
-      // Set up saved width from previous closure
       manager.state.right.width = 300
       manager.state.right.order = []
       mockApi.getPanel.mockReturnValue(null)
 
       manager.toggle('todos')
 
-      // First panel on side should use saved width
       expect(mockApi.addPanel).toHaveBeenCalledWith(
         expect.objectContaining({
           initialWidth: 300,
@@ -148,7 +142,6 @@ describe('SidePanelManager', () => {
 
   describe('canonical ordering', () => {
     it('inserts panel below existing panel that should be above it', () => {
-      // 'sessions' is open, opening 'files' should go below
       const sessionsPanel = createMockPanel('sessions')
       mockApi.getPanel.mockImplementation(id => (id === 'sessions' ? sessionsPanel : null))
       manager.state.left.order = ['sessions']
@@ -164,7 +157,6 @@ describe('SidePanelManager', () => {
     })
 
     it('inserts panel above existing panel that should be below it', () => {
-      // 'stash' is open, opening 'todos' should go above
       const stashPanel = createMockPanel('stash')
       mockApi.getPanel.mockImplementation(id => (id === 'stash' ? stashPanel : null))
       manager.state.right.order = ['stash']
@@ -198,7 +190,7 @@ describe('SidePanelManager', () => {
     it('removes panel from order when moved out of side group', () => {
       manager.state.left.order = ['sessions', 'files']
 
-      // Panel moved to group with chat (not a left-side panel)
+      // 'chat' is not a left-side panel, so this group no longer counts as same-side
       const movedPanel = {
         id: 'sessions',
         api: { group: { panels: [{ id: 'chat' }, { id: 'sessions' }] } },
@@ -212,7 +204,7 @@ describe('SidePanelManager', () => {
     it('keeps panel in order when still grouped with same-side panels', () => {
       manager.state.left.order = ['sessions', 'files']
 
-      // Panel still grouped with files (both left-side)
+      // 'files' is also a left-side panel, so the group still counts as same-side
       const movedPanel = {
         id: 'sessions',
         api: { group: { panels: [{ id: 'sessions' }, { id: 'files' }] } },
@@ -268,16 +260,13 @@ describe('SidePanelManager', () => {
     })
 
     it('serializes and restores bottom state, filtering stray logs entries', () => {
-      // 'logs' is rendered in the full-width strip, never in the bottom slot -
-      // any 'logs' id surfacing in bottom.order is stripped on restore (mirrors
-      // the 'files' filter).
+      // 'logs' renders in the full-width strip, so fromJSON strips it from bottom.order (mirrors 'files').
       manager.state.bottom = { height: 250, order: ['logs'] }
 
       const json = manager.toJSON()
 
       expect(json.bottom).toEqual({ height: 250, order: ['logs'] })
 
-      // Reset and restore - filter strips 'logs' from the order.
       manager.state.bottom = { height: null, order: [] }
       manager.fromJSON(json)
 
@@ -290,7 +279,6 @@ describe('SidePanelManager', () => {
       mockApi.getPanel.mockReturnValue(null)
       manager.state.right.order = []
 
-      // Rapid toggles
       manager.toggle('todos')
       manager.toggle('stash')
       manager.toggle('help')
@@ -302,18 +290,15 @@ describe('SidePanelManager', () => {
     })
 
     it('handles toggle-close-toggle sequence', () => {
-      // First toggle opens
       mockApi.getPanel.mockReturnValue(null)
       manager.toggle('todos')
       expect(manager.state.right.order).toContain('todos')
 
-      // Second toggle closes
       const mockPanel = createMockPanel('todos')
       mockApi.getPanel.mockReturnValue(mockPanel)
       manager.toggle('todos')
       expect(manager.state.right.order).not.toContain('todos')
 
-      // Third toggle opens again
       mockApi.getPanel.mockReturnValue(null)
       manager.toggle('todos')
       expect(manager.state.right.order).toContain('todos')
@@ -430,7 +415,6 @@ describe('SidePanelManager', () => {
       expect(mockApi.exitMaximizedGroup).toHaveBeenCalledOnce()
       expect(mockApi.fromJSON).not.toHaveBeenCalled()
       expect(manager.preMaximizeLayout).toBeNull()
-      // Should still toggle the panel
       expect(mockApi.addPanel).toHaveBeenCalled()
     })
 
@@ -483,7 +467,6 @@ describe('SidePanelManager', () => {
       // Should exit maximize without destructive fromJSON
       expect(mockApi.exitMaximizedGroup).toHaveBeenCalledOnce()
       expect(mockApi.fromJSON).not.toHaveBeenCalled()
-      // Should also open the panel
       expect(mockApi.addPanel).toHaveBeenCalledWith(expect.objectContaining({ id: 'todos' }))
     })
   })
@@ -645,9 +628,8 @@ describe('SidePanelManager', () => {
   describe('edge cases', () => {
     describe('detached panel handling', () => {
       it('toggle on detached panel (not in order) opens normally', () => {
-        // Panel was moved out of side group, not in order anymore
         manager.state.right.order = ['stash'] // todos was detached
-        mockApi.getPanel.mockReturnValue(null) // Panel doesn't exist
+        mockApi.getPanel.mockReturnValue(null)
 
         manager.toggle('todos')
 
@@ -656,7 +638,6 @@ describe('SidePanelManager', () => {
       })
 
       it('toggle on detached panel that exists elsewhere closes it', () => {
-        // Panel exists but not in our tracking (was moved out)
         manager.state.right.order = ['stash']
         const mockPanel = createMockPanel('todos')
         mockApi.getPanel.mockReturnValue(mockPanel)
@@ -664,12 +645,11 @@ describe('SidePanelManager', () => {
         manager.toggle('todos')
 
         expect(mockPanel.api.close).toHaveBeenCalled()
-        // Order unchanged since it wasn't in there
+        // Order unchanged - 'todos' was never tracked
         expect(manager.state.right.order).toEqual(['stash'])
       })
 
       it('detached panel does not affect width calculations', () => {
-        // Detached panel (stash) exists but not in order
         manager.state.right.order = ['todos']
         manager.state.right.width = 200
         const todosPanel = createMockPanel('todos', { width: 180 })
@@ -683,15 +663,12 @@ describe('SidePanelManager', () => {
 
     describe('restore with missing panels', () => {
       it('skips panel in saved order that does not exist in layout', () => {
-        // Saved state includes 'help' but layout doesn't have it
         manager.fromJSON({
           right: { width: 200, order: ['todos', 'help', 'stash'] },
         })
 
-        // Simulate rebuild: layout only has todos and stash
         mockApi.panels = [{ id: 'todos' }, { id: 'stash' }]
 
-        // When toggling, should work normally without crashing
         const todosPanel = createMockPanel('todos')
         mockApi.getPanel.mockReturnValue(todosPanel)
 
@@ -699,16 +676,13 @@ describe('SidePanelManager', () => {
       })
 
       it('preserved width used when no panels on side after restore', () => {
-        // Saved state has width but order will be empty after verification
         manager.fromJSON({
           left: { width: 250, order: ['sessions'] },
         })
 
-        // But sessions doesn't exist in current layout
         mockApi.getPanel.mockReturnValue(null)
-        manager.state.left.order = [] // Cleared after realizing panel doesn't exist
+        manager.state.left.order = []
 
-        // Opening a new panel should use saved width
         manager.toggle('sessions')
 
         expect(mockApi.addPanel).toHaveBeenCalledWith(
@@ -719,19 +693,14 @@ describe('SidePanelManager', () => {
 
     describe('restore with extra panels', () => {
       it('panel in layout but not in saved order gets detected via handlePanelMove', () => {
-        // Start with no saved state
         manager.state.left.order = []
 
-        // Simulate a panel that exists in layout but wasn't in saved order
-        // This would be caught by the rebuild logic in App.jsx
-        // Manager should gracefully handle if such panel is manually moved
-
+        // A panel manually moved into layout without being in the saved order should not crash
         const movedPanel = {
           id: 'sessions',
           api: { group: { panels: [{ id: 'sessions' }] } },
         }
 
-        // Shouldn't crash even though sessions isn't in order
         expect(() => manager.handlePanelMove(movedPanel)).not.toThrow()
       })
     })
@@ -745,7 +714,6 @@ describe('SidePanelManager', () => {
 
         manager.toggle('todos')
 
-        // Should use default, not 0
         expect(mockApi.addPanel).toHaveBeenCalledWith(
           expect.objectContaining({
             initialWidth: 150, // 1000 * 0.15
@@ -754,7 +722,6 @@ describe('SidePanelManager', () => {
       })
 
       it('captures width from first panel in order only', () => {
-        // Multiple panels in order, should only capture from first
         manager.state.right.order = ['todos', 'stash']
         const todosPanel = createMockPanel('todos', { width: 180 })
         const stashPanel = createMockPanel('stash', { width: 220 })
@@ -881,7 +848,7 @@ describe('SidePanelManager', () => {
 
       expect(result).toEqual({ loaded: true })
       expect(manager.preMaximizeLayout).toBeNull()
-      // fromJSON was called with layout (stash/notifications/updated_at stripped before)
+      // fromJSON receives the layout only; stash/notifications/updated_at are stripped first
       expect(mockApi.fromJSON).toHaveBeenCalledWith(savedLayout)
     })
 
@@ -906,8 +873,7 @@ describe('SidePanelManager', () => {
     })
 
     it('restores bottom panel groups from server, filtering stray logs entries', async () => {
-      // 'logs' bottom-slot entries are dropped on restore (height preserved
-      // for other bottom panels).
+      // 'logs' bottom-slot entries are dropped on restore; height is preserved for other panels
       const savedLayout = { some: 'layout' }
       const savedPanelGroups = {
         left: { width: 200, order: ['sessions'] },
@@ -1055,7 +1021,6 @@ function createMockPanel(id, options = {}) {
   }
 }
 
-// Mock requestAnimationFrame
 beforeEach(() => {
   vi.stubGlobal(
     'requestAnimationFrame',

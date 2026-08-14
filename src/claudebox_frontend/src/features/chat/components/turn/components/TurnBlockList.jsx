@@ -9,21 +9,13 @@ import LocalCommandBlock from './LocalCommandBlock'
 import SystemReminders from './SystemReminders'
 import ThinkingBlock from './ThinkingBlock'
 import ToolBlock from './tool-block'
+import LookupsGroup from './tool-block/components/tool-block-expanded-content/components/LookupsGroup'
 import TodosGroup from './tool-block/components/tool-block-expanded-content/components/TodosGroup'
 import { extractSystemReminders } from './tool-block/utils/toolResultFormatters'
 
 /**
- * Render the block list for a conversation turn.
- * Consumes TurnContext implicitly through ToolBlock.
- * Consecutive task-list tool blocks within one subagent partition collapse into
- * a single always-expanded TodosGroup; non-list tools pass through unchanged
- * and break runs.
- * @param {Object} props
- * @param {Array} props.blocks - Processed event blocks.
- * @param {Array} props.blockOffsets - Precomputed timing offsets per block.
+ * Dispatches each segment (todos/lookups-group, single block) to its renderer; consumes TurnContext via ToolBlock.
  * @param {Set} [props.duplicateAskUserIds] - Cross-turn duplicate AskUserQuestion IDs to hide.
- * @param {Map} [props.todoDiffs] - Todo diffs for todoDiff lookup.
- * @returns {JSX.Element|null}
  */
 export default function TurnBlockList({
   blocks,
@@ -43,6 +35,15 @@ export default function TurnBlockList({
                 toolUseId: b.toolUse?.tool_use_id,
                 toolUse: b.toolUse,
               }))}
+            />
+          )
+        }
+        if (segment.kind === 'lookups-group') {
+          return (
+            <LookupsGroup
+              key={`lg-${segIdx}`}
+              entries={segment.entries}
+              blockOffsets={blockOffsets}
             />
           )
         }

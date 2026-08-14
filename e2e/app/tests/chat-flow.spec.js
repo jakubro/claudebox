@@ -1,7 +1,7 @@
 /** E2E tests for chat flow including message submission, pending states, draft persistence, and input animations. */
 
 import { expect, test } from '@playwright/test'
-import { assertRedColor, waitForAppReady } from '../helpers.js'
+import { assertRedColor, waitForAppReady, waitForStableScrollHeight } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { createSSEController, mockSSE, mockSSEDynamic } from '../mocks/sse.js'
 
@@ -13,9 +13,8 @@ test.describe('Chat Flow', () => {
   // SPEC: input:always-focused
   // SPEC: chat:selection-not-preempted
   test('input receives focus when connected', async ({ page }) => {
-    // In headless Chromium with concurrent workers, element.focus() is a
-    // silent no-op when the page lacks OS-level window focus. Intercept
-    // focus calls to verify the autofocus useEffect targets the textarea.
+    // Headless Chromium: focus() is a no-op without real OS window focus (concurrent workers).
+    // Intercept focus calls to verify the autofocus effect targets the textarea.
     await page.addInitScript(() => {
       const orig = HTMLElement.prototype.focus
       window.__focusLog = []
@@ -29,7 +28,6 @@ test.describe('Chat Flow', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // The autofocus useEffect should have called .focus() on the chat-input textarea
     await expect
       .poll(() => page.evaluate(() => window.__focusLog.includes('chat-input')))
       .toBe(true)
@@ -37,7 +35,6 @@ test.describe('Chat Flow', () => {
 
   // SPEC: shortcut:enter
   test('submits message on Enter', async ({ page }) => {
-    // Track /api/send calls before setting up SSE
     const sendCalls = []
     await page.route('**/api/send', async route => {
       sendCalls.push(await route.request().postDataJSON())
@@ -48,11 +45,9 @@ test.describe('Chat Flow', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Type and submit
     await page.locator('[data-testid="chat-input"]').fill('Hello world')
     await page.locator('[data-testid="chat-input"]').press('Enter')
 
-    // Verify POST was made
     await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
     expect(sendCalls[0].prompt).toBe('Hello world')
   })
@@ -64,26 +59,21 @@ test.describe('Chat Flow', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Type and submit
     await page.locator('[data-testid="chat-input"]').fill('My pending message')
     await page.locator('[data-testid="chat-input"]').press('Enter')
 
-    // Pending message should appear immediately
     await expect(page.getByText('My pending message')).toBeVisible()
   })
 
   // SPEC: turn:pending-remove
   test('removes pending when SSE confirms', async ({ page }) => {
-    // Start with empty events
     await mockSSEDynamic(page, () => [])
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Submit message
     await page.locator('[data-testid="chat-input"]').fill('Test message')
     await page.locator('[data-testid="chat-input"]').press('Enter')
 
-    // Pending should show
     await expect(page.locator('.turn-container.pending')).toBeVisible()
 
     // Deliver confirmed events via the mock SSE instance
@@ -110,7 +100,6 @@ test.describe('Chat Flow', () => {
       }, JSON.stringify(event))
     }
 
-    // After SSE delivers, pending class should be gone
     await expect(page.locator('.turn-container.pending')).not.toBeVisible()
   })
 
@@ -140,7 +129,6 @@ test.describe('Chat Flow', () => {
     const errorTurn = page.locator('.turn-error').first()
     await expect(errorTurn).toBeVisible()
 
-    // Verify red border CSS
     await assertRedColor(errorTurn, 'borderLeftColor')
   })
 
@@ -155,7 +143,6 @@ test.describe('Chat Flow', () => {
     await input.press('Shift+Enter')
     await input.type('Line 2')
 
-    // Check value contains newline
     const value = await input.inputValue()
     expect(value).toContain('\n')
     expect(value).toBe('Line 1\nLine 2')
@@ -169,13 +156,10 @@ test.describe('Chat Flow', () => {
 
     const input = page.locator('[data-testid="chat-input"]')
 
-    // Get initial height
     const initialHeight = await input.evaluate(el => el.offsetHeight)
 
-    // Add multiple lines
     await input.fill('Line 1\nLine 2\nLine 3\nLine 4\nLine 5')
 
-    // Height should increase
     const newHeight = await input.evaluate(el => el.offsetHeight)
     expect(newHeight).toBeGreaterThan(initialHeight)
   })
@@ -197,10 +181,8 @@ test.describe('Chat Flow', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // Type slash to trigger autocomplete
     await page.locator('[data-testid="chat-input"]').type('/')
 
-    // Custom autocomplete dropdown should appear
     await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
   })
 
@@ -217,15 +199,12 @@ test.describe('Chat Flow', () => {
     await input.fill('First message')
     await input.press('Enter')
 
-    // Wait for input to clear
     await expect(input).toHaveValue('')
 
-    // Cursor must be at position 0 for Up to work (it should be after clear)
-    // Press Home to ensure cursor is at start
+    // Cursor must be at position 0 for Up to work, so press Home to ensure it's at start after clear.
     await input.press('Home')
     await input.press('ArrowUp')
 
-    // Should show previous message
     await expect(input).toHaveValue('First message')
   })
 
@@ -241,10 +220,8 @@ test.describe('Chat Flow', () => {
     await input.fill('History message')
     await input.press('Enter')
 
-    // Wait for clear
     await expect(input).toHaveValue('')
 
-    // Type something new
     await input.fill('Current draft')
 
     // Go up (cursor must be at start for Up to work)
@@ -281,10 +258,8 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for the active turn to render
       await expect(page.getByText('Processing...').first()).toBeVisible()
 
-      // Should show "Working" indicator with spinner
       await expect(page.locator('.turn-progress-working').first()).toBeVisible()
       await expect(
         page.locator('.turn-progress-working').first().getByText('Working'),
@@ -297,7 +272,6 @@ test.describe('Chat Flow', () => {
       await mockSSE(page)
       await page.goto(DEFAULT_SESSION_URL)
 
-      // Wait for completed turn with duration
       await expect(page.locator('.turn-progress-complete').first()).toBeVisible()
       await expect(page.locator('.turn-duration').first()).toBeVisible()
     })
@@ -307,10 +281,8 @@ test.describe('Chat Flow', () => {
       await mockSSE(page)
       await page.goto(DEFAULT_SESSION_URL)
 
-      // Wait for completed turn
       await expect(page.locator('.turn-progress-complete').first()).toBeVisible()
 
-      // Should show checkmark character (✓)
       await expect(page.locator('.turn-progress-complete').first()).toContainText('✓')
     })
   })
@@ -346,11 +318,9 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Save a draft
       const input = page.locator('[data-testid="chat-input"]')
       await input.fill('Saved draft')
 
-      // Poll until draft is saved
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -360,20 +330,15 @@ test.describe('Chat Flow', () => {
         })
         .toBe(true)
 
-      // Reload page
       await page.reload()
       await waitForAppReady(page)
 
-      // Draft should be restored
       await expect(input).toHaveValue('Saved draft')
     })
 
     // SPEC: input:draft-restore
-    // LIMITATION: Ideally this test would set a draft in localStorage, reload,
-    // and verify the draft only appears when the input is empty on load. However,
-    // reliably racing user input against draft restoration on page load is fragile
-    // in a test environment. This approximation verifies that user-typed content
-    // is not overwritten once present.
+    // LIMITATION: racing input against draft restore is fragile in a test env, so this only
+    // verifies typed content survives rather than confirming restore-only-when-empty.
     test('draft only restored when input is empty', async ({ page }) => {
       await mockSSE(page)
       await page.goto(DEFAULT_SESSION_URL)
@@ -381,10 +346,8 @@ test.describe('Chat Flow', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Save a draft to localStorage
       await input.fill('Original draft')
 
-      // Poll until draft is saved
       await expect
         .poll(async () => {
           return await page.evaluate(() => {
@@ -398,8 +361,6 @@ test.describe('Chat Flow', () => {
       await input.clear()
       await input.fill('User typed this')
 
-      // Draft restoration should not overwrite user's current input
-      // Since user has typed "User typed this", it should remain
       await expect(input).toHaveValue('User typed this')
     })
 
@@ -412,7 +373,6 @@ test.describe('Chat Flow', () => {
       const input = page.locator('[data-testid="chat-input"]')
       await input.fill('Draft before unload')
 
-      // Trigger beforeunload by starting navigation
       // First check that draft might not be saved yet (debounce is 100ms)
       const _draftBefore = await page.evaluate(() => {
         const keys = Object.keys(localStorage).filter(k => k.startsWith('draft:'))
@@ -426,11 +386,9 @@ test.describe('Chat Flow', () => {
       // Navigate away (triggers beforeunload)
       await page.goto('about:blank')
 
-      // Go back
       await page.goBack()
       await waitForAppReady(page)
 
-      // Draft should be restored (was flushed on beforeunload)
       await expect(input).toHaveValue('Draft before unload')
     })
   })
@@ -438,10 +396,8 @@ test.describe('Chat Flow', () => {
   test.describe('Input Behavior', () => {
     // SPEC: input:scroll-compensation
     test('scroll position preserved when textarea shrinks', async ({ page }) => {
-      // Long-conversation replay + wheel disengage + textarea grow/shrink +
-      // settle poll exceeds the default 5 s cap on slow CI runs. The poll
-      // itself can take up to ~2 s to converge as ResizeObserver fires its
-      // delayed reflow; the test was already marginal pre-batch.
+      // Long-conversation replay + wheel disengage + grow/shrink + settle poll exceeds the
+      // default 5s cap on slow CI - ResizeObserver's delayed reflow alone can take ~2s.
       test.setTimeout(15000)
       await mockSSE(page, 'events/long-conversation.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
@@ -450,22 +406,18 @@ test.describe('Chat Flow', () => {
       const input = page.locator('[data-testid="chat-input"]')
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
 
-      // Wait for messages to load
+      // Wait for messages to load and the transcript to finish streaming - a scrollTop write mid-stream
+      // lands in autoscroll's near-bottom re-engage zone, which snaps back to bottom and drifts position.
       await expect(
         messagesContainer.locator('[data-testid="turn-container"]').first(),
       ).toBeVisible()
+      await waitForStableScrollHeight(messagesContainer)
 
-      // CONTRACT: ChatController classifies user-scroll intent from
-      // input events. The "scroll position preserved when textarea shrinks"
-      // assertion needs auto-scroll OFF, which now requires a real wheel
-      // event before the programmatic position write.
+      // CONTRACT: ChatController infers user-scroll intent only from input events, so auto-scroll OFF here
+      // requires a real wheel event before the programmatic scrollTop write below.
       await messagesContainer.dispatchEvent('wheel', { deltaY: -100 })
-      // Wait for the autoscroll button to flip to "disabled" (title changes
-      // from "Autoscroll enabled" -> "Last message (Alt+End)"). Without this
-      // explicit barrier, the test races the wheel listener: when autoscroll
-      // is still ON, the next render snaps `scrollTop` back to the bottom
-      // and `beforeScroll` != scrollHeight/2 - the textarea-shrink delta then
-      // dwarfs the 75px tolerance.
+      // Wait for the autoscroll button to flip disabled - skip it and the test races the wheel listener,
+      // which can leave autoscroll ON and drift beforeScroll past scrollHeight/2 (75px tolerance).
       await expect(page.locator('button[title="Last message (Alt+End)"]')).toBeVisible({
         timeout: 5000,
       })
@@ -474,16 +426,11 @@ test.describe('Chat Flow', () => {
       })
       const beforeScroll = await messagesContainer.evaluate(el => el.scrollTop)
 
-      // Type multiline text to expand textarea
       await input.fill('Line 1\nLine 2\nLine 3\nLine 4')
-
-      // Clear textarea (shrink it)
       await input.fill('')
 
-      // Poll until scroll position is approximately preserved (allow up to 75px drift
-      // from textarea resize triggering layout reflow). 10 s budget - the
-      // ResizeObserver reflow can take ~2 s alone, and under full-suite
-      // concurrency the polling round-trip stretches further.
+      // Poll until scroll position is approximately preserved (75px drift allowed for resize
+      // reflow). 10s budget - ResizeObserver alone can take ~2s, more under full-suite load.
       await expect
         .poll(
           async () => {
@@ -502,13 +449,10 @@ test.describe('Chat Flow', () => {
       await mockAPI(page)
       await page.goto(DEFAULT_SESSION_URL)
 
-      // App shows resuming overlay when SSE hasn't connected
       await expect(page.locator('[data-testid="footer"]')).toBeVisible()
       await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
-      // Per the always-enabled invariant, the textarea is NOT disabled even
-      // when SSE has not connected. Submit-time guards prevent sending until
-      // the session is ready, but the textarea itself stays usable.
+      // Textarea stays enabled while disconnected; submit-time guards elsewhere block sending until ready.
       await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
     })
   })
@@ -520,7 +464,6 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for assistant text block
       const turnText = page.locator('.turn-text').first()
       await expect(turnText).toBeVisible()
 
@@ -537,10 +480,8 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for assistant response
       await expect(page.getByText('Hello! How can I help you today?').first()).toBeVisible()
 
-      // Assistant text block has per-message copy button (visible on hover)
       const turnText = page.locator('.turn-text').first()
       await turnText.hover()
       const responseCopyBtn = turnText.locator('.turn-text-copy-btn')
@@ -554,12 +495,11 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Tool block should be visible
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
 
-      // Copy button should be in expanded content
-      const copyBtn = toolBlock.locator('.tool-copy-btn')
+      // Scoped to the Result section - Bash's Command section has its own "Copy command" button.
+      const copyBtn = toolBlock.locator('.tool-result-section .tool-copy-btn')
       await expect(copyBtn).toBeVisible()
       await expect(copyBtn).toHaveAttribute('title', 'Copy output')
     })
@@ -571,12 +511,10 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // User message with /help should be visible
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await expect(userMessage).toBeVisible()
       await expect(userMessage).toContainText('/help')
 
-      // Click copy button and verify clipboard contains plain text (no XML)
       const copyBtn = userMessage.locator('.message-copy-btn')
       await expect(copyBtn).toBeVisible()
       await copyBtn.click()
@@ -593,11 +531,9 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Stdout content should be rendered (not raw XML tags)
       await expect(page.getByText('Hello from stdout').first()).toBeVisible()
       await expect(page.locator('text=<local-command-stdout>')).not.toBeVisible()
 
-      // Copy button on the stdout block should copy the content
       const userMessage = page.locator('[data-testid="message-user"]').first()
       const copyBtn = userMessage.locator('.message-copy-btn')
       await expect(copyBtn).toBeVisible()
@@ -614,12 +550,9 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Stderr content should be rendered
       await expect(page.getByText('Something went wrong').first()).toBeVisible()
 
-      // Copy should include stderr content
       const userMessages = page.locator('[data-testid="message-user"]')
-      // Find the message containing stderr
       const stderrMessage = userMessages.filter({ hasText: 'Something went wrong' })
       const copyBtn = stderrMessage.locator('.message-copy-btn')
       await expect(copyBtn).toBeVisible()
@@ -637,19 +570,16 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Wait for assistant response to render
       await expect(page.getByText('Hello! How can I help you today?').first()).toBeVisible()
 
       // Turn meta contains the turn copy button; hover to reveal it
       const turnMeta = page.locator('.turn-meta').first()
       await turnMeta.hover()
 
-      // Click the turn-level copy button
       const turnCopyBtn = turnMeta.locator('.turn-copy-btn')
       await expect(turnCopyBtn).toBeVisible()
       await turnCopyBtn.click()
 
-      // Verify clipboard contains full assistant text content
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
       expect(clipboardText).toBe('Hello! How can I help you today?')
     })
@@ -661,16 +591,13 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // User message should be visible
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await expect(userMessage).toBeVisible()
 
-      // Click the user message copy button
       const copyBtn = userMessage.locator('.message-copy-btn')
       await expect(copyBtn).toBeVisible()
       await copyBtn.click()
 
-      // Verify clipboard contains user message text
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
       expect(clipboardText).toBe('Hello Claude')
     })
@@ -690,15 +617,12 @@ test.describe('Chat Flow', () => {
       const askUserResponse = userMessages.nth(1)
       await expect(askUserResponse).toBeVisible()
 
-      // Click the copy button on the AskUser response message
       const copyBtn = askUserResponse.locator('.message-copy-btn')
       await expect(copyBtn).toBeVisible()
       await copyBtn.click()
 
-      // Verify clipboard has clean Q/A text without XML tags
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
       expect(clipboardText).toBe('Which framework would you like to use?: React')
-      // Ensure no XML tags leaked into clipboard
       expect(clipboardText).not.toContain('<response:AskUserQuestion>')
       expect(clipboardText).not.toContain('<answer>')
       expect(clipboardText).not.toContain('<question')
@@ -714,16 +638,13 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // User message with arbitrary XML should be visible
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await expect(userMessage).toBeVisible()
 
-      // Click the copy button
       const copyBtn = userMessage.locator('.message-copy-btn')
       await expect(copyBtn).toBeVisible()
       await copyBtn.click()
 
-      // Verify clipboard preserves the XML tags as-is
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText())
       expect(clipboardText).toBe('<custom-tag>important content here</custom-tag>')
     })
@@ -739,14 +660,12 @@ test.describe('Chat Flow', () => {
       const reloadBtn = page.locator('button[title="Reload session (picks up config changes)"]')
       await expect(reloadBtn).toBeVisible()
 
-      // Track SSE connection count before click
       const connectionsBefore = await page.evaluate(() => window.__sseConnectionCount || 0)
 
       // Click reload - should trigger page reload or SSE reconnect
       await reloadBtn.click()
       await waitForAppReady(page)
 
-      // After reload, a new SSE connection should be established
       const connectionsAfter = await page.evaluate(() => window.__sseConnectionCount || 0)
       expect(connectionsAfter).toBeGreaterThan(connectionsBefore)
     })
@@ -763,12 +682,10 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Click compact button
       const compactBtn = page.locator('button[title="Compact conversation (/compact)"]')
       await expect(compactBtn).toBeVisible()
       await compactBtn.click()
 
-      // Verify /compact was sent
       await expect.poll(() => sendCalls.length).toBeGreaterThan(0)
       expect(sendCalls[0].prompt).toBe('/compact')
     })
@@ -779,7 +696,6 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // When at bottom (autoscroll active), button should be disabled with pressed class
       const jumpBtn = page.locator('button[title="Autoscroll enabled"]')
       await expect(jumpBtn).toBeVisible()
       await expect(jumpBtn).toBeDisabled()
@@ -793,8 +709,7 @@ test.describe('Chat Flow', () => {
 
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
 
-      // Scroll up via wheel events to reliably disable autoscroll
-      // (programmatic scrollTop doesn't always disable - scrollHeight guard race)
+      // Wheel events reliably disable autoscroll; programmatic scrollTop doesn't (scrollHeight guard race).
       const box = await messagesContainer.boundingBox()
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
       await page.mouse.wheel(0, -500)
@@ -811,10 +726,8 @@ test.describe('Chat Flow', () => {
       await expect(jumpBtn).toBeVisible()
       await expect(jumpBtn).toBeEnabled()
 
-      // Click jump-to-bottom
       await jumpBtn.click()
 
-      // Should scroll to bottom
       await expect
         .poll(async () => {
           const { scrollTop, scrollHeight, clientHeight } = await messagesContainer.evaluate(
@@ -831,11 +744,8 @@ test.describe('Chat Flow', () => {
   })
 
   test.describe('Input Animations', () => {
-    // The decorative border animation is a compositor-driven overlay: a static
-    // conic gradient rotated via transform, revealed through the textarea's
-    // transparent border. Assert on `.textarea-border-overlay` (opacity gates the
-    // reveal - polled because it fades over 0.25s; its `::before` carries the
-    // `border-travel` rotation).
+    // Decorative border ring: a static conic gradient revealed through the textarea's transparent border.
+    // Assert `.textarea-border-overlay` opacity (fades over 0.25s); its `::before` carries `border-travel`.
 
     // SPEC: input:anim-idle
     test('idle empty input reveals the animated border ring', async ({ page }) => {
@@ -880,7 +790,6 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Chat input wrapper should have status-working class
       await expect(page.locator('.chat-input')).toHaveClass(/status-working/)
 
       const overlay = page.locator('.textarea-border-overlay')
@@ -897,13 +806,11 @@ test.describe('Chat Flow', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Ensure working state
       await expect(page.locator('.chat-input')).toHaveClass(/status-working/)
 
       await page.locator('[data-testid="chat-input"]').focus()
 
-      // The working border cue must persist even while focused (composer is
-      // usually focused during streaming).
+      // The working border cue must persist even while focused (composer is usually focused during streaming).
       const overlay = page.locator('.textarea-border-overlay')
       await expect
         .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
@@ -920,7 +827,6 @@ test.describe('Chat Flow', () => {
 
       const input = page.locator('[data-testid="chat-input"]')
 
-      // Fill input with text then blur
       await input.fill('Some text')
       await page.locator('[data-testid="footer"]').click()
 

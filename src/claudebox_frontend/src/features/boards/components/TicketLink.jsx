@@ -8,9 +8,8 @@ import { extractTicketId } from '../utils/ticketId'
 import TicketContextMenu from './TicketContextMenu'
 
 /**
- * Render a single ticket as an inline `<a>` ID link with hover tooltip,
- * session-attached coloring, multi-select support, drag participation, and
- * a right-click context menu mirroring TicketCard.
+ * Render a ticket as a button styled as an inline ID link, with hover tooltip, session-attached
+ * coloring, multi-select, drag participation, and a right-click menu mirroring TicketCard.
  *
  * @param {object} props
  * @param {object} props.ticket - Ticket data (path, title, session).

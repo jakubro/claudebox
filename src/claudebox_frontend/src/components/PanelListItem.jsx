@@ -1,7 +1,6 @@
 /** Reusable tab/filter button for panel list headers. */
 
 /**
- * Render a panel list item button with active state and optional count badge.
  * @param {Object} props
  * @param {string} props.label - Display text.
  * @param {boolean} props.active - Whether this item is currently selected.

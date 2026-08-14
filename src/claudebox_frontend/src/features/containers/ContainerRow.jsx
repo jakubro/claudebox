@@ -22,12 +22,7 @@ const STATUS_COLORS = {
 }
 
 /**
- * One container row - status dot, container id, session id, session name, state,
- * kind, age, action cluster. Stop button (composite delete) shows on running/
- * starting rows; ResumeControl shows whenever the container carries a session id
- * and that session is not the currently-active one. Container id and session id
- * each carry a click-to-copy affordance with a "Copied!" overlay (matching the
- * footer's container pill and the sessions panel's session-id span).
+ * Click-to-copy on id and session id mirrors the footer's container pill and the sessions panel's session-id span.
  *
  * @param {object} props
  * @param {object} props.container - Container record from the workspace endpoint.
@@ -62,9 +57,8 @@ function ContainerRow({ container }) {
   const isRunning = status === 'running' || status === 'starting'
   const isCurrent = !!container.session_id && container.session_id === activeSessionId
 
-  // Display id is the runtime backend_id (matches footer); container.id stays
-  // bound to API calls + test selectors. Fall back to '' when backend_id is
-  // missing so the cell renders empty rather than 'undefined'.
+  // displayId is backend_id (matches footer); container.id is used for API calls and test selectors.
+  // Falls back to '' so the cell renders empty rather than 'undefined'.
   const displayId = container.backend_id || ''
   const session = container.session_id
     ? sessions?.find?.(s => s.session_id === container.session_id)

@@ -43,8 +43,7 @@
 /* Reset font from tool-block monospace — match assistant text (body defaults) */
 .markdown-preview-content,
 .markdown-preview-content p {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: normal;
 }

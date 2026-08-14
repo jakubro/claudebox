@@ -17,7 +17,7 @@ def _make_statusline_data(
 
     data = {
         "session_id": session_id,
-        "model": {"display_name": "Sonnet 4.6"},
+        "model": {"display_name": "Sonnet 5"},
         "output_style": {"name": "concise"},
         "cost": {
             "total_cost_usd": 0.0512,
@@ -43,7 +43,7 @@ class TestStatuslineRequest:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         data = _make_statusline_data(workspace_path=str(tmp_workspace))
         req = StatuslineRequest(data)
-        assert req.model == "Sonnet 4.6"
+        assert req.model == "Sonnet 5"
 
     def test_parses_output_style(self, tmp_workspace, monkeypatch):
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
@@ -93,7 +93,7 @@ class TestStatuslineDecorator:
 
         my_statusline(data=_make_statusline_data(workspace_path=str(tmp_workspace)))
         output = capsys.readouterr().out.strip()
-        assert "Sonnet 4.6" in output
+        assert "Sonnet 5" in output
         assert "$0.0512" in output
 
     def test_calls_without_request(self, tmp_workspace, monkeypatch, capsys):

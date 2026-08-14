@@ -136,7 +136,7 @@ class TestCheckEventNotification:
         mgr.check_event(event)
 
         assert "agent-1" not in mgr._monitors
-        mock_monitor.stop.assert_called_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        mock_monitor.stop.assert_called_once()
 
     def test_unknown_agent_notification_noop(self):
         on_event = AsyncMock()
@@ -167,8 +167,8 @@ class TestStopAll:
 
         mgr.stop_all()
 
-        task1.cancel.assert_called_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
-        task2.cancel.assert_called_once()  # Mock attribute (assert_*, call_*, await_*) on test-replaced method.
+        task1.cancel.assert_called_once()
+        task2.cancel.assert_called_once()
         assert len(mgr._monitors) == 0
 
 
@@ -188,9 +188,9 @@ class TestEnrichNotification:
                 {
                     "type": "assistant",
                     "message": {"content": [{"type": "text", "text": "Final answer"}]},
-                }
+                },
             )
-            + "\n"
+            + "\n",
         )
 
         mgr._output_files["task-1"] = str(output_file)
