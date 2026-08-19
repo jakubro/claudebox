@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from claudebox.agent_session.rate_limits import RateLimitStore
 from claudebox_daemon.domain.executors import DaemonExecutors
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from claudebox_daemon.domain.workspaces.service import WorkspaceService
@@ -80,6 +81,24 @@ class TestInit:
 
         with pytest.raises(RuntimeError, match="unavailable"):
             _ = svc.container_service
+
+
+# --- rate_limits ---
+
+
+class TestRateLimits:
+    """rate_limits is a plain value accessor, like config - never gated on availability."""
+
+    def test_rooted_at_the_workspace_path(self, tmp_path):
+        svc, _ = _make_service(tmp_path, available=True)
+
+        assert isinstance(svc.rate_limits, RateLimitStore)
+        assert svc.rate_limits._path == tmp_path / ".claudebox" / "rate-limits.json"
+
+    def test_accessible_on_an_unavailable_workspace(self, tmp_path):
+        svc, _ = _make_service(tmp_path, available=False)
+
+        assert isinstance(svc.rate_limits, RateLimitStore)  # must not raise
 
 
 # --- start ---

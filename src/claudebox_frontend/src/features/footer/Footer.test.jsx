@@ -16,8 +16,19 @@ function defaultEventsData(overrides = {}) {
     lastEventTimestamp: null,
     isResuming: false,
     isReplaying: false,
+    events: [],
     ...overrides,
   }
+}
+
+// An hour ahead of the real clock - a hardcoded epoch would go stale once it's in the past.
+function rateLimitPayload(
+  rateLimitType,
+  status,
+  utilization,
+  resetsAt = Math.floor(Date.now() / 1000) + 3600,
+) {
+  return { rate_limit_type: rateLimitType, status, resets_at: resetsAt, utilization }
 }
 
 const mockSetNotificationsEnabled = vi.fn()
@@ -120,6 +131,7 @@ beforeEach(() => {
   mockSessionDataCtx = defaultSessionDataCtx()
   mockInteractionData = defaultInteractionData()
   mockSetNotificationsEnabled.mockReset()
+  localStorage.clear()
 })
 
 describe('StatusIndicator', () => {
@@ -253,7 +265,7 @@ describe('Footer', () => {
 
     render(<Footer />)
     const toggle = screen.getByTestId('footer-notifications-toggle')
-    expect(toggle).toHaveAttribute('title', 'Notifications - disabled')
+    expect(toggle).toHaveAttribute('title', 'Notifications — disabled')
 
     await user.click(toggle)
     expect(mockSetNotificationsEnabled).toHaveBeenCalledWith(true)
@@ -263,7 +275,7 @@ describe('Footer', () => {
     mockSessionDataCtx = defaultSessionDataCtx({ notificationsEnabled: true })
     render(<Footer />)
     const toggle = screen.getByTestId('footer-notifications-toggle')
-    expect(toggle).toHaveAttribute('title', 'Notifications - enabled')
+    expect(toggle).toHaveAttribute('title', 'Notifications — enabled')
     expect(screen.getByLabelText('Notifications enabled')).toBeInTheDocument()
   })
 
@@ -393,5 +405,71 @@ describe('Footer empty/new session state', () => {
       'data-disabled',
       'false',
     )
+  })
+})
+
+describe('Rate limit items', () => {
+  it('shows no limit items when nothing is being approached', () => {
+    render(<Footer />)
+    expect(screen.queryByTestId('footer-rate-limit-session')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('footer-rate-limit-weekly')).not.toBeInTheDocument()
+  })
+
+  it('shows a session item when the five_hour window is being approached', () => {
+    mockSessionDataCtx = defaultSessionDataCtx({
+      rateLimits: [rateLimitPayload('five_hour', 'allowed_warning', 0.86)],
+    })
+    render(<Footer />)
+    expect(screen.getByTestId('footer-rate-limit-session')).toHaveTextContent('Session 86%')
+  })
+
+  it('shows a weekly item when the seven_day window is being approached', () => {
+    mockSessionDataCtx = defaultSessionDataCtx({
+      rateLimits: [rateLimitPayload('seven_day', 'allowed_warning', 0.91)],
+    })
+    render(<Footer />)
+    expect(screen.getByTestId('footer-rate-limit-weekly')).toHaveTextContent('Weekly 91%')
+  })
+
+  it('shows both items, session before weekly, each with its own separator', () => {
+    mockSessionDataCtx = defaultSessionDataCtx({
+      rateLimits: [
+        rateLimitPayload('seven_day', 'allowed_warning', 0.91),
+        rateLimitPayload('five_hour', 'allowed_warning', 0.86),
+      ],
+    })
+    render(<Footer />)
+    const items = screen
+      .getAllByText(/^(Session|Weekly) \d+%$/)
+      .map(el => el.getAttribute('data-testid'))
+    expect(items).toEqual(['footer-rate-limit-session', 'footer-rate-limit-weekly'])
+    // Trailing separator convention: each item is immediately followed by a footer-sep span.
+    const sessionItem = screen.getByTestId('footer-rate-limit-session')
+    expect(sessionItem.nextElementSibling).toHaveClass('footer-sep')
+  })
+
+  it('shows limit-reached text with no percentage when rejected', () => {
+    mockSessionDataCtx = defaultSessionDataCtx({
+      rateLimits: [rateLimitPayload('five_hour', 'rejected', null)],
+    })
+    render(<Footer />)
+    expect(screen.getByTestId('footer-rate-limit-session')).toHaveTextContent(
+      'Session limit reached',
+    )
+  })
+
+  it('reads whatever the current session reports, not a locally-accumulated event trail', () => {
+    // The server never serves an 'allowed' window (cleared on write) - it is simply absent.
+    mockSessionDataCtx = defaultSessionDataCtx({ rateLimits: [] })
+    render(<Footer />)
+    expect(screen.queryByTestId('footer-rate-limit-session')).not.toBeInTheDocument()
+  })
+
+  it('shows an item from sessionData alone, with no rate_limit event this render', () => {
+    mockSessionDataCtx = defaultSessionDataCtx({
+      rateLimits: [rateLimitPayload('seven_day', 'allowed_warning', 0.78, Date.now() / 1000 + 60)],
+    })
+    render(<Footer />)
+    expect(screen.getByTestId('footer-rate-limit-weekly')).toHaveTextContent('Weekly 78%')
   })
 })

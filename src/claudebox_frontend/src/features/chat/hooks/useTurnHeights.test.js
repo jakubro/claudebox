@@ -82,4 +82,19 @@ describe('useTurnHeights', () => {
 
     expect(Object.keys(result.current.turnHeights)).toEqual(['a'])
   })
+
+  it('prices a Bash-heavy turn lower once splitEnabled flips on (memo dependency)', () => {
+    const bashy = turn('a', {
+      events: [{ type: 'assistant', subtype: 'tool_use', content: 'Bash' }],
+    })
+    const { result, rerender } = renderHook(
+      ({ splitEnabled }) => useTurnHeights(messagesRef, [bashy], undefined, splitEnabled),
+      { initialProps: { splitEnabled: false } },
+    )
+    const splitOff = result.current.turnHeights.a
+
+    rerender({ splitEnabled: true })
+
+    expect(result.current.turnHeights.a).toBeLessThan(splitOff)
+  })
 })

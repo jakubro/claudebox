@@ -152,6 +152,13 @@ describe('parseLocalCommandOutput', () => {
     ])
   })
 
+  it('drops whitespace-only trailing text after the last block', () => {
+    const msg = '<local-command-stdout>out</local-command-stdout>   '
+    const result = parseLocalCommandOutput(msg)
+
+    expect(result).toEqual([{ type: 'stdout', content: 'out' }])
+  })
+
   it('parses text before and after local-command into segments', () => {
     const msg = 'Before\n<local-command-stdout>middle</local-command-stdout>\nAfter'
     const result = parseLocalCommandOutput(msg)

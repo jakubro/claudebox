@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import PanelListItem from '../../components/PanelListItem'
 import { TaskStatus } from '../../config/schema'
-import { LIVE_TICK_INTERVAL_MS, TASK_HIGHLIGHT_MS } from '../../config/timing'
+import { LIVE_TICK_INTERVAL_MS } from '../../config/timing'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useEvents } from '../../context/EventsContext'
 import { extractTasks } from '../../utils/eventProcessing'
-import { scrollAndHighlight } from '../../utils/scroll'
+import { MOUNT_FRAMES, pollFrames } from '../../utils/mountTurn'
 import TaskEntry from './components/task-entry'
+import { findVisibleToolBlock, jumpToTask } from './utils/taskScroll'
 
 const FILTERS = [
   { id: TaskStatus.RUNNING, label: 'Active' },
@@ -17,7 +18,13 @@ const FILTERS = [
 
 export default function TasksPanel() {
   const { events, taskNotifications, isResuming, isReplaying } = useEvents()
-  const { focusChatTab } = useAppActions()
+  const {
+    focusChatTab,
+    scrollToTurnRef,
+    expandTurnRef,
+    markUserIntentRef,
+    markProgrammaticScrollRef,
+  } = useAppActions()
   const [filter, setFilter] = useState('running')
   const [now, setNow] = useState(Date.now())
 
@@ -51,25 +58,46 @@ export default function TasksPanel() {
   }, [allTasks])
 
   const handleTaskClick = useCallback(
-    taskId => {
+    task => {
       focusChatTab()
+
       requestAnimationFrame(() => {
-        const el = document.querySelector(`[data-tool-use-id="${taskId}"]`)
-        if (el) {
-          const chatContainer = document.querySelector('.chat-messages')
-          if (chatContainer) {
-            scrollAndHighlight(chatContainer, el, {
-              highlightMs: TASK_HIGHLIGHT_MS,
-              highlightClass: 'task-highlight',
-            })
-          } else {
-            el.classList.add('task-highlight')
-            setTimeout(() => el.classList.remove('task-highlight'), TASK_HIGHLIGHT_MS)
+        // Expanding and jumping are independent - a task may need either, both, or neither.
+        const proceed = () => {
+          if (task.turnId) {
+            expandTurnRef.current?.(task.turnId)
           }
+          pollFrames(
+            MOUNT_FRAMES,
+            () => findVisibleToolBlock(task.id),
+            el => {
+              if (el) {
+                jumpToTask(el, { markUserIntentRef, markProgrammaticScrollRef })
+              }
+            },
+          )
         }
+
+        // Fast path: a running task's turn is never windowed or collapsed, so it's mounted.
+        if (document.querySelector(`[data-tool-use-id="${CSS.escape(String(task.id))}"]`)) {
+          proceed()
+          return
+        }
+
+        // Windowed out, turn id known: mount it first via the ref ChatPanel publishes.
+        if (task.turnId && scrollToTurnRef.current) {
+          scrollToTurnRef.current(task.turnId, turnEl => {
+            if (turnEl) {
+              proceed()
+            }
+          })
+          return
+        }
+
+        // Unresolvable (no turn id, or absent from the historical array): no crash, no jump.
       })
     },
-    [focusChatTab],
+    [focusChatTab, expandTurnRef, scrollToTurnRef, markUserIntentRef, markProgrammaticScrollRef],
   )
 
   if (isResuming || isReplaying) {
@@ -109,12 +137,7 @@ export default function TasksPanel() {
           <div className="tasks-list-empty">No tasks</div>
         ) : (
           filteredTasks.map(task => (
-            <TaskEntry
-              key={task.id}
-              task={task}
-              now={now}
-              onClick={() => handleTaskClick(task.id)}
-            />
+            <TaskEntry key={task.id} task={task} now={now} onClick={() => handleTaskClick(task)} />
           ))
         )}
       </div>

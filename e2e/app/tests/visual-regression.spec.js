@@ -713,6 +713,20 @@ test.describe('Visual Regression - User Messages', () => {
     )
   })
 
+  test('user message with AskUser Q/A response and a note', async ({ page }) => {
+    await mockSSE(page, 'events/user-message-askuser-response-with-note.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await expect(
+      page.locator('[data-testid="message-user"]').nth(1).locator('.message-note'),
+    ).toBeVisible()
+    await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
+      'user-msg-askuser-response-with-note.png',
+      OPTS,
+    )
+  })
+
   test('slash command in user message', async ({ page }) => {
     await mockSSE(page, 'events/slash-command-message.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
@@ -1356,7 +1370,8 @@ test.describe('Visual Regression - Minimap & Controls', () => {
                   },
                 },
               },
-              session: {},
+              // Split on, matching the baseline this snapshot was captured against.
+              session: { terminalSplitEnabled: true },
             },
           })
         },
@@ -1562,18 +1577,15 @@ async function mockBoardsForVisuals(page) {
       await route.continue()
     }
   })
+  await page.route(new RegExp(`${BOARDS_WS_PREFIX}/boards/[^/]+$`), async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: BOARD_DETAIL })
+    } else {
+      await route.continue()
+    }
+  })
   await page.route(
-    new RegExp(`${BOARDS_WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-    async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: BOARD_DETAIL })
-      } else {
-        await route.continue()
-      }
-    },
-  )
-  await page.route(
-    new RegExp(`${BOARDS_WS_PREFIX}/boards/[^/]+/tickets/.+/content`.replace(/\//g, '\\/')),
+    new RegExp(`${BOARDS_WS_PREFIX}/boards/[^/]+/tickets/.+/content`),
     async route => {
       await route.fulfill({ body: '# Setup infra\n\nTicket body content for the visual test.' })
     },

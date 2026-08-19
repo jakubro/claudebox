@@ -1,5 +1,8 @@
-"""Tests for claudebox_daemon.serving - port calculation."""
+"""Tests for claudebox_daemon.serving - port calculation, host binding, subprocess lifecycle."""
 
+import os
+import subprocess
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +12,8 @@ from claudebox_daemon.serving import (
     _frontend_port,
     _resolve_port,
     _startup_banner,
+    _stop_subprocess,
+    backend_server,
 )
 
 
@@ -161,3 +166,68 @@ class TestPortEdgeCases:
         with patch("claudebox_daemon.serving.is_dev_mode", return_value=False):
             result = _backend_port(70000)
             assert result == 70001
+
+
+class TestBackendServerHostBinding:
+    """The uvicorn backend binds loopback - Caddy is the only externally-bound listener."""
+
+    def test_binds_loopback(self):
+        info = {
+            "version": "(unknown)",
+            "branch": "v1",
+            "commit": "abc",
+            "path": Path("/x"),
+            "python": "3.12",
+        }
+
+        with (
+            patch("claudebox_daemon.serving.is_dev_mode", return_value=False),
+            patch("claudebox_daemon.serving.https_proxy"),
+            patch("claudebox_daemon.serving.get_install_info", return_value=info),
+            patch("claudebox_daemon.serving.http_serve") as mock_http_serve,
+        ):
+            backend_server(lambda: None, port=DAEMON_PORT)
+
+        assert mock_http_serve.call_args.kwargs["host"] == "127.0.0.1"
+
+
+class TestStopSubprocessProcessGroup:
+    """_stop_subprocess must reach a grandchild the immediate process doesn't forward signals to."""
+
+    def test_kills_grandchild_the_immediate_process_does_not_forward_to(self, tmp_path):
+        """Like npm: a shell doesn't forward SIGTERM to a backgrounded child, so it outlives
+        its signaled parent unless the whole process group is signaled."""
+
+        pid_file = tmp_path / "grandchild.pid"
+        proc = subprocess.Popen(
+            ["sh", "-c", f"sleep 30 & echo $! > {pid_file}; wait"],
+            start_new_session=True,
+        )
+
+        for _ in range(50):
+            if pid_file.exists():
+                break
+
+            time.sleep(0.1)
+
+        grandchild_pid = int(pid_file.read_text().strip())
+
+        _stop_subprocess(proc)
+
+        assert _pid_gone(grandchild_pid)
+
+
+def _pid_gone(pid: int, timeout: float = 3.0) -> bool:
+    """Poll until a process id no longer exists, or the timeout elapses."""
+
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+
+        time.sleep(0.05)
+
+    return False

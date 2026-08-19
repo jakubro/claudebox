@@ -234,12 +234,12 @@ class TestMapVolume:
     """Test volume mount path resolution."""
 
     def test_creates_directory(self, tmp_path):
-        src, dst = prepare_volume(tmp_path / "new_dir", "/container/path")
+        src, _dst = prepare_volume(tmp_path / "new_dir", "/container/path")
         assert src.exists()
         assert src.is_dir()
 
     def test_creates_file(self, tmp_path):
-        src, dst = prepare_volume(tmp_path / "new_file", "/container/path", is_dir=False)
+        src, _dst = prepare_volume(tmp_path / "new_file", "/container/path", is_dir=False)
         assert src.exists()
         assert src.is_file()
 

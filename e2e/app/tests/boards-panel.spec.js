@@ -68,7 +68,7 @@ async function mockBoardsAPI(page) {
   })
 
   // GET /api/workspaces/{ws}/boards/:id
-  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')), async route => {
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ json: MOCK_BOARD_DETAIL })
     } else {
@@ -77,32 +77,23 @@ async function mockBoardsAPI(page) {
   })
 
   // PATCH /api/workspaces/{ws}/boards/:id/tickets/:path/move
-  await page.route(
-    new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-    async route => {
-      await route.fulfill({ json: { path: 'moved' } })
-    },
-  )
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+    await route.fulfill({ json: { path: 'moved' } })
+  })
 
   // DELETE /api/workspaces/{ws}/boards/:id/tickets/:path
-  await page.route(
-    new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+$`.replace(/\//g, '\\/')),
-    async route => {
-      if (route.request().method() === 'DELETE') {
-        await route.fulfill({ status: 200, json: {} })
-      } else {
-        await route.continue()
-      }
-    },
-  )
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+$`), async route => {
+    if (route.request().method() === 'DELETE') {
+      await route.fulfill({ status: 200, json: {} })
+    } else {
+      await route.continue()
+    }
+  })
 
   // POST/PATCH/DELETE swimlane endpoints
-  await page.route(
-    new RegExp(`${WS_PREFIX}/boards/[^/]+/swimlanes`.replace(/\//g, '\\/')),
-    async route => {
-      await route.fulfill({ json: { id: 'new-lane', name: 'New Lane' } })
-    },
-  )
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/swimlanes`), async route => {
+    await route.fulfill({ json: { id: 'new-lane', name: 'New Lane' } })
+  })
 }
 
 test.describe('Boards Panel', () => {
@@ -615,17 +606,14 @@ test.describe('Board Tab', () => {
     // SPEC: board:archive-behavior
     // SPEC: board:archive-no-confirm
     let archiveRequested = false
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'DELETE') {
-          archiveRequested = true
-          await route.fulfill({ status: 200, json: {} })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+$`), async route => {
+      if (route.request().method() === 'DELETE') {
+        archiveRequested = true
+        await route.fulfill({ status: 200, json: {} })
+      } else {
+        await route.continue()
+      }
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -690,15 +678,12 @@ test.describe('Board Tab', () => {
   test('swimlane delete removes via API', async ({ page }) => {
     // SPEC: board:swimlane-delete
     let deleteRequested = false
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/swimlanes`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'DELETE') {
-          deleteRequested = true
-        }
-        await route.fulfill({ json: {} })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/swimlanes`), async route => {
+      if (route.request().method() === 'DELETE') {
+        deleteRequested = true
+      }
+      await route.fulfill({ json: {} })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -719,15 +704,12 @@ test.describe('Board Tab', () => {
     // SPEC: board:swimlane-dnd-reorder
     // SPEC: board:drag-lane-reorder
     let reorderPayload = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/swimlanes/reorder`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'PATCH') {
-          reorderPayload = JSON.parse(route.request().postData())
-        }
-        await route.fulfill({ json: [] })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/swimlanes/reorder`), async route => {
+      if (route.request().method() === 'PATCH') {
+        reorderPayload = JSON.parse(route.request().postData())
+      }
+      await route.fulfill({ json: [] })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -771,14 +753,11 @@ test.describe('Board States', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        // Delay response so loading state is visible
-        await new Promise(r => setTimeout(r, 2000))
-        await route.fulfill({ json: MOCK_BOARD_DETAIL })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      // Delay response so loading state is visible
+      await new Promise(r => setTimeout(r, 2000))
+      await route.fulfill({ json: MOCK_BOARD_DETAIL })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -798,12 +777,9 @@ test.describe('Board States', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        await route.fulfill({ status: 500, body: 'parse error in board.yaml' })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      await route.fulfill({ status: 500, body: 'parse error in board.yaml' })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -823,12 +799,9 @@ test.describe('Board States', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        await route.fulfill({ json: null })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      await route.fulfill({ json: null })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -893,15 +866,12 @@ test.describe('Board SSE Updates', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          boardFetchCount++
-          await route.fulfill({ json: MOCK_BOARD_DETAIL })
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        boardFetchCount++
+        await route.fulfill({ json: MOCK_BOARD_DETAIL })
+      }
+    })
 
     const daemonSSE = await createDaemonSSEController(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -928,15 +898,12 @@ test.describe('Board SSE Updates', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          boardFetchCount++
-          await route.fulfill({ json: MOCK_BOARD_DETAIL })
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        boardFetchCount++
+        await route.fulfill({ json: MOCK_BOARD_DETAIL })
+      }
+    })
 
     const daemonSSE = await createDaemonSSEController(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -961,13 +928,10 @@ test.describe('Board SSE Updates', () => {
     await mockBoardsAPI(page)
 
     let movePayload = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        movePayload = JSON.parse(route.request().postData())
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      movePayload = JSON.parse(route.request().postData())
+      await route.fulfill({ json: { path: 'moved' } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1011,13 +975,10 @@ test.describe('Board SSE Updates', () => {
     await mockBoardsAPI(page)
 
     let movePayload = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        movePayload = JSON.parse(route.request().postData())
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      movePayload = JSON.parse(route.request().postData())
+      await route.fulfill({ json: { path: 'moved' } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1059,13 +1020,10 @@ test.describe('Board SSE Updates', () => {
     await mockBoardsAPI(page)
 
     let movePayload = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        movePayload = JSON.parse(route.request().postData())
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      movePayload = JSON.parse(route.request().postData())
+      await route.fulfill({ json: { path: 'moved' } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1187,17 +1145,14 @@ test.describe('Boards Panel - board item interactions', () => {
     await mockSSE(page)
     let renameCalledWith = null
     // Registered before navigating so it wins over mockBoardsAPI's catch-all GET handler on the same URL.
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'PATCH') {
-          renameCalledWith = JSON.parse(route.request().postData() || '{}')
-          await route.fulfill({ json: { ok: true } })
-        } else {
-          await route.fallback()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'PATCH') {
+        renameCalledWith = JSON.parse(route.request().postData() || '{}')
+        await route.fulfill({ json: { ok: true } })
+      } else {
+        await route.fallback()
+      }
+    })
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
     await openBoardsPanel(page)
@@ -1223,17 +1178,14 @@ test.describe('Boards Panel - board item interactions', () => {
   test('Cancel button dismisses inline rename without calling API', async ({ page }) => {
     await mockSSE(page)
     let renameCalled = false
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'PATCH') {
-          renameCalled = true
-          await route.fulfill({ json: { ok: true } })
-        } else {
-          await route.fallback()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'PATCH') {
+        renameCalled = true
+        await route.fulfill({ json: { ok: true } })
+      } else {
+        await route.fallback()
+      }
+    })
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
     await openBoardsPanel(page)
@@ -1414,16 +1366,13 @@ test.describe('Board bulk-aware drag', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: BULK_BOARD })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: BULK_BOARD })
+      } else {
+        await route.continue()
+      }
+    })
   })
 
   // SPEC: board:drag-bulk-selected
@@ -1434,23 +1383,17 @@ test.describe('Board bulk-aware drag', () => {
     test.setTimeout(30000)
     const moves = []
     // Register first so it wins over any earlier registration.
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        const url = route.request().url()
-        const match = url.match(/tickets\/(.+)\/move/)
-        const ticketPath = match ? decodeURIComponent(match[1]) : null
-        moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      const url = route.request().url()
+      const match = url.match(/tickets\/(.+)\/move/)
+      const ticketPath = match ? decodeURIComponent(match[1]) : null
+      moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
+      await route.fulfill({ json: { path: 'moved' } })
+    })
     // Stub assignTickets so auto-assign doesn't error noisily.
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`.replace(/\//g, '\\/')),
-      async route => {
-        await route.fulfill({ json: { sessions: [{ session_id: 'shared-001' }] } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
+      await route.fulfill({ json: { sessions: [{ session_id: 'shared-001' }] } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1551,31 +1494,25 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: CROSS_LANE_BOARD })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: CROSS_LANE_BOARD })
+      } else {
+        await route.continue()
+      }
+    })
   })
 
   // SPEC: board:cross-lane-bulk-preserve
   test('cross-lane bulk move preserves each ticket origin swimlane', async ({ page }) => {
     const moves = []
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        const url = route.request().url()
-        const match = url.match(/tickets\/(.+)\/move/)
-        const ticketPath = match ? decodeURIComponent(match[1]) : null
-        moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      const url = route.request().url()
+      const match = url.match(/tickets\/(.+)\/move/)
+      const ticketPath = match ? decodeURIComponent(match[1]) : null
+      moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
+      await route.fulfill({ json: { path: 'moved' } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1620,16 +1557,13 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
     page,
   }) => {
     const moves = []
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        const url = route.request().url()
-        const match = url.match(/tickets\/(.+)\/move/)
-        const ticketPath = match ? decodeURIComponent(match[1]) : null
-        moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      const url = route.request().url()
+      const match = url.match(/tickets\/(.+)\/move/)
+      const ticketPath = match ? decodeURIComponent(match[1]) : null
+      moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
+      await route.fulfill({ json: { path: 'moved' } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1672,16 +1606,13 @@ test.describe('Board column rename', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: MOCK_BOARD_DETAIL })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: MOCK_BOARD_DETAIL })
+      } else {
+        await route.continue()
+      }
+    })
   })
 
   // SPEC: board:column-rename
@@ -1689,22 +1620,19 @@ test.describe('Board column rename', () => {
     let renameBody = null
     let renamedStateId = null
 
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/states/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() !== 'PATCH') {
-          await route.continue()
-          return
-        }
-        const url = route.request().url()
-        const match = url.match(/states\/([^/]+)$/)
-        renamedStateId = match ? match[1] : null
-        renameBody = JSON.parse(route.request().postData())
-        await route.fulfill({
-          json: { id: renamedStateId, label: renameBody.label, folder: 'backlog' },
-        })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/states/[^/]+$`), async route => {
+      if (route.request().method() !== 'PATCH') {
+        await route.continue()
+        return
+      }
+      const url = route.request().url()
+      const match = url.match(/states\/([^/]+)$/)
+      renamedStateId = match ? match[1] : null
+      renameBody = JSON.parse(route.request().postData())
+      await route.fulfill({
+        json: { id: renamedStateId, label: renameBody.label, folder: 'backlog' },
+      })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1738,43 +1666,34 @@ test.describe('Board bulk shared session', () => {
     page,
   }) => {
     // Override board detail to mark in-progress as an active column.
-    await page.unroute(new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')))
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          const board = {
-            ...MOCK_BOARD_DETAIL,
-            states: MOCK_BOARD_DETAIL.states.map(s =>
-              s.id === 'in-progress' ? { ...s, active: true } : s,
-            ),
-          }
-          await route.fulfill({ json: board })
-        } else {
-          await route.fulfill({ json: { ok: true } })
+    await page.unroute(new RegExp(`${WS_PREFIX}/boards/[^/]+$`))
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        const board = {
+          ...MOCK_BOARD_DETAIL,
+          states: MOCK_BOARD_DETAIL.states.map(s =>
+            s.id === 'in-progress' ? { ...s, active: true } : s,
+          ),
         }
-      },
-    )
+        await route.fulfill({ json: board })
+      } else {
+        await route.fulfill({ json: { ok: true } })
+      }
+    })
     // Re-registered so it wins over the beforeEach handler; ordering matters with encoded slashes in the URL.
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      await route.fulfill({ json: { path: 'moved' } })
+    })
     let assignBody = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`.replace(/\//g, '\\/')),
-      async route => {
-        const post = route.request().postData()
-        try {
-          assignBody = JSON.parse(post || '{}')
-        } catch {
-          assignBody = post
-        }
-        await route.fulfill({ json: { sessions: [{ session_id: 'shared-session-001' }] } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
+      const post = route.request().postData()
+      try {
+        assignBody = JSON.parse(post || '{}')
+      } catch {
+        assignBody = post
+      }
+      await route.fulfill({ json: { sessions: [{ session_id: 'shared-session-001' }] } })
+    })
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -1838,31 +1757,22 @@ test.describe('Board prompt sequence', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: PROMPT_BOARD })
-        } else {
-          await route.continue()
-        }
-      },
-    )
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`.replace(/\//g, '\\/')),
-      async route => {
-        await route.fulfill({ json: { path: 'moved' } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: PROMPT_BOARD })
+      } else {
+        await route.continue()
+      }
+    })
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      await route.fulfill({ json: { path: 'moved' } })
+    })
 
     let assignBody = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`.replace(/\//g, '\\/')),
-      async route => {
-        assignBody = JSON.parse(route.request().postData())
-        await route.fulfill({ json: { sessions: [{ session_id: 'sess-from-seq' }] } })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
+      assignBody = JSON.parse(route.request().postData())
+      await route.fulfill({ json: { sessions: [{ session_id: 'sess-from-seq' }] } })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -1937,16 +1847,13 @@ test.describe('Board column reorder + context menu', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: MOCK_BOARD_DETAIL })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: MOCK_BOARD_DETAIL })
+      } else {
+        await route.continue()
+      }
+    })
   })
 
   // SPEC: board:col-dnd-reorder
@@ -2001,17 +1908,14 @@ test.describe('Board column reorder + context menu', () => {
   // SPEC: board:drag-col-reorder
   test('Move left context-menu action PATCHes column order', async ({ page }) => {
     let reorderPayload = null
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/states/reorder`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() === 'PATCH') {
-          reorderPayload = JSON.parse(route.request().postData())
-          await route.fulfill({ json: {} })
-        } else {
-          await route.continue()
-        }
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/states/reorder`), async route => {
+      if (route.request().method() === 'PATCH') {
+        reorderPayload = JSON.parse(route.request().postData())
+        await route.fulfill({ json: {} })
+      } else {
+        await route.continue()
+      }
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
@@ -2036,21 +1940,18 @@ test.describe('Board column reorder + context menu', () => {
   // SPEC: board:archive-bulk-column
   test('archive-all-in-column action fans out one archive per ticket', async ({ page }) => {
     const archived = []
-    await page.route(
-      new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/[^/]+$`.replace(/\//g, '\\/')),
-      async route => {
-        if (route.request().method() !== 'DELETE') {
-          await route.continue()
-          return
-        }
-        const match = route
-          .request()
-          .url()
-          .match(/tickets\/([^/?]+)/)
-        archived.push(match ? decodeURIComponent(match[1]) : null)
-        await route.fulfill({ json: {} })
-      },
-    )
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/[^/]+$`), async route => {
+      if (route.request().method() !== 'DELETE') {
+        await route.continue()
+        return
+      }
+      const match = route
+        .request()
+        .url()
+        .match(/tickets\/([^/?]+)/)
+      archived.push(match ? decodeURIComponent(match[1]) : null)
+      await route.fulfill({ json: {} })
+    })
 
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)

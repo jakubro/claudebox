@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 
 T = TypeVar("T")
@@ -10,7 +10,7 @@ T = TypeVar("T")
 MISSING = object()
 
 
-class FileCache(Generic[T]):
+class FileCache[T]:
     """Cache keyed by file path, invalidated when the file's mtime changes."""
 
     def __init__(self):

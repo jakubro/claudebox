@@ -10,6 +10,7 @@ const mockNotifyContainerChanged = vi.fn()
 const mockReconnectSSE = vi.fn()
 const mockStartCreating = vi.fn()
 const mockClearCreating = vi.fn()
+const mockMarkJustCreatedSession = vi.fn()
 const mockSetContainerId = vi.fn()
 const mockNavigateToSession = vi.fn()
 
@@ -39,6 +40,7 @@ vi.mock('../context/EventsContext', () => ({
     reconnectSSE: mockReconnectSSE,
     startCreating: mockStartCreating,
     clearCreating: mockClearCreating,
+    markJustCreatedSession: mockMarkJustCreatedSession,
     isCreating: false,
     isResponding: false,
   }),
@@ -139,6 +141,11 @@ describe('useNewSession', () => {
     expect(mockNavigateToSession).toHaveBeenCalledWith('my-workspace', 's1')
     // focusChatTab fires twice - once before the API call, once after success.
     expect(mockFocusChatTab).toHaveBeenCalledTimes(2)
+    // Must be marked before navigating - the routing effect needs it in place to skip the resume.
+    expect(mockMarkJustCreatedSession).toHaveBeenCalledWith('s1')
+    expect(mockMarkJustCreatedSession.mock.invocationCallOrder[0]).toBeLessThan(
+      mockNavigateToSession.mock.invocationCallOrder[0],
+    )
   })
 
   it('skips container wiring when session_id is missing', async () => {

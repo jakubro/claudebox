@@ -191,35 +191,35 @@ test.describe('Attachment Zoom', () => {
   test('clicking image attachment in history opens zoom overlay', async ({ page }) => {
     await page.locator('.message-attachment-thumb').first().click()
 
-    await expect(page.locator('.attachment-zoom-overlay')).toBeVisible()
+    await expect(page.locator('.zoom-overlay')).toBeVisible()
     await expect(page.locator('.attachment-zoom-content img')).toBeVisible()
   })
 
   // SPEC: chat:attachment-zoom-close
   test('Escape closes attachment zoom overlay', async ({ page }) => {
     await page.locator('.message-attachment-thumb').first().click()
-    await expect(page.locator('.attachment-zoom-overlay')).toBeVisible()
+    await expect(page.locator('.zoom-overlay')).toBeVisible()
 
     await page.keyboard.press('Escape')
-    await expect(page.locator('.attachment-zoom-overlay')).not.toBeVisible()
+    await expect(page.locator('.zoom-overlay')).not.toBeVisible()
   })
 
   // SPEC: chat:attachment-zoom-close
   test('backdrop click closes attachment zoom overlay', async ({ page }) => {
     await page.locator('.message-attachment-thumb').first().click()
-    await expect(page.locator('.attachment-zoom-overlay')).toBeVisible()
+    await expect(page.locator('.zoom-overlay')).toBeVisible()
 
-    await page.locator('.attachment-zoom-overlay').click({ position: { x: 10, y: 10 } })
-    await expect(page.locator('.attachment-zoom-overlay')).not.toBeVisible()
+    await page.locator('.zoom-overlay').click({ position: { x: 10, y: 10 } })
+    await expect(page.locator('.zoom-overlay')).not.toBeVisible()
   })
 
   // SPEC: chat:attachment-zoom-close
   test('close button closes attachment zoom overlay', async ({ page }) => {
     await page.locator('.message-attachment-thumb').first().click()
-    await expect(page.locator('.attachment-zoom-overlay')).toBeVisible()
+    await expect(page.locator('.zoom-overlay')).toBeVisible()
 
     await page.locator('.zoom-overlay-close').click()
-    await expect(page.locator('.attachment-zoom-overlay')).not.toBeVisible()
+    await expect(page.locator('.zoom-overlay')).not.toBeVisible()
   })
 })
 

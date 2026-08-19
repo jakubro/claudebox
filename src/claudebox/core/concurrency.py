@@ -34,7 +34,7 @@ class SingleFlight:
             self._inflight = None
 
 
-async def maybe_awaitable(res: T | Awaitable[T]) -> T:
+async def maybe_awaitable[T](res: T | Awaitable[T]) -> T:
     """Await the value if it's awaitable, otherwise return it directly."""
 
     if inspect.isawaitable(res):

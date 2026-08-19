@@ -4,6 +4,7 @@ import pytest
 
 from claudebox.config import Config
 from claudebox.constants import CLAUDEBOX_SETTINGS_FILE
+from ..conftest import bounded_walk_up
 
 
 class TestLoadConfigFiles:
@@ -53,9 +54,26 @@ class TestLoadConfigFiles:
         # Grandparent should NOT be merged because root=true stops walk
         assert result.get("agent") == "parent-agent"
 
-    def test_no_config_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
-        result = Config._load_config_files(tmp_path)
+    def test_no_config_files(self, bounded_config_root, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: bounded_config_root / "fakehome")
+        result = Config._load_config_files(bounded_config_root)
+        assert result == {}
+
+    def test_ancestor_settings_above_start_dir_not_leaked(self, tmp_path_factory, monkeypatch):
+        """The walk runs start_dir -> Path.home(), so an ancestor's settings.toml must not leak."""
+        isolated_root = tmp_path_factory.mktemp("ancestor-leak")
+        start_dir = isolated_root / "workspace"
+        start_dir.mkdir()
+
+        ancestor_settings = isolated_root / CLAUDEBOX_SETTINGS_FILE
+        ancestor_settings.parent.mkdir(parents=True, exist_ok=True)
+        ancestor_settings.write_text('[editor]\nurl_template = "should-not-leak"\n')
+
+        monkeypatch.setattr("pathlib.Path.home", lambda: isolated_root / "fakehome")
+        monkeypatch.setattr("claudebox.config.walk_up", bounded_walk_up(start_dir))
+
+        result = Config._load_config_files(start_dir)
+
         assert result == {}
 
 

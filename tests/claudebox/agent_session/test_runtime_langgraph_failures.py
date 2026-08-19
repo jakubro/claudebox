@@ -1,4 +1,4 @@
-"""LangGraphRuntime failure modes - J1 (Ollama unreachable), J2 (model not pulled), J3 (tool error), J6 (compaction)."""
+"""LangGraphRuntime failure modes - Ollama unreachable, model not pulled, tool error, compaction."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -53,16 +53,18 @@ def _httpx_client_mock(*, version_ok=True, model_404=False, raise_on_get=None, r
     return client
 
 
-class TestJ1OllamaUnreachable:
+class TestOllamaUnreachable:
     @pytest.mark.anyio
     async def test_connect_raises_on_connect_error(self, tmp_path):
         runtime = LangGraphRuntime(_config(tmp_path))
 
         client_mock = _httpx_client_mock(raise_on_get=httpx.ConnectError("conn refused"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable, match="11434"):
-                await runtime.connect()
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable, match="11434"),
+        ):
+            await runtime.connect()
 
     @pytest.mark.anyio
     async def test_connect_raises_on_timeout(self, tmp_path):
@@ -70,12 +72,14 @@ class TestJ1OllamaUnreachable:
 
         client_mock = _httpx_client_mock(raise_on_get=httpx.TimeoutException("timeout"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable):
-                await runtime.connect()
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
+        ):
+            await runtime.connect()
 
 
-class TestJ2ModelNotPulled:
+class TestModelNotPulled:
     @pytest.mark.anyio
     async def test_connect_raises_on_show_404(self, tmp_path):
         """Ollama /api/show returns 404 -> OllamaModelNotPulled."""
@@ -83,9 +87,11 @@ class TestJ2ModelNotPulled:
         runtime = LangGraphRuntime(_config(tmp_path))
         client_mock = _httpx_client_mock(model_404=True)
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaModelNotPulled, match="llama3.2:3b"):
-                await runtime.connect()
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaModelNotPulled, match="llama3.2:3b"),
+        ):
+            await runtime.connect()
 
     @pytest.mark.anyio
     async def test_probe_timeout_raises_unreachable_not_not_pulled(self, tmp_path):
@@ -94,9 +100,11 @@ class TestJ2ModelNotPulled:
         runtime = LangGraphRuntime(_config(tmp_path))
         client_mock = _httpx_client_mock(raise_on_post=httpx.TimeoutException("timeout"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable):
-                await runtime.connect()
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
+        ):
+            await runtime.connect()
 
     @pytest.mark.anyio
     async def test_probe_500_raises_unreachable_not_not_pulled(self, tmp_path):
@@ -114,9 +122,11 @@ class TestJ2ModelNotPulled:
         client_mock = _httpx_client_mock()
         client_mock.post.return_value = response_500
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable):
-                await runtime.connect()
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
+        ):
+            await runtime.connect()
 
     @pytest.mark.anyio
     async def test_probe_connect_error_raises_unreachable(self, tmp_path):
@@ -125,12 +135,14 @@ class TestJ2ModelNotPulled:
         runtime = LangGraphRuntime(_config(tmp_path))
         client_mock = _httpx_client_mock(raise_on_post=httpx.ConnectError("refused"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable):
-                await runtime.connect()
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
+        ):
+            await runtime.connect()
 
 
-class TestJ3ToolErrorPropagation:
+class TestToolErrorPropagation:
     """Tool errors propagate through ToolMessage(status='error') -> tool_result.is_error=true."""
 
     def test_tool_result_event_marks_is_error(self, tmp_path):
@@ -148,7 +160,7 @@ class TestJ3ToolErrorPropagation:
         assert block.tool_use_id == "tu-x"
 
 
-class TestJ6SummarizationMiddleware:
+class TestSummarizationMiddleware:
     @pytest.mark.anyio
     async def test_connect_wires_summarization_middleware(self, tmp_path):
         runtime = LangGraphRuntime(_config(tmp_path))

@@ -52,8 +52,9 @@ export default function useDockviewLayout() {
           // fromJSON restore creates groups via its own lifecycle - re-apply the marker so
           // MainPanel.css hides the tab bar.
           applyMainGroupMarker(api)
-        } else if (api.panels.length === 0) {
-          // fromJSON.clear() may have destroyed panels before the restore failed - rebuild
+        } else {
+          // A failed fromJSON can leave panels behind; clear so the rebuild hits no stale id.
+          api.clear()
           buildDefaultLayout(api, sidePanel)
         }
       })
@@ -129,6 +130,9 @@ export default function useDockviewLayout() {
   /**
    * Bind sessionIdRef and run the one-shot per-tab layout restore on first session attach; the
    * onDidLayoutChange save path reads sessionIdRef to know which session to PATCH.
+   *
+   * A missing per-session layout is not rebuilt here: onReady already applied the inherited one,
+   * and rebuilding would tear down the panel holding a just-created session's first message.
    */
   const onSessionAttach = useCallback(async sessionId => {
     const api = apiRef.current
@@ -145,10 +149,7 @@ export default function useDockviewLayout() {
         await initialRestoreRef.current
         initialRestoreRef.current = null
       }
-      const { loaded } = await sidePanel.restoreFromServer(sessionId)
-      if (!loaded && api.panels.length === 0) {
-        buildDefaultLayout(api, sidePanel)
-      }
+      await sidePanel.restoreFromServer(sessionId)
     }
   }, [])
 

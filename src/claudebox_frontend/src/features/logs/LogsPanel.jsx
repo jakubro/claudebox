@@ -1,8 +1,8 @@
 /** Container API logs panel with auto-scroll, consuming provider-scoped SSE stream. */
 
-import { useCallback, useEffect, useRef } from 'react'
-import { AUTOSCROLL_THRESHOLD } from '../../config/dimensions'
+import { useEffect } from 'react'
 import { useLogsStream } from '../../context/LogsStreamContext'
+import { useBottomAutoscroll } from '../../hooks/useBottomAutoscroll'
 import { formatTimestamp } from '../../utils/formatters'
 import { flattenExtras, formatPillValue } from './utils/extras'
 
@@ -10,35 +10,13 @@ export default function LogsPanel() {
   const { logs, connectionStatus, isResuming, isSessionReplaying, containerId, clearUnreadErrors } =
     useLogsStream()
 
-  const scrollRef = useRef(null)
-  const isAutoScrollEnabled = useRef(true)
-  const isProgrammaticScroll = useRef(false)
+  const { scrollRef, handleScroll } = useBottomAutoscroll(logs)
 
   const isConnected = connectionStatus === 'connected'
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only clear on mount
   useEffect(() => {
     clearUnreadErrors()
-  }, [])
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: logs triggers scroll on new entries
-  useEffect(() => {
-    if (isAutoScrollEnabled.current && scrollRef.current) {
-      isProgrammaticScroll.current = true
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-      requestAnimationFrame(() => {
-        isProgrammaticScroll.current = false
-      })
-    }
-  }, [logs])
-
-  const handleScroll = useCallback(() => {
-    if (isProgrammaticScroll.current || !scrollRef.current) {
-      return
-    }
-    const { scrollHeight, scrollTop, clientHeight } = scrollRef.current
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-    isAutoScrollEnabled.current = distanceFromBottom <= AUTOSCROLL_THRESHOLD
   }, [])
 
   if (!containerId) {

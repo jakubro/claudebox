@@ -7,24 +7,20 @@ import { predictTurnHeight, predictUserMessageHeight } from '../utils/predictTur
 const EMPTY_SET = new Set()
 
 /**
- * Return per-turn heights and a scroll-axis total for the minimap.
+ * Per-turn heights and a scroll-axis total for the minimap - all turns, active one included.
+ * Priced by `predictTurnHeight`, the same estimator the virtualizer uses; calibrated against
+ * fixtures by `e2e/app/tests/predictor-calibration.spec.js` (drift under 30%).
  *
- * Every turn is priced by `predictTurnHeight`, the same content-derived estimator the virtualizer
- * uses, calibrated against fixtures by `e2e/app/tests/predictor-calibration.spec.js` (drift under
- * 30%).
- *
- * Deliberately NOT sourced from real measurements: with the list windowed, only a handful of turns
- * have a height at any moment, and feeding those back into state re-renders the list, which mounts
- * and measures more turns, which publishes again - a cycle that never settles and that React aborts
- * outright on a long transcript. Predictions are stable, complete, and independent of what's on
- * screen, so the minimap stops depending on scroll history for its proportions.
- *
- * @param {object} messagesRef - Ref to the chat scroll container.
- * @param {Array} turns - All turns, active one included.
- * @param {Set} [collapsedTurnIds] - Turn ids currently collapsed.
- * @returns {{turnHeights: object, userMessageHeights: object, getLogicalScrollHeight: Function}}
+ * Never sourced from real measurements: with the list windowed only a handful of turns have a
+ * height, and publishing those re-renders the list, which mounts and measures more, which publishes
+ * again - a loop that never settles and that React aborts outright on a long transcript.
  */
-export default function useTurnHeights(messagesRef, turns, collapsedTurnIds = EMPTY_SET) {
+export default function useTurnHeights(
+  messagesRef,
+  turns,
+  collapsedTurnIds = EMPTY_SET,
+  splitEnabled = false,
+) {
   const effectiveWidth = Math.max(
     0,
     (messagesRef?.current?.clientWidth || 0) - TURN_HORIZONTAL_PADDING_PX,
@@ -35,11 +31,11 @@ export default function useTurnHeights(messagesRef, turns, collapsedTurnIds = EM
     for (const turn of turns) {
       const id = turn?.turn_id
       if (id) {
-        out[id] = predictTurnHeight(turn, effectiveWidth, collapsedTurnIds.has(id))
+        out[id] = predictTurnHeight(turn, effectiveWidth, collapsedTurnIds.has(id), splitEnabled)
       }
     }
     return out
-  }, [turns, effectiveWidth, collapsedTurnIds])
+  }, [turns, effectiveWidth, collapsedTurnIds, splitEnabled])
 
   // Predicted for the same reason as turnHeights: a windowed-out turn has no element to measure,
   // and measuring only the mounted few would flatten the rest.

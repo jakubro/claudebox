@@ -1,7 +1,8 @@
 """LangGraphRuntime persistent checkpointer - SqliteSaver per session_dir."""
 
+import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -95,8 +96,6 @@ class TestCheckpointerWiring:
         async def _fake_aexit(self, *args):
             aexit_calls.append(args)
 
-            return None
-
         mock_cm = MagicMock()
         mock_cm.__aenter__ = _fake_aenter
         mock_cm.__aexit__ = _fake_aexit
@@ -131,6 +130,75 @@ class TestCheckpointerWiring:
         runtime = LangGraphRuntime(_config(tmp_path))
 
         assert runtime._thread_id == "sess-ckpt"
+
+
+class TestRecordTurnBoundary:
+    """_record_turn_boundary journals the pre-turn checkpoint_id, read by fork truncation."""
+
+    @pytest.mark.anyio
+    async def test_records_the_current_checkpoint_id_before_a_later_turn(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path))
+        tuple_ = MagicMock()
+        tuple_.config = {"configurable": {"checkpoint_id": "chk-prior"}}
+        runtime._checkpointer = MagicMock()
+        runtime._checkpointer.aget_tuple = AsyncMock(return_value=tuple_)
+
+        await runtime._record_turn_boundary("turn-2", {"configurable": {"thread_id": "sess-ckpt"}})
+
+        journal = json.loads((tmp_path / "checkpoint_turns.json").read_text())
+        assert journal == {"turn-2": "chk-prior"}
+
+    @pytest.mark.anyio
+    async def test_records_none_for_the_threads_first_turn(self, tmp_path):
+        """aget_tuple returns nothing when the thread has no checkpoint yet."""
+
+        runtime = LangGraphRuntime(_config(tmp_path))
+        runtime._checkpointer = MagicMock()
+        runtime._checkpointer.aget_tuple = AsyncMock(return_value=None)
+
+        await runtime._record_turn_boundary("turn-1", {"configurable": {"thread_id": "sess-ckpt"}})
+
+        journal = json.loads((tmp_path / "checkpoint_turns.json").read_text())
+        assert journal == {"turn-1": None}
+
+    @pytest.mark.anyio
+    async def test_accumulates_entries_across_turns(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path))
+        runtime._checkpointer = MagicMock()
+
+        tuple_1 = MagicMock()
+        tuple_1.config = {"configurable": {"checkpoint_id": "chk-a"}}
+        runtime._checkpointer.aget_tuple = AsyncMock(return_value=tuple_1)
+        await runtime._record_turn_boundary("turn-1", {"configurable": {"thread_id": "sess-ckpt"}})
+
+        tuple_2 = MagicMock()
+        tuple_2.config = {"configurable": {"checkpoint_id": "chk-b"}}
+        runtime._checkpointer.aget_tuple = AsyncMock(return_value=tuple_2)
+        await runtime._record_turn_boundary("turn-2", {"configurable": {"thread_id": "sess-ckpt"}})
+
+        journal = json.loads((tmp_path / "checkpoint_turns.json").read_text())
+        assert journal == {"turn-1": "chk-a", "turn-2": "chk-b"}
+
+    @pytest.mark.anyio
+    async def test_no_checkpointer_is_a_silent_noop(self, tmp_path):
+        """connect() hasn't run (or the runtime never got a checkpointer) - never crash the turn."""
+
+        runtime = LangGraphRuntime(_config(tmp_path))
+        assert runtime._checkpointer is None
+
+        await runtime._record_turn_boundary("turn-1", {"configurable": {"thread_id": "sess-ckpt"}})
+
+        assert not (tmp_path / "checkpoint_turns.json").exists()
+
+    @pytest.mark.anyio
+    async def test_lookup_failure_is_a_silent_noop(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path))
+        runtime._checkpointer = MagicMock()
+        runtime._checkpointer.aget_tuple = AsyncMock(side_effect=RuntimeError("db locked"))
+
+        await runtime._record_turn_boundary("turn-1", {"configurable": {"thread_id": "sess-ckpt"}})
+
+        assert not (tmp_path / "checkpoint_turns.json").exists()
 
 
 class TestSessionDirIsolation:

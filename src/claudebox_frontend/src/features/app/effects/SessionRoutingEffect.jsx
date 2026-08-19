@@ -29,7 +29,7 @@ export default function SessionRoutingEffect() {
     startResume,
     clearResume,
     notifyContainerChanged,
-    isCreating,
+    consumeJustCreatedSession,
   } = useEvents()
   const { clearProgress } = useDaemonStreamContext()
   const { clearSessionData } = useSessionActions()
@@ -101,11 +101,13 @@ export default function SessionRoutingEffect() {
       selectWorkspace(activeWorkspaceId)
     }
 
-    // Skip resume for just-created sessions - useNewSession already set up the container, and SSE
-    // connects naturally via the container ID change.
-    if (!isCreating) {
-      handleResume(activeSessionId, seq)
+    // Skip resume for a session this tab just created - useNewSession already set up the
+    // container, and SSE connects naturally via the container ID change.
+    if (consumeJustCreatedSession(activeSessionId)) {
+      return
     }
+
+    handleResume(activeSessionId, seq)
   }, [
     activeSessionId,
     activeWorkspaceId,
@@ -115,7 +117,7 @@ export default function SessionRoutingEffect() {
     clearSessionData,
     clearStash,
     disconnectSSE,
-    isCreating,
+    consumeJustCreatedSession,
   ])
 
   // Switch workspace when the board URL targets a workspace different from the active one -

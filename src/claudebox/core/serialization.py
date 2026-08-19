@@ -75,9 +75,8 @@ def serialize(obj: Any, *, _seen: set | None = None) -> Any:
     if callable(asdict):
         try:
             obj = asdict()
-        except Exception:
+        except Exception:  # noqa: BLE001 - a caller's asdict() bug must not break serialize()
             traceback.print_exc()
-            pass
 
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         obj = dataclasses.asdict(obj)
@@ -120,7 +119,9 @@ def deserialize(node: Any, cls: type | types.UnionType | None) -> Any:
     elif origin in (list, set, frozenset, tuple) and isinstance(node, list):
         args = args or (None,)
 
-        return origin(deserialize(item, args[0]) for item in node)
+        # `in (list, set, frozenset, tuple)` above already excludes UnionType at runtime; ty
+        # can't narrow origin's static type from that membership check.
+        return origin(deserialize(item, args[0]) for item in node)  # ty: ignore[call-non-callable]
     elif origin is dict and isinstance(node, dict):
         args = args or (None, None)
 

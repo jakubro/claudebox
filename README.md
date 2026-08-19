@@ -1,19 +1,21 @@
 # Claudebox
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-actively_developed-green.svg)](#)
 
 Containerized isolation, customizable agent profiles, and a visual web UI — for AI coding agents.
 
-Claudebox runs AI coding agents in disposable containers — one per session, full agent capabilities, controlled host exposure. Claude Code via the Claude Agent SDK by default, or any LangChain provider (Ollama, OpenAI, Gemini, and more) via LangGraph. Profiles layer in system prompts, hooks, commands, skills, agents, and custom tools — install and customize what each project needs. The web interface renders the full conversation — markdown, code, diffs, and diagrams — while dockable panels let you manage sessions, track tasks, browse and edit files, queue follow-up messages, switch between sessions, and fork at any point in history: a multi-panel workspace the terminal can't replicate.
+Claudebox runs AI coding agents in disposable containers — one per session, full agent capabilities, controlled host exposure. It runs Claude Code via the Claude Agent SDK by default, or any LangChain provider (Ollama, OpenAI, Gemini, and more) via LangGraph. Profiles layer in system prompts, hooks, commands, skills, agents, and custom tools — install and customize what each project needs. The web interface renders the full conversation — markdown, code, diffs, and diagrams — while dockable panels track tasks, queue follow-up messages, switch between sessions, and fork at any point in history: a multi-panel workspace the terminal can't replicate.
+
+<img src="./docs/demo.gif" alt="claudebox: an agent tracking todos, researching a spec, and fixing a bug end to end" />
 
 ## Prerequisites
 
 - **Podman** or Docker
 - **Git**
 - **Bash**
-- **Python** 3.11+ (managed via [uv](https://docs.astral.sh/uv/), installed automatically if not present)
+- **Python** 3.13+ (managed via [uv](https://docs.astral.sh/uv/), installed automatically if not present)
 - **Node.js** 24+ (managed via [nvm](https://github.com/nvm-sh/nvm), installed automatically if not present)
 
 ## Installation
@@ -25,6 +27,9 @@ curl -LsSf https://raw.githubusercontent.com/jakubro/claudebox/main/bin/install.
 # Docker
 CLAUDEBOX_BACKEND=docker curl -LsSf https://raw.githubusercontent.com/jakubro/claudebox/main/bin/install.sh | bash
 
+# First run — authenticate via TUI (one-time)
+claudebox run
+
 # Then open https://localhost:41820
 ```
 
@@ -34,12 +39,7 @@ This clones the library, builds the frontend and container image, installs the `
 
 ## Quick Start
 
-```bash
-# First run — authenticate via TUI (one-time)
-claudebox run
-```
-
-The first launch opens the Claude Code TUI where you complete authentication. Credentials persist across sessions within the same workspace (or globally when no `.workspace` marker is set). After login, you can use either TUI or web mode.
+The first launch (`claudebox run`) opens the Claude Code TUI where you complete authentication. Credentials persist across sessions within the same workspace (or globally when no `.workspace` marker is set). After login, you can use either TUI or web mode.
 
 The web UI is served by `claudeboxd`, a daemon installed during setup, at [https://localhost:41820](https://localhost:41820). Caddy fronts the daemon with a self-signed TLS certificate; your browser will show a one-time certificate warning that's safe to accept. The daemon manages container lifecycles and proxies requests to the per-session container API.
 
@@ -74,9 +74,13 @@ backend = "podman"
 [network]
 mode = "slirp4netns:allow_host_loopback=true"
 
-# Agent can run/build its own containers inside the session (rootless, invisible outside it). Off by default.
+# Agent can run/build its own containers inside the session (no --privileged flag, invisible outside it). Off by default.
 [containers]
 nested = true
+
+# "Open in IDE" controls in tool blocks; {path} and {line} are substituted. Omit to disable.
+[editor]
+url_template = "jetbrains://idea/navigate/reference?project=myProject&path={path}:{line}"
 
 # Environment variables passed to the container
 [env]
@@ -113,7 +117,7 @@ Indentation is preserved: when `{{ content }}` appears indented, all included li
 
 **Claude Code SDK hooks.** In addition to shell lifecycle hooks, profiles can include Python hooks processed by the `@hook` and `@statusline` decorators. These integrate with the Claude Code hook system (SessionStart, PreToolUse, PostToolUse, etc.) for programmatic control over agent behavior.
 
-Point your config at a profile with `profile = "/path/to/profile"`. See [`etc/profile.sample/`](etc/profile.sample/) for a working example with modular prompts, lifecycle hooks, a multi-agent review command, and an MCP skill.
+Point your config at a profile with `profile = "/path/to/profile"`. See [`etc/profile.sample/`](etc/profile.sample/) for a working example with modular prompts, lifecycle hooks, a command, and a skill.
 
 ## Workspaces
 
@@ -181,12 +185,13 @@ Panels toggle from icon strips on the left (Sessions, Containers) and right (Tod
 
 - Real-time streaming responses with markdown rendering, syntax-highlighted code blocks, and mermaid diagrams
 - Collapsible tool blocks with formatted summaries (file diffs, grep results, search hits)
+- Open a file in your editor from a tool block, or Alt+Click a highlighted path (requires `[editor] url_template`)
 - Inline interactive forms — answer questions and review plans without leaving the chat
 - Drag-drop or paste file/image attachments
 - Input history (Up/Down), draft persistence, and auto-resize textarea
 - XML block folding in the input area (Ctrl+' to collapse, Ctrl+\ to expand)
 - Rewind to any user message — fork here (replaces current session) or fork in new browser tab
-- Inline quote-and-reply — drag-select any message text to quote it, reply to several fragments in a side comments bar, and send them together as one turn (desktop)
+- Inline quote-and-reply — drag-select any message text to quote it; each reply box opens beside its own highlight, several stay open at once, and all replies send as one turn (desktop)
 - Turn-level copy buttons, collapsible turns, duration and timestamp badges
 - Slash command autocomplete — type `/` at the start of input for a substring-matched dropdown of available commands
 
@@ -324,6 +329,7 @@ model = "anthropic:claude-sonnet-5"   # "provider:model-id" form
 
 [langgraph.ollama]
 base_url = "http://host.containers.internal:11434"   # Ollama on the host
+reasoning = true   # opt in to reasoning; anthropic: thinking = { type = "adaptive" }, openai: reasoning_effort = "high"
 ```
 
 The model id follows LangChain's `init_chat_model` convention. Common providers:
@@ -342,7 +348,9 @@ LangGraph workspaces also support MCP servers via `[langgraph.mcp.<name>]` block
 
 ### What's different under LangGraph
 
-LangGraph binds the same core tools (filesystem, search, shell, web, MCP), but some Claude-only UI surfaces are hidden because the runtime doesn't support them: the effort picker, permission-mode picker, mid-session model picker, skills autocomplete, manual `/compact` button, and MCP control panel.
+LangGraph binds the same core tools (filesystem, search, shell, web, MCP) and runs skills the same way — Skills panel, `/` autocomplete, and typed `/<skill>` all work. Claude-only surfaces the runtime doesn't support are hidden: the effort picker, permission-mode picker, mid-session model picker, manual `/compact` button, and MCP control panel.
+
+There is no permission mode and no per-action approval under LangGraph — the container is the isolation boundary for the whole tool surface.
 
 > Model calls, `web_fetch`/`web_search`, and `[langgraph.mcp.*]` servers all make outbound requests from the container. The container's network policy is the real boundary — review your configured providers before adopting in privacy-sensitive workspaces.
 
@@ -406,7 +414,7 @@ The container image is built in three layers, each rebuilt at different frequenc
 | **Profile** | Custom tools installed by the profile's `image-build.sh` hook | On profile change |
 | **Agent** | Claude Code CLI (via mise) + Python dependencies (`uv sync`) | On `build --layer agent` |
 
-`build` rebuilds all layers with caching. `build --layer agent` forces only the agent layer to rebuild (fast update for new Claude Code versions). `build --layer all` discards all caches.
+`build --layer agent` forces only the agent layer to rebuild — a fast update path for new Claude Code versions. `build --layer all` discards every cache for a full rebuild from base.
 
 ### Shell completion (bash)
 
@@ -420,15 +428,15 @@ Reload your shell, and pressing Tab fills in commands and their arguments as you
 
 ### Maintenance
 
-Claudebox ships with a systemd timer that rebuilds the agent layer of the container image daily to keep Claude Code and dependencies up to date. The timer is installed automatically during setup.
+Claudebox ships with a systemd timer that rebuilds the agent layer of the container image daily to keep Claude Code and dependencies up to date, installed automatically during setup.
+
+A second timer health-checks the daemon every 30 seconds and restarts it if it stops serving, so a hung daemon recovers unattended.
 
 On macOS or systems without systemd, run maintenance manually:
 
 ```bash
 claudebox update
 ```
-
-This pulls the latest library, rebuilds the container image, and prunes old containers. (The underlying script lives at `~/.claudebox/lib/bin/install.sh` and can be invoked directly as a fallback.)
 
 ### Update
 
@@ -438,7 +446,7 @@ To update Claudebox itself (library + container image):
 claudebox update
 ```
 
-Same code path as fresh install — it detects an existing installation and reinstalls in place (library, frontend build, systemd units, container image). Concurrent invocations are blocked by an `flock` inside the install script; the second invocation exits non-zero immediately. The underlying script (`~/.claudebox/lib/bin/install.sh`) can still be invoked directly when needed.
+Same code path as fresh install: it detects an existing installation, reinstalls in place (library, frontend build, systemd units, container image), and prunes stale containers. An `flock` inside the install script blocks concurrent invocations — the second exits non-zero immediately. The underlying script (`~/.claudebox/lib/bin/install.sh`) can also be invoked directly.
 
 ### Logs
 
@@ -495,7 +503,7 @@ flowchart LR
 | Container fails to start                 | `claudebox --verbose` to see the full `podman run` command; check logs                                                                                        |
 | Stale containers / disk pressure         | `claudebox prune` (or `claudebox -v prune` for per-item output)                                                                                               |
 | Need daemon/container logs               | `journalctl --user -u claudebox-daemon.service -f` (systemd) or `~/.claudebox/logs/`                                                                          |
-| Browser find (Cmd-F/Ctrl-F) misses older messages, or Print/Save-as-PDF only captures part of the conversation | Expected. The chat builds only the turns near the viewport so long sessions stay fast, and the browser can only search or print what is currently built. Scroll to the region first, or use the minimap and Alt+Up/Down to navigate. |
+| Browser find (Cmd-F/Ctrl-F) misses older messages or terminal entries, or Print/Save-as-PDF only captures part of the conversation | Expected. The chat and the terminal column both build only the entries near the viewport so long sessions stay fast, and the browser can only search or print what is currently built. Scroll to the region first; the minimap and Alt+Up/Down also help for the chat transcript. |
 
 ## Security
 
@@ -504,6 +512,7 @@ Claudebox's trust boundary is the container. Agents run with `--permission-mode 
 - **Inside the container**: agent has full filesystem access to the workspace, full network access, and can install packages.
 - **Outside the workspace**: protected by the container boundary — agent cannot read or write host files outside the mounted workspace.
 - **Daemon network surface**: Caddy listens on all interfaces at the configured port (default 41820) with a self-signed TLS certificate. There is no built-in auth on the HTTP surface, so anyone with network access to the host can reach the daemon. Bind to localhost, firewall the port, or front with an authenticated reverse proxy if hosting on a network you don't control.
+- **Nested containers**: `[containers] nested = true` lets the agent run its own containers — no `--privileged` flag, tmpfs-backed, invisible to the host and to sibling sessions, gone when the session ends. Off unless set.
 - **Credentials**: Claude Code's auth token lives at `.claudebox/fs/root/.claude.json` (per-workspace) or `~/.claudebox/fs/root/.claude.json` (global). Treat these as you would any other API token.
 
 Claudebox itself is telemetry-free.
@@ -553,10 +562,20 @@ podman image prune -f --filter label=app=claudebox
 - [Guidelines](docs/GUIDELINES.md) — coding conventions, development setup, and testing
 - [Test UI](docs/TEST-UI.md) — in-container Playwright harness for live debugging
 
-## Acknowledgements
+## Built With
 
-Built on [Claude Code](https://github.com/anthropics/claude-code) and the [Claude Agent SDK](https://docs.anthropic.com/claude/docs/agent-sdk). Uses [LangGraph](https://langchain-ai.github.io/langgraph/) and [LangChain](https://www.langchain.com/) for multi-provider runtime support, plus [FastAPI](https://fastapi.tiangolo.com/), [Vite](https://vite.dev/), [React](https://react.dev/), [Dockview](https://dockview.dev/), [Playwright](https://playwright.dev/), [Caddy](https://caddyserver.com/), [uv](https://docs.astral.sh/uv/), [nvm](https://github.com/nvm-sh/nvm), [Podman](https://podman.io/), and [Docker](https://www.docker.com/).
+Claudebox is a thin layer over other people's work.
+
+- **Agent runtimes** — [Claude Code](https://github.com/anthropics/claude-code), [Claude Agent SDK](https://docs.anthropic.com/claude/docs/agent-sdk), [LangGraph](https://langchain-ai.github.io/langgraph/), [LangChain](https://www.langchain.com/), [Model Context Protocol](https://modelcontextprotocol.io/), [Ollama](https://ollama.com/)
+- **Interface** — [React](https://react.dev/), [Vite](https://vite.dev/), [Dockview](https://dockview.dev/), [dnd kit](https://dndkit.com/), [Floating UI](https://floating-ui.com/), [TanStack Virtual](https://tanstack.com/virtual), [Lucide](https://lucide.dev/)
+- **Typefaces** — [Inter](https://rsms.me/inter/), [JetBrains Mono](https://www.jetbrains.com/lp/mono/)
+- **Rendering** — [react-markdown](https://github.com/remarkjs/react-markdown), [remark/rehype](https://unifiedjs.com/), [Mermaid](https://mermaid.js.org/), [KaTeX](https://katex.org/), [highlight.js](https://highlightjs.org/), [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter), [DOMPurify](https://github.com/cure53/DOMPurify), [jsdiff](https://github.com/kpdecker/jsdiff)
+- **Backend** — [FastAPI](https://fastapi.tiangolo.com/), [Starlette](https://www.starlette.io/), [Uvicorn](https://www.uvicorn.org/), [HTTPX](https://www.python-httpx.org/), [Pydantic](https://docs.pydantic.dev/), [structlog](https://www.structlog.org/), [Rich](https://github.com/Textualize/rich), [ruamel.yaml](https://sourceforge.net/projects/ruamel-yaml/)
+- **Container and toolchain** — [Podman](https://podman.io/), [Docker](https://www.docker.com/), [Ubuntu](https://ubuntu.com/), [Bubblewrap](https://github.com/containers/bubblewrap), [mise](https://mise.jdx.dev/), [uv](https://docs.astral.sh/uv/), [nvm](https://github.com/nvm-sh/nvm), [Node.js](https://nodejs.org/), [just](https://just.systems/), [Caddy](https://caddyserver.com/)
+- **Testing and quality** — [Playwright](https://playwright.dev/), [Vitest](https://vitest.dev/), [pytest](https://docs.pytest.org/), [Biome](https://biomejs.dev/), [Ruff](https://docs.astral.sh/ruff/), [ty](https://github.com/astral-sh/ty), [Knip](https://knip.dev/), [jscpd](https://github.com/kucherenko/jscpd)
 
 ## License
 
 Copyright (C) 2025-2026 Jakub Roman. Distributed under the [GNU GPL v3](LICENSE).
+
+Third-party licenses and the notices that must accompany a redistributed build are recorded in [NOTICE.md](NOTICE.md).

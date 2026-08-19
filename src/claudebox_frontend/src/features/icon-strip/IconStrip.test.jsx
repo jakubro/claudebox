@@ -15,7 +15,6 @@ vi.mock('lucide-react', () => ({
   History: () => <span>⏰</span>,
   Kanban: () => <span>📋</span>,
   ListTodo: () => <span>📋</span>,
-  Network: () => <span>🌐</span>,
   Plug: () => <span>🔌</span>,
   SquareKanban: () => <span>📊</span>,
   Terminal: () => <span>💻</span>,

@@ -29,3 +29,13 @@
 .dropdown-option:hover {
   background: var(--bg-tertiary);
 }
+
+/* Shared popover chrome; CommandAutocomplete.css and SlashCommandToken.css keep positioning. */
+.command-autocomplete,
+.slash-command-hover-card {
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}

@@ -20,6 +20,8 @@ class SessionMetadata(DataClass):
     fork_point_cost_usd: float
     name: str | None = None
     model: str | None = None
+    runtime: str | None = None
+    provider: str | None = None
     started_at: datetime | None = None
     updated_at: datetime | None = None
     num_turns: int | None = None

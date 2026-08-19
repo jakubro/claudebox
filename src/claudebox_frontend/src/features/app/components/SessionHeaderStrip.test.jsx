@@ -302,7 +302,7 @@ describe('SessionHeaderStrip', () => {
 
     expect(screen.getByTestId('session-header-session-name')).toHaveAttribute(
       'title',
-      'Session directory - /tmp/sessions/abc',
+      'Session directory — /tmp/sessions/abc',
     )
   })
 

@@ -301,6 +301,7 @@ The center area of the workspace shows a single **main panel** whose content is 
 - Horizontal divider rendered between turns when model, permission mode, or effort level changes mid-conversation <!-- claim:turn:setting-change-divider -->
 - Effort level divider labeled `Effort: <level>` <!-- claim:turn:effort-change-divider -->
 - Amber divider appears at the resume point whenever a session resumes with prior messages in the chat; labeled `Restarted` for an ordinary restart, or `Forked from <parent>` on the first viewing of a forked session <!-- claim:turn:container-restart-divider -->
+- Reopening a session under a workspace whose runtime has changed since the session was created shows a red warning divider naming both runtimes, instead of silently running the new one <!-- claim:turn:runtime-mismatch-divider -->
 
 ### 3.2 Input Behavior
 
@@ -347,6 +348,7 @@ The center area of the workspace shows a single **main panel** whose content is 
 | View returns to the bottom (scrolling back, Alt+End, Alt+Down past the last message, or the control-bar jump-to-bottom button) | View resumes following new content; no jump-to-bottom button or other affordance | <!-- claim:chat:autoscroll-reenable -->
 | Scroll within code block / nested scrollable | View keeps following; only scrolling the conversation itself stops it | <!-- claim:chat:auto-scroll-ignores-nested-scroll -->
 | Click bookmark for active session | Stops following when the resulting position will not be at the bottom; if the target keeps the chat scrolled to the bottom, the view keeps following | <!-- claim:chat:bookmark-click-respects-autoscroll -->
+| Click a task in the Tasks panel | Stops following when the resulting position will not be at the bottom; if the target keeps the chat scrolled to the bottom, the view keeps following | <!-- claim:chat:task-click-respects-autoscroll -->
 | Tab switch                   | Preserve scroll position   | <!-- claim:chat:autoscroll-tab-switch -->
 | Session rename               | Preserve scroll position across rename via chat control bar pencil, sessions panel right-click, or panel-tab right-click | <!-- claim:chat:rename-preserves-scroll -->
 | During streaming             | Scrolling feels as smooth as when no response is in flight | <!-- claim:chat:autoscroll-streaming-responsive -->
@@ -374,6 +376,7 @@ Control bar at top of Chat panel with two groups: <!-- claim:chat:control-bar --
 | | | Separator | <!-- claim:chat:control-fork-separator -->
 | Session Prompt | Note icon | Toggle dropdown editor for per-session prompt text | <!-- claim:chat:control-session-prompt -->
 | Auto-collapse | Chevrons-down-up icon | Toggle auto-collapse of earlier turns, keeping only the last turn expanded; on by default; pressed when on | <!-- claim:chat:turn-autocollapse-toggle -->
+| Terminal split | Split-square-horizontal icon | "Show agent's terminal" / "Hide agent's terminal" - toggles the terminal column, which carries the session's shell commands; off by default; pressed when on | <!-- claim:chat:control-terminal-split -->
 
 **Right group:**
 
@@ -577,6 +580,30 @@ Quote any part of a turn - prose, code, tool output, or a thinking block - write
 - Message history, stash, and slash-command autocomplete stay with the message box; arrow keys in a reply box move the caret instead <!-- claim:chat:inline-replies-editing-excluded -->
 - A collapsed block of text left in a reply is delivered in full when sent, never as its collapsed placeholder <!-- claim:chat:inline-replies-collapse-expands-on-send -->
 
+### 3.18 Terminal Column
+
+The chat content area splits into two columns: the transcript on the left, and a running shell
+transcript on the right - desktop only.
+
+- The chat content area shows two columns of equal width, with a draggable boundary between them <!-- claim:chat:terminal-column -->
+- A shell command the assistant runs appears in the terminal column instead of as a block in its turn; every other tool call still renders in its turn exactly as before <!-- claim:chat:terminal-column-routing -->
+- A terminal entry shows the model's description as a dimmed comment line above the command, then the command on a prompt line, then its output beneath; a call with no description starts directly at the command <!-- claim:chat:terminal-entry-shape -->
+- A terminal entry's lines are never broken to fit the column; a line wider than the column scrolls sideways on its own, independent of the rest of the entry <!-- claim:chat:terminal-entry-no-wrap -->
+- A command the tool reports as failed is marked on its command line; its output still shows beneath it <!-- claim:chat:terminal-entry-failure -->
+- Hovering a terminal entry reveals a jump button alongside a copy button; the copy button copies that command alone <!-- claim:chat:terminal-entry-copy -->
+- The hover controls sit level with the entry's first line, whichever it is - the description comment when there is one, the command otherwise <!-- claim:chat:terminal-entry-controls-position -->
+- A terminal entry appears as soon as its command text arrives, before the command completes; its output fills in beneath it once the call lands <!-- claim:chat:terminal-entry-running -->
+- A terminal entry's output is coloured when its content is recognisable (e.g. JSON), the same way an inline tool block's output is; unrecognisable output, including markdown-looking text, stays plain <!-- claim:chat:terminal-entry-output-highlighting -->
+- The terminal column shows every shell command run since the session started, oldest first, regardless of which turn ran it <!-- claim:chat:terminal-column-scope -->
+- Entries outside the viewport are not present in the page, so the browser's own find-on-page and Print/Save-as-PDF reach only the entries currently on screen; scrolling to an entry brings it back <!-- claim:chat:terminal-column-offscreen-absent -->
+- The terminal column scrolls to a newly landed entry when it was already scrolled to the bottom, and stays where it was left when it was scrolled up <!-- claim:chat:terminal-column-autoscroll -->
+- Clicking a terminal entry's jump button scrolls the transcript to the turn that ran it and highlights it, including when that turn is not currently mounted; an entry belonging to a turn the transcript cannot address shows no jump button <!-- claim:chat:terminal-entry-jump -->
+- Dragging the boundary between the columns resizes both live; neither column can be dragged below a minimum width <!-- claim:chat:terminal-split-divider -->
+- The boundary position is restored after a page reload <!-- claim:chat:terminal-split-divider-persist -->
+- A session that has run no shell commands shows the terminal column with a message stating none have run <!-- claim:chat:terminal-column-empty -->
+- A subagent's shell commands stay nested inside its own activity section in the transcript and never appear in the terminal column <!-- claim:chat:terminal-column-subagent -->
+- Turning the terminal column off restores every shell command inline in its turn, with the command and its output intact, and the choice is restored after a page reload <!-- claim:chat:terminal-split-toggle-off -->
+
 ---
 
 ## 4. Tool Display
@@ -690,6 +717,7 @@ Visual styling for expanded Grep output: <!-- claim:tool:grep-visual -->
 - Alongside your choices you can type a message; sending delivers both as one turn, together with any attachments and any inline replies you have waiting <!-- claim:tool:askuser-note -->
 - User's selection shown immediately after submit <!-- claim:tool:askuser-optimistic -->
 - The answer and the message it was sent with are both shown in the transcript <!-- claim:tool:askuser-note-shown -->
+- The message sent with an answer appears in the same bubble as a message sent on its own <!-- claim:tool:askuser-note-bubble -->
 - After submit, highlight what was answered (selected option or custom text) <!-- claim:tool:askuser-highlight-answer -->
 - Tool block collapses after submitting response <!-- claim:tool:askuser-collapse-after-submit -->
 - Q/A visual separation: visually distinguish questions from answers, separate pairs <!-- claim:tool:askuser-qa-separation -->
@@ -790,6 +818,7 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 - Handled tools (Read, Edit, Write, Bash, Grep, Glob, Task, etc.) use their specialized formatters and omit the generic input section <!-- claim:tool:input-handled-skip -->
 - Unhandled tools wrap output in collapsible "Output" section (symmetric with "Input" section) <!-- claim:tool:output-unhandled-section -->
 - A Bash block's command and its output are shown in the same fixed-width type as other code, on a single surface <!-- claim:tool:bash-code-surface -->
+- A shell command appears in the terminal column while the split is on, and as a block in its turn while the split is off <!-- claim:tool:bash-terminal-routing -->
 
 ### 4.9 Todos Details
 
@@ -945,6 +974,7 @@ Tool output with code or text content: <!-- claim:tool:codeblock-detect -->
 
 - Shows all sessions (newest first) <!-- claim:panel-session:list-order -->
 - Each row: status dot (green/gray), ID (first 8 chars) + name (if set), time ago, turns, cost <!-- claim:panel-session:row-content --> <!-- claim:panel-session:container-dot -->
+- A row for a session whose runtime is known also shows that runtime's name <!-- claim:panel-session:runtime-badge -->
 - Resume button (Play icon) shows a spinner from click until the tab switch / new browser tab paints; disabled while spinning <!-- claim:panel-session:resume-spinner -->
 - Hovering turns / cost / each timestamp segment reveals informative tooltips: "Turns — N", "API cost this session — $X.XX", "Started — …", "Last active — …" <!-- claim:panel-session:meta-tooltips -->
 - Clicking session ID copies full session directory path to clipboard; shows "Copied!" briefly <!-- claim:panel-session:copy-id -->
@@ -981,7 +1011,7 @@ Tool output with code or text content: <!-- claim:tool:codeblock-detect -->
 ### 5.3 Display Format
 
 - Time: "just now" (<1m), "Xm ago", "Xh ago", "Xd ago" (<7d), then full date <!-- claim:panel-session:time-format -->
-- Time range: "started → updated" when different <!-- claim:panel-session:time-range -->
+- Time range: "started – updated" when different <!-- claim:panel-session:time-range -->
 - Cost: USD with 2 decimal places (`$X.XX`), `$X.XXK` for ≥$1K; em dash if null <!-- claim:panel-session:cost-format -->
 - Turns: "X turns", "—" if null <!-- claim:panel-session:turns-format -->
 - Messages: truncated with ellipsis <!-- claim:panel-session:message-truncate -->
@@ -1174,7 +1204,7 @@ Temporary text clipboard for storing/retrieving prompts.
 
 ---
 
-## 7. Todos Panel
+## 8. Todos Panel
 
 ### 8.1 Display
 
@@ -1207,13 +1237,13 @@ Temporary text clipboard for storing/retrieving prompts.
 
 ---
 
-## 8. Help Panel
+## 9. Help Panel
 
 Displays keyboard shortcuts reference tables. <!-- claim:panel-help:shortcuts-table -->
 
 ---
 
-## 9. Footer
+## 10. Footer
 
 ### 10.1 DEV Mode Indicator
 
@@ -1254,7 +1284,7 @@ Displays keyboard shortcuts reference tables. <!-- claim:panel-help:shortcuts-ta
 | Effort          | Effort level name + chevron; clickable to open effort picker | "Effort — level"               | <!-- claim:footer:effort -->
 | Permission mode | Permission mode label + chevron; clickable to open mode picker | "Permission mode — label"      | <!-- claim:footer:permission-mode -->
 | Session ID      | First fragment (before the first "-"); full id stays in the tooltip / copy | "Session directory — /path/..." | <!-- claim:footer:session-id -->
-| Runtime ID      | 12-char prefix; "—" when no container; clicking copies the full id; transitions to "—" immediately when the container stops | "Container — full-id" | <!-- claim:footer:runtime-id -->
+| Runtime ID      | 8-char prefix; "—" when no container; clicking copies the full id; transitions to "—" immediately when the container stops | "Container — full-id" | <!-- claim:footer:runtime-id -->
 
 On a brand-new session, every footer field shows a real value from the moment the session view appears. <!-- claim:footer:new-session-populated -->
 
@@ -1334,9 +1364,31 @@ Dropdown for switching Claude's reasoning effort level at runtime: <!-- claim:fo
 - All effort levels available on all models <!-- claim:footer:effort-picker-all-models -->
 - Effort level persisted in session; survives refresh and resume <!-- claim:footer:effort-picker-persist -->
 
+### 10.10 Plan Limit Warnings
+
+An item per usage window appears in the footer, immediately left of the workspace name, only while
+that window is being approached or has been reached: <!-- claim:footer:rate-limit -->
+
+- Position: immediately after the status indicator, before the workspace name; each item carries
+  its own separator, so multiple items and the workspace name each stay visually distinct <!-- claim:footer:rate-limit-position -->
+- Two windows: "Session" and "Weekly"; when both are being approached at once, Session appears
+  first, then Weekly <!-- claim:footer:rate-limit-order -->
+- Reads "Session <n>%" or "Weekly <n>%" while a percentage is known <!-- claim:footer:rate-limit-percentage -->
+- Tinted from amber toward red as the percentage climbs; solid red once at or past the danger
+  threshold, however much higher it climbs <!-- claim:footer:rate-limit-color -->
+- Once a window is fully reached, its item reads "Session limit reached" or "Weekly limit reached"
+  in red, with no percentage <!-- claim:footer:rate-limit-reached -->
+- Hovering an item shows which window it is, the percentage (when known), and when it resets <!-- claim:footer:rate-limit-tooltip -->
+- An item disappears on its own once its window resets or usage falls back to normal, and its
+  separator disappears with it <!-- claim:footer:rate-limit-clears -->
+- An item belongs to the workspace it appeared in: it stays visible after switching sessions or
+  reloading the page within that workspace, and clears once a new session in that workspace
+  reports the window back to normal <!-- claim:footer:rate-limit-persistence -->
+- Nothing appears here before any usage information is known <!-- claim:footer:rate-limit-unknown -->
+
 ---
 
-## 10. Error Handling
+## 11. Error Handling
 
 ### 11.1 Error Display
 
@@ -1372,7 +1424,7 @@ Dropdown for switching Claude's reasoning effort level at runtime: <!-- claim:fo
 
 ---
 
-## 11. Performance Requirements
+## 12. Performance Requirements
 
 ### 12.1 Responsiveness
 
@@ -1385,7 +1437,7 @@ Dropdown for switching Claude's reasoning effort level at runtime: <!-- claim:fo
 
 ---
 
-## 12. Notifications
+## 13. Notifications
 
 ### 13.1 Desktop Notifications
 
@@ -1430,7 +1482,7 @@ Visual indicator in browser tab: <!-- claim:notify:tab-indicator -->
 
 ---
 
-## 13. MCP Status Panel
+## 14. MCP Status Panel
 
 ### 14.1 Panel Content
 
@@ -1451,19 +1503,19 @@ Visual indicator in browser tab: <!-- claim:notify:tab-indicator -->
 
 ---
 
-## 14. Bookmarks
+## 15. Bookmarks
 
-### 14.1 Bookmark Toggle
+### 15.1 Bookmark Toggle
 
 - Bookmark button shown on user message rows (between rewind and copy buttons); on assistant turns, bookmark button is persistently visible in the turn's meta area alongside the copy button <!-- claim:bookmark:toggle-btn -->
 - User-turn bookmark hidden by default, visible on hover; assistant-turn bookmark always visible; filled yellow when active, outline when inactive <!-- claim:bookmark:toggle-visibility -->
 - Clicking toggles bookmark state; survives refresh and resume <!-- claim:bookmark:persistence -->
 
-### 14.2 Minimap Indicators
+### 15.2 Minimap Indicators
 
 - Bookmarked turns display as fully highlighted yellow sub-bar segments in minimap <!-- claim:bookmark:minimap-segment -->
 
-### 14.3 Bookmarks Panel
+### 15.3 Bookmarks Panel
 
 - Side panel on right strip below Tasks and above Boards, accessible via Alt+5 <!-- claim:panel-bookmarks:shortcut -->
 - Two tabs: "This session" and "All sessions", with count badges <!-- claim:panel-bookmarks:tabs -->
@@ -1477,25 +1529,27 @@ Visual indicator in browser tab: <!-- claim:notify:tab-indicator -->
 - Remove button anchored to the top-right corner of each item, visible on hover <!-- claim:panel-bookmarks:remove -->
 - Middle-click or Alt+click opens the bookmarked session in a new browser tab; the originating item flashes briefly to confirm the action <!-- claim:panel-bookmarks:new-tab -->
 
-### 14.4 Cross-Tab Sync
+### 15.4 Cross-Tab Sync
 
 - Bookmark changes sync across browser tabs <!-- claim:bookmark:cross-tab -->
 
 ---
 
-## 15. Tasks Panel
+## 16. Tasks Panel
 
-### 15.1 Purpose
+### 16.1 Purpose
 
 Panel for monitoring background tasks: <!-- claim:panel-task:panel -->
 
 - Filter tabs: "Active" (running only) and "All" (including completed/failed/killed); badge counts per filter <!-- claim:panel-task:filter-tabs -->
 - Tasks sorted chronologically (oldest first) <!-- claim:panel-task:sort-chronological -->
 - Click task focuses chat tab, then scrolls to the top of the visible area with a brief highlight pulse <!-- claim:panel-task:click-tab -->
+- Clicking a task whose place in the conversation has scrolled out of view still brings it into view <!-- claim:panel-task:click-reaches-history -->
+- Clicking a task inside a collapsed turn opens that turn and shows the task <!-- claim:panel-task:click-opens-collapsed-turn -->
 - Empty state: "No tasks" <!-- claim:panel-task:empty -->
 - Resume state: "Resuming..." <!-- claim:panel-task:resume -->
 
-### 15.2 Task Item Display
+### 16.2 Task Item Display
 
 | Element | Content |
 |---------|---------|
@@ -1503,7 +1557,7 @@ Panel for monitoring background tasks: <!-- claim:panel-task:panel -->
 | Description | Task description from invocation | <!-- claim:panel-task:description -->
 | Duration | Time since start (live for running) | <!-- claim:panel-task:duration -->
 
-### 15.3 Staleness Indication
+### 16.3 Staleness Indication
 
 Running tasks show staleness via left border color gradient: <!-- claim:panel-task:staleness -->
 
@@ -1515,9 +1569,9 @@ Running tasks show staleness via left border color gradient: <!-- claim:panel-ta
 
 ---
 
-## 16. Usage Panel
+## 17. Usage Panel
 
-### 16.1 Panel Content
+### 17.1 Panel Content
 
 Aggregated cost display over time intervals: <!-- claim:panel-usage:content -->
 
@@ -1535,9 +1589,9 @@ Aggregated cost display over time intervals: <!-- claim:panel-usage:content -->
 
 ---
 
-## 17. Logs Panel
+## 18. Logs Panel
 
-### 17.1 Panel Content
+### 18.1 Panel Content
 
 Real-time log viewer:
 
@@ -1551,9 +1605,9 @@ Real-time log viewer:
 
 ---
 
-## 18. Commands Panel
+## 19. Commands Panel
 
-### 18.1 Panel Content
+### 19.1 Panel Content
 
 Displays available slash commands organized by category:
 
@@ -1568,15 +1622,15 @@ Displays available slash commands organized by category:
 
 ---
 
-## 19. Workspaces & Containers
+## 20. Workspaces & Containers
 
-### 19.1 Workspace Discovery
+### 20.1 Workspace Discovery
 
 - Available workspaces appear on page load <!-- claim:workspace:discovery -->
-- Single workspace: auto-selected; no workspace-list dropdown shown (color palette still appears in chat group; see §19.2) <!-- claim:workspace:auto-select -->
+- Single workspace: auto-selected; no workspace-list dropdown shown (color palette still appears in chat group; see §20.2) <!-- claim:workspace:auto-select -->
 - Multiple workspaces: selection priority is URL hash > saved preference > first workspace <!-- claim:workspace:selection-priority -->
 
-### 19.2 Workspace Switcher
+### 20.2 Workspace Switcher
 
 - Dropdown in the chat-area header tab bar (right-aligned) <!-- claim:workspace:switcher -->
 - Shows current workspace name with chevron <!-- claim:workspace:switcher-label -->
@@ -1590,21 +1644,21 @@ Displays available slash commands organized by category:
 - A "+ Register workspace…" footer item below the color palette opens a modal that accepts an absolute path and registers it <!-- claim:workspace:register -->
 - Registering an already-known path is idempotent: the modal shows an inline notice and auto-closes; no duplicate workspace row is created <!-- claim:workspace:register-idempotent -->
 
-### 19.3 Deep Linking
+### 20.3 Deep Linking
 
 - URL form: `#/workspaces/{workspaceId}/sessions/{sessionId}` <!-- claim:workspace:url-routing -->
 - Supports deep linking and browser back/forward navigation <!-- claim:workspace:url-deep-link -->
 - Deep link to session in different workspace triggers automatic workspace switch <!-- claim:workspace:url-cross-workspace -->
 - URL updates on session switch, workspace switch, and new session creation <!-- claim:workspace:url-update -->
 
-### 19.4 Container Status Indicators
+### 20.4 Container Status Indicators
 
 - Colored dot on the session header strip: green (running), amber (stopping), gray (no container) <!-- claim:container:tab-dot -->
 - Colored dot on session panel rows: same colors and states <!-- claim:container:panel-dot -->
 - Dot color mapping: running (green), stopping (amber), all other states (gray) <!-- claim:container:dot-states -->
 - Stopping a session shows the stopping color on every status dot at once; once the container is gone, all dots clear together — no dot stays showing stopping, and none keeps showing running <!-- claim:container:stop-clears-uniformly -->
 
-### 19.5 Session Creation Overlay
+### 20.5 Session Creation Overlay
 
 When creating a new session: <!-- claim:container:creation-overlay -->
 
@@ -1618,7 +1672,7 @@ When creating a new session: <!-- claim:container:creation-overlay -->
 | On success | Header strip swaps "Creating…" for the session name; overlay dismissed | <!-- claim:container:creation-success -->
 | On failure | Header strip clears the "Creating…" placeholder; error shown | <!-- claim:container:creation-failure -->
 
-### 19.7 Session Resume Overlay
+### 20.6 Session Resume Overlay
 
 When resuming an existing session: <!-- claim:container:resume-overlay -->
 
@@ -1629,11 +1683,11 @@ When resuming an existing session: <!-- claim:container:resume-overlay -->
 | Phase 2 | Replay progress: "Replaying events (X/Y)..." | <!-- claim:container:resume-replay-phase -->
 | Textarea | Stays usable and focused during resume; a message typed while the conversation is still loading stays in the composer, ready to send once the conversation is on screen | <!-- claim:container:resume-textarea-stays-enabled -->
 
-### 19.7.5 Containers Panel
+### 20.7 Containers Panel
 
 A bottom-slot panel listing every container the app knows about, across all registered workspaces. Mounted at the bottom-left slot of the bottom-panel strip.
 
-- Each row shows: a colored state dot, the container's 12-character identifier (the same one shown in the footer when the active session is attached to that container), the 8-character session identifier (matching the Sessions panel), the session name, the capitalized state name (Running / Starting / Stopping / Crashed / Stopped), the capitalized kind label, and the relative age <!-- claim:panel-containers:columns --> <!-- claim:panel-containers:id-source -->
+- Each row shows: a colored state dot, the container's 8-character identifier (the same one shown in the footer when the active session is attached to that container), the 8-character session identifier (matching the Sessions panel), the session name, the capitalized state name (Running / Starting / Stopping / Crashed / Stopped), the capitalized kind label, and the relative age <!-- claim:panel-containers:columns --> <!-- claim:panel-containers:id-source -->
 - Hovering the container identifier shows a tooltip reading `Container — <full identifier>` (the same string the footer's container pill shows) <!-- claim:panel-containers:id-tooltip-format -->
 - Hovering the session identifier shows a tooltip reading `Session directory — <full path>` (the same string the Sessions panel and the footer show on the session identifier) <!-- claim:panel-containers:session-id-tooltip-format -->
 - Clicking the container identifier copies the full identifier to the clipboard; a brief "Copied!" indicator appears in the same slot and reverts after a short interval <!-- claim:panel-containers:id-copy-on-click -->
@@ -1651,7 +1705,7 @@ A bottom-slot panel listing every container the app knows about, across all regi
 - The Resume control is not shown on the current container's row <!-- claim:panel-containers:current-no-resume -->
 - Empty state: "No containers" <!-- claim:panel-containers:empty -->
 
-### 19.8 Welcome State
+### 20.8 Welcome State
 
 - When no session is active, chat panel shows welcome page <!-- claim:container:welcome-state -->
 - Workspace name displayed prominently; colored with workspace accent if set, otherwise default text color <!-- claim:container:welcome-name -->
@@ -1660,27 +1714,27 @@ A bottom-slot panel listing every container the app knows about, across all regi
 - Picker changes (model, permission mode, effort level) made on the welcome screen apply to the next session created from that welcome view; only the latest value per picker is applied; pickers display the chosen values immediately <!-- claim:input:welcome-config-buffer -->
 - Keyboard shortcuts reference card listing key bindings (Alt+N, Alt+Shift+N, Alt+arrows, Alt+C, Alt+1..9, Alt+?) <!-- claim:container:welcome-shortcuts -->
 
-### 19.9 Nested Containers
+### 20.9 Nested Containers
 
 - A workspace may opt in so the agent can run and build its own containers inside its session <!-- claim:container:nested-opt-in -->
 - Containers the agent runs stay invisible to the host and to other sessions, and disappear when the session ends <!-- claim:container:nested-isolation -->
 
 ---
 
-## 20. Mobile
+## 21. Mobile
 
 A single-column layout for narrow screens: top bar, status strip, chat area only. No side panels, icon strips, or tab bar.
 
-### 20.1 Activation
+### 21.1 Activation
 
 - On touch-primary devices (phones and tablets), the app shows the mobile layout instead of the desktop layout <!-- claim:mobile:activation -->
 - Layout classification depends on device type, not browser window size <!-- claim:mobile:viewport-change -->
 
-### 20.2 Layout Structure
+### 21.2 Layout Structure
 
 Top to bottom: top bar, status strip, chat area. The drawer slides in from the left and the details sheet drops down from below the top bar — both appear over the chat area when opened. <!-- claim:mobile:layout-structure -->
 
-### 20.3 Top Bar
+### 21.3 Top Bar
 
 | Element | Behavior |
 |---------|----------|
@@ -1690,7 +1744,7 @@ Top to bottom: top bar, status strip, chat area. The drawer slides in from the l
 | Stop affordance | The chat send button doubles as the stop control on mobile | <!-- claim:mobile:send-button-stop -->
 | Details button (right) | Tapping toggles the details sheet open and closed | <!-- claim:mobile:top-details-toggle -->
 
-### 20.4 Status Strip
+### 21.4 Status Strip
 
 A thin, non-interactive bar below the top bar.
 
@@ -1700,7 +1754,7 @@ A thin, non-interactive bar below the top bar.
 - Percentage display caps at 100% even when context is exceeded <!-- claim:mobile:status-context-cap -->
 - Fill bar color shifts with usage level (e.g. green → amber → red as usage rises) <!-- claim:mobile:status-context-color -->
 
-### 20.5 Navigation Drawer
+### 21.5 Navigation Drawer
 
 Slides in from the left when the hamburger is tapped.
 
@@ -1715,7 +1769,7 @@ Slides in from the left when the hamburger is tapped.
 - Close session button stops the active session <!-- claim:mobile:drawer-close-session -->
 - Close session button is disabled when there is no active session or the app is disconnected <!-- claim:mobile:drawer-close-disabled -->
 
-### 20.6 Details Sheet
+### 21.6 Details Sheet
 
 Drops down from below the top bar when the details button is tapped.
 
@@ -1723,25 +1777,25 @@ Drops down from below the top bar when the details button is tapped.
 - Shows: connection status, workspace name, turn count, total cost (two decimals, USD), elapsed duration, context usage percentage, model, effort level, and permission mode <!-- claim:mobile:details-fields -->
 - The sheet's background is visually distinct from the chat behind it <!-- claim:mobile:details-sheet-bg -->
 
-### 20.7 Chat Area
+### 21.7 Chat Area
 
 - The welcome screen leads with a touch-suited usage prompt <!-- claim:mobile:welcome-touch -->
 - Chat occupies the full content width <!-- claim:mobile:chat-fullwidth -->
 - The send button doubles as a stop button while a response is in flight; tapping it interrupts the response <!-- claim:mobile:send-button-morph -->
 - Tapping the chat input keeps the page at its current zoom level <!-- claim:mobile:no-zoom -->
 
-### 20.8 Drawer Session Rows
+### 21.8 Drawer Session Rows
 
-- Each drawer session row shows a status dot, ID prefix, optional name, an edit pencil, started→updated timestamps, turns, cost, and first/last message previews — matching the desktop session item content <!-- claim:mobile:session-list-rich -->
+- Each drawer session row shows a status dot, ID prefix, optional name, an edit pencil, started–updated timestamps, turns, cost, and first/last message previews — matching the desktop session item content <!-- claim:mobile:session-list-rich -->
 - Tapping anywhere on a non-current session row resumes that session in the current browser tab and closes the drawer <!-- claim:mobile:session-list-tap-resume -->
 
 ---
 
-## 21. CLI
+## 22. CLI
 
 The host-side `claudebox` binary is a verb-mode command line: `claudebox <verb> [options] [-- agent-args]`. Each verb is a discrete subcommand with its own help and options.
 
-### 21.1 Run
+### 22.1 Run
 
 Running `claudebox run` launches an agent session in a fresh container:
 
@@ -1750,7 +1804,7 @@ Running `claudebox run` launches an agent session in a fresh container:
 - If no `.workspace` marker is found by walking up from the current directory, the current directory is used as the workspace; no error, no prompt <!-- claim:cli:run:workspace-fallback -->
 - `run` operates without registering the workspace; the session works in cwd-as-workspace fallback mode <!-- claim:cli:run:no-auto-register -->
 
-### 21.2 Build
+### 22.2 Build
 
 Running `claudebox build` produces a container image:
 
@@ -1760,39 +1814,39 @@ Running `claudebox build` produces a container image:
 
 > The `build` verb operates on the container image; `update` operates on Claudebox itself (Claudebox's library on the host). They are unrelated despite both being able to refresh "the agent" — `build` rebuilds the agent layer in the image; `update` refreshes Claudebox's own installed code.
 
-### 21.3 Shell
+### 22.3 Shell
 
 Running `claudebox shell` opens a fresh container with a bash prompt <!-- claim:cli:shell -->
 
-### 21.4 Prune
+### 22.4 Prune
 
 Running `claudebox prune` removes accumulated resources:
 
 - Running `prune` removes stale temp directories, dangling claudebox images, and stopped claudebox containers (typically none under auto-removal) <!-- claim:cli:prune -->
 - If a removal fails, the rest still run; the command exits non-zero <!-- claim:cli:prune:partial-failure -->
 
-### 21.5 Version
+### 22.5 Version
 
 Running `claudebox version` prints a multi-line block: the package version, the branch and short commit of the installed library, the install path, and the Python and container-runtime versions <!-- claim:cli:version -->
 
-### 21.6 Doctor
+### 22.6 Doctor
 
 Running `claudebox doctor` runs an ordered set of environment checks and prints a result row per check; the command exits non-zero if any check failed <!-- claim:cli:doctor -->
 
 The profile check names the profile from your settings; when that profile cannot be read, the check fails <!-- claim:cli:doctor:profile -->
 
-### 21.7 Update
+### 22.7 Update
 
 Running `claudebox update` refreshes Claudebox itself:
 
 - Running `update` refreshes Claudebox; verbose output is forwarded when `-v` is passed <!-- claim:cli:update -->
 - Running `update` twice in parallel: the second invocation fails immediately with a clear message <!-- claim:cli:update:concurrent-blocked -->
 
-### 21.8 Daemon
+### 22.8 Daemon
 
 Running `claudebox daemon start`, `stop`, `restart`, or `status` controls the host daemon <!-- claim:cli:daemon -->
 
-### 21.9 Logs
+### 22.9 Logs
 
 Running `claudebox logs` tails the daemon log:
 
@@ -1804,14 +1858,14 @@ Running `claudebox logs` tails the daemon log:
 - `logs all` picks up containers that start while it is already running; a short notice names the container when it starts streaming and when it stops <!-- claim:cli:logs-live-discovery -->
 - When a container log stream ends, the message says why — exit, connection error, or server error — instead of a bare "stream ended" notice <!-- claim:cli:logs:eof-cause -->
 
-### 21.10 Status
+### 22.10 Status
 
 Running `claudebox status` shows daemon, container, and workspace state:
 
 - Running `status` shows daemon, container, and workspace state in three sections <!-- claim:cli:status -->
 - When the daemon is stopped, status still shows container and workspace info; the daemon section reports its stopped state <!-- claim:cli:status-degraded -->
 
-### 21.11 Containers
+### 22.11 Containers
 
 Running `claudebox containers list`, `stop`, or `kill` manages containers across all workspaces:
 
@@ -1821,7 +1875,7 @@ Running `claudebox containers list`, `stop`, or `kill` manages containers across
 - You can pass any unique prefix of a container ID; ambiguous prefixes show matching IDs <!-- claim:cli:containers-prefix-match -->
 - When stopping or killing multiple containers, each is reported individually; failures don't abort the rest; the command exits non-zero if any failed <!-- claim:cli:containers-partial-failure -->
 
-### 21.12 Workspaces
+### 22.12 Workspaces
 
 Running `claudebox workspaces list`, `register`, or `deregister` manages the daemon's workspace registry:
 
@@ -1831,7 +1885,7 @@ Running `claudebox workspaces list`, `register`, or `deregister` manages the dae
 - Two paths sharing a basename get distinct workspace IDs <!-- claim:cli:workspaces-register-collision -->
 - Running `workspaces deregister <id>` removes the workspace from the registry; the `.workspace` marker file is preserved <!-- claim:cli:workspaces-deregister -->
 
-### 21.13 Shell completion
+### 22.13 Shell completion
 
 Bash tab-completion is opt-in; once enabled, pressing Tab offers context-appropriate completions:
 
@@ -1839,17 +1893,17 @@ Bash tab-completion is opt-in; once enabled, pressing Tab offers context-appropr
 - Completing a container target offers container ids across all workspaces plus `all`, falling back to `all` when the daemon is unreachable <!-- claim:cli:completion:container-ids -->
 - Completing a workspace to deregister offers the registered workspace ids without contacting the daemon <!-- claim:cli:completion:workspace-ids -->
 
-### 21.14 Help
+### 22.14 Help
 
 Command help is colourised - usage, section headings, verb names, option flags and their defaults - and falls back to plain text when colour is unavailable, staying readable and greppable when piped <!-- claim:cli:help-rendering -->
 
 ---
 
-## 22. Multi-Runtime Support
+## 23. Multi-Runtime Support
 
-Workspaces choose their agent runtime via the `agent` field in `.claudebox/settings.toml`. The active runtime appears in the footer identity pill (§9). Each runtime declares its capability surface, and the frontend shows or hides controls accordingly.
+Workspaces choose their agent runtime via the `agent` field in `.claudebox/settings.toml`. The active runtime appears in the footer identity pill (§10). Each runtime declares its capability surface, and the frontend shows or hides controls accordingly.
 
-### 22.1 LangGraph Workspaces
+### 23.1 LangGraph Workspaces
 
 - LangGraph workspaces have file-system, shell, search, web, and notebook tools available; the model invokes them and their results appear as tool-use blocks identically to Claude workspaces. Unlike Claude workspaces, there is no per-action approval step or permission mode - the container is the isolation boundary for the whole tool surface <!-- claim:langgraph:file-tools -->
 - LangGraph workspaces can spawn sub-agents for focused tasks; the sub-agent runs to completion and its final report appears as a tool result in the parent's chat <!-- claim:langgraph:subagent -->

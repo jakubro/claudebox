@@ -1,0 +1,131 @@
+/* Terminal column: session-wide shell transcript, flat entries (no header, no collapse) */
+
+.terminal-column {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.terminal-empty {
+  color: var(--text-muted);
+  padding: 0;
+}
+
+/* Holds the full scroll height of every entry, measured or predicted - see HistoricalTurnList.css. */
+.terminal-entries {
+  position: relative;
+  width: 100%;
+}
+
+/* Contains .terminal-entry's margin-bottom inside the measured height - as .historical-turn-row. */
+.terminal-entry-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flow-root;
+}
+
+.terminal-entry {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+/* Every windowed entry is the sole child of its own .terminal-entry-row, so a bare :last-child
+   would zero every row's margin - only the entry rendered outside the window should lose it. */
+.terminal-column > .terminal-entry:last-child {
+  margin-bottom: 0;
+}
+
+.terminal-entry-comment {
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  white-space: pre;
+  overflow-x: auto;
+  /* Matches .terminal-entry-command's line-height so both candidate first lines are the same
+     height - the button centring below assumes one fixed line box regardless of which it is. */
+  line-height: 1.4;
+}
+
+.terminal-entry-command-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.terminal-entry-prompt {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.terminal-entry-command {
+  flex: 1;
+  min-width: 0;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.4;
+  font-weight: 600;
+  color: #e6e6e6;
+}
+
+.terminal-entry-failed .terminal-entry-prompt,
+.terminal-entry-failed .terminal-entry-command {
+  color: var(--error);
+}
+
+/* Centres the 22px button box (12px icon + 8px padding + 2px border) on the entry's first line.
+   Comment and command are both ~17px line boxes here, so either one centres the same. */
+.terminal-entry .terminal-jump-btn {
+  top: -2.5px;
+  right: 28px;
+}
+
+.terminal-entry .terminal-copy-btn {
+  top: -2.5px;
+  right: 0;
+}
+
+.terminal-entry:hover .terminal-jump-btn,
+.terminal-entry:hover .terminal-copy-btn {
+  opacity: 1;
+}
+
+.terminal-entry-pending {
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.terminal-entry-output {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  /* Pinned, not inherited - the height predictor is calibrated against it. */
+  line-height: 1.4;
+}
+
+/* Covers both branches DefaultCodeBlock emits (highlighter pre+code, plain fallback pre).
+   No wrap - shell output is column-aligned, so each block scrolls sideways instead. */
+.terminal-entry-output pre,
+.terminal-entry-output code {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* No per-entry cap - the terminal is the full transcript, unlike an inline tool block. Overrides
+   the shared .tool-details pre-wrap (ToolContentRenderer.css); inline blocks keep wrapping. */
+.terminal-column .tool-details {
+  max-height: none;
+  white-space: pre;
+  overflow-x: auto;
+}

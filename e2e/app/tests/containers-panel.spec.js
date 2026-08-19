@@ -67,7 +67,7 @@ test.describe('Containers Panel', () => {
     await expect(rows).toHaveCount(2)
 
     await expect(panel.locator('.containers-status-dot')).toHaveCount(2)
-    await expect(panel.locator('.containers-id')).toContainText(['bk1111111111', 'bk2222222222'])
+    await expect(panel.locator('.containers-id')).toContainText(['bk111111', 'bk222222'])
     await expect(panel.locator('.containers-session-id')).toContainText(['s-foo-1', 's-bar-1'])
     await expect(panel.locator('.containers-state')).toContainText(['Running', 'Stopped'])
     await expect(panel.locator('.containers-kind')).toContainText(['Session', 'Session'])
@@ -168,11 +168,11 @@ test.describe('Containers Panel', () => {
     await waitForAppReady(page)
     await page.locator('[data-testid="icon-containers"]').click()
 
-    const idTexts = await page
-      .locator('[data-testid="panel-containers"] .containers-id')
-      .allTextContents()
-    // Display source is backend_id (12-char prefix), NOT the internal record id.
-    expect(idTexts).toEqual(['bk1111111111', 'bk2222222222'])
+    const panel = page.locator('[data-testid="panel-containers"]')
+    await expect(panel).toBeVisible()
+
+    // Display source is backend_id (8-char prefix), NOT the internal record id.
+    await expect(panel.locator('.containers-id')).toContainText(['bk111111', 'bk222222'])
   })
 
   // SPEC: panel-containers:session-name-empty
@@ -208,7 +208,7 @@ test.describe('Containers Panel', () => {
 
   // SPEC: panel-containers:id-tooltip-format
   // SPEC: panel-containers:id-copy-on-click
-  test('container id cell exposes Container - <full id> tooltip and copies the full id on click', async ({
+  test('container id cell exposes Container — <full id> tooltip and copies the full id on click', async ({
     page,
     context,
   }) => {
@@ -220,7 +220,7 @@ test.describe('Containers Panel', () => {
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     const firstId = page.locator('[data-testid="panel-containers"] .containers-id').first()
-    await expect(firstId).toHaveAttribute('title', 'Container - bk1111111111-aaaa')
+    await expect(firstId).toHaveAttribute('title', 'Container — bk1111111111-aaaa')
 
     await firstId.click()
     const copied = await page.evaluate(() => navigator.clipboard.readText())
@@ -232,7 +232,7 @@ test.describe('Containers Panel', () => {
 
   // SPEC: panel-containers:session-id-tooltip-format
   // SPEC: panel-containers:session-id-copy-on-click
-  test('session id cell exposes Session directory - <full path> tooltip and copies the path on click', async ({
+  test('session id cell exposes Session directory — <full path> tooltip and copies the path on click', async ({
     page,
     context,
   }) => {
@@ -248,7 +248,7 @@ test.describe('Containers Panel', () => {
       .first()
     await expect(firstSessionId).toHaveAttribute(
       'title',
-      'Session directory - /home/u/.claudebox/sessions/s-foo-1',
+      'Session directory — /home/u/.claudebox/sessions/s-foo-1',
     )
 
     await firstSessionId.click()

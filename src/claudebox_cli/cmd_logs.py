@@ -141,7 +141,7 @@ def _stream_end_message(container: dict, exc: BaseException | None) -> str:
         if exc.response is not None:
             try:
                 body_first = (exc.response.text or "").splitlines()[0][:120]
-            except Exception:
+            except Exception:  # noqa: BLE001 - cosmetic preview; failure omits it
                 body_first = ""
 
         suffix = f" {body_first}" if body_first else ""
@@ -171,9 +171,7 @@ def _tail_daemon(args: argparse.Namespace) -> int:
     daemon_running = _daemon_is_running()
     _print_tail(log_path, tail_n)
 
-    if not follow:
-        return 0
-    elif not daemon_running:
+    if not follow or not daemon_running:
         return 0
     else:
         return _follow(log_path)

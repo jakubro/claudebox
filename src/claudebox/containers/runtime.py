@@ -1,7 +1,8 @@
 """Container runtime facade - build, run, and backend delegation."""
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from .backend import ContainerBackend
 from .build import build_image

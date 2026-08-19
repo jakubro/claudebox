@@ -7,19 +7,7 @@
   overflow: hidden;
 }
 
-/* Toolbar — top-right buttons */
-.markdown-preview-toolbar {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
+/* Toolbar - top-right buttons; base chrome lives in preview-toolbar.css's .preview-toolbar. */
 .markdown-preview-container:hover .markdown-preview-toolbar {
   opacity: 1;
 }

@@ -7,19 +7,7 @@
   overflow: hidden;
 }
 
-/* Toolbar — top-right buttons */
-.mermaid-toolbar {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
+/* Toolbar - top-right buttons; base chrome lives in preview-toolbar.css's .preview-toolbar. */
 .mermaid-container:hover .mermaid-toolbar {
   opacity: 1;
 }
@@ -66,18 +54,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Zoom overlay */
-.mermaid-zoom-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(4px);
-}
-
+/* Zoom overlay - backdrop chrome lives in zoom-overlay.css's shared .zoom-overlay. */
 .mermaid-zoom-content {
   display: flex;
   align-items: center;

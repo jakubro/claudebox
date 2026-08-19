@@ -85,9 +85,9 @@ def make_temp_dir(**kwargs) -> Iterator[Path]:
 def find_files(path: str | Path, filename: str, **kwargs) -> Iterator[Path]:
     """Find files by name in a gitignore-aware walk."""
 
-    for path in walk_filtered(path, **kwargs):
-        if path.name == filename:
-            yield path
+    for found in walk_filtered(path, **kwargs):
+        if found.name == filename:
+            yield found
 
 
 def walk_filtered(

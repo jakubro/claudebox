@@ -35,7 +35,7 @@ def make_shell_tools(ctx: ToolContext) -> list[BaseTool]:
         effective_timeout = min(max(1, timeout_seconds), _BASH_TIMEOUT_CAP)
 
         try:
-            result = subprocess.run(  # noqa: S603 - intentional shell exec via /bin/bash -c
+            result = subprocess.run(
                 ["/bin/bash", "-c", command],
                 capture_output=True,
                 text=True,

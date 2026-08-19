@@ -273,6 +273,49 @@ describe('groupBlocks - hidden ToolSearch', () => {
   })
 })
 
+describe('groupBlocks - hideShellCalls (terminal column routing)', () => {
+  it('keeps a top-level Bash block by default (flag omitted)', () => {
+    const segments = groupBlocks([toolBlock(ToolName.BASH, 'b-1')])
+    expect(segments).toHaveLength(1)
+    expect(segments[0].kind).toBe('single')
+    expect(segments[0].block.toolUse.tool_use_id).toBe('b-1')
+  })
+
+  it('drops a top-level Bash block when hideShellCalls is true', () => {
+    const segments = groupBlocks([toolBlock(ToolName.BASH, 'b-1')], true)
+    expect(segments).toEqual([])
+  })
+
+  it('drops a LangGraph snake_case bash block the same as Bash', () => {
+    const segments = groupBlocks([toolBlock('bash', 'b-1')], true)
+    expect(segments).toEqual([])
+  })
+
+  it('keeps a nested Bash block (inside a Task) even with hideShellCalls true - stays in its Task block', () => {
+    const segments = groupBlocks([toolBlock(ToolName.BASH, 'b-1', 'subagent-X')], true)
+    expect(segments).toHaveLength(1)
+    expect(segments[0].kind).toBe('single')
+  })
+
+  it('drops only the top-level Bash between ordinary blocks, leaving the rest untouched', () => {
+    const segments = groupBlocks(
+      [
+        toolBlock(ToolName.READ, 'r-1'),
+        toolBlock(ToolName.BASH, 'b-1'),
+        toolBlock(ToolName.EDIT, 'e-1'),
+      ],
+      true,
+    )
+    expect(segments.map(s => s.kind)).toEqual(['single', 'single'])
+    expect(segments.map(s => s.block.toolUse.tool_use_id)).toEqual(['r-1', 'e-1'])
+  })
+
+  it('still hides a ToolSearch in the same turn regardless of hideShellCalls', () => {
+    const segments = groupBlocks([toolBlock(ToolName.BASH, 'b-1'), toolSearchBlock('ts-1')], true)
+    expect(segments).toEqual([])
+  })
+})
+
 describe('groupBlocks - lookups gather pass (switch off)', () => {
   beforeEach(() => {
     vi.mocked(isLookupsGroupingEnabled).mockReturnValue(false)

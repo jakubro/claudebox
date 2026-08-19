@@ -9,6 +9,7 @@ with the JSONL contract.
 import dataclasses
 from collections.abc import Iterator
 from datetime import datetime
+from typing import TypedDict
 
 from .models import Event, EventSubtype, EventType, PublishedEvent
 from ..events import (
@@ -369,6 +370,23 @@ def _block_to_event(block: dict, *, msg_type: str, message: dict) -> Event | Non
         )
 
 
+class _PromotedFields(TypedDict, total=False):
+    """PublishedEvent fields `to_published_event` promotes from raw dicts.
+    Typed so the `**fields` spread type-checks: raw dicts are Any, so the TypedDict pins each slot.
+    """
+
+    tool_use_id: str | None
+    tool_name: str | None
+    tool_input: dict | None
+    is_error: bool | None
+    tool_use_result: dict
+    cost_usd: float
+    duration_ms: int
+    model: str
+    message_data: dict
+    parent_tool_use_id: str
+
+
 def to_published_event(
     event: Event,
     *,
@@ -380,7 +398,7 @@ def to_published_event(
     """Convert Event to PublishedEvent, promoting fields from the raw message/block dicts to
     top-level attributes (tool_use_id, tool_name, cost_usd, model, etc.) for easier querying."""
 
-    fields = {}
+    fields: _PromotedFields = {}
     block = event.raw.get("block") if event.raw else None
     message = event.raw.get("message") if event.raw else None
 

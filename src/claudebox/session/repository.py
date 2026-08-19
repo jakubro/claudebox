@@ -42,9 +42,13 @@ class SessionRepository:
             data.setdefault("fork_point_cost_usd", 0.0)
             sessions.append(SessionMetadata.fromdict(data))
 
+        # .replace(tzinfo=None) normalizes whichever operand wins to naive, so datetime.min (always
+        # naive) sorts consistently against aware updated_at/started_at without a tz-mismatch error.
         return sorted(
             sessions,
-            key=lambda s: (s.updated_at or s.started_at or datetime.min).replace(tzinfo=None),
+            key=lambda s: (s.updated_at or s.started_at or datetime.min).replace(  # noqa: DTZ901
+                tzinfo=None,
+            ),
             reverse=True,
         )
 

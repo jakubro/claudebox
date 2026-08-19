@@ -693,6 +693,100 @@ test.describe('Welcome State', () => {
     await expect(shortcuts).toContainText('Sessions')
   })
 
+  // SPEC: container:welcome-input
+  test("the first message typed on the welcome page is sent as the new session's first message", async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      handlers: {
+        newSession: async route => {
+          await route.fulfill({
+            status: 200,
+            json: {
+              session_id: 'welcome-created-1',
+              container_id: DEFAULT_CONTAINER_ID,
+              name: null,
+            },
+          })
+        },
+      },
+    })
+    await mockSSE(page)
+
+    // Registered after mockAPI so it wins Playwright's LIFO route precedence over the default handler.
+    const sendCalls = []
+    await page.route('**/api/send', async route => {
+      sendCalls.push(await route.request().postDataJSON())
+      await route.fulfill({ status: 200, json: { success: true } })
+    })
+
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await waitForAppReady(page)
+
+    await page.locator('[data-testid="chat-input"]').fill('Fix the login bug')
+    await page.locator('[data-testid="chat-input"]').press('Enter')
+
+    await expect.poll(() => sendCalls.length, { timeout: 10000 }).toBeGreaterThan(0)
+    expect(sendCalls[0].prompt).toBe('Fix the login bug')
+  })
+
+  // SPEC: container:welcome-input
+  test('text typed while the container is still starting stays in the composer', async ({
+    page,
+  }) => {
+    const newSessionId = 'welcome-created-2'
+    await mockAPI(page, {
+      handlers: {
+        newSession: async route => {
+          await new Promise(resolve => setTimeout(resolve, 500))
+          await route.fulfill({
+            status: 200,
+            json: {
+              session_id: newSessionId,
+              container_id: DEFAULT_CONTAINER_ID,
+              name: null,
+            },
+          })
+        },
+        // The default fixture's hardcoded id would read as a switch to another session once the
+        // post-connect status fetch lands; a real backend reports the session in this container.
+        getSessionStatus: async route => {
+          await route.fulfill({
+            json: { ...loadFixture('status/default.json'), session_id: newSessionId },
+          })
+        },
+      },
+    })
+    await mockSSE(page)
+
+    // Registered after mockAPI so it wins LIFO precedence; a resume here would clear the composer.
+    const resumeCalls = []
+    await page.route(/\/sessions\/[^/]+\/resume/, async route => {
+      resumeCalls.push(route.request().url())
+      await route.fulfill({
+        status: 200,
+        json: { session_id: newSessionId, container_id: DEFAULT_CONTAINER_ID },
+      })
+    })
+
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await waitForAppReady(page)
+
+    await page.locator('[data-testid="chat-input"]').fill('First message')
+    await page.locator('[data-testid="chat-input"]').press('Enter')
+
+    // newSession is still in flight (500ms delay) - the composer must survive the transition.
+    await page.locator('[data-testid="chat-input"]').fill('Second message typed during creation')
+
+    // Held past newSession's 500ms delay and SSE settling - a late resume would clear the composer.
+    await page.waitForTimeout(2000)
+
+    await expect(page.locator('[data-testid="chat-input"]')).toHaveValue(
+      'Second message typed during creation',
+    )
+    expect(resumeCalls).toHaveLength(0)
+  })
+
   // SPEC: footer:welcome-defaults
   test('footer shows session defaults from the workspace, not "-" placeholders', async ({
     page,

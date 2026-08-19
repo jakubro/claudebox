@@ -42,23 +42,16 @@
   opacity: 0.85;
 }
 
+/* Border/color/wrap chrome shared with .inline-reply-quote lives in App.css. */
 .inline-thread-quote {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  border-left: 2px solid var(--text-muted);
-  padding-left: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
+/* Color/size/transform shared with .inline-reply-from lives in App.css. */
 .inline-thread-from {
   flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  text-transform: lowercase;
   line-height: 1rem;
 }
 

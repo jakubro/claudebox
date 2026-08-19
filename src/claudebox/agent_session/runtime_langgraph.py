@@ -12,17 +12,18 @@ universal-provider design.
 """
 
 import asyncio
+import base64
 import importlib
 import re
 import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool, ToolException
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -64,7 +65,7 @@ from .hooks import CompactStartPayload
 from .langgraph_tools import SUBAGENT_RUN_TAG, ToolCatalog, ToolContext, make_tools
 from .langgraph_tools._middleware import ClaudeboxToolHookMiddleware, content_reports_nonzero_exit
 from .langgraph_tools._summarization import ClaudeboxSummarizationMiddleware
-from ..constants import SESSION_COMPACTION_FILE
+from ..constants import SESSION_CHECKPOINT_TURNS_FILE, SESSION_COMPACTION_FILE
 from ..core.io import read_json, write_json
 from ..core.logging import get_logger
 
@@ -157,9 +158,9 @@ class LangGraphRuntime:
 
     # No static catalog: Ollama models are dynamic (fetched via get_models()), so these stay
     # empty - the workspace TOML `model` key is the source of truth.
-    AVAILABLE_MODELS: list[Model] = []
-    AVAILABLE_EFFORT_LEVELS: list[EffortLevel] = []
-    AVAILABLE_PERMISSION_MODES: list[PermissionMode] = []
+    AVAILABLE_MODELS: ClassVar[list[Model]] = []
+    AVAILABLE_EFFORT_LEVELS: ClassVar[list[EffortLevel]] = []
+    AVAILABLE_PERMISSION_MODES: ClassVar[list[PermissionMode]] = []
 
     CAPABILITIES = RuntimeCapabilities(
         supports_set_model_mid_session=False,
@@ -201,6 +202,7 @@ class LangGraphRuntime:
         self._graph: Any | None = None
         self._summarization: Any | None = None
         self._compaction_path = config.session_dir / SESSION_COMPACTION_FILE
+        self._checkpoint_turns_path = config.session_dir / SESSION_CHECKPOINT_TURNS_FILE
         self._checkpointer: Any | None = None
         # Entered in connect, exited in disconnect.
         self._checkpointer_cm: Any | None = None
@@ -331,8 +333,11 @@ class LangGraphRuntime:
 
             try:
                 await self._astream_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # A non-CancelledError escape is a real fault, not part of cancellation.
+                self._logger.warning("astream_task_cancel_error", error=str(exc))
 
         self._astream_task = None
 
@@ -345,7 +350,7 @@ class LangGraphRuntime:
         if self._checkpointer_cm is not None:
             try:
                 await self._checkpointer_cm.__aexit__(None, None, None)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - disconnect must always complete
                 self._logger.warning("checkpointer_close_failed", error=str(exc))
 
             self._checkpointer_cm = None
@@ -362,7 +367,7 @@ class LangGraphRuntime:
             if callable(close):
                 try:
                     close()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - disconnect must always complete
                     self._logger.warning("chat_model_close_failed", error=str(exc))
 
         self._chat_model = None
@@ -523,27 +528,28 @@ class LangGraphRuntime:
         # Any `task` invocation during this turn folds its USD into the closing _result_event below.
         self._subagent_cost_this_turn = 0.0
 
+        config = {"configurable": {"thread_id": self._thread_id}}
+
+        # Minted here, not inside _human_message_event, so the same id keys both the turn-tracker
+        # boundary (via the yielded event's uuid) and the fork-truncation journal below.
+        turn_uuid = str(uuid.uuid4())
+        await self._record_turn_boundary(turn_uuid, config)
+
         # Must go first: the turn tracker keys a turn on this event's uuid, and the attachment path's
         # one-shot echo suppression matches a no-tool-result user message - going first claims
         # this one, not a later match.
-        yield self._human_message_event(prompt)
+        yield self._human_message_event(prompt, uuid_=turn_uuid)
 
         # If the prior turn ended on an `ask_user_question` interrupt, route this prompt as
         # Command(resume=) so the tool's interrupt() returns it and the graph resumes;
         # otherwise start a fresh HumanMessage turn.
-        config = {"configurable": {"thread_id": self._thread_id}}
-
         if self._awaiting_resume:
             self._awaiting_resume = False
             resume_value = prompt if isinstance(prompt, str) else str(prompt)
             graph_input: Any = Command(resume=resume_value)
         else:
             skill_body = _resolve_slash_skill(prompt) if isinstance(prompt, str) else None
-            content: Any = (
-                skill_body
-                if skill_body is not None
-                else (prompt if isinstance(prompt, list) else prompt)
-            )
+            content: Any = skill_body if skill_body is not None else prompt
             messages: list[Any] = [HumanMessage(content=content)]
 
             # Session-start context leads the first turn so the model reads the profile's bootstrap
@@ -662,17 +668,15 @@ class LangGraphRuntime:
             ),
         )
 
-    def _human_message_event(self, prompt: str | list[dict]) -> AgentEvent:
-        """User-role message opening a human turn, carrying the turn's identity.
-
-        The uuid is the whole point: downstream turn tracking assigns a turn only to a user message that
-        carries one; tool-result user messages deliberately carry none, since they belong to an already-open turn.
+    def _human_message_event(self, prompt: str | list[dict], *, uuid_: str) -> AgentEvent:
+        """Turn-opening user message; only a uuid-carrying user message claims a turn.
+        Tool-result messages carry none; `_drive_turn` mints it to key the fork-truncation journal.
         """
 
         return AgentEvent(
             kind="user_message",
             payload=UserMessagePayload(
-                uuid=str(uuid.uuid4()),
+                uuid=uuid_,
                 content=_tag_slash_command(self._prompt_text(prompt)),
             ),
         )
@@ -1037,6 +1041,37 @@ class LangGraphRuntime:
         except OSError as exc:
             self._logger.warning("compaction_record_write_failed", error=str(exc))
 
+    async def _record_turn_boundary(self, turn_id: str, config: dict[str, Any]) -> None:
+        """Best-effort record of the checkpoint_id in force before this turn, for fork truncation.
+        None means the thread's first turn, so a fork deletes the whole chain, not a suffix.
+        """
+
+        if self._checkpointer is None:
+            return
+
+        try:
+            tuple_ = await self._checkpointer.aget_tuple(config)
+        except Exception as exc:  # noqa: BLE001 - best-effort probe
+            self._logger.warning("turn_boundary_checkpoint_probe_failed", error=str(exc))
+
+            return
+
+        boundary_checkpoint_id = (
+            tuple_.config["configurable"].get("checkpoint_id") if tuple_ else None
+        )
+
+        journal = read_json(self._checkpoint_turns_path, default={})
+
+        if not isinstance(journal, dict):
+            journal = {}
+
+        journal[turn_id] = boundary_checkpoint_id
+
+        try:
+            write_json(self._checkpoint_turns_path, journal)
+        except OSError as exc:
+            self._logger.warning("turn_boundary_write_failed", error=str(exc))
+
     async def _has_pending_interrupt(self, config: dict[str, Any]) -> bool:
         """Return True when the graph is paused at an `interrupt()` call.
 
@@ -1336,3 +1371,211 @@ class LangGraphRuntime:
                 checkpointer=self._checkpointer,
                 system_prompt=self._config.system_prompt,
             )
+
+
+# Claude-to-LangGraph session migration; CLI front-end: scripts/migrate_claude_to_langgraph.py.
+# Not a standalone module: SDK containment confines langchain imports to this file (GUIDELINES.md).
+
+# Claude tool_use name -> (LangGraph tool name, Claude-arg-key -> LangGraph-arg-key table).
+# An absent name has no equivalent: events_to_messages flattens it to text, never an unbound call.
+TOOL_NAME_TO_LANGGRAPH: dict[str, tuple[str, dict[str, str]]] = {
+    "Read": ("read_file", {"file_path": "path"}),
+    "Write": ("write_file", {"file_path": "path", "content": "content"}),
+    "Edit": (
+        "edit_file",
+        {
+            "file_path": "path",
+            "old_string": "old_string",
+            "new_string": "new_string",
+            "replace_all": "replace_all",
+        },
+    ),
+    "Glob": ("glob", {"pattern": "pattern"}),
+    "Grep": (
+        "grep",
+        {
+            "pattern": "pattern",
+            "path": "path",
+            "output_mode": "output_mode",
+            "glob": "glob",
+            "type": "type",
+            "-i": "i",
+            "-n": "n",
+            "-A": "A",
+            "-B": "B",
+            "-C": "C",
+            "multiline": "multiline",
+            "head_limit": "head_limit",
+        },
+    ),
+    "Bash": (
+        "bash",
+        {"command": "command", "description": "description", "timeout": "timeout_seconds"},
+    ),
+    "Task": ("task", {"description": "description", "subagent_type": "agent_type"}),
+    "Skill": ("skill", {"name": "name", "arguments": "arguments", "args": "arguments"}),
+    "AskUserQuestion": ("ask_user_question", {"questions": "questions"}),
+    "WebFetch": ("web_fetch", {"url": "url", "prompt": "prompt"}),
+    "WebSearch": (
+        "web_search",
+        {
+            "query": "query",
+            "allowed_domains": "allowed_domains",
+            "blocked_domains": "blocked_domains",
+        },
+    ),
+    "TaskCreate": (
+        "task_create",
+        {"subject": "subject", "description": "description", "activeForm": "activeForm"},
+    ),
+    "TaskGet": ("task_get", {"taskId": "taskId"}),
+    "TaskList": ("task_list", {"statusFilter": "statusFilter"}),
+    "TaskOutput": ("task_output", {"taskId": "taskId"}),
+    "TaskUpdate": (
+        "task_update",
+        {
+            "taskId": "taskId",
+            "status": "status",
+            "subject": "subject",
+            "description": "description",
+            "activeForm": "activeForm",
+            "addBlockedBy": "addBlockedBy",
+        },
+    ),
+}
+
+# Synthetic echoes of a captured tool_result; genuine context (summaries, reminders) is unlisted.
+_ECHO_MARKER_PREFIXES = ("<local-command-stdout>", "<local-command-stderr>", "<task-notification")
+
+
+def _migrated_attachment_block(attachment: dict, attachments_dir: Path | None) -> dict:
+    """One multi-part content block for a migrated attachment, mirroring a live send's shape.
+    Falls back to a text note when the file is missing or `attachments_dir` wasn't provided -
+    the session's own attachment files may have been cleaned up since the original send.
+    """
+
+    name = attachment.get("name", "?")
+    mime = attachment.get("type") or "application/octet-stream"
+    filename = attachment.get("filename")
+    path = attachments_dir / filename if attachments_dir and filename else None
+
+    if not (path and path.exists()):
+        return {"type": "text", "text": f"[Attachment: {name} ({mime}) - file no longer on disk]"}
+
+    raw = path.read_bytes()
+
+    if mime.startswith("image/"):
+        data = base64.b64encode(raw).decode("ascii")
+
+        return {"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}}
+    elif mime == "application/pdf":
+        data = base64.b64encode(raw).decode("ascii")
+
+        return {"type": "document", "source": {"type": "base64", "media_type": mime, "data": data}}
+    else:
+        return {"type": "text", "text": f"[File: {name}]\n{raw.decode('utf-8', errors='replace')}"}
+
+
+def events_to_messages(
+    events: list[dict],
+    attachments_dir: Path | None = None,
+) -> list[BaseMessage]:
+    """Convert Claude events.jsonl into ordered LangChain messages (seed via aupdate_state()).
+    Drops nested/subagent events (`parent_tool_use_id`), pipeline-only system/result events, and
+    assistant thinking blocks - LangChain has no carrier for reasoning content on seeded history.
+    Mapped tool_use (`TOOL_NAME_TO_LANGGRAPH`) -> real tool_calls plus `ToolMessage`.
+    Unmapped -> bracketed assistant text, its result a plain `HumanMessage`, never an orphan.
+    A human message's attachments re-encode from `attachments_dir` into the same multi-part
+    content blocks a live send builds (see `_migrated_attachment_block`); omit `attachments_dir`
+    to flatten every human message to plain text instead (attachments included, as text notes).
+    Trailing unresolved mapped tool_call + all after it drop: providers reject a resultless call.
+    Ids are locally unique - LangGraph's `add_messages` merges by id rather than appending.
+    """
+
+    messages: list[BaseMessage] = []
+    pending_mapped: dict[str, int] = {}  # tool_use_id -> index of its AIMessage in `messages`
+    pending_unmapped: set[str] = set()  # tool_use_id of a flattened call still awaiting its result
+    counter = 0
+
+    def next_id(prefix: str) -> str:
+        nonlocal counter
+        counter += 1
+
+        return f"migrated-{prefix}-{counter}"
+
+    for event in events:
+        if event.get("parent_tool_use_id"):
+            continue
+
+        etype, subtype = event.get("type"), event.get("subtype")
+
+        if (
+            etype == "user"
+            and subtype in ("message", "text")
+            and (event.get("content") or event.get("attachments"))
+        ):
+            content: str | list[str | dict] = event.get("content") or ""
+
+            if isinstance(content, str) and content.strip().startswith(_ECHO_MARKER_PREFIXES):
+                continue
+
+            attachments = event.get("attachments") or []
+
+            if attachments:
+                blocks: list[str | dict] = []
+
+                if isinstance(content, str) and content.strip():
+                    blocks.append({"type": "text", "text": content})
+
+                blocks.extend(_migrated_attachment_block(a, attachments_dir) for a in attachments)
+                content = blocks
+
+            messages.append(HumanMessage(content=content, id=next_id("human")))
+        elif etype == "assistant" and subtype == "thinking":
+            continue
+        elif etype == "assistant" and subtype == "text" and event.get("content"):
+            messages.append(AIMessage(content=event["content"], id=next_id("ai")))
+        elif etype == "assistant" and subtype == "tool_use":
+            name = event.get("tool_name") or event.get("content") or ""
+            tool_input = event.get("tool_input") or {}
+            tool_use_id = event.get("tool_use_id") or next_id("call")
+            mapped = TOOL_NAME_TO_LANGGRAPH.get(name)
+
+            if mapped:
+                lg_name, key_map = mapped
+                args = {key_map[k]: v for k, v in tool_input.items() if k in key_map}
+                messages.append(
+                    AIMessage(
+                        content="",
+                        id=next_id("ai"),
+                        tool_calls=[{"id": tool_use_id, "name": lg_name, "args": args}],
+                    ),
+                )
+                pending_mapped[tool_use_id] = len(messages) - 1
+            else:
+                messages.append(
+                    AIMessage(content=f"[Called {name}({tool_input})]", id=next_id("ai")),
+                )
+                pending_unmapped.add(tool_use_id)
+        elif subtype == "tool_result":
+            tool_use_id = event.get("tool_use_id")
+            content = str(event.get("content") or "")
+
+            if tool_use_id in pending_mapped:
+                del pending_mapped[tool_use_id]
+                messages.append(
+                    ToolMessage(
+                        content=content,
+                        tool_call_id=tool_use_id,
+                        status="error" if event.get("is_error") else "success",
+                    ),
+                )
+            elif tool_use_id in pending_unmapped:
+                pending_unmapped.discard(tool_use_id)
+                messages.append(HumanMessage(content=f"[Result: {content}]", id=next_id("human")))
+            # else: no matching call (nested or truncated history) - drop rather than orphan
+
+    if pending_mapped:
+        messages = messages[: min(pending_mapped.values())]
+
+    return messages

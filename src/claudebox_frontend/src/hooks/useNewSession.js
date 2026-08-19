@@ -28,6 +28,7 @@ export default function useNewSession() {
     reconnectSSE,
     startCreating,
     clearCreating,
+    markJustCreatedSession,
     isCreating,
     isResponding,
   } = useEvents()
@@ -77,6 +78,8 @@ export default function useNewSession() {
         }
       }
       if (data?.session_id && workspaceId) {
+        // Set before navigating - SessionRoutingEffect must see it on its first reaction to the id.
+        markJustCreatedSession(data.session_id)
         navigateToSession(workspaceId, data.session_id)
         if (prevWasResponding && prevSessionId && prevSessionId !== data.session_id) {
           showStillRunningToast({
@@ -111,6 +114,7 @@ export default function useNewSession() {
     setSessionContainer,
     startCreating,
     clearCreating,
+    markJustCreatedSession,
     currentSessionId,
     currentSessionName,
     isResponding,

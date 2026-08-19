@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { HideShellCallsContext } from './HideShellCallsContext'
 import Turn from './Turn'
 import { TurnCollapseProvider } from './TurnCollapseContext'
 
@@ -329,6 +330,40 @@ describe('Turn', () => {
       fireEvent.click(document.querySelector('.turn-meta'))
 
       expect(onToggleTurnCollapse).toHaveBeenCalledWith('t1')
+    })
+  })
+
+  describe('terminal split (HideShellCallsContext)', () => {
+    it('hides all chrome for a Bash-only turn when the context value is true', () => {
+      const events = [toolUseEvent('Bash', 'b1', { command: 'ls' })]
+
+      render(
+        <HideShellCallsContext.Provider value={true}>
+          <Turn events={events} turnId="t1" isActive={false} />
+        </HideShellCallsContext.Provider>,
+      )
+
+      expect(screen.queryByTestId('message-assistant')).toBeNull()
+    })
+
+    it('renders the Bash block inline when the context value is false (default, no provider)', () => {
+      const events = [toolUseEvent('Bash', 'b1', { command: 'ls' })]
+
+      render(<Turn events={events} turnId="t1" isActive={false} />)
+
+      expect(screen.getByTestId('message-assistant')).toBeInTheDocument()
+    })
+
+    it('keeps a non-Bash turn visible even when the context value is true', () => {
+      const events = [textEvent('hello')]
+
+      render(
+        <HideShellCallsContext.Provider value={true}>
+          <Turn events={events} turnId="t1" isActive={false} />
+        </HideShellCallsContext.Provider>,
+      )
+
+      expect(screen.getByTestId('message-assistant')).toBeInTheDocument()
     })
   })
 

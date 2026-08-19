@@ -55,4 +55,15 @@ describe('DefaultCodeBlock', () => {
     expect(pre.tagName).toBe('PRE')
     expect(screen.queryByTestId('markdown')).not.toBeInTheDocument()
   })
+
+  it('renders plain pre for markdown-shaped content when no markdown renderer is supplied', () => {
+    const content =
+      '## Release Notes\n\n- Fixed a bug\n- Added a feature\n\nSee [changelog](http://example.com).'
+    const { container } = render(<DefaultCodeBlock content={content} />)
+
+    const pre = container.querySelector('pre.codeblock-plain')
+    expect(pre).not.toBeNull()
+    expect(pre.textContent).toBe(content)
+    expect(container.querySelector('code[class*="language-"]')).toBeNull()
+  })
 })

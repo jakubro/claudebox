@@ -30,6 +30,7 @@ just install         # install all dependencies (python + shared JS + frontend +
 just check           # full pre-commit (lint + test)
 just lint            # lint all (python + JS + e2e spec coverage)
 just fix             # auto-fix all (python + JS)
+just outdated        # report current-vs-latest per direct dependency; never fails, not part of check
 just test            # run all tests (python unit + frontend unit + frontend e2e + CLI e2e)
 just coverage        # all tests with coverage enforcement
 just build           # production build (frontend → dist/)
@@ -43,7 +44,7 @@ just test-py         # pytest tests/
 just test-py-cov     # pytest tests/ with coverage
 ```
 
-`just install-py` installs the core dev surface. The Tier 1 Anthropic integration test (`tests/claudebox/agent_session/test_runtime_langgraph_providers.py::TestTier1AnthropicIntegration`) needs the `langchain-anthropic` provider package, which lives behind the `[anthropic]` extra. Install it explicitly when running that test locally — without the extra the test skips via `pytest.importorskip`:
+`just install-py` installs the core dev surface. The Tier 1 Anthropic integration test (`tests/claudebox/agent_session/test_runtime_langgraph_providers.py::TestTier1AnthropicIntegration`) needs the `langchain-anthropic` provider package, behind the `[anthropic]` extra — install it explicitly to run that test locally; without it, the test skips via `pytest.importorskip`:
 
 ```bash
 UV_PROJECT_ENVIRONMENT='<agent-venv>' VIRTUAL_ENV= uv pip install langchain-anthropic
@@ -117,7 +118,7 @@ The boundary is enforced two ways:
 
 Prefix-pattern enforcement matters because the LangChain ecosystem ships new provider packages monthly (e.g. `langchain_anthropic`, `langchain_groq`, `langchain_xyz_future_provider`). A regex-bounded match (`^(langchain|langgraph)($|_|\.)`) auto-bans every future package without per-package list maintenance — the previous ruff `banned-api` table required enumerating each one and would have decayed into a treadmill.
 
-When adding a new runtime (`runtime_<name>.py`), add a `_ContainmentRule` to `SdkContainmentAudit.RULES` in `lib/scripts/python-guidelines-audit.py` carrying the package regex, the adapter file (plus any test files that legitimately exercise the SDK boundary) in the `allowlist`, and the containment message. No other config changes needed.
+When adding a new runtime (`runtime_<name>.py`), add a `_ContainmentRule` to `SdkContainmentAudit.RULES` in `lib/scripts/python-guidelines-audit.py` with the package regex, allowlist, and containment message — same shape as existing rules. No other config changes needed.
 
 ### Runtime Resolution
 
@@ -192,20 +193,20 @@ await loop.run_in_executor(self._executor, self._resolver.resolve, candidates, t
 Every `cmd_*.py` defines an `EPILOG` with the same shape, so a new verb does not have to be reverse-engineered from an existing one:
 
 ```
-examples:
+Examples:
   claudebox logs                    tail daemon log, then follow
   claudebox logs --tail 50          backfill 50 lines, then follow
 
-<topic>:
+<Topic>:
   Two-space indented content.
 
-notes:
+Notes:
   Prose that does not fit a topical heading.
 ```
 
-- ✅ **Always** lead with `examples:` — two columns, command left, effect right, hand-aligned
-- ✅ **Always** use lowercase, colon-terminated section headings and indent their content two spaces
-- ✅ **Always** put trailing prose under a heading (`notes:` when nothing more specific fits) — never a bare paragraph
+- ✅ **Always** lead with `Examples:` — two columns, command left, effect right, hand-aligned
+- ✅ **Always** use title-case, colon-terminated section headings and indent their content two spaces
+- ✅ **Always** put trailing prose under a heading (`Notes:` when nothing more specific fits) — never a bare paragraph
 - ✅ **Always** use single backticks for literal values and paths; double backticks render literally and read as noise
 - 🚫 **Never** state an option's default in the epilog — it belongs in that option's `help=`, which is the single source (the formatter no longer appends one)
 
@@ -250,7 +251,7 @@ Three-layer DDD with strict import boundaries:
 - ✅ **Always** give every `FileLock` an explicit `timeout=` and translate a `filelock.Timeout` into a typed error — never let acquisition block forever
 - ✅ **Always** give subprocess dispatch an explicit `timeout=` and log argv + elapsed time before it propagates; exempt only long-running foreground processes the daemon never calls
 - 🚫 **Never** assume `AsyncPoller`'s `asyncio.wait_for` backstop makes an unbounded call inside `_poll()` safe — bound the call itself
-- 🚫 **Never** read a bound placed around `run_in_executor` as a bound on the work — it starts at submission, so it measures queueing plus execution, and firing it reclaims a worker only while the job is still queued. Record whether the job ever started (`executors.tracked`) so a full pool is never logged as a hung filesystem
+- 🚫 **Never** read a bound placed around `run_in_executor` as a bound on the work — it starts at submission, so it measures queueing plus execution, and firing it reclaims a worker only while the job is still queued. Record whether the job ever started (`executors.tracked`) so a full pool is never logged as a hung filesystem call
 - ✅ **Always** dispatch to the pool that matches the work's concern (`listing` / `podman` / `state`) — a single shared pool makes every class of blocking work fail together
 - ✅ **Always** collapse concurrent callers asking one question onto one job (`SingleFlight`) before widening a pool — N tabs refetching on one broadcast is one scan, not N
 - ✅ **Always** make a liveness signal observe the resource that actually serves requests, and keep the endpoint reporting it off that resource — a proxy that stays green through an outage is worse than no signal, because it is trusted
@@ -263,6 +264,7 @@ Two-line typed errors with one global exception handler — no per-handler try/e
 class ContainerNotFound(DaemonError):
     status_code = 404
     error_key = "container_not_found"
+
 
 # App wiring (once): app.add_exception_handler(domain.DaemonError, handle_daemon_error)
 # Produces: {"error": "container_not_found", ...context_kwargs}
@@ -279,6 +281,7 @@ class ContainerNotFound(DaemonError):
 ```python
 DaemonDep = Annotated[DaemonService, Depends(get_daemon)]
 WorkspaceDep = Annotated[WorkspaceService, Depends(get_workspace)]
+
 
 # Handlers use clean signatures:
 async def list_containers(svc: WorkspaceDep): ...
@@ -301,7 +304,7 @@ Section dividers (`# Name` + `# ---...---`) in classes >100 lines, and in handle
 3. **State Management** — `save()`, `_load()`, `sync_state()`
 4. **Misc** — `_broadcast_status()`, `_log_context` property (always last)
 
-Public before private within each section. `_log_context` always last.
+Public before private within each section.
 
 ### Structured Log Context
 
@@ -311,6 +314,7 @@ Service classes define a `_log_context` property returning structured dict conte
 @property
 def _log_context(self) -> dict:
     return {"workspace": {"id": self.workspace.id, "path": self.workspace.path}}
+
 
 logger.info("Started", **self._log_context)
 # Extended context: ctx = {"container": {"id": cid}, **self._log_context}
@@ -426,7 +430,7 @@ Frontend-specific recipes (`install-fe`, `build-fe`, `test-fe`, `test-fe-cov`) a
 
 ### Design Principle
 
-Features are **modular, self-contained, and encapsulated**. Everything a feature needs — components, hooks, utils, styles — lives together in one directory. Looking at a feature's folder should tell you everything about it without scanning other parts of the codebase. Cross-feature code lives in top-level `components/`, `hooks/`, `utils/`; truly global concerns (contexts, constants, API clients) also live at the top level.
+Features are **modular, self-contained, and encapsulated** — everything a feature needs (components, hooks, utils, styles) lives together in one directory, so its folder tells you everything about it without scanning elsewhere. Cross-feature code lives in top-level `components/`, `hooks/`, `utils/`; truly global concerns (contexts, constants, API clients) also live at the top level.
 
 ### Directory Architecture
 
@@ -487,7 +491,7 @@ src/
 
 Split contexts exist to prevent unnecessary re-renders. This is the most common source of performance bugs:
 
-- ✅ **Always** isolate a continuously-updating element from a long-lived list of otherwise-stable siblings — when one element updates at high frequency (e.g. the active streaming turn) inside a list of many stable elements (completed turns), render the updating element separately and place the stable siblings behind a `React.memo`ed subtree with referentially-stable props, so the stable siblings don't reconcile on each update. See ARCHITECTURE.md §5.4 (active/historical turn split).
+- ✅ **Always** isolate a continuously-updating element (e.g. the active streaming turn) from a long-lived list of otherwise-stable siblings (completed turns) — render it separately and place the siblings behind a `React.memo`ed subtree with referentially-stable props, so they don't reconcile on each update. See ARCHITECTURE.md §5.4 (active/historical turn split).
 - ✅ **Always** use granular context hooks — `useEvents()`, `useSessionData()`, `useSessionDir()`, `useSessionId()`, `useSessionActions()`, `useInteraction()`, `useStash()`, `useSessionsList()`, `useAppActions()`, `useWorkspace()`, `useSessionRouting()`
 - ✅ **Always** use composition hooks to combine cross-context actions (e.g., `useNewSession()` composes tab creation + navigation + container spawning)
 - ✅ **Always** use `useMemo` for context value objects
@@ -525,7 +529,7 @@ export default ComponentName
 - ✅ **Always** use function declarations for components — never arrow functions
 - ✅ **Always** destructure props in the function signature
 - ✅ **Always** use `handle*` for internal handlers, `on*` for callback props
-- 🚫 **Never** build a component-override map inline in a render body when the subtree beneath it is expensive — it's used as the JSX element type per tag, so a new identity per render forces React to rebuild instead of reconcile. Hoist to module scope; route per-render values through context instead of a closure (see ARCHITECTURE.md 5.8)
+- 🚫 **Never** build a component-override map inline in a render body when the subtree beneath it is expensive — it's used as the JSX element type per tag, so a new identity per render forces React to rebuild instead of reconcile. Hoist to module scope; route per-render values through context instead of a closure (see ARCHITECTURE.md §5.8)
 
 ### API Patterns
 
@@ -584,7 +588,7 @@ Panels use a class triplet `.{panel}-loading / -empty / -error` as panel-root mo
 - ✅ **Always** extract private sub-components to their own file once they exceed ~30 lines
 - ✅ **Always** extract pure functions (no React APIs) into the nearest enclosing `utils/` (component-level if exclusive, feature-level otherwise)
 - ✅ **Always** use descriptive filenames for extracted utils — `notifications.js`, `sessionTree.js`, not generic `helpers.js`
-- ✅ **Always** order top-level declarations public-before-private — exported functions/classes appear before non-exported helpers within a file. Helpers form a trailing block at the bottom. Function declarations are hoisted, so order is purely a readability concern; exports lead because they are the file's contract, helpers follow because they are implementation detail.
+- ✅ **Always** order top-level declarations public-before-private — exported functions/classes before non-exported helpers, which form a trailing block at the bottom. Function declarations are hoisted, so order is purely a readability concern; exports lead because they are the file's contract, helpers follow because they are implementation detail.
 - 🚫 **Never** export utility functions from component files (e.g., `readFileAsBase64` from `AttachmentPreview.jsx`)
 
 ### Utils Placement
@@ -739,7 +743,7 @@ When the frontend communicates with the daemon (multi-workspace mode), these con
 
 ### Commands
 
-All commands run from `lib/` via [just](https://github.com/casey/just). Run `just --list` for the full list.
+All commands run from `lib/` via [just](https://github.com/casey/just) — `just --list` for the full list.
 
 ```bash
 # All tests (python + frontend unit + e2e)
@@ -767,16 +771,14 @@ just test-e2e-app
 
 ### Visual Regression Snapshots
 
-`visual-regression.spec.js` renders identically in the container and on Jakub's
-machine — the app pins its own webfonts (see Styling above), so no OS font
-resolution is left to diverge. A failure is a genuine visual difference (or
-occasionally a real bug); investigate it, do not dismiss it as environment
-noise.
+`visual-regression.spec.js` renders identically in the container and on a
+local dev machine — the app pins its own webfonts (see Styling above), so
+either is a valid source of truth. A failure is a genuine visual difference
+(or occasionally a real bug); investigate it, never dismiss it as noise.
 
 Regenerate reference images only when a change is intended to alter the
 rendered output, via `just update-e2e-app-snapshots` (runs the suite with
-`--update-snapshots`) — the pinned webfont makes the result equivalent whether
-run in the container or on the host, so either is a valid source of truth.
+`--update-snapshots`).
 
 ### Principles
 
@@ -804,8 +806,6 @@ run in the container or on the host, so either is a valid source of truth.
 
 **The acid test for any new test**: if you flipped the implementation to a no-op or a wrong implementation, would the test fail? If no, the test isn't earning its keep. If the answer needs you to flip a *Python language feature* (dataclass kwargs, default values, type hints), you're testing the language — not your code.
 
-**Convention enforcement is not a test concern.** If a convention applies to N targets, a pytest case for one target enforces it for one; the other N-1 drift silently. Promote conventions to linter rules or AST audit scripts that run across the codebase. Pytest is for behavior.
-
 **Python testing:**
 - Framework: pytest with `pytest-anyio` for async, `inline-snapshot` for complex assertions, `pytest-cov` for coverage
 - Test directory: unified `lib/tests/` at project root, mirroring source package layout (`tests/claudebox/`, `tests/claudebox_daemon/`, `tests/claudebox_container_api/`)
@@ -830,8 +830,6 @@ Test modules using these fixtures must declare `pytestmark = pytest.mark.allow_h
 
 - **Parser-level tests** — dispatch, help snapshots, parser errors, unknown verbs — live in `lib/tests/claudebox_cli/`. Fast in-process unit tests via `host_cli.app.parser`. SPEC markers are forbidden here (see §8 — e2e-only).
 - **End-to-end binary-behavior tests** — real `subprocess.run` exec paths, raw `print()` output, Rich/structlog rendering, filesystem side-effects, `Traceback`-absence at the process boundary, `importlib.metadata` resolution from the installed binary — live in `lib/e2e/cli/`. SPEC markers go here.
-
-Add new CLI tests by the surface they prove.
 
 - ✅ **Always** use `tmp_path` for any filesystem writes — it targets `/tmp` which is writable in the sandbox
 - ✅ **Always** mock `touch_file`/`touch_dir` when testing code paths that create host files (e.g., `get_container_args` → `map_volume`)
@@ -948,7 +946,7 @@ These apply to all Python packages (`claudebox`, `claudebox_cli`, `claudebox_dae
 - 🚫 **Never** comment sentinel patterns — `NOT_PROVIDED = object()` and `MISSING = object()` are self-evident
 - 🚫 **Never** explain standard library usage, common design patterns, or language idioms
 
-**Docstring sizing**: Default to one line. Wrappers and obvious functions get single lines:
+**Docstring sizing** — wrappers and obvious functions get single lines:
 
 ```python
 # ✅ Simple wrapper → single-line docstring
@@ -956,6 +954,7 @@ def dumps(obj: Any, **kwargs) -> str:
     """Serialize object to JSON string using extended encoder."""
 
     return json.dumps(obj, cls=JSONEncoder, **kwargs)
+
 
 # 🚫 Over-documented wrapper (Args/Returns just restate signature)
 def dumps(obj: Any, **kwargs) -> str:
@@ -992,6 +991,7 @@ class ContainerBackend:
     def __init__(self, name: str, *, verbose: bool = False):
         self.name = name
         self.verbose = verbose
+
 
 # ✅ Non-trivial __init__ — docstring explains non-obvious behavior
 class Workspace:

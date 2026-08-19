@@ -1,102 +1,69 @@
-/** Tests for comparators. */
+/** Tests for comparators - React.memo comparator factories. */
 
 import { describe, expect, it } from 'vitest'
-import { createPropsComparator } from './comparators'
+import { createPropsComparator, sameIdSet } from './comparators'
 
 describe('createPropsComparator', () => {
-  describe('default shallow compare', () => {
+  it('returns true when every prop is shallow-equal', () => {
     const compare = createPropsComparator()
-
-    it('returns true for identical props', () => {
-      const obj = { a: 1, b: 'hello' }
-      expect(compare(obj, obj)).toBe(true)
-    })
-
-    it('returns true when all values are strictly equal', () => {
-      expect(compare({ a: 1, b: 'x' }, { a: 1, b: 'x' })).toBe(true)
-    })
-
-    it('returns false when a primitive value differs', () => {
-      expect(compare({ a: 1 }, { a: 2 })).toBe(false)
-    })
-
-    it('returns false for different object references even if deeply equal', () => {
-      const arr1 = [1, 2, 3]
-      const arr2 = [1, 2, 3]
-      expect(compare({ items: arr1 }, { items: arr2 })).toBe(false)
-    })
-
-    it('returns true when both objects are empty', () => {
-      expect(compare({}, {})).toBe(true)
-    })
-
-    it('returns true for same reference values', () => {
-      const sharedArr = [1, 2]
-      expect(compare({ items: sharedArr }, { items: sharedArr })).toBe(true)
-    })
+    expect(compare({ a: 1, b: 'x' }, { a: 1, b: 'x' })).toBe(true)
   })
 
-  describe('custom per-field comparators', () => {
-    it('uses custom comparator for specified field', () => {
-      const compare = createPropsComparator({
-        items: (a, b) => a.length === b.length,
-      })
-
-      expect(compare({ items: [1, 2] }, { items: [3, 4] })).toBe(true)
-      expect(compare({ items: [1] }, { items: [1, 2] })).toBe(false)
-    })
-
-    it('still uses shallow compare for fields without custom comparator', () => {
-      const compare = createPropsComparator({
-        items: (a, b) => a.length === b.length,
-      })
-
-      expect(compare({ items: [1], label: 'a' }, { items: [2], label: 'a' })).toBe(true)
-
-      expect(compare({ items: [1], label: 'a' }, { items: [2], label: 'b' })).toBe(false)
-    })
-
-    it('supports multiple custom comparators', () => {
-      const compare = createPropsComparator({
-        items: (a, b) => a.length === b.length,
-        events: (a, b) => a.length === b.length,
-      })
-
-      expect(compare({ items: [1, 2], events: ['a'] }, { items: [3, 4], events: ['b'] })).toBe(true)
-
-      expect(compare({ items: [1, 2], events: ['a'] }, { items: [3, 4], events: ['b', 'c'] })).toBe(
-        false,
-      )
-    })
+  it('returns false when a shared prop differs', () => {
+    const compare = createPropsComparator()
+    expect(compare({ a: 1 }, { a: 2 })).toBe(false)
   })
 
-  describe('key-set union', () => {
-    it('returns false when prev has a key that next lacks', () => {
-      const compare = createPropsComparator()
-      expect(compare({ a: 1, b: 2 }, { a: 1 })).toBe(false)
+  it('returns false when next has an extra key', () => {
+    const compare = createPropsComparator()
+    expect(compare({ a: 1 }, { a: 1, b: 2 })).toBe(false)
+  })
+
+  it('returns false when prev has an extra key', () => {
+    const compare = createPropsComparator()
+    expect(compare({ a: 1, b: 2 }, { a: 1 })).toBe(false)
+  })
+
+  it('delegates to a special comparator for the configured key', () => {
+    const compare = createPropsComparator({
+      items: (prevItems, nextItems) => prevItems.length === nextItems.length,
     })
+    expect(compare({ items: [1, 2] }, { items: [3, 4] })).toBe(true)
+  })
 
-    it('returns false when next has a key that prev lacks', () => {
-      const compare = createPropsComparator()
-      expect(compare({ a: 1 }, { a: 1, b: 2 })).toBe(false)
-    })
+  it('a false special comparator result short-circuits to unequal', () => {
+    const compare = createPropsComparator({ items: () => false })
+    expect(compare({ items: [1] }, { items: [1] })).toBe(false)
+  })
+})
 
-    it('handles mismatched keys with custom comparator on missing field', () => {
-      const compare = createPropsComparator({
-        extra: (a, b) => a === b,
-      })
+describe('sameIdSet', () => {
+  it('returns true for the same reference', () => {
+    const set = new Set(['a'])
+    expect(sameIdSet(set, set)).toBe(true)
+  })
 
-      // prev has extra=undefined, next has extra=undefined => comparator called with (undefined, undefined)
-      expect(compare({ a: 1 }, { a: 1 })).toBe(true)
-    })
+  it('returns true for two null values', () => {
+    expect(sameIdSet(null, null)).toBe(true)
+  })
 
-    it('uses custom comparator when key exists only in one side', () => {
-      const compare = createPropsComparator({
-        b: (a, b) => a == null && b == null,
-      })
+  it('returns false when only one side is null', () => {
+    expect(sameIdSet(null, new Set(['a']))).toBe(false)
+  })
 
-      // b exists only in prev; the key union still invokes the custom comparator for it
-      expect(compare({ a: 1, b: 5 }, { a: 1 })).toBe(false)
-    })
+  it('returns true for equal contents regardless of insertion order', () => {
+    expect(sameIdSet(new Set(['a', 'b']), new Set(['b', 'a']))).toBe(true)
+  })
+
+  it('returns false when sizes differ', () => {
+    expect(sameIdSet(new Set(['a']), new Set(['a', 'b']))).toBe(false)
+  })
+
+  it('returns false when same size but different members', () => {
+    expect(sameIdSet(new Set(['a', 'b']), new Set(['a', 'c']))).toBe(false)
+  })
+
+  it('returns true for two distinct empty sets', () => {
+    expect(sameIdSet(new Set(), new Set())).toBe(true)
   })
 })

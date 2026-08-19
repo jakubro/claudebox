@@ -212,7 +212,7 @@ def _use_memory_buffer() -> None:
         flushLevel=logging.CRITICAL + 1,  # Never auto-flush
         target=None,
     )
-    _root.addHandler(handler)
+    _root.addHandler(handler)  # ty: ignore[unresolved-attribute]
 
 
 def _close_memory_buffer() -> None:
@@ -223,4 +223,4 @@ def _close_memory_buffer() -> None:
 
     if handler := _handlers.pop("memory", None):
         handler.close()
-        _root.removeHandler(handler)
+        _root.removeHandler(handler)  # ty: ignore[unresolved-attribute]

@@ -214,6 +214,16 @@ class TestAdmission:
         assert admission.queued_seconds == settled
         assert settled >= 0.02
 
+    def test_running_seconds_stops_climbing_once_the_job_finishes(self):
+        wrapped, admission = tracked(lambda: time.sleep(0.02))
+
+        wrapped()
+        settled = admission.running_seconds
+        time.sleep(0.02)
+
+        assert admission.running_seconds == settled
+        assert settled >= 0.02
+
     def test_a_dispatch_cancelled_before_it_runs_stops_being_counted(self):
         """A cancelled queued job never runs the wrapper, so wrapper-side cleanup can never fire."""
 

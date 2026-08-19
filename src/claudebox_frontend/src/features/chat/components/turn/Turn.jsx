@@ -18,6 +18,7 @@ import TurnBlockList from './components/TurnBlockList'
 import TurnMeta from './components/TurnMeta'
 import TurnProgress from './components/TurnProgress'
 import UserMessageContent from './components/user-message-content'
+import { useHideShellCalls } from './hooks/useHideShellCalls'
 import { useTurnCollapse } from './hooks/useTurnCollapse'
 import { TurnProvider } from './TurnContext'
 import { getAssistantTextContent, getTurnPreview, getTurnTimeRange } from './utils/turnContent'
@@ -78,8 +79,12 @@ function Turn({
     }
   }
 
+  const hideShellCalls = useHideShellCalls()
   const blocks = useMemo(() => processEvents(events), [events])
-  const hasVisibleBlocks = useMemo(() => hasVisibleBlock(blocks), [blocks])
+  const hasVisibleBlocks = useMemo(
+    () => hasVisibleBlock(blocks, hideShellCalls),
+    [blocks, hideShellCalls],
+  )
 
   // Compaction has its own spinner via CompactionBlock, or via isCompacting prop for pending turns with no events
   const hasActiveCompaction =
@@ -124,7 +129,10 @@ function Turn({
   }, [blocks, startTime])
 
   // Generate preview for collapsed state
-  const preview = useMemo(() => getTurnPreview(blocks, duration), [blocks, duration])
+  const preview = useMemo(
+    () => getTurnPreview(blocks, duration, hideShellCalls),
+    [blocks, duration, hideShellCalls],
+  )
 
   // Full assistant text content for copy button (without system reminders)
   const assistantTextContent = useMemo(() => getAssistantTextContent(blocks), [blocks])

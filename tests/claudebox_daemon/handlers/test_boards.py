@@ -1,7 +1,7 @@
 """Tests for claudebox_daemon.handlers.boards - HTTP adapter responses."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -67,3 +67,21 @@ def test_get_ticket_content_returns_typed_404_for_missing_ticket():
     assert body["error"] == "ticket_not_found"
     assert body["board_id"] == "docs"
     assert body["ticket_path"] == "missing.md"
+
+
+def test_list_boards_logs_the_measured_response_size_and_duration():
+    """The byte count only exists once the response is built - the handler is the only place to measure it."""
+
+    board_service = MagicMock()
+    board_service.list_all = AsyncMock(return_value=[{"name": "My Board"}])
+
+    client = TestClient(_build_app(board_service))
+    resp = client.get("/api/workspaces/myws/boards")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"boards": [{"name": "My Board"}]}
+    board_service.log_listing_completed.assert_called_once()
+    kw = board_service.log_listing_completed.call_args.kwargs
+    assert kw["board_count"] == 1
+    assert kw["response_bytes"] > 0
+    assert kw["total_seconds"] >= 0

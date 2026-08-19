@@ -155,7 +155,7 @@ export function stripMarkdown(text) {
     return ''
   }
   return String(stripper.processSync(text))
-    .replace(/<[^>]+>/g, '')
+    .replace(/<[^>]*>/g, '')
     .trim()
 }
 

@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isLookupsGroupingEnabled } from '../../../../../config/features'
 import { BlockType, ToolName } from '../../../../../config/schema'
+import { HideShellCallsContext } from '../HideShellCallsContext'
 import TurnBlockList from './TurnBlockList'
 
 vi.mock('../../../../../config/features', () => ({
@@ -104,6 +105,22 @@ describe('TurnBlockList', () => {
     ])
     expect(screen.getByTestId('tool-block')).toHaveAttribute('data-tool-use-id', 'e-1')
     expect(screen.getByTestId('lookups-group')).toHaveAttribute('data-count', '2')
+  })
+
+  it('drops a top-level Bash block when HideShellCallsContext is true', () => {
+    render(
+      <HideShellCallsContext.Provider value={true}>
+        <TurnBlockList blocks={[toolBlock(ToolName.BASH, 'b-1')]} blockOffsets={[]} />
+      </HideShellCallsContext.Provider>,
+    )
+
+    expect(screen.queryByTestId('tool-block')).not.toBeInTheDocument()
+  })
+
+  it('keeps a top-level Bash block by default (no provider)', () => {
+    render(<TurnBlockList blocks={[toolBlock(ToolName.BASH, 'b-1')]} blockOffsets={[]} />)
+
+    expect(screen.getByTestId('tool-block')).toHaveAttribute('data-tool-use-id', 'b-1')
   })
 
   it('with the gather disabled (default), read-only blocks dispatch to ToolBlock individually, never LookupsGroup', () => {

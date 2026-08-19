@@ -64,7 +64,7 @@ class SessionMutationObserver(AsyncPoller):
             )
             response.raise_for_status()
             data = response.json()
-        except Exception:
+        except Exception:  # noqa: BLE001 - any probe failure means "no update", not a crash
             return False
 
         updated_at = data.get("updated_at")

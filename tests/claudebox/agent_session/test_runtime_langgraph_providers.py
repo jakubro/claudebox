@@ -118,12 +118,14 @@ class TestProviderPackageMissing:
             _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
 
-        with patch(
-            "claudebox.agent_session.runtime_langgraph.init_chat_model",
-            side_effect=ImportError("No module named 'langchain_anthropic'"),
+        with (
+            patch(
+                "claudebox.agent_session.runtime_langgraph.init_chat_model",
+                side_effect=ImportError("No module named 'langchain_anthropic'"),
+            ),
+            pytest.raises(ProviderPackageMissing) as exc_info,
         ):
-            with pytest.raises(ProviderPackageMissing) as exc_info:
-                runtime._build_chat_model()
+            runtime._build_chat_model()
 
         assert exc_info.value.provider == "anthropic"
         assert "anthropic" in exc_info.value.install_hint
@@ -136,12 +138,14 @@ class TestProviderPackageMissing:
             _config(tmp_path, model="future_provider:some-model", provider_kwargs={}),
         )
 
-        with patch(
-            "claudebox.agent_session.runtime_langgraph.init_chat_model",
-            side_effect=ImportError("No module named 'langchain_future_provider'"),
+        with (
+            patch(
+                "claudebox.agent_session.runtime_langgraph.init_chat_model",
+                side_effect=ImportError("No module named 'langchain_future_provider'"),
+            ),
+            pytest.raises(ProviderPackageMissing) as exc_info,
         ):
-            with pytest.raises(ProviderPackageMissing) as exc_info:
-                runtime._build_chat_model()
+            runtime._build_chat_model()
 
         assert exc_info.value.provider == "future_provider"
         assert "langchain-future-provider" in exc_info.value.install_hint
@@ -154,12 +158,14 @@ class TestProviderPackageMissing:
         )
         original = ImportError("No module named 'langchain_anthropic'")
 
-        with patch(
-            "claudebox.agent_session.runtime_langgraph.init_chat_model",
-            side_effect=original,
+        with (
+            patch(
+                "claudebox.agent_session.runtime_langgraph.init_chat_model",
+                side_effect=original,
+            ),
+            pytest.raises(ProviderPackageMissing) as exc_info,
         ):
-            with pytest.raises(ProviderPackageMissing) as exc_info:
-                runtime._build_chat_model()
+            runtime._build_chat_model()
 
         assert exc_info.value.__cause__ is original
 
@@ -170,12 +176,14 @@ class TestProviderPackageMissing:
             _config(tmp_path, model="anthropic:claude-sonnet-5", provider_kwargs={}),
         )
 
-        with patch(
-            "claudebox.agent_session.runtime_langgraph.init_chat_model",
-            side_effect=RuntimeError("some other failure"),
+        with (
+            patch(
+                "claudebox.agent_session.runtime_langgraph.init_chat_model",
+                side_effect=RuntimeError("some other failure"),
+            ),
+            pytest.raises(RuntimeError, match="some other failure"),
         ):
-            with pytest.raises(RuntimeError, match="some other failure"):
-                runtime._build_chat_model()
+            runtime._build_chat_model()
 
 
 # Probe dispatch via PROVIDER_STRATEGIES
@@ -356,9 +364,9 @@ class TestProbeDispatch:
             agent_p,
             ckpt_p,
             patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OpenAICompatibleUnreachable),
         ):
-            with pytest.raises(OpenAICompatibleUnreachable):
-                await runtime.connect()
+            await runtime.connect()
 
 
 # Catalog dispatch via PROVIDER_STRATEGIES
@@ -490,9 +498,9 @@ class TestProbeOllamaDispatchedRaisesExpectedTypes:
             agent_p,
             ckpt_p,
             patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
         ):
-            with pytest.raises(OllamaUnreachable):
-                await runtime.connect()
+            await runtime.connect()
 
     @pytest.mark.anyio
     async def test_model_not_pulled_raises_through_strategy(self, tmp_path):
@@ -516,9 +524,9 @@ class TestProbeOllamaDispatchedRaisesExpectedTypes:
             agent_p,
             ckpt_p,
             patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaModelNotPulled),
         ):
-            with pytest.raises(OllamaModelNotPulled):
-                await runtime.connect()
+            await runtime.connect()
 
 
 # Cost telemetry + context-window via _providers lookup helpers
@@ -711,12 +719,14 @@ class TestToolBindingDegradation:
         runtime._chat_model = MagicMock()
         runtime._checkpointer = MagicMock()
 
-        with patch(
-            "claudebox.agent_session.runtime_langgraph.create_agent",
-            side_effect=RuntimeError("some other failure"),
+        with (
+            patch(
+                "claudebox.agent_session.runtime_langgraph.create_agent",
+                side_effect=RuntimeError("some other failure"),
+            ),
+            pytest.raises(RuntimeError, match="some other failure"),
         ):
-            with pytest.raises(RuntimeError, match="some other failure"):
-                runtime._build_graph(tools=[MagicMock()], middleware=[])
+            runtime._build_graph(tools=[MagicMock()], middleware=[])
 
 
 # Tier 1 Anthropic integration headline

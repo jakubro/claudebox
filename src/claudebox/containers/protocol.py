@@ -1,7 +1,8 @@
 """Container runtime protocol - interface for runtime implementations."""
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 
 if TYPE_CHECKING:

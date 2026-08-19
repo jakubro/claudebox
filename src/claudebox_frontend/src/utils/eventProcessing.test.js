@@ -17,6 +17,7 @@ import {
   indexEvents,
   isHiddenToolSearch,
   isInterruptAck,
+  isTopLevelBashCall,
   isVisibleEvent,
   processEvents,
   processNestedEvents,
@@ -919,6 +920,74 @@ describe('hasVisibleBlock', () => {
   })
 })
 
+describe('hasVisibleBlock - hideShellCalls (terminal column routing)', () => {
+  it('is true for a top-level Bash call by default (flag omitted)', () => {
+    const blocks = [{ type: 'tool', toolUse: { content: 'Bash' }, toolResult: null }]
+
+    expect(hasVisibleBlock(blocks)).toBe(true)
+  })
+
+  it('is false when the only block is a top-level Bash call and hideShellCalls is true', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'Bash', tool_use_id: 'b-1' }, toolResult: null },
+    ]
+
+    expect(hasVisibleBlock(blocks, true)).toBe(false)
+  })
+
+  it('is false for a routed Bash call plus a hidden ToolSearch, both excluded', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'Bash', tool_use_id: 'b-1' }, toolResult: null },
+      { type: 'tool', toolUse: { content: 'ToolSearch' }, toolResult: { is_error: false } },
+    ]
+
+    expect(hasVisibleBlock(blocks, true)).toBe(false)
+  })
+
+  it('is true when a nested Bash call is present even with hideShellCalls true', () => {
+    const blocks = [
+      {
+        type: 'tool',
+        toolUse: { content: 'Bash', tool_use_id: 'b-1', parent_tool_use_id: 'subagent-X' },
+        toolResult: null,
+      },
+    ]
+
+    expect(hasVisibleBlock(blocks, true)).toBe(true)
+  })
+
+  it('is true for a routed LangGraph snake_case bash call plus a non-tool block', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'bash', tool_use_id: 'b-1' }, toolResult: null },
+      { type: 'text', event: { content: 'done' } },
+    ]
+
+    expect(hasVisibleBlock(blocks, true)).toBe(true)
+  })
+})
+
+describe('isTopLevelBashCall', () => {
+  it('is true for a top-level Bash call', () => {
+    expect(isTopLevelBashCall({ content: 'Bash' })).toBe(true)
+  })
+
+  it('is true for the LangGraph snake_case alias', () => {
+    expect(isTopLevelBashCall({ content: 'bash' })).toBe(true)
+  })
+
+  it('is false for a nested Bash call (parent_tool_use_id set)', () => {
+    expect(isTopLevelBashCall({ content: 'Bash', parent_tool_use_id: 'subagent-X' })).toBe(false)
+  })
+
+  it('is false for a non-Bash tool', () => {
+    expect(isTopLevelBashCall({ content: 'Read' })).toBe(false)
+  })
+
+  it('is false for a missing toolUse', () => {
+    expect(isTopLevelBashCall(undefined)).toBe(false)
+  })
+})
+
 describe('extractTasks', () => {
   it('returns empty array for empty events', () => {
     const tasks = extractTasks([], new Map())
@@ -1142,6 +1211,74 @@ describe('extractTasks', () => {
     const tasks = extractTasks(events, new Map())
 
     expect(tasks[0].lastEventTime).toBe(new Date('2026-01-01T00:00:20Z').getTime())
+  })
+
+  it('attaches the enclosing turn id from the preceding human event', () => {
+    const events = [
+      { type: 'user', subtype: 'text', is_human: true, content: 'Run it', turn_id: 'turn_001' },
+      {
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: 1000,
+        tool_use_id: 'task_1',
+        tool_input: { description: 'Test' },
+      },
+    ]
+
+    const tasks = extractTasks(events, new Map())
+
+    expect(tasks[0].turnId).toBe('turn_001')
+  })
+
+  it('keeps the parent turn id for a task inside a subagent nested event stream', () => {
+    const events = [
+      { type: 'user', subtype: 'text', is_human: true, content: 'Run it', turn_id: 'turn_001' },
+      {
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: 1000,
+        tool_use_id: 'task_outer',
+        tool_input: { description: 'Outer task' },
+      },
+      // A nested human event must not retarget the turn (same guard as appendTurns).
+      {
+        type: 'user',
+        subtype: 'text',
+        is_human: true,
+        content: 'Subagent prompt',
+        turn_id: 'turn_should_not_apply',
+        parent_tool_use_id: 'task_outer',
+      },
+      {
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: 2000,
+        tool_use_id: 'task_nested',
+        tool_input: { description: 'Nested task' },
+        parent_tool_use_id: 'task_outer',
+      },
+    ]
+
+    const tasks = extractTasks(events, new Map())
+
+    expect(tasks.find(t => t.id === 'task_outer').turnId).toBe('turn_001')
+    expect(tasks.find(t => t.id === 'task_nested').turnId).toBe('turn_001')
+  })
+
+  it('leaves turnId null when the transcript has no turn id', () => {
+    const events = [
+      {
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: 1000,
+        tool_use_id: 'task_1',
+        tool_input: { description: 'Test' },
+      },
+    ]
+
+    const tasks = extractTasks(events, new Map())
+
+    expect(tasks[0].turnId).toBeNull()
   })
 })
 

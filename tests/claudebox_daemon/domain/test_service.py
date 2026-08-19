@@ -303,7 +303,7 @@ class TestGetWorkspace:
 
         def reload_with_new_ws():
             config.workspaces = [ws]
-            config.get_workspace = MagicMock(side_effect=_config_get_workspace(config))  # ty: ignore[invalid-assignment]
+            config.get_workspace = MagicMock(side_effect=_config_get_workspace(config))
 
             return config
 
@@ -414,7 +414,7 @@ class TestHealth:
         assert report["degraded"] == ["event_loop"]
 
     def test_a_daemon_that_cannot_serve_names_the_serving_signal(self, patched):
-        """The gap 75.87 left: alive, scheduling, and unable to answer anything."""
+        """A daemon that is alive and scheduling but unable to answer anything."""
 
         svc = _make_service(mocks=patched)
         svc.watchdog.healthy = True

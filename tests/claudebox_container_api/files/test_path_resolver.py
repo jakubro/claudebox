@@ -487,7 +487,7 @@ class TestPathResolverPersistence:
         def _persist(resolver, n):
             try:
                 resolver._persist_index({f"f{n}.py": [f"f{n}.py"]})
-            except Exception as exc:  # pragma: no cover - failure path under test
+            except Exception as exc:  # noqa: BLE001 # pragma: no cover - failure path under test
                 errors.append(exc)
 
         threads = [threading.Thread(target=_persist, args=(r, n)) for n, r in enumerate(resolvers)]

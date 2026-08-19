@@ -106,6 +106,40 @@ class TestListAll:
 
         assert len(walks) == 1
 
+    @pytest.mark.anyio
+    async def test_a_successful_walk_logs_queue_and_scan_seconds(self, tmp_path):
+        """A slow-but-successful walk must still say where its time went."""
+
+        svc, _ = _make_service(tmp_path)
+        logged = []
+        svc._logger = MagicMock()
+        svc._logger.info = lambda event, **kw: logged.append((event, kw))
+
+        await svc.list_all()
+
+        scanned = next(kw for event, kw in logged if event == "board_listing_scanned")
+        assert scanned["queued_seconds"] >= 0
+        assert scanned["scan_seconds"] >= 0
+        assert "pool" in scanned
+        assert scanned["workspace"]["id"] == "test-ws"
+
+    def test_log_listing_completed_reports_the_handler_measured_fields(self, tmp_path):
+        """The byte count and end-to-end duration only exist in the handler - this is where they land."""
+
+        svc, _ = _make_service(tmp_path)
+        logged = []
+        svc._logger = MagicMock()
+        svc._logger.info = lambda event, **kw: logged.append((event, kw))
+
+        svc.log_listing_completed(board_count=2, response_bytes=256, total_seconds=0.5)
+
+        event, kw = logged[0]
+        assert event == "board_listing_completed"
+        assert kw["board_count"] == 2
+        assert kw["response_bytes"] == 256
+        assert kw["total_seconds"] == 0.5
+        assert kw["workspace"]["id"] == "test-ws"
+
 
 class TestSendPromptSequence:
     """Test the prompt sequence delivery to a session's send endpoint."""

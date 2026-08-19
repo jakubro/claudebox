@@ -456,6 +456,12 @@ describe('stripMarkdown', () => {
     expect(out).not.toContain('<')
     expect(out).not.toContain('>')
   })
+
+  it('leaves no bracket fragment for nested angle brackets', () => {
+    const out = stripMarkdown('<<a>>text<<b>>')
+    expect(out).not.toContain('<')
+    expect(out).not.toContain('>')
+  })
 })
 
 describe('getBasename', () => {

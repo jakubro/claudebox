@@ -175,6 +175,7 @@ def http_serve(
     factory: Factory,
     *,
     port: int,
+    host: str = "0.0.0.0",
     dev: bool = False,
     reload_dirs: list[str | Path] | None = None,
 ) -> None:
@@ -185,7 +186,7 @@ def http_serve(
     uvicorn.run(
         f"{factory.__module__}:{factory.__name__}",  # ty: ignore[unresolved-attribute]
         factory=True,
-        host="0.0.0.0",
+        host=host,
         port=port,
         timeout_keep_alive=30,
         reload=reload,

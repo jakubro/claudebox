@@ -136,6 +136,43 @@ test.describe('Tasks Panel', () => {
     // Scroll position and highlight verification is timing-dependent in mocks
   })
 
+  // SPEC: panel-task:click-opens-collapsed-turn
+  test('clicking a task in a collapsed turn opens the turn and reveals it', async ({ page }) => {
+    await mockSSE(page, 'events/task-in-collapsed-turn.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await openTasksPanel(page)
+    await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+    await page.locator('[data-testid="task-entry"]').first().click()
+
+    const block = page.locator('[data-tool-use-id="task_probe_001"]')
+    // A collapsed turn keeps the block in the DOM but visibility: hidden.
+    await expect(block).toBeVisible()
+    await expect(page.locator('[data-turn-id="turn_001"]')).not.toHaveClass(/turn-collapsed/)
+  })
+
+  // SPEC: panel-task:click-reaches-history
+  test('clicking a task whose turn has scrolled out of view brings it into view', async ({
+    page,
+  }) => {
+    await mockSSE(page, 'events/task-in-collapsed-turn.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    // Scroll to bottom: covers a windowed-out turn with no DOM element, not just a collapsed one.
+    await page.locator('[data-testid="chat-messages"]').evaluate(el => {
+      el.scrollTop = el.scrollHeight
+    })
+
+    await openTasksPanel(page)
+    await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+    await page.locator('[data-testid="task-entry"]').first().click()
+
+    // turn_001 has no element until scrollToTurnRef mounts it.
+    await expect(page.locator('[data-tool-use-id="task_probe_001"]')).toBeVisible()
+  })
+
   // SPEC: panel-task:status-indicator
   test('running task has running status class', async ({ page }) => {
     const controller = await createSSEController(page)

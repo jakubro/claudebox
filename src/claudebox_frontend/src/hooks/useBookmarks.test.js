@@ -309,4 +309,105 @@ describe('useBookmarks', () => {
     const setOp = call.find(op => op.op === 'set')
     expect(setOp.value.preview).toHaveLength(80)
   })
+
+  describe('removeBookmark', () => {
+    it('does nothing when targetSessionId, turnId, or messageType is missing', async () => {
+      mockGetUiState.mockResolvedValue({ global: {} })
+      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
+      await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+
+      act(() => result.current.removeBookmark(null, 'turn-1', 'user'))
+      act(() => result.current.removeBookmark('session-1', null, 'user'))
+      act(() => result.current.removeBookmark('session-1', 'turn-1', null))
+
+      expect(mockPatchGlobalUiState).not.toHaveBeenCalled()
+    })
+
+    it('removes a bookmark from a different session without touching current-session state', async () => {
+      mockGetUiState.mockResolvedValue({
+        global: {
+          bookmarkedTurns: {
+            'session-1': ['turn-a:user'],
+            'session-2': ['turn-x:user', 'turn-y:assistant'],
+          },
+          bookmarkMeta: { 'session-2/turn-x:user': { preview: 'p', ts: '2026-01-01' } },
+        },
+      })
+
+      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
+      await waitFor(() => expect(result.current.bookmarkedMessageIds.size).toBe(1))
+
+      act(() => {
+        result.current.removeBookmark('session-2', 'turn-x', 'user')
+      })
+
+      expect(mockPatchGlobalUiState).toHaveBeenCalledWith([
+        { op: 'remove', path: 'bookmarkedTurns.session-2', value: 'turn-x:user' },
+        { op: 'unset', path: 'bookmarkMeta.session-2/turn-x:user' },
+      ])
+      expect(result.current.allBookmarks['session-2']).toEqual(['turn-y:assistant'])
+      expect(result.current.bookmarkMeta['session-2/turn-x:user']).toBeUndefined()
+      expect(result.current.bookmarkedMessageIds.has('turn-a:user')).toBe(true)
+    })
+
+    it('also clears the current session set when the target session matches', async () => {
+      mockGetUiState.mockResolvedValue({
+        global: { bookmarkedTurns: { 'session-1': ['turn-a:user'] } },
+      })
+
+      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
+      await waitFor(() => expect(result.current.bookmarkedMessageIds.has('turn-a:user')).toBe(true))
+
+      act(() => {
+        result.current.removeBookmark('session-1', 'turn-a', 'user')
+      })
+
+      expect(result.current.bookmarkedMessageIds.has('turn-a:user')).toBe(false)
+    })
+
+    it('deletes the session key entirely once its last bookmark is removed', async () => {
+      mockGetUiState.mockResolvedValue({
+        global: { bookmarkedTurns: { 'session-2': ['turn-x:user'] } },
+      })
+
+      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
+      await waitFor(() => expect(result.current.allBookmarks['session-2']).toEqual(['turn-x:user']))
+
+      act(() => {
+        result.current.removeBookmark('session-2', 'turn-x', 'user')
+      })
+
+      expect(result.current.allBookmarks['session-2']).toBeUndefined()
+    })
+
+    it('is a no-op on allBookmarks when the target session has no entries', async () => {
+      mockGetUiState.mockResolvedValue({ global: {} })
+      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
+      await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+
+      act(() => {
+        result.current.removeBookmark('session-3', 'turn-z', 'user')
+      })
+
+      expect(result.current.allBookmarks['session-3']).toBeUndefined()
+      expect(mockPatchGlobalUiState).toHaveBeenCalled()
+    })
+
+    it('signals cross-tab via localStorage', async () => {
+      mockGetUiState.mockResolvedValue({
+        global: { bookmarkedTurns: { 'session-2': ['turn-x:user'] } },
+      })
+      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
+      await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+
+      act(() => {
+        result.current.removeBookmark('session-2', 'turn-x', 'user')
+      })
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'claudebox-bookmarks-changed',
+        expect.any(String),
+      )
+    })
+  })
 })

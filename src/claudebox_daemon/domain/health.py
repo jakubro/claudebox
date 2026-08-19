@@ -65,12 +65,12 @@ class HealthMonitor(AsyncPoller):
                 raw=True,
             )
             response.raise_for_status()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the probe's job is catching any failure mode
             container.failure_count += 1
             crashed = container.failure_count >= CONTAINER_HEALTH_MAX_FAILURES
 
             self._probe_logger.log(
-                logging.WARN if crashed else logging.DEBUG,
+                logging.WARNING if crashed else logging.DEBUG,
                 "Container health check failed",
                 workspace={"id": svc.workspace.id, "path": svc.workspace.path},
                 container={"id": container.id, "failures": container.failure_count},

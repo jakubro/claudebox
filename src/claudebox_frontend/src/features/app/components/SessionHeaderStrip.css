@@ -26,19 +26,15 @@
   color: var(--text-muted);
 }
 
+/* Metrics shared with .session-header-strip-stop and .workspace-switcher-btn live in App.css. */
 .session-header-strip-name {
   background: transparent;
   border: none;
   color: var(--header-icon-color);
   cursor: pointer;
   font-size: 13px;
-  height: var(--chrome-btn-h);
   padding: var(--chrome-btn-pad-y) 8px;
-  margin: var(--chrome-btn-mar-y) 0;
-  line-height: var(--chrome-btn-line-height);
-  border-radius: 3px;
   display: inline-flex;
-  align-items: center;
   position: relative;
 }
 
@@ -68,13 +64,8 @@
   border: none;
   color: var(--header-icon-color);
   cursor: pointer;
-  height: var(--chrome-btn-h);
   padding: var(--chrome-btn-pad-y) var(--chrome-btn-pad-y);
-  margin: var(--chrome-btn-mar-y) 0;
-  line-height: var(--chrome-btn-line-height);
-  border-radius: 3px;
   display: inline-flex;
-  align-items: center;
   justify-content: center;
 }
 

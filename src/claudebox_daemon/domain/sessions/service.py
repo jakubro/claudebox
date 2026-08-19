@@ -5,7 +5,7 @@ import json
 import shutil
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,7 +22,11 @@ from claudebox import (
     write_json,
 )
 from claudebox import SessionNotFound as SharedSessionNotFound
-from claudebox.constants import SESSION_EVENTS_FILE, SESSION_METADATA_FILE
+from claudebox.constants import (
+    SESSION_CHECKPOINT_TURNS_FILE,
+    SESSION_EVENTS_FILE,
+    SESSION_METADATA_FILE,
+)
 from .errors import SessionNotFound
 from .models import SessionInfo, SessionProgressEvent, SessionsChangedEvent
 from ..errors import ListingTimeout
@@ -47,6 +51,8 @@ INHERITED_CONFIG_FIELDS = frozenset(
     {
         "name",
         "model",
+        "runtime",
+        "provider",
         "permission_mode",
         "effort_level",
         "session_prompt",
@@ -179,12 +185,46 @@ class SessionService:
         return sessions
 
     def _dispatch_scan(self):
-        """Submit the repo scan, recording when a worker picks it up."""
+        """Submit the repo scan, recording when a worker picks it up.
+
+        Logs from the wrapper itself, against a locally-captured admission - reading
+        self._admission after the fact would race a concurrent caller's later flight.
+        """
 
         loop = asyncio.get_running_loop()
         scan, self._admission = tracked(self._repo.list_all)
+        admission = self._admission
 
-        return loop.run_in_executor(self._executor, scan)
+        def _scan_and_log():
+            result = scan()
+            self._logger.info(
+                "session_listing_scanned",
+                queued_seconds=round(admission.queued_seconds, 3),
+                scan_seconds=round(admission.running_seconds, 3),
+                pool=self._executor.stats().asdict(),
+                **self._log_context,
+            )
+
+            return result
+
+        return loop.run_in_executor(self._executor, _scan_and_log)
+
+    def log_listing_completed(
+        self,
+        *,
+        session_count: int,
+        response_bytes: int,
+        total_seconds: float,
+    ) -> None:
+        """Log a successful listing's end-to-end cost - the success-path twin of the timeout warning."""
+
+        self._logger.info(
+            "session_listing_completed",
+            session_count=session_count,
+            response_bytes=response_bytes,
+            total_seconds=round(total_seconds, 3),
+            **self._log_context,
+        )
 
     async def get(self, session_id: str) -> SessionInfo:
         """Read session metadata from disk; raises SessionNotFound if missing."""
@@ -248,7 +288,7 @@ class SessionService:
         workspace = Workspace(self._workspace.path)
         new_session_dir = workspace.ensure_session(session_id).path
         cls = resolve_runtime_class(self._agent)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         return SessionInfo(
             session_id=session_id,
@@ -444,6 +484,13 @@ class SessionService:
                     new_session_id,
                     turn_id,
                 )
+                await loop.run_in_executor(
+                    None,
+                    self._truncate_langgraph_checkpoint,
+                    workspace,
+                    new_session_id,
+                    turn_id,
+                )
 
             # Derive from the (possibly truncated) child events.jsonl, not parent_data, to avoid
             # double-counting the parent's tail in cross-session rollups.
@@ -457,7 +504,7 @@ class SessionService:
             # Identity/config inherited from parent; counters/snapshots from derived below.
             inherited = {k: v for k, v in parent_data.items() if k in INHERITED_CONFIG_FIELDS}
 
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             seed: dict = {
                 **inherited,
                 **derived,
@@ -525,7 +572,7 @@ class SessionService:
                     response.raise_for_status()
 
                     return
-            except Exception:
+            except Exception:  # noqa: BLE001 - startup retry loop: any failure just retries
                 if attempt < CONTAINER_HEALTH_STARTUP_MAX_RETRIES - 1:
                     await asyncio.sleep(CONTAINER_HEALTH_STARTUP_INTERVAL.total_seconds())
 
@@ -619,13 +666,9 @@ class SessionService:
         source_id: str,
         new_id: str,
     ) -> None:
-        """Re-key a copied LangGraph checkpoint onto the fork's own thread_id.
-
-        A copy still points at the parent's `thread_id` (pinned to `session_id`) unless
-        re-keyed, so the fork would read empty state; only the key column is rewritten, since
-        payloads never embed it. No-op when the file is absent. Kept full-fidelity, not
-        truncated, so the model recalls more than the fork's own transcript (see
-        ARCHITECTURE.md's Fork paragraph).
+        """Re-key a copied LangGraph checkpoint onto the fork's own thread_id; else it reads empty.
+        thread_id is pinned to session_id; only the key column changes - payloads never embed it.
+        No-op when the file is absent; must run before `_truncate_langgraph_checkpoint`.
         """
 
         path = workspace.ensure_session(new_id).path / "checkpoints.sqlite"
@@ -668,6 +711,52 @@ class SessionService:
             kept.append(line)
 
         path.write_text("".join(kept))
+
+    def _truncate_langgraph_checkpoint(
+        self,
+        workspace: Workspace,
+        session_id: str,
+        turn_id: str,
+    ) -> None:
+        """Truncate a forked LangGraph checkpoint at the turn boundary, matching the transcript.
+        `LangGraphRuntime` journals each turn's pre-turn checkpoint_id in `checkpoint_turns.json`.
+        checkpoint_id is UUID6 - creation-time sortable - so rows past the boundary are deleted.
+        No-op when file, journal, or entry is absent - the whole checkpoint carries over instead.
+        """
+
+        session_path = workspace.ensure_session(session_id).path
+        checkpoint_path = session_path / "checkpoints.sqlite"
+
+        if not checkpoint_path.exists():
+            return
+
+        journal = read_json(session_path / SESSION_CHECKPOINT_TURNS_FILE, default=None)
+
+        if not isinstance(journal, dict) or turn_id not in journal:
+            return
+
+        boundary_checkpoint_id = journal[turn_id]
+
+        conn = sqlite3.connect(checkpoint_path)
+
+        try:
+            if boundary_checkpoint_id is None:
+                # The turn being forked away from is the thread's first - nothing precedes it.
+                conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (session_id,))
+                conn.execute("DELETE FROM writes WHERE thread_id = ?", (session_id,))
+            else:
+                conn.execute(
+                    "DELETE FROM checkpoints WHERE thread_id = ? AND checkpoint_id > ?",
+                    (session_id, boundary_checkpoint_id),
+                )
+                conn.execute(
+                    "DELETE FROM writes WHERE thread_id = ? AND checkpoint_id > ?",
+                    (session_id, boundary_checkpoint_id),
+                )
+
+            conn.commit()
+        finally:
+            conn.close()
 
     def _compute_derived_fields(self, events_path: Path) -> dict:
         """Sum counters and snapshot last-value fields from an events JSONL log.

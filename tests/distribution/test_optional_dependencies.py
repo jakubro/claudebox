@@ -5,6 +5,7 @@ catches missing extras, unbundled extras, or relocated core deps."""
 import re
 import tomllib
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -93,7 +94,7 @@ class TestCombinedBundlesReferenceDefinedExtras:
 class TestCorePackageDependenciesUnchanged:
     """Core dependencies must NOT silently move into optional extras."""
 
-    REQUIRED_CORE_DEPS = {
+    REQUIRED_CORE_DEPS: ClassVar[set[str]] = {
         "langchain",
         "langchain-core",
         "langchain-mcp-adapters",

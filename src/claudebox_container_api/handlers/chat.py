@@ -16,8 +16,6 @@ async def send(svc: SessionDep, body: SendRequest):
 
     await svc.send(body.prompt, body.attachments, body.inline_replies, body.note)
 
-    return None
-
 
 @router.get("/stream")
 async def chat_stream(svc: SessionDep):

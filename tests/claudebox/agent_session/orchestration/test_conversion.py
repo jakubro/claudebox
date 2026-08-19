@@ -1,6 +1,6 @@
 """Tests for claudebox.agent_session.orchestration.conversion - message-to-event pipeline."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from inline_snapshot import snapshot
@@ -230,7 +230,7 @@ class TestToPublishedEvent:
                 "block": {"id": "tu_1", "name": "Bash", "input": {"command": "ls"}},
             },
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.tool_use_id == "tu_1"
         assert pub.tool_name == "Bash"
         assert pub.tool_input == {"command": "ls"}
@@ -240,7 +240,7 @@ class TestToPublishedEvent:
             subtype="tool_result",
             raw={"message": {}, "block": {"tool_use_id": "tu_1", "is_error": True}},
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.tool_use_id == "tu_1"
         assert pub.is_error is True
 
@@ -252,7 +252,7 @@ class TestToPublishedEvent:
                 "block": {"tool_use_id": "tu_1"},
             },
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.tool_use_result == {"isAsync": True}
 
     def test_result_cost_promotion(self):
@@ -260,7 +260,7 @@ class TestToPublishedEvent:
             type="result",
             raw={"message": {"total_cost_usd": 0.05, "duration_ms": 1200}},
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.cost_usd == 0.05
         assert pub.duration_ms == 1200
 
@@ -276,7 +276,7 @@ class TestToPublishedEvent:
                 },
             },
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.context_tokens is None
 
     def test_system_model_promotion(self):
@@ -284,7 +284,7 @@ class TestToPublishedEvent:
             type="system",
             raw={"message": {"data": {"model": "sonnet"}}},
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.model == "sonnet"
         assert pub.message_data == {"model": "sonnet"}
 
@@ -292,7 +292,7 @@ class TestToPublishedEvent:
         event = self._make_event(
             raw={"message": {"parent_tool_use_id": "ptu_1"}, "block": {}},
         )
-        pub = to_published_event(event, id_="e1", ts=datetime.now(), turn_id="t1")
+        pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
         assert pub.parent_tool_use_id == "ptu_1"
 
     def test_parent_tool_use_id_kwargs_precedence(self):
@@ -302,7 +302,7 @@ class TestToPublishedEvent:
         pub = to_published_event(
             event,
             id_="e1",
-            ts=datetime.now(),
+            ts=datetime.now(UTC),
             turn_id="t1",
             parent_tool_use_id="from_kwargs",
         )
@@ -324,7 +324,7 @@ class TestSerializeEvent:
             is_human=False,
             raw={"message": {}, "block": {}},
             id="e1",
-            ts=datetime(2026, 3, 6, 12, 0, 0),
+            ts=datetime(2026, 3, 6, 12, 0, 0, tzinfo=UTC),
             turn_id="t1",
         )
         result = serialize_event(pub)
@@ -337,7 +337,7 @@ class TestSerializeEvent:
                 "primary": True,
                 "is_human": False,
                 "id": "e1",
-                "ts": datetime(2026, 3, 6, 12, 0, 0),
+                "ts": datetime(2026, 3, 6, 12, 0, 0, tzinfo=UTC),
                 "turn_id": "t1",
                 "tool_use_id": None,
                 "tool_name": None,

@@ -263,6 +263,59 @@ describe('predictTurnHeight', () => {
     )
   })
 
+  it('prices a top-level Bash lower with the split on, by exactly the bash contribution', () => {
+    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
+    const turn = {
+      turn_id: 't',
+      events: [{ type: 'assistant', subtype: 'tool_use', content: 'Bash' }],
+      // Padded above the MIN floor: without it, split-on clamps and masks the delta.
+      userMessage: 'u'.repeat(charsPerLine * 2),
+      attachments: null,
+    }
+    const splitOff = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, false)
+    const splitOn = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, true)
+    expect(splitOff - splitOn).toBe(PX_PER_BASH_TOOL_BLOCK)
+  })
+
+  it("is unaffected by the split flag when the only Bash call is nested (a subagent's)", () => {
+    const turn = {
+      turn_id: 't',
+      events: [
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          parent_tool_use_id: 'task-1',
+        },
+      ],
+      userMessage: '',
+      attachments: null,
+    }
+    const splitOff = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, false)
+    const splitOn = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, true)
+    // Nested calls are not terminal-eligible.
+    expect(splitOff).toBe(splitOn)
+  })
+
+  it('prices a nested Bash call as an ordinary tool row, not the 200px top-level rate', () => {
+    const turn = {
+      turn_id: 't',
+      events: [
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          parent_tool_use_id: 'task-1',
+        },
+      ],
+      userMessage: '',
+      attachments: null,
+    }
+    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH)).toBe(
+      Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, TURN_BASE_HEIGHT_PX + PX_PER_TOOL_BLOCK),
+    )
+  })
+
   it('prices a mix of hidden ToolSearch and ordinary tool_use correctly', () => {
     const turn = {
       turn_id: 't',

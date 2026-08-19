@@ -418,6 +418,165 @@ class TestHandleEvent:
         session._sdk_client.query.assert_not_awaited()
 
 
+# --- _fold_rate_limit / _drop_unannounced_rate_limits (via _handle_event) ---
+
+
+class TestFoldRateLimit:
+    """A live rate_limit event upserts or clears its window and marks it re-announced."""
+
+    @pytest.mark.anyio
+    async def test_non_allowed_status_upserts_the_window(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+
+        event = _make_event(
+            type="system",
+            subtype="rate_limit",
+            message_data={
+                "rate_limit_type": "five_hour",
+                "status": "allowed_warning",
+                "resets_at": None,
+                "utilization": 0.86,
+            },
+        )
+        await session._handle_event(event)
+
+        entries = session._rate_limit_store.get()
+        assert entries == [
+            {
+                "rate_limit_type": "five_hour",
+                "status": "allowed_warning",
+                "resets_at": None,
+                "utilization": 0.86,
+            },
+        ]
+
+    @pytest.mark.anyio
+    async def test_allowed_status_clears_the_window(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._rate_limit_store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.9,
+        )
+
+        event = _make_event(
+            type="system",
+            subtype="rate_limit",
+            message_data={
+                "rate_limit_type": "five_hour",
+                "status": "allowed",
+                "resets_at": None,
+                "utilization": None,
+            },
+        )
+        await session._handle_event(event)
+
+        assert session._rate_limit_store.get() == []
+
+    @pytest.mark.anyio
+    async def test_discards_the_type_from_pending_reconcile(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._rate_limit_pending_reconcile = {"five_hour"}
+
+        event = _make_event(
+            type="system",
+            subtype="rate_limit",
+            message_data={
+                "rate_limit_type": "five_hour",
+                "status": "allowed_warning",
+                "resets_at": None,
+                "utilization": 0.9,
+            },
+        )
+        await session._handle_event(event)
+
+        assert session._rate_limit_pending_reconcile == set()
+
+    @pytest.mark.anyio
+    async def test_missing_rate_limit_type_is_a_noop(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+
+        event = _make_event(type="system", subtype="rate_limit", message_data={"status": "allowed"})
+        await session._handle_event(event)  # must not raise
+
+        assert session._rate_limit_store.get() == []
+
+
+class TestDropUnannouncedRateLimits:
+    """The first result of a session drops windows it never re-announced."""
+
+    @pytest.mark.anyio
+    async def test_result_drops_a_window_never_reannounced(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._sdk_client = MagicMock()
+        session._rate_limit_store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.9,
+        )
+        session._rate_limit_pending_reconcile = {"five_hour"}
+
+        await session._handle_event(_make_event(type="result", subtype="success"))
+        assert session._context_refresh_timer is not None
+        session._context_refresh_timer.cancel()
+
+        assert session._rate_limit_store.get() == []
+        assert session._rate_limit_pending_reconcile == set()
+
+    @pytest.mark.anyio
+    async def test_result_keeps_a_window_reannounced_this_session(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._sdk_client = MagicMock()
+        session._rate_limit_store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.9,
+        )
+        # Not in pending - as if a rate_limit event already re-announced and discarded it.
+        session._rate_limit_pending_reconcile = set()
+
+        await session._handle_event(_make_event(type="result", subtype="success"))
+        assert session._context_refresh_timer is not None
+        session._context_refresh_timer.cancel()
+
+        assert len(session._rate_limit_store.get()) == 1
+
+    @pytest.mark.anyio
+    async def test_result_with_nothing_pending_is_a_noop(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._sdk_client = MagicMock()
+
+        await session._handle_event(_make_event(type="result", subtype="success"))  # must not raise
+        assert session._context_refresh_timer is not None
+        session._context_refresh_timer.cancel()
+
+        assert session._rate_limit_store.get() == []
+
+
 # --- _on_permission_mode_changed (hook) ---
 
 
@@ -684,6 +843,61 @@ class TestHandleInitCapabilityGuards:
         assert session._last_known_model == "provider:some-model"
 
 
+# --- _handle_init rate-limit reconcile snapshot ---
+
+
+class TestHandleInitRateLimitSnapshot:
+    """At session start, every currently-stored window is marked unannounced."""
+
+    @pytest.mark.anyio
+    async def test_snapshots_stored_windows_as_pending(self, tmp_workspace):
+        session, projection = TestHandleInitCapabilityGuards._session_with(
+            tmp_workspace,
+            supported=False,
+        )
+        session._rate_limit_store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.9,
+        )
+        session._rate_limit_store.set(
+            "seven_day",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.5,
+        )
+
+        with (
+            patch("claudebox.agent_session.orchestration.session.BaseSession"),
+            patch(
+                "claudebox.agent_session.orchestration.session.Projection",
+                return_value=projection,
+            ),
+        ):
+            await session._handle_init("resumed")
+
+        assert session._rate_limit_pending_reconcile == {"five_hour", "seven_day"}
+
+    @pytest.mark.anyio
+    async def test_empty_store_snapshots_to_empty_pending(self, tmp_workspace):
+        session, projection = TestHandleInitCapabilityGuards._session_with(
+            tmp_workspace,
+            supported=False,
+        )
+
+        with (
+            patch("claudebox.agent_session.orchestration.session.BaseSession"),
+            patch(
+                "claudebox.agent_session.orchestration.session.Projection",
+                return_value=projection,
+            ),
+        ):
+            await session._handle_init("resumed")
+
+        assert session._rate_limit_pending_reconcile == set()
+
+
 # --- _emit_container_restarted_if_resumed ---
 
 
@@ -691,15 +905,23 @@ class TestContainerRestartedEmit:
     """_emit_container_restarted_if_resumed fires per the divider behavior matrix."""
 
     @staticmethod
-    def _wire(session, *, historical: list, parent_session_id: str | None):
-        """Attach the mocks _emit_container_restarted_if_resumed depends on."""
+    def _wire(
+        session,
+        *,
+        historical: list,
+        parent_session_id: str | None,
+        runtime: str | None = None,
+    ):
+        """Attach the mocks _emit_container_restarted_if_resumed depends on. `runtime` defaults
+        to None (real Claude never stamps it) since a MagicMock auto-attribute would always
+        compare unequal to `_expected_runtime_name`."""
 
         session._event_pipeline = MagicMock()
         session._event_pipeline.get_historical_events = MagicMock(return_value=historical)
         session._event_pipeline.inject_event = AsyncMock()
 
         session._projection = MagicMock()
-        session._projection.value = MagicMock(parent_session_id=parent_session_id)
+        session._projection.value = MagicMock(parent_session_id=parent_session_id, runtime=runtime)
 
     @pytest.mark.anyio
     async def test_pristine_session_emits_nothing(self, tmp_workspace):
@@ -789,6 +1011,65 @@ class TestContainerRestartedEmit:
 
         kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]
         assert kwargs["message_data"] == {"fork_parent_session_id": "parent-abc"}
+
+    @pytest.mark.anyio
+    async def test_runtime_mismatch_emits_warning_payload(self, tmp_workspace):
+        """Persisted runtime differs from the workspace's current agent -> warning payload."""
+
+        session = _make_session(tmp_workspace)
+        session._expected_runtime_name = "Claude"
+        self._wire(
+            session,
+            historical=[_make_event(type="user", subtype="message", content="hi")],
+            parent_session_id=None,
+            runtime="LangGraph",
+        )
+
+        await session._emit_container_restarted_if_resumed()
+
+        kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]
+        assert kwargs["message_data"] == {
+            "runtime_mismatch": {"persisted": "LangGraph", "expected": "Claude"},
+        }
+
+    @pytest.mark.anyio
+    async def test_matching_runtime_emits_no_mismatch_payload(self, tmp_workspace):
+        """Persisted runtime equals the workspace's current agent -> no mismatch key."""
+
+        session = _make_session(tmp_workspace)
+        session._expected_runtime_name = "Claude"
+        self._wire(
+            session,
+            historical=[_make_event(type="user", subtype="message", content="hi")],
+            parent_session_id=None,
+            runtime="Claude",
+        )
+
+        await session._emit_container_restarted_if_resumed()
+
+        kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]
+        assert kwargs["message_data"] is None
+
+    @pytest.mark.anyio
+    async def test_fork_and_mismatch_both_present_in_same_payload(self, tmp_workspace):
+        """A forked session under a changed runtime carries both keys in one event."""
+
+        session = _make_session(tmp_workspace)
+        session._expected_runtime_name = "Claude"
+        self._wire(
+            session,
+            historical=[_make_event(type="user", subtype="message", content="seeded")],
+            parent_session_id="parent-abc",
+            runtime="LangGraph",
+        )
+
+        await session._emit_container_restarted_if_resumed()
+
+        kwargs = session._event_pipeline.inject_event.call_args.kwargs  # ty: ignore[unresolved-attribute]
+        assert kwargs["message_data"] == {
+            "fork_parent_session_id": "parent-abc",
+            "runtime_mismatch": {"persisted": "LangGraph", "expected": "Claude"},
+        }
 
 
 # --- Constructor kwarg discipline ---
@@ -961,7 +1242,7 @@ class TestStallWatchdog:
         session._event_pipeline = MagicMock(last_message_at=last_message_at)
         session._turn_dispatched_at = time.monotonic() - SESSION_STALL_TIMEOUT.total_seconds() - 1
         session._logger = MagicMock()
-        session.restart = AsyncMock()  # ty: ignore[invalid-assignment]
+        session.restart = AsyncMock()
 
         return session
 
@@ -1061,7 +1342,7 @@ class TestEnsureStreamHealthy:
         session = _make_session(tmp_workspace)
         session._sdk_client = MagicMock()
         session._sdk_client.stream_health = MagicMock(return_value=health)
-        session.restart = AsyncMock()  # ty: ignore[invalid-assignment]
+        session.restart = AsyncMock()
 
         return session
 
@@ -1103,8 +1384,8 @@ class TestEnsureStreamHealthy:
     @pytest.mark.anyio
     async def test_no_runtime_is_a_no_op(self, tmp_workspace):
         session = _make_session(tmp_workspace)
-        session.restart = AsyncMock()  # ty: ignore[invalid-assignment]
+        session.restart = AsyncMock()
 
         await session._ensure_stream_healthy()
 
-        session.restart.assert_not_awaited()  # ty: ignore[unresolved-attribute]
+        session.restart.assert_not_awaited()

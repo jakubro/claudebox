@@ -1,16 +1,12 @@
 /* Command autocomplete — two-panel IntelliJ-style dropdown */
 
+/* Popover chrome shared with .slash-command-hover-card lives in dropdown.css. */
 .command-autocomplete {
   position: absolute;
   bottom: 100%;
   left: 0;
   right: 0;
-  z-index: 1000;
   display: flex;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   max-height: 260px;
   margin-bottom: 4px;
   overflow: hidden;

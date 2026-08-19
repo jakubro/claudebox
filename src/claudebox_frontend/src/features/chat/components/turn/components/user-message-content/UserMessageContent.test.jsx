@@ -257,7 +257,7 @@ describe('UserMessageContent', () => {
 
       await user.click(screen.getByAltText('photo.png'))
 
-      expect(document.querySelector('.attachment-zoom-overlay')).toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).toBeInTheDocument()
       expect(screen.getByAltText('Attachment preview')).toBeInTheDocument()
     })
 
@@ -267,10 +267,10 @@ describe('UserMessageContent', () => {
       render(<UserMessageContent message="See this" attachments={attachments} />)
 
       await user.click(screen.getByAltText('photo.png'))
-      expect(document.querySelector('.attachment-zoom-overlay')).toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).toBeInTheDocument()
 
       await user.click(screen.getByTitle('Close'))
-      expect(document.querySelector('.attachment-zoom-overlay')).not.toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('closes zoom overlay on Escape key', async () => {
@@ -279,10 +279,10 @@ describe('UserMessageContent', () => {
       render(<UserMessageContent message="See this" attachments={attachments} />)
 
       await user.click(screen.getByAltText('photo.png'))
-      expect(document.querySelector('.attachment-zoom-overlay')).toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).toBeInTheDocument()
 
       await user.keyboard('{Escape}')
-      expect(document.querySelector('.attachment-zoom-overlay')).not.toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('closes zoom overlay on backdrop click', async () => {
@@ -291,11 +291,11 @@ describe('UserMessageContent', () => {
       render(<UserMessageContent message="See this" attachments={attachments} />)
 
       await user.click(screen.getByAltText('photo.png'))
-      const overlay = document.querySelector('.attachment-zoom-overlay')
+      const overlay = document.querySelector('.zoom-overlay')
       expect(overlay).toBeInTheDocument()
 
       await user.click(overlay)
-      expect(document.querySelector('.attachment-zoom-overlay')).not.toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('does not open zoom for non-image attachments', async () => {
@@ -304,7 +304,7 @@ describe('UserMessageContent', () => {
       render(<UserMessageContent message="Here" attachments={attachments} />)
 
       await user.click(screen.getByText('PDF'))
-      expect(document.querySelector('.attachment-zoom-overlay')).not.toBeInTheDocument()
+      expect(document.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
   })
 
@@ -354,6 +354,31 @@ describe('UserMessageContent', () => {
       const { container } = render(<UserMessageContent message="edit src/app.js please" />)
 
       expect(container.querySelector('.path-link')).toBeNull()
+    })
+  })
+
+  describe('note row', () => {
+    it('renders the note as a sibling, not inside message-content', () => {
+      const { container } = render(<UserMessageContent message="Hello" note="a note" />)
+
+      expect(screen.getByText('a note')).toHaveClass('message-note')
+      expect(container.querySelectorAll('.message-content')).toHaveLength(1)
+      expect(container.querySelector('.message-content').textContent).not.toContain('a note')
+    })
+
+    it('omits the note row when note is empty or whitespace-only', () => {
+      const { container } = render(<UserMessageContent message="Hello" note="   " />)
+
+      expect(container.querySelector('.message-note')).toBeNull()
+    })
+
+    it('renders the note alongside a QA response (mixed-content branch)', () => {
+      const qaMessage =
+        '<response:AskUserQuestion>\n  <question header="H" text="Q?">\n    <answer>A</answer>\n  </question>\n</response:AskUserQuestion>'
+      const { container } = render(<UserMessageContent message={qaMessage} note="please also" />)
+
+      expect(screen.getByText('please also')).toHaveClass('message-note')
+      expect(container.querySelector('.message-content-with-commands')).not.toBeNull()
     })
   })
 })

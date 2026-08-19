@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests',
+  // A project's own testIgnore/testMatch replaces this, so each must repeat it or demo-video runs.
   testIgnore: ['**/demo-video*'],
 
   workers: process.env.CLAUDEBOX_AGENT ? '20%' : '20%',
@@ -31,7 +32,7 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
-      testIgnore: ['**/mobile.spec.js'],
+      testIgnore: ['**/mobile.spec.js', '**/demo-video*'],
       use: { ...devices['Desktop Chrome'] },
     },
     {

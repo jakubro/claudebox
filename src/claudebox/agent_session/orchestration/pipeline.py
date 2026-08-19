@@ -19,6 +19,9 @@ from ...core.logging import get_logger
 from ...workspace import Workspace
 
 
+logger = get_logger(__name__)
+
+
 class OnInit(Protocol):
     """Callback invoked when the pipeline discovers the session ID."""
 
@@ -449,8 +452,9 @@ class EventPipeline:
 
             if idx >= 0:
                 event.source_offset = content[:idx].count("\n") + 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Best-effort enrichment - a missing/unreadable file just leaves source_offset unset.
+            logger.debug("edit_line_offset_failed", path=inp["file_path"], error=str(exc))
 
     async def _surface_result_only_turn(
         self,

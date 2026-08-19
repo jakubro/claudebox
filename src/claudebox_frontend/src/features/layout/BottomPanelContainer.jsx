@@ -1,11 +1,11 @@
 /** Bottom-panel strip above the footer: 1 slot full-width, 2 slots split 50/50, shared height. */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { LOGS_STRIP_MAX_HEIGHT_RATIO, LOGS_STRIP_MIN_HEIGHT } from '../../config/dimensions'
 import { components } from '../../config/layout'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useBottomPanels } from '../../context/BottomPanelsContext'
-import { isPrimaryPointer } from '../../utils/pointer'
+import { usePointerDragHandle } from '../../hooks/usePointerDragHandle'
 
 export default function BottomPanelContainer() {
   const { openSet, height, panelSideMap, setHeight } = useBottomPanels()
@@ -38,40 +38,11 @@ export default function BottomPanelContainer() {
     }
   }, [stripVisible, height])
 
-  const dragRef = useRef(null)
-
-  const handlePointerDown = useCallback(
-    e => {
-      if (!isPrimaryPointer(e)) {
-        return
-      }
-      e.preventDefault()
-      e.currentTarget.setPointerCapture(e.pointerId)
-      dragRef.current = { startY: e.clientY, startHeight: height }
-    },
-    [height],
-  )
-
-  const handlePointerMove = useCallback(
-    e => {
-      if (!dragRef.current) {
-        return
-      }
-      const dy = e.clientY - dragRef.current.startY
-      setHeight(dragRef.current.startHeight - dy)
-    },
-    [setHeight],
-  )
-
-  const handlePointerUp = useCallback(e => {
-    if (!dragRef.current) {
-      return
-    }
-    dragRef.current = null
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    }
-  }, [])
+  const { handlePointerDown, handlePointerMove, handlePointerUp } = usePointerDragHandle({
+    axis: 'y',
+    onDragStart: () => ({ startHeight: height }),
+    onDragMove: (drag, dy) => setHeight(drag.startHeight - dy),
+  })
 
   if (!stripVisible) {
     return null

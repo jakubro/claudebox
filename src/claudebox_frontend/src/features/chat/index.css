@@ -6,6 +6,7 @@
 @import "./ChatPanel.css";
 @import "./components/chat-control-bar/ChatControlBar.css";
 @import "./components/minimap/MiniMap.css";
+@import "./components/terminal/TerminalColumn.css";
 
 @import "./components/WelcomeContent.css";
 

@@ -123,16 +123,15 @@ class TestWebFetch:
         with (
             patch("httpx.Client", return_value=fake_client),
             patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO),
+            pytest.raises(Exception, match="HTTP error"),
         ):
-            with pytest.raises(Exception, match="HTTP error"):
-                web_fetch.invoke({"url": "https://example.com"})
+            web_fetch.invoke({"url": "https://example.com"})
 
     def test_non_http_scheme_is_rejected_without_any_network_call(self, tool_ctx):
         web_fetch, _ = _tools(tool_ctx)
 
-        with patch("httpx.Client") as client_cls:
-            with pytest.raises(Exception, match="scheme"):
-                web_fetch.invoke({"url": "file:///etc/passwd"})
+        with patch("httpx.Client") as client_cls, pytest.raises(Exception, match="scheme"):
+            web_fetch.invoke({"url": "file:///etc/passwd"})
 
         client_cls.assert_not_called()
 
@@ -140,32 +139,40 @@ class TestWebFetch:
         web_fetch, _ = _tools(tool_ctx)
         loopback = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
 
-        with patch("socket.getaddrinfo", return_value=loopback):
-            with pytest.raises(Exception, match="local/internal"):
-                web_fetch.invoke({"url": "http://localhost:8080/admin"})
+        with (
+            patch("socket.getaddrinfo", return_value=loopback),
+            pytest.raises(Exception, match="local/internal"),
+        ):
+            web_fetch.invoke({"url": "http://localhost:8080/admin"})
 
     def test_cloud_metadata_endpoint_is_blocked(self, tool_ctx):
         web_fetch, _ = _tools(tool_ctx)
         metadata_ip = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 0))]
 
-        with patch("socket.getaddrinfo", return_value=metadata_ip):
-            with pytest.raises(Exception, match="local/internal"):
-                web_fetch.invoke({"url": "http://169.254.169.254/latest/meta-data/"})
+        with (
+            patch("socket.getaddrinfo", return_value=metadata_ip),
+            pytest.raises(Exception, match="local/internal"),
+        ):
+            web_fetch.invoke({"url": "http://169.254.169.254/latest/meta-data/"})
 
     def test_private_rfc1918_host_is_blocked(self, tool_ctx):
         web_fetch, _ = _tools(tool_ctx)
         private_ip = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))]
 
-        with patch("socket.getaddrinfo", return_value=private_ip):
-            with pytest.raises(Exception, match="local/internal"):
-                web_fetch.invoke({"url": "http://10.0.0.5/internal-api"})
+        with (
+            patch("socket.getaddrinfo", return_value=private_ip),
+            pytest.raises(Exception, match="local/internal"),
+        ):
+            web_fetch.invoke({"url": "http://10.0.0.5/internal-api"})
 
     def test_unresolvable_host_is_blocked(self, tool_ctx):
         web_fetch, _ = _tools(tool_ctx)
 
-        with patch("socket.getaddrinfo", side_effect=OSError("Name or service not known")):
-            with pytest.raises(Exception, match="could not resolve"):
-                web_fetch.invoke({"url": "http://does-not-resolve.invalid/"})
+        with (
+            patch("socket.getaddrinfo", side_effect=OSError("Name or service not known")),
+            pytest.raises(Exception, match="could not resolve"),
+        ):
+            web_fetch.invoke({"url": "http://does-not-resolve.invalid/"})
 
     def test_redirect_to_a_blocked_host_is_refused(self, tool_ctx):
         web_fetch, _ = _tools(tool_ctx)
@@ -187,9 +194,9 @@ class TestWebFetch:
         with (
             patch("httpx.Client", return_value=fake_client),
             patch("socket.getaddrinfo", side_effect=_resolve),
+            pytest.raises(Exception, match="local/internal"),
         ):
-            with pytest.raises(Exception, match="local/internal"):
-                web_fetch.invoke({"url": "https://example.com/redirect-me"})
+            web_fetch.invoke({"url": "https://example.com/redirect-me"})
 
 
 class TestWebSearch:

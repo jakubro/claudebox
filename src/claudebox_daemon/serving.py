@@ -3,6 +3,7 @@
 import atexit
 import logging
 import os
+import signal
 import subprocess
 import textwrap
 import threading
@@ -50,6 +51,7 @@ def backend_server(factory, *, port: int) -> None:
     http_serve(
         factory,
         port=_backend_port(port),
+        host="127.0.0.1",
         dev=dev_mode,
         reload_dirs=[CORE_DIR, DAEMON_DIR] if dev_mode else None,
     )
@@ -104,6 +106,7 @@ def https_proxy(port: int) -> None:
         [caddy, "run", "--config", caddyfile],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     _drain_subprocess_output(proc, "caddy")
     atexit.register(_stop_subprocess, proc)
@@ -140,6 +143,7 @@ def frontend_dev_server(port: int) -> None:
         return
 
     proc = _start_frontend_dev_server(port)
+    _drain_subprocess_output(proc, "vite")
     atexit.register(_stop_subprocess, proc)
 
 
@@ -153,6 +157,9 @@ def _start_frontend_dev_server(port: int) -> subprocess.Popen:
             **os.environ,
             "VITE_API_URL": f"http://localhost:{_backend_port(port)}",
         },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
 
 
@@ -176,7 +183,7 @@ def _drain_subprocess_output(proc: subprocess.Popen, name: str) -> None:
 
                 level = log_levels.get(level.upper(), logging.INFO)
                 logger.log(level, msg, **obj)
-            except Exception:
+            except Exception:  # noqa: BLE001 - a non-JSON line is logged raw
                 logger.info(line)
 
     thread = threading.Thread(target=drain, name=f"{name}-log-drain", daemon=True)
@@ -184,14 +191,26 @@ def _drain_subprocess_output(proc: subprocess.Popen, name: str) -> None:
 
 
 def _stop_subprocess(proc: subprocess.Popen) -> None:
-    """Terminate a subprocess, falling back to kill on timeout."""
+    """Terminate a subprocess's whole process group, falling back to SIGKILL on timeout.
+    Group-wide (launchers pass start_new_session=True) since npm/npx never forward SIGTERM to vite.
+    """
 
-    proc.terminate()
+    _signal_group(proc, signal.SIGTERM)
 
     try:
         proc.wait(timeout=SERVER_PROCESS_TERMINATION_TIMEOUT.total_seconds())
     except subprocess.TimeoutExpired:
-        proc.kill()
+        _signal_group(proc, signal.SIGKILL)
+
+
+def _signal_group(proc: subprocess.Popen, sig: signal.Signals) -> None:
+    """Send a signal to a subprocess's process group, tolerating a group that's already gone."""
+
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except ProcessLookupError:
+        # Group already gone - the process exited between the caller's check and this call.
+        pass
 
 
 def _resolve_port(port: int) -> int:

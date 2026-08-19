@@ -2,8 +2,8 @@
 
 import { useCallback, useRef } from 'react'
 import { MESSAGE_JUMP_HIGHLIGHT_MS } from '../../../config/timing'
+import { findTurnRow, MOUNT_FRAMES, pollFrames } from '../../../utils/mountTurn'
 import { jumpTargets } from '../utils/jumpTargets'
-import { findTurnRow, MOUNT_FRAMES, pollFrames } from '../utils/mountTurn'
 
 const HIGHLIGHT_CLASS = 'jump-highlight'
 

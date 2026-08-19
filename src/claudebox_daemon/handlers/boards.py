@@ -1,8 +1,11 @@
 """Board CRUD - workspace-scoped HTTP adapters for board management."""
 
+import time
+
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 
+from claudebox import JSONResponse
 from ._models import (
     AssignTicketsRequest,
     CreateSwimlaneRequest,
@@ -27,7 +30,16 @@ router = APIRouter(prefix="/api/workspaces/{workspace_id}")
 async def list_boards(svc: WorkspaceDep):
     """List discovered boards in the workspace."""
 
-    return {"boards": await svc.board_service.list_all()}
+    started_at = time.monotonic()
+    boards = await svc.board_service.list_all()
+    response = JSONResponse(content={"boards": boards})
+    svc.board_service.log_listing_completed(
+        board_count=len(boards),
+        response_bytes=len(response.body),
+        total_seconds=time.monotonic() - started_at,
+    )
+
+    return response
 
 
 @router.get("/boards/{board_id}")

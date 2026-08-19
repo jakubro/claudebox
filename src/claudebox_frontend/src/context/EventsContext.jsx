@@ -194,6 +194,22 @@ export function EventsProvider({ children }) {
     dispatch({ type: 'CREATING_ENDED' })
   }, [])
 
+  // Marks a session id as "just created by this tab" - isCreating's clearing races the URL update,
+  // so a resume-skip check reading it at effect time can already see false. Consumed on first read.
+  const justCreatedSessionIdRef = useRef(null)
+
+  const markJustCreatedSession = useCallback(sessionId => {
+    justCreatedSessionIdRef.current = sessionId
+  }, [])
+
+  const consumeJustCreatedSession = useCallback(sessionId => {
+    if (justCreatedSessionIdRef.current !== sessionId) {
+      return false
+    }
+    justCreatedSessionIdRef.current = null
+    return true
+  }, [])
+
   const startForking = useCallback(() => {
     dispatch({ type: 'FORKING_STARTED' })
   }, [])
@@ -298,6 +314,8 @@ export function EventsProvider({ children }) {
       clearResume,
       startCreating,
       clearCreating,
+      markJustCreatedSession,
+      consumeJustCreatedSession,
       startForking,
       clearForking,
       startOpeningBoard,
@@ -341,6 +359,8 @@ export function EventsProvider({ children }) {
       clearResume,
       startCreating,
       clearCreating,
+      markJustCreatedSession,
+      consumeJustCreatedSession,
       startForking,
       clearForking,
       startOpeningBoard,

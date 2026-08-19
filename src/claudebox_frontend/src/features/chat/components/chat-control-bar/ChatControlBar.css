@@ -21,22 +21,7 @@
   max-width: 250px;
 }
 
-.chat-control-edit-input {
-  flex: 1;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  color: var(--text-primary);
-  min-width: 0;
-}
-
-.chat-control-edit-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
+/* Base chrome + :focus shared with .sessions-edit-input live in App.css. */
 .chat-control-edit-input::placeholder {
   color: var(--text-muted);
 }

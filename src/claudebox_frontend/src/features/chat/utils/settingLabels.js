@@ -15,6 +15,7 @@ const MODE_COLORS = {
 const MODEL_COLOR = '#8888bb'
 const EFFORT_COLOR = '#9a7ec8'
 const RESTART_COLOR = '#c89060'
+const MISMATCH_COLOR = '#e05c5c'
 
 /** Label + color for a setting-change / container-restart divider event. */
 export function getSettingChangeInfo(
@@ -47,6 +48,14 @@ export function getSettingChangeInfo(
     }
   }
   if (event.subtype === EventSubtype.CONTAINER_RESTARTED) {
+    // Outranks the fork/restart label: a runtime that may not read its own storage is urgent.
+    const mismatch = event.message_data?.runtime_mismatch
+    if (mismatch) {
+      return {
+        label: `Runtime mismatch: workspace is ${mismatch.expected}, session was ${mismatch.persisted}`,
+        color: MISMATCH_COLOR,
+      }
+    }
     const forkParentId = event.message_data?.fork_parent_session_id
     if (forkParentId) {
       const parent = sessions.find(s => s.session_id === forkParentId)

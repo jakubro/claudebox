@@ -125,6 +125,7 @@ const mockAppActions = vi.hoisted(() => ({
   autoCollapseEnabledRef: { current: true },
   markUserIntentRef: { current: null },
   scrollToTurnRef: { current: null },
+  expandTurnRef: { current: null },
   markProgrammaticScrollRef: { current: null },
   focusChatTab: vi.fn(),
   addSessionTab: vi.fn(),
@@ -567,6 +568,65 @@ describe('ChatPanel', () => {
       })
       expect(document.querySelector('[data-turn-id="t2"]')).toHaveClass('turn-collapsed')
       expect(document.querySelector('[data-turn-id="t3"]')).not.toHaveClass('turn-collapsed')
+    })
+
+    it('expandTurnRef opens a collapsed turn for a sibling panel (Tasks)', async () => {
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      await act(async () => {
+        mockAppActions.expandTurnRef.current('t1')
+      })
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+    })
+
+    it('expandTurnRef no-ops on a turn that is already open', async () => {
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t3"]')).not.toHaveClass('turn-collapsed')
+      })
+
+      await act(async () => {
+        mockAppActions.expandTurnRef.current('t3')
+      })
+
+      expect(document.querySelector('[data-turn-id="t3"]')).not.toHaveClass('turn-collapsed')
+    })
+
+    it('a turn opened via expandTurnRef stays open across the next auto-collapse recompute', async () => {
+      mockEventsData = defaultEventsData(threeCompletedTurns())
+      const { rerender } = await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      await act(async () => {
+        mockAppActions.expandTurnRef.current('t1')
+      })
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+
+      // A new turn arrives (t4 becomes the last turn) - the recompute runs again.
+      mockEventsData = defaultEventsData(withFourthTurn())
+      await act(async () => {
+        rerender(<ChatPanel />)
+      })
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t3"]')).toHaveClass('turn-collapsed')
+      })
+      expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
     })
   })
 

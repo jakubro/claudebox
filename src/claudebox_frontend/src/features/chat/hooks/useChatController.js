@@ -17,7 +17,8 @@ export default function useChatController({ events, contextRefs }) {
 
   const { sessionId } = useSessionData()
   const { reloadSession } = useSessionActions()
-  const { resultCount, compactionCount, isCreating, isReplaying, isResuming } = useEvents()
+  const { resultCount, compactionCount, isCreating, isConnected, isReplaying, isResuming } =
+    useEvents()
   const {
     interruptStatus,
     startSubmitting,
@@ -119,7 +120,7 @@ export default function useChatController({ events, contextRefs }) {
       sendFn: send,
     })
 
-  // Holds the first message submitted during session creation; auto-fires send() once isCreating clears.
+  // Holds the first message submitted during session creation; auto-fires send() once connected.
   const [deferredSend, setDeferredSend] = useState(null)
 
   // Use ref to check current deferred state without stale closures
@@ -139,20 +140,19 @@ export default function useChatController({ events, contextRefs }) {
     [enqueueMessage],
   )
 
-  // Fires once isCreating clears and sessionId is available; preserves deferredSend through the
-  // null->realId sessionId transition.
-  const prevIsCreatingRef = useRef(isCreating)
+  // Fires once sessionId and the container connection are both available; preserves deferredSend
+  // through the null->realId sessionId transition. isCreating cannot gate it - it clears only once
+  // the deferred message is already visible, a cycle only the send itself can break.
   useEffect(() => {
-    prevIsCreatingRef.current = isCreating
     if (!deferredSend) {
       return
     }
-    if (!isCreating && sessionId) {
+    if (sessionId && isConnected) {
       send(deferredSend.content, { attachments: deferredSend.attachments })
       setDeferredSend(null)
       deferredSendRef.current = null
     }
-  }, [isCreating, deferredSend, sessionId, send])
+  }, [isConnected, deferredSend, sessionId, send])
 
   // Clears deferred send on an actual session switch (old and new both non-null), but not during
   // creation - the provisional->real ID transition must preserve it for auto-fire.

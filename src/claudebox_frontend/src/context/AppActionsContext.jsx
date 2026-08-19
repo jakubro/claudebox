@@ -48,6 +48,9 @@ export function AppActionsProvider({
   // instead of querying the DOM, since a windowed turn outside the viewport has no element.
   const scrollToTurnRef = useRef(null)
 
+  // Registered by ChatPanel; lets sibling panels open a collapsed turn before jumping into it.
+  const expandTurnRef = useRef(null)
+
   const focusChatTab = useCallback(() => onFocusChat?.(), [onFocusChat])
 
   const value = useMemo(
@@ -61,6 +64,7 @@ export function AppActionsProvider({
       autoCollapseEnabledRef,
       chatPanelSwitchingRef: panelSwitchingRef,
       scrollToTurnRef,
+      expandTurnRef,
       jumpPrevRef,
       jumpNextRef,
       jumpTopRef,

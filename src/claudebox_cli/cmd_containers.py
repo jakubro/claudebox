@@ -44,13 +44,13 @@ def register(parser: argparse.ArgumentParser) -> None:
         help="SIGTERM a container (10s grace) - accepts <id>, prefix, or all",
     )
     stop_target = stop_action.add_argument("target", help="container id, unique prefix, or 'all'")
-    setattr(stop_target, "completer", complete_container_target)
+    stop_target.completer = complete_container_target  # ty: ignore[unresolved-attribute]
     kill_action = actions.add_parser(
         "kill",
         help="SIGKILL a container immediately - accepts <id>, prefix, or all",
     )
     kill_target = kill_action.add_argument("target", help="container id, unique prefix, or 'all'")
-    setattr(kill_target, "completer", complete_container_target)
+    kill_target.completer = complete_container_target  # ty: ignore[unresolved-attribute]
 
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0)
@@ -76,7 +76,7 @@ def _print_subhelp() -> None:
     """
 
     print("usage: claudebox containers <action> [args]")
-    print("")
+    print()
     print("actions:")
     print("  list                       Enumerate all containers")
     print("  stop {<id>|all}            SIGTERM, container exits + auto-removed")
@@ -277,7 +277,7 @@ def _format_age(created_at: str | None) -> str:
         return "?"
 
     try:
-        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(created_at)
     except ValueError:
         return "?"
 

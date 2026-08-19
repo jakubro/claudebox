@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from .agent_session.orchestration.models import EventSubtype, EventType
     from .agent_session.orchestration.session import SessionService
     from .agent_session.protocol import AgentSession
+    from .agent_session.rate_limits import RateLimitStore
     from .agent_session.runtime_claude import ClaudeRuntime
     from .agent_session.session import make_agent_session
     from .cleanup import cleanup_stale_dirs
@@ -138,6 +139,7 @@ _EXPORTS_BY_MODULE = {
     "agent_session.orchestration.models": ("EventSubtype", "EventType"),
     "agent_session.orchestration.session": ("SessionService",),
     "agent_session.protocol": ("AgentSession",),
+    "agent_session.rate_limits": ("RateLimitStore",),
     "agent_session.runtime_claude": ("ClaudeRuntime",),
     "agent_session.session": ("make_agent_session",),
     "cleanup": ("cleanup_stale_dirs",),
@@ -215,7 +217,7 @@ _EXPORTS_BY_MODULE = {
 
 _EXPORTS = {name: module for module, names in _EXPORTS_BY_MODULE.items() for name in names}
 
-__all__ = [*_SUBMODULES, *_EXPORTS]
+__all__ = [*_SUBMODULES, *_EXPORTS.keys()]  # noqa: PLE0604 - both dicts are keyed by str literals
 
 
 def __getattr__(name: str):

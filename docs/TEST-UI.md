@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-The test-UI harness runs the complete claudebox web UI inside the container for headless debugging. It starts a daemon with `backend=local` (subprocess runtime instead of podman), a Vite dev server for the frontend, and provides Playwright-based browser helpers for observation and interaction. Use it to reproduce UI bugs, validate frontend changes, write visual regression scripts, and confirm fixes before committing.
+Starts a daemon with `backend=local`, a Vite dev server, and Playwright browser helpers for headless in-container UI debugging. Use it to reproduce UI bugs, validate frontend changes, write visual regression scripts, and confirm fixes before committing.
 
 ### Live & Interactive
 
@@ -20,7 +20,7 @@ The harness connects to real Claude with active credentials — sessions produce
 
 1. **Stop** any existing test environment (kills process group via PID file)
 2. **Create workspace** at `/tmp/claudebox-test/ws/` with `.workspace` marker and `.claudebox/settings.toml` configured for `backend = "local"`
-3. **Sync dependencies** into an isolated venv at `/tmp/claudebox-test/.venv` via `uv sync --extra dev`, then installs Playwright into the same venv
+3. **Sync dependencies** into an isolated venv at `/tmp/claudebox-test/.venv` via `uv sync --extra dev`; install Playwright into the same venv
 4. **Rewrite daemon config** — deregisters all existing workspaces and registers only the test workspace, isolating from any host daemon configuration
 5. **Start daemon** via `setsid` as a background process group:
    - Environment: `CLAUDEBOX_PWD` (workspace path), `CLAUDEBOX_NO_RELOAD=1` (no file watcher), `CLAUDEBOX_NO_TMP_REMAP=1` (disable `/tmp` symlink remapping in hook subprocesses)
@@ -56,11 +56,11 @@ All commands run from `lib/` via `just`. The test venv is injected via `UV_PROJE
 
 ### `just test-ui-start`
 
-Starts the test environment. Kills any existing instance first. Blocks until Ctrl-C.
+Starts the test environment, killing any existing instance first; blocks until Ctrl-C.
 
-**Prerequisites**: `just install-py` (installs Python deps into container-local venv). Google Chrome ships in the container image at `/usr/bin/google-chrome`, which is what harness scripts get from `channel="chrome"`; `start.sh` installs Playwright itself into the harness venv.
+**Prerequisites**: `just install-py` (installs Python deps into the container-local venv). Chrome ships in the container image at `/usr/bin/google-chrome`, which harness scripts use via `channel="chrome"`.
 
-The image also ships a Playwright of its own with matching browser builds, but `lib/e2e/app` pins its own `@playwright/test` and each Playwright release demands its own browser build. When the two versions differ, the image's builds do not satisfy the pinned one and the Playwright suite fails with `Executable doesn't exist at .../chromium_headless_shell-<build>`. Run `just install-e2e-app` to fetch the build the pinned version wants - see GUIDELINES.md §0.
+The image ships its own Playwright and matching browser builds, but `lib/e2e/app` pins its own `@playwright/test` and each release demands its own build. On a mismatch the suite fails outright - run `just install-e2e-app`, see GUIDELINES.md §0 and Troubleshooting below.
 
 ### `just test-ui-stop`
 
@@ -68,7 +68,7 @@ Stops the test environment by killing the daemon process group. Safe to call whe
 
 ### `just test-ui-browse <subcommand> [args]`
 
-Runs `browse.py` — a headless Playwright browser helper. Launches Chrome, navigates to `http://localhost:41930`, executes the subcommand, then exits.
+Runs `browse.py`, a headless Playwright browser helper: launches Chrome, navigates to `http://localhost:41930`, executes the subcommand, then exits.
 
 | Subcommand | Arguments | Output | Description |
 |------------|-----------|--------|-------------|
@@ -80,11 +80,11 @@ Runs `browse.py` — a headless Playwright browser helper. Launches Chrome, navi
 | `navigate` | `<path>` | — | Navigates to a path relative to base URL, waits 2 seconds |
 | `eval` | `<expression>` | stdout | Evaluates JavaScript in page context, prints result (JSON-formatted for objects/arrays) |
 
-All output files are written to `/tmp/claudebox-test/`. Override with `--output <dir>`. Override base URL with `--url <url>`.
+Output files default to `/tmp/claudebox-test/`; override with `--output <dir>`, or the base URL with `--url <url>`.
 
 ### `just test-ui-run <script> [args]`
 
-Runs an arbitrary Python script using the test venv. The script gets access to Playwright, all claudebox packages, and test dependencies. Extra arguments are forwarded to the script.
+Runs an arbitrary Python script in the test venv, with access to Playwright, claudebox packages, and test dependencies. Extra arguments are forwarded to the script.
 
 ```bash
 just test-ui-run path/to/repro.py
@@ -95,7 +95,7 @@ just test-ui-run path/to/repro.py --verbose
 
 ## 5. Writing Custom Playwright Scripts
 
-Scripts run inside the container with Chrome pre-installed. No display server needed — everything runs headless.
+Scripts run inside the container with Chrome pre-installed; no display server needed, everything runs headless.
 
 ### Minimal template
 
@@ -159,7 +159,7 @@ with sync_playwright() as pw:
 | Aspect | Test-UI | Production |
 |--------|---------|------------|
 | Container backend | `local` (subprocess runtime) | podman container |
-| Ports | 41930 (Vite) / 41931 (API) | 41920 (Caddy) / 41921 (uvicorn) |
+| Ports | 41930 (Vite) / 41931 (API) | 41820 (Caddy) / 41821 (uvicorn) |
 | Frontend server | Vite dev server (HMR) | Caddy reverse proxy to static build |
 | Workspaces | Single test workspace | Multiple registered workspaces |
 | Daemon config | Rewritten on each start | Persistent `~/.claudebox/daemon.json` |
@@ -181,7 +181,7 @@ Check `cat /tmp/claudebox-test/daemon.log` for errors. Common causes: missing de
 Run `just install-py` to sync the test venv. Chrome is pre-installed in the container image — if missing, the container image needs rebuilding.
 
 **`Executable doesn't exist at .../chromium_headless_shell-<build>`**
-The pinned `@playwright/test` in `lib/e2e/app` wants a browser build the container image does not carry (the image installs the builds for its own Playwright version). Run `just install-e2e-app` to download the matching build. Expect this after any bump to either Playwright version.
+The pinned `@playwright/test` in `lib/e2e/app` wants a browser build the container image doesn't carry (the image only installs builds for its own Playwright version). Run `just install-e2e-app` to fetch the matching build - expect this after bumping either Playwright version.
 
 **Screenshots are blank or show wrong state**
 Ensure the test-UI is fully ready before capturing. Add `page.wait_for_timeout(3000)` after navigation. Check that Vite has finished compiling (`daemon.log` shows "ready in" message).

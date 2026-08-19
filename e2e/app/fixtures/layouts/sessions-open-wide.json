@@ -9,18 +9,18 @@
             "data": {
               "views": ["sessions"],
               "activeView": "sessions",
-              "id": "4"
+              "id": "2"
             },
-            "size": 320
+            "size": 450
           },
           {
             "type": "leaf",
             "data": {
-              "views": ["chat"],
-              "activeView": "chat",
+              "views": ["main"],
+              "activeView": "main",
               "id": "1"
             },
-            "size": 1130
+            "size": 366
           },
           {
             "type": "branch",
@@ -30,27 +30,27 @@
                 "data": {
                   "views": ["todos"],
                   "activeView": "todos",
-                  "id": "2"
+                  "id": "3"
                 },
-                "size": 515
+                "size": 348
               },
               {
                 "type": "leaf",
                 "data": {
                   "views": ["stash"],
                   "activeView": "stash",
-                  "id": "3"
+                  "id": "4"
                 },
-                "size": 516
+                "size": 348
               }
             ],
             "size": 400
           }
         ],
-        "size": 1031
+        "size": 696
       },
-      "width": 1850,
-      "height": 1031,
+      "width": 1216,
+      "height": 696,
       "orientation": "HORIZONTAL"
     },
     "panels": {
@@ -60,9 +60,9 @@
         "tabComponent": "icon",
         "title": "Sessions"
       },
-      "chat": {
-        "id": "chat",
-        "contentComponent": "chat",
+      "main": {
+        "id": "main",
+        "contentComponent": "main",
         "tabComponent": "icon",
         "title": "session-id"
       },
@@ -83,7 +83,7 @@
   },
   "panelGroups": {
     "left": {
-      "width": 320,
+      "width": 450,
       "order": ["sessions"]
     },
     "right": {

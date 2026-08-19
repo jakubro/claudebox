@@ -21,6 +21,12 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--host",
+    default="0.0.0.0",
+    help="Bind address (default: %(default)s)",
+)
+
+parser.add_argument(
     "--system-prompt",
     help="System prompt",
 )

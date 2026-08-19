@@ -491,7 +491,7 @@ class ContainerService:
                     **self._log_context,
                 )
                 container.port = port
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort refresh, never fatal
             self._logger.debug(
                 "Port refresh failed",
                 container={"id": container.id},

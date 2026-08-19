@@ -46,7 +46,7 @@ class TestJSONEncoder:
     """Test extended JSON type serialization."""
 
     def test_datetime(self):
-        dt = datetime(2026, 3, 6, 12, 30, 0)
+        dt = datetime(2026, 3, 6, 12, 30, 0)  # noqa: DTZ001 - asserts naive-datetime serialization
         assert json.loads(dumps(dt)) == "2026-03-06T12:30:00"
 
     def test_date(self):
@@ -150,7 +150,7 @@ class TestDeserialize:
 
     def test_datetime_from_iso_string(self):
         result = deserialize("2026-03-06T12:30:00", datetime)
-        assert result == datetime(2026, 3, 6, 12, 30, 0)
+        assert result == datetime(2026, 3, 6, 12, 30, 0)  # noqa: DTZ001 - naive ISO string round-trip
 
     def test_date_from_iso_string(self):
         result = deserialize("2026-03-06", date)
@@ -199,7 +199,7 @@ class TestDumpLoad:
         path = tmp_path / "data.json"
 
         with open(path, "w") as f:
-            dump({"path": Path("/fake"), "dt": datetime(2026, 1, 1)}, f)
+            dump({"path": Path("/fake"), "dt": datetime(2026, 1, 1)}, f)  # noqa: DTZ001 - naive-datetime serialization
 
         with open(path) as f:
             result = load(f)
@@ -252,7 +252,7 @@ class TestSerialize:
         assert serialize(True) is True
 
     def test_datetime(self):
-        assert serialize(datetime(2026, 3, 6, 12, 30)) == "2026-03-06T12:30:00"
+        assert serialize(datetime(2026, 3, 6, 12, 30)) == "2026-03-06T12:30:00"  # noqa: DTZ001
 
     def test_date(self):
         assert serialize(date(2026, 3, 6)) == "2026-03-06"
@@ -288,7 +288,7 @@ class TestSerialize:
         assert serialize(obj) == {"custom": True}
 
     def test_dict_recursive(self):
-        data = {"path": Path("/tmp"), "nested": {"dt": datetime(2026, 1, 1)}}
+        data = {"path": Path("/tmp"), "nested": {"dt": datetime(2026, 1, 1)}}  # noqa: DTZ001
         result = serialize(data)
         assert result == {"path": "/tmp", "nested": {"dt": "2026-01-01T00:00:00"}}
 

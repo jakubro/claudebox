@@ -139,12 +139,20 @@ export async function closeAllSidePanels(page) {
   }
 }
 
-/** Extract RGB channels from a computed CSS color property. */
+/**
+ * Extract RGB channels from a computed CSS color property, polling until it settles - a
+ * `toBeVisible()` check does not prove a class-driven color has been computed for that frame.
+ */
 async function parseComputedColor(locator, cssProp) {
-  const color = await locator.evaluate((el, prop) => getComputedStyle(el)[prop], cssProp)
-  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-  expect(match, `Expected valid rgb() value for ${cssProp}, got: ${color}`).toBeTruthy()
-  const [, r, g, b] = match.map(Number)
+  let color = ''
+  await expect
+    .poll(async () => {
+      color = await locator.evaluate((el, prop) => getComputedStyle(el)[prop], cssProp)
+      return color
+    })
+    .toMatch(/rgba?\(\d+,\s*\d+,\s*\d+/)
+
+  const [, r, g, b] = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/).map(Number)
   return { r, g, b }
 }
 
@@ -248,9 +256,17 @@ export async function waitForStableScrollHeight(locator, { interval = 100, attem
   return prev
 }
 
-/** Set a value at a dot-separated path in an object. */
+const UNSAFE_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/** Set a value at a dot-separated path in an object; throws on a prototype-polluting segment. */
 function setPath(obj, path, value) {
   const parts = path.split('.')
+  for (const part of parts) {
+    if (UNSAFE_PATH_SEGMENTS.has(part)) {
+      throw new Error(`setPath: unsafe path segment "${part}" in "${path}"`)
+    }
+  }
+
   let current = obj
   for (let i = 0; i < parts.length - 1; i++) {
     if (!(parts[i] in current)) {

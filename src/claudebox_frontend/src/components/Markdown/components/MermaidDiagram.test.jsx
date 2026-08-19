@@ -276,7 +276,7 @@ describe('MermaidDiagram', () => {
 
       fireEvent.click(container.querySelector('.mermaid-diagram'))
 
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).toBeInTheDocument()
+      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
       expect(document.body.querySelector('.mermaid-zoom-content').innerHTML).toBe(RENDERED_SVG)
     })
 
@@ -288,10 +288,10 @@ describe('MermaidDiagram', () => {
       })
 
       fireEvent.click(container.querySelector('.mermaid-diagram'))
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).toBeInTheDocument()
+      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
 
       fireEvent.click(document.body.querySelector('.zoom-overlay-close'))
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).not.toBeInTheDocument()
+      expect(document.body.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('closes zoom overlay on Escape key', async () => {
@@ -302,10 +302,10 @@ describe('MermaidDiagram', () => {
       })
 
       fireEvent.click(container.querySelector('.mermaid-diagram'))
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).toBeInTheDocument()
+      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
 
-      fireEvent.keyDown(document.body.querySelector('.mermaid-zoom-overlay'), { key: 'Escape' })
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).not.toBeInTheDocument()
+      fireEvent.keyDown(document.body.querySelector('.zoom-overlay'), { key: 'Escape' })
+      expect(document.body.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('closes zoom overlay on backdrop click', async () => {
@@ -316,10 +316,10 @@ describe('MermaidDiagram', () => {
       })
 
       fireEvent.click(container.querySelector('.mermaid-diagram'))
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).toBeInTheDocument()
+      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
 
-      fireEvent.click(document.body.querySelector('.mermaid-zoom-overlay'))
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).not.toBeInTheDocument()
+      fireEvent.click(document.body.querySelector('.zoom-overlay'))
+      expect(document.body.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('does not close zoom when clicking zoom content', async () => {
@@ -332,7 +332,7 @@ describe('MermaidDiagram', () => {
       fireEvent.click(container.querySelector('.mermaid-diagram'))
       fireEvent.click(document.body.querySelector('.mermaid-zoom-content'))
 
-      expect(document.body.querySelector('.mermaid-zoom-overlay')).toBeInTheDocument()
+      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
     })
   })
 

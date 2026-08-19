@@ -1,14 +1,20 @@
-/** Choreographed demo video recording for Claudebox showcase. */
+/** Choreographed demo GIF for the README - a CSV export dropping its last row. */
 
 import { test } from '@playwright/test'
 import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
+import { DEFAULT_WORKSPACE_ID, loadFixture, mockAPI } from '../mocks/api.js'
 import { createSSEController } from '../mocks/sse.js'
 
 // --- Event factories ---
+// ts() uses the real clock: durations are now - event.ts (future ts clamps to "0s"); +1ms on tie.
 
 let evtSeq = 0
-const ts = () => new Date(Date.now() + evtSeq * 100).toISOString()
+let lastTs = 0
+const ts = () => {
+  const now = Date.now()
+  lastTs = now > lastTs ? now : lastTs + 1
+  return new Date(lastTs).toISOString()
+}
 const nextId = () => `evt_${String(++evtSeq).padStart(3, '0')}`
 
 function userMessage(turnId, content) {
@@ -36,19 +42,8 @@ function assistantText(content) {
   }
 }
 
-function assistantThinking(content) {
-  return {
-    type: 'assistant',
-    subtype: 'thinking',
-    content,
-    ts: ts(),
-    id: nextId(),
-    primary: false,
-    is_human: false,
-  }
-}
-
-function toolUse(toolName, toolInput, toolUseId) {
+// parentToolUseId nests a call under a Task block - see ToolBlock.jsx's auto-expand/collapse.
+function toolUse(toolName, toolInput, toolUseId, parentToolUseId) {
   return {
     type: 'assistant',
     subtype: 'tool_use',
@@ -56,6 +51,7 @@ function toolUse(toolName, toolInput, toolUseId) {
     tool_name: toolName,
     tool_use_id: toolUseId,
     tool_input: toolInput,
+    parent_tool_use_id: parentToolUseId,
     ts: ts(),
     id: nextId(),
     primary: false,
@@ -63,12 +59,13 @@ function toolUse(toolName, toolInput, toolUseId) {
   }
 }
 
-function toolResult(toolUseId, content) {
+function toolResult(toolUseId, content, parentToolUseId) {
   return {
     type: 'assistant',
     subtype: 'tool_result',
     content,
     tool_use_id: toolUseId,
+    parent_tool_use_id: parentToolUseId,
     ts: ts(),
     id: nextId(),
     primary: false,
@@ -88,13 +85,64 @@ function turnResult(turnId) {
   }
 }
 
-function systemInit(mcpServers) {
+// TaskCreate/TaskUpdate group into one itemized "Todos" block (TASK_LIST_TOOLS); TodoWrite won't.
+
+function taskCreate(toolUseId, subject, description, activeForm) {
   return {
-    type: 'system',
-    subtype: 'init',
-    message_data: { mcp_servers: mcpServers },
+    type: 'assistant',
+    subtype: 'tool_use',
+    content: 'TaskCreate',
+    tool_name: 'TaskCreate',
+    tool_use_id: toolUseId,
+    tool_input: { subject, description, activeForm },
     ts: ts(),
     id: nextId(),
+    primary: false,
+    is_human: false,
+  }
+}
+
+/** appendTaskDiffs binds a TaskUpdate's taskId to this result's tool_use_result.task.id. */
+function taskCreateResult(toolUseId, taskId, subject) {
+  return {
+    type: 'user',
+    subtype: 'tool_result',
+    content: `Task #${taskId} created successfully: ${subject}`,
+    tool_use_id: toolUseId,
+    tool_use_result: { task: { id: String(taskId), subject } },
+    ts: ts(),
+    id: nextId(),
+    primary: false,
+    is_human: false,
+  }
+}
+
+function taskUpdate(toolUseId, taskId, patch) {
+  return {
+    type: 'assistant',
+    subtype: 'tool_use',
+    content: 'TaskUpdate',
+    tool_name: 'TaskUpdate',
+    tool_use_id: toolUseId,
+    tool_input: { taskId: String(taskId), ...patch },
+    ts: ts(),
+    id: nextId(),
+    primary: false,
+    is_human: false,
+  }
+}
+
+function taskUpdateResult(toolUseId, taskId, updatedFields) {
+  return {
+    type: 'user',
+    subtype: 'tool_result',
+    content: `Task #${taskId} updated`,
+    tool_use_id: toolUseId,
+    tool_use_result: { success: true, taskId: String(taskId), updatedFields },
+    ts: ts(),
+    id: nextId(),
+    primary: false,
+    is_human: false,
   }
 }
 
@@ -102,7 +150,11 @@ function systemInit(mcpServers) {
 
 const wait = ms => new Promise(r => setTimeout(r, ms))
 
-/** Scroll chat messages container to bottom. */
+// One knob to retime every post-capture beat without touching each call site.
+const PACE = 1.0
+const pwait = ms => wait(ms * PACE)
+
+/** Jump chat scroll to bottom in one discrete step - never animated (kills GIF delta-encoding). */
 async function scrollToBottom(page) {
   await page.evaluate(() => {
     const el = document.querySelector('[data-testid="chat-messages"]')
@@ -112,14 +164,21 @@ async function scrollToBottom(page) {
   })
 }
 
-/** Send an event and scroll to bottom. */
-async function sendAndScroll(controller, page, event, delayMs = 400) {
+/** Send an SSE event, jump-scroll, and hold for the beat's pacing (setup phase, unscaled). */
+async function beat(controller, page, event, delayMs = 400) {
   await controller.sendEvent(event)
   await scrollToBottom(page)
   await wait(delayMs)
 }
 
-/** Inject click ripple overlay into the page. */
+/** Same as beat(), but scaled by PACE - use for every beat once frame capture has started. */
+async function pbeat(controller, page, event, delayMs = 400) {
+  await controller.sendEvent(event)
+  await scrollToBottom(page)
+  await pwait(delayMs)
+}
+
+/** Click ripple following real pointer events - dispatchEvent bypasses real coordinates. */
 async function injectClickHighlight(page) {
   await page.addStyleTag({
     content: `
@@ -127,8 +186,8 @@ async function injectClickHighlight(page) {
         position: fixed;
         pointer-events: none;
         z-index: 999999;
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         background: rgba(66, 133, 244, 0.5);
         border: 2px solid rgba(66, 133, 244, 0.8);
@@ -137,7 +196,7 @@ async function injectClickHighlight(page) {
       }
       @keyframes demo-ripple {
         0%   { transform: translate(-50%, -50%) scale(0.3); opacity: 1; }
-        100% { transform: translate(-50%, -50%) scale(2.0); opacity: 0; }
+        100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; }
       }
     `,
   })
@@ -157,383 +216,377 @@ async function injectClickHighlight(page) {
   })
 }
 
-// --- Demo content ---
+/** Legibility zoom: 11-12px type falls under 9px once GitHub downscales the frame. */
+async function injectLegibilityZoom(page) {
+  await page.addStyleTag({ content: 'body { zoom: 1.15; }' })
+}
 
-const WEATHER_PY = `#!/usr/bin/env python3
-"""Fetch and display weather data with colored terminal output."""
+// --- Scenario content ---
+// Invented: no real session/product/codebase, no foo/bar placeholders; only the shape is realistic.
 
-import argparse
-import sys
+const WRITER_BEFORE = `def write_rows(rows: list[dict], path: str) -> None:
+    with open(path, "w") as f:
+        f.write("\\n".join(format_row(r) for r in rows))`
 
-import requests
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
+const WRITER_AFTER = `def write_rows(rows: list[dict], path: str) -> None:
+    with open(path, "w") as f:
+        f.write("\\n".join(format_row(r) for r in rows))
+        f.write("\\n")`
 
-API_BASE = "https://api.openweathermap.org/data/2.5/weather"
-console = Console()
+const READER_SNIPPET = `def read_rows(path: str) -> list[str]:
+    with open(path) as f:
+        return f.read().split("\\n")`
 
+const TEST_RESULT = '9 passed in 0.3s'
 
-def fetch_weather(city: str, api_key: str) -> dict:
-    """Fetch current weather for a city."""
-    params = {"q": city, "appid": api_key, "units": "metric"}
-    resp = requests.get(API_BASE, params=params, timeout=10)
-    resp.raise_for_status()
-    return resp.json()
+const TASKS = [
+  {
+    subject: 'Confirm the last row is dropped when reproduced locally',
+    description: 'Write a small file with no trailing newline and read it back',
+    activeForm: 'Confirming the dropped row',
+  },
+  {
+    subject: 'Check whether the reader or the writer is responsible',
+    description: 'Trace where the unterminated line goes missing',
+    activeForm: 'Checking reader vs writer',
+  },
+  {
+    subject: 'Always terminate the last row with a newline',
+    description: 'Fix the writer instead of the reader',
+    activeForm: 'Terminating the last row',
+  },
+  {
+    subject: 'Add a regression test for a file with no trailing newline',
+    description: 'Assert the last row survives a round trip',
+    activeForm: 'Adding a regression test',
+  },
+  {
+    subject: 'Run the full suite to confirm no regressions',
+    description: 'pytest tests/export/',
+    activeForm: 'Running the full suite',
+  },
+]
 
+// --- Layout preload ---
+// Panel ids match config/layout.js (main, not stale fixtures' chat); 3 right panels, 5 is cramped.
 
-def display_weather(data: dict) -> None:
-    """Render weather data as a colored Rich panel."""
-    city = data["name"]
-    temp = data["main"]["temp"]
-    feels = data["main"]["feels_like"]
-    desc = data["weather"][0]["description"]
-    humidity = data["main"]["humidity"]
-    wind = data["wind"]["speed"]
+function buildDemoLayout() {
+  return {
+    layout: {
+      grid: {
+        root: {
+          type: 'branch',
+          data: [
+            {
+              type: 'leaf',
+              data: { views: ['sessions'], activeView: 'sessions', id: 'sessions' },
+              size: 260,
+            },
+            {
+              type: 'leaf',
+              data: { views: ['main'], activeView: 'main', id: 'main' },
+              size: 1141,
+            },
+            {
+              type: 'branch',
+              data: [
+                {
+                  type: 'leaf',
+                  data: { views: ['todos'], activeView: 'todos', id: 'todos' },
+                  size: 350,
+                },
+                {
+                  type: 'leaf',
+                  data: { views: ['tasks'], activeView: 'tasks', id: 'tasks' },
+                  size: 350,
+                },
+                {
+                  type: 'leaf',
+                  data: { views: ['stash'], activeView: 'stash', id: 'stash' },
+                  size: 350,
+                },
+              ],
+              size: 279,
+            },
+          ],
+          size: 1050,
+        },
+        width: 1680,
+        height: 1050,
+        orientation: 'HORIZONTAL',
+      },
+      panels: {
+        sessions: {
+          id: 'sessions',
+          contentComponent: 'sessions',
+          tabComponent: 'icon',
+          title: 'Sessions',
+        },
+        main: { id: 'main', contentComponent: 'main', tabComponent: 'icon', title: 'Main' },
+        todos: { id: 'todos', contentComponent: 'todos', tabComponent: 'icon', title: 'Todos' },
+        tasks: { id: 'tasks', contentComponent: 'tasks', tabComponent: 'icon', title: 'Tasks' },
+        stash: { id: 'stash', contentComponent: 'stash', tabComponent: 'icon', title: 'Stash' },
+      },
+      activeGroup: 'main',
+    },
+    panelGroups: {
+      left: { width: 260, order: ['sessions'] },
+      right: { width: 279, order: ['todos', 'tasks', 'stash'] },
+    },
+    stash: [
+      {
+        text: 'check other export formats for the same trailing-newline gap',
+        timestamp: 1737200000000,
+      },
+    ],
+    updated_at: '2025-01-18T12:00:00Z',
+    // The showcase keeps the terminal pane on-screen; the app default is off.
+    terminalSplitEnabled: true,
+  }
+}
 
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="bold cyan")
-    table.add_column()
-    table.add_row("🌡️  Temperature", f"[bold]{temp}°C[/] (feels like {feels}°C)")
-    table.add_row("☁️  Conditions", desc.capitalize())
-    table.add_row("💧 Humidity", f"{humidity}%")
-    table.add_row("💨 Wind", f"{wind} m/s")
-
-    panel = Panel(table, title=f"[bold blue]{city}[/]", border_style="blue")
-    console.print(panel)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Weather CLI")
-    parser.add_argument("city", help="City name")
-    parser.add_argument("--api-key", required=True, help="OpenWeatherMap API key")
-    args = parser.parse_args()
-
-    try:
-        data = fetch_weather(args.city, args.api_key)
-        display_weather(data)
-    except requests.HTTPError as e:
-        console.print(f"[red]Error:[/] {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()`
-
-const CACHE_DIFF = `--- old
-+++ new
-@@ -5,0 +5,28 @@
-+import json
-+import time
-+from pathlib import Path
-+
-+CACHE_DIR = Path.home() / ".cache" / "weather-cli"
-+CACHE_TTL = 300  # 5 minutes
-+
-+
-+def get_cached(city: str) -> dict | None:
-+    """Return cached weather data if fresh enough."""
-+    cache_file = CACHE_DIR / f"{city.lower()}.json"
-+    if not cache_file.exists():
-+        return None
-+    data = json.loads(cache_file.read_text())
-+    if time.time() - data["_cached_at"] > CACHE_TTL:
-+        return None
-+    return data
-+
-+
-+def set_cached(city: str, data: dict) -> None:
-+    """Write weather data to cache."""
-+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-+    data["_cached_at"] = time.time()
-+    cache_file = CACHE_DIR / f"{city.lower()}.json"
-+    cache_file.write_text(json.dumps(data))`
+// --- Frame capture ---
+// Screenshots, not video: no ffmpeg/VP8 decoder, and screenshots preserve deviceScaleFactor.
+// A shot costs >100ms, so shoot to a wall-clock deadline; demo-gif.py paces by frames landed.
+async function captureFrames(page, { outDir, durationMs }) {
+  const fs = await import('node:fs')
+  fs.mkdirSync(outDir, { recursive: true })
+  const start = Date.now()
+  let i = 0
+  while (Date.now() - start < durationMs) {
+    await page
+      .screenshot({ path: `${outDir}/frame_${String(i).padStart(4, '0')}.png` })
+      .catch(() => {})
+    i++
+  }
+}
 
 // --- Demo script ---
 
 test.use({
-  video: { mode: 'on', size: { width: 1280, height: 720 } },
-  viewport: { width: 1280, height: 720 },
+  viewport: { width: 1680, height: 1050 },
+  deviceScaleFactor: 2,
 })
 
 test.describe('Demo Video', () => {
   test('claudebox showcase', async ({ page }) => {
-    test.setTimeout(120000)
+    test.setTimeout(180000)
 
-    await mockAPI(page)
-    const controller = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await injectClickHighlight(page)
-
-    // --- Init: Set up MCP servers ---
-    await controller.sendEvent(
-      systemInit([
-        { name: 'jina', status: 'connected' },
-        { name: 'chroma', status: 'connected' },
-        { name: 'deepwiki', status: 'connected' },
-      ]),
-    )
-
-    await wait(1500)
-
-    // --- Turn 1: User types and sends a message ---
-    const input = page.locator('[data-testid="chat-input"]')
-    await input.click()
-    await page.keyboard.type('Build a CLI weather tool in Python with colored output', {
-      delay: 35,
+    const session = loadFixture('sessions/demo.json').sessions[0]
+    const layout = buildDemoLayout()
+    await mockAPI(page, {
+      sessionsFixture: 'sessions/demo.json',
+      statusFixture: 'status/demo.json',
+      handlers: {
+        async getUIState(route) {
+          if (route.request().method() === 'GET') {
+            await route.fulfill({ json: { global: {}, session: layout } })
+          } else {
+            await route.fulfill({ status: 200, json: { global: {}, session: layout } })
+          }
+        },
+      },
     })
-    await wait(600)
-    await page.keyboard.press('Enter')
-    await wait(800)
 
-    // Inject user message event (transitions pending -> actual with turn_id)
-    await sendAndScroll(
+    const controller = await createSSEController(page)
+
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${session.session_id}`)
+    await waitForAppReady(page)
+    await injectClickHighlight(page)
+    await injectLegibilityZoom(page)
+
+    // --- Setup (not captured): the turn is already underway - opens mid-task, no cold open. ---
+
+    const turnId = 'turn_001'
+    await beat(
       controller,
       page,
-      userMessage('turn_001', 'Build a CLI weather tool in Python with colored output'),
-      500,
+      userMessage(turnId, 'The last row of every CSV export is missing - can you find out why?'),
+      200,
     )
-
-    // Thinking block
-    await sendAndScroll(
+    await beat(controller, page, assistantText('Looking at the export writer.'), 250)
+    await beat(
       controller,
       page,
-      assistantThinking(
-        "I'll create a Python CLI that fetches weather data from OpenWeatherMap and displays it with rich colored output using the `rich` library. I'll need to:\n1. Set up argument parsing with `argparse`\n2. Fetch data from the weather API\n3. Format output with colors and icons",
-      ),
-      1200,
+      toolUse('Read', { file_path: 'src/export/csv_writer.py' }, 'tool_001'),
+      200,
     )
+    await beat(controller, page, toolResult('tool_001', WRITER_BEFORE), 250)
 
-    // First assistant text
-    await sendAndScroll(
+    // Bulk-create the list up front (real usage at bootstrap) - a contiguous TaskCreate run merges
+    // into one grouped "Todos" block showing every item, not five separate ones.
+    for (let i = 0; i < TASKS.length; i++) {
+      const id = i + 1
+      const t = TASKS[i]
+      await beat(
+        controller,
+        page,
+        taskCreate(`tc${id}`, t.subject, t.description, t.activeForm),
+        80,
+      )
+      await beat(controller, page, taskCreateResult(`tc${id}`, id, t.subject), 100)
+    }
+    await beat(controller, page, taskUpdate('tu0', 1, { status: 'in_progress' }), 100)
+    await beat(controller, page, taskUpdateResult('tu0', 1, ['status']), 150)
+
+    // ~51s of choreography below plus a trailing hold - see captureFrames' own comment for why
+    // this is wall-clock-bounded rather than a fixed frame count.
+    const outDir = '/tmp/claudebox--demo-frames'
+    const capture = captureFrames(page, { outDir, durationMs: 60000 })
+
+    await pbeat(
       controller,
       page,
       assistantText(
-        "I'll create a weather CLI with colored terminal output. Let me write the main script:",
+        'The writer joins rows with newlines but never terminates the last one. A reader that ' +
+          'splits on newline treats an unterminated final line as incomplete and drops it.',
       ),
-      800,
+      3500,
     )
-
-    // Write tool - create weather.py
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
       toolUse(
-        'Write',
-        { file_path: '/home/user/project/weather.py', content: WEATHER_PY },
-        'tool_001',
+        'Task',
+        {
+          description: 'Research whether CSV readers require a trailing newline',
+          prompt:
+            'Check whether line-oriented CSV readers treat an unterminated final record as ' +
+            'valid, and cite the relevant spec.',
+          subagent_type: 'general-purpose',
+        },
+        'task_001',
       ),
       1500,
     )
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
-      toolResult('tool_001', 'File created at /home/user/project/weather.py'),
-      600,
+      toolUse(
+        'WebFetch',
+        {
+          url: 'https://www.rfc-editor.org/rfc/rfc4180',
+          prompt: 'Does the format require a trailing newline on the last record?',
+        },
+        'task_001_web',
+        'task_001',
+      ),
+      1500,
     )
-
-    // Bash tool - install deps
-    await sendAndScroll(
-      controller,
-      page,
-      toolUse('Bash', { command: 'pip install requests rich' }, 'tool_002'),
-      1000,
-    )
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
       toolResult(
-        'tool_002',
-        'Successfully installed requests-2.31.0 rich-13.7.0 markdown-it-py-3.0.0 pygments-2.17.2',
+        'task_001_web',
+        "RFC 4180 doesn't mandate a trailing CRLF on the last record - readers are expected to " +
+          'accept it either way.',
+        'task_001',
       ),
-      600,
+      2000,
     )
-
-    // Final text
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
-      assistantText(
-        'Done! Run it with:\n\n```bash\npython weather.py London --api-key YOUR_KEY\n```\n\nThe output displays temperature, conditions, humidity, and wind speed in a styled panel with color-coded labels.',
+      toolUse('Read', { file_path: 'src/export/csv_reader.py' }, 'task_001_read', 'task_001'),
+      1500,
+    )
+    await pbeat(controller, page, toolResult('task_001_read', READER_SNIPPET, 'task_001'), 2000)
+    await pbeat(
+      controller,
+      page,
+      toolResult(
+        'task_001',
+        "RFC 4180 doesn't require a trailing newline, but our reader splits on '\\n' and silently " +
+          'drops an unterminated final record - confirmed that is the actual bug.',
       ),
-      400,
+      3000,
     )
-    await sendAndScroll(controller, page, turnResult('turn_001'), 2000)
 
-    // --- Bookmark the first turn ---
-    const userMsg = page.locator('[data-testid="message-user"]').first()
-    await userMsg.hover()
-    await wait(500)
-    const bookmarkBtn = userMsg.locator('.message-bookmark-btn')
-    await bookmarkBtn.dispatchEvent('click')
-    await wait(1500)
-
-    // --- Turn 2: Second message ---
-    await input.click()
-    await page.keyboard.type('Add a 5-minute file cache so repeated queries are instant', {
-      delay: 30,
-    })
-    await wait(400)
-    await page.keyboard.press('Enter')
-    await wait(800)
-
-    await sendAndScroll(
+    await pbeat(controller, page, taskUpdate('tu1', 1, { status: 'completed' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu1', 1, ['status']), 600)
+    await pbeat(controller, page, taskUpdate('tu2', 2, { status: 'in_progress' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu2', 2, ['status']), 800)
+    await pbeat(
       controller,
       page,
-      userMessage('turn_002', 'Add a 5-minute file cache so repeated queries are instant'),
-      500,
+      assistantText('The writer should always terminate the last row, not rely on the caller.'),
+      4000,
     )
-
-    await sendAndScroll(
-      controller,
-      page,
-      assistantText("I'll add a JSON file cache with 5-minute TTL:"),
-      800,
-    )
-
-    // Edit tool - modify weather.py
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
       toolUse(
         'Edit',
         {
-          file_path: '/home/user/project/weather.py',
-          old_string: 'API_BASE = "https://api.openweathermap.org/data/2.5/weather"',
-          new_string:
-            '# ... cache code ...\n\nAPI_BASE = "https://api.openweathermap.org/data/2.5/weather"',
+          file_path: 'src/export/csv_writer.py',
+          old_string: WRITER_BEFORE,
+          new_string: WRITER_AFTER,
         },
-        'tool_003',
+        'tool_002',
       ),
-      1200,
+      3500,
     )
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
-      toolResult(
-        'tool_003',
-        `The file /home/user/project/weather.py has been updated.\n${CACHE_DIFF}`,
-      ),
-      600,
+      toolResult('tool_002', 'The file src/export/csv_writer.py has been updated.'),
+      2000,
     )
-
-    await sendAndScroll(
-      controller,
-      page,
-      assistantText(
-        'Cache added. Now `fetch_weather` checks the cache first and writes results after fetching. Repeated queries within 5 minutes return instantly from `~/.cache/weather-cli/`.',
-      ),
-      400,
-    )
-    await sendAndScroll(controller, page, turnResult('turn_002'), 2000)
-
-    // --- Show fork UI (no execution) ---
-    await userMsg.scrollIntoViewIfNeeded()
-    await wait(500)
-    await userMsg.hover()
-    await wait(1000)
-
-    // Show fork variants dropdown if available
-    const rewindSplit = userMsg.locator('.message-rewind-split')
-    const chevronBtn = rewindSplit.locator('.message-rewind-chevron')
-    const hasChevron = (await chevronBtn.count()) > 0
-    if (hasChevron) {
-      await chevronBtn.click()
-      await wait(2000)
-      await page.keyboard.press('Escape')
-      await wait(500)
-    } else {
-      const rewindBtn = userMsg.locator('.message-rewind-btn')
-      await rewindBtn.hover()
-      await wait(2000)
-    }
-
-    // --- Re-engage autoscroll before next message ---
-    const autoscrollBtn = page.locator('button[title="Last message (Alt+End)"]')
-    if (await autoscrollBtn.isVisible()) {
-      await autoscrollBtn.click()
-      await wait(800)
-    } else {
-      // Fallback: use keyboard shortcut
-      await page.keyboard.press('Alt+End')
-      await wait(800)
-    }
-
-    // --- Turn 3: Queue messages while "responding" ---
-    await input.click()
-    await page.keyboard.type('Now add unit tests', { delay: 35 })
-    await wait(400)
-    await page.keyboard.press('Enter')
-    await wait(600)
-
-    // Inject user message and start a response (no result = still responding)
-    await sendAndScroll(controller, page, userMessage('turn_003', 'Now add unit tests'), 500)
-    await sendAndScroll(
-      controller,
-      page,
-      assistantText("I'll write comprehensive tests using pytest. Let me create the test file:"),
-      1000,
-    )
-
-    // Queue a message while responding
-    await input.click()
-    await page.keyboard.type('Also add a --format json flag for machine-readable output', {
-      delay: 30,
-    })
-    await wait(300)
-    await page.keyboard.press('Alt+Enter')
-    await wait(1500)
-
-    // Queue another
-    await page.keyboard.type('And update the README with usage examples', { delay: 30 })
-    await wait(300)
-    await page.keyboard.press('Alt+Enter')
-    await wait(2000)
-    await scrollToBottom(page)
-    await wait(500)
-
-    // Complete turn 3
-    await sendAndScroll(
+    await pbeat(controller, page, taskUpdate('tu3', 2, { status: 'completed' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu3', 2, ['status']), 600)
+    await pbeat(controller, page, taskUpdate('tu4', 3, { status: 'in_progress' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu4', 3, ['status']), 800)
+    await pbeat(
       controller,
       page,
       toolUse(
-        'Write',
+        'Edit',
         {
-          file_path: '/home/user/project/tests/test_weather.py',
-          content:
-            '"""Tests for weather CLI."""\n\nimport pytest\nfrom unittest.mock import patch, MagicMock\n\nfrom weather import fetch_weather, get_cached, set_cached\n\n\ndef test_fetch_weather_success():\n    """Test successful API call."""\n    with patch("weather.requests.get") as mock_get:\n        mock_get.return_value.json.return_value = {"name": "London"}\n        result = fetch_weather("London", "key")\n        assert result["name"] == "London"\n\n\ndef test_cache_hit():\n    """Test that cached data is returned within TTL."""\n    ...\n\n\ndef test_cache_expired():\n    """Test that expired cache triggers fresh fetch."""\n    ...',
+          file_path: 'tests/export/test_csv_writer.py',
+          old_string: 'def test_write_rows_separates_with_newlines():',
+          new_string:
+            'def test_write_rows_separates_with_newlines():\n    ...\n\n\ndef test_write_rows_terminates_last_row():',
         },
-        'tool_004',
+        'tool_003',
       ),
-      1200,
+      3500,
     )
-    await sendAndScroll(
+    await pbeat(
       controller,
       page,
-      toolResult('tool_004', 'File created at /home/user/project/tests/test_weather.py'),
-      600,
+      toolResult('tool_003', 'The file tests/export/test_csv_writer.py has been updated.'),
+      2000,
     )
-    await sendAndScroll(
+    await pbeat(controller, page, taskUpdate('tu5', 3, { status: 'completed' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu5', 3, ['status']), 600)
+    await pbeat(controller, page, taskUpdate('tu6', 4, { status: 'in_progress' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu6', 4, ['status']), 800)
+    await pbeat(
       controller,
       page,
-      assistantText('Tests created covering API fetching, cache hits, and cache expiration.'),
-      400,
+      toolUse('Bash', { command: 'pytest tests/export/test_csv_writer.py -v' }, 'tool_004'),
+      3000,
     )
-    await sendAndScroll(controller, page, turnResult('turn_003'), 2500)
+    await pbeat(controller, page, toolResult('tool_004', TEST_RESULT), 3500)
+    await pbeat(controller, page, taskUpdate('tu7', 4, { status: 'completed' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu7', 4, ['status']), 600)
+    await pbeat(controller, page, taskUpdate('tu8', 5, { status: 'in_progress' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu8', 5, ['status']), 600)
+    await pbeat(controller, page, taskUpdate('tu9', 5, { status: 'completed' }), 500)
+    await pbeat(controller, page, taskUpdateResult('tu9', 5, ['status']), 800)
+    await pbeat(
+      controller,
+      page,
+      assistantText(
+        'The export now always terminates its last row - verified against a file with no trailing ' +
+          'newline, with a regression test guarding the case.',
+      ),
+      4500,
+    )
+    await pbeat(controller, page, turnResult(turnId), 3000)
 
-    // --- Open Bookmarks panel ---
-    await page.keyboard.press('Alt+5')
-    await wait(2500)
-    await page.keyboard.press('Alt+5')
-    await wait(1000)
+    await capture
 
-    // Final pause
-    await wait(3000)
-
-    // Save video to accessible location
     await page.close()
-    await page.video().saveAs('/tmp/claudebox-demo.webm')
   })
 })

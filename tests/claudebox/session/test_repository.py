@@ -1,7 +1,7 @@
 """Tests for claudebox.session.repository - shared session disk I/O."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -34,7 +34,7 @@ def _create_session_dir(workspace, session_id, data=None):
     sessions_root = workspace.sessions_root
     sessions_root.mkdir(parents=True, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     session_dir = sessions_root / f"{ts}--{session_id}"
     session_dir.mkdir()
 

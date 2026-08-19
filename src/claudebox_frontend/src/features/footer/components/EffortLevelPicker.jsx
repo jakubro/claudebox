@@ -60,7 +60,7 @@ export default function EffortLevelPicker({ currentEffortLevel, defaultValue, di
         className="footer-picker-btn"
         disabled={disabled}
         onClick={handleToggle}
-        title={`Effort - ${effectiveLevel || '-'}`}
+        title={`Effort — ${effectiveLevel || '-'}`}
         data-testid="footer-effort">
         {displayName}
         <ChevronDown size={10} />

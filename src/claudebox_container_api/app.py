@@ -33,6 +33,7 @@ def run_container_api(*args, **cli_args) -> None:
     http_serve(
         api_factory,
         port=cli_args["port"],
+        host=cli_args["host"],
         dev=dev_mode,
         reload_dirs=[CORE_DIR, CONTAINER_API_DIR],
     )

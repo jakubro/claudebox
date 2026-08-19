@@ -5,8 +5,14 @@ stdout/stderr - stray output corrupts argcomplete's fd-8 completion stream.
 """
 
 import json
+import logging
 
 from claudebox.constants import daemon_base_url, daemon_config_path
+
+
+# Stdlib logging: no deep-import of claudebox internals (scripts/python-guidelines-audit.py).
+# Handlerless, so INFO is absorbed - stray output would corrupt argcomplete's fd-8 stream.
+_logger = logging.getLogger(__name__)
 
 
 # Short, fixed timeout: a TAB press must stay responsive even when the daemon is down.
@@ -18,8 +24,7 @@ def complete_workspace_id(prefix: str = "", **kwargs) -> list[str]:
 
     try:
         return [ws_id for ws_id in registered_workspace_ids() if ws_id.startswith(prefix)]
-    except Exception:
-        # argcomplete contract: never raise out of the completion subprocess.
+    except Exception:  # noqa: BLE001 - argcomplete contract: never raise
         return []
 
 
@@ -33,9 +38,8 @@ def complete_container_target(prefix: str = "", **kwargs) -> list[str]:
 
     try:
         candidates.extend(_container_short_ids())
-    except Exception:
-        # argcomplete contract: never raise out of the completion subprocess.
-        pass
+    except Exception as exc:  # noqa: BLE001 - argcomplete contract: never raise
+        _logger.info("container completion failed: %s", exc)
 
     return [c for c in candidates if c.startswith(prefix)]
 

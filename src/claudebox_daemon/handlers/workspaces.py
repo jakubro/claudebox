@@ -62,24 +62,32 @@ async def get_session_defaults(svc: WorkspaceDep) -> dict:
     except UnknownRuntime as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    caps = cls.CAPABILITIES
+    # Protocol declares these for instances; ty doesn't resolve class attrs via type[AgentSession].
+    caps = cls.CAPABILITIES  # ty: ignore[unresolved-attribute]
 
     return {
         "workspace": str(svc.workspace.path),
-        "runtime_name": cls.runtime_name,
+        "runtime_name": cls.runtime_name,  # ty: ignore[unresolved-attribute]
         "editor_url_template": svc.config.editor_url_template,
         "capabilities": dataclasses.asdict(caps),
+        "rate_limits": svc.rate_limits.get(),
         "model": cls.get_default_model() if caps.supports_models else None,
         "permission_mode": (
             cls.get_default_permission_mode() if caps.supports_permission_modes else None
         ),
         "effort_level": (cls.get_default_effort_level() if caps.supports_effort_levels else None),
-        "available_models": cls.AVAILABLE_MODELS if caps.supports_models else None,
+        "available_models": cls.AVAILABLE_MODELS  # ty: ignore[unresolved-attribute]
+        if caps.supports_models
+        else None,
         "available_permission_modes": (
-            cls.AVAILABLE_PERMISSION_MODES if caps.supports_permission_modes else None
+            cls.AVAILABLE_PERMISSION_MODES  # ty: ignore[unresolved-attribute]
+            if caps.supports_permission_modes
+            else None
         ),
         "available_effort_levels": (
-            cls.AVAILABLE_EFFORT_LEVELS if caps.supports_effort_levels else None
+            cls.AVAILABLE_EFFORT_LEVELS  # ty: ignore[unresolved-attribute]
+            if caps.supports_effort_levels
+            else None
         ),
     }
 

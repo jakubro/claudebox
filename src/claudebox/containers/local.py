@@ -6,9 +6,10 @@ import socket
 import subprocess
 import sys
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 from ..core.logging import get_logger
 
@@ -76,8 +77,10 @@ class LocalRuntime:
         # Prevent subcontainer from remapping /tmp - it shares the host filesystem
         proc_env["CLAUDEBOX_NO_TMP_REMAP"] = "1"
 
-        proc = subprocess.Popen(
-            [sys.executable, str(server_script), "--port", str(port)],
+        # ty's overload resolution for Popen.__init__ doesn't settle on the generic (no
+        # text/encoding) overload here despite proc_env being a plain dict[str, str].
+        proc = subprocess.Popen(  # ty: ignore[no-matching-overload]
+            [sys.executable, str(server_script), "--port", str(port), "--host", "127.0.0.1"],
             env=proc_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -119,9 +122,8 @@ class LocalRuntime:
             if entry.process.poll() is not None:
                 continue
 
-            if labels:
-                if not all(entry.labels.get(k) == v for k, v in labels.items()):
-                    continue
+            if labels and not all(entry.labels.get(k) == v for k, v in labels.items()):
+                continue
 
             result.append(
                 {
@@ -211,9 +213,9 @@ class LocalRuntime:
 
     @staticmethod
     def _find_free_port() -> int:
-        """Find an available TCP port by binding to port 0."""
+        """Return a free ephemeral TCP port on loopback."""
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
+            s.bind(("127.0.0.1", 0))
 
             return s.getsockname()[1]

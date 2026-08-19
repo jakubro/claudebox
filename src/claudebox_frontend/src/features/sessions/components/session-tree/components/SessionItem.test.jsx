@@ -113,6 +113,33 @@ describe('SessionItem', () => {
     expect(screen.getAllByText(/\$0\.15/).length).toBeGreaterThan(0)
   })
 
+  it('shows a runtime badge when the session has one', () => {
+    render(
+      <SessionItem
+        session={createSession({ runtime: 'LangGraph' })}
+        isCurrent={false}
+        onResume={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    )
+
+    // Appears in both meta-row and meta-overflow, same responsive pattern as turns/cost.
+    expect(screen.getAllByText('LangGraph').length).toBeGreaterThan(0)
+  })
+
+  it('omits the runtime badge for a session with no runtime recorded', () => {
+    render(
+      <SessionItem
+        session={createSession()}
+        isCurrent={false}
+        onResume={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByTestId('sessions-runtime-badge')).not.toBeInTheDocument()
+  })
+
   it('shows first/last message preview', () => {
     render(
       <SessionItem
@@ -169,7 +196,7 @@ describe('SessionItem', () => {
     const idSpan = document.querySelector('.sessions-id')
     expect(idSpan).toHaveAttribute(
       'title',
-      'Session directory - /tmp/sessions/abc12345-6789-0def-ghij-klmnopqrstuv',
+      'Session directory — /tmp/sessions/abc12345-6789-0def-ghij-klmnopqrstuv',
     )
   })
 

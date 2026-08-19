@@ -7,6 +7,7 @@ import { interrupt } from '../../api/chat'
 import { getUiState, patchSessionUiState } from '../../api/uiState'
 import ConfirmStopModal from '../../components/ConfirmStopModal.jsx'
 import ErrorBoundary from '../../components/ErrorBoundary.jsx'
+import { SCROLL_SETTLE_MAX_FRAMES } from '../../config/timing'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useBookmarksContext } from '../../context/BookmarksContext'
 import { useDaemonStreamContext } from '../../context/DaemonStreamContext'
@@ -19,8 +20,9 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import useIsMobile from '../../hooks/useIsMobile'
 import useNewSession from '../../hooks/useNewSession'
 import { computeDuplicateAskUserIds } from '../../utils/eventProcessing'
-import { scrollAndHighlight } from '../../utils/scroll'
+import { withMountedTurn } from '../../utils/mountTurn'
 import ChatInputArea from './components/ChatInputArea'
+import ChatSplitDivider from './components/ChatSplitDivider'
 import ChatControlBar from './components/chat-control-bar'
 import useComposerMaxHeight from './components/chat-input/hooks/useComposerMaxHeight'
 import HistoricalTurnList from './components/HistoricalTurnList'
@@ -30,7 +32,9 @@ import MiniMap from './components/minimap'
 import QueuedMessageBubble from './components/QueuedMessageBubble'
 import RewindModal from './components/RewindModal'
 import SettingChangeDivider from './components/SettingChangeDivider'
+import TerminalColumn from './components/terminal'
 import Turn from './components/turn'
+import { HideShellCallsContext } from './components/turn/HideShellCallsContext'
 import { TurnCollapseProvider } from './components/turn/TurnCollapseContext'
 import WelcomeContent from './components/WelcomeContent'
 import useChatController from './hooks/useChatController'
@@ -38,11 +42,13 @@ import useChatCreatingClear from './hooks/useChatCreatingClear'
 import useChatRewindFork from './hooks/useChatRewindFork'
 import useMessageJump from './hooks/useMessageJump'
 import useNotifications from './hooks/useNotifications'
+import { useTerminalSplitLayout } from './hooks/useTerminalSplitLayout'
 import useTurnHeights from './hooks/useTurnHeights'
+import { useTurnJump } from './hooks/useTurnJump'
 import { findTopmostVisibleTurn } from './utils/findTopmostVisibleTurn'
-import { withMountedTurn } from './utils/mountTurn'
 import { getOverlayStatusText } from './utils/overlayStatus'
 import { tryRefocusChatTextarea } from './utils/refocusChatInput'
+import { deriveTerminalEntries } from './utils/terminalEvents'
 
 /** Render main chat panel with conversation turns, input, and minimap navigation. */
 export default function ChatPanel() {
@@ -98,6 +104,7 @@ export default function ChatPanel() {
     markUserIntentRef,
     markProgrammaticScrollRef,
     scrollToTurnRef,
+    expandTurnRef,
     focusChatTab,
   } = useAppActions()
 
@@ -247,43 +254,16 @@ export default function ChatPanel() {
     return () => clearTimeout(timer)
   }, [isResuming, clearResume])
 
-  // Cross-session jump after replay: the URL `/turns/<role>-<id>` segment carries the target.
-  // Scrolls to the matching turn once replay completes and disengages autoscroll so SSE can't yank the view.
-  const wasReplayingRef = useRef(false)
-  useEffect(() => {
-    if (isReplaying) {
-      wasReplayingRef.current = true
-      return
-    }
-    if (!wasReplayingRef.current) {
-      return
-    }
-    wasReplayingRef.current = false
-
-    if (!activeTurnId) {
-      return
-    }
-
-    // The target may be windowed out, so ask the virtualizer for it first, or a deep link resolves to nothing.
-    withMountedTurn({
-      turnId: activeTurnId,
-      turns: turnsRef.current.slice(0, -1),
-      virtualizer: turnVirtualizerRef.current,
-      onResolved: turnEl => {
-        const scrollContainer = messagesRef.current
-        if (!(turnEl && scrollContainer)) {
-          return
-        }
-        let target =
-          activeMessageType === 'user' ? turnEl.querySelector('[data-testid="message-user"]') : null
-        if (!target) {
-          target = turnEl.querySelector('[data-testid="message-assistant"]') || turnEl
-        }
-        chatAutoScrollEnabledRef.current = false
-        scrollAndHighlight(scrollContainer, target)
-      },
-    })
-  }, [isReplaying, activeTurnId, activeMessageType, chatAutoScrollEnabledRef, messagesRef])
+  // Kept out of ChatPanel for the cognitive-complexity gate; runs the cross-session replay jump.
+  const { handleTerminalEntryClick } = useTurnJump({
+    turnsRef,
+    turnVirtualizerRef,
+    messagesRef,
+    chatAutoScrollEnabledRef,
+    isReplaying,
+    activeTurnId,
+    activeMessageType,
+  })
 
   // Driven by useChatController, which forwards controller.onAutoScrollChange transitions into reactive state.
   const isAutoScrollEnabled = controllerAutoScrollEnabled
@@ -313,6 +293,16 @@ export default function ChatPanel() {
       return next
     })
   }, [sessionId])
+
+  // Preference + ratio, hydrated per session; a width-driven collapse leaves the preference alone.
+  const {
+    contentAreaRef,
+    terminalSplit,
+    showTerminalSplit,
+    toggleTerminalSplit,
+    setTerminalSplitRatio,
+  } = useTerminalSplitLayout(sessionId, isMobile)
+  const terminalEntries = useMemo(() => deriveTerminalEntries(events), [events])
 
   // The unsent buffer persists per session; sent threads re-hydrate from turns' inline replies, no side bar.
   const composerHandleRef = useRef(null)
@@ -415,6 +405,19 @@ export default function ChatPanel() {
     })
   }, [])
 
+  // Sibling panels can't open a collapsed turn directly; delegating to the header toggle keeps
+  // manuallyExpandedIdsRef in sync so the turn doesn't silently re-collapse.
+  useEffect(() => {
+    expandTurnRef.current = turnId => {
+      if (turnId && collapsedTurnIds.has(turnId)) {
+        handleToggleTurnCollapse(turnId)
+      }
+    }
+    return () => {
+      expandTurnRef.current = null
+    }
+  }, [expandTurnRef, collapsedTurnIds, handleToggleTurnCollapse])
+
   // Collapses every turn but the last, minus hand-expanded ones (sticky).
   // Reads turnsRef, not turns, so a streaming flush alone (lastTurnId unchanged) doesn't re-run it.
   const prevAutoCollapseRef = useRef(autoCollapseEnabled)
@@ -516,29 +519,46 @@ export default function ChatPanel() {
     messagesRef,
     turns,
     collapsedTurnIds,
+    showTerminalSplit,
   )
 
-  // Settles the view at bottom once loading finishes: windowed-list sizing keeps shifting as turns mount.
-  // Fires once on the replay-finished edge plus one frame later - per-batch firing cascades into a runaway update.
-  // No-op while autoscroll is disengaged; skipped when the URL names a turn (races that async deep link).
-  const wasReplayingForPinRef = useRef(false)
+  // Turns land with estimated heights; windowed rows swap in real heights over several frames, so
+  // re-scroll every frame until scrollHeight stops growing, capped so an animation can't stall it.
+  // Keyed on turns.length, not an isReplaying edge: React can fold a whole replay into one commit.
+  // Skipped while replaying (refires later) and when the URL names a turn (races that deep link).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: turns.length is a deliberate trigger (see below)
   useEffect(() => {
-    if (isReplaying) {
-      wasReplayingForPinRef.current = true
-      return undefined
-    }
-    if (!wasReplayingForPinRef.current) {
-      return undefined
-    }
-    wasReplayingForPinRef.current = false
-
-    if (activeTurnId) {
+    if (isReplaying || activeTurnId) {
       return undefined
     }
 
-    const id = requestAnimationFrame(() => scrollToBottom())
+    let id
+    let lastHeight = -1
+    let lastScrollTop = -1
+    let framesLeft = SCROLL_SETTLE_MAX_FRAMES
+    const settle = () => {
+      const el = messagesRef.current
+      if (!el) {
+        return
+      }
+      // Our writes never shrink scrollTop, so a drop means something outside repositioned the view
+      // (e.g. a direct scrollTop write bypassing markUserIntent); back off rather than fight it.
+      if (lastScrollTop >= 0 && el.scrollTop < lastScrollTop) {
+        return
+      }
+
+      scrollToBottom()
+      framesLeft -= 1
+      lastScrollTop = el.scrollTop
+      const height = el.scrollHeight
+      if (framesLeft > 0 && height !== lastHeight) {
+        lastHeight = height
+        id = requestAnimationFrame(settle)
+      }
+    }
+    id = requestAnimationFrame(settle)
     return () => cancelAnimationFrame(id)
-  }, [isReplaying, activeTurnId, scrollToBottom])
+  }, [turns.length, isReplaying, activeTurnId, scrollToBottom, messagesRef])
 
   // Desktop notifications and sound when response completes while tab is hidden
   useNotifications({
@@ -715,156 +735,209 @@ export default function ChatPanel() {
           onJumpNext={jumpNext}
           minimapPinned={minimapPinned}
           onToggleMinimap={handleToggleMinimap}
+          terminalSplitEnabled={terminalSplit?.enabled ?? false}
+          onToggleTerminalSplit={toggleTerminalSplit}
         />
       )}
-      <div className="chat-content-area">
+      <div className="chat-content-area" ref={contentAreaRef}>
         <ErrorBoundary label="chat-transcript" resetKey={sessionId}>
           {isWelcome ? (
             <WelcomeContent />
           ) : (
             <>
-              {showReplayOverlay && (
-                <div className="chat-replay-overlay">
-                  <div className={`chat-replay-progress-bar${isCreating ? ' indeterminate' : ''}`}>
-                    {!isCreating && (
-                      <div
-                        className="chat-replay-progress-fill"
-                        style={{
-                          // Clamped: events arriving live while the transcript is still materializing are drained through the same queue but aren't part of the announced total.
-                          width: `${replayTotal > 0 ? Math.min(100, (replayProgress / replayTotal) * 100) : 0}%`,
-                        }}
-                      />
-                    )}
-                  </div>
-                  {overlayStatusText && (
-                    <p className="chat-replay-status-text">{overlayStatusText}</p>
-                  )}
-                </div>
-              )}
               <div
-                className={`chat-messages${reserveMinimapSpace ? ' minimap-pinned' : ''}`}
-                ref={messagesRef}
-                onScroll={wrappedHandleScroll}
-                onPointerDown={handleMessagesPointerDown}
-                onClick={handleMessagesClick}
-                tabIndex={-1}
-                data-testid="chat-messages">
-                {turns.length === 0 &&
-                showPendingMessages.length === 0 &&
-                queueItems.length === 0 &&
-                !deferredSend &&
-                !deferredHold &&
-                !isCreating ? (
-                  <p className="chat-empty">Waiting for messages...</p>
-                ) : (
-                  <TurnCollapseProvider
-                    collapsedTurnIds={collapsedTurnIds}
-                    onToggleTurnCollapse={handleToggleTurnCollapse}>
-                    <HistoricalTurnList
-                      messagesRef={messagesRef}
-                      virtualizerRef={turnVirtualizerRef}
-                      turns={historicalTurns}
-                      boundaryNextUserMessage={activeTurn?.userMessage ?? null}
-                      todoDiffs={todoDiffs}
-                      taskNotifications={taskNotifications}
-                      turnResults={turnResults}
-                      duplicateAskUserIds={duplicateAskUserIds}
-                      hasPendingMessages={showPendingMessages.length > 0}
-                      forkingTurnId={forkingTurnId}
-                      onFormSubmit={handleFormSubmit}
-                      registerPendingForm={registerPendingForm}
-                      onRewind={handleRewindRequest}
-                      isBookmarked={isBookmarked}
-                      onToggleBookmark={toggleBookmark}
-                    />
-                    {activeTurn && [
-                      <Turn
-                        key={`${activeTurn.turn_id || 'g'}-${lastTurnIndex}`}
-                        userMessage={activeTurn.userMessage}
-                        attachments={activeTurn.attachments}
-                        inlineReplies={activeTurn.inlineReplies}
-                        note={activeTurn.note}
-                        events={activeTurn.events}
-                        turnId={activeTurn.turn_id}
-                        todoDiffs={todoDiffs}
-                        taskNotifications={taskNotifications}
-                        resultStatus={activeTurn.turn_id ? turnResults[activeTurn.turn_id] : null}
-                        interrupted={activeTurn.interrupted}
-                        isActive={
-                          (isResponding || isAwaitingResponse) &&
-                          !interruptStatus &&
-                          showPendingMessages.length === 0
-                        }
-                        showProgress={
-                          (isResponding || isAwaitingResponse) &&
-                          !interruptStatus &&
-                          showPendingMessages.length === 0
-                        }
-                        isStopping={interruptStatus === 'stopping' || interruptStatus === 'stopped'}
-                        hasNextUserMessage={false}
-                        hasPendingMessages={showPendingMessages.length > 0}
-                        duplicateAskUserIds={duplicateAskUserIds}
-                        onFormSubmit={handleFormSubmit}
-                        registerPendingForm={registerPendingForm}
-                        onRewind={handleRewindRequest}
-                        forking={forkingTurnId === activeTurn.turn_id}
-                        isUserBookmarked={isBookmarked(activeTurn.turn_id, 'user')}
-                        isAssistantBookmarked={isBookmarked(activeTurn.turn_id, 'assistant')}
-                        onToggleBookmark={toggleBookmark}
-                      />,
-                      ...(activeTurn.settingChanges || []).map((event, ci) => (
-                        <SettingChangeDivider key={`sc-${lastTurnIndex}-${ci}`} event={event} />
-                      )),
-                    ]}
-                    {/* Pending turns from prior session activity are hidden during resume/replay, so
-                    optimistic pending messages from session A don't bleed into session B on tab-switch.
-                    The deferred-message Turn is its own render path and stays visible during boot. */}
-                    <div className="chat-overlay-hoist">
-                      {!(isResuming || isReplaying) &&
-                        showPendingMessages.map((pm, i) => (
-                          <Turn
-                            key={`pending-${pm.id}`}
-                            userMessage={pm.content}
-                            attachments={pm.attachments}
-                            inlineReplies={pm.inlineReplies}
-                            note={pm.note}
-                            events={[]}
-                            pending={true}
-                            hasNextUserMessage={true}
-                            showProgress={i === showPendingMessages.length - 1 && !interruptStatus}
-                            isStopping={
-                              (interruptStatus === 'stopping' || interruptStatus === 'stopped') &&
-                              i === showPendingMessages.length - 1
-                            }
-                            isCompacting={i === showPendingMessages.length - 1 && isCompacting}
-                          />
-                        ))}
-                      {(deferredSend || deferredHold) && showPendingMessages.length === 0 && (
-                        <Turn
-                          key="deferred"
-                          userMessage={(deferredSend || deferredHold).content}
-                          attachments={(deferredSend || deferredHold).attachments}
-                          events={[]}
-                          pending={true}
-                          hasNextUserMessage={true}
-                          showProgress={true}
-                          isCompacting={isCompacting}
+                className="chat-transcript-column"
+                style={
+                  showTerminalSplit
+                    ? {
+                        flexGrow: 0,
+                        flexShrink: 0,
+                        flexBasis: `${(terminalSplit.ratio * 100).toFixed(4)}%`,
+                      }
+                    : undefined
+                }>
+                {showReplayOverlay && (
+                  <div className="chat-replay-overlay">
+                    <div
+                      className={`chat-replay-progress-bar${isCreating ? ' indeterminate' : ''}`}>
+                      {!isCreating && (
+                        <div
+                          className="chat-replay-progress-fill"
+                          style={{
+                            // Clamped: live events drain through this queue, outside replayTotal.
+                            width: `${replayTotal > 0 ? Math.min(100, (replayProgress / replayTotal) * 100) : 0}%`,
+                          }}
                         />
                       )}
-                      {queueItems.map(item => (
-                        <QueuedMessageBubble
-                          key={`queued-${item.id}`}
-                          item={item}
-                          onEdit={handleEditQueued}
-                          onCancel={cancelQueuedItem}
-                          onRequeue={requeueItem}
-                          onSendNow={sendNowItem}
-                        />
-                      ))}
                     </div>
-                  </TurnCollapseProvider>
+                    {overlayStatusText && (
+                      <p className="chat-replay-status-text">{overlayStatusText}</p>
+                    )}
+                  </div>
+                )}
+                <div
+                  className={`chat-messages${reserveMinimapSpace ? ' minimap-pinned' : ''}`}
+                  ref={messagesRef}
+                  onScroll={wrappedHandleScroll}
+                  onPointerDown={handleMessagesPointerDown}
+                  onClick={handleMessagesClick}
+                  tabIndex={-1}
+                  data-testid="chat-messages">
+                  {turns.length === 0 &&
+                  showPendingMessages.length === 0 &&
+                  queueItems.length === 0 &&
+                  !deferredSend &&
+                  !deferredHold &&
+                  !isCreating ? (
+                    <p className="chat-empty">Waiting for messages...</p>
+                  ) : (
+                    <HideShellCallsContext.Provider value={showTerminalSplit}>
+                      <TurnCollapseProvider
+                        collapsedTurnIds={collapsedTurnIds}
+                        onToggleTurnCollapse={handleToggleTurnCollapse}>
+                        <HistoricalTurnList
+                          messagesRef={messagesRef}
+                          virtualizerRef={turnVirtualizerRef}
+                          turns={historicalTurns}
+                          boundaryNextUserMessage={activeTurn?.userMessage ?? null}
+                          todoDiffs={todoDiffs}
+                          taskNotifications={taskNotifications}
+                          turnResults={turnResults}
+                          duplicateAskUserIds={duplicateAskUserIds}
+                          hasPendingMessages={showPendingMessages.length > 0}
+                          forkingTurnId={forkingTurnId}
+                          onFormSubmit={handleFormSubmit}
+                          registerPendingForm={registerPendingForm}
+                          onRewind={handleRewindRequest}
+                          isBookmarked={isBookmarked}
+                          onToggleBookmark={toggleBookmark}
+                          splitEnabled={showTerminalSplit}
+                        />
+                        {activeTurn && [
+                          <Turn
+                            key={`${activeTurn.turn_id || 'g'}-${lastTurnIndex}`}
+                            userMessage={activeTurn.userMessage}
+                            attachments={activeTurn.attachments}
+                            inlineReplies={activeTurn.inlineReplies}
+                            note={activeTurn.note}
+                            events={activeTurn.events}
+                            turnId={activeTurn.turn_id}
+                            todoDiffs={todoDiffs}
+                            taskNotifications={taskNotifications}
+                            resultStatus={
+                              activeTurn.turn_id ? turnResults[activeTurn.turn_id] : null
+                            }
+                            interrupted={activeTurn.interrupted}
+                            isActive={
+                              (isResponding || isAwaitingResponse) &&
+                              !interruptStatus &&
+                              showPendingMessages.length === 0
+                            }
+                            showProgress={
+                              (isResponding || isAwaitingResponse) &&
+                              !interruptStatus &&
+                              showPendingMessages.length === 0
+                            }
+                            isStopping={
+                              interruptStatus === 'stopping' || interruptStatus === 'stopped'
+                            }
+                            hasNextUserMessage={false}
+                            hasPendingMessages={showPendingMessages.length > 0}
+                            duplicateAskUserIds={duplicateAskUserIds}
+                            onFormSubmit={handleFormSubmit}
+                            registerPendingForm={registerPendingForm}
+                            onRewind={handleRewindRequest}
+                            forking={forkingTurnId === activeTurn.turn_id}
+                            isUserBookmarked={isBookmarked(activeTurn.turn_id, 'user')}
+                            isAssistantBookmarked={isBookmarked(activeTurn.turn_id, 'assistant')}
+                            onToggleBookmark={toggleBookmark}
+                          />,
+                          ...(activeTurn.settingChanges || []).map((event, ci) => (
+                            <SettingChangeDivider key={`sc-${lastTurnIndex}-${ci}`} event={event} />
+                          )),
+                        ]}
+                        {/* Pending turns from prior session activity are hidden during resume/replay, so
+                    optimistic pending messages from session A don't bleed into session B on tab-switch.
+                    The deferred-message Turn is its own render path and stays visible during boot. */}
+                        <div className="chat-overlay-hoist">
+                          {!(isResuming || isReplaying) &&
+                            showPendingMessages.map((pm, i) => (
+                              <Turn
+                                key={`pending-${pm.id}`}
+                                userMessage={pm.content}
+                                attachments={pm.attachments}
+                                inlineReplies={pm.inlineReplies}
+                                note={pm.note}
+                                events={[]}
+                                pending={true}
+                                hasNextUserMessage={true}
+                                showProgress={
+                                  i === showPendingMessages.length - 1 && !interruptStatus
+                                }
+                                isStopping={
+                                  (interruptStatus === 'stopping' ||
+                                    interruptStatus === 'stopped') &&
+                                  i === showPendingMessages.length - 1
+                                }
+                                isCompacting={i === showPendingMessages.length - 1 && isCompacting}
+                              />
+                            ))}
+                          {(deferredSend || deferredHold) && showPendingMessages.length === 0 && (
+                            <Turn
+                              key="deferred"
+                              userMessage={(deferredSend || deferredHold).content}
+                              attachments={(deferredSend || deferredHold).attachments}
+                              events={[]}
+                              pending={true}
+                              hasNextUserMessage={true}
+                              showProgress={true}
+                              isCompacting={isCompacting}
+                            />
+                          )}
+                          {queueItems.map(item => (
+                            <QueuedMessageBubble
+                              key={`queued-${item.id}`}
+                              item={item}
+                              onEdit={handleEditQueued}
+                              onCancel={cancelQueuedItem}
+                              onRequeue={requeueItem}
+                              onSendNow={sendNowItem}
+                            />
+                          ))}
+                        </div>
+                      </TurnCollapseProvider>
+                    </HideShellCallsContext.Provider>
+                  )}
+                </div>
+                {/* Held back while the loading screen is up: the minimap sits above the overlay in paint order, and its segments resize on every drained slice, so a resuming session would show a bar twitching over an otherwise still screen. */}
+                {!(isMobile || showReplayOverlay) && (
+                  <MiniMap
+                    groups={turns}
+                    turnResults={turnResults}
+                    messagesRef={messagesRef}
+                    pendingCount={showPendingMessages.length}
+                    turnHeights={turnHeights}
+                    userMessageHeights={userMessageHeights}
+                    autoScrollEnabledRef={chatAutoScrollEnabledRef}
+                    persistent={minimapPinned}
+                    isStreaming={isResponding}
+                    isTurnBookmarked={isTurnBookmarked}
+                    getLogicalScrollHeight={getLogicalScrollHeight}
+                  />
                 )}
               </div>
+              {showTerminalSplit && (
+                <>
+                  <ChatSplitDivider
+                    ratio={terminalSplit.ratio}
+                    onRatioChange={setTerminalSplitRatio}
+                  />
+                  <TerminalColumn
+                    entries={terminalEntries}
+                    onEntryClick={handleTerminalEntryClick}
+                  />
+                </>
+              )}
               {!isMobile && (
                 <InlineThreadsOverlay
                   messagesRef={messagesRef}
@@ -876,22 +949,6 @@ export default function ChatPanel() {
                   onRemove={removeInlineReply}
                   onSubmitBatch={submitInlineReplyBatch}
                   canInterrupt={showInterrupt}
-                />
-              )}
-              {/* Held back while the loading screen is up: the minimap sits above the overlay in paint order, and its segments resize on every drained slice, so a resuming session would show a bar twitching over an otherwise still screen. */}
-              {!(isMobile || showReplayOverlay) && (
-                <MiniMap
-                  groups={turns}
-                  turnResults={turnResults}
-                  messagesRef={messagesRef}
-                  pendingCount={showPendingMessages.length}
-                  turnHeights={turnHeights}
-                  userMessageHeights={userMessageHeights}
-                  autoScrollEnabledRef={chatAutoScrollEnabledRef}
-                  persistent={minimapPinned}
-                  isStreaming={isResponding}
-                  isTurnBookmarked={isTurnBookmarked}
-                  getLogicalScrollHeight={getLogicalScrollHeight}
                 />
               )}
               <QuoteAffordance

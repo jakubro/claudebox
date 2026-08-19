@@ -157,9 +157,7 @@ def _extract_result_content(result: Any) -> str | dict[str, Any] | None:
     elif isinstance(result, ToolMessage):
         content = result.content
 
-        if isinstance(content, str):
-            return content
-        elif isinstance(content, dict):
+        if isinstance(content, (str, dict)):
             return content
         elif isinstance(content, list):
             return str(content)

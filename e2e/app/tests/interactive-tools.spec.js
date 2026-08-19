@@ -1,4 +1,4 @@
-/** E2E tests for interactive tools including AskUserQuestion forms and ExitPlanMode approve/reject. */
+/** E2E tests for interactive tools: AskUserQuestion forms, ExitPlanMode approve/reject. */
 
 import { expect, test } from '@playwright/test'
 import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
@@ -737,6 +737,63 @@ test.describe('AskUserQuestion - XML Response Rendering', () => {
       'Please also add TypeScript support',
     )
     await expect(askUserResponse.locator('.qa-answer')).toContainText('React')
+  })
+
+  // SPEC: tool:askuser-note-bubble
+  test('note sent with an answer gets the same bubble as a plain message', async ({ page }) => {
+    await mockAPI(page)
+    await mockSSE(page, 'events/user-message-askuser-response-with-note.jsonl')
+
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    // turn_001's opening message is a plain send with no note - the ground truth here.
+    const plainMessage = page
+      .locator('[data-testid="message-user"]')
+      .nth(0)
+      .locator('.message-content')
+    const note = page.locator('[data-testid="message-user"]').nth(1).locator('.message-note')
+    await expect(note).toBeVisible()
+
+    const plainStyles = await plainMessage.evaluate(el => {
+      const s = getComputedStyle(el)
+      return {
+        backgroundColor: s.backgroundColor,
+        padding: s.padding,
+        borderRadius: s.borderRadius,
+        fontFamily: s.fontFamily,
+        whiteSpace: s.whiteSpace,
+      }
+    })
+    const noteStyles = await note.evaluate(el => {
+      const s = getComputedStyle(el)
+      return {
+        backgroundColor: s.backgroundColor,
+        padding: s.padding,
+        borderRadius: s.borderRadius,
+        fontFamily: s.fontFamily,
+        whiteSpace: s.whiteSpace,
+      }
+    })
+
+    // A bare .message-note would carry only a margin, leaving backgroundColor transparent.
+    expect(noteStyles.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(noteStyles.backgroundColor).toBe(plainStyles.backgroundColor)
+    expect(noteStyles.padding).toBe(plainStyles.padding)
+    expect(noteStyles.borderRadius).toBe(plainStyles.borderRadius)
+    expect(noteStyles.fontFamily).toBe(plainStyles.fontFamily)
+    expect(noteStyles.whiteSpace).toBe('pre-wrap')
+
+    // The rule must not have widened past the message: the plain bubble's own styles are unchanged.
+    expect(plainStyles.whiteSpace).toBe('pre-wrap')
+
+    // A turn with no note shows no extra surface - no empty bubble.
+    const plainTurnNoteCount = await page
+      .locator('[data-testid="message-user"]')
+      .nth(0)
+      .locator('.message-note')
+      .count()
+    expect(plainTurnNoteCount).toBe(0)
   })
 })
 

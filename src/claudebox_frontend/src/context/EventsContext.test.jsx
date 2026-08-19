@@ -685,6 +685,60 @@ describe('EventsContext', () => {
     })
   })
 
+  describe('markJustCreatedSession / consumeJustCreatedSession', () => {
+    it('consuming a matching id returns true and clears the marker', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+
+      act(() => {
+        result.current.markJustCreatedSession('s1')
+      })
+
+      let consumed
+      act(() => {
+        consumed = result.current.consumeJustCreatedSession('s1')
+      })
+      expect(consumed).toBe(true)
+
+      // Second consume for the same id fails - the marker is one-shot.
+      let consumedAgain
+      act(() => {
+        consumedAgain = result.current.consumeJustCreatedSession('s1')
+      })
+      expect(consumedAgain).toBe(false)
+    })
+
+    it('consuming a non-matching id returns false and leaves the marker in place', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+
+      act(() => {
+        result.current.markJustCreatedSession('s1')
+      })
+
+      let consumed
+      act(() => {
+        consumed = result.current.consumeJustCreatedSession('s2')
+      })
+      expect(consumed).toBe(false)
+
+      // s1's marker survived the mismatched check.
+      let consumedS1
+      act(() => {
+        consumedS1 = result.current.consumeJustCreatedSession('s1')
+      })
+      expect(consumedS1).toBe(true)
+    })
+
+    it('consuming with nothing marked returns false', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+
+      let consumed
+      act(() => {
+        consumed = result.current.consumeJustCreatedSession('s1')
+      })
+      expect(consumed).toBe(false)
+    })
+  })
+
   describe('replay boundary events', () => {
     it('sets isReplaying true on replay_started', () => {
       const { result } = renderHook(() => useEvents(), { wrapper })

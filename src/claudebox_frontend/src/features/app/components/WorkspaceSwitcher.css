@@ -7,17 +7,13 @@
   margin-left: 8px;
 }
 
+/* Chrome-button metrics shared with .session-header-strip-name/-stop live in App.css. */
 .workspace-switcher-btn {
   display: flex;
-  align-items: center;
   gap: 4px;
-  height: var(--chrome-btn-h);
   padding: var(--chrome-btn-pad-y) 8px;
-  margin: var(--chrome-btn-mar-y) 0;
-  line-height: var(--chrome-btn-line-height);
   background: transparent;
   border: none;
-  border-radius: 3px;
   color: var(--header-icon-color);
   font-size: 11px;
   cursor: pointer;
@@ -78,8 +74,9 @@
   text-overflow: ellipsis;
 }
 
-/* Open in new tab button per workspace item */
-.workspace-switcher-newtab {
+/* Hover-reveal icon buttons per workspace row; each keeps its own hover color. */
+.workspace-switcher-newtab,
+.workspace-switcher-trash {
   flex-shrink: 0;
   margin-left: 4px;
   background: transparent;
@@ -94,7 +91,8 @@
     color 0.15s;
 }
 
-.workspace-switcher-option:hover .workspace-switcher-newtab {
+.workspace-switcher-option:hover .workspace-switcher-newtab,
+.workspace-switcher-option:hover .workspace-switcher-trash {
   opacity: 1;
 }
 
@@ -156,26 +154,7 @@
   border-color: var(--text-primary);
 }
 
-/* Trash icon — hover-reveal danger affordance, per workspace row. */
-.workspace-switcher-trash {
-  flex-shrink: 0;
-  margin-left: 4px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 3px;
-  opacity: 0;
-  transition:
-    opacity 0.15s,
-    color 0.15s;
-}
-
-.workspace-switcher-option:hover .workspace-switcher-trash {
-  opacity: 1;
-}
-
+/* Danger hover color; base chrome + hover-reveal live with .workspace-switcher-newtab. */
 .workspace-switcher-trash:hover {
   color: #ef4444;
 }

@@ -1,7 +1,14 @@
 /** Color interpolation and derived color utilities. */
 
-import { STALENESS_FADE_RATE } from '../config/thresholds'
+import {
+  RATE_LIMIT_DANGER_PCT,
+  RATE_LIMIT_WARNING_START_PCT,
+  STALENESS_FADE_RATE,
+} from '../config/thresholds'
 import { STALENESS_FRESH_PEAK_MS, STALENESS_STALE_PEAK_MS } from '../config/timing'
+
+const RATE_LIMIT_AMBER_HUE = 38 // matches #f59e0b, the app's existing amber
+const RATE_LIMIT_RED_HUE = 0
 
 const FAVICON_BG_LIGHTNESS = 0.36
 const FAVICON_BG_SATURATION_BOOST = 1.5
@@ -123,6 +130,14 @@ export function getContextBarColor(percent) {
   }
 
   return `hsl(${hue}, 80%, 55%)`
+}
+
+/** Amber at warning -> red at danger; a flat ramp since the item shows only inside that band. */
+export function getRateLimitColor(percent) {
+  const span = RATE_LIMIT_DANGER_PCT - RATE_LIMIT_WARNING_START_PCT
+  const t = Math.max(0, Math.min(1, (percent - RATE_LIMIT_WARNING_START_PCT) / span))
+  const hue = RATE_LIMIT_AMBER_HUE - t * (RATE_LIMIT_AMBER_HUE - RATE_LIMIT_RED_HUE)
+  return `hsl(${hue}, 45%, 72%)`
 }
 
 /**

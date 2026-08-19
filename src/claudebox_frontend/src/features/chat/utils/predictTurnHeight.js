@@ -13,22 +13,18 @@ import {
   TURN_MIN_PREDICTED_HEIGHT_PX,
 } from '../../../config/dimensions'
 import { isLookupsGroupingEnabled } from '../../../config/features'
-import { normalizeToolName, ToolName } from '../../../config/schema'
 import { getToolConfig } from '../../../config/toolRegistry'
-import { isHiddenToolSearch } from '../../../utils/eventProcessing'
+import { isHiddenToolSearch, isTopLevelBashCall } from '../../../utils/eventProcessing'
 
 const THINKING_TAG = /<thinking>/g
 
 /**
- * Predict per-turn rendered height from content metrics, scaled to chat column width.
- *
- * Prices a turn with no DOM, for the virtualizer sizing a windowed-out turn and the minimap sizing its segment.
- * A real measurement replaces the prediction once the turn mounts.
- *
- * Coefficients live in config/dimensions.js, calibrated against fixtures in predictor-calibration.spec.js.
- * That spec (e2e/app/tests/) also regression-tests drift under 30% per fixture.
+ * Per-turn rendered height from content metrics and column width, with no DOM; a real measurement
+ * replaces it once the turn mounts. Seeds the virtualizer for windowed-out turns and the minimap.
+ * `splitEnabled` zeroes a top-level Bash call - it renders in the terminal column instead.
+ * Coefficients: config/dimensions.js; e2e/app/tests/predictor-calibration.spec.js caps drift 30%.
  */
-export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false) {
+export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false, splitEnabled = false) {
   if (!turn) {
     return TURN_MIN_PREDICTED_HEIGHT_PX
   }
@@ -37,7 +33,7 @@ export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false) {
   const userLines = userMessageLines(turn, charsPerLine)
 
   if (isCollapsed) {
-    // Collapsed strip omits hidden assistant content; base + user line(s) seeds off-screen turns until measured.
+    // Collapsed strip omits assistant content; base + user lines seed off-screen turns.
     return TURN_BASE_HEIGHT_PX + userLines * LINE_HEIGHT_PX
   }
 
@@ -47,7 +43,7 @@ export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false) {
   let readOnlyToolBlocks = 0
   let bashBlocks = 0
 
-  // Index by tool_use_id (like indexEvents) so hide-check finds the paired result, avoiding over-reserved height.
+  // Index by tool_use_id so the hide-check finds its paired result; avoids over-reserving height.
   const toolResultsByUseId = new Map()
   for (const event of turn.events || []) {
     if (event.subtype === 'tool_result' && event.tool_use_id) {
@@ -62,9 +58,13 @@ export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false) {
       }
       if (getToolConfig(event.content).category === 'read-only') {
         readOnlyToolBlocks += 1
-      } else if (normalizeToolName(event.content) === ToolName.BASH) {
-        bashBlocks += 1
+      } else if (isTopLevelBashCall(event)) {
+        // Split on -> rendered in the terminal column, so no height here.
+        if (!splitEnabled) {
+          bashBlocks += 1
+        }
       } else {
+        // Non-Bash, or a subagent's nested Bash call: prices as an ordinary tool row.
         toolBlocks += 1
       }
     } else if (event.subtype === 'thinking') {
@@ -103,12 +103,7 @@ export function predictTurnHeight(turn, effectiveWidth, isCollapsed = false) {
   return Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, predicted)
 }
 
-/**
- * Predict the height of a turn's human message alone, scaled to chat column width.
- *
- * The minimap draws the human message as a proportional slice of its turn's segment.
- * Measuring needs the turn mounted (windowing can't promise that), so it reuses the turn predictor's math.
- */
+/** Human-message height for the minimap's turn slice; predicted - the turn may be unmounted. */
 export function predictUserMessageHeight(turn, effectiveWidth) {
   if (!turn) {
     return 0

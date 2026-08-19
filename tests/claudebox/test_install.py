@@ -9,7 +9,7 @@ _SYNTHETIC = {
     "version": "(unknown)",
     "branch": "v51",
     "commit": "76a76a9",
-    "path": Path("/home/jakub/dev/share/lib/claudebox"),
+    "path": Path("/opt/example/lib/claudebox"),
     "python": "3.12.11",
 }
 
@@ -23,7 +23,7 @@ class TestFormatInstallInfo:
         assert "\n" not in line
         assert "v51" in line
         assert "76a76a9" in line
-        assert "/home/jakub/dev/share/lib/claudebox" in line
+        assert "/opt/example/lib/claudebox" in line
         assert "3.12.11" in line
 
     def test_no_posixpath_or_dict_braces(self):

@@ -80,7 +80,7 @@ def read_json(path: str | Path, default: Any = NOT_PROVIDED) -> Any:
     raise FileNotFoundError(path)
 
 
-def read_toml(path: str | Path, default: T = NOT_PROVIDED) -> dict | T:  # ty: ignore[invalid-parameter-default]
+def read_toml[T](path: str | Path, default: T = NOT_PROVIDED) -> dict | T:  # ty: ignore[invalid-parameter-default]
     """Read and parse a TOML file, returning default if missing or empty (else raises)."""
 
     try:

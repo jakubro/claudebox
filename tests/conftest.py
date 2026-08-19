@@ -28,7 +28,7 @@ def pytest_configure(config):
 
     os.execvp(
         "bwrap",
-        [  # noqa: S606
+        [
             "bwrap",
             "--ro-bind",
             "/",
@@ -74,7 +74,7 @@ def anyio_backend():
 
 @pytest.fixture
 def tmp_workspace(tmp_path, monkeypatch):
-    """Create a workspace dir with a .workspace marker and isolated home; returns the root."""
+    """Workspace dir with a .workspace marker, isolated home, bounded config walk-up."""
 
     marker = tmp_path / ".workspace"
     marker.touch()
@@ -85,8 +85,36 @@ def tmp_workspace(tmp_path, monkeypatch):
     fake_home = tmp_path / "_home"
     fake_home.mkdir(exist_ok=True)
     monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: fake_home))
+    monkeypatch.setattr("claudebox.config.walk_up", bounded_walk_up(tmp_path))
 
     return tmp_path
+
+
+@pytest.fixture
+def bounded_config_root(tmp_path, monkeypatch):
+    """tmp_workspace's ancestor-walk isolation minus the marker/home setup, for a bare tmp_path."""
+
+    monkeypatch.setattr("claudebox.config.walk_up", bounded_walk_up(tmp_path))
+
+    return tmp_path
+
+
+def bounded_walk_up(boundary: Path):
+    """walk_up replacement stopping at `boundary`: tmp_path can resolve inside a populated tree,
+    so an unbounded walk-up in Config tests would merge a real settings.toml from above."""
+
+    from claudebox.core.fs import walk_up
+
+    resolved_boundary = boundary.resolve()
+
+    def bounded(start_dir=None):
+        for directory in walk_up(start_dir):
+            yield directory
+
+            if directory == resolved_boundary:
+                break
+
+    return bounded
 
 
 def _in_container() -> bool:

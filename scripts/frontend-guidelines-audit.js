@@ -35,36 +35,33 @@ const AUDIT_IGNORE_RE = /\/\/\s*audit-ignore:\s*(.+)/
 
 // --- File Discovery ---
 
-/** Find all source files recursively, excluding node_modules. */
-function findSourceFiles(dir, { includeTests = false } = {}) {
+/** Recursively collect files under `dir` matching `predicate`, excluding node_modules. */
+function walkDir(dir, predicate) {
   const results = []
 
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name)
     if (entry.isDirectory() && entry.name !== 'node_modules') {
-      results.push(...findSourceFiles(fullPath, { includeTests }))
-    } else if (/\.(jsx?|tsx?)$/.test(entry.name)) {
-      if (includeTests || !entry.name.includes('.test.')) {
-        results.push(fullPath)
-      }
+      results.push(...walkDir(fullPath, predicate))
+    } else if (predicate(entry.name)) {
+      results.push(fullPath)
     }
   }
 
   return results
 }
 
+/** Find .js/.jsx/.ts/.tsx source files, test files only with `includeTests`. */
+function findSourceFiles(dir, { includeTests = false } = {}) {
+  return walkDir(
+    dir,
+    name => /\.(jsx?|tsx?)$/.test(name) && (includeTests || !name.includes('.test.')),
+  )
+}
+
 /** Find all files matching a regex extension, recursively, excluding node_modules. */
 function findByExt(dir, extRe) {
-  const results = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name)
-    if (entry.isDirectory() && entry.name !== 'node_modules') {
-      results.push(...findByExt(fullPath, extRe))
-    } else if (extRe.test(entry.name)) {
-      results.push(fullPath)
-    }
-  }
-  return results
+  return walkDir(dir, name => extRe.test(name))
 }
 
 /** Classify a file by its source-tree location; hooks/ and utils/ match at any nesting depth. */
@@ -156,7 +153,7 @@ function extractFileIgnores(lines) {
 
 // --- Checks ---
 
-/** Check non-blank line count against the type's threshold constant; blank lines never count against it. */
+/** Check non-blank line count against the type's threshold; blank lines never count. */
 function checkFileSize(_filePath, lines, type) {
   const violations = []
   const thresholds = {
@@ -177,7 +174,7 @@ function checkFileSize(_filePath, lines, type) {
   return violations
 }
 
-/** Flag behavioral/config ALL_CAPS constants outside constants/; config, barrel, and other types are exempt. */
+/** Flag behavioral/config ALL_CAPS constants outside constants/; config/barrel/other exempt. */
 function checkMisplacedConstants(_filePath, lines, type) {
   const violations = []
   if (type === 'config' || type === 'barrel' || type === 'other') {
@@ -203,20 +200,30 @@ function checkMisplacedConstants(_filePath, lines, type) {
   return violations
 }
 
-/** Flag a .jsx file exporting multiple components; non-exported helpers under 30 body lines are tolerated. */
+/** Whether `filePath` is a `type: 'component'` .jsx file - the shared component-check guard. */
+function isJsxComponent(filePath, type) {
+  return type === 'component' && filePath.endsWith('.jsx')
+}
+
+/** Yield `{ index, name }` for each PascalCase `function` declaration line. */
+function* findComponentDeclarations(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(FUNCTION_DECL_RE)
+    if (match && /^[A-Z]/.test(match[1])) {
+      yield { index: i, name: match[1] }
+    }
+  }
+}
+
+/** Flag a .jsx file exporting multiple components; private helpers under 30 body lines are fine. */
 function checkMultipleComponents(filePath, lines, type) {
   const violations = []
-  if (type !== 'component' || !filePath.endsWith('.jsx')) {
+  if (!isJsxComponent(filePath, type)) {
     return violations
   }
 
   const components = []
-  for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(FUNCTION_DECL_RE)
-    if (!(match && /^[A-Z]/.test(match[1]))) {
-      continue
-    }
-
+  for (const { index: i, name } of findComponentDeclarations(lines)) {
     const isExported = /^export\s/.test(lines[i])
 
     // Measure function body length for non-exported helpers
@@ -243,7 +250,7 @@ function checkMultipleComponents(filePath, lines, type) {
       }
     }
 
-    components.push({ name: match[1], line: i + 1, isExported, bodyLines })
+    components.push({ name, line: i + 1, isExported, bodyLines })
   }
 
   // Filter: keep exported components + private helpers exceeding 30 lines
@@ -260,10 +267,10 @@ function checkMultipleComponents(filePath, lines, type) {
   return violations
 }
 
-/** Flag non-default function/const exports from .jsx files - utilities belong in utils/, not component files. */
+/** Flag non-default function/const exports from .jsx - utilities belong in utils/. */
 function checkUtilityExportsFromComponents(filePath, lines, type) {
   const violations = []
-  if (type !== 'component' || !filePath.endsWith('.jsx')) {
+  if (!isJsxComponent(filePath, type)) {
     return violations
   }
 
@@ -374,7 +381,7 @@ function checkFileLevelJSDoc(_filePath, content, type) {
   return violations
 }
 
-/** Check for a blank line after file-level JSDoc (GUIDELINES section 9 requires one before imports). */
+/** Check for a blank line after file-level JSDoc (GUIDELINES section 9, before imports). */
 function checkJSDocBlankLine(_filePath, content, type) {
   const violations = []
   if (type === 'other' || type === 'barrel') {
@@ -402,16 +409,11 @@ function checkJSDocBlankLine(_filePath, content, type) {
 /** Flag component JSDoc missing @param when the component takes a destructured props object. */
 function checkComponentParamDocs(filePath, lines, type) {
   const violations = []
-  if (type !== 'component' || !filePath.endsWith('.jsx')) {
+  if (!isJsxComponent(filePath, type)) {
     return violations
   }
 
-  for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(FUNCTION_DECL_RE)
-    if (!(match && /^[A-Z]/.test(match[1]))) {
-      continue
-    }
-
+  for (const { index: i, name } of findComponentDeclarations(lines)) {
     const hasProps = /\(\s*\{/.test(lines[i])
     if (!hasProps) {
       continue
@@ -436,7 +438,7 @@ function checkComponentParamDocs(filePath, lines, type) {
     if (jsdocBlock && !PARAM_RE.test(jsdocBlock)) {
       violations.push({
         rule: 'missing-param-jsdoc',
-        message: `component \`${match[1]}\` has props but no @param in JSDoc`,
+        message: `component \`${name}\` has props but no @param in JSDoc`,
         line: i + 1,
       })
     }
@@ -447,7 +449,7 @@ function checkComponentParamDocs(filePath, lines, type) {
 
 function checkPropsCount(filePath, content, type) {
   const violations = []
-  if (type !== 'component' || !filePath.endsWith('.jsx')) {
+  if (!isJsxComponent(filePath, type)) {
     return violations
   }
 
@@ -482,7 +484,7 @@ function checkPropsCount(filePath, content, type) {
 /** Flag arrow-function component exports in .jsx - GUIDELINES require function declarations. */
 function checkArrowComponents(filePath, lines, type) {
   const violations = []
-  if (type !== 'component' || !filePath.endsWith('.jsx')) {
+  if (!isJsxComponent(filePath, type)) {
     return violations
   }
 
@@ -678,7 +680,7 @@ function checkTemporalReferences(filePath, lines, _type) {
   return violations
 }
 
-/** Flag CSS-in-JS library imports (GUIDELINES section 6 Styling bans CSS-in-JS, CSS modules, Tailwind). */
+/** Flag CSS-in-JS library imports (GUIDELINES section 6 Styling bans CSS-in-JS). */
 function checkCssInJsImport(filePath, lines, _type) {
   const violations = []
   if (!/\.(jsx?|tsx?)$/.test(filePath)) {
@@ -738,7 +740,7 @@ function checkNoTailwind(filePath, content, _type) {
   return violations
 }
 
-/** Flag "Loading" copy using the Unicode ellipsis instead of three ASCII dots (GUIDELINES section 6). */
+/** Flag "Loading" copy using a Unicode ellipsis instead of ASCII dots (GUIDELINES section 6). */
 function checkLoadingCopy(filePath, lines, _type) {
   const violations = []
   if (!/\.(jsx?|tsx?)$/.test(filePath)) {
@@ -937,7 +939,7 @@ function checkUrlLiteralInComponent(_filePath, content, type) {
   return violations
 }
 
-/** Flag .css class selectors containing uppercase letters (GUIDELINES section 6: kebab-case only). */
+/** Flag .css class selectors containing uppercase (GUIDELINES section 6: kebab-case only). */
 function checkKebabCaseCss(filePath, content, _type) {
   const violations = []
   if (!filePath.endsWith('.css')) {
@@ -983,7 +985,7 @@ function checkNoCssModules(cssFiles) {
   return violations
 }
 
-/** Detect any `styles/` directory under src/ - CSS must co-locate with its component (section 6). */
+/** Detect any `styles/` directory under src/ - CSS co-locates with its component (section 6). */
 function checkNoStylesDirectory(cssFiles, allSourceFiles) {
   const violations = []
   const seen = new Set()
@@ -1003,7 +1005,7 @@ function checkNoStylesDirectory(cssFiles, allSourceFiles) {
   return violations
 }
 
-/** Detect `*.test.{js,jsx}` files with no co-located source sibling (GUIDELINES section 7 Testing). */
+/** Detect `*.test.{js,jsx}` files with no source sibling (GUIDELINES section 7 Testing). */
 function checkOrphanedTestFiles(testFiles, sourceFiles) {
   const violations = []
   const sourceSet = new Set(sourceFiles)
@@ -1065,6 +1067,21 @@ function checkCssWithoutComponentSibling(cssFiles, sourceFiles) {
   return violations
 }
 
+/** Yield `{ index, importPath, resolved }` for each relative import, resolved SRC-relative. */
+function* findRelativeImports(lines, fromDir) {
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(IMPORT_RE)
+    if (!match) {
+      continue
+    }
+    const importPath = match[1]
+    if (!importPath.startsWith('.')) {
+      continue
+    }
+    yield { index: i, importPath, resolved: relative(SRC, join(fromDir, importPath)) }
+  }
+}
+
 /**
  * Flag a feature util with no imports from its own feature tree - such generic utils belong
  * in utils/ where they're discoverable and reusable.
@@ -1087,24 +1104,11 @@ function checkBuriedGenericUtils(allFiles, allContents) {
       continue
     }
 
-    const content = allContents[i]
     const featurePrefix = `features/${rel.split('/')[1]}/`
-    const lines = content.split('\n')
+    const lines = allContents[i].split('\n')
     let hasFeatureImport = false
 
-    for (const line of lines) {
-      const match = line.match(IMPORT_RE)
-      if (!match) {
-        continue
-      }
-
-      const importPath = match[1]
-      if (!importPath.startsWith('.')) {
-        continue
-      }
-
-      // Resolve relative import and check if it stays within this feature
-      const resolved = relative(SRC, join(dirname(allFiles[i]), importPath))
+    for (const { resolved } of findRelativeImports(lines, dirname(allFiles[i]))) {
       if (resolved.startsWith(featurePrefix)) {
         hasFeatureImport = true
         break
@@ -1128,18 +1132,7 @@ function checkBuriedGenericUtils(allFiles, allContents) {
       }
 
       const lines = allContents[j].split('\n')
-      for (const line of lines) {
-        const match = line.match(IMPORT_RE)
-        if (!match) {
-          continue
-        }
-
-        const importPath = match[1]
-        if (!importPath.startsWith('.')) {
-          continue
-        }
-
-        const resolved = relative(SRC, join(dirname(allFiles[j]), importPath))
+      for (const { resolved } of findRelativeImports(lines, dirname(allFiles[j]))) {
         if (resolved === utilStem || resolved.startsWith(`${utilStem}/`)) {
           hasExternalConsumer = true
           break
@@ -1163,13 +1156,9 @@ function checkBuriedGenericUtils(allFiles, allContents) {
   return violations
 }
 
-/**
- * Flag a feature importing another feature's internals; features may only import their own
- * internals, shared/, context/, constants/, api/. Exception: features/app/, the layout shell.
- */
-function checkCrossFeatureImports(allFiles, allContents) {
-  const violations = []
-
+/** Yield `{ filePath, rel, featureName, index, resolved }` per relative import in non-app
+ * `features/` files - shared by checkCrossFeatureImports and checkImportSources. */
+function* findFeatureFileImports(allFiles, allContents) {
   for (let i = 0; i < allFiles.length; i++) {
     const filePath = allFiles[i]
     const rel = relative(SRC, filePath)
@@ -1177,41 +1166,39 @@ function checkCrossFeatureImports(allFiles, allContents) {
       continue
     }
 
-    // Extract this file's feature name (first segment after features/)
-    const featureName = rel.split('/')[1]
-
     // app is the layout shell - allowed to import from all features
+    const featureName = rel.split('/')[1]
     if (featureName === 'app') {
       continue
     }
 
     const lines = allContents[i].split('\n')
-    for (let j = 0; j < lines.length; j++) {
-      const match = lines[j].match(IMPORT_RE)
-      if (!match) {
-        continue
-      }
+    for (const { index, resolved } of findRelativeImports(lines, dirname(filePath))) {
+      yield { filePath, rel, featureName, index, resolved }
+    }
+  }
+}
 
-      const importPath = match[1]
-      if (!importPath.startsWith('.')) {
-        continue
-      }
+/** Flag a feature importing another feature's internals - only own internals, shared/, context/,
+ * constants/, api/ are allowed; features/app/ (layout shell) is exempt. */
+function checkCrossFeatureImports(allFiles, allContents) {
+  const violations = []
 
-      // Resolve the import to see if it points to another feature
-      const importDir = dirname(filePath)
-      const resolved = relative(SRC, join(importDir, importPath))
-
-      if (resolved.startsWith('features/')) {
-        const targetFeature = resolved.split('/')[1]
-        if (targetFeature !== featureName) {
-          violations.push({
-            file: rel,
-            rule: 'cross-feature-import',
-            message: `imports from features/${targetFeature}/ - features must be independent`,
-            line: j + 1,
-          })
-        }
-      }
+  for (const { rel, featureName, index: j, resolved } of findFeatureFileImports(
+    allFiles,
+    allContents,
+  )) {
+    if (!resolved.startsWith('features/')) {
+      continue
+    }
+    const targetFeature = resolved.split('/')[1]
+    if (targetFeature !== featureName) {
+      violations.push({
+        file: rel,
+        rule: 'cross-feature-import',
+        message: `imports from features/${targetFeature}/ - features must be independent`,
+        line: j + 1,
+      })
     }
   }
 
@@ -1226,53 +1213,26 @@ function checkImportSources(allFiles, allContents) {
   const violations = []
   const allowedRoots = new Set(['components', 'hooks', 'utils', 'config', 'context', 'api'])
 
-  for (let i = 0; i < allFiles.length; i++) {
-    const filePath = allFiles[i]
-    const rel = relative(SRC, filePath)
-    if (!rel.startsWith('features/')) {
+  for (const { rel, featureName, index: j, resolved } of findFeatureFileImports(
+    allFiles,
+    allContents,
+  )) {
+    if (resolved.startsWith(`features/${featureName}`)) {
+      continue
+    }
+    const topDir = resolved.split('/')[0]
+    if (allowedRoots.has(topDir)) {
       continue
     }
 
-    const featureName = rel.split('/')[1]
-    // app can import from managers/ and all features
-    if (featureName === 'app') {
-      continue
-    }
-
-    const lines = allContents[i].split('\n')
-    for (let j = 0; j < lines.length; j++) {
-      const match = lines[j].match(IMPORT_RE)
-      if (!match) {
-        continue
-      }
-
-      const importPath = match[1]
-      if (!importPath.startsWith('.')) {
-        continue
-      }
-
-      const importDir = dirname(filePath)
-      const resolved = relative(SRC, join(importDir, importPath))
-
-      // Skip own feature internals
-      if (resolved.startsWith(`features/${featureName}`)) {
-        continue
-      }
-      // Skip allowed roots
-      const topDir = resolved.split('/')[0]
-      if (allowedRoots.has(topDir)) {
-        continue
-      }
-
-      // managers/ is only allowed for app feature
-      if (topDir === 'managers') {
-        violations.push({
-          file: rel,
-          rule: 'import-source-violation',
-          message: `imports from ${topDir}/ - only app feature can import managers`,
-          line: j + 1,
-        })
-      }
+    // managers/ is only allowed for app feature
+    if (topDir === 'managers') {
+      violations.push({
+        file: rel,
+        rule: 'import-source-violation',
+        message: `imports from ${topDir}/ - only app feature can import managers`,
+        line: j + 1,
+      })
     }
   }
 

@@ -1,6 +1,6 @@
 """Tests for claudebox.core.http - HTTP proxy client."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -11,6 +11,7 @@ from claudebox.core.http import (
     ProxyBufferedResponse,
     ProxyClient,
     ProxyStreamingResponse,
+    http_serve,
 )
 
 
@@ -290,7 +291,7 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         mock_send = AsyncMock(return_value=upstream)
-        client._client.send = mock_send  # ty: ignore[invalid-assignment]
+        client._client.send = mock_send
 
         request = _make_starlette_request(method="POST", body=b'{"prompt":"hi"}')
         resp = await client.forward(request, path="/v1/chat")
@@ -305,8 +306,8 @@ class TestProxyClientForward:
             content=b'{"result": "ok"}',
         )
         # Make it behave like a streamed response (send with stream=True)
-        upstream.aread = AsyncMock(return_value=b'{"result": "ok"}')  # ty: ignore[invalid-assignment]
-        upstream.aclose = AsyncMock()  # ty: ignore[invalid-assignment]
+        upstream.aread = AsyncMock(return_value=b'{"result": "ok"}')
+        upstream.aclose = AsyncMock()
         upstream_mock = MagicMock(spec=httpx.Response)
         upstream_mock.status_code = 200
         upstream_mock.headers = httpx.Headers({"content-type": "application/json"})
@@ -314,7 +315,7 @@ class TestProxyClientForward:
         upstream_mock.aclose = AsyncMock()
 
         client = ProxyClient(base_url="http://upstream")
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
+        client._client.send = AsyncMock(return_value=upstream_mock)
 
         request = _make_starlette_request(method="GET")
         resp = await client.forward(request, path="/v1/models")
@@ -333,8 +334,8 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         build_spy = MagicMock(wraps=client._client.build_request)
-        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
+        client._client.build_request = build_spy
+        client._client.send = AsyncMock(return_value=upstream_mock)
 
         request = _make_starlette_request(query_string="foo=bar&baz=1")
         await client.forward(request, path="/api")
@@ -353,8 +354,8 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         build_spy = MagicMock(wraps=client._client.build_request)
-        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
+        client._client.build_request = build_spy
+        client._client.send = AsyncMock(return_value=upstream_mock)
 
         request = _make_starlette_request(method="PUT", body=b"payload")
         await client.forward(request, path="/resource")
@@ -374,8 +375,8 @@ class TestProxyClientForward:
 
         client = ProxyClient(base_url="http://upstream")
         build_spy = MagicMock(wraps=client._client.build_request)
-        client._client.build_request = build_spy  # ty: ignore[invalid-assignment]
-        client._client.send = AsyncMock(return_value=upstream_mock)  # ty: ignore[invalid-assignment]
+        client._client.build_request = build_spy
+        client._client.send = AsyncMock(return_value=upstream_mock)
 
         request = _make_starlette_request(method="GET", body=b"")
         await client.forward(request, path="/endpoint")
@@ -394,6 +395,25 @@ class TestProxyClientClose:
     @pytest.mark.anyio
     async def test_close_delegates_to_httpx(self):
         client = ProxyClient(base_url="http://upstream")
-        client._client.aclose = AsyncMock()  # ty: ignore[invalid-assignment]
+        client._client.aclose = AsyncMock()
         await client.close()
-        client._client.aclose.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        client._client.aclose.assert_awaited_once()
+
+
+# --- http_serve ---
+
+
+class TestHttpServe:
+    """Test host binding passed through to uvicorn."""
+
+    def test_defaults_to_all_interfaces(self):
+        with patch("claudebox.core.http.uvicorn.run") as mock_run:
+            http_serve(lambda: None, port=8000)  # ty: ignore[invalid-argument-type]
+
+        assert mock_run.call_args.kwargs["host"] == "0.0.0.0"
+
+    def test_explicit_host_forwarded(self):
+        with patch("claudebox.core.http.uvicorn.run") as mock_run:
+            http_serve(lambda: None, port=8000, host="127.0.0.1")  # ty: ignore[invalid-argument-type]
+
+        assert mock_run.call_args.kwargs["host"] == "127.0.0.1"

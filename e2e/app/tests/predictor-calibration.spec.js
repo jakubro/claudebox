@@ -1,4 +1,4 @@
-/** Predictor accuracy regression: measured vs predicted turn heights across content shapes and widths. */
+/** Predictor accuracy regression: measured vs predicted turn heights across shapes and widths. */
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -15,7 +15,7 @@ const TS = '2026-05-17T12:00:00Z'
 let _eventCounter = 0
 const nextId = () => `cal-evt-${++_eventCounter}`
 
-/** Build one fixture (turn shape) -> a record consumed by both the predictor and the event-stream builder. */
+/** Build one fixture record, consumed by both the predictor and the event-stream builder. */
 function fixture(name, { userMessage = 'query', assistantEvents = [], attachments = null }) {
   return { turnId: `cal-${name}`, userMessage, assistantEvents, attachments }
 }
@@ -134,7 +134,7 @@ function buildFixtures() {
     }),
   )
 
-  // Bash alone - isolates PX_PER_BASH_TOOL_BLOCK from the other coefficients mixed-all blends it with.
+  // Bash alone isolates PX_PER_BASH_TOOL_BLOCK from the coefficients mixed-all blends it with.
   for (const n of [1, 3]) {
     const bashEvents = []
     for (let i = 0; i < n; i++) {
@@ -272,10 +272,23 @@ const WIDTHS = [
   { name: 'wide', viewport: { width: 1800, height: 900 } },
 ]
 
+// Split off prices a top-level Bash inline (sole PX_PER_BASH_TOOL_BLOCK calibration); split on: 0.
+const SPLIT_STATES = [
+  { enabled: false, label: 'split off' },
+  { enabled: true, label: 'split on' },
+]
+
+// bash-1/3 are dropped from split-on only: with the command routed out the turn is ~2 text lines,
+// too small a denominator for the 30% bound to mean anything (split off does that isolation).
+// mixed-all is dropped for a layout quirk: halving the transcript column makes
+// .chat-content-area's width (default mock's side panels) non-monotonic in viewport width, a
+// regime the char-count model was never fitted for - not bash routing, which already prices 0.
+const SPLIT_ON_EXCLUDED_FIXTURES = new Set(['cal-bash-1', 'cal-bash-3', 'cal-mixed-all'])
+
 const DRIFT_BOUND = 0.3
 const DUMP_DIR = '/tmp/predictor-calibration'
 
-/** Convert a fixture's stored assistantEvents to predictor-shaped events (adds `type: 'assistant'`). */
+/** Convert a fixture's assistantEvents to predictor-shaped events (adds `type: 'assistant'`). */
 function turnFromFixture(f) {
   return {
     turn_id: f.turnId,
@@ -295,23 +308,27 @@ test.describe('predictor accuracy regression', () => {
     fs.mkdirSync(DUMP_DIR, { recursive: true })
   })
 
-  for (const { name, viewport } of WIDTHS) {
-    test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px)`, async ({
-      page,
-    }) => {
-      // Already marginal on the 5s cap; the pinned webfont's metrics push narrow width's wrapped turns over it.
-      test.setTimeout(15000)
-      await page.setViewportSize(viewport)
-      await mockAPI(page)
-      await mockSSEDynamic(page, () => EVENTS)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      // Predictor estimates expanded heights; keep every turn expanded to match.
-      await disableAutoCollapse(page)
+  for (const split of SPLIT_STATES) {
+    for (const { name, viewport } of WIDTHS) {
+      test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px), ${split.label}`, async ({
+        page,
+      }) => {
+        // Marginal on the 5s cap: the pinned webfont's metrics push narrow-width wrapping over it.
+        test.setTimeout(15000)
+        await page.setViewportSize(viewport)
+        await mockAPI(page, { sessionUiStateDefaults: { terminalSplitEnabled: split.enabled } })
+        await mockSSEDynamic(page, () => EVENTS)
+        await page.goto(DEFAULT_SESSION_URL)
+        await waitForAppReady(page)
+        // Predictor estimates expanded heights; keep every turn expanded to match.
+        await disableAutoCollapse(page)
 
-      // List is windowed - sweep it fully, recording each turn's real height once it mounts near the viewport.
-      const captured = await page.evaluate(
-        async turnIds => {
+        const turnIds = FIXTURES.map(f => f.turnId).filter(
+          id => !(split.enabled && SPLIT_ON_EXCLUDED_FIXTURES.has(id)),
+        )
+
+        // List is windowed - sweep it fully, recording each turn's height as it mounts.
+        const captured = await page.evaluate(async ids => {
           const container = document.querySelector('.chat-messages')
           const settle = () =>
             new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -321,7 +338,7 @@ test.describe('predictor accuracy regression', () => {
           for (let top = 0; top <= container.scrollHeight; top += step) {
             container.scrollTop = top
             await settle()
-            for (const id of turnIds) {
+            for (const id of ids) {
               if (measured[id] == null) {
                 const el = document.querySelector(`[data-turn-id="${id}"]`)
                 if (el) {
@@ -331,53 +348,55 @@ test.describe('predictor accuracy regression', () => {
             }
           }
 
-          return turnIds.map(id => ({
+          return ids.map(id => ({
             turnId: id,
             measured: measured[id] ?? null,
             containerWidth: container.clientWidth,
           }))
-        },
-        FIXTURES.map(f => f.turnId),
-      )
+        }, turnIds)
 
-      const records = []
-      const failures = []
-      for (const c of captured) {
-        if (c.measured == null) {
-          failures.push(`${c.turnId} not found in DOM`)
-          continue
+        const records = []
+        const failures = []
+        for (const c of captured) {
+          if (c.measured == null) {
+            failures.push(`${c.turnId} not found in DOM`)
+            continue
+          }
+          const f = FIXTURE_BY_ID.get(c.turnId)
+          const turn = turnFromFixture(f)
+          const effectiveWidth = Math.max(0, c.containerWidth - TURN_HORIZONTAL_PADDING_PX)
+          const predicted = predictTurnHeight(turn, effectiveWidth, false, split.enabled)
+          const drift = Math.abs(predicted - c.measured) / c.measured
+          records.push({
+            turnId: c.turnId,
+            containerWidth: c.containerWidth,
+            measured: c.measured,
+            predicted,
+            drift,
+            pass: drift < DRIFT_BOUND,
+          })
+          if (drift >= DRIFT_BOUND) {
+            failures.push(
+              `${c.turnId.padEnd(32)} measured=${String(c.measured).padStart(5)}px predicted=${String(predicted).padStart(5)}px drift=${(drift * 100).toFixed(1)}%`,
+            )
+          }
         }
-        const f = FIXTURE_BY_ID.get(c.turnId)
-        const turn = turnFromFixture(f)
-        const effectiveWidth = Math.max(0, c.containerWidth - TURN_HORIZONTAL_PADDING_PX)
-        const predicted = predictTurnHeight(turn, effectiveWidth)
-        const drift = Math.abs(predicted - c.measured) / c.measured
-        records.push({
-          turnId: c.turnId,
-          containerWidth: c.containerWidth,
-          measured: c.measured,
-          predicted,
-          drift,
-          pass: drift < DRIFT_BOUND,
-        })
-        if (drift >= DRIFT_BOUND) {
-          failures.push(
-            `${c.turnId.padEnd(32)} measured=${String(c.measured).padStart(5)}px predicted=${String(predicted).padStart(5)}px drift=${(drift * 100).toFixed(1)}%`,
+
+        // Always dump for offline calibration / re-fitting.
+        fs.writeFileSync(
+          path.join(
+            DUMP_DIR,
+            `calibration-${name}-${split.enabled ? 'split-on' : 'split-off'}.json`,
+          ),
+          JSON.stringify({ width: viewport.width, splitEnabled: split.enabled, records }, null, 2),
+        )
+
+        if (failures.length > 0) {
+          throw new Error(
+            `${failures.length}/${records.length} fixtures exceed ${(DRIFT_BOUND * 100).toFixed(0)}% drift at ${name} width (${viewport.width}px), ${split.label}:\n  ${failures.join('\n  ')}`,
           )
         }
-      }
-
-      // Always dump for offline calibration / re-fitting.
-      fs.writeFileSync(
-        path.join(DUMP_DIR, `calibration-${name}.json`),
-        JSON.stringify({ width: viewport.width, records }, null, 2),
-      )
-
-      if (failures.length > 0) {
-        throw new Error(
-          `${failures.length}/${records.length} fixtures exceed ${(DRIFT_BOUND * 100).toFixed(0)}% drift at ${name} width (${viewport.width}px):\n  ${failures.join('\n  ')}`,
-        )
-      }
-    })
+      })
+    }
   }
 })

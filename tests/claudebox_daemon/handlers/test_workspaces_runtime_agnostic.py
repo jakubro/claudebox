@@ -20,8 +20,9 @@ def _build_app(workspace_path: str, *, agent: str):
         workspace = MagicMock()
         workspace.path = workspace_path
         config = SimpleNamespace(agent=agent, editor_url_template=None)
+        rate_limits = SimpleNamespace(get=list)
 
-        return SimpleNamespace(workspace=workspace, config=config)
+        return SimpleNamespace(workspace=workspace, config=config, rate_limits=rate_limits)
 
     app.dependency_overrides[get_workspace] = _fake_get_workspace
 

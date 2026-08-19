@@ -126,4 +126,13 @@ describe('collectLiveSessionIdsAcrossWorkspaces', () => {
     expect(ids).toEqual(new Set(['current-ws-session']))
     expect(listSessionsForWorkspace).not.toHaveBeenCalled()
   })
+
+  it('tolerates a fulfilled response with no sessions field', async () => {
+    listWorkspaces.mockResolvedValue([{ id: 'ws-a' }, { id: 'ws-b' }])
+    listSessionsForWorkspace.mockResolvedValue({})
+
+    const ids = await collectLiveSessionIdsAcrossWorkspaces('ws-a', ['current-ws-session'])
+
+    expect(ids).toEqual(new Set(['current-ws-session']))
+  })
 })

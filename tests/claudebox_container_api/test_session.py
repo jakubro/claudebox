@@ -1,5 +1,7 @@
 """Tests for the container API session lifespan - log-routing callback wiring."""
 
+from typing import ClassVar
+
 import pytest
 
 from claudebox_container_api import session as session_module
@@ -8,7 +10,7 @@ from claudebox_container_api import session as session_module
 class _FakeSession:
     """Capture the kwargs managed() passes to SessionService (no real session started)."""
 
-    last_kwargs: dict = {}
+    last_kwargs: ClassVar[dict] = {}
 
     def __init__(self, **kwargs):
         type(self).last_kwargs = kwargs

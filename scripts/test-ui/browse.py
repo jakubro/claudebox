@@ -184,7 +184,7 @@ def main() -> None:
             try:
                 page.goto(args.url, wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - CLI top-level: report and exit, any failure
                 print(f"Failed to load {args.url}: {e}", file=sys.stderr)
                 browser.close()
                 sys.exit(1)

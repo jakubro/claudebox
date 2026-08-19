@@ -12,7 +12,29 @@
   flex: 1;
   display: flex;
   overflow: hidden;
-  position: relative; /* For minimap overlay positioning */
+  position: relative;
+}
+
+/* Inline flex-basis from the persisted ratio when split; anchors the minimap's `right: 0`. */
+.chat-transcript-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.chat-split-divider {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: var(--border);
+  touch-action: none;
+}
+
+.chat-split-divider:hover,
+.chat-split-divider:focus-visible {
+  background: var(--accent);
 }
 
 .chat-messages {

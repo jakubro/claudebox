@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class UIStateService:
     """Read and patch UI state backed by a per-workspace JSON file with versioning and pruning."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self, workspace: "RegisteredWorkspace", executor: ThreadPoolExecutor) -> None:
         self._state_path = workspace.path / CONFIG_DIR_NAME / UI_STATE_FILE
@@ -149,12 +149,11 @@ class UIStateService:
                     parent[key] = []
 
                 parent[key].append(value)
-            elif op == "remove":
-                if key in parent and isinstance(parent[key], list):
-                    try:
-                        parent[key].remove(value)
-                    except ValueError:
-                        pass
+            elif op == "remove" and key in parent and isinstance(parent[key], list):
+                try:
+                    parent[key].remove(value)
+                except ValueError:
+                    pass
 
         state["updated_at"] = datetime.now(UTC).isoformat()
 

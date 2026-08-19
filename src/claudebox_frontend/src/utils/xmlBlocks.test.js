@@ -73,4 +73,11 @@ describe('findEnclosingCollapsed', () => {
   it('returns null when no collapsed placeholders exist', () => {
     expect(findEnclosingCollapsed('plain text', 5)).toBeNull()
   })
+
+  it('keeps the nearer placeholder when a later match is farther from the cursor', () => {
+    const value = '<a...1> midtext padding padding <b...2>'
+    const result = findEnclosingCollapsed(value, 0) // right at <a...1>, far from <b...2>
+
+    expect(result.tagName).toBe('a')
+  })
 })

@@ -1,5 +1,6 @@
 """ProviderSpec parsing + install_hint helper + strategy dispatch + lookup helpers - universal-provider plumbing tests."""
 
+import dataclasses
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -85,9 +86,7 @@ class TestProviderSpecParse:
     def test_frozen_dataclass(self):
         spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
-        with pytest.raises(
-            Exception,
-        ):  # FrozenInstanceError subclasses dataclasses.FrozenInstanceError
+        with pytest.raises(dataclasses.FrozenInstanceError):
             spec.provider = "other"  # ty: ignore[invalid-assignment]
 
 
@@ -186,7 +185,7 @@ class TestProviderStrategy:
     def test_provider_strategy_is_frozen(self):
         strategy = ProviderStrategy()
 
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.probe = lambda spec: None  # ty: ignore[invalid-assignment]
 
 
@@ -217,18 +216,22 @@ class TestProbeOllama:
     def test_reachable_failure_raises_unreachable(self):
         client_mock = _httpx_client_mock(raise_on_get=httpx.ConnectError("refused"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable, match="11434"):
-                _probe_ollama(self._spec())
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable, match="11434"),
+        ):
+            _probe_ollama(self._spec())
 
     def test_show_404_raises_model_not_pulled(self):
         """/api/show returning 404 means model is not pulled - distinct exception."""
 
         client_mock = _httpx_client_mock(post_status_code=404)
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaModelNotPulled, match="llama3.2:3b"):
-                _probe_ollama(self._spec())
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaModelNotPulled, match="llama3.2:3b"),
+        ):
+            _probe_ollama(self._spec())
 
     def test_show_5xx_raises_unreachable(self):
         """/api/show returning 5xx means server misbehaving - unreachable, not not-pulled."""
@@ -243,16 +246,20 @@ class TestProbeOllama:
         )
         client_mock.post.return_value = bad_response
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable):
-                _probe_ollama(self._spec())
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
+        ):
+            _probe_ollama(self._spec())
 
     def test_show_timeout_raises_unreachable(self):
         client_mock = _httpx_client_mock(raise_on_post=httpx.TimeoutException("timeout"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OllamaUnreachable):
-                _probe_ollama(self._spec())
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OllamaUnreachable),
+        ):
+            _probe_ollama(self._spec())
 
 
 class TestProbeOpenAICompatible:
@@ -315,9 +322,11 @@ class TestProbeOpenAICompatible:
         spec = self._spec(probe_on_connect=True, base_url="http://offline:8000/v1")
         client_mock = _httpx_client_mock(raise_on_get=httpx.ConnectError("refused"))
 
-        with patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock):
-            with pytest.raises(OpenAICompatibleUnreachable, match="offline:8000"):
-                _probe_openai_compatible(spec)
+        with (
+            patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
+            pytest.raises(OpenAICompatibleUnreachable, match="offline:8000"),
+        ):
+            _probe_openai_compatible(spec)
 
     def test_unreachable_distinct_from_ollama_unreachable(self):
         """OpenAICompatibleUnreachable must NOT collapse into OllamaUnreachable."""

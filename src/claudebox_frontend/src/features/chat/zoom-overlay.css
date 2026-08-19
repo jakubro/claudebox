@@ -1,4 +1,15 @@
-/* Shared close button for fullscreen zoom overlays (mermaid diagrams, attachment previews) */
+/* Shared chrome for fullscreen zoom overlays (mermaid diagrams, attachment previews) */
+
+.zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
 
 .zoom-overlay-close {
   position: absolute;

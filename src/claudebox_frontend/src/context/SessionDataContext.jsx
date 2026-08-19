@@ -357,6 +357,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       effortLevel: sessionData?.effort_level || null,
       capabilities: sessionData?.capabilities || null,
       runtimeName: sessionData?.runtime_name || null,
+      rateLimits: sessionData?.rate_limits || null,
       availableModels,
       availablePermissionModes,
       availableEffortLevels,

@@ -225,8 +225,9 @@ class TestWorkspaceScopedRoutesPreserved:
             workspace = MagicMock()
             workspace.path = tmp_path / workspace_id
             config = SimpleNamespace(agent="claude", editor_url_template=None)
+            rate_limits = SimpleNamespace(get=list)
 
-            return SimpleNamespace(workspace=workspace, config=config)
+            return SimpleNamespace(workspace=workspace, config=config, rate_limits=rate_limits)
 
         app.dependency_overrides[get_workspace] = _fake_get_workspace
 

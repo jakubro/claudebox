@@ -1,4 +1,4 @@
-/** E2E tests for the single-session mode header strip, URL hash schema, and replace-while-responding policy. */
+/** E2E tests for single-session mode: header strip, URL hash schema, replace-while-responding. */
 
 import { expect, test } from '@playwright/test'
 import { waitForAppReady } from '../helpers.js'
@@ -79,9 +79,8 @@ test.describe('Single-Session Mode', () => {
 
     const name = page.locator('[data-testid="session-header-session-name"]')
     if (await name.count()) {
-      // Tooltip is the unified "Session directory - ..." string
       const tooltip = await name.getAttribute('title')
-      expect(tooltip).toMatch(/^Session directory - /)
+      expect(tooltip).toMatch(/^Session directory — /)
 
       await name.click()
       // Clipboard contains a non-empty session directory path
@@ -158,7 +157,7 @@ test.describe('Single-Session Mode', () => {
   test('still-running toast slot is part of the desktop layout', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
-    // The toast only renders when an emit site fires replace-while-responding; confirms the testid slot is wired.
+    // Renders only when an emit site fires replace-while-responding; this checks the slot exists.
     const toast = page.locator('[data-testid="still-running-toast"]')
     await expect(toast).toHaveCount(0) // hidden until an emit site fires it
   })
@@ -189,7 +188,7 @@ test.describe('Single-Session Mode', () => {
   // SPEC: url:reload-restore
   // SPEC: url:cross-session-deep-link
   test('session URL accepts /turns/<role>-<turnId> deep links', async ({ page }) => {
-    // Verifiable without running scroll sync: the parser accepts the segment and surfaces activeTurnId.
+    // No scroll sync needed: the parser accepts the segment and surfaces activeTurnId.
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/test-session/turns/u-tid-1`)
     await waitForAppReady(page)
     expect(await page.evaluate(() => window.location.hash)).toContain('/turns/u-tid-1')

@@ -29,6 +29,7 @@ from ..config import (
 from ..errors import UnknownRuntime
 from ..hooks import CompactStartPayload, HookCallbacks
 from ..protocol import AgentSession
+from ..rate_limits import RateLimitStore
 from ..session import make_agent_session
 from ...config import Config
 from ...constants import (
@@ -68,6 +69,9 @@ class SessionService:
         self._logger = get_logger(__name__)
 
         self._workspace = Workspace(workspace)
+        self._rate_limit_store = RateLimitStore(self._workspace.path)
+        # Windows announced at the last session start, not yet re-announced or ruled normal here.
+        self._rate_limit_pending_reconcile: set[str] = set()
         self._system_prompt = system_prompt
         self._permission_mode = permission_mode
         self._on_start = on_start
@@ -77,6 +81,11 @@ class SessionService:
         self._last_known_effort_level: str | None = None
         self._pending_session_prompt: str | None = None
         self._pending_compact_trigger: str | None = None
+
+        # Set in start() from the workspace's current `agent` setting; compared against the
+        # session's persisted runtime on resume (see _emit_container_restarted_if_resumed).
+        self._expected_runtime_name: str | None = None
+        self._session_provider: str | None = None
 
         self._base_session: BaseSession | None = None
         self._repo = SessionRepository(self._workspace)
@@ -175,6 +184,12 @@ class SessionService:
 
         workspace_config = Config.load(workspace_path=self._workspace.path)
 
+        # Provider is LangGraph-only; None under Claude. See _emit_container_restarted_if_resumed.
+        self._expected_runtime_name = {"claude": "Claude", "langgraph": "LangGraph"}.get(
+            workspace_config.agent,
+        )
+        self._session_provider = None
+
         config: AgentSessionConfig  # tightened below to the right subclass
 
         if workspace_config.agent == "claude":
@@ -207,6 +222,7 @@ class SessionService:
             raw_model = workspace_config.langgraph_model or ""
             provider = raw_model.partition(":")[0]
             provider_kwargs = dict(workspace_config.langgraph_provider_kwargs.get(provider, {}))
+            self._session_provider = provider or None
 
             config = LangGraphAgentSessionConfig(
                 runtime="langgraph",
@@ -328,14 +344,14 @@ class SessionService:
                 await obj
             except asyncio.CancelledError:
                 pass
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a dispose failure must not block the rest
                 self._logger.error("Error disposing component", attr=attr, error=str(exc))
             finally:
                 setattr(self, attr, None)
         else:
             try:
                 await getattr(obj, cleanup_method)()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self._logger.error("Error disposing component", attr=attr, error=str(exc))
             finally:
                 setattr(self, attr, None)
@@ -400,6 +416,11 @@ class SessionService:
 
         return projection.value if projection else None
 
+    def get_rate_limits(self) -> list[dict]:
+        """Live plan-limit entries for the footer, read fresh from the workspace store."""
+
+        return self._rate_limit_store.get()
+
     def update(self, session_id: str, **data) -> SessionSummary:
         """Update session fields and persist to disk."""
 
@@ -426,9 +447,7 @@ class SessionService:
     def _resolve_projection(self, session_id: str | None) -> Projection:
         """Return active projection if matching, otherwise create a throwaway one."""
 
-        if not session_id:
-            return self._projection
-        elif self._projection and session_id == self._projection.session_id:
+        if not session_id or self._projection and session_id == self._projection.session_id:
             return self._projection
         else:
             return Projection(session_id=session_id, workspace=self._workspace)
@@ -744,7 +763,7 @@ class SessionService:
         for a in attachments:
             try:
                 decoded = base64.b64decode(a["data"])
-            except Exception:
+            except Exception:  # noqa: BLE001 - any decode failure means invalid_base64
                 raise AttachmentInvalid("invalid_base64", name=a.get("name", "?"))
 
             if len(decoded) > MAX_ATTACHMENT_BYTES:
@@ -860,7 +879,7 @@ class SessionService:
                             "text": f"[File: {attachment['name']}]\n{text}",
                         },
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 - decode failure falls back to the placeholder
                     blocks.append(
                         {
                             "type": "text",
@@ -937,10 +956,17 @@ class SessionService:
         """Create and initialize projection when pipeline discovers session_id."""
 
         self._base_session = BaseSession(session_id=session_id, workspace=self._workspace)
+
+        # Mark every currently-stored window unannounced until this session re-announces it.
+        self._rate_limit_pending_reconcile = {
+            entry["rate_limit_type"] for entry in self._rate_limit_store.get()
+        }
+
         self._projection = Projection(
             session_id=session_id,
             workspace=self._workspace,
             runtime=self._sdk_client,
+            provider=self._session_provider,
         )
 
         # Replay events into projection when session.json is missing on disk (fork copies
@@ -976,11 +1002,9 @@ class SessionService:
         self._schedule_context_refresh()
 
     async def _emit_container_restarted_if_resumed(self) -> None:
-        """Mark the chat transcript with an amber divider when the session resumes with prior messages.
-
-        Fires only when historical events exist on disk. First boot of a forked session carries
-        the parent's id in `message_data` so the frontend renders `Forked from <parent>`; later
-        restarts of that forked session emit without the payload (plain `Restarted`).
+        """Amber transcript divider when a session resumes with prior messages on disk.
+        A fork's first boot carries the parent id, so the frontend renders `Forked from <parent>`.
+        Later restarts omit it (`Restarted`); a runtime/agent mismatch adds `runtime_mismatch`.
         """
 
         # A consumer rebuild re-runs init though nothing restarted, and the divider would
@@ -993,23 +1017,29 @@ class SessionService:
         if not historical:
             return
 
-        parent_id = self._projection.value.parent_session_id
+        summary = self._projection.value
+        parent_id = summary.parent_session_id
         already_announced_fork = any(
             e.subtype == "container_restarted"
             and (e.message_data or {}).get("fork_parent_session_id")
             for e in historical
         )
 
-        message_data = (
-            {"fork_parent_session_id": parent_id}
-            if parent_id and not already_announced_fork
-            else None
-        )
+        message_data: dict = {}
+
+        if parent_id and not already_announced_fork:
+            message_data["fork_parent_session_id"] = parent_id
+
+        if summary.runtime and summary.runtime != self._expected_runtime_name:
+            message_data["runtime_mismatch"] = {
+                "persisted": summary.runtime,
+                "expected": self._expected_runtime_name,
+            }
 
         await self._event_pipeline.inject_event(
             event_type=EventType.SYSTEM,
             subtype=EventSubtype.CONTAINER_RESTARTED,
-            message_data=message_data,
+            message_data=message_data or None,
         )
 
     async def _handle_event(self, event: PublishedEvent) -> None:
@@ -1025,11 +1055,15 @@ class SessionService:
         elif event.subtype == "tool_result":
             self._tools_outstanding = max(0, self._tools_outstanding - 1)
 
+        if event.subtype == "rate_limit" and event.message_data:
+            self._fold_rate_limit(event.message_data)
+
         # Turn answered: disarm the stall watchdog, refresh context usage (debounced).
         if event.type == "result":
             self._turn_dispatched_at = None
             self._tools_outstanding = 0
             self._schedule_context_refresh()
+            self._drop_unannounced_rate_limits()
 
         # Send session prompt to Claude after compaction boundary
         if event.subtype == "compact_boundary":
@@ -1039,6 +1073,47 @@ class SessionService:
                 prompt = self._pending_session_prompt
                 self._pending_session_prompt = None
                 await self._sdk_client.query(f"<system-reminder>\n{prompt}\n</system-reminder>")
+
+    # Rate Limits
+    # ----------------------------------------------------------------------------------------------
+    # Best-effort throughout - a slow or contended store write must never break the pipeline.
+
+    def _fold_rate_limit(self, message_data: dict) -> None:
+        """Upsert or clear one window from a live `rate_limit` event; marks it re-announced."""
+
+        rate_limit_type = message_data.get("rate_limit_type")
+
+        if not rate_limit_type:
+            return
+
+        self._rate_limit_pending_reconcile.discard(rate_limit_type)
+
+        try:
+            if message_data.get("status") == "allowed":
+                self._rate_limit_store.remove(rate_limit_type)
+            else:
+                self._rate_limit_store.set(
+                    rate_limit_type,
+                    status=message_data.get("status"),
+                    resets_at=message_data.get("resets_at"),
+                    utilization=message_data.get("utilization"),
+                )
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence, never fatal
+            self._logger.warning("Rate-limit store update failed", error=str(exc))
+
+    def _drop_unannounced_rate_limits(self) -> None:
+        """At the first exchange's end, drop windows this session never re-announced."""
+
+        if not self._rate_limit_pending_reconcile:
+            return
+
+        try:
+            for rate_limit_type in self._rate_limit_pending_reconcile:
+                self._rate_limit_store.remove(rate_limit_type)
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence, never fatal
+            self._logger.warning("Rate-limit store reconcile failed", error=str(exc))
+        finally:
+            self._rate_limit_pending_reconcile.clear()
 
     # Context Usage
     # ----------------------------------------------------------------------------------------------
@@ -1063,7 +1138,7 @@ class SessionService:
 
         try:
             usage = await self._sdk_client.get_context_usage()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort refresh, never fatal
             self._logger.warning("Context usage fetch failed", error=str(exc))
 
             return

@@ -62,6 +62,7 @@ def _branch() -> str:
             capture_output=True,
             text=True,
             timeout=GIT_SUBPROCESS_TIMEOUT.total_seconds(),
+            check=False,
         )
     except (subprocess.SubprocessError, OSError):
         return "(unknown)"
@@ -78,6 +79,7 @@ def _commit() -> str:
             capture_output=True,
             text=True,
             timeout=GIT_SUBPROCESS_TIMEOUT.total_seconds(),
+            check=False,
         )
     except (subprocess.SubprocessError, OSError):
         return "(unknown)"

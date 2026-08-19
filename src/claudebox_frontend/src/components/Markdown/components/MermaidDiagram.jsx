@@ -1,6 +1,6 @@
 /** Mermaid diagram renderer with toggle-to-source, zoom overlay, and error fallback. */
 
-import { Code, X } from 'lucide-react'
+import { Code } from 'lucide-react'
 import { memo, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import SyntaxHighlighter from 'react-syntax-highlighter'
@@ -12,6 +12,7 @@ import {
   renderMermaidChart,
 } from '../../../utils/mermaidLoader'
 import CopyButton from '../../CopyButton.jsx'
+import ZoomOverlay from '../../ZoomOverlay.jsx'
 
 // Prefix for the failure notice - the specific reason (mermaid's own error message), when present, follows it.
 const MERMAID_FAILURE_PREFIX = 'Diagram failed to draw'
@@ -176,20 +177,13 @@ function MermaidDiagram({ chart }) {
       {/* Portal the zoom overlay to body so it escapes the turn's containment (otherwise the fixed overlay is clipped to the turn box). */}
       {zoomed &&
         createPortal(
-          <div className="mermaid-zoom-overlay" onClick={handleBackdropClick}>
-            <button
-              type="button"
-              className="zoom-overlay-close"
-              onClick={handleZoomClose}
-              title="Close">
-              <X size={20} />
-            </button>
+          <ZoomOverlay onBackdropClick={handleBackdropClick} onClose={handleZoomClose}>
             <div
               className="mermaid-zoom-content"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid SVG output is sanitized by strict security level
               dangerouslySetInnerHTML={{ __html: svg }}
             />
-          </div>,
+          </ZoomOverlay>,
           document.body,
         )}
     </div>

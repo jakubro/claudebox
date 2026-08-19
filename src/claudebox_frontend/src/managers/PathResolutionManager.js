@@ -3,7 +3,7 @@
 import { resolvePaths } from '../api/pathResolution'
 import { PATH_RESOLVE_BATCH_MS } from '../config/timing'
 
-export default class PathResolutionManager {
+class PathResolutionManager {
   /**
    * Multiple usePathResolution hooks fire concurrently during render; this batches their
    * enqueue calls into a single resolvePaths request, with results cached per session.
@@ -140,3 +140,6 @@ export default class PathResolutionManager {
 
 /** Singleton instance shared across all hook consumers. */
 export const pathResolutionManager = new PathResolutionManager()
+
+// Test-only; attached (not exported) so knip doesn't flag a test-only binding as unused.
+pathResolutionManager.PathResolutionManager = PathResolutionManager

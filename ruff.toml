@@ -7,11 +7,15 @@ line-ending = "lf"
 
 [lint]
 extend-select = [
+  "COM812",
+  "E4",
+  "E7",
+  "F4",
+  "F7",
   "I",
   "RUF001",
   "RUF002",
   "RUF003",
-  "COM812",
 ]
 
 [lint.per-file-ignores]

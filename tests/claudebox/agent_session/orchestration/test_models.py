@@ -1,6 +1,6 @@
 """Tests for claudebox.agent_session.orchestration.models - event and session data models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from claudebox.agent_session.orchestration.models import Event, PublishedEvent, SessionSummary
@@ -43,7 +43,7 @@ class TestPublishedEvent:
         assert pub.ts.year == 2026
 
     def test_datetime_timestamp_passthrough(self):
-        dt = datetime(2026, 3, 6, 12, 0, 0)
+        dt = datetime(2026, 3, 6, 12, 0, 0, tzinfo=UTC)
         pub = PublishedEvent(
             type="assistant",
             subtype="text",

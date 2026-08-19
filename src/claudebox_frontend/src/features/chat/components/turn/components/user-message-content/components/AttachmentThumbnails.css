@@ -49,18 +49,7 @@
   cursor: zoom-in;
 }
 
-/* Attachment zoom overlay — mirrors mermaid-zoom-overlay pattern */
-.attachment-zoom-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(4px);
-}
-
+/* Attachment zoom overlay - backdrop chrome lives in zoom-overlay.css's .zoom-overlay. */
 .attachment-zoom-content {
   display: flex;
   align-items: center;

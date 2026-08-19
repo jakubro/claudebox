@@ -264,8 +264,11 @@ class AsyncTaskManager:
         max_offset = 0
 
         for event in events:
-            if event.parent_tool_use_id and event.source_offset:
-                if agent_id in str(event.source_file or ""):
-                    max_offset = max(max_offset, event.source_offset)
+            if (
+                event.parent_tool_use_id
+                and event.source_offset
+                and agent_id in str(event.source_file or "")
+            ):
+                max_offset = max(max_offset, event.source_offset)
 
         return max_offset

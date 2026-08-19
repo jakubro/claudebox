@@ -90,9 +90,11 @@ class TestGrep:
     def test_missing_rg_raises_tool_exception(self, tool_ctx, tmp_path):
         _, grep = _tools(tool_ctx)
 
-        with patch("subprocess.run", side_effect=FileNotFoundError("rg")):
-            with pytest.raises(Exception, match="ripgrep"):
-                grep.invoke({"pattern": "x"})
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError("rg")),
+            pytest.raises(Exception, match="ripgrep"),
+        ):
+            grep.invoke({"pattern": "x"})
 
     def test_output_truncated_at_cap(self, tool_ctx, tmp_path):
         _, grep = _tools(tool_ctx)
@@ -123,6 +125,8 @@ class TestGrep:
             stderr="regex parse error: unclosed group",
         )
 
-        with patch("subprocess.run", return_value=fake):
-            with pytest.raises(Exception, match="unclosed group"):
-                grep.invoke({"pattern": "(unclosed"})
+        with (
+            patch("subprocess.run", return_value=fake),
+            pytest.raises(Exception, match="unclosed group"),
+        ):
+            grep.invoke({"pattern": "(unclosed"})

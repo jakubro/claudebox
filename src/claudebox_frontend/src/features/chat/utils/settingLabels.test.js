@@ -183,6 +183,31 @@ describe('getSettingChangeInfo', () => {
     expect(result.label).toBe('Forked from orphan-id')
     expect(result.color).toBe('#c89060')
   })
+
+  it('warns when the persisted runtime no longer matches the workspace', () => {
+    const result = getSettingChangeInfo({
+      subtype: 'container_restarted',
+      message_data: { runtime_mismatch: { persisted: 'LangGraph', expected: 'Claude' } },
+    })
+
+    expect(result.label).toBe('Runtime mismatch: workspace is Claude, session was LangGraph')
+    expect(result.color).toBe('#e05c5c')
+  })
+
+  it('the runtime-mismatch warning takes precedence over the fork label', () => {
+    const result = getSettingChangeInfo(
+      {
+        subtype: 'container_restarted',
+        message_data: {
+          fork_parent_session_id: 'parent-abc',
+          runtime_mismatch: { persisted: 'LangGraph', expected: 'Claude' },
+        },
+      },
+      { sessions: [{ session_id: 'parent-abc', name: 'morning planning' }] },
+    )
+
+    expect(result.label).toBe('Runtime mismatch: workspace is Claude, session was LangGraph')
+  })
 })
 
 describe('isSettingInitEvent', () => {

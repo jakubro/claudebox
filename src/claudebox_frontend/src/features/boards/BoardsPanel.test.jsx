@@ -1,8 +1,10 @@
 /** Tests for BoardsPanel component. */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { renameBoard } from '../../api/boards'
+import { openBoardInNewTab } from '../../utils/navigation'
 import BoardsPanel from './BoardsPanel'
 
 vi.mock('lucide-react', () => ({
@@ -17,8 +19,9 @@ vi.mock('../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => mockRouting,
 }))
 
+const mockWorkspace = { workspaceId: 'test-ws' }
 vi.mock('../../context/WorkspaceContext', () => ({
-  useWorkspace: () => ({ workspaceId: 'test-ws' }),
+  useWorkspace: () => mockWorkspace,
 }))
 
 // Mock EventsContext for footer status flashing
@@ -31,6 +34,10 @@ vi.mock('../../context/EventsContext', () => ({
 
 vi.mock('../../api/boards', () => ({
   renameBoard: vi.fn(),
+}))
+
+vi.mock('../../utils/navigation', () => ({
+  openBoardInNewTab: vi.fn(),
 }))
 
 const mockBoardList = {
@@ -50,6 +57,9 @@ describe('BoardsPanel', () => {
     mockBoardList.error = null
     mockBoardList.refresh.mockClear()
     mockRouting.navigateToBoard.mockClear()
+    mockWorkspace.workspaceId = 'test-ws'
+    renameBoard.mockReset().mockResolvedValue(undefined)
+    openBoardInNewTab.mockReset()
   })
 
   it('renders refresh meta-item at the end of the list', () => {
@@ -184,5 +194,135 @@ describe('BoardsPanel', () => {
 
     expect(screen.getByText('No boards found')).toBeInTheDocument()
     expect(screen.getByTestId('boards-refresh-meta')).toBeInTheDocument()
+  })
+
+  it('does not navigate when alt-clicked and opens in a new tab instead', async () => {
+    mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+    render(<BoardsPanel />)
+
+    fireEvent.click(screen.getByText('Sprint Board'), { altKey: true })
+
+    expect(openBoardInNewTab).toHaveBeenCalledWith('test-ws', 'b1')
+    expect(mockRouting.navigateToBoard).not.toHaveBeenCalled()
+  })
+
+  it('opens in a new tab on middle-click', () => {
+    mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+    render(<BoardsPanel />)
+
+    fireEvent(
+      screen.getByText('Sprint Board'),
+      new MouseEvent('auxclick', { bubbles: true, button: 1 }),
+    )
+
+    expect(openBoardInNewTab).toHaveBeenCalledWith('test-ws', 'b1')
+  })
+
+  it('does not navigate or open a new tab without a workspace id', async () => {
+    mockWorkspace.workspaceId = null
+    mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+    const user = userEvent.setup()
+    render(<BoardsPanel />)
+
+    await user.click(screen.getByText('Sprint Board'))
+    fireEvent.click(screen.getByText('Sprint Board'), { altKey: true })
+
+    expect(mockRouting.navigateToBoard).not.toHaveBeenCalled()
+    expect(openBoardInNewTab).not.toHaveBeenCalled()
+  })
+
+  describe('inline rename', () => {
+    it('enters edit mode pre-filled with the current name', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+
+      expect(screen.getByDisplayValue('Sprint Board')).toBeInTheDocument()
+    })
+
+    it('saves a rename via the check button and refreshes', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+      const input = screen.getByDisplayValue('Sprint Board')
+      await user.clear(input)
+      await user.type(input, 'Renamed Board')
+      await user.click(screen.getByTitle('Save'))
+
+      expect(renameBoard).toHaveBeenCalledWith('b1', 'Renamed Board')
+      expect(mockBoardList.refresh).toHaveBeenCalled()
+      expect(screen.queryByDisplayValue('Renamed Board')).not.toBeInTheDocument()
+    })
+
+    it('saves a rename via the Enter key', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+      const input = screen.getByDisplayValue('Sprint Board')
+      await user.clear(input)
+      await user.type(input, 'Renamed via Enter{Enter}')
+
+      expect(renameBoard).toHaveBeenCalledWith('b1', 'Renamed via Enter')
+    })
+
+    it('cancels via the X button without saving', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+      const input = screen.getByDisplayValue('Sprint Board')
+      await user.clear(input)
+      await user.type(input, 'Discarded')
+      await user.click(screen.getByTitle('Cancel'))
+
+      expect(renameBoard).not.toHaveBeenCalled()
+      expect(screen.queryByDisplayValue('Discarded')).not.toBeInTheDocument()
+      expect(screen.getByText('Sprint Board')).toBeInTheDocument()
+    })
+
+    it('cancels via the Escape key without saving', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+      await user.type(screen.getByDisplayValue('Sprint Board'), '{Escape}')
+
+      expect(renameBoard).not.toHaveBeenCalled()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    it('does not save an empty or whitespace-only name, but still exits edit mode', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+      const input = screen.getByDisplayValue('Sprint Board')
+      await user.clear(input)
+      await user.type(input, '   ')
+      await user.click(screen.getByTitle('Save'))
+
+      expect(renameBoard).not.toHaveBeenCalled()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    it('clicking the edit input does not bubble into board navigation', async () => {
+      const user = userEvent.setup()
+      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+      render(<BoardsPanel />)
+
+      await user.click(screen.getByTitle('Rename board'))
+      await user.click(screen.getByDisplayValue('Sprint Board'))
+
+      expect(mockRouting.navigateToBoard).not.toHaveBeenCalled()
+    })
   })
 })

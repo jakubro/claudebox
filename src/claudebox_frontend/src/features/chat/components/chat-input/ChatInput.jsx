@@ -2,7 +2,7 @@
 
 // audit-ignore-file: file-size, excessive-props
 
-import { Square } from 'lucide-react'
+import { Send, Square } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { DRAFT_STORAGE_PREFIX } from '../../../../config/storage'
 import { useInteraction } from '../../../../context/InteractionContext'
@@ -483,19 +483,7 @@ function ChatInput({
             disabled={showStopButton ? stopButtonDisabled : !hasContent && attachments.length === 0}
             data-testid={showStopButton ? 'chat-input-stop-btn' : 'mobile-send-btn'}
             title={showStopButton ? 'Stop response' : 'Send message'}>
-            {showStopButton ? (
-              <Square size={16} />
-            ) : (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                role="img"
-                aria-label="Send">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            )}
+            {showStopButton ? <Square size={16} /> : <Send size={16} />}
           </button>
         )}
       </div>

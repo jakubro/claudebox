@@ -148,4 +148,60 @@ describe('HistoricalTurnList', () => {
     expect(turnRenderSpy).toHaveBeenCalledWith('t1')
     expect(turnRenderSpy).toHaveBeenCalledWith('t2')
   })
+
+  // The virtualizer caches measured heights per turn id, so a split flip must force a re-measure -
+  // otherwise already-mounted turns keep their pre-flip size until they happen to unmount/remount.
+  it('re-measures the virtualizer when splitEnabled flips', () => {
+    const turns = [mkTurn('t1'), mkTurn('t2')]
+    const virtualizerRef = { current: null }
+    const { rerender } = render(
+      <HistoricalTurnList
+        turns={turns}
+        messagesRef={containerRef(800)}
+        virtualizerRef={virtualizerRef}
+        splitEnabled={false}
+        {...STABLE}
+      />,
+    )
+    const measureSpy = vi.spyOn(virtualizerRef.current, 'measure')
+
+    rerender(
+      <HistoricalTurnList
+        turns={turns}
+        messagesRef={containerRef(800)}
+        virtualizerRef={virtualizerRef}
+        splitEnabled={true}
+        {...STABLE}
+      />,
+    )
+
+    expect(measureSpy).toHaveBeenCalled()
+  })
+
+  it('does not re-measure the virtualizer when splitEnabled stays the same', () => {
+    const turns = [mkTurn('t1'), mkTurn('t2')]
+    const virtualizerRef = { current: null }
+    const { rerender } = render(
+      <HistoricalTurnList
+        turns={turns}
+        messagesRef={containerRef(800)}
+        virtualizerRef={virtualizerRef}
+        splitEnabled={false}
+        {...STABLE}
+      />,
+    )
+    const measureSpy = vi.spyOn(virtualizerRef.current, 'measure')
+
+    rerender(
+      <HistoricalTurnList
+        turns={[...turns, mkTurn('t3')]}
+        messagesRef={containerRef(800)}
+        virtualizerRef={virtualizerRef}
+        splitEnabled={false}
+        {...STABLE}
+      />,
+    )
+
+    expect(measureSpy).not.toHaveBeenCalled()
+  })
 })

@@ -1,6 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.projection - session summary accumulator."""
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -180,6 +181,63 @@ class TestProjectionUpdate:
 
         proj2.update(_make_event(duration_ms=500))
         assert proj2.value.total_duration_ms == 500
+
+
+# --- Projection runtime/provider stamping ---
+
+
+class TestProjectionRuntimeStamping:
+    """Test runtime/provider stamped on a fresh summary, never overwritten on resume."""
+
+    def test_fresh_session_stamps_runtime_and_provider(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        ws = Workspace(start_dir=tmp_workspace)
+        fake_runtime = SimpleNamespace(runtime_name="LangGraph")
+
+        proj = Projection(
+            "sess-1",
+            ws,
+            runtime=fake_runtime,  # ty: ignore[invalid-argument-type]
+            provider="ollama",
+        )
+
+        assert proj.value.runtime == "LangGraph"
+        assert proj.value.provider == "ollama"
+
+    def test_no_runtime_leaves_fields_none(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        ws = Workspace(start_dir=tmp_workspace)
+
+        proj = Projection("sess-2", ws)
+
+        assert proj.value.runtime is None
+        assert proj.value.provider is None
+
+    def test_resume_does_not_overwrite_persisted_runtime(self, tmp_workspace, monkeypatch):
+        """Persisted runtime wins on resume; the mismatch is surfaced elsewhere, not fixed here."""
+
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        ws = Workspace(start_dir=tmp_workspace)
+        fake_langgraph = SimpleNamespace(runtime_name="LangGraph")
+
+        proj = Projection(
+            "sess-3",
+            ws,
+            runtime=fake_langgraph,  # ty: ignore[invalid-argument-type]
+            provider="ollama",
+        )
+        proj.save()
+
+        fake_claude = SimpleNamespace(runtime_name="Claude")
+        proj2 = Projection(
+            "sess-3",
+            ws,
+            runtime=fake_claude,  # ty: ignore[invalid-argument-type]
+            provider=None,
+        )
+
+        assert proj2.value.runtime == "LangGraph"
+        assert proj2.value.provider == "ollama"
 
 
 # --- Projection.loaded_from_disk ---

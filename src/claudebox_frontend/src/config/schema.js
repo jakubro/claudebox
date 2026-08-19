@@ -26,6 +26,7 @@ export const EventSubtype = Object.freeze({
   INIT: 'init',
   COMPACT_START: 'compact_start',
   COMPACT_BOUNDARY: 'compact_boundary',
+  RATE_LIMIT: 'rate_limit',
 })
 
 // --- Tool names (event.content for tool_use events) ---

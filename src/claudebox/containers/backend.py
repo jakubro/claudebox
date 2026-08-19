@@ -193,10 +193,14 @@ class ContainerBackend:
             if timeout is not None:
                 kwargs["timeout"] = timeout
 
+            # Callers opt into check=True individually (build(), etc.).
+            kwargs.setdefault("check", False)
+
             started = time.monotonic()
 
             try:
-                return subprocess.run([self.name, *args], **kwargs)
+                # check is set via kwargs.setdefault above - invisible to this rule's syntax check.
+                return subprocess.run([self.name, *args], **kwargs)  # noqa: PLW1510
             except subprocess.TimeoutExpired:
                 self._logger.warning(
                     "podman_command_timed_out",

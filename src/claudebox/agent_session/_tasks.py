@@ -10,7 +10,7 @@ restart rebuilds it by replaying prior task_create/task_update/task_stop/task_ou
 """
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -96,7 +96,7 @@ class TaskService:
 
         task_id = self._next_id
         self._next_id += 1
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         task = Task(
             id=task_id,
             subject=subject,
@@ -130,7 +130,7 @@ class TaskService:
         if current is None:
             raise TaskNotFound(task_id)
 
-        updates: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+        updates: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
         if status is not None:
             updates["status"] = status
@@ -163,7 +163,7 @@ class TaskService:
             raise TaskNotFound(task_id)
 
         combined = output if not current.output else current.output + "\n" + output
-        new_task = replace(current, output=combined, updated_at=datetime.now(timezone.utc))
+        new_task = replace(current, output=combined, updated_at=datetime.now(UTC))
         self._tasks[task_id] = new_task
 
         return new_task

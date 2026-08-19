@@ -53,7 +53,7 @@ class _DaemonState:
     uptime: str | None
 
 
-def handle(args: argparse.Namespace) -> int:  # noqa: ARG001
+def handle(args: argparse.Namespace) -> int:
     """Print DAEMON / CONTAINERS / WORKSPACE rows. Always exit 0 - status is a query."""
 
     daemon = _resolve_daemon()
@@ -212,7 +212,7 @@ def _containers_via_http() -> tuple[int, int] | None:
 
     try:
         return asyncio.run(_containers_via_http_async())
-    except Exception:
+    except Exception:  # noqa: BLE001 - contract: degrade to None on any error
         return None
 
 
@@ -278,7 +278,7 @@ def _containers_via_runtime() -> tuple[int, int]:
         config = Config.load()
         runtime = ContainerRuntime(config)
         containers = runtime.list_containers(labels={"app": "claudebox"})
-    except Exception:
+    except Exception:  # noqa: BLE001 - contract: degrade to (0, 0) on any error
         return 0, 0
 
     running = sum(1 for c in containers if c.get("State") == "running")

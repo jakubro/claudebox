@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test'
 import {
   openBookmarksPanel,
   openSessionsPanel,
+  openTasksPanel,
   waitForAppReady,
   waitForStableScrollHeight,
 } from '../helpers.js'
@@ -396,6 +397,145 @@ test.describe('Autoscroll', () => {
       const bookmarkItem = panel.locator('[data-testid="bookmark-item"]').first()
       await expect(bookmarkItem).toBeVisible()
       await bookmarkItem.click()
+
+      await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
+    })
+  })
+
+  test.describe('Task Click', () => {
+    // SPEC: chat:task-click-respects-autoscroll
+    test('task click that lands viewport not-at-bottom disengages auto-scroll', async ({
+      page,
+    }) => {
+      // Same round-trip budget as the bookmark equivalent above.
+      test.setTimeout(30000)
+      await mockAPI(page)
+
+      // A running (result-less) Task far above the bottom, same shape as the Bookmark Click target.
+      const events = []
+      const N = 20
+      for (let i = 1; i <= N; i++) {
+        const id = String(i).padStart(3, '0')
+        events.push({
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: i === 1 ? 'First message' : `Message ${i}`,
+          turn_id: `turn_${id}`,
+          id: `evt_u_${id}`,
+          primary: true,
+          ts: `2025-01-18T12:00:${id}Z`,
+        })
+        if (i === 1) {
+          events.push({
+            type: 'assistant',
+            subtype: 'tool_use',
+            content: 'Task',
+            tool_use_id: 'task_click_001',
+            tool_name: 'Task',
+            tool_input: {
+              description: 'Background build',
+              prompt: 'run it',
+              subagent_type: 'Bash',
+            },
+            id: 'evt_task_001',
+            primary: false,
+            is_human: false,
+            ts: '2025-01-18T12:00:01Z',
+          })
+        }
+        events.push({
+          type: 'assistant',
+          subtype: 'text',
+          content: `Reply ${i}: ${'lorem ipsum '.repeat(20)}`,
+          id: `evt_a_${id}`,
+          primary: true,
+          is_human: false,
+          ts: `2025-01-18T12:00:${id}Z`,
+        })
+        events.push({
+          type: 'result',
+          subtype: 'success',
+          turn_id: `turn_${id}`,
+          id: `evt_r_${id}`,
+          primary: false,
+          is_human: false,
+          ts: `2025-01-18T12:00:${id}Z`,
+        })
+      }
+      await mockSSEDynamic(page, () => events)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const messagesContainer = page.locator('[data-testid="chat-messages"]')
+      const lastTurnId = `turn_${String(N).padStart(3, '0')}`
+      await expect(page.locator(`[data-turn-id="${lastTurnId}"]`)).toBeVisible()
+
+      await expect
+        .poll(() =>
+          messagesContainer.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 50),
+        )
+        .toBe(true)
+
+      const jumpBtn = page.locator(
+        'button[title="Autoscroll enabled"], button[title="Last message (Alt+End)"]',
+      )
+      await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
+
+      await openTasksPanel(page)
+      const taskEntry = page.locator('[data-testid="task-entry"]').first()
+      await expect(taskEntry).toBeVisible()
+      await taskEntry.click()
+
+      // The task's turn lands at viewport top, far from bottom, so autoscroll disengages.
+      await expect(jumpBtn).toHaveAttribute('title', 'Last message (Alt+End)')
+    })
+
+    // SPEC: chat:task-click-respects-autoscroll
+    test('task click whose target keeps viewport at bottom does not change engagement', async ({
+      page,
+    }) => {
+      // A running task in the default session's single (and therefore at-bottom) turn.
+      await mockAPI(page)
+      await mockSSEDynamic(page, () => [
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Hello',
+          turn_id: 'turn_001',
+          id: 'evt_001',
+          primary: true,
+          ts: '2025-01-18T12:00:00Z',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          tool_use_id: 'task_click_002',
+          tool_name: 'Task',
+          tool_input: { description: 'Quick check', prompt: 'run it', subagent_type: 'Bash' },
+          id: 'evt_002',
+          primary: false,
+          is_human: false,
+          ts: '2025-01-18T12:00:01Z',
+        },
+      ])
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const messagesContainer = page.locator('[data-testid="chat-messages"]')
+      await expect(messagesContainer).toBeVisible()
+
+      const jumpBtn = page.locator(
+        'button[title="Autoscroll enabled"], button[title="Last message (Alt+End)"]',
+      )
+      await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
+
+      await openTasksPanel(page)
+      const taskEntry = page.locator('[data-testid="task-entry"]').first()
+      await expect(taskEntry).toBeVisible()
+      await taskEntry.click()
 
       await expect(jumpBtn).toHaveAttribute('title', 'Autoscroll enabled')
     })

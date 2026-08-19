@@ -27,6 +27,7 @@ vi.mock('lucide-react', () => ({
   Pencil: () => <span data-testid="icon-pencil">Pencil</span>,
   Pin: () => <span data-testid="icon-pin">Pin</span>,
   RefreshCw: () => <span data-testid="icon-refresh">Refresh</span>,
+  SquareSplitHorizontal: () => <span data-testid="icon-split">SquareSplitHorizontal</span>,
   StickyNote: () => <span data-testid="icon-sticky-note">StickyNote</span>,
   X: () => <span data-testid="icon-x">X</span>,
 }))
@@ -100,6 +101,8 @@ describe('ChatControlBar', () => {
       onJumpNext: vi.fn(),
       minimapPinned: false,
       onToggleMinimap: vi.fn(),
+      terminalSplitEnabled: true,
+      onToggleTerminalSplit: vi.fn(),
     }
   })
 
@@ -308,6 +311,43 @@ describe('ChatControlBar', () => {
       await user.click(screen.getByTestId('autocollapse-toggle'))
 
       expect(defaultProps.onToggleAutoCollapse).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('terminal split toggle', () => {
+    it('shows pressed state when the split is enabled', () => {
+      render(<ChatControlBar {...defaultProps} terminalSplitEnabled={true} />)
+
+      const btn = screen.getByTestId('terminal-split-toggle')
+      expect(btn).toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'true')
+      expect(btn).toHaveAttribute('title', "Hide agent's terminal")
+    })
+
+    it('shows unpressed state when the split is disabled', () => {
+      render(<ChatControlBar {...defaultProps} terminalSplitEnabled={false} />)
+
+      const btn = screen.getByTestId('terminal-split-toggle')
+      expect(btn).not.toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'false')
+      expect(btn).toHaveAttribute('title', "Show agent's terminal")
+    })
+
+    it('calls onToggleTerminalSplit when clicked', async () => {
+      const user = userEvent.setup()
+      render(<ChatControlBar {...defaultProps} />)
+
+      await user.click(screen.getByTestId('terminal-split-toggle'))
+
+      expect(defaultProps.onToggleTerminalSplit).toHaveBeenCalledOnce()
+    })
+
+    it('sits immediately after the auto-collapse button with no separator between them', () => {
+      render(<ChatControlBar {...defaultProps} />)
+
+      const autoCollapse = screen.getByTestId('autocollapse-toggle')
+      const split = screen.getByTestId('terminal-split-toggle')
+      expect(autoCollapse.nextElementSibling).toBe(split)
     })
   })
 

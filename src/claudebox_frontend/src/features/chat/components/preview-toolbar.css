@@ -1,5 +1,16 @@
-/* Shared toolbar styles for preview containers (MermaidDiagram, MarkdownPreview); each supplies its own
-   -container/-toolbar class names, these rules target the common inner elements. */
+/* Shared toolbar chrome for preview containers; each supplies its own hover-reveal trigger. */
+
+.preview-toolbar {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
 
 /* CopyButton override: join flex flow, inherit toolbar opacity */
 .preview-toolbar .copy-btn {

@@ -16,10 +16,12 @@ COPY fs/_install.sh /_install.sh
 COPY fs/install_base.sh /install_base.sh
 RUN /_install.sh /install_base.sh && rm /install_base.sh
 
-# Install rootless podman-in-podman toolchain (opt-in at runtime via [containers] nested; see run.py)
+# Install podman-in-podman toolchain (opt-in at runtime via [containers] nested; see run.py)
 COPY fs/install_containers.sh /install_containers.sh
 RUN /_install.sh /install_containers.sh && rm /install_containers.sh
-ENV _CONTAINERS_USERNS_CONFIGURED=""
+# Forces podman's rootless code path despite running as real root.
+# Without it the pause-process path resolves relative to cwd, so podman only works from /.
+ENV _CONTAINERS_ROOTLESS_UID=1
 
 # Install profile customizations (placeholder swapped with {profile}/hooks/image-build.sh)
 COPY fs/install_profile.sh /install_profile.sh

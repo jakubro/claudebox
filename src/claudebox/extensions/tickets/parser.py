@@ -19,7 +19,10 @@ from .errors import (
 )
 from .models import Board, BoardState, BoardSummary, BoardTicket, Swimlane
 from ...constants import FILE_LOCK_TIMEOUT_SECONDS
+from ...core.logging import get_logger
 
+
+logger = get_logger(__name__)
 
 _yaml = YAML()
 _yaml.preserve_quotes = True
@@ -440,8 +443,9 @@ def _read_name_field(yaml_path: Path) -> str | None:
 
         if isinstance(data, dict) and data.get("name"):
             return str(data["name"])
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Best-effort peek - a malformed board.yaml falls back to the directory name below.
+        logger.debug("board_name_field_read_failed", path=str(yaml_path), error=str(exc))
 
     return None
 

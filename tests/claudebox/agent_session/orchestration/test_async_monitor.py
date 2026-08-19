@@ -105,7 +105,7 @@ class TestProcessLine:
 
     @pytest.mark.anyio
     async def test_malformed_json_logs_warning(self, tmp_path):
-        monitor, _, cb = _make_monitor(tmp_path)
+        monitor, _, _cb = _make_monitor(tmp_path)
 
         with patch.object(monitor._logger, "warning") as mock_warn:
             await monitor._process_line("{bad json")
@@ -131,7 +131,7 @@ class TestRun:
     @pytest.mark.anyio
     async def test_reads_existing_lines_then_stops(self, tmp_path):
         """Write lines before starting, then stop after they are consumed."""
-        monitor, output_file, cb = _make_monitor(tmp_path)
+        monitor, output_file, _cb = _make_monitor(tmp_path)
 
         line1 = {"type": "system", "message": {"subtype": "init"}}
         line2 = {
@@ -216,7 +216,7 @@ class TestRun:
         """If stopped while waiting for file, run exits cleanly."""
         import asyncio
 
-        monitor, output_file, cb = _make_monitor(tmp_path)
+        monitor, _output_file, cb = _make_monitor(tmp_path)
 
         async def _stop_soon():
             await asyncio.sleep(0.15)
@@ -248,7 +248,7 @@ class TestRun:
     @pytest.mark.anyio
     async def test_offset_advances_after_each_line(self, tmp_path):
         """The internal offset advances as lines are consumed."""
-        monitor, output_file, cb = _make_monitor(tmp_path)
+        monitor, output_file, _cb = _make_monitor(tmp_path)
 
         line = json.dumps({"type": "system", "message": {"subtype": "x"}}) + "\n"
         output_file.write_text(line * 3)

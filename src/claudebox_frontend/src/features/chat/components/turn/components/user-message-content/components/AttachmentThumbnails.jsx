@@ -1,9 +1,9 @@
 /** Render a horizontal row of attachment thumbnails with fullscreen zoom on click. */
 
-import { X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { containerUrl } from '../../../../../../../api/apiClient'
+import ZoomOverlay from '../../../../../../../components/ZoomOverlay.jsx'
 import { formatFileSize } from '../../../../../../../utils/formatters'
 
 /**
@@ -75,18 +75,11 @@ export default function AttachmentThumbnails({ attachments }) {
       {/* Portal the zoom overlay to body so it escapes the turn's containment (otherwise the fixed overlay is clipped to the turn box). */}
       {zoomedSrc &&
         createPortal(
-          <div className="attachment-zoom-overlay" onClick={handleBackdropClick}>
-            <button
-              type="button"
-              className="zoom-overlay-close"
-              onClick={handleZoomClose}
-              title="Close">
-              <X size={20} />
-            </button>
+          <ZoomOverlay onBackdropClick={handleBackdropClick} onClose={handleZoomClose}>
             <div className="attachment-zoom-content">
               <img src={zoomedSrc} alt="Attachment preview" />
             </div>
-          </div>,
+          </ZoomOverlay>,
           document.body,
         )}
     </>

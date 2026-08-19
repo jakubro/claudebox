@@ -37,7 +37,7 @@ def make_task_mgmt_tools(ctx: ToolContext) -> list[BaseTool]:
     def task_create(
         subject: str,
         description: str = "",
-        activeForm: str = "",  # noqa: N803 - camelCase wire format for Claude parity
+        activeForm: str = "",
     ) -> dict[str, Any]:
         """Create a new pending task; return its record.
 
@@ -52,7 +52,7 @@ def make_task_mgmt_tools(ctx: ToolContext) -> list[BaseTool]:
         return {"task": record.asdict()}
 
     @tool
-    def task_get(taskId: int) -> dict[str, Any]:  # noqa: N803
+    def task_get(taskId: int) -> dict[str, Any]:
         """Return the full record for `taskId`."""
 
         try:
@@ -61,7 +61,7 @@ def make_task_mgmt_tools(ctx: ToolContext) -> list[BaseTool]:
             raise ToolException(str(exc)) from exc
 
     @tool
-    def task_list(statusFilter: str | None = None) -> dict[str, Any]:  # noqa: N803
+    def task_list(statusFilter: str | None = None) -> dict[str, Any]:
         """List tasks, optionally filtered by status (pending/in_progress/completed)."""
 
         narrowed = cast("TaskStatus | None", statusFilter)
@@ -69,7 +69,7 @@ def make_task_mgmt_tools(ctx: ToolContext) -> list[BaseTool]:
         return {"tasks": [t.asdict() for t in tasks.list(status_filter=narrowed)]}
 
     @tool
-    def task_output(taskId: int) -> dict[str, Any]:  # noqa: N803
+    def task_output(taskId: int) -> dict[str, Any]:
         """Return the accumulated output buffer for `taskId`."""
 
         try:
@@ -78,7 +78,7 @@ def make_task_mgmt_tools(ctx: ToolContext) -> list[BaseTool]:
             raise ToolException(str(exc)) from exc
 
     @tool
-    def task_stop(taskId: int) -> dict[str, Any]:  # noqa: N803
+    def task_stop(taskId: int) -> dict[str, Any]:
         """Mark `taskId` as completed; return the updated record."""
 
         try:
@@ -88,12 +88,12 @@ def make_task_mgmt_tools(ctx: ToolContext) -> list[BaseTool]:
 
     @tool
     def task_update(
-        taskId: int,  # noqa: N803
+        taskId: int,
         status: str | None = None,
         subject: str | None = None,
         description: str | None = None,
-        activeForm: str | None = None,  # noqa: N803
-        addBlockedBy: list[int] | None = None,  # noqa: N803
+        activeForm: str | None = None,
+        addBlockedBy: list[int] | None = None,
     ) -> dict[str, Any]:
         """Mutate fields on an existing task; return the updated record."""
 

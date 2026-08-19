@@ -1,0 +1,79 @@
+{
+  "layout": {
+    "grid": {
+      "root": {
+        "type": "branch",
+        "data": [
+          {
+            "type": "leaf",
+            "data": {
+              "views": ["main"],
+              "activeView": "main",
+              "id": "1"
+            },
+            "size": 608
+          },
+          {
+            "type": "branch",
+            "data": [
+              {
+                "type": "leaf",
+                "data": {
+                  "views": ["todos"],
+                  "activeView": "todos",
+                  "id": "2"
+                },
+                "size": 348
+              },
+              {
+                "type": "leaf",
+                "data": {
+                  "views": ["stash"],
+                  "activeView": "stash",
+                  "id": "3"
+                },
+                "size": 348
+              }
+            ],
+            "size": 608
+          }
+        ],
+        "size": 696
+      },
+      "width": 1216,
+      "height": 696,
+      "orientation": "HORIZONTAL"
+    },
+    "panels": {
+      "main": {
+        "id": "main",
+        "contentComponent": "main",
+        "title": "Main"
+      },
+      "todos": {
+        "id": "todos",
+        "contentComponent": "todos",
+        "tabComponent": "icon",
+        "title": "Todos"
+      },
+      "stash": {
+        "id": "stash",
+        "contentComponent": "stash",
+        "tabComponent": "icon",
+        "title": "Stash"
+      }
+    },
+    "activeGroup": "3"
+  },
+  "panelGroups": {
+    "left": {
+      "width": 500,
+      "order": []
+    },
+    "right": {
+      "width": 608,
+      "order": ["todos", "stash"]
+    }
+  },
+  "updated_at": "2026-08-16T20:19:05.000000+00:00"
+}

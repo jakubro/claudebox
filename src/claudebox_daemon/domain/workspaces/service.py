@@ -2,7 +2,14 @@
 
 from typing import TYPE_CHECKING
 
-from claudebox import Broadcaster, Config, get_logger, resolve_runtime_class, serialization
+from claudebox import (
+    Broadcaster,
+    Config,
+    RateLimitStore,
+    get_logger,
+    resolve_runtime_class,
+    serialization,
+)
 from .models import RegisteredWorkspace
 from ..executors import DaemonExecutors
 
@@ -33,6 +40,7 @@ class WorkspaceService:
 
         self._logger = get_logger(__name__)
         self._config = Config.load(workspace.path)
+        self._rate_limit_store = RateLimitStore(workspace.path)
 
         self.workspace: RegisteredWorkspace = workspace
 
@@ -145,7 +153,8 @@ class WorkspaceService:
 
         cls = resolve_runtime_class(self._config.agent)
 
-        if not cls.CAPABILITIES.supports_skills:
+        # Protocol declares CAPABILITIES for instances; ty can't resolve it via type[AgentSession].
+        if not cls.CAPABILITIES.supports_skills:  # ty: ignore[unresolved-attribute]
             return None
 
         profile = self._config.profile
@@ -162,6 +171,12 @@ class WorkspaceService:
         """Public read-only access to the workspace's parsed configuration."""
 
         return self._config
+
+    @property
+    def rate_limits(self) -> RateLimitStore:
+        """Public read access to the workspace's plan-limit store - no container required."""
+
+        return self._rate_limit_store
 
     # Misc
     # ----------------------------------------------------------------------------------------------

@@ -42,20 +42,9 @@
   gap: 4px;
 }
 
-.inline-reply-quote {
-  border-left: 2px solid var(--text-muted);
-  padding-left: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
+/* Base chrome shared with .inline-thread-quote/.inline-thread-from lives in App.css. */
 .inline-reply-from {
   margin-right: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
-  text-transform: lowercase;
 }
 
 .inline-reply-response {

@@ -25,8 +25,8 @@ function DefaultCodeBlock({ content, filePath = null, renderer = null }) {
     return <MarkdownRenderer>{content}</MarkdownRenderer>
   }
 
-  // Render with syntax highlighting if language detected
-  if (detected) {
+  // Markdown with no markdown renderer stays plain - no caller wants colored markdown syntax.
+  if (detected && detected !== 'markdown') {
     return (
       <SyntaxHighlighter
         style={vs2015}

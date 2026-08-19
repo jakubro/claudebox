@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   deriveFaviconBgColor,
+  getRateLimitColor,
   getStalenessColor,
   hexToRgb,
   hslToRgb,
@@ -108,6 +109,26 @@ describe('getStalenessColor', () => {
     const c2 = getStalenessColor(200_000)
     const c3 = getStalenessColor(500_000)
     expect(new Set([c1, c2, c3]).size).toBe(3)
+  })
+})
+
+describe('getRateLimitColor', () => {
+  it('is amber at the warning start (75%)', () => {
+    expect(getRateLimitColor(75)).toBe('hsl(38, 45%, 72%)')
+  })
+
+  it('is red at the danger threshold (95%) and clamped beyond', () => {
+    expect(getRateLimitColor(95)).toBe('hsl(0, 45%, 72%)')
+    expect(getRateLimitColor(100)).toBe('hsl(0, 45%, 72%)')
+    expect(getRateLimitColor(150)).toBe('hsl(0, 45%, 72%)')
+  })
+
+  it('interpolates between amber and red at the midpoint', () => {
+    expect(getRateLimitColor(85)).toBe('hsl(19, 45%, 72%)')
+  })
+
+  it('clamps below the warning start to amber', () => {
+    expect(getRateLimitColor(25)).toBe('hsl(38, 45%, 72%)')
   })
 })
 

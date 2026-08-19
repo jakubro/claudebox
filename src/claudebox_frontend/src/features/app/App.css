@@ -76,6 +76,85 @@
   padding-right: 3px;
 }
 
+/* Rest of the sessions-panel header icon-button chrome; components keep their own spacing. */
+.sessions-new,
+.sessions-refresh,
+.sessions-new-chevron,
+.sessions-resume-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+/* Shared metrics; SessionHeaderStrip.css and WorkspaceSwitcher.css keep their own colors. */
+.session-header-strip-name,
+.session-header-strip-stop,
+.workspace-switcher-btn {
+  height: var(--chrome-btn-h);
+  margin: var(--chrome-btn-mar-y) 0;
+  line-height: var(--chrome-btn-line-height);
+  border-radius: 3px;
+  align-items: center;
+}
+
+/* Shared modal action-button chrome; each modal keeps its own hover/confirm color override. */
+.confirm-deregister-cancel,
+.confirm-deregister-confirm,
+.register-workspace-cancel,
+.register-workspace-confirm {
+  padding: 6px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Shared inline-rename input chrome; ChatControlBar.css and SessionItem.css keep their layout. */
+.chat-control-edit-input,
+.sessions-edit-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.chat-control-edit-input:focus,
+.sessions-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Shared inline-reply quote and attribution styling; each component keeps its own layout. */
+.inline-thread-quote,
+.inline-reply-quote {
+  border-left: 2px solid var(--text-muted);
+  padding-left: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inline-thread-from,
+.inline-reply-from {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

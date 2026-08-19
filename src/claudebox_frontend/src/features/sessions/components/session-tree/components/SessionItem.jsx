@@ -183,24 +183,35 @@ function SessionItem({
       <div className="sessions-row sessions-meta-row">
         <div className="sessions-meta-left">
           <span className="sessions-timestamp">
-            <span title={`Started - ${startedAbsolute}`}>{startedTime}</span>
+            <span title={`Started — ${startedAbsolute}`}>{startedTime}</span>
             {updatedTime && updatedTime !== startedTime && (
               <>
-                {' -> '}
-                <span title={`Last active - ${updatedAbsolute}`}>{updatedTime}</span>
+                {' – '}
+                <span title={`Last active — ${updatedAbsolute}`}>{updatedTime}</span>
               </>
             )}
           </span>
           {(session.num_turns != null || session.total_cost_usd != null) && (
             <span className="sessions-meta-extra">
               {' · '}
-              <span title={`Turns - ${session.num_turns ?? 0}`}>
+              <span title={`Turns — ${session.num_turns ?? 0}`}>
                 {formatTurns(session.num_turns)}
               </span>
               {' · '}
-              <span title={`API cost this session - $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
+              <span title={`API cost this session — $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
                 {formatCost(session.total_cost_usd)}
               </span>
+              {session.runtime && (
+                <>
+                  {' · '}
+                  <span
+                    className="sessions-runtime-badge"
+                    title={`Runtime — ${session.runtime}`}
+                    data-testid="sessions-runtime-badge">
+                    {session.runtime}
+                  </span>
+                </>
+              )}
             </span>
           )}
         </div>
@@ -241,13 +252,21 @@ function SessionItem({
       <div className="sessions-row sessions-meta-overflow">
         {session.num_turns != null || session.total_cost_usd != null ? (
           <>
-            <span title={`Turns - ${session.num_turns ?? 0}`}>
+            <span title={`Turns — ${session.num_turns ?? 0}`}>
               {formatTurns(session.num_turns)}
             </span>
             {' · '}
-            <span title={`API cost this session - $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
+            <span title={`API cost this session — $${(session.total_cost_usd ?? 0).toFixed(2)}`}>
               {formatCost(session.total_cost_usd)}
             </span>
+            {session.runtime && (
+              <>
+                {' · '}
+                <span title={`Runtime — ${session.runtime}`} data-testid="sessions-runtime-badge">
+                  {session.runtime}
+                </span>
+              </>
+            )}
           </>
         ) : (
           '\u00A0'

@@ -1,5 +1,6 @@
 /** Footer status bar showing session info. */
 
+import { Bell } from 'lucide-react'
 import { STATUS_PAGE_URL } from '../../config/urls'
 import { useEvents } from '../../context/EventsContext'
 import { useInteraction } from '../../context/InteractionContext'
@@ -15,9 +16,11 @@ import { formatSessionDirTooltip } from '../../utils/session'
 import EffortLevelPicker from './components/EffortLevelPicker'
 import ModelPicker from './components/ModelPicker'
 import PermissionModePicker from './components/PermissionModePicker'
+import RateLimitItem from './components/RateLimitItem'
 import RuntimeIdentityPill from './components/RuntimeIdentityPill'
 import StatusIndicator from './components/status-indicator'
 import useClaudeStatus from './hooks/useClaudeStatus'
+import useRateLimitStatus from './hooks/useRateLimitStatus'
 
 /**
  * Render footer bar: workspace, turns, cost, duration, context, model, session id, notifications, Claude status.
@@ -56,6 +59,7 @@ export default function Footer() {
   const { isSubmitting, isAwaitingResponse, interruptStatus, errorMessage } = useInteraction()
 
   const claudeStatus = useClaudeStatus()
+  const rateLimits = useRateLimitStatus()
   const sessionDefaults = useSessionDefaults()
   const { capabilities } = useCapabilities()
   const [copied, copy] = useCopyFlash()
@@ -100,27 +104,30 @@ export default function Footer() {
         isOpeningWorkspace={isOpeningWorkspace}
       />
       <span className="footer-spacer" />
+      {rateLimits.map(entry => (
+        <RateLimitItem key={entry.window} entry={entry} />
+      ))}
       <span
         className="footer-item"
-        title={`Workspace - ${effectiveWorkspace || '-'}`}
+        title={`Workspace — ${effectiveWorkspace || '-'}`}
         data-testid="footer-workspace">
         {workspaceName}
       </span>
       <span className="footer-sep">|</span>
-      <span className="footer-item" title={`Turns - ${numTurns}`} data-testid="footer-turns">
+      <span className="footer-item" title={`Turns — ${numTurns}`} data-testid="footer-turns">
         {numTurns} turns
       </span>
       <span className="footer-sep">|</span>
       <span
         className="footer-item"
-        title={`API cost this session - $${totalCostUsd.toFixed(2)}`}
+        title={`API cost this session — $${totalCostUsd.toFixed(2)}`}
         data-testid="footer-cost">
         ${totalCostUsd.toFixed(2)}
       </span>
       <span className="footer-sep">|</span>
       <span
         className="footer-item"
-        title={`Time Claude spent responding - ${formatDurationClock(totalDurationMs)}`}>
+        title={`Time Claude spent responding — ${formatDurationClock(totalDurationMs)}`}>
         {formatDurationClock(totalDurationMs)}
       </span>
       {showContextUsage && (
@@ -128,7 +135,7 @@ export default function Footer() {
           <span className="footer-sep">|</span>
           <span
             className="footer-item footer-context"
-            title={`Context - ${lastContextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens`}
+            title={`Context — ${lastContextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens`}
             data-testid="footer-context">
             <span className="context-bar">
               <span
@@ -174,12 +181,12 @@ export default function Footer() {
       <span className="footer-sep">|</span>
       <span
         className="footer-item footer-backend-id"
-        title={backendId ? `Container - ${backendId}` : 'No container'}
+        title={backendId ? `Container — ${backendId}` : 'No container'}
         data-testid="footer-backend-id"
         onClick={backendId ? () => copyBackend(backendId) : undefined}
         style={{ cursor: backendId ? 'pointer' : undefined }}>
         <span style={{ visibility: backendCopied ? 'hidden' : 'visible' }}>
-          {backendId ? backendId.slice(0, 12) : '-'}
+          {backendId ? backendId.slice(0, 8) : '-'}
         </span>
         {backendCopied && <span className="footer-backend-id-copied-text">Copied!</span>}
       </span>
@@ -188,22 +195,13 @@ export default function Footer() {
         type="button"
         className={`footer-copy-btn footer-notifications-toggle${notificationsEnabled ? ' enabled' : ''}`}
         onClick={() => setNotificationsEnabled(!notificationsEnabled)}
-        title={`Notifications - ${notificationsEnabled ? 'enabled' : 'disabled'}`}
+        title={`Notifications — ${notificationsEnabled ? 'enabled' : 'disabled'}`}
         data-testid="footer-notifications-toggle">
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <Bell
+          size={10}
           role="img"
-          aria-label={notificationsEnabled ? 'Notifications enabled' : 'Notifications disabled'}>
-          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-        </svg>
+          aria-label={notificationsEnabled ? 'Notifications enabled' : 'Notifications disabled'}
+        />
         {!notificationsEnabled && <span className="strikethrough" />}
       </button>
       <span className="footer-sep">|</span>
@@ -211,7 +209,7 @@ export default function Footer() {
         type="button"
         className="footer-copy-btn footer-claude-status"
         onClick={() => window.open(STATUS_PAGE_URL, '_blank')}
-        title={`Claude Status - ${claudeStatus.description}`}
+        title={`Claude Status — ${claudeStatus.description}`}
         data-testid="footer-claude-status">
         <span
           className={`status-dot status-claude-${claudeStatus.error ? 'error' : claudeStatus.indicator}`}

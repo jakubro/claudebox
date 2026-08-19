@@ -1,0 +1,14 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Run the tests and check the config","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"I'll run the tests and check the config.","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_bash_ok","tool_name":"Bash","tool_input":{"command":"just test-fe","description":"Run frontend tests"},"id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"2922 passed (178 files)","ts":"2025-01-18T12:00:03Z","tool_use_id":"tool_bash_ok","id":"evt_004","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","ts":"2025-01-18T12:00:04Z","tool_use_id":"tool_bash_fail","tool_name":"Bash","tool_input":{"command":"just build","description":"Check the build"},"id":"evt_005","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"error: build failed","ts":"2025-01-18T12:00:05Z","tool_use_id":"tool_bash_fail","is_error":true,"id":"evt_006","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:00:06Z","tool_use_id":"tool_read","tool_name":"Read","tool_input":{"file_path":"/home/user/project/config.json"},"id":"evt_007","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"{ \"name\": \"my-project\" }","ts":"2025-01-18T12:00:07Z","tool_use_id":"tool_read","id":"evt_008","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Task","ts":"2025-01-18T12:00:08Z","tool_use_id":"tool_task","tool_name":"Task","tool_input":{"description":"Search config","subagent_type":"Explore"},"id":"evt_009","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","ts":"2025-01-18T12:00:09Z","parent_tool_use_id":"tool_task","tool_use_id":"tool_nested_bash","tool_name":"Bash","tool_input":{"command":"grep -rn config","description":"Grep for config"},"id":"evt_010","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"config.json:1:name","ts":"2025-01-18T12:00:10Z","tool_use_id":"tool_nested_bash","parent_tool_use_id":"tool_task","id":"evt_011","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Found the config key.","ts":"2025-01-18T12:00:11Z","tool_use_id":"tool_task","id":"evt_012","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Done - tests pass, build failed.","ts":"2025-01-18T12:00:12Z","id":"evt_013","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:13Z","id":"evt_014","primary":false,"is_human":false}

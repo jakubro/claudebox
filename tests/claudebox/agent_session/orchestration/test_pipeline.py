@@ -301,7 +301,7 @@ class TestPromptCleanupOnError:
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
             _error_then_stop
         )
-        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]
+        pipeline.inject_event = AsyncMock()
 
         await pipeline._run()
 
@@ -342,11 +342,11 @@ class TestCompactBoundaryFallbackOnError:
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
             _error_then_stop
         )
-        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]
+        pipeline.inject_event = AsyncMock()
 
         await pipeline._run()
 
-        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]
         assert injected[0]["subtype"] == "compact_boundary"
         assert injected[0]["message_data"]["compact_metadata"]["status"] == "error"
         assert injected[1]["subtype"] == "error"
@@ -378,11 +378,11 @@ class TestCompactBoundaryFallbackOnError:
         pipeline._sdk_client.receive_events = (  # ty: ignore[invalid-assignment]
             _error_then_stop
         )
-        pipeline.inject_event = AsyncMock()  # ty: ignore[invalid-assignment]
+        pipeline.inject_event = AsyncMock()
 
         await pipeline._run()
 
-        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        injected = [c.kwargs for c in pipeline.inject_event.await_args_list]
         assert all(c["subtype"] != "compact_boundary" for c in injected)
         assert any(c["subtype"] == "error" for c in injected)
 

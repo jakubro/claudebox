@@ -40,9 +40,11 @@ class TestBash:
         bash = _bash(tool_ctx)
         fake_timeout = subprocess.TimeoutExpired(cmd=["bash"], timeout=1)
 
-        with patch("subprocess.run", side_effect=fake_timeout):
-            with pytest.raises(Exception, match="timed out"):
-                bash.invoke({"command": "sleep 99", "timeout_seconds": 1})
+        with (
+            patch("subprocess.run", side_effect=fake_timeout),
+            pytest.raises(Exception, match="timed out"),
+        ):
+            bash.invoke({"command": "sleep 99", "timeout_seconds": 1})
 
     def test_timeout_capped_at_300(self, tool_ctx):
         bash = _bash(tool_ctx)

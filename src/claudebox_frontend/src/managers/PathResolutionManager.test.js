@@ -1,7 +1,9 @@
 /** Tests for PathResolutionManager batching and caching logic. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import PathResolutionManager from './PathResolutionManager'
+import { pathResolutionManager as _singleton } from './PathResolutionManager'
+
+const { PathResolutionManager } = _singleton
 
 const mockResolvePaths = vi.fn()
 

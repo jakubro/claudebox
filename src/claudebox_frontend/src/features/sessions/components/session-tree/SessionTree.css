@@ -23,8 +23,9 @@
   padding-bottom: 6px;
 }
 
-/* Vertical line (continues down to next sibling) */
-.sessions-tree-gutter::before {
+/* Vertical line (continues to the next sibling), shared with the pass-through gutter. */
+.sessions-tree-gutter::before,
+.sessions-tree-gutter-passthrough::before {
   content: "";
   position: absolute;
   left: 50%;
@@ -64,17 +65,6 @@
   position: relative;
   align-self: stretch;
   padding-bottom: 6px;
-}
-
-.sessions-tree-gutter-passthrough::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border);
-  transform: translateX(-50%);
 }
 
 /* Pass-through gutter: empty spacer (ancestor was last child, no line) */

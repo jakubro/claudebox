@@ -3,7 +3,7 @@
 import { isLookupsGroupingEnabled } from '../../../../../config/features'
 import { BlockType, normalizeToolName, ToolName } from '../../../../../config/schema'
 import { getToolConfig } from '../../../../../config/toolRegistry'
-import { isHiddenToolSearch } from '../../../../../utils/eventProcessing'
+import { isHiddenToolSearch, isTopLevelBashCall } from '../../../../../utils/eventProcessing'
 
 // Task-list families in the grouped Todos run; TaskOutput and the bare Task tool are excluded
 // so they render as ordinary blocks and break the run.
@@ -19,16 +19,11 @@ const TASK_LIST_TOOLS = new Set([
 const TASK_MUTATION_TOOLS = new Set([ToolName.TASK_CREATE, ToolName.TASK_UPDATE])
 
 /**
- * Partitions blocks into segments: consecutive task-list tool blocks within one subagent
- * partition form a `'todos-group'`, unless the run is inspection-only (TaskList/TaskGet with no
- * mutation), which demotes to per-block `'single'` segments. A second pass then gathers every
- * read-only `'single'` into one trailing `'lookups-group'` (see `gatherLookups`). Tool names are
- * normalised so LangGraph's snake_case names classify like their PascalCase equivalents.
- *
- * @param {Array<object>} blocks - Processed event blocks (TurnBlockList input).
- * @returns {Array<{kind: 'single', block: object, index: number} | {kind: 'todos-group', blocks: Array<object>} | {kind: 'lookups-group', entries: Array<object>}>}
+ * Consecutive task-list blocks in one subagent partition form a `'todos-group'`, unless the run is
+ * inspection-only (TaskList/TaskGet, no mutation). `gatherLookups` then pools read-only singles.
+ * `hideShellCalls` drops top-level Bash blocks - they render in the terminal column instead.
  */
-export function groupBlocks(blocks) {
+export function groupBlocks(blocks, hideShellCalls = false) {
   const segments = []
   let run = null
   for (let i = 0; i < blocks.length; i++) {
@@ -38,6 +33,9 @@ export function groupBlocks(blocks) {
     }
     const tu = block.type === BlockType.TOOL ? block.toolUse : null
     const toolName = tu ? normalizeToolName(tu.content) : null
+    if (hideShellCalls && tu && isTopLevelBashCall(tu)) {
+      continue
+    }
     const isListTool = !!tu && TASK_LIST_TOOLS.has(toolName)
     if (isListTool) {
       const partition = tu.parent_tool_use_id ?? null
@@ -64,10 +62,7 @@ export function groupBlocks(blocks) {
   return gatherLookups(segments)
 }
 
-/**
- * Flushes a run: emits a `'todos-group'` if it contains a mutation, else demotes each
- * block to `'single'` so inspection-only payloads stay visible.
- */
+/** A run with a mutation emits `'todos-group'`; otherwise singles, keeping payloads visible. */
 function flushRun(run, segments) {
   if (run.entries.some(e => isMutation(e.block))) {
     segments.push({ kind: 'todos-group', blocks: run.entries.map(e => e.block) })
@@ -83,12 +78,8 @@ function isMutation(block) {
 }
 
 /**
- * Second pass: gathers every read-only `'single'` segment into a trailing `'lookups-group'`,
- * preserving call order (segments already in a `'todos-group'` aren't candidates). Returns
- * `segments` unchanged below a two-entry threshold.
- *
- * @param {Array<object>} segments - Output of the positional pass above.
- * @returns {Array<object>}
+ * Pools read-only `'single'` segments into a trailing `'lookups-group'`, preserving call order.
+ * Segments already inside a `'todos-group'` are not candidates.
  */
 function gatherLookups(segments) {
   if (!isLookupsGroupingEnabled()) {

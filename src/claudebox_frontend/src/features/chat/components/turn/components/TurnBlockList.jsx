@@ -3,6 +3,7 @@
 import CopyButton from '../../../../../components/CopyButton.jsx'
 import Markdown from '../../../../../components/Markdown'
 import { BlockType } from '../../../../../config/schema'
+import { useHideShellCalls } from '../hooks/useHideShellCalls'
 import { groupBlocks } from '../utils/groupBlocks'
 import CompactionBlock from './CompactionBlock'
 import LocalCommandBlock from './LocalCommandBlock'
@@ -23,7 +24,8 @@ export default function TurnBlockList({
   duplicateAskUserIds = null,
   todoDiffs = null,
 }) {
-  const segments = groupBlocks(blocks)
+  const hideShellCalls = useHideShellCalls()
+  const segments = groupBlocks(blocks, hideShellCalls)
   return (
     <>
       {segments.map((segment, segIdx) => {

@@ -117,7 +117,7 @@ export default function WorkspaceSwitcher() {
         type="button"
         className="workspace-switcher-btn"
         onClick={handleToggle}
-        title={`Workspace - ${currentPath}`}
+        title={`Workspace — ${currentPath}`}
         data-testid="workspace-switcher">
         {workspaceColor && (
           <span className="workspace-switcher-dot" style={{ background: workspaceColor }} />

@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
@@ -14,6 +15,8 @@ class AgentSession(Protocol):
     """Runtime-neutral interface implemented by every adapter."""
 
     runtime_name: str
+
+    CAPABILITIES: RuntimeCapabilities
 
     ready: asyncio.Event
 
@@ -52,4 +55,18 @@ class AgentSession(Protocol):
 
     def get_permission_modes(self) -> list[PermissionMode]: ...
 
-    def get_skills(self) -> list[Skill]: ...
+    @classmethod
+    def get_default_model(cls) -> str: ...
+
+    @classmethod
+    def get_default_effort_level(cls) -> str: ...
+
+    @classmethod
+    def get_default_permission_mode(cls) -> str: ...
+
+    @classmethod
+    def get_skills(
+        cls,
+        commands_dir: Path | None = None,
+        skills_dir: Path | None = None,
+    ) -> list[Skill]: ...

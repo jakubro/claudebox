@@ -1,6 +1,6 @@
 /** Tests for SessionRoutingEffect - board route triggers workspace switch when URL workspace differs. */
 
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Routing
@@ -24,6 +24,7 @@ const mockClearProgress = vi.fn()
 const mockClearSessionData = vi.fn()
 const mockClearStash = vi.fn()
 const mockSetError = vi.fn()
+const mockConsumeJustCreatedSession = vi.fn(() => false)
 
 vi.mock('../../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => ({
@@ -53,7 +54,7 @@ vi.mock('../../../context/EventsContext', () => ({
     startResume: mockStartResume,
     clearResume: mockClearResume,
     notifyContainerChanged: mockNotifyContainerChanged,
-    isCreating: false,
+    consumeJustCreatedSession: mockConsumeJustCreatedSession,
   }),
 }))
 
@@ -72,7 +73,19 @@ vi.mock('../../../context/InteractionContext', () => ({
 vi.mock('../../../api/apiClient', () => ({ setContainerId: vi.fn() }))
 vi.mock('../../../api/sessions', () => ({ resumeSession: vi.fn() }))
 
+import { resumeSession } from '../../../api/sessions'
 import SessionRoutingEffect from './SessionRoutingEffect'
+
+function render() {
+  return renderHook(() => {}, {
+    wrapper: ({ children }) => (
+      <>
+        <SessionRoutingEffect onUpdateChatTitle={vi.fn()} />
+        {children}
+      </>
+    ),
+  })
+}
 
 describe('SessionRoutingEffect - board route', () => {
   beforeEach(() => {
@@ -81,18 +94,8 @@ describe('SessionRoutingEffect - board route', () => {
     mockActiveBoardId = null
     mockActiveWorkspaceId = null
     mockWorkspaceId = null
+    mockConsumeJustCreatedSession.mockReturnValue(false)
   })
-
-  function render() {
-    return renderHook(() => {}, {
-      wrapper: ({ children }) => (
-        <>
-          <SessionRoutingEffect onUpdateChatTitle={vi.fn()} />
-          {children}
-        </>
-      ),
-    })
-  }
 
   it('does not switch workspace when the board URL matches the active workspace', () => {
     mockActiveBoardId = 'b1'
@@ -133,5 +136,39 @@ describe('SessionRoutingEffect - board route', () => {
     render()
 
     expect(mockSelectWorkspace).not.toHaveBeenCalled()
+  })
+})
+
+describe('SessionRoutingEffect - session resume', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockActiveSessionId = null
+    mockActiveBoardId = null
+    mockActiveWorkspaceId = null
+    mockWorkspaceId = null
+    mockConsumeJustCreatedSession.mockReturnValue(false)
+    resumeSession.mockResolvedValue({ container_id: 'c1' })
+  })
+
+  it('resumes a session reached by normal navigation', async () => {
+    mockActiveSessionId = 's1'
+
+    render()
+
+    await waitFor(() => {
+      expect(resumeSession).toHaveBeenCalledWith('s1')
+    })
+  })
+
+  it('skips resume for a session this tab just created, even if isCreating already cleared', async () => {
+    mockActiveSessionId = 's1'
+    mockConsumeJustCreatedSession.mockReturnValue(true)
+
+    render()
+
+    await waitFor(() => {
+      expect(mockConsumeJustCreatedSession).toHaveBeenCalledWith('s1')
+    })
+    expect(resumeSession).not.toHaveBeenCalled()
   })
 })

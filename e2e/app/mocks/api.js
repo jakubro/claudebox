@@ -38,6 +38,12 @@ export async function mockAPI(page, options = {}) {
   const sessionsFixture = options.sessionsFixture || 'sessions/default.json'
   const statusFixture = options.statusFixture || 'status/default.json'
   const handlers = options.handlers || {}
+  // Matches the app's own default (off); specs needing the split pass it explicitly.
+  const sessionUiStateDefaults = options.sessionUiStateDefaults || {}
+  // Plan-limit entries: pre-session (session-defaults) and in-session (sessions/current) sources,
+  // each empty by default so most tests never see a footer item.
+  const sessionDefaultsRateLimits = options.sessionDefaultsRateLimits || []
+  const sessionRateLimits = options.sessionRateLimits || []
 
   const ws = wsPrefix()
   const cp = cPrefix()
@@ -61,8 +67,21 @@ export async function mockAPI(page, options = {}) {
 
   // --- Workspace-scoped endpoints (via workspaceFetch) ---
 
+  // GET /api/workspaces/{ws}/containers - Cross-workspace container list
+  await page.route(`**${ws}/containers`, async route => {
+    if (route.request().method() === 'GET') {
+      if (handlers.getContainers) {
+        await handlers.getContainers(route)
+      } else {
+        await route.fulfill({ json: { containers: [] } })
+      }
+    } else {
+      await route.continue()
+    }
+  })
+
   // GET/DELETE /api/workspaces/{ws}/containers/:id - Single container ops
-  await page.route(new RegExp(`${ws}/containers/[^/]+$`.replace(/\//g, '\\/')), async route => {
+  await page.route(new RegExp(`${ws}/containers/[^/]+$`), async route => {
     const method = route.request().method()
     if (method === 'GET') {
       if (handlers.getContainer) {
@@ -134,6 +153,7 @@ export async function mockAPI(page, options = {}) {
           runtime_name: 'Claude',
           editor_url_template: 'claudebox-editor-test://open?path={path}&line={line}',
           capabilities: mockCapabilities(),
+          rate_limits: sessionDefaultsRateLimits,
           available_models: [
             { id: 'claude-fable-5', name: 'Fable 5', context_window: 1000000 },
             { id: 'claude-opus-5', name: 'Opus 5', context_window: 1000000 },
@@ -175,7 +195,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST /api/workspaces/{ws}/sessions/:id/resume - Resume session
-  await page.route(new RegExp(`${ws}/sessions/[^/]+/resume`.replace(/\//g, '\\/')), async route => {
+  await page.route(new RegExp(`${ws}/sessions/[^/]+/resume`), async route => {
     if (handlers.resumeSession) {
       await handlers.resumeSession(route)
     } else {
@@ -189,33 +209,30 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
-  // GET/PATCH /api/workspaces/{ws}/sessions/:id - excludes reserved paths (new) and paths with extra segments
-  await page.route(
-    new RegExp(`${ws}/sessions/(?!new$)[^/]+$`.replace(/\//g, '\\/')),
-    async route => {
-      if (route.request().method() === 'PATCH') {
-        if (handlers.updateSession) {
-          await handlers.updateSession(route)
-        } else {
-          const data = await route.request().postDataJSON()
-          const status = loadFixture(statusFixture)
-          await route.fulfill({ status: 200, json: { ...status, ...data } })
-        }
-      } else if (route.request().method() === 'GET') {
-        if (handlers.getSession) {
-          await handlers.getSession(route)
-        } else {
-          await route.fulfill({ json: loadFixture(statusFixture) })
-        }
+  // GET/PATCH /api/workspaces/{ws}/sessions/:id - excludes "new" and multi-segment paths
+  await page.route(new RegExp(`${ws}/sessions/(?!new$)[^/]+$`), async route => {
+    if (route.request().method() === 'PATCH') {
+      if (handlers.updateSession) {
+        await handlers.updateSession(route)
       } else {
-        await route.continue()
+        const data = await route.request().postDataJSON()
+        const status = loadFixture(statusFixture)
+        await route.fulfill({ status: 200, json: { ...status, ...data } })
       }
-    },
-  )
+    } else if (route.request().method() === 'GET') {
+      if (handlers.getSession) {
+        await handlers.getSession(route)
+      } else {
+        await route.fulfill({ json: loadFixture(statusFixture) })
+      }
+    } else {
+      await route.continue()
+    }
+  })
 
   // GET/PATCH /api/workspaces/{ws}/ui-state - UI state persistence
   const uiState = { global: {}, sessions: {} }
-  await page.route(new RegExp(`${ws}/ui-state`.replace(/\//g, '\\/')), async route => {
+  await page.route(new RegExp(`${ws}/ui-state`), async route => {
     const url = new URL(route.request().url())
     const sessionId = url.searchParams.get('session_id')
 
@@ -223,7 +240,9 @@ export async function mockAPI(page, options = {}) {
       if (handlers.getUIState) {
         await handlers.getUIState(route)
       } else {
-        const session = sessionId ? uiState.sessions[sessionId] || {} : {}
+        const session = sessionId
+          ? { ...sessionUiStateDefaults, ...(uiState.sessions[sessionId] || {}) }
+          : {}
         await route.fulfill({ json: { global: uiState.global, session } })
       }
     } else if (route.request().method() === 'PATCH') {
@@ -245,7 +264,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST /api/workspaces/{ws}/sessions/:id/fork - Fork session
-  await page.route(new RegExp(`${ws}/sessions/[^/]+/fork`.replace(/\//g, '\\/')), async route => {
+  await page.route(new RegExp(`${ws}/sessions/[^/]+/fork`), async route => {
     if (handlers.forkSession) {
       await handlers.forkSession(route)
     } else {
@@ -263,25 +282,24 @@ export async function mockAPI(page, options = {}) {
     if (handlers.getSessionStatus) {
       await handlers.getSessionStatus(route)
     } else {
-      await route.fulfill({ json: loadFixture(statusFixture) })
+      await route.fulfill({
+        json: { ...loadFixture(statusFixture), rate_limits: sessionRateLimits },
+      })
     }
   })
 
   // GET .../api/sessions/current/tool-output/:tool_use_id
-  await page.route(
-    new RegExp(`${cp}/api/sessions/current/tool-output/[^/]+$`.replace(/\//g, '\\/')),
-    async route => {
-      if (handlers.getToolOutput) {
-        await handlers.getToolOutput(route)
-      } else {
-        await route.fulfill({ json: { content: 'tool output content', lines: 1 } })
-      }
-    },
-  )
+  await page.route(new RegExp(`${cp}/api/sessions/current/tool-output/[^/]+$`), async route => {
+    if (handlers.getToolOutput) {
+      await handlers.getToolOutput(route)
+    } else {
+      await route.fulfill({ json: { content: 'tool output content', lines: 1 } })
+    }
+  })
 
   // GET .../api/sessions/current/tool-output/:id/download
   await page.route(
-    new RegExp(`${cp}/api/sessions/current/tool-output/[^/]+/download`.replace(/\//g, '\\/')),
+    new RegExp(`${cp}/api/sessions/current/tool-output/[^/]+/download`),
     async route => {
       if (handlers.downloadToolOutput) {
         await handlers.downloadToolOutput(route)
@@ -292,16 +310,13 @@ export async function mockAPI(page, options = {}) {
   )
 
   // PATCH .../api/sessions/current/prompt
-  await page.route(
-    new RegExp(`${cp}/api/sessions/current/prompt`.replace(/\//g, '\\/')),
-    async route => {
-      if (handlers.updateSessionPrompt) {
-        await handlers.updateSessionPrompt(route)
-      } else {
-        await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
-      }
-    },
-  )
+  await page.route(new RegExp(`${cp}/api/sessions/current/prompt`), async route => {
+    if (handlers.updateSessionPrompt) {
+      await handlers.updateSessionPrompt(route)
+    } else {
+      await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+    }
+  })
 
   // POST .../api/model
   await page.route(`**${cp}/api/model`, async route => {

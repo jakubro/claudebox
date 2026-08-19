@@ -26,6 +26,14 @@ function compactionBlock() {
   return { type: BlockType.COMPACTION, event: {} }
 }
 
+/** Make a top-level (or nested, via `parentId`) Bash tool block. */
+function bashToolBlock(content = 'Bash', parentId = null) {
+  return {
+    type: BlockType.TOOL,
+    toolUse: { content, tool_use_id: 'b-1', parent_tool_use_id: parentId },
+  }
+}
+
 describe('getTurnPreview', () => {
   it('returns the first line of ordinary prose, truncated at 60 characters', () => {
     const preview = getTurnPreview([textBlock('Hello! How can I help you today?')], null)
@@ -112,5 +120,32 @@ describe('getTurnPreview', () => {
   it('prefers the stripped text over the fallback chain even with tool blocks present', () => {
     const preview = getTurnPreview([textBlock('All done'), toolBlock()], null)
     expect(preview).toBe('All done')
+  })
+})
+
+describe('getTurnPreview - hideShellCalls (terminal column routing)', () => {
+  it('counts a top-level Bash call by default (flag omitted)', () => {
+    const preview = getTurnPreview([bashToolBlock()], null)
+    expect(preview).toBe('1 tool used')
+  })
+
+  it('excludes a top-level Bash call from the tool count when hideShellCalls is true', () => {
+    const preview = getTurnPreview([toolBlock(), bashToolBlock()], null, true)
+    expect(preview).toBe('1 tool used')
+  })
+
+  it('excludes a LangGraph snake_case bash call the same as Bash', () => {
+    const preview = getTurnPreview([toolBlock(), bashToolBlock('bash')], null, true)
+    expect(preview).toBe('1 tool used')
+  })
+
+  it('keeps a nested Bash call in the count even with hideShellCalls true', () => {
+    const preview = getTurnPreview([bashToolBlock('Bash', 'subagent-X')], null, true)
+    expect(preview).toBe('1 tool used')
+  })
+
+  it('falls through past an all-hidden turn (Bash + ToolSearch) when hideShellCalls is true', () => {
+    const preview = getTurnPreview([bashToolBlock(), hiddenToolSearchBlock()], 5, true)
+    expect(preview).toBe('Worked for 5s')
   })
 })

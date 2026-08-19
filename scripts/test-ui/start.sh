@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start in-container test UI environment — daemon with local backend in dev mode
+# Start in-container test UI environment - daemon with local backend in dev mode
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
@@ -12,7 +12,7 @@ VENV_DIR="${TEST_DIR}/.venv"
 PID_FILE="${TEST_DIR}/pids"
 LOG_DIR="${TEST_DIR}"
 
-# Port 41930 → Vite on 41930, uvicorn on 41931 (avoids host daemon on 41920/41921)
+# Port 41930 -> Vite on 41930, uvicorn on 41931 (avoids host daemon on 41920/41921)
 DAEMON_PORT=41930
 
 # Stop running test environment (kill entire process group)
@@ -51,8 +51,9 @@ echo "Syncing dependencies..."
 UV_PROJECT_ENVIRONMENT="$VENV_DIR" uv sync --directory "$LIB_DIR" --extra dev 2>&1 | tail -3
 uv pip install --python "${VENV_DIR}/bin/python" playwright 2>&1 | tail -3
 
-# Write a clean daemon config with only the test workspace
-"${VENV_DIR}/bin/python" -c "
+# Write a clean daemon config with only the test workspace. PYTHONPATH points at the workspace's
+# own src/ so this resolves the current edit, not the container's deployed /root/.claudebox copy.
+PYTHONPATH="${LIB_DIR}/src" "${VENV_DIR}/bin/python" -c "
 from claudebox_daemon.domain.config import DaemonConfig
 config = DaemonConfig.load()
 # Remove all existing workspaces, register only the test workspace
@@ -70,9 +71,10 @@ fi
 # Unset container API args from host daemon
 unset CLAUDEBOX_CONTAINER_API_ARGS 2>/dev/null || true
 
-# Start daemon in dev mode (launches Vite on DAEMON_PORT, uvicorn on DAEMON_PORT+1)
+# Dev mode: Vite on DAEMON_PORT, uvicorn on +1. PYTHONPATH set here beats the container's ambient.
 echo "Starting daemon on port ${DAEMON_PORT}..."
 setsid env \
+    PYTHONPATH="${LIB_DIR}/src" \
     CLAUDEBOX_PWD="$WORKSPACE_DIR" \
     CLAUDEBOX_NO_RELOAD=1 \
     CLAUDEBOX_NO_TMP_REMAP=1 \

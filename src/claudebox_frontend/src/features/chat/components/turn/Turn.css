@@ -11,13 +11,8 @@
   background: var(--bg-tertiary);
 }
 
-.message-bookmark-btn {
-  position: absolute;
-  top: 4px;
-  right: 32px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 6px;
+.message-bookmark-btn,
+.message-rewind-chevron {
   cursor: pointer;
   color: var(--text-muted);
   background: var(--bg-tertiary);
@@ -26,6 +21,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.message-bookmark-btn {
+  position: absolute;
+  top: 4px;
+  right: 32px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -63,14 +67,6 @@
   border-left: none;
   border-radius: 0 4px 4px 0;
   padding: 4px 2px;
-  cursor: pointer;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-  height: 22px;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .chat-message-user:hover .message-copy-btn,
@@ -95,7 +91,7 @@
   z-index: 100;
 }
 
-.chat-message-user .message-content {
+.chat-message-user :is(.message-content, .message-note) {
   display: block;
   background: #424245;
   color: var(--text-primary);
@@ -107,12 +103,12 @@
 }
 
 /* pre-wrap skips a line box for a trailing \n at the block boundary - zero-width space fills it in. */
-.chat-message-user .message-content::after {
+.chat-message-user :is(.message-content, .message-note)::after {
   content: "\200b";
 }
 
 /* Highlight flash when jumping to a human message */
-.chat-message-user.jump-highlight .message-content {
+.chat-message-user.jump-highlight :is(.message-content, .message-note) {
   animation: jump-highlight-pulse 1.5s ease-out;
 }
 

@@ -42,6 +42,7 @@ vi.mock('../../../context/WorkspaceContext', () => ({
   useWorkspace: () => ({ workspaceId: 'test-workspace' }),
 }))
 
+import { buildDefaultLayout } from '../utils/default-layout'
 import useDockviewLayout from './useDockviewLayout'
 
 describe('useDockviewLayout', () => {
@@ -72,6 +73,7 @@ describe('useDockviewLayout', () => {
     return {
       toJSON: vi.fn().mockReturnValue({ panels: [], groups: [] }),
       fromJSON: vi.fn(),
+      clear: vi.fn(),
       panels: [{}],
       groups: [],
       onDidAddGroup: vi.fn(),
@@ -145,6 +147,39 @@ describe('useDockviewLayout', () => {
       })
 
       expect(result.current.isMaximized).toBe(false)
+    })
+  })
+
+  describe('rebuild guard on failed restore', () => {
+    it('onReady clears and rebuilds even when a failed restore left panels behind', async () => {
+      // Panels can survive a partial fromJSON failure despite `loaded: false` - rebuild anyway.
+      const mockApi = createMockApi({ panels: [{ id: 'main' }, { id: 'sessions' }] })
+      const { result } = renderHook(() => useDockviewLayout())
+
+      await act(async () => {
+        result.current.onReady({ api: mockApi })
+      })
+
+      expect(mockApi.clear).toHaveBeenCalled()
+      expect(buildDefaultLayout).toHaveBeenCalled()
+    })
+
+    it('onSessionAttach leaves the layout alone when the session has no restore of its own', async () => {
+      const mockApi = createMockApi({ panels: [{ id: 'main' }, { id: 'sessions' }] })
+      const { result } = renderHook(() => useDockviewLayout())
+
+      await act(async () => {
+        result.current.onReady({ api: mockApi })
+      })
+      mockApi.clear.mockClear()
+      buildDefaultLayout.mockClear()
+
+      await act(async () => {
+        await result.current.onSessionAttach('session-1')
+      })
+
+      expect(mockApi.clear).not.toHaveBeenCalled()
+      expect(buildDefaultLayout).not.toHaveBeenCalled()
     })
   })
 

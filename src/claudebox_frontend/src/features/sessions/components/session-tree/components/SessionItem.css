@@ -201,19 +201,7 @@
   gap: 0;
 }
 
-.sessions-resume-chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s;
-}
-
+/* Base chrome lives in App.css's shared `.sessions-*` button block. */
 .sessions-resume-chevron > svg {
   transform: translateY(-1px);
 }
@@ -238,22 +226,7 @@
   gap: 4px;
 }
 
-.sessions-edit-input {
-  flex: 1;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  color: var(--text-primary);
-  min-width: 0;
-}
-
-.sessions-edit-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
+/* Base chrome + :focus shared with .chat-control-edit-input live in App.css. */
 .sessions-edit-cancel,
 .sessions-edit-save {
   background: transparent;

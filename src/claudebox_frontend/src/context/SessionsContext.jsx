@@ -4,7 +4,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { listSessions } from '../api/sessions'
 import { getUiState, patchGlobalUiState } from '../api/uiState'
 import { PINNED_PATH, PINS_CHANGE_SIGNAL_KEY, WORKSPACE_COLOR_PATH } from '../config/storage'
-import { SESSIONS_CHANGED_DEBOUNCE_MS, SESSIONS_REFRESH_FALLBACK_MS } from '../config/timing'
+import {
+  SESSION_STORAGE_SWEEP_INTERVAL_MS,
+  SESSIONS_CHANGED_DEBOUNCE_MS,
+  SESSIONS_REFRESH_FALLBACK_MS,
+} from '../config/timing'
 import {
   collectLiveSessionIdsAcrossWorkspaces,
   sweepDeadSessionStorage,
@@ -30,41 +34,90 @@ export function SessionsProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const debounceRef = useRef(null)
+  // Coalesces concurrent callers (provider mount, panel mount, StrictMode repeat) onto one request.
+  const fetchInFlightRef = useRef(null)
+  // The workspace the in-flight request was made for - a switch mid-flight must not silently
+  // apply the old workspace's response to the new one, so a mismatch bypasses the join below.
+  const fetchInFlightWorkspaceRef = useRef(null)
+  const lastFetchCompletedAtRef = useRef(0)
+  // A signal arriving mid-flight may predate that fetch's snapshot - re-fetch on settle rather than
+  // lose it until the fallback poll. Armed only by external-signal callers (SSE, cross-tab sync).
+  const pendingSignalRef = useRef(false)
+  const sweepLastRunAtRef = useRef(0)
 
-  const fetchSessions = useCallback(async () => {
-    if (!workspaceId) {
-      return
-    }
-    try {
-      const [sessionsData, uiStateData] = await Promise.all([listSessions(), getUiState()])
-      const liveSessions = sessionsData.sessions || []
-      setSessions(liveSessions)
-      setPinnedSessions(uiStateData.global?.pinnedSessions || [])
-      setWorkspaceColorState(uiStateData.global?.workspaceColor || null)
-      setError(null)
-      // Storage keys lack a workspace segment; a session live elsewhere must count as live, or refresh deletes it.
-      const liveAcrossWorkspaces = await collectLiveSessionIdsAcrossWorkspaces(
-        workspaceId,
-        liveSessions.map(s => s.session_id),
-      )
-      sweepDeadSessionStorage(liveAcrossWorkspaces)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [workspaceId])
+  const fetchSessions = useCallback(
+    async ({ armPendingOnJoin = false } = {}) => {
+      if (!workspaceId) {
+        return
+      }
+      if (fetchInFlightRef.current && fetchInFlightWorkspaceRef.current === workspaceId) {
+        if (armPendingOnJoin) {
+          pendingSignalRef.current = true
+        }
+        return fetchInFlightRef.current
+      }
+
+      const run = (async () => {
+        try {
+          const [sessionsData, uiStateData] = await Promise.all([listSessions(), getUiState()])
+          const liveSessions = sessionsData.sessions || []
+          setSessions(liveSessions)
+          setPinnedSessions(uiStateData.global?.pinnedSessions || [])
+          setWorkspaceColorState(uiStateData.global?.workspaceColor || null)
+          setError(null)
+
+          const now = Date.now()
+          if (now - sweepLastRunAtRef.current >= SESSION_STORAGE_SWEEP_INTERVAL_MS) {
+            sweepLastRunAtRef.current = now
+            // Keys are workspace-agnostic - a session live elsewhere counts, or refresh deletes it.
+            const liveAcrossWorkspaces = await collectLiveSessionIdsAcrossWorkspaces(
+              workspaceId,
+              liveSessions.map(s => s.session_id),
+            )
+            sweepDeadSessionStorage(liveAcrossWorkspaces)
+          }
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setLoading(false)
+          fetchInFlightRef.current = null
+          fetchInFlightWorkspaceRef.current = null
+          lastFetchCompletedAtRef.current = Date.now()
+          if (pendingSignalRef.current) {
+            pendingSignalRef.current = false
+            fetchSessions()
+          }
+        }
+      })()
+
+      fetchInFlightRef.current = run
+      fetchInFlightWorkspaceRef.current = workspaceId
+      return run
+    },
+    [workspaceId],
+  )
 
   // Fetch when workspace becomes available
   useEffect(() => {
     fetchSessions()
   }, [fetchSessions])
 
-  // Refetch when daemon signals sessions or container changes (debounced to collapse rapid events)
+  // Refetch when daemon signals sessions or container changes (debounced to collapse rapid events).
+  // The post-fetch cooldown below is scoped to this signal path - inside `refresh` it would
+  // silently no-op Retry buttons and cross-tab pin sync, which fire right after a completed fetch.
   useEffect(() => {
     if (sessionsChanged > 0 || containerStatus > 0) {
       clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(fetchSessions, SESSIONS_CHANGED_DEBOUNCE_MS)
+      debounceRef.current = setTimeout(() => {
+        if (fetchInFlightRef.current) {
+          pendingSignalRef.current = true
+          return
+        }
+        if (Date.now() - lastFetchCompletedAtRef.current < SESSIONS_CHANGED_DEBOUNCE_MS) {
+          return
+        }
+        fetchSessions()
+      }, SESSIONS_CHANGED_DEBOUNCE_MS)
     }
     return () => clearTimeout(debounceRef.current)
   }, [sessionsChanged, containerStatus, fetchSessions])
@@ -81,7 +134,7 @@ export function SessionsProvider({ children }) {
   useEffect(() => {
     const handleStorage = e => {
       if (e.key === PINS_CHANGE_SIGNAL_KEY) {
-        fetchSessions()
+        fetchSessions({ armPendingOnJoin: true })
       }
     }
     window.addEventListener('storage', handleStorage)

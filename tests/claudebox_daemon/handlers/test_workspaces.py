@@ -17,6 +17,7 @@ def _build_app(
     *,
     agent: str = "claude",
     editor_url_template: str | None = None,
+    rate_limits: list[dict] | None = None,
 ):
     """Build a minimal FastAPI app with the workspaces router and a workspace stub."""
 
@@ -27,8 +28,9 @@ def _build_app(
         workspace = MagicMock()
         workspace.path = workspace_path
         config = SimpleNamespace(agent=agent, editor_url_template=editor_url_template)
+        rate_limit_store = SimpleNamespace(get=lambda: rate_limits or [])
 
-        return SimpleNamespace(workspace=workspace, config=config)
+        return SimpleNamespace(workspace=workspace, config=config, rate_limits=rate_limit_store)
 
     app.dependency_overrides[get_workspace] = _fake_get_workspace
 
@@ -48,6 +50,7 @@ def test_session_defaults_returns_framework_constants():
     assert body["workspace"] == "/path/to/my-project"
     assert body["runtime_name"] == "Claude"
     assert body["editor_url_template"] is None
+    assert body["rate_limits"] == []
     assert len(body["capabilities"]) == 16
     assert body["capabilities"]["supports_models"] is True
     assert body["model"] == ClaudeRuntime.DEFAULT_MODEL
@@ -104,6 +107,24 @@ def test_session_defaults_includes_editor_url_template_when_configured():
     assert (
         response.json()["editor_url_template"] == "jetbrains://idea/navigate/reference?path={path}"
     )
+
+
+def test_session_defaults_passes_through_stored_rate_limits():
+    """The workspace's live plan-limit entries ride the same response - the welcome-screen path."""
+
+    entries = [
+        {
+            "rate_limit_type": "seven_day",
+            "status": "allowed_warning",
+            "resets_at": None,
+            "utilization": 0.82,
+        },
+    ]
+    app = _build_app("/path/to/my-project", rate_limits=entries)
+    response = TestClient(app).get("/api/workspaces/my-project/session-defaults")
+
+    assert response.status_code == 200
+    assert response.json()["rate_limits"] == entries
 
 
 def test_session_defaults_resolves_per_workspace():

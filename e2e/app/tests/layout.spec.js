@@ -1,4 +1,4 @@
-/** E2E tests for layout and panel management including icon strips, persistence, and tab interactions. */
+/** E2E tests for layout and panels: icon strips, persistence, tab interactions. */
 
 import { expect, test } from '@playwright/test'
 import {
@@ -191,7 +191,7 @@ test.describe('Layout', () => {
       const chatBox = await page.locator('[data-testid="panel-chat"]').boundingBox()
       expect(chatBox).toBeTruthy()
 
-      // Left strip sits left of chat, todos sits right of it - anchors the "in center" claim beyond visibility.
+      // Left strip left of chat, todos right of it - anchors "in center" beyond mere visibility.
       const leftStripBox = await page.locator('[data-testid="icon-sessions"]').boundingBox()
       const rightPanelBox = await page.locator('[data-testid="panel-todos"]').boundingBox()
       expect(leftStripBox.x + leftStripBox.width).toBeLessThanOrEqual(chatBox.x)
@@ -529,9 +529,9 @@ test.describe('Layout', () => {
 
     // SPEC: layout:restore
     test('layout restored from server on load', async ({ page }) => {
-      // Fixture is schema v2, with the sessions panel open.
+      // Fixture is schema v3, with the sessions panel open.
       const savedSession = loadFixture('layouts/sessions-open.json')
-      savedSession.layout.panels.chat.title = '12345678'
+      savedSession.layout.panels.main.title = '12345678'
 
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
@@ -546,7 +546,19 @@ test.describe('Layout', () => {
       await waitForAppReady(page)
 
       // Fixture's left.order includes sessions.
-      await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
+      const sessionsPanel = page.locator('[data-testid="panel-sessions"]')
+      await expect(sessionsPanel).toBeVisible()
+
+      // The fixture's 400px width only survives a real restore; a default rebuild gives ~192px.
+      // Polled: dockview's resize pass can still be settling right after mount.
+      await expect
+        .poll(async () => {
+          return await sessionsPanel.evaluate(el => {
+            const group = el.closest('.dv-view')
+            return group ? group.offsetWidth : 0
+          })
+        })
+        .toBeGreaterThan(350)
     })
 
     // SPEC: layout:restore
@@ -746,7 +758,7 @@ test.describe('Layout', () => {
 
       await chevron.click()
 
-      // Portaling to <body> escapes the icon strip's stacking context, so side panels never clip the dropdown.
+      // Portaling to <body> escapes the icon strip's stacking context, so panels can't clip it.
       const dropdown = page.locator('.new-session-dropdown-portal')
       await expect(dropdown).toBeVisible()
       const portaledToBody = await dropdown.evaluate(el => el.parentElement === document.body)
@@ -812,13 +824,10 @@ test.describe('Layout', () => {
 
     // SPEC: layout:restore
     test('saved width from server applied on panel open', async ({ page }) => {
-      // Schema v2 ui-state with specific widths.
-      const savedSession = {
-        panelGroups: {
-          left: { width: 350, order: ['sessions'] },
-          right: { width: 400, order: ['todos', 'stash'] },
-        },
-      }
+      // Schema v3 ui-state - restoreFromServer reads `layout` (not `panelGroups`) to decide
+      // whether a restore happened at all, so the fixture needs a real dockview-shaped `layout`.
+      const savedSession = loadFixture('layouts/session-open-panel.json')
+      const savedWidth = savedSession.panelGroups.left.width
 
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
@@ -834,7 +843,7 @@ test.describe('Layout', () => {
 
       await openSessionsPanel(page)
 
-      // Saved width is 350, so the applied width should clear this floor easily.
+      // Fixture width 500 is far above the default rebuild's ~192px here, so this proves a restore.
       await expect
         .poll(async () => {
           return await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
@@ -842,7 +851,7 @@ test.describe('Layout', () => {
             return group ? group.offsetWidth : 0
           })
         })
-        .toBeGreaterThan(150)
+        .toBeGreaterThan(savedWidth - 100)
     })
   })
 
@@ -981,7 +990,7 @@ test.describe('Layout', () => {
     // SPEC: layout:auto-copy
     test('inherited layout preserves panel widths from previous session', async ({ page }) => {
       const sessionALayout = loadFixture('layouts/sessions-open-wide.json')
-      const _savedWidth = sessionALayout.panelGroups.left.width
+      const savedWidth = sessionALayout.panelGroups.left.width
 
       await page.route(/\/ui-state/, async route => {
         if (route.request().method() === 'GET') {
@@ -997,6 +1006,7 @@ test.describe('Layout', () => {
 
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
+      // Fixture width 450 is far above the default rebuild's ~192px here, so this proves a restore.
       await expect
         .poll(async () => {
           return await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
@@ -1004,7 +1014,7 @@ test.describe('Layout', () => {
             return group ? group.offsetWidth : 0
           })
         })
-        .toBeGreaterThan(150)
+        .toBeGreaterThan(savedWidth - 100)
     })
 
     // SPEC: layout:auto-copy
@@ -1064,7 +1074,7 @@ test.describe('Layout', () => {
         return el.getBoundingClientRect().width
       })
 
-      // Close every default-open panel: left (sessions, bookmarks, boards), right (todos, stash, tasks).
+      // Close every default-open panel: left sessions/bookmarks/boards, right todos/stash/tasks.
       await toggleSessionsPanel(page)
       await page.keyboard.press('Alt+5') // bookmarks
       await page.keyboard.press('Alt+6') // boards
@@ -1108,8 +1118,7 @@ test.describe('Layout', () => {
     })
 
     // SPEC: layout:panel-drag-invalidate
-    // MOCK-LIMITED: Dockview's drag-to-reposition and sash setPointerCapture() aren't simulable in Playwright,
-    // so this only verifies resize infrastructure exists (sash elements with the correct cursor).
+    // MOCK-LIMITED: dockview drag/sash setPointerCapture() isn't simulable - checks sashes exist.
     test('resize sashes exist for panel width adjustment', async ({ page }) => {
       await mockAPI(page)
       await mockSSE(page)
@@ -1349,7 +1358,7 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // .panel-control-btn scopes to the chat control bar, distinct from the sessions panel's pin button.
+      // .panel-control-btn scopes to the chat control bar, not the sessions panel's pin.
       const pinBtn = page.locator('.panel-control-btn[title="Pin session"]')
       await expect(pinBtn).toBeVisible()
     })

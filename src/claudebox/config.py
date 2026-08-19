@@ -31,7 +31,7 @@ class Config(DataClass):
     network_mode: str | None = None
     env: dict[str, str] | None = None
 
-    # [containers] - opt-in nested rootless podman-in-podman inside the session.
+    # [containers] - opt-in nested podman-in-podman inside the session.
     containers_nested: bool = False
 
     # [editor] - URI template for "open in IDE" affordances; absent disables it, else {path}/{line}

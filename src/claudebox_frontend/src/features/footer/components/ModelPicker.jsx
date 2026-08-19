@@ -62,7 +62,7 @@ export default function ModelPicker({ currentModel, defaultValue, disabled }) {
         className="footer-picker-btn"
         disabled={disabled}
         onClick={handleToggle}
-        title={`Model - ${effectiveModel || '-'}`}
+        title={`Model — ${effectiveModel || '-'}`}
         data-testid="footer-model">
         {displayName}
         <ChevronDown size={10} />

@@ -32,7 +32,7 @@ export default function BoardHeaderInfo({ boardId }) {
         type="button"
         className="session-header-strip-name"
         onClick={handleClick}
-        title={board?.path ? `Board path - ${board.path}` : label}
+        title={board?.path ? `Board path — ${board.path}` : label}
         data-testid="board-header"
         data-board-id={boardId}>
         <span style={{ visibility: copied ? 'hidden' : 'visible' }}>{label}</span>

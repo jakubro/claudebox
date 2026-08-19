@@ -14,30 +14,17 @@ const EMPTY_SET = new Set()
 /**
  * Render the completed turns that currently fall inside the scroll window.
  *
- * Split out of ChatPanel so historical turns skip reconciliation on each streaming flush: the
- * active turn grows every flush and is rendered directly by ChatPanel, while this list's props stay
- * referentially stable, so its memo bails. `nextUserMessage` for the last historical turn comes from
- * `boundaryNextUserMessage`, since the active turn is excluded from this list.
+ * Split from ChatPanel so historical turns skip reconciliation on each streaming flush: props stay
+ * referentially stable, so the memo bails while the active turn re-renders in ChatPanel. The
+ * virtualizer is owned here because it re-renders its owner every scroll frame; owning it above
+ * this memo boundary would drag ChatPanel - and the live streaming turn - into each frame.
  *
- * The virtualizer is owned here rather than in ChatPanel: it re-renders its owner every scroll
- * frame, and owning it above this memo boundary would drag ChatPanel - and the live streaming turn -
- * into each frame. ChatPanel reaches it through `virtualizerRef` for jump-to-turn.
- *
- * @param {object} props.messagesRef - Ref to the chat scroll container.
- * @param {object} props.virtualizerRef - Filled with the virtualizer for jump-to-turn.
- * @param {Array} props.turns - Completed turns to render (active turn excluded).
- * @param {string|null} props.boundaryNextUserMessage - User message of the turn after the last one here.
- * @param {Map} props.todoDiffs - Todo changes keyed by tool_use_id.
- * @param {Object} props.taskNotifications - Task completion notifications.
- * @param {Object} props.turnResults - Result status keyed by turn_id.
+ * @param {object} props.virtualizerRef - Filled with the virtualizer for ChatPanel's jump-to-turn.
+ * @param {Array} props.turns - Completed turns; active turn excluded.
+ * @param {string|null} props.boundaryNextUserMessage - Next user message after the last turn here.
  * @param {Set} props.duplicateAskUserIds - Cross-turn duplicate AskUserQuestion IDs to hide.
- * @param {boolean} props.hasPendingMessages - Whether optimistic pending messages exist.
- * @param {string|null} props.forkingTurnId - Turn currently being forked, if any.
- * @param {Function} props.onFormSubmit - Form submission callback.
- * @param {Function} props.registerPendingForm - Registers the active turn's live AskUserQuestion form.
- * @param {Function} props.onRewind - Rewind-to-turn callback.
  * @param {Function} props.isBookmarked - (turnId, messageType) => boolean.
- * @param {Function} props.onToggleBookmark - Toggle-bookmark callback.
+ * @param {boolean} [props.splitEnabled] - Terminal split state - see `useTurnVirtualizer`.
  */
 function HistoricalTurnList({
   messagesRef,
@@ -55,6 +42,7 @@ function HistoricalTurnList({
   onRewind,
   isBookmarked,
   onToggleBookmark,
+  splitEnabled = false,
 }) {
   const collapse = useTurnCollapse()
   const collapsedTurnIds = collapse?.collapsedTurnIds ?? EMPTY_SET
@@ -64,6 +52,7 @@ function HistoricalTurnList({
     listRef,
     turns,
     collapsedTurnIds,
+    splitEnabled,
   })
 
   if (virtualizerRef) {

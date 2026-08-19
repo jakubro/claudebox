@@ -193,7 +193,7 @@ class DaemonExecutors:
         return (self.listing, self.podman, self.state)
 
 
-def tracked(fn: Callable[[], T]) -> tuple[Callable[[], T], Admission]:
+def tracked[T](fn: Callable[[], T]) -> tuple[Callable[[], T], Admission]:
     """Wrap a pool-bound callable so a fired timeout can say whether the work ever ran."""
 
     admission = Admission()
@@ -201,6 +201,9 @@ def tracked(fn: Callable[[], T]) -> tuple[Callable[[], T], Admission]:
     def _run() -> T:
         admission.started_at = time.monotonic()
 
-        return fn()
+        try:
+            return fn()
+        finally:
+            admission.finished_at = time.monotonic()
 
     return _run, admission

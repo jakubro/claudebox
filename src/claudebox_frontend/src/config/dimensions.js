@@ -36,3 +36,14 @@ export const LOGS_STRIP_DEFAULT_HEIGHT = 240
 export const LOGS_STRIP_MIN_HEIGHT = 80
 export const LOGS_STRIP_MAX_HEIGHT_RATIO = 0.6
 export const MOBILE_BREAKPOINT = 768
+/** Chat content area's transcript/terminal split - divider ratio and each side's floor width. */
+export const CHAT_SPLIT_DEFAULT_RATIO = 0.5
+export const CHAT_TRANSCRIPT_MIN_WIDTH = 320
+export const CHAT_TERMINAL_MIN_WIDTH = 320
+export const CHAT_SPLIT_DIVIDER_WIDTH = 5
+/** Terminal column height prediction - line count only, no wrap. */
+export const TERMINAL_LINE_HEIGHT_PX = 17
+/** .terminal-entry chrome: margin-bottom only; the buttons overlay the first line. */
+export const TERMINAL_ENTRY_BASE_HEIGHT_PX = 16
+export const TERMINAL_ENTRY_MIN_PREDICTED_HEIGHT_PX = 60
+export const TERMINAL_OVERSCAN = 4

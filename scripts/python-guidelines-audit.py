@@ -89,14 +89,11 @@ class CrossPackageImportAudit:
         """Whether this module path is an allowed cross-package deep import."""
 
         # claudebox.constants - shared canonical constants
-        if parts[:2] == ["claudebox", "constants"]:
-            return True
-
-        # claudebox.extensions.<subpackage> - each extension is its own root surface
-        elif len(parts) == 3 and parts[:2] == ["claudebox", "extensions"]:
-            return True
-        else:
-            return False
+        return bool(
+            parts[:2] == ["claudebox", "constants"]
+            or len(parts) == 3
+            and parts[:2] == ["claudebox", "extensions"],
+        )
 
     def _is_violation(self, module: str, source_pkg: str | None) -> bool:
         """Whether `from module import ...` from source_pkg violates the boundary rule."""
@@ -104,16 +101,12 @@ class CrossPackageImportAudit:
         parts = module.split(".")
         head = parts[0]
 
-        if head not in self.FIRST_PARTY:
-            return False
-        elif head == source_pkg:
-            return False
-        elif len(parts) == 1:
-            return False
-        elif self._is_exempt(parts):
-            return False
-        else:
-            return True
+        return not (
+            head not in self.FIRST_PARTY
+            or head == source_pkg
+            or len(parts) == 1
+            or self._is_exempt(parts)
+        )
 
     def _audit_file(self, path: Path) -> list[tuple[int, str]]:
         """Return (line, import_text) tuples for every violation in this file."""
@@ -221,10 +214,9 @@ class WhitespaceControlFlowAudit:
         for i, stmt in enumerate(body):
             if i > 0 and not isinstance(stmt, self.DEF):
                 prev = body[i - 1]
-                paragraphed = (
-                    isinstance(prev, self.COMPOUND)
-                    or isinstance(stmt, self.COMPOUND)
-                    or isinstance(stmt, self.TERM)
+                paragraphed = isinstance(prev, self.COMPOUND) or isinstance(
+                    stmt,
+                    (self.COMPOUND, self.TERM),
                 )
 
                 if paragraphed and self._missing_blank(lines, stmt.lineno, stmt.col_offset):
@@ -296,14 +288,7 @@ class WhitespaceControlFlowAudit:
         ):
             j -= 1
 
-        if j < 0:
-            return False
-        elif not lines[j].strip():
-            return False
-        elif lines[j].rstrip().endswith(":"):
-            return False
-        else:
-            return True
+        return not (j < 0 or not lines[j].strip() or lines[j].rstrip().endswith(":"))
 
     @staticmethod
     def _subbodies(node: ast.stmt) -> list[list[ast.stmt]]:
@@ -545,8 +530,10 @@ class CallbackCatchAllAudit:
                 found.append(
                     (
                         node.lineno,
-                        f"def {node.name}(...) has a `**{kwarg.arg}` catch-all alongside a named "
-                        "callback parameter - drop the catch-all so a misnamed callback fails loud",
+                        (
+                            f"def {node.name}(...) has a `**{kwarg.arg}` catch-all alongside a named "
+                            "callback parameter - drop the catch-all so a misnamed callback fails loud"
+                        ),
                     ),
                 )
 

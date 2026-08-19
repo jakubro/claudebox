@@ -115,12 +115,46 @@ class BoardService:
             raise ListingTimeout(workspace=str(self._workspace.path)) from exc
 
     def _dispatch_walk(self):
-        """Submit the workspace walk, recording when a worker picks it up."""
+        """Submit the workspace walk, recording when a worker picks it up.
+
+        Logs from the wrapper itself, against a locally-captured admission - reading
+        self._admission after the fact would race a concurrent caller's later flight.
+        """
 
         loop = asyncio.get_running_loop()
         walk, self._admission = tracked(self._list_all_sync)
+        admission = self._admission
 
-        return loop.run_in_executor(self._executor, walk)
+        def _walk_and_log():
+            result = walk()
+            self._logger.info(
+                "board_listing_scanned",
+                queued_seconds=round(admission.queued_seconds, 3),
+                scan_seconds=round(admission.running_seconds, 3),
+                pool=self._executor.stats().asdict(),
+                **self._log_context,
+            )
+
+            return result
+
+        return loop.run_in_executor(self._executor, _walk_and_log)
+
+    def log_listing_completed(
+        self,
+        *,
+        board_count: int,
+        response_bytes: int,
+        total_seconds: float,
+    ) -> None:
+        """Log a successful listing's end-to-end cost - the success-path twin of the timeout warning."""
+
+        self._logger.info(
+            "board_listing_completed",
+            board_count=board_count,
+            response_bytes=response_bytes,
+            total_seconds=round(total_seconds, 3),
+            **self._log_context,
+        )
 
     def _list_all_sync(self) -> list[BoardSummary]:
         """Synchronous body of list_all - runs on the daemon executor."""
@@ -336,7 +370,7 @@ class BoardService:
                     endpoint="api/send",
                     payload={"prompt": message},
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort; must not fail the board mutation
                 self._logger.warning(
                     "Failed to send prompt message",
                     message=message,

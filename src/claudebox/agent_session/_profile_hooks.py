@@ -124,7 +124,7 @@ def _extract_context(stdout: str, hook: Path) -> str | None:
 
     try:
         response: Any = serialization.loads(stdout)
-    except Exception:
+    except Exception:  # noqa: BLE001 - untrusted hook stdout; any parse failure degrades the same
         _logger.warning("profile_hook_unparseable_output", hook=str(hook))
 
         return None

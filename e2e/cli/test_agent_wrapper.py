@@ -56,6 +56,7 @@ def _run(agent: str, hermetic_home: Path, **env) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         timeout=30,
+        check=False,
     )
 
 

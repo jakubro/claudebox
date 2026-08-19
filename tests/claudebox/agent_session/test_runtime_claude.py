@@ -469,14 +469,16 @@ class TestDisconnect:
         runtime._buffer.append("msg")
         runtime._pending_calls.append(("set_model", ("m",), {}))
 
-        with patch.object(
-            runtime._sdk,
-            "disconnect",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("disconnect failed"),
+        with (
+            patch.object(
+                runtime._sdk,
+                "disconnect",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("disconnect failed"),
+            ),
+            pytest.raises(RuntimeError, match="disconnect failed"),
         ):
-            with pytest.raises(RuntimeError, match="disconnect failed"):
-                await runtime.disconnect()
+            await runtime.disconnect()
 
         assert not runtime.ready.is_set()
         assert len(runtime._buffer) == 0

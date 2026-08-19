@@ -1,6 +1,6 @@
 /** Tests for TasksPanel component. */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import TasksPanel from './TasksPanel'
@@ -8,6 +8,12 @@ import TasksPanel from './TasksPanel'
 const mockEvents = []
 const mockFocusChatTab = vi.fn()
 const mockEventsData = { isResuming: false, isReplaying: false }
+// Stable ref identity across renders (mirrors the real useRef-backed context), so a click handler
+// reading `.current` at call time sees whatever the test set, not a fresh mock each render.
+const mockScrollToTurnRef = { current: null }
+const mockExpandTurnRef = { current: null }
+const mockMarkUserIntentRef = { current: null }
+const mockMarkProgrammaticScrollRef = { current: null }
 
 vi.mock('../../context/EventsContext', () => ({
   useEvents: () => ({
@@ -19,6 +25,10 @@ vi.mock('../../context/EventsContext', () => ({
 vi.mock('../../context/AppActionsContext', () => ({
   useAppActions: () => ({
     focusChatTab: mockFocusChatTab,
+    scrollToTurnRef: mockScrollToTurnRef,
+    expandTurnRef: mockExpandTurnRef,
+    markUserIntentRef: mockMarkUserIntentRef,
+    markProgrammaticScrollRef: mockMarkProgrammaticScrollRef,
   }),
 }))
 
@@ -28,6 +38,10 @@ describe('TasksPanel', () => {
     mockFocusChatTab.mockClear()
     mockEventsData.isResuming = false
     mockEventsData.isReplaying = false
+    mockScrollToTurnRef.current = null
+    mockExpandTurnRef.current = null
+    mockMarkUserIntentRef.current = null
+    mockMarkProgrammaticScrollRef.current = null
   })
 
   it('renders empty state when no tasks', () => {
@@ -201,6 +215,112 @@ describe('TasksPanel', () => {
     render(<TasksPanel />)
 
     await user.click(screen.getByText('Clickable task'))
+
+    expect(mockFocusChatTab).toHaveBeenCalled()
+  })
+
+  it('expands the task turn and brackets the scroll when the tool block is already mounted', async () => {
+    const user = userEvent.setup()
+    // The common fast path: a task in the active turn, never windowed or collapsed.
+    mockEvents.push(
+      {
+        type: 'user',
+        subtype: 'text',
+        is_human: true,
+        content: 'do it',
+        turn_id: 'turn_mounted',
+        timestamp: Date.now(),
+      },
+      {
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: Date.now(),
+        tool_use_id: 'task_mounted',
+        tool_input: { description: 'Mounted task' },
+      },
+    )
+    mockExpandTurnRef.current = vi.fn()
+    mockMarkProgrammaticScrollRef.current = vi.fn()
+
+    // Bare stand-ins for what the chat tree renders - isolates TasksPanel's own click handling.
+    const chatMessages = document.createElement('div')
+    chatMessages.setAttribute('data-testid', 'chat-messages')
+    const block = document.createElement('div')
+    block.setAttribute('data-tool-use-id', 'task_mounted')
+    document.body.append(chatMessages, block)
+
+    render(<TasksPanel />)
+    await user.click(screen.getByText('Mounted task'))
+
+    await waitFor(() => expect(mockMarkProgrammaticScrollRef.current).toHaveBeenCalled())
+    // Expansion runs on the fast path too - a completed task in an earlier, now-collapsed turn.
+    expect(mockExpandTurnRef.current).toHaveBeenCalledWith('turn_mounted')
+
+    document.body.removeChild(chatMessages)
+    document.body.removeChild(block)
+  })
+
+  it('resolves the turn via scrollToTurnRef when the tool block is windowed out, then expands it', async () => {
+    const user = userEvent.setup()
+    mockEvents.push(
+      {
+        type: 'user',
+        subtype: 'text',
+        is_human: true,
+        content: 'do it',
+        turn_id: 'turn_windowed',
+        timestamp: Date.now(),
+      },
+      {
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: Date.now(),
+        tool_use_id: 'task_windowed',
+        tool_input: { description: 'Windowed task' },
+      },
+    )
+    const chatMessages = document.createElement('div')
+    chatMessages.setAttribute('data-testid', 'chat-messages')
+    document.body.appendChild(chatMessages)
+    const block = document.createElement('div')
+    block.setAttribute('data-tool-use-id', 'task_windowed')
+    mockExpandTurnRef.current = vi.fn()
+    mockMarkProgrammaticScrollRef.current = vi.fn()
+    mockScrollToTurnRef.current = vi.fn((_turnId, onResolved) => {
+      // Simulates ChatPanel mounting the turn on request, then handing back its element.
+      document.body.appendChild(block)
+      onResolved(block)
+    })
+
+    render(<TasksPanel />)
+    await user.click(screen.getByText('Windowed task'))
+
+    await waitFor(() =>
+      expect(mockScrollToTurnRef.current).toHaveBeenCalledWith(
+        'turn_windowed',
+        expect.any(Function),
+      ),
+    )
+    await waitFor(() => expect(mockExpandTurnRef.current).toHaveBeenCalledWith('turn_windowed'))
+    expect(mockMarkProgrammaticScrollRef.current).toHaveBeenCalled()
+
+    document.body.removeChild(chatMessages)
+    document.body.removeChild(block)
+  })
+
+  it('does not throw when a task has no turn id and the tool block is not mounted (no crash, no jump)', async () => {
+    const user = userEvent.setup()
+    mockEvents.push({
+      subtype: 'tool_use',
+      content: 'Task',
+      timestamp: Date.now(),
+      tool_use_id: 'task_unresolvable',
+      tool_input: { description: 'Unresolvable task' },
+    })
+    mockScrollToTurnRef.current = null
+
+    render(<TasksPanel />)
+    await user.click(screen.getByText('Unresolvable task'))
 
     expect(mockFocusChatTab).toHaveBeenCalled()
   })

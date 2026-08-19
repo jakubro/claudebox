@@ -98,12 +98,11 @@ class Projection:
         session_id: str,
         workspace: Workspace,
         runtime: AgentSession | None = None,
+        provider: str | None = None,
     ):
-        """Initialize projection, loading existing state or creating new summary.
-
-        `runtime` is the active AgentSession adapter backing a live session - `_categorize_commands`
-        sources skill metadata from its catalog so categorization stays runtime-agnostic. None is only
-        valid for throwaway read-only get/list projections, which never receive events to categorize.
+        """Initialize projection, loading existing state or creating a new summary.
+        `runtime` feeds `_categorize_commands` skill metadata; None only for throwaway projections.
+        `provider` is LangGraph's `provider:model` prefix; None under Claude, fresh summaries only.
         """
 
         self._logger = get_logger(__name__)
@@ -132,6 +131,9 @@ class Projection:
                 started_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
                 model=None,
+                # Stamped once at creation; a later runtime change must surface as a mismatch.
+                runtime=runtime.runtime_name if runtime else None,
+                provider=provider,
                 num_turns=0,
                 todos=[],
                 total_cost_usd=0.0,

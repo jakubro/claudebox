@@ -89,7 +89,7 @@ def make_search_tools(ctx: ToolContext) -> list[BaseTool]:
             argv.append("--multiline")
 
         try:
-            result = subprocess.run(  # noqa: S603 - argv is constructed from typed args
+            result = subprocess.run(
                 argv,
                 capture_output=True,
                 text=True,

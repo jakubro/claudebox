@@ -1,0 +1,24 @@
+{
+  "sessions": [
+    {
+      "session_id": "a3f9d012",
+      "name": "csv fix",
+      "workspace": "/home/user/project",
+      "model": "claude-opus-5",
+      "num_turns": 0,
+      "total_cost_usd": 0,
+      "fork_point_cost_usd": 0,
+      "total_duration_ms": 0,
+      "last_context_tokens": 0,
+      "started_at": "2025-01-18T12:00:00Z",
+      "updated_at": "2025-01-18T12:00:00Z",
+      "first_message": null,
+      "last_message": null,
+      "parent_session_id": null,
+      "session_dir": "/tmp/sessions/a3f9d012",
+      "todos": [],
+      "commands": [],
+      "container_id": "test-cid"
+    }
+  ]
+}

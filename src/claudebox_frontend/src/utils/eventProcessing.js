@@ -722,8 +722,13 @@ export function extractTasks(events, taskNotifications) {
 
   const lastEventByParent = buildLastEventTimeMap(events)
 
-  // Second pass: extract Task tool_use events
+  // Turn tracking mirrors appendTurns: a non-nested human event opens a turn; the rest join it.
+  let currentTurnId = null
   for (const event of events) {
+    if (isHumanEvent(event) && !event.parent_tool_use_id) {
+      currentTurnId = event.turn_id ?? null
+    }
+
     if (event.subtype === EventSubtype.TOOL_USE && event.content === ToolName.TASK) {
       const toolUseId = event.tool_use_id
       const input = event.tool_input ?? {}
@@ -762,6 +767,7 @@ export function extractTasks(events, taskNotifications) {
 
       tasks.push({
         id: toolUseId,
+        turnId: currentTurnId,
         asyncTaskId,
         description: input.description || 'Task',
         prompt: input.prompt,
@@ -854,17 +860,25 @@ export function isHiddenToolSearch(toolUse, toolResult) {
   if (normalizeToolName(toolUse?.content) !== ToolName.TOOL_SEARCH) {
     return false
   }
-  return !(toolResult && toolResult.is_error)
+  return !toolResult?.is_error
 }
 
-/**
- * True when `blocks` has at least one block that isn't a hidden ToolSearch call; a turn whose only
- * content is hidden calls renders no header/footer chrome, not an empty shell.
- */
-export function hasVisibleBlock(blocks) {
-  return blocks.some(
-    block => block.type !== BlockType.TOOL || !isHiddenToolSearch(block.toolUse, block.toolResult),
-  )
+/** Terminal-column routing predicate; a subagent's nested Bash stays in its Task block. */
+export function isTopLevelBashCall(toolUse) {
+  return normalizeToolName(toolUse?.content) === ToolName.BASH && !toolUse?.parent_tool_use_id
+}
+
+/** Any block left after hiding ToolSearch and (if `hideShellCalls`) Bash; else no turn chrome. */
+export function hasVisibleBlock(blocks, hideShellCalls = false) {
+  return blocks.some(block => {
+    if (block.type !== BlockType.TOOL) {
+      return true
+    }
+    if (isHiddenToolSearch(block.toolUse, block.toolResult)) {
+      return false
+    }
+    return !(hideShellCalls && isTopLevelBashCall(block.toolUse))
+  })
 }
 
 /** Extract MCP servers from init events. */

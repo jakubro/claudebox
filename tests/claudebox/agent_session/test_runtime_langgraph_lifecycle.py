@@ -3,10 +3,12 @@
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_ollama import ChatOllama
 
 from claudebox.agent_session.config import LangGraphAgentSessionConfig
 from claudebox.agent_session.events import (
@@ -237,6 +239,14 @@ class TestDisconnect:
             await runtime.disconnect()
 
         assert not runtime.ready.is_set()
+
+    def test_ollama_chat_model_exposes_closeable_client(self):
+        """Checks disconnect's `_client.close` assumption against the real package, not a mock."""
+
+        chat_model = ChatOllama(model="llama3.2:3b")
+
+        assert hasattr(chat_model, "_client")
+        assert callable(getattr(chat_model._client, "close", None))
 
 
 class TestQuery:
@@ -609,6 +619,33 @@ class TestDriveTurn:
         assert kinds == ["system_init", "user_message", "assistant_message", "result"]
 
     @pytest.mark.anyio
+    async def test_human_message_uuid_matches_the_turn_boundary_journal_key(self, tmp_path):
+        """One id both opens the turn (TurnTracker) and keys the journal fork truncation reads."""
+
+        import json
+
+        runtime = LangGraphRuntime(_make_config(tmp_path))
+        runtime._checkpointer = MagicMock()
+        runtime._checkpointer.aget_tuple = AsyncMock(return_value=None)
+        ai = AIMessage(
+            content="2 + 2 is 4.",
+            usage_metadata={"input_tokens": 10, "output_tokens": 8, "total_tokens": 18},
+        )
+        runtime._graph = _stub_graph_with_events(
+            [{"event": "on_chat_model_end", "data": {"output": ai}}],
+        )
+        runtime.ready.set()
+
+        await runtime.query("what's 2+2?")
+
+        events = [evt async for evt in _drain_n(runtime.receive_events(), 4)]
+        human_event = next(e for e in events if e.kind == "user_message" and e.payload.uuid)
+
+        journal = json.loads((tmp_path / "checkpoint_turns.json").read_text())
+
+        assert list(journal.keys()) == [human_event.payload.uuid]
+
+    @pytest.mark.anyio
     async def test_emits_assistant_tool_use_then_tool_result(self, tmp_path):
         runtime = LangGraphRuntime(_make_config(tmp_path))
         ai_call = AIMessage(
@@ -847,7 +884,11 @@ class TestContextSeedFromCheckpoint:
     """Resume seeds occupancy from the checkpoint, and never from a compacted-away prompt."""
 
     # Absurd for a short thread: any seed near it came from the pre-compaction reply.
-    STALE_USAGE = {"input_tokens": 999_000, "output_tokens": 1_000, "total_tokens": 1_000_000}
+    STALE_USAGE: ClassVar[dict[str, int]] = {
+        "input_tokens": 999_000,
+        "output_tokens": 1_000,
+        "total_tokens": 1_000_000,
+    }
     COMPACTED_TOKENS = 4_321
 
     @staticmethod

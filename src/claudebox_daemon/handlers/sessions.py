@@ -1,7 +1,10 @@
 """Session CRUD - workspace-scoped HTTP adapters for session management."""
 
+import time
+
 from fastapi import APIRouter
 
+from claudebox import JSONResponse
 from ._models import ForkSessionRequest, UpdateSessionRequest
 from ._shared import WorkspaceDep
 
@@ -13,7 +16,16 @@ router = APIRouter(prefix="/api/workspaces/{workspace_id}")
 async def list_sessions(svc: WorkspaceDep):
     """List all sessions from workspace disk."""
 
-    return {"sessions": await svc.session_service.list_all()}
+    started_at = time.monotonic()
+    sessions = await svc.session_service.list_all()
+    response = JSONResponse(content={"sessions": sessions})
+    svc.session_service.log_listing_completed(
+        session_count=len(sessions),
+        response_bytes=len(response.body),
+        total_seconds=time.monotonic() - started_at,
+    )
+
+    return response
 
 
 @router.post("/sessions/new")

@@ -32,32 +32,9 @@
   padding: 8px 12px 4px;
 }
 
-/* Vertical metrics + radius live in App.css `.sessions-new, .sessions-refresh, ...` shared block. */
-.sessions-new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s;
-}
-
+/* Metrics, radius, and remaining chrome live in App.css shared `.sessions-*` blocks. */
 .sessions-refresh {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   margin-left: 8px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s;
 }
 
 .sessions-new:hover,
@@ -72,19 +49,6 @@
   position: relative;
   display: flex;
   align-items: center;
-}
-
-.sessions-new-chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    color 0.15s,
-    background 0.15s;
 }
 
 .sessions-new-dropdown {

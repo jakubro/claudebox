@@ -5,6 +5,8 @@ export const BOOKMARKED_TURNS_PATH = 'bookmarkedTurns'
 export const BOOKMARK_META_PATH = 'bookmarkMeta'
 export const WORKSPACE_COLOR_PATH = 'workspaceColor'
 export const WORKSPACE_STORAGE_KEY = 'claudebox-workspace-id'
+// Nothing writes this key; useRateLimitStatus removes it on mount.
+export const RATE_LIMITS_STORAGE_KEY = 'claudebox-rate-limits'
 
 // Per-session prefixes, GC'd by utils/sessionStorageGc.js once the session ends; keys below stay global.
 export const MESSAGE_QUEUE_STORAGE_PREFIX = 'queue:'

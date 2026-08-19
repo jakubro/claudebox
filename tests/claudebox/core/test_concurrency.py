@@ -42,7 +42,7 @@ class TestMaybeAwaitable:
 
         with pytest.raises(ValueError, match="boom"):
             # Result deliberately discarded - the raise is what's under test.
-            await maybe_awaitable(failing())  # ty: ignore[unused-awaitable]
+            await maybe_awaitable(failing())
 
 
 class TestSingleFlight:

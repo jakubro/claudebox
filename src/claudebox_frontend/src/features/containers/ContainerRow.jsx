@@ -78,11 +78,11 @@ function ContainerRow({ container }) {
       />
       <span
         className={`containers-id${displayId ? ' containers-id-clickable' : ''}`}
-        title={displayId ? `Container - ${displayId}` : undefined}
+        title={displayId ? `Container — ${displayId}` : undefined}
         onClick={displayId ? () => copyBackend(displayId) : undefined}
         style={{ cursor: displayId ? 'pointer' : undefined }}>
         <span style={{ visibility: backendCopied ? 'hidden' : 'visible' }}>
-          {displayId.slice(0, 12)}
+          {displayId.slice(0, 8)}
         </span>
         {backendCopied && <span className="containers-id-copied">Copied!</span>}
       </span>

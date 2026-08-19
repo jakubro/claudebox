@@ -140,7 +140,7 @@ class TestResolvePath:
 
     def test_nested_path_creates_intermediary(self):
         state = {}
-        parent, key = UIStateService._resolve_path(state, "layout.sidebar.width")
+        _parent, key = UIStateService._resolve_path(state, "layout.sidebar.width")
         assert key == "width"
         assert "layout" in state
         assert "sidebar" in state["layout"]
@@ -153,7 +153,7 @@ class TestResolvePath:
 
     def test_non_dict_overwritten(self):
         state = {"layout": "flat"}
-        parent, key = UIStateService._resolve_path(state, "layout.sidebar")
+        _parent, key = UIStateService._resolve_path(state, "layout.sidebar")
         assert key == "sidebar"
         assert isinstance(state["layout"], dict)
 
@@ -202,7 +202,7 @@ class TestLoad:
         svc = _make_service(tmp_path)
         write_json(svc._state_path, {"version": 1, "global": {"old": True}, "sessions": {}})
 
-        physical, virtual = svc._load(None)
+        physical, _virtual = svc._load(None)
         assert physical["version"] == UIStateService.VERSION
         assert physical["global"] == {}  # migrated - old data cleared
 
@@ -261,7 +261,7 @@ class TestGetPatch:
         svc = _make_service(tmp_path)
         result = await svc.patch(
             "s1",
-            **{"session": [{"op": "set", "path": "sidebar", "value": "open"}]},
+            session=[{"op": "set", "path": "sidebar", "value": "open"}],
         )
         assert result.session_state["sidebar"] == "open"
 
@@ -270,7 +270,7 @@ class TestGetPatch:
         svc = _make_service(tmp_path)
 
         with pytest.raises(ValueError, match="session_id required"):
-            await svc.patch(None, **{"session": [{"op": "set", "path": "x", "value": 1}]})
+            await svc.patch(None, session=[{"op": "set", "path": "x", "value": 1}])
 
     @pytest.mark.anyio
     async def test_patch_persists(self, tmp_path):
@@ -285,7 +285,7 @@ class TestGetPatch:
     @pytest.mark.anyio
     async def test_latest_session_inheritance(self, tmp_path):
         svc = _make_service(tmp_path)
-        await svc.patch("s1", **{"session": [{"op": "set", "path": "layout", "value": "wide"}]})
+        await svc.patch("s1", session=[{"op": "set", "path": "layout", "value": "wide"}])
 
         # Get without session_id returns latest
         result = svc.get()

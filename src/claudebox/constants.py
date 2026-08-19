@@ -133,8 +133,7 @@ CONTAINER_CLAUDE_JSON_MOUNT = Path("/root/.claude.json")
 
 CONTAINER_IMAGE_NAME = "claudebox"
 
-# Granted only when [containers] nested = true - lets the baked-in rootless podman-in-podman
-# toolchain initialize storage.
+# Granted only when [containers] nested = true, for the podman-in-podman toolchain's storage init.
 CONTAINER_NESTED_FUSE_DEVICE = "/dev/fuse"
 
 # Inner podman's storage root, tmpfs-mounted at run time so it never persists past the session.
@@ -181,7 +180,11 @@ SESSIONS_DIR_NAME = "sessions"  # subdirectory under config_dir
 SESSION_METADATA_FILE = "session.json"  # per-session metadata file
 SESSION_EVENTS_FILE = "events.jsonl"  # per-session event log
 SESSION_COMPACTION_FILE = "compaction.json"
+SESSION_CHECKPOINT_TURNS_FILE = (
+    "checkpoint_turns.json"  # LangGraph: turn_id -> boundary checkpoint_id
+)
 SESSION_ATTACHMENTS_DIR = "attachments"  # per-session attachment files
+RATE_LIMITS_FILE = "rate-limits.json"  # per-workspace plan-limit state, under config_dir
 
 # Size limits
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10 MB per attachment

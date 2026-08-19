@@ -14,7 +14,7 @@ Examples:
 """
 
 
-def handle(args: argparse.Namespace) -> int:  # noqa: ARG001
+def handle(args: argparse.Namespace) -> int:
     """Print a version block: package version + branch / commit / install / python."""
 
     info = get_install_info()

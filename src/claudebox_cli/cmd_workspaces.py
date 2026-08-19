@@ -55,7 +55,7 @@ def register(parser: argparse.ArgumentParser) -> None:
         help="Remove a workspace from the daemon's registry (.workspace marker preserved)",
     )
     deregister_id = deregister_action.add_argument("id", help="Workspace id to deregister")
-    setattr(deregister_id, "completer", complete_workspace_id)
+    deregister_id.completer = complete_workspace_id  # ty: ignore[unresolved-attribute]
 
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0)
@@ -78,7 +78,7 @@ def _print_subhelp() -> None:
     """Print the workspaces noun-group help text (literal brackets via plain print)."""
 
     print("usage: claudebox workspaces <action> [args]")
-    print("")
+    print()
     print("actions:")
     print("  list                       Enumerate registered workspaces")
     print("  register [<path>]          Register a workspace (defaults to cwd)")

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
@@ -24,7 +24,7 @@
       "vitest": false
     },
     "e2e/app": {
-      "entry": ["tests/**/*.spec.{js,jsx}"],
+      "entry": ["tests/**/*.spec.{js,jsx}", "playwright.demo.config.js"],
       "project": ["**/*.{js,jsx}"],
       "ignoreDependencies": ["serve"]
     }

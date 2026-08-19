@@ -13,6 +13,7 @@ import {
   Package,
   Pin,
   RefreshCw,
+  SquareSplitHorizontal,
 } from 'lucide-react'
 import { useCallback } from 'react'
 import { sendMessage } from '../../../../api/chat'
@@ -27,18 +28,9 @@ import SessionNameEditor from './components/SessionNameEditor'
 
 /**
  * @param {Object} props
- * @param {Function} props.onReload - Callback to reload session
- * @param {Function} props.onFork - Callback receiving fork mode string
- * @param {boolean} props.forking - Whether a fork is in progress
- * @param {Object} props.messagesRef - Ref to messages container for scroll
- * @param {Object} props.autoScrollEnabledRef - Ref tracking auto-scroll state
- * @param {boolean} props.isAutoScrollEnabled - Whether auto-scroll is active
- * @param {boolean} props.autoCollapseEnabled - Whether auto-collapse of earlier turns is active
- * @param {Function} props.onToggleAutoCollapse - Callback to toggle auto-collapse
- * @param {Function} props.onJumpPrev - Callback to jump to previous message
- * @param {Function} props.onJumpNext - Callback to jump to next message
- * @param {boolean} props.minimapPinned - Whether minimap is pinned visible
- * @param {Function} props.onToggleMinimap - Callback to toggle minimap pinned state
+ * @param {Function} props.onFork - Receives a fork mode string.
+ * @param {boolean} props.terminalSplitEnabled - Split preference, independent of a width-driven
+ *   collapse.
  */
 export default function ChatControlBar({
   onReload,
@@ -53,6 +45,8 @@ export default function ChatControlBar({
   onJumpNext,
   minimapPinned,
   onToggleMinimap,
+  terminalSplitEnabled,
+  onToggleTerminalSplit,
 }) {
   const isMobile = useIsMobile()
   const { capabilities } = useCapabilities()
@@ -208,6 +202,15 @@ export default function ChatControlBar({
               data-testid="autocollapse-toggle"
               title={autoCollapseEnabled ? 'Disable auto-collapse' : 'Enable auto-collapse'}>
               <ChevronsDownUp size={12} />
+            </button>
+            <button
+              type="button"
+              className={`panel-control-btn${terminalSplitEnabled ? ' pressed' : ''}`}
+              onClick={onToggleTerminalSplit}
+              aria-pressed={terminalSplitEnabled}
+              data-testid="terminal-split-toggle"
+              title={terminalSplitEnabled ? "Hide agent's terminal" : "Show agent's terminal"}>
+              <SquareSplitHorizontal size={12} />
             </button>
           </div>
         )}

@@ -12,7 +12,7 @@ import shutil
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from claude_agent_sdk import (
     AssistantMessage as SdkAssistantMessage,
@@ -186,10 +186,17 @@ class ClaudeRuntime:
     runtime_name: str = "Claude"
 
     # PreCompact SDK trigger -> claudebox compact_metadata.trigger.
-    SDK_COMPACT_TRIGGER_MAP = {"auto": "context_limit", "manual": "manual"}
+    SDK_COMPACT_TRIGGER_MAP: ClassVar[dict[str, str]] = {
+        "auto": "context_limit",
+        "manual": "manual",
+    }
 
     # "stopped" maps to "killed" so the Tasks panel's killed-shown-as-failed path fires.
-    SDK_TASK_STATUS_MAP = {"completed": "completed", "failed": "failed", "stopped": "killed"}
+    SDK_TASK_STATUS_MAP: ClassVar[dict[str, str]] = {
+        "completed": "completed",
+        "failed": "failed",
+        "stopped": "killed",
+    }
 
     DEFAULT_MODEL = "claude-opus-5"
     DEFAULT_CONTEXT_WINDOW = 1_000_000
@@ -215,14 +222,14 @@ class ClaudeRuntime:
         supports_ask_user_question=True,
     )
 
-    AVAILABLE_MODELS = [
+    AVAILABLE_MODELS: ClassVar[list[Model]] = [
         Model(id="claude-fable-5", name="Fable 5", context_window=1_000_000),
         Model(id="claude-opus-5", name="Opus 5", context_window=1_000_000),
         Model(id="claude-sonnet-5", name="Sonnet 5", context_window=1_000_000),
         Model(id="claude-haiku-4-5-20251001", name="Haiku 4.5", context_window=200_000),
     ]
 
-    AVAILABLE_EFFORT_LEVELS = [
+    AVAILABLE_EFFORT_LEVELS: ClassVar[list[EffortLevel]] = [
         EffortLevel(id="max", name="Max"),
         EffortLevel(id="xhigh", name="XHigh"),
         EffortLevel(id="high", name="High"),
@@ -230,7 +237,7 @@ class ClaudeRuntime:
         EffortLevel(id="low", name="Low"),
     ]
 
-    AVAILABLE_PERMISSION_MODES = [
+    AVAILABLE_PERMISSION_MODES: ClassVar[list[PermissionMode]] = [
         PermissionMode(id="default", name="Default", description="Standard permission behavior"),
         PermissionMode(id="plan", name="Plan", description="Planning mode"),
         PermissionMode(id="acceptEdits", name="Accept Edits", description="Auto-accept file edits"),
@@ -457,7 +464,7 @@ class ClaudeRuntime:
                 buffered=stats.current_buffer_used,
                 consumers_waiting=stats.tasks_waiting_receive,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - private SDK internals; a shape change degrades to None
             global _WARNED_STREAM_HEALTH_UNAVAILABLE
 
             if not _WARNED_STREAM_HEALTH_UNAVAILABLE:
@@ -1038,7 +1045,7 @@ class ClaudeRuntime:
 
         result = input_data.get("tool_response")
 
-        if isinstance(result, str) or isinstance(result, dict) or result is None:
+        if isinstance(result, (str, dict)) or result is None:
             tool_use_result: str | dict | None = result
         else:
             tool_use_result = str(result)

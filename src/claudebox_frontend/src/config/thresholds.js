@@ -12,3 +12,7 @@ export const REPLAY_DRAIN_SLICE_SIZE = 50
 
 // Staleness fade past STALENESS_STALE_PEAK_MS: fraction = 1 - 1 / (1 + STALENESS_FADE_RATE * overflow_ms).
 export const STALENESS_FADE_RATE = 0.00002
+
+// Footer plan-limit item color ramp: amber at the warning start, red from here up, clamped beyond.
+export const RATE_LIMIT_WARNING_START_PCT = 75
+export const RATE_LIMIT_DANGER_PCT = 95

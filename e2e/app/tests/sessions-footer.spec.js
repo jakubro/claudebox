@@ -6,6 +6,7 @@ import {
   DEFAULT_BACKEND_ID,
   DEFAULT_CONTAINER_ID,
   DEFAULT_SESSION_URL,
+  DEFAULT_WORKSPACE_ID,
   loadFixture,
   mockAPI,
 } from '../mocks/api.js'
@@ -66,13 +67,13 @@ test.describe('Footer', () => {
     })
 
     // SPEC: footer:runtime-id
-    test('shows runtime container id (12-char prefix) after the session id', async ({ page }) => {
-      // Footer reads GET .../containers/{id} (Container.backend_id); mock returns DEFAULT_BACKEND_ID.
+    test('shows runtime container id (8-char prefix) after the session id', async ({ page }) => {
+      // Footer reads .../containers/{id} (Container.backend_id); mock returns DEFAULT_BACKEND_ID.
       const runtime = page.locator('[data-testid="footer-backend-id"]')
-      await expect(runtime).toContainText(DEFAULT_BACKEND_ID.slice(0, 12))
+      await expect(runtime).toContainText('abcdef01')
       await expect(runtime).toHaveAttribute(
         'title',
-        new RegExp(`Container - ${DEFAULT_BACKEND_ID}`),
+        new RegExp(`Container — ${DEFAULT_BACKEND_ID}`),
       )
     })
 
@@ -94,7 +95,7 @@ test.describe('Footer', () => {
     test('on new session creation, footer fields populate immediately from create-response', async ({
       page,
     }) => {
-      // Fields must populate from the new-session response, not the later SDK init event (avoids a blank window).
+      // Populate from the new-session response, not the later SDK init event - no blank window.
       await page.click('[data-testid="header-new-session-btn"]')
       await expect(page.locator('[data-testid="footer-workspace"]')).not.toContainText('-')
       await expect(page.locator('[data-testid="footer-session"]')).not.toBeEmpty()
@@ -437,7 +438,7 @@ test.describe('Footer', () => {
 
     // SPEC: footer:effort-picker-default
     test('falls back to backend default effort level when session has none', async ({ page }) => {
-      // No session effort_level: picker shows the backend default (mocked "xhigh"), not a hardcoded fallback.
+      // No session effort_level: shows the backend default (mocked "xhigh"), not a hardcoded one.
       await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
     })
 
@@ -628,6 +629,186 @@ test.describe('Footer', () => {
     })
   })
 
+  test.describe('Plan Limit Warnings', () => {
+    function rateLimitPayload(rateLimitType, status, utilization, resetsAt) {
+      return {
+        rate_limit_type: rateLimitType,
+        status,
+        resets_at: resetsAt ?? Math.floor(Date.now() / 1000) + 3600,
+        utilization,
+      }
+    }
+
+    // SPEC: footer:rate-limit
+    // SPEC: footer:rate-limit-unknown
+    test('no items before any usage is known', async ({ page }) => {
+      await mockAPI(page, { sessionRateLimits: [] })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+
+      await expect(page.locator('[data-testid^="footer-rate-limit-"]')).toHaveCount(0)
+    })
+
+    // SPEC: footer:rate-limit-position
+    test('an item sits immediately left of the workspace name, its own separator intact', async ({
+      page,
+    }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('five_hour', 'allowed_warning', 0.86)],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+
+      const sessionItem = page.locator('[data-testid="footer-rate-limit-session"]')
+      await expect(sessionItem).toHaveText('Session 86%')
+      await expect(sessionItem.locator('xpath=following-sibling::*[1]')).toHaveClass('footer-sep')
+      await expect(sessionItem.locator('xpath=following-sibling::*[2]')).toHaveAttribute(
+        'data-testid',
+        'footer-workspace',
+      )
+    })
+
+    // SPEC: footer:rate-limit-percentage
+    // SPEC: footer:rate-limit-order
+    test('both windows show a percentage, session before weekly', async ({ page }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [
+          rateLimitPayload('five_hour', 'allowed_warning', 0.86),
+          rateLimitPayload('seven_day', 'allowed_warning', 0.91),
+        ],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+
+      await expect(page.locator('[data-testid="footer-rate-limit-session"]')).toHaveText(
+        'Session 86%',
+      )
+      await expect(page.locator('[data-testid="footer-rate-limit-weekly"]')).toHaveText(
+        'Weekly 91%',
+      )
+      const order = await page
+        .locator('[data-testid^="footer-rate-limit-"]')
+        .evaluateAll(els => els.map(el => el.dataset.testid))
+      expect(order).toEqual(['footer-rate-limit-session', 'footer-rate-limit-weekly'])
+    })
+
+    // SPEC: footer:rate-limit-color
+    test('tints from amber toward red as the percentage climbs, solid red past the danger threshold', async ({
+      page,
+    }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('five_hour', 'allowed_warning', 0.75)],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+
+      const item = page.locator('[data-testid="footer-rate-limit-session"]')
+      await expect(item).toHaveText('Session 75%')
+      await assertColor(item, 'color', { r: 216, g: 192, b: 151 }, 8)
+
+      // A fresh percentage is a new server report, not a client-side transition - reload picks
+      // up the daemon's current state, same as the live 5s poll would once it landed.
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('five_hour', 'allowed_warning', 0.99)],
+      })
+      await page.reload()
+      await waitForAppReady(page)
+      await expect(item).toHaveText('Session 99%')
+      await assertColor(item, 'color', { r: 216, g: 151, b: 151 }, 8)
+    })
+
+    // SPEC: footer:rate-limit-reached
+    test('a reached window shows no percentage, in red', async ({ page }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('five_hour', 'rejected', null)],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+
+      const item = page.locator('[data-testid="footer-rate-limit-session"]')
+      await expect(item).toHaveText('Session limit reached')
+      await assertColor(item, 'color', { r: 216, g: 151, b: 151 }, 8)
+    })
+
+    // SPEC: footer:rate-limit-tooltip
+    test('hovering an item names the window, the percentage, and the reset time', async ({
+      page,
+    }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('seven_day', 'allowed_warning', 0.91)],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+
+      const title = await page
+        .locator('[data-testid="footer-rate-limit-weekly"]')
+        .getAttribute('title')
+      expect(title).toContain('Weekly')
+      expect(title).toContain('91%')
+    })
+
+    // SPEC: footer:rate-limit-clears
+    test('an item clears on its own once usage falls back to normal', async ({ page }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('five_hour', 'allowed_warning', 0.9)],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+      await expect(page.locator('[data-testid="footer-rate-limit-session"]')).toBeVisible()
+
+      // The server never serves an 'allowed' status - a window back to normal is simply absent.
+      await mockAPI(page, { sessionRateLimits: [] })
+      await page.reload()
+      await waitForAppReady(page)
+      await expect(page.locator('[data-testid="footer-rate-limit-session"]')).toHaveCount(0)
+    })
+
+    // SPEC: footer:rate-limit-persistence
+    test('an item survives a reload - it describes the account, not one session', async ({
+      page,
+    }) => {
+      await mockAPI(page, {
+        sessionRateLimits: [rateLimitPayload('seven_day', 'allowed_warning', 0.82)],
+      })
+      await mockSSE(page)
+      await page.reload()
+      await waitForAppReady(page)
+      await expect(page.locator('[data-testid="footer-rate-limit-weekly"]')).toHaveText(
+        'Weekly 82%',
+      )
+
+      await page.reload()
+      await waitForAppReady(page)
+
+      await expect(page.locator('[data-testid="footer-rate-limit-weekly"]')).toHaveText(
+        'Weekly 82%',
+      )
+    })
+
+    // SPEC: footer:rate-limit-persistence
+    test('an item known to the account shows before any session attaches', async ({ page }) => {
+      await mockAPI(page, {
+        sessionDefaultsRateLimits: [rateLimitPayload('seven_day', 'allowed_warning', 0.7)],
+      })
+      // Hash-only navigation does not force a reload, and useSessionDefaults caches per
+      // workspace for its own TTL - reload guarantees this test's mock is what actually answers.
+      await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+      await page.reload()
+      await waitForAppReady(page)
+
+      await expect(page.locator('[data-testid="footer-rate-limit-weekly"]')).toHaveText(
+        'Weekly 70%',
+      )
+    })
+  })
+
   test.describe('Footer Buttons', () => {
     // SPEC: footer:copy-session
     test('has copy session dir button', async ({ page }) => {
@@ -664,19 +845,19 @@ test.describe('Footer', () => {
     })
 
     // SPEC: footer:notifications-scope
-    // This covers the toggle UI only; sound and desktop notification behavior is in notifications.spec.js.
+    // Toggle UI only; sound/desktop behavior is in notifications.spec.js.
     test('toggling notifications enables both sound and desktop', async ({ page }) => {
       const notificationsToggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await expect(notificationsToggle).toBeVisible()
 
       await expect(notificationsToggle).not.toHaveClass(/enabled/)
-      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - disabled')
+      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications — disabled')
 
       await notificationsToggle.click()
 
       // Single toggle covers both sound and desktop notifications.
       await expect(notificationsToggle).toHaveClass(/enabled/)
-      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - enabled')
+      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications — enabled')
 
       const bellIcon = notificationsToggle.locator('svg')
       await expect(bellIcon).toHaveAttribute('aria-label', 'Notifications enabled')
@@ -684,7 +865,7 @@ test.describe('Footer', () => {
       await notificationsToggle.click()
 
       await expect(notificationsToggle).not.toHaveClass(/enabled/)
-      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications - disabled')
+      await expect(notificationsToggle).toHaveAttribute('title', 'Notifications — disabled')
     })
   })
 
@@ -777,7 +958,7 @@ test.describe('Sessions Panel', () => {
   test.describe('Sessions List', () => {
     // SPEC: panel-session:list-order
     test('sessions list is sorted newest-first regardless of input order', async ({ page }) => {
-      // Sessions are fed in reverse chronological order, so newest-first proves the panel actively sorts.
+      // Fed in reverse chronological order, so newest-first proves the panel sorts.
       const sessions = [
         {
           session_id: 'oldest',
@@ -995,7 +1176,7 @@ test.describe('Sessions Panel', () => {
     // SPEC: panel-session:new-button
     // SPEC: panel-session:new
     // SPEC: footer:model-picker-scope
-    // model-picker-scope is only partly covered: asserts the API call fires, not the footer's reset model.
+    // model-picker-scope only partly covered: asserts the API call, not the footer's reset model.
     test('new session button creates new session', async ({ page }) => {
       let newSessionCalled = false
       await mockAPI(page, {
@@ -1132,8 +1313,45 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // e.g. "2h ago -> 1h ago"
-      await expect(page.getByText(/->/).first()).toBeVisible()
+      // e.g. "2h ago - 1h ago" (en dash)
+      await expect(page.getByText(/–/).first()).toBeVisible()
+    })
+
+    // SPEC: panel-session:runtime-badge
+    test('session row shows its runtime when known', async ({ page }) => {
+      await mockAPI(page, {
+        handlers: {
+          getSessions: async route => {
+            await route.fulfill({
+              json: {
+                sessions: [
+                  {
+                    session_id: 'test-session-001',
+                    container_id: DEFAULT_CONTAINER_ID,
+                    workspace: '/home/user/project',
+                    model: 'ollama:llama3.2',
+                    runtime: 'LangGraph',
+                    num_turns: 1,
+                    total_cost_usd: 0,
+                    started_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  },
+                ],
+              },
+            })
+          },
+        },
+      })
+      await mockSSE(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await openSessionsPanel(page)
+
+      // Both wide/narrow badges render; the docked panel is narrow, so only the overflow shows.
+      const badge = page.locator('[data-testid="sessions-runtime-badge"]:visible').first()
+      await expect(badge).toBeVisible()
+      await expect(badge).toHaveText('LangGraph')
     })
 
     // SPEC: panel-session:cost-format
@@ -1154,7 +1372,7 @@ test.describe('Sessions Panel', () => {
       // Waits for all 3 sessions from the fixture to render.
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3, { timeout: 10000 })
 
-      // Cost ($0.12/$0.75) renders in .sessions-meta-extra (wide layout) or .sessions-meta-overflow (narrow).
+      // Cost ($0.12/$0.75) is in .sessions-meta-extra (wide) or .sessions-meta-overflow (narrow).
       const costLocator = page
         .locator('.sessions-meta-extra:visible, .sessions-meta-overflow:visible')
         .getByText(/\$0\.\d[1-9]/)
@@ -1179,7 +1397,7 @@ test.describe('Sessions Panel', () => {
       // Waits for all 3 sessions from the fixture to render.
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3, { timeout: 10000 })
 
-      // Turns (5/12) render in .sessions-meta-extra (wide layout) or .sessions-meta-overflow (narrow).
+      // Turns (5/12) render in .sessions-meta-extra (wide) or .sessions-meta-overflow (narrow).
       const turnsLocator = page
         .locator('.sessions-meta-extra:visible, .sessions-meta-overflow:visible')
         .getByText(/[1-9]\d* turns/)
@@ -1383,7 +1601,7 @@ test.describe('Sessions Panel', () => {
 
       await openSessionsPanel(page)
 
-      // Parent (forked Jan 15) sorts above session-003 (Jan 12): sort key is the newest descendant timestamp.
+      // Parent (forked Jan 15) outranks session-003 (Jan 12): sort key is the newest descendant.
       const items = page.locator('[data-testid="session-item"]')
       await expect(items.first()).toBeVisible()
       await expect(items.first()).toContainText('Parent session')
@@ -1680,23 +1898,23 @@ test.describe('Sessions Panel Meta Tooltips', () => {
   test('turn count, cost, and timestamps each carry an explanatory title attribute', async ({
     page,
   }) => {
-    // Assert via attribute presence, not visibility: meta-extra (turns/cost) hides behind overflow when narrow.
-    const turnsSpan = page.locator('.sessions-meta-extra span[title^="Turns -"]').first()
+    // Attribute presence, not visibility: meta-extra hides behind overflow when narrow.
+    const turnsSpan = page.locator('.sessions-meta-extra span[title^="Turns —"]').first()
     await expect(turnsSpan).toHaveCount(1)
     const turnsTitle = await turnsSpan.getAttribute('title')
-    expect(turnsTitle).toMatch(/^Turns - \d+$/)
+    expect(turnsTitle).toMatch(/^Turns — \d+$/)
 
     const costSpan = page
       .locator('.sessions-meta-extra span[title^="API cost this session"]')
       .first()
     await expect(costSpan).toHaveCount(1)
     const costTitle = await costSpan.getAttribute('title')
-    expect(costTitle).toMatch(/^API cost this session - \$\d+\.\d{2}$/)
+    expect(costTitle).toMatch(/^API cost this session — \$\d+\.\d{2}$/)
 
-    const startedSpan = page.locator('.sessions-timestamp span[title^="Started -"]').first()
+    const startedSpan = page.locator('.sessions-timestamp span[title^="Started —"]').first()
     await expect(startedSpan).toHaveCount(1)
     const startedTitle = await startedSpan.getAttribute('title')
-    expect(startedTitle).toMatch(/^Started - /)
+    expect(startedTitle).toMatch(/^Started — /)
   })
 })
 
@@ -1707,7 +1925,7 @@ test.describe('Sessions Panel Resume Spinner', () => {
     await mockSSE(page)
     await page.goto(DEFAULT_SESSION_URL)
 
-    // Stubbed so Alt+click's window.open (onOpenInNewTab) doesn't navigate; double-rAF spinner-clear never fires.
+    // window.open and rAF are stubbed: Alt+click can't navigate, so the spinner-clear never fires.
     await page.evaluate(() => {
       window.requestAnimationFrame = () => 0
       window.open = () => null
@@ -1719,7 +1937,7 @@ test.describe('Sessions Panel Resume Spinner', () => {
     const resumeBtn = page.locator('[data-testid="session-resume-btn"]').first()
     await expect(resumeBtn).toBeVisible()
 
-    // Alt+click's sync window.open means no navigation, so SessionItem stays mounted to observe the spinner.
+    // No navigation means SessionItem stays mounted, so the spinner is observable.
     await resumeBtn.click({ modifiers: ['Alt'] })
 
     await expect(resumeBtn.locator('.spin')).toBeVisible()

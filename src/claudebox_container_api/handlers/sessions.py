@@ -44,6 +44,7 @@ async def get_current_session(svc: SessionDep):
     body = dataclasses.asdict(summary)
     body["capabilities"] = svc.get_capabilities()
     body["runtime_name"] = svc.runtime_name
+    body["rate_limits"] = svc.get_rate_limits()
 
     return body
 

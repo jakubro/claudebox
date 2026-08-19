@@ -31,7 +31,7 @@ from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 
 def _make_metadata(session_id: str, **overrides) -> SessionMetadata:
     """Create a SessionMetadata with sensible defaults."""
-    defaults = dict(session_id=session_id, fork_point_cost_usd=0.0)
+    defaults = {"session_id": session_id, "fork_point_cost_usd": 0.0}
     defaults.update(overrides)
 
     return SessionMetadata(**defaults)  # ty: ignore[invalid-argument-type]
@@ -179,7 +179,7 @@ class TestListAll:
         """Admission failure and execution failure logged the same line; only this tells them apart."""
 
         monkeypatch.setattr(service_module, "DISK_LISTING_TIMEOUT", timedelta(seconds=0.05))
-        svc, repo, _containers = _make_service(tmp_path)
+        svc, _repo, _containers = _make_service(tmp_path)
         release = threading.Event()
         # The service's pool has one worker; occupying it means the scan is only ever queued.
         svc._executor.submit(release.wait)
@@ -226,6 +226,42 @@ class TestListAll:
         await svc.list_all()
 
         assert repo.list_all.call_count == 2
+
+    @pytest.mark.anyio
+    async def test_a_successful_scan_logs_queue_and_scan_seconds(self, tmp_path):
+        """A slow-but-successful scan must still say where its time went."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        containers.list_all.return_value = []
+        repo.list_all.return_value = []
+        logged = []
+        svc._logger = MagicMock()
+        svc._logger.info = lambda event, **kw: logged.append((event, kw))
+
+        await svc.list_all()
+
+        scanned = next(kw for event, kw in logged if event == "session_listing_scanned")
+        assert scanned["queued_seconds"] >= 0
+        assert scanned["scan_seconds"] >= 0
+        assert "pool" in scanned
+        assert scanned["workspace"]["id"] == "test-ws"
+
+    def test_log_listing_completed_reports_the_handler_measured_fields(self, tmp_path):
+        """The byte count and end-to-end duration only exist in the handler - this is where they land."""
+
+        svc, _repo, _containers = _make_service(tmp_path)
+        logged = []
+        svc._logger = MagicMock()
+        svc._logger.info = lambda event, **kw: logged.append((event, kw))
+
+        svc.log_listing_completed(session_count=3, response_bytes=512, total_seconds=1.2345)
+
+        event, kw = logged[0]
+        assert event == "session_listing_completed"
+        assert kw["session_count"] == 3
+        assert kw["response_bytes"] == 512
+        assert kw["total_seconds"] == 1.234
+        assert kw["workspace"]["id"] == "test-ws"
 
 
 # --- get ---
@@ -975,9 +1011,11 @@ class TestForkIsTransactional:
         sessions_root = parent.path.parent
         before = {entry.name for entry in sessions_root.iterdir()}
 
-        with patch.object(svc, "_compute_derived_fields", side_effect=OSError("disk full")):
-            with pytest.raises(OSError):
-                await svc.fork("sess-parent", reuse_container=True)
+        with (
+            patch.object(svc, "_compute_derived_fields", side_effect=OSError("disk full")),
+            pytest.raises(OSError),
+        ):
+            await svc.fork("sess-parent", reuse_container=True)
 
         assert {entry.name for entry in sessions_root.iterdir()} == before
 
@@ -986,9 +1024,11 @@ class TestForkIsTransactional:
         svc, _repo, containers = _make_service(tmp_path)
         self._parent_with_events(tmp_path, svc, containers)
 
-        with patch.object(svc, "_compute_derived_fields", side_effect=OSError("disk full")):
-            with pytest.raises(OSError, match="disk full"):
-                await svc.fork("sess-parent", reuse_container=True)
+        with (
+            patch.object(svc, "_compute_derived_fields", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            await svc.fork("sess-parent", reuse_container=True)
 
     @pytest.mark.anyio
     async def test_cancellation_mid_fork_leaves_no_orphan(self, tmp_path):
@@ -999,9 +1039,11 @@ class TestForkIsTransactional:
         sessions_root = parent.path.parent
         before = {entry.name for entry in sessions_root.iterdir()}
 
-        with patch.object(svc, "_compute_derived_fields", side_effect=asyncio.CancelledError):
-            with pytest.raises(asyncio.CancelledError):
-                await svc.fork("sess-parent", reuse_container=True)
+        with (
+            patch.object(svc, "_compute_derived_fields", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await svc.fork("sess-parent", reuse_container=True)
 
         assert {entry.name for entry in sessions_root.iterdir()} == before
 
@@ -1050,6 +1092,8 @@ class TestForkInheritsUserSettings:
                 "session_id": parent_id,
                 "name": "Parent",
                 "model": "claude-sonnet-5",
+                "runtime": "LangGraph",
+                "provider": "ollama",
                 "permission_mode": "bypassPermissions",
                 "effort_level": "max",
                 "session_prompt": "Stay terse.",
@@ -1084,6 +1128,8 @@ class TestForkInheritsUserSettings:
         assert fork_data["session_prompt"] == "Stay terse."
         assert fork_data["name"] == "Parent"
         assert fork_data["model"] == "claude-sonnet-5"
+        assert fork_data["runtime"] == "LangGraph"
+        assert fork_data["provider"] == "ollama"
         # first_message is identity-stable across rewinds (truncation keeps the session prefix).
         assert fork_data["first_message"] == "Initial"
         # Derived counters/snapshots come from the empty child events.jsonl, hence zero/None.
@@ -1626,3 +1672,135 @@ class TestForkRekeysLangGraphCheckpoint:
 
         child_db = Workspace(tmp_path).ensure_session(result.session_id).path / "checkpoints.sqlite"
         assert not child_db.exists()
+
+
+class TestForkTruncatesLangGraphCheckpoint:
+    """Fork truncates the copied checkpoint at the journal's boundary to match its transcript."""
+
+    @staticmethod
+    def _seed_checkpoint_chain(tmp_path: Path, parent_id: str, checkpoint_ids: list[str]) -> Path:
+        """Write a checkpoints.sqlite with one row per id, matching AsyncSqliteSaver's schema."""
+
+        parent = Workspace(tmp_path).ensure_session(parent_id)
+        db_path = parent.path / "checkpoints.sqlite"
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            """
+            CREATE TABLE checkpoints (
+                thread_id TEXT NOT NULL,
+                checkpoint_ns TEXT NOT NULL DEFAULT '',
+                checkpoint_id TEXT NOT NULL,
+                parent_checkpoint_id TEXT,
+                type TEXT,
+                checkpoint BLOB,
+                metadata BLOB,
+                PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+            );
+            CREATE TABLE writes (
+                thread_id TEXT NOT NULL,
+                checkpoint_ns TEXT NOT NULL DEFAULT '',
+                checkpoint_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                idx INTEGER NOT NULL,
+                channel TEXT NOT NULL,
+                type TEXT,
+                value BLOB,
+                PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+            );
+            """,
+        )
+
+        for i, checkpoint_id in enumerate(checkpoint_ids):
+            conn.execute(
+                "INSERT INTO checkpoints VALUES (?, '', ?, NULL, 'msgpack', X'00', X'01')",
+                (parent_id, checkpoint_id),
+            )
+            conn.execute(
+                "INSERT INTO writes VALUES (?, '', ?, ?, 0, 'messages', 'msgpack', X'02')",
+                (parent_id, checkpoint_id, f"task-{i}"),
+            )
+
+        conn.commit()
+        conn.close()
+
+        return db_path
+
+    @staticmethod
+    def _fork_checkpoint_ids(tmp_path: Path, new_session_id: str) -> list[str]:
+        db_path = Workspace(tmp_path).ensure_session(new_session_id).path / "checkpoints.sqlite"
+        conn = sqlite3.connect(db_path)
+
+        try:
+            return [
+                row[0]
+                for row in conn.execute(
+                    "SELECT checkpoint_id FROM checkpoints ORDER BY checkpoint_id",
+                )
+            ]
+        finally:
+            conn.close()
+
+    @staticmethod
+    async def _fork_at_turn(svc, containers, parent_id: str, turn_id: str):
+        existing = _make_container("ctr", session_id=parent_id)
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            return await svc.fork(parent_id, turn_id=turn_id, reuse_container=True)
+
+    @pytest.mark.anyio
+    async def test_truncation_deletes_checkpoints_at_and_after_boundary(self, tmp_path):
+        svc, _repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        _repo.get.side_effect = SharedSessionNotFound(parent_id)
+        self._seed_checkpoint_chain(tmp_path, parent_id, ["chk-1", "chk-2", "chk-3", "chk-4"])
+        write_json(
+            Workspace(tmp_path).ensure_session(parent_id).path / "checkpoint_turns.json",
+            {"turn-rewind": "chk-2"},
+        )
+
+        result = await self._fork_at_turn(svc, containers, parent_id, "turn-rewind")
+
+        # Boundary survives (state right before the rewound-away turn); everything after it is gone.
+        assert self._fork_checkpoint_ids(tmp_path, result.session_id) == ["chk-1", "chk-2"]
+
+    @pytest.mark.anyio
+    async def test_first_turn_boundary_deletes_the_whole_chain(self, tmp_path):
+        """A None boundary: the rewound-away turn was the thread's first, nothing precedes it."""
+
+        svc, _repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        _repo.get.side_effect = SharedSessionNotFound(parent_id)
+        self._seed_checkpoint_chain(tmp_path, parent_id, ["chk-1", "chk-2"])
+        write_json(
+            Workspace(tmp_path).ensure_session(parent_id).path / "checkpoint_turns.json",
+            {"turn-first": None},
+        )
+
+        result = await self._fork_at_turn(svc, containers, parent_id, "turn-first")
+
+        assert self._fork_checkpoint_ids(tmp_path, result.session_id) == []
+
+    @pytest.mark.anyio
+    async def test_missing_journal_entry_is_a_noop(self, tmp_path):
+        """No journal entry for the turn - keep the full checkpoint rather than bound blindly."""
+
+        svc, _repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        _repo.get.side_effect = SharedSessionNotFound(parent_id)
+        self._seed_checkpoint_chain(tmp_path, parent_id, ["chk-1", "chk-2", "chk-3"])
+        # No checkpoint_turns.json written at all.
+
+        result = await self._fork_at_turn(svc, containers, parent_id, "turn-unknown")
+
+        assert self._fork_checkpoint_ids(tmp_path, result.session_id) == ["chk-1", "chk-2", "chk-3"]

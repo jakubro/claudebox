@@ -17,7 +17,7 @@ from claudebox import epilog as _install_epilog
 try:
     import argcomplete
 except ImportError:  # pragma: no cover - optional bash-completion dependency
-    argcomplete = None  # ty: ignore[invalid-assignment]
+    argcomplete = None
 
 
 class CliCommandModule(Protocol):
@@ -107,9 +107,14 @@ class Cli:
 
         for _, name, _ in pkgutil.iter_modules(claudebox_cli.__path__):
             if name.startswith("cmd_"):
-                modules.append(importlib.import_module(f"claudebox_cli.{name}"))
+                # cmd_*.py modules duck-type CliCommandModule; ModuleType's stub can't show it.
+                mod = importlib.import_module(f"claudebox_cli.{name}")
+                modules.append(mod)  # ty: ignore[invalid-argument-type]
 
-        return sorted(modules, key=lambda m: (getattr(m, "ORDER", math.inf), m.__spec__.name))
+        return sorted(
+            modules,
+            key=lambda m: (getattr(m, "ORDER", math.inf), m.__spec__.name),  # ty: ignore[unresolved-attribute]
+        )
 
     @staticmethod
     def _add_subparser(

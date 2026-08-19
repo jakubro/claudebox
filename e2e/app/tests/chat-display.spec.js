@@ -1180,5 +1180,41 @@ test.describe('Chat Display', () => {
       await expect(divider).toBeVisible()
       await expect(divider).toContainText('Restarted')
     })
+
+    // SPEC: turn:runtime-mismatch-divider
+    test('shows a runtime-mismatch warning divider when the session was created under a different runtime', async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          content: 'Hello',
+          is_human: true,
+          timestamp: Date.now(),
+          turn_id: 'turn_001',
+        },
+        { type: 'assistant', subtype: 'text', content: 'Hi there', timestamp: Date.now() + 100 },
+        { type: 'result', subtype: 'success', timestamp: Date.now() + 200 },
+      ])
+
+      await controller.sendEvent({
+        type: 'system',
+        subtype: 'container_restarted',
+        message_data: { runtime_mismatch: { persisted: 'LangGraph', expected: 'Claude' } },
+        timestamp: Date.now() + 300,
+        turn_id: 'turn_001',
+      })
+
+      const divider = page.locator('[data-testid="setting-change-divider"]')
+      await expect(divider).toBeVisible()
+      await expect(divider).toContainText('Runtime mismatch')
+      await expect(divider).toContainText('Claude')
+      await expect(divider).toContainText('LangGraph')
+    })
   })
 })

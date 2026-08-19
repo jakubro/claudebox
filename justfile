@@ -116,7 +116,7 @@ test-e2e-cov:
 [group('e2e/app')]
 [working-directory('e2e/app')]
 update-e2e-app-snapshots:
-    npx playwright test visual-regression --update-snapshots 2>&1 | tee /tmp/claudebox--update-e2e-app-snapshots.log
+    npx playwright test visual-regression --update-snapshots=all 2>&1 | tee /tmp/claudebox--update-e2e-app-snapshots.log
 
 # ─── Test UI (In-Container) ────────────────────────────
 
@@ -140,6 +140,16 @@ test-ui-browse *ARGS:
 test-ui-run SCRIPT *ARGS:
     UV_PROJECT_ENVIRONMENT="/tmp/claudebox-test/.venv" uv run --directory "{{ justfile_directory() }}" {{ SCRIPT }} {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-ui-run.log
 
+# ─── Demo ───────────────────────────────────────────────
+
+# Record and assemble the README demo GIF (docs/demo.gif) from a fresh run
+[group('demo')]
+[working-directory('e2e/app')]
+demo: (build-fe)
+    rm -rf /tmp/claudebox--demo-frames
+    npx playwright test --config=playwright.demo.config.js --reporter=list 2>&1 | tee /tmp/claudebox--demo-record.log
+    uv run --directory "{{ justfile_directory() }}" --script scripts/demo-gif.py --frames-dir /tmp/claudebox--demo-frames --output docs/demo.gif 2>&1 | tee /tmp/claudebox--demo-gif.log
+
 # ─── Lint ───────────────────────────────────────────────
 
 # Lint all code
@@ -153,8 +163,8 @@ lint:
     node scripts/frontend-guidelines-audit.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/spec-coverage.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     npx knip 2>&1 | tee -a /tmp/claudebox--lint.log
-    npx jscpd --exitCode 1 --format python --min-tokens 100 2>&1 | tee -a /tmp/claudebox--lint.log
-    npx jscpd --exitCode 1 --format javascript,jsx,typescript,tsx,css,scss,less 2>&1 | tee -a /tmp/claudebox--lint.log
+    npx jscpd --exit-code 1 --format python --min-tokens 100 2>&1 | tee -a /tmp/claudebox--lint.log
+    npx jscpd --exit-code 1 --format javascript,jsx,typescript,tsx,css,scss,less 2>&1 | tee -a /tmp/claudebox--lint.log
 
 # Auto-fix all code
 fix:
@@ -166,3 +176,7 @@ fix:
     done
     PYTHONPATH= {{ UV_RUN }} ty check --fix 2>&1 | tee -a /tmp/claudebox--fix.log
     npx biome check --fix 2>&1 | tee -a /tmp/claudebox--fix.log
+
+# Report current-vs-latest for every direct dependency (python + all npm workspaces); never fails
+outdated:
+    {{ UV_ENV }} node scripts/check-outdated.js 2>&1 | tee /tmp/claudebox--outdated.log

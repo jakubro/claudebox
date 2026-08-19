@@ -3,14 +3,14 @@
 import asyncio
 import uuid
 from collections.abc import Iterable
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 
 TSource = TypeVar("TSource")
 TTarget = TypeVar("TTarget")
 
 
-class Broadcaster(Generic[TSource, TTarget]):
+class Broadcaster[TSource, TTarget]:
     """Manage subscribers and broadcast events with replay support."""
 
     def __init__(self):

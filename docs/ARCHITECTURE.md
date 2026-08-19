@@ -6,7 +6,7 @@
 
 ## 0. Workspace Layout
 
-`lib/` is the build root — recipes (`justfile`), JS lint configs (`biome.json`, `.jscpd.json`, `knip.json`), Python project (`pyproject.toml`), and shared tooling (`scripts/`) all live here. Source packages, tests, e2e suites, and tooling sit as siblings underneath.
+`lib/` is the build root — recipes (`justfile`), JS lint configs (`biome.json`, `.jscpd.json`, `knip.json`), Python project (`pyproject.toml`), and shared tooling (`scripts/`) all live here.
 
 ```
 lib/
@@ -80,7 +80,7 @@ paths.py                  # Workspace/session directory discovery and naming
 workspace.py              # Workspace context — ignore patterns, session listing
 config.py                 # Config.load() — TOML walk-up, deep-merge across hierarchy
 cleanup.py                # cleanup_stale_dirs() — remove orphaned session/temp dirs
-cli.py                    # CLI epilog and installation metadata utilities
+install.py                # CLI epilog and installation metadata utilities
 constants.py              # Path constants, labels, ports, timings, defaults
 env.py                    # is_dev_mode(), set_dev_mode() — runtime environment detection
 temp.py                   # Session /tmp symlink — ensure_tmp(), restore_tmp()
@@ -149,9 +149,9 @@ extensions/
 
 ### 1.4 Agent Runtime Abstraction
 
-The agent runtime is reached through the `AgentSession` Protocol owned by `claudebox/agent_session/`. The Protocol declares everything claudebox-core needs from any backend runtime — connection lifecycle, query input, control plane (model / permission / effort), MCP delegation, telemetry, event stream, runtime identity, capabilities, and metadata catalogs. No code outside `claudebox/agent_session/runtime_claude.py` may import `claude_agent_sdk`; ast-grep enforces the rule (see GUIDELINES §SDK Containment).
+The agent runtime is reached through the `AgentSession` Protocol owned by `claudebox/agent_session/`. The Protocol declares everything claudebox-core needs from any backend runtime — connection lifecycle, query input, control plane (model / permission / effort), MCP delegation, telemetry, event stream, runtime identity, capabilities, and metadata catalogs. No code outside `claudebox/agent_session/runtime_claude.py` may import `claude_agent_sdk`; a static import audit (`python-guidelines-audit.py`) enforces the rule (see GUIDELINES §SDK Containment).
 
-`ClaudeRuntime` is the only adapter today. It **composes** (does not inherit) `BaseClaudeSDKClient` as a private `_sdk` attribute and translates between the SDK's native message/hook surface and claudebox-native types. Future runtimes implement the same Protocol and declare their own `RuntimeCapabilities`.
+`ClaudeRuntime` was the first adapter; `LangGraphRuntime` (§1.4, below) is the second. `ClaudeRuntime` **composes** (does not inherit) `BaseClaudeSDKClient` as a private `_sdk` attribute and translates between the SDK's native message/hook surface and claudebox-native types. Every adapter implements the same Protocol and declares its own `RuntimeCapabilities`.
 
 ```
 claudebox-core
@@ -181,16 +181,16 @@ BaseClaudeSDKClient            ← external SDK
 
 **`AgentEvent`** is the claudebox-native event yielded by `receive_events()`. Each event carries a `kind` discriminator ("system", "user", "assistant", "result") and a `payload` dict projected by `ClaudeRuntime._translate_sdk_message()` from the SDK message. Downstream of `AgentSession`, no SDK type reaches `EventPipeline`, `conversion`, or any subscriber. A future slice may tighten `payload` to a per-kind frozen-dataclass tagged union; consumers today read it as a typed dict.
 
-**`HookCallbacks`** is a dataclass of optional lifecycle callbacks passed in via `AgentSessionConfig.hooks`. Five slots — `on_session_start`, `on_pre_compact`, `on_permission_mode_changed`, `on_model_changed`, `on_effort_level_changed`. State-change callbacks fire from setter calls AND from SDK-detected drift (the PostToolUse-as-permission-mode-detector path is an internal implementation detail; consumers see only the canonical signal). Delta detection lives in `ClaudeRuntime._fire_*_changed` helpers: a callback fires iff a baseline was established AND the new value differs.
+**`HookCallbacks`** is a dataclass of optional lifecycle callbacks passed in via `AgentSessionConfig.hooks`. Seven slots — `on_session_start`, `on_pre_compact`, `on_model_changed`, `on_permission_mode_changed`, `on_effort_level_changed`, `on_pre_tool_use`, `on_post_tool_use`. State-change callbacks fire both from setter calls and from SDK-detected drift, consumers seeing only the canonical signal (the PostToolUse-as-permission-mode-detector path is internal). `ClaudeRuntime._fire_*_changed` holds the delta detection: a callback fires iff a baseline exists and the new value differs.
 
-**`AgentSessionConfig`** is the base config dataclass with universal fields (`runtime`, `model`, `permission_mode`, `effort_level`, `session_dir`, `hooks`, etc.). Per-runtime subclasses carry runtime-specific fields: `ClaudeAgentSessionConfig(AgentSessionConfig)` holds SDK-passthrough fields (`sdk_passthrough`, `setting_sources`, `max_buffer_size`, `system_prompt`, `debug_mode`). Future runtimes add their own subclasses.
+**`AgentSessionConfig`** is the base config dataclass with universal fields (`runtime`, `model`, `permission_mode`, `effort_level`, `session_dir`, `hooks`, etc.). Per-runtime subclasses carry runtime-specific fields: `ClaudeAgentSessionConfig(AgentSessionConfig)` holds SDK-passthrough fields (`sdk_passthrough`, `setting_sources`, `max_buffer_size`, `system_prompt`, `debug_mode`); `LangGraphAgentSessionConfig(AgentSessionConfig)` (§1.4, below) is the second. Each new runtime adds its own subclass the same way.
 
 **Invariants:**
 
-1. `claude_agent_sdk` is imported only from `claudebox/agent_session/runtime_claude.py`. Ruff fails `just check` on any other importer.
+1. `claude_agent_sdk` is imported only from `claudebox/agent_session/runtime_claude.py`. The import audit fails `just check` on any other importer.
 2. `AgentSession.receive_events()` yields `AgentEvent` only; SDK message types stay inside `ClaudeRuntime._translate_sdk_message()`.
 3. Hook callbacks receive claudebox-typed payloads — never raw `HookInput` / `HookContext`.
-4. `RuntimeCapabilities` is a frozen 16-boolean dataclass with no defaults. Runtime metadata (display name, version) lives on sibling fields of the session-info envelope, not on the capability dataclass.
+4. `RuntimeCapabilities` is a frozen 16-boolean dataclass with no defaults. Runtime metadata (display name) lives on a sibling field of the session-info envelope, not on the capability dataclass.
 
 **ClaudeRuntime-specific notes** (not Protocol-level invariants):
 
@@ -200,9 +200,9 @@ BaseClaudeSDKClient            ← external SDK
 
 **Adding a runtime** — implement `AgentSession` at `claudebox/agent_session/runtime_<name>.py`, declare an `AgentSessionConfig` subclass, return a `RuntimeCapabilities` instance with the actual support matrix, translate the native event stream into `AgentEvent`, and route the native hook system through `HookCallbacks`. No other claudebox module changes — the Protocol is the entire contract.
 
-**LangGraphRuntime — the second adapter.** Built on LangGraph (graph runtime, `astream_events`, middleware, sqlite checkpointer) + LangChain core (model abstraction) + LangChain's universal `init_chat_model` factory (provider-agnostic model construction) + `langchain-ollama` (the dev / test default in core deps). In-process Python — no subprocess, no proxy. The second runtime adapter — chosen over Goose to escape Claude-SDK lock-in quickly.
+**LangGraphRuntime — the second adapter.** Built on LangGraph (graph runtime, `astream_events`, middleware, sqlite checkpointer) + LangChain core (model abstraction) + LangChain's universal `init_chat_model` factory (provider-agnostic model construction) + `langchain-ollama` (the dev / test default in core deps). In-process Python — no subprocess, no proxy.
 
-**Universal provider surface.** `init_chat_model(spec.full_id, **spec.kwargs)` is the single model-construction entry point; the workspace TOML's `[langgraph] model = "provider:model-id"` value selects any LangChain-supported provider. Tier 1 (tested in CI): Anthropic, OpenAI, Ollama. Tier 2 (smoke-tested + documented): Google Gemini, Groq, Mistral, vLLM (via openai+base_url). Tier 3 (preinstalled; no provider-specific tests): Cohere, Fireworks, Together, DeepSeek, xAI, Perplexity, NVIDIA NIM, HuggingFace, AWS Bedrock, Azure OpenAI, Vertex AI, IBM watsonx, Databricks. All provider packages ship preinstalled in the agent image (`uv sync --frozen --extra langgraph-all`); provider selection is runtime config with no install step.
+**Universal provider surface.** `init_chat_model(spec.full_id, **spec.kwargs)` is the single model-construction entry point; the workspace TOML's `[langgraph] model = "provider:model-id"` selects any LangChain-supported provider. Tier 1 (tested in CI): Anthropic, OpenAI, Ollama. Tier 2 (smoke-tested + documented): Google Gemini, Groq, Mistral, vLLM (via openai+base_url). Tier 3 (preinstalled, no provider-specific tests): Cohere, Fireworks, Together, DeepSeek, xAI, Perplexity, NVIDIA NIM, HuggingFace, AWS Bedrock, Azure OpenAI, Vertex AI, IBM watsonx, Databricks. Every provider package ships preinstalled in the agent image (`uv sync --extra langgraph-all`), so selection is runtime config with no install step.
 
 **`ProviderSpec` — single parsed identity.** A frozen dataclass parses the workspace's `model` string and captures provider + model id + kwargs in one typed object. Built ONCE in `LangGraphRuntime.__init__()` and stored as `self._spec`; every downstream method (`_build_chat_model`, `connect()`, `get_models()`, `_accumulate_usage`, `_model_context_window`) reads from `self._spec`. NO method re-parses `self._config.model` via `.split(":")`. `ProviderSpec.parse` raises `ValueError` on malformed input (missing colon, empty provider, empty model_id) so workspace TOML mistakes surface immediately at session start.
 
@@ -210,7 +210,7 @@ BaseClaudeSDKClient            ← external SDK
 
 **Curated tables + lookup helpers.** `_providers.py` holds three module-level dicts keyed by bare `model_id`: `MODEL_CONTEXT_WINDOW` (int tokens), `PRICE_PER_MTOK` (USD per million tokens), `PROVIDER_EXTRAS` (per-provider pyproject extra names). Three lookup helpers — `lookup_context_window(spec, override) -> int`, `lookup_price(spec, overrides) -> dict | None`, `install_hint(provider) -> str` — accept `ProviderSpec` (or bare provider name) and read `spec.model_id`; usage sites never inline a prefix strip. `lookup_price` returns `None` for unknown models with no workspace `cost_overrides` entry; the runtime translates that into `ResultPayload.total_cost_usd = None` so the projection's truthy-cost gate hides the cost row in the UI. Ollama rows in `PRICE_PER_MTOK` are explicitly zero (local compute carries no real USD); the row stays visible at `$0.00`. Workspace `max_tokens_override` short-circuits the context-window lookup for models outside the curated table.
 
-**Tool-call graceful degradation.** Tools register regardless of model capability. The single `NotImplementedError` catch lives in `LangGraphRuntime._build_graph()` — when a provider/model can't `bind_tools()` (Perplexity, some HuggingFace pipelines), the catch logs `provider_no_tool_calling` with provider/model context and rebuilds the graph with `tools=[]`; conversation continues as chat-only. No fail-loud; UX matches a workspace using a model that simply chose not to call tools. Tool factories in `langgraph_tools/*` remain provider-unaware.
+**Tool-call graceful degradation.** Tools register regardless of model capability. The single `NotImplementedError` catch sits in `LangGraphRuntime._build_graph()`: when a provider/model cannot `bind_tools()` (Perplexity, some HuggingFace pipelines) it logs `provider_no_tool_calling` with provider/model context and rebuilds with `tools=[]`, continuing chat-only rather than failing loud - the same UX as a model that simply chose not to call a tool. Tool factories in `langgraph_tools/*` stay provider-unaware.
 
 **Tool-call error degradation.** The sibling case: a raising tool degrades to a failed tool result instead of ending the run. `ClaudeboxToolHookMiddleware.awrap_tool_call` catches `ToolException` (every claudebox tool's own failure signal) and returns an error `ToolMessage` instead of letting `ToolNode`'s default re-raise end the turn — matching the Claude runtime's `is_error` contract. Any other exception still re-raises unchanged. `_drive_turn` also projects LangChain's `on_tool_error` callback event (fired on the tool's own span even after the middleware recovers), gated to `ToolException` so an unrecovered bug still ends the turn.
 
@@ -227,7 +227,7 @@ Capability profile (concrete worked example):
 - Catalogs — `supports_models: True` (dynamic from Ollama `/api/tags`); `supports_skills: True` (§ below); `supports_effort_levels: False`; `supports_permission_modes: False`.
 - Telemetry — `supports_context_usage: True` (`usage_metadata` from the latest model call is the occupancy level, not a running sum, since each call re-sends the whole conversation; seeded from the checkpoint's last `AIMessage` on `connect()` so a resumed session reads its real size immediately. Compaction puts its summary at the *head* of the list and preserves the most recent messages after it (`keep` defaults to 20), so a checkpoint written between a compaction and the reply that follows it still carries a pre-compaction `AIMessage` whose `usage_metadata` describes a prompt that no longer exists — and the compaction hook runs before *every* model call, so that state also occurs mid-tool-loop, where the tail is tool results rather than a prompt. Neither shape is distinguishable by position. Each compaction therefore records its own `post_tokens` alongside the length and last message id of what it kept (`{session_dir}/compaction.json`); on resume, anything after that point carries post-compaction usage and wins, and if nothing follows it the recorded count is used. A record whose last message id no longer sits where it was written is discarded, so a fork or rewind cannot seed from a history the thread no longer has). `supports_cost_telemetry: True` (tokens native; USD via per-model `PRICE_PER_MTOK` table — toy registry at v1).
 - Hooks — `supports_pre_compact_hook: True` (synthesized via token-fraction threshold; `SummarizationMiddleware` does the actual compaction). `supports_manual_compact: False`.
-- Session ops — `supports_session_resume: True`, `supports_session_fork: True`, `supports_session_rewind: True`. All native via `AsyncSqliteSaver` + LangGraph's checkpoint time-travel.
+- Session ops — `supports_session_resume: True`, `supports_session_fork: True`, `supports_session_rewind: True`. All native via `AsyncSqliteSaver`; rewind truncates the checkpoint chain at the fork turn (see "Fork" below) so the model's recall matches the truncated transcript, the same contract the Claude runtime gives.
 
 Selection: per-workspace via `.claudebox/settings.toml` — top-level `agent` selects the adapter, `[langgraph]` carries adapter-private knobs, `[langgraph.<provider>]` carries per-provider kwargs:
 
@@ -256,13 +256,15 @@ base_url = "http://127.0.0.1:8000/v1"   # vLLM / LM Studio / llama.cpp's OpenAI-
 
 Persistence: each session gets its own `checkpoints.sqlite` inside the session directory alongside `events.jsonl` + `session.json`. Cross-container-restart resume is automatic (bind-mounted from the host).
 
-**Fork.** `checkpoints.sqlite` is keyed by `thread_id`, pinned to `session_id` (`LangGraphRuntime.__init__`) - a filesystem copy alone would leave the fork's checkpoint rows pointing at the parent's `thread_id`, so the forked graph would read empty state on first resume. `claudebox_daemon/domain/sessions/service.py::SessionService._rekey_langgraph_checkpoint` re-keys every row in the copied `checkpoints`/`writes` tables from the parent's `thread_id` to the fork's own, right after the filesystem copy. Full-fidelity re-key, not a truncated rebuild: `checkpoint`/`metadata` payloads never carry the thread_id internally, so only the key column needs rewriting, and the WHOLE checkpoint chain carries over regardless of where a turn-bounded fork truncates the visible transcript (`events.jsonl` / SDK transcript). Consequence: a fork made from an earlier turn still resumes with the model remembering everything up to the point of forking, not just what the truncated transcript shows - accepted as the fork contract for LangGraph sessions. No-op for a Claude-runtime session, which has no `checkpoints.sqlite`.
+**Fork.** `checkpoints.sqlite` is keyed by `thread_id`, pinned to `session_id` (`LangGraphRuntime.__init__`) - a filesystem copy alone would leave the fork's checkpoint rows pointing at the parent's `thread_id`, so the forked graph would read empty state on first resume. `claudebox_daemon/domain/sessions/service.py::SessionService._rekey_langgraph_checkpoint` re-keys every row in the copied `checkpoints`/`writes` tables from the parent's `thread_id` to the fork's own, right after the filesystem copy; `checkpoint`/`metadata` payloads never carry the thread_id internally, so only the key column needs rewriting.
+
+Truncation then matches the fork's checkpoint chain to its transcript. `LangGraphRuntime._record_turn_boundary` runs at the start of every turn, journaling the checkpoint id current just before it to `checkpoint_turns.json` under the `turn_id` `TurnTracker` derives from that turn's human-message `uuid` (a thread's first turn journals `None`). `_copy_claudebox_session` carries the journal to the child unmodified, and a turn-bounded `fork()` has `SessionService._truncate_langgraph_checkpoint` look that boundary up and issue `DELETE ... WHERE thread_id = ? AND checkpoint_id > ?` against both re-keyed tables - dropping the thread's rows outright when the boundary is `None` (a fork at the first turn). The model therefore recalls only what the truncated transcript shows: the contract `AsyncSqliteSaver` time-travel gives through `aget_state_history`, reached by a direct delete rather than a LangGraph-native truncation call. A whole-session fork (`turn_id=None`) skips truncation and keeps the full chain; no-op under the Claude runtime, which has no `checkpoints.sqlite`.
 
 Failure modes: dispatched per-provider via `PROVIDER_STRATEGIES` (see "Provider strategy registry" above). Ollama probes both reachability and model-pulled when `base_url` is set; OpenAI-compatible servers (vLLM / LM Studio / llama.cpp) probe `/v1/models` opt-in via `probe_on_connect`; cloud providers (Anthropic, OpenAI, Google Gemini, Groq, Mistral, ...) have no probe and surface auth / network errors naturally at first `query()`. Typed exceptions in `agent_session/errors.py` — `OllamaUnreachable(url)`, `OllamaModelNotPulled(model)`, `OpenAICompatibleUnreachable(url)`, `ProviderPackageMissing(provider, install_hint)` — all inherit from `ProviderError`; the container API handler maps `isinstance(exc, ProviderError)` to typed HTTP responses (422 for missing-package + model-not-pulled; 503 for unreachable). Tool execution errors propagate `is_error=True` through `tool_result` blocks to the frontend's error styling.
 
-Tool surface: every `@tool`-decorated function lives under `agent_session/langgraph_tools/`, one module per subscope (`filesystem.py`, `search.py`, `shell.py`, `notebook.py`, `web.py`, ...). The aggregator `langgraph_tools/__init__.py::make_tools(ctx)` is the single registration site; `runtime_langgraph.connect()` calls it once after the chat model is built. The `ToolContext` DI bundle (`_context.py`) carries workspace path, session id, session dir, config, hooks, logger, and a mutable `ToolCatalog` populated AFTER aggregation so future self-discovery tools (`tool_search`) read the full bound set lazily at invoke time. SDK containment: the `ast-grep` prefix-pattern rule lists `langgraph_tools/**/*.py` in its `ignores:` glob so the tool modules import `langchain_core.tools` directly; no other claudebox module is permitted to.
+Tool surface: every `@tool`-decorated function lives under `agent_session/langgraph_tools/`, one module per subscope (`filesystem.py`, `search.py`, `shell.py`, `notebook.py`, `web.py`, ...). `langgraph_tools/__init__.py::make_tools(ctx)` is the single registration site, called once by `runtime_langgraph.connect()` after the chat model is built. The `ToolContext` DI bundle (`_context.py`) carries workspace path, session id, session dir, config, hooks, logger, and a mutable `ToolCatalog` populated AFTER aggregation, so self-discovery tools (`tool_search`) read the full bound set lazily at invoke time. The import audit's `langchain/langgraph` rule allowlists `langgraph_tools/**/*.py` to import `langchain_core.tools` directly; no other claudebox module may.
 
-`web_fetch` SSRF guard: `web.py`'s `_guard_url` resolves the target hostname via `socket.getaddrinfo` and rejects loopback / private / link-local (including the `169.254.169.254` cloud metadata endpoint) / reserved / multicast / unspecified addresses before any request is made; `_guarded_get` re-runs the same check on every redirect hop instead of trusting `httpx`'s own `follow_redirects`, closing the redirect-based bypass a single up-front check would leave open. The response body is read via `iter_text()` and capped as bytes arrive (not after a full buffered read), so a large or malicious response cannot hold unbounded memory before the 100 KB cap engages. **Accepted residual risk**: the guard's own DNS lookup and the actual connection's DNS lookup are independent - a hostname that resolves to a public address at guard-check time and a private/internal one moments later (DNS rebinding) passes the guard and still reaches the blocked destination, since nothing pins the connection to the address that was validated. Judged disproportionate to close for what is a local dev tool with a narrow threat model; revisit if `web_fetch` gains a broader deployment story.
+`web_fetch` SSRF guard: `web.py`'s `_guard_url` resolves the hostname via `socket.getaddrinfo` and rejects loopback / private / link-local (including the `169.254.169.254` metadata endpoint) / reserved / multicast / unspecified addresses before any request is made. `_guarded_get` re-runs that check on every redirect hop rather than trusting `httpx`'s `follow_redirects`, closing the bypass a single up-front check would leave open, and reads the body via `iter_text()` capped as bytes arrive, so nothing buffers unbounded before the 100 KB cap engages. **Known limitation**: validating a hostname before connecting leaves DNS rebinding open in principle; closing it needs the resolved address pinned through to the connection. Accepted as disproportionate for a local dev tool with a narrow threat model; revisit if `web_fetch` gains a broader deployment story.
 
 Hook surface — PreToolUse / PostToolUse: `HookCallbacks` (in `hooks.py`) exposes `on_pre_tool_use(PreToolUsePayload)` and `on_post_tool_use(PostToolUsePayload)` typed callbacks shared by both runtimes. LangGraph fires them via `ClaudeboxToolHookMiddleware` (in `langgraph_tools/_middleware.py`), an `AgentMiddleware` that overrides `awrap_tool_call` and is composed OUTERMOST in `connect()`'s middleware list — so its observations wrap any retry / modification logic an inner middleware might introduce. The pre callback fires before the handler runs; the post callback fires after with `duration_ms` from `time.monotonic`, `is_error` derived from `ToolMessage.status == "error"`, and `tool_use_result` projected from the `ToolMessage.content`. If the handler raises, the post callback still fires with `is_error=True` and a `None` result before the exception propagates — consumers always observe a matched pair. ClaudeRuntime fires the same callbacks via SDK adapters: `_adapt_pre_tool_use` records a per-`tool_use_id` start time and fires the pre callback; `_adapt_post_tool_use` extends the existing permission-mode-drift detector to additionally fire the post callback with `is_error=False`; `_adapt_post_tool_use_failure` (new) fires the post callback with `is_error=True`. Per-`tool_use_id` timing converts to `duration_ms` on the post side.
 
@@ -286,7 +288,7 @@ Frontmatter gates two distinct paths, not one: the `skill` tool itself refuses (
 
 Frontend (per §1.5 "Capability-Aware Frontend Wiring") honors LangGraph's profile — footer pickers for effort / permission / model-mid-session, manual compact button, and MCP panel hidden. Token usage bar, cost display, runtime identity pill ("LangGraph"), session resume / fork / rewind controls, skills panel, and slash-command autocomplete render.
 
-No claudebox code outside `agent_session/runtime_langgraph.py` knows about LangGraph. The Protocol is the entire contract; ast-grep's prefix-pattern rule (see GUIDELINES §SDK Containment) keeps it that way and auto-covers future `langchain_*`/`langgraph_*` provider packages.
+No claudebox code outside `agent_session/runtime_langgraph.py` knows about LangGraph. The Protocol is the entire contract; the import audit's prefix-pattern rule (see GUIDELINES §SDK Containment) keeps it that way and auto-covers future `langchain_*`/`langgraph_*` provider packages.
 
 **ADR — no external agent protocol adopted.** A multi-source survey (AG-UI Protocol, A2A, ACP, AGNTCY, OpenAI Agents SDK, LangGraph, OpenAI Responses, Vercel AI SDK, MAF, Llama Stack/OGX) found no public standard covering the host↔runtime SPI — these target adjacent layers (runtime↔UI, inter-org agent↔agent, model wire format) or model the lifecycle differently (stateless run vs. stateful session). AG-UI / A2A / OpenAI Responses are export-edge translation targets if claudebox ever grows an external surface; they are not internal contracts.
 
@@ -372,7 +374,7 @@ AgentSession.receive_events() → AgentEvent stream
       → Projection.update(event)       # update session.json
 ```
 
-SDK-message-to-AgentEvent projection happens inside `ClaudeRuntime._translate_sdk_message` (§1.4) before the stream reaches the pipeline — no module in `claudebox/agent_session/orchestration/` imports `claude_agent_sdk` (enforced by ast-grep per GUIDELINES §SDK Containment).
+SDK-message-to-AgentEvent projection happens inside `ClaudeRuntime._translate_sdk_message` (§1.4) before the stream reaches the pipeline — no module in `claudebox/agent_session/orchestration/` imports `claude_agent_sdk` (enforced by the import audit per GUIDELINES §SDK Containment).
 
 **Event model hierarchy**:
 
@@ -443,7 +445,25 @@ Monitors background Task agents spawned by the SDK:
 
 **events.jsonl** — append-only event log. Source of truth. One line per `PublishedEvent`, JSON-serialized.
 
-**session.json** — derived projection. Recomputable from events. Contains: `session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`, `name`, `model`, `num_turns`, `permission_mode`, `effort_level`, `todos`, `total_cost_usd`, `total_duration_ms`, `last_context_tokens`, `context_window`, `first_message`, `last_message`, `commands`, `session_prompt`, `parent_session_id`, `fork_point_cost_usd`.
+**session.json** — derived projection. Recomputable from events. Contains: `session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`, `name`, `model`, `runtime`, `provider`, `num_turns`, `permission_mode`, `effort_level`, `todos`, `total_cost_usd`, `total_duration_ms`, `last_context_tokens`, `context_window`, `first_message`, `last_message`, `commands`, `session_prompt`, `parent_session_id`, `fork_point_cost_usd`. `runtime` is the adapter's display name (`"Claude"` / `"LangGraph"`), stamped once at creation and never overwritten; resume warns on mismatch against the workspace's current `agent` setting rather than switching silently (§1.4.1's sibling concern for LangGraph). `provider` is the `provider:model` prefix, `None` under Claude.
+
+**Claude → LangGraph session migration** (one-shot, `scripts/migrate_claude_to_langgraph.py`) — the reverse of the pipeline above. Parses `events.jsonl` into a LangChain message list (`runtime_langgraph.py::events_to_messages`, kept in the adapter file per SDK Containment since it constructs `langchain_core.messages` objects), seeds it into a fresh `checkpoints.sqlite` through the target workspace's own `LangGraphRuntime` and `graph.aupdate_state(..., as_node="model")`, then flips `session.json`'s `runtime`/`provider` via `SessionRepository.update()`. A Claude tool call with a LangGraph equivalent (`TOOL_NAME_TO_LANGGRAPH`) becomes a real tool call; anything else flattens to plain text. Thinking blocks are dropped - LangChain has no first-class carrier for reasoning content on seeded history - and the CLI reports how many were dropped; an attached image or document re-encodes from the session's own `attachments/` directory into the same multi-part content blocks a live send builds, falling back to a text note when the file is gone or no `attachments_dir` was given. Idempotent by construction: `events_to_messages` derives message ids from the input, so `add_messages` merges a re-seed by id instead of duplicating history, and the CLI checks `runtime == "LangGraph"` up front as a second independent guard. Conversion leaves a native LangGraph session needing no further translation; the reverse direction has no native-resume path, the Claude SDK's session store being opaque.
+
+**rate-limits.json** — per-workspace plan-limit state (`RateLimitStore`,
+`claudebox/agent_session/rate_limits.py`), one entry per SDK `rate_limit_type` keyed window,
+folded from the `rate_limit` system event in `SessionService._handle_event`. Written
+container-side only: the daemon never sees this event itself, since `ProxyStreamingResponse`
+(`core/http.py:38`) forwards the container's SSE stream as opaque bytes rather than parsing it.
+Both sides read the same file directly — the workspace is bind-mounted at the same path in the
+container and on the host — via `RateLimitStore.get()`; no daemon-owned copy exists. Served as a
+`rate_limits` sibling field on both `GET .../api/sessions/current` (container, in-session) and
+`GET /api/workspaces/{id}/session-defaults` (daemon, pre-session), rather than a dedicated
+endpoint, since both were already polled or fetched at the moments a transition needs to surface.
+**Reconcile at session start**: every currently-stored window is marked unannounced
+(`_handle_init`); each `rate_limit` event re-announces its window, upserting it (or clearing it,
+for the `allowed` status the SDK announces for `five_hour` but never for `seven_day`); once the
+session's first `result` event lands, any window still unannounced is dropped — the absence of an
+announcement is the only "back to normal" signal the SDK gives for a weekly window.
 
 #### Executor Ownership
 
@@ -598,6 +618,8 @@ Mount types yielded by `get_volumes()` (in `claudebox.containers.run`):
 
 `ContainerBackend` (in `claudebox.containers.backend`) abstracts podman/docker CLI differences. Key methods: `build_image()`, `run_container()`, `stop()`, `kill()`, `remove_container()`, `create_network()`, `print_container_logs()`, `inspect_container()`, `get_host_port()`, `list_containers()`. All commands go through `_exec()` which calls `subprocess.run()` (or `os.execvp()` when `replace=True`).
 
+`LocalRuntime` spawns `container_api_server.py` as an ordinary host subprocess (no container, no network namespace) and passes `--host 127.0.0.1`, so the session API is reachable only from the host. The containerized path keeps the all-interfaces default, since its port is published from inside a container and a loopback bind there would be unreachable through the publish mapping — a session that never connects, not a closed one.
+
 ### 2.6 Container Lifecycle (Stop vs. Kill vs. Remove)
 
 Container shutdown is split into three daemon-side operations:
@@ -619,14 +641,14 @@ CLI verbs:
 
 ### 3.1 Containerfile (Multi-Stage)
 
-Three installation layers in `lib/container/build/Containerfile`:
+Four installation layers in `lib/container/build/Containerfile`:
 
 | Layer | Script | Content | Rebuild frequency |
 |-------|--------|---------|-------------------|
 | Base | `install_base.sh` | System packages, mise, Python 3.13, Node 24, uv, Rust, just, gh | Rare |
-| Nesting | `install_containers.sh` | Rootless podman-in-podman toolchain (§3.7); capability-gated at runtime, always baked | Rare |
+| Nesting | `install_containers.sh` | Podman-in-podman toolchain (§3.7); capability-gated at runtime, always baked | Rare |
 | Profile | `install_profile.sh` | Overridden by `{profile}/hooks/image-build.sh` — dev tools, linters, runtimes | On profile change |
-| Agent | `install_agent.sh` | Claude Code CLI (via mise) + Python dependencies and all LangGraph provider packages (`uv sync --frozen --extra langgraph-all` into `/opt/claudebox/.venv`) | On `--update` |
+| Agent | `install_agent.sh` | Claude Code CLI (via mise) + Python dependencies and all LangGraph provider packages (`uv sync --extra langgraph-all` into `/opt/claudebox/.venv`, resolved fresh at build - `uv.lock` governs the host install only) | On `--update` |
 
 Runtime config: `WORKDIR /workdir`, `BASH_ENV=/root/.bash_env`, `ENTRYPOINT ["/entrypoint.sh"]`.
 
@@ -700,9 +722,11 @@ Shell hooks are sourced (container-*) or executed as subprocesses (agent-*). Pro
 
 **Claude Code SDK hooks** are configured in the profile's config and processed by the `@hook` decorator (§1.2). Profiles can implement any combination of Claude Code hook types (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, SessionEnd, AgentStop, Stop) and the statusline command.
 
-### 3.7 Nested Containers (rootless)
+### 3.7 Nested Containers
 
-The image bakes a rootless podman-in-podman toolchain (`install_containers.sh` - podman, buildah, podman-compose, the docker-CLI compat wrapper, rootless storage/subuid config) unconditionally, keeping the image single/global; `[containers] nested` (§2.1, §2.3) gates the capability at the runtime device layer. The outer agent stays root; the toolchain runs as a dedicated non-root user via PATH shims, since podman picks rootless-vs-rootful by euid. Inner containers run inside the outer container's own namespaces (no `--privileged`) - invisible outside the session and removed with it, storage tmpfs-mounted and never persisted.
+The image bakes a podman-in-podman toolchain (`install_containers.sh` - podman, buildah, podman-compose, the docker-CLI compat wrapper, an identity subuid/subgid config) unconditionally, keeping the image single/global; `[containers] nested` (§2.1, §2.3) gates the capability at the runtime device layer. The toolchain runs as real root inside the session container, mapped through an identity subuid/subgid range (`daemon:1:65535`, `root:1:65535`) so inner containers get the container's full host id range. Writing a non-trivial id map needs `CAP_SYS_ADMIN` in the namespace being mapped, unless the namespace's owner and the writer share the same effective uid - podman satisfies that by creating and writing its own namespace as root, so no capability grant is required. Inner containers run inside the outer container's own namespaces (no `--privileged`) - invisible outside the session and removed with it, storage tmpfs-mounted and never persisted.
+
+The toolchain shares the session container's network namespace (`netns = "host"`) rather than getting its own: inner containers cannot publish ports (`-p` is accepted but has no effect), cannot bind ports below 1024, and cannot create user-defined networks (needs `CAP_NET_ADMIN`) - `podman-compose` services must set `network_mode: host` and reach each other via `localhost`. Isolation from the true host holds only because the session container itself gets its own private network namespace by default (`config.network_mode` unset); a workspace that sets `[network] mode = "host"` puts inner containers on the host network too.
 
 ---
 
@@ -743,8 +767,10 @@ PathResolver's file index persists to `{workspace}/.claudebox/path-index.json` (
 # session.py
 current: Session | None = None
 
+
 def get_session() -> Session:
     """Return the active session, raising SessionNotReady if uninitialized."""
+
 
 def managed(**kwargs):
     """Async context manager for FastAPI lifespan.
@@ -758,7 +784,7 @@ def managed(**kwargs):
     # Shutdown: await current.stop(); current = None
 ```
 
-`Session` is imported from `claudebox.agent_session.orchestration.session`. All handlers access `session_lifespan.current` via the `get_session()` dependency injected through `SessionDep` in `handlers/_shared.py`. FastAPI lifespan manages the singleton across container startup / shutdown.
+`Session` is imported from `claudebox.agent_session.orchestration.session`. All handlers access `session_lifespan.current` via the `get_session()` dependency injected through `SessionDep` in `handlers/_shared.py`.
 
 ### 4.3 API Endpoints
 
@@ -805,7 +831,7 @@ src/
 ├── context/          # React Context providers (split contexts — see §5.3)
 ├── features/         # Feature modules (self-contained)
 │   ├── app/          # App shell, AppProviders, cross-cutting effects
-│   ├── chat/         # ChatPanel, ChatController
+│   ├── chat/         # ChatPanel, ChatController, terminal column (components/terminal/)
 │   ├── boards/       # BoardsPanel, BoardTab
 │   ├── bookmarks/    # BookmarksPanel
 │   ├── commands/     # CommandsPanel
@@ -820,7 +846,7 @@ src/
 │   ├── todos/        # TodosPanel
 │   └── usage/        # UsagePanel
 ├── components/       # Cross-feature React components (CopyButton, ConfirmSwitchModal, Dropdown, Markdown, MermaidDiagram, PanelControlBar, PanelListItem, PathHighlighter)
-├── hooks/            # Cross-feature hooks (useBookmarks, useDaemonStream, useDropdown, useIsMobile, useLocalStorage, useNewSession, usePathResolution, useSSE)
+├── hooks/            # Cross-feature hooks (useBookmarks, useBottomAutoscroll, useDaemonStream, useDropdown, useIsMobile, useLocalStorage, useNewSession, usePathResolution, usePointerDragHandle, useSSE)
 ├── managers/         # Coordination logic classes — see §5.5
 ├── utils/            # Cross-feature pure functions (event processing, predicates, formatters, parsers, language detection, diff, xml block folding, scroll, color, comparators, collections, attachment helpers, layout persistence, mermaid loader, path candidates, bookmark IDs, categorization, navigation, flash status)
 ├── main.jsx          # React entry point
@@ -837,7 +863,7 @@ src/
 4. `onerror` → close, auto-reconnect with exponential backoff (1s–10s)
 5. `close()` → permanent shutdown (`_closed` flag prevents reconnect)
 
-**Daemon Reconnect Recovery**: `DaemonReconnectEffect` monitors the daemon SSE connection and triggers automatic session recovery when the daemon restarts. It distinguishes initial connections from reconnections by tracking whether the daemon has been connected before; only non-initial `connected` transitions fire recovery. When triggered, it checks whether the container SSE is still alive — if so, recovery is skipped. Otherwise, it calls the resume endpoint to obtain a fresh container ID and reconnects the container SSE. On failure, a "Session reconnect failed" error is shown to the user.
+**Daemon Reconnect Recovery**: `DaemonReconnectEffect` monitors the daemon SSE connection and triggers automatic session recovery when the daemon restarts — tracked as a non-initial `connected` transition, so the first connect never fires it. If the container SSE is still alive, recovery is skipped; otherwise it calls the resume endpoint for a fresh container ID and reconnects the container SSE. Failure shows the user a "Session reconnect failed" error.
 
 ### 5.3 State Management
 
@@ -919,7 +945,7 @@ Container listing is workspace-scoped end-to-end: the daemon exposes `GET /api/w
 
 The in-chat grouped renderer (`TodosGroup`) derives the "blocked" flag at render time by resolving each item's `blockedBy` taskIds against the same merged-run set (frozen-snapshot semantics: cross-run blocker references are treated as resolved, keeping the group self-contained). The panel (`TodosPanel`) does the same resolution against the live cumulative `todosBySubagent` partition. No new store mutation — both consumers operate on the read side of the existing state.
 
-**Empty-state suppression**: `TodosGroup` returns `null` when `bucketize(...).rowGroups.length === 0`. The segment list from `groupBlocks.flushRun` (which already demotes inspection-only runs to per-block segments) can still emit a `'todos-group'` segment even when no rows ultimately materialize — three converging paths produce this end-state: (1) streaming race where a TaskCreate / TaskUpdate `tool_use` lands but the matching `tool_result` has not yet populated `todoDiffs`, so `mergeRunItems` returns `[]`; (2) empty-items mutation (TaskCreate with no items, or TaskUpdate that removes the last item); (3) any future `bucketize` edge that yields zero rows. The render-layer guard suppresses the chrome until something is in fact ready to show; once `todoDiffs` populates and React reconciliation re-runs, the chrome appears with its rows. No upstream code change is needed because the partitioner (`groupBlocks.flushRun`) has no access to `todoDiffs` — it lives in `TurnContext`, only consumed by the React tree.
+**Empty-state suppression**: `TodosGroup` returns `null` when `bucketize(...).rowGroups.length === 0`. `groupBlocks.flushRun` can emit a `'todos-group'` segment that yields no rows via three paths: a streaming race where a TaskCreate / TaskUpdate `tool_use` lands before its `tool_result` populates `todoDiffs`, so `mergeRunItems` returns `[]`; an empty-items mutation (TaskCreate with no items, TaskUpdate removing the last one); or any future zero-row `bucketize` edge. The render-layer guard hides the chrome until rows exist, and reconciliation brings it back once `todoDiffs` populates. The guard belongs there because the partitioner cannot see `todoDiffs` at all - it lives in `TurnContext`, consumed only by the React tree.
 
 The run-detector (`groupBlocks` in `TurnBlockList`) only emits a grouped-Todos segment when the run contains at least one `TaskCreate` or `TaskUpdate`; runs composed entirely of `TaskList` / `TaskGet` (inspection-only) are demoted to individual `single` segments so the per-block ToolBlock dispatch renders each inspection's payload. The grouped renderer wraps its rows in the shared ToolBlock chrome (`ToolBlockHeader` + `.tool-expanded-content`), so its expand / collapse affordance matches every other tool block; the row body is a CSS grid with three columns (state icon · title · description) and each row uses `display: contents` so its cells participate directly in the parent grid — columns align across rows.
 
@@ -955,7 +981,9 @@ Whether the list is windowed at all is decided by what the virtualizer produced,
 
 **Known limitation.** A session of roughly 200+ turns can still trip React's maximum-update-depth guard and leave the chat blank, intermittently. This predates windowing: the same session reproduces it on builds from before both the chunked replay drain and this list, where it rendered nothing at all rather than a bounded window. Windowing bounds the cost and gets the session on screen in seconds, but does not remove the underlying cycle. Note that no shipped test fixture is long enough to reach the failing condition - the largest is 16 turns - so a green suite says nothing about it.
 
-**Minimap sizing**: every turn's segment is priced by `predictTurnHeight` - a content-derived estimate scaled to chat column width (text wrap, tool/thinking blocks, attachment rows, collapsed strips), the same estimator the virtualizer uses for unmounted rows. Coefficients live in `config/dimensions.js`; `e2e/app/tests/predictor-calibration.spec.js` holds per-fixture drift under 30% across three viewport widths by scrolling each fixture turn into view and measuring it while mounted.
+**Minimap sizing**: every turn's segment is priced by `predictTurnHeight` - a content-derived estimate scaled to chat column width (text wrap, tool/thinking blocks, attachment rows, collapsed strips), the same estimator the virtualizer uses for unmounted rows. Coefficients live in `config/dimensions.js`; `e2e/app/tests/predictor-calibration.spec.js` holds per-fixture drift under 30% across three viewport widths, each swept with the terminal split both on and off, by scrolling each fixture turn into view and measuring it while mounted.
+
+`predictTurnHeight`'s 4th parameter, `splitEnabled`, routes through the `isTopLevelBashCall` predicate `groupBlocks` uses (§5.10), so a top-level Bash call is priced at zero while the split is on and a subagent's nested one keeps the ordinary tool-row price either way - predicted and rendered heights agree in both states. `useTurnVirtualizer` calls `virtualizer.measure()` on the flag's edge rather than every render, so mounted turns re-price immediately instead of holding a pre-flip cached height until they happen to remount.
 
 Heights are deliberately NOT sourced from real measurements. With the list windowed only a handful of turns have a height at any moment, and feeding those back into state re-renders the list, which mounts and measures more turns, which publishes again - a cycle that does not settle. Predictions are complete and independent of what happens to be on screen, so minimap proportions no longer depend on where the user has scrolled. Heights are keyed by `turn_id`, so a turn keeps its size when the list shifts underneath it (a compaction dropping an earlier turn, a rewind). The human-message marker drawn inside each segment is predicted the same way, for the same reason: measuring it needs the turn mounted, and sizing only the mounted few would flatten every other marker to its minimum.
 
@@ -997,6 +1025,31 @@ That call is declarative rather than a per-id register/unregister pair for a spe
 **Routing**: `DesktopLayoutBody.handleTogglePanel` consults `useBottomPanels().isBottomPanelId(id)` — bottom-slot IDs route through `togglePanel(id)`, everything else stays on dockview's `onTogglePanel`. The dockview `augmentedActivePanels` adds the open bottom-slot IDs so their icons highlight as active alongside dockview panels.
 
 Panel state (widths, heights, visibility, ordering) persisted to `/api/ui-state` with 500ms debounce.
+
+**Chat content area split**: `.chat-content-area` holds the transcript (`.chat-transcript-column`)
+and, when the split is on, the terminal column
+(`features/chat/components/terminal/TerminalColumn.jsx`), separated by a repo-authored
+`ChatSplitDivider.jsx` rather than a dockview sash - the terminal column is not a dockview panel and
+has no side/bottom slot membership. `useTerminalSplit` hydrates `{enabled, ratio}` from
+`session.terminalSplitEnabled` / `session.terminalSplitRatio` (defaults: off, 0.5) on session attach,
+mirroring `minimapPinned`'s flat camelCase key shape; `enabled` patches on toggle, `ratio` debounced
+(`LAYOUT_SAVE_DEBOUNCE_MS`) on drag. `useTerminalSplitLayout` derives `showTerminalSplit` from that
+plus a measured `.chat-content-area` width: mobile always suppresses it, and any width under
+`CHAT_TRANSCRIPT_MIN_WIDTH + CHAT_TERMINAL_MIN_WIDTH + CHAT_SPLIT_DIVIDER_WIDTH` collapses to the
+transcript alone without touching the persisted `enabled` flag. `ChatSplitDivider` shares
+`usePointerDragHandle` (pointer capture, axis-parameterized) with `BottomPanelContainer`'s handle - see
+§5.10 for what routes into the column.
+
+`TerminalColumn` is windowed the same way `HistoricalTurnList` windows turns (`useTerminalVirtualizer`,
+`@tanstack/react-virtual`): only entries near the viewport plus `TERMINAL_OVERSCAN` mount, priced by
+`predictTerminalEntryHeight` until measured. The column never wraps output - each line, however wide,
+stays one line and scrolls sideways within its own block - so the predictor is a pure line count,
+independent of column width, so a divider drag that resizes the column needs no re-measure pass.
+The trailing entry stays outside the window and renders directly, mirroring `ChatPanel`'s active turn,
+since it is the one whose height still changes as "Running..." becomes real output. Autoscroll (follow
+new entries at the bottom, hold position when scrolled up) comes from the virtualizer's own
+`anchorTo`/`followOnAppend` options rather than a scroll listener; `LogsPanel` is `useBottomAutoscroll`'s
+only remaining consumer, unwindowed.
 
 ### 5.7 Build System
 
@@ -1061,7 +1114,7 @@ ToolContentRenderer(toolName, details, filePath, outputMode)
 | `ToolCodeBlock` | `features/chat/.../tool-content-renderer/components/code-block/` | Parses tool-specific formats → `CodeBlock` |
 | `CodeBlock` | `features/chat/.../tool-content-renderer/components/code-block/` | Low-level table renderer with sticky gutter |
 
-**Gutter inference**: CodeBlock infers gutter structure from line data — file column if any line has `file`, lineNum column if any line has `lineNum`, no gutter otherwise (Edit diffs).
+**Gutter inference**: Edit's diff lines carry neither `file` nor `lineNum`, so `CodeBlock` renders them with no gutter.
 
 **Element-override identity constraint**: `Markdown`'s `components` map is used by react-markdown as each tag's JSX element type, so a new identity per render (e.g. built inline, closing over `sessionDir`) makes React rebuild the subtree instead of updating it — defeating any memoisation inside it (`MarkdownCodeFence`, `MermaidDiagram`). Hoisted to module scope; per-render values reach the overrides through context instead of a closure. This is why `MarkdownCodeFence`'s memo existed without doing anything.
 
@@ -1152,9 +1205,9 @@ ToolBlock(toolUse, toolResult, nestedEvents)
    └─ [awaiting + user types in chat] → mark skipped
 ```
 
-**Interactive tools**: AskUserQuestion and ExitPlanMode render forms via InteractiveQuestions. Form submit sets `wasAnsweredLocally`, collapses block, sends answer to the container API. `ChatPanel`'s `handleFormSubmit` reads whatever is sitting in the composer at that moment (`composerHandleRef.current.extractOrEmpty()`) and sends it alongside the answer as a sibling `note`, rather than folding it into the answer text - same reason as ARCHITECTURE.md:267, the transcript's answer match is anchored and cannot tolerate a prefix.
+**Interactive tools**: AskUserQuestion and ExitPlanMode render forms via InteractiveQuestions. Form submit sets `wasAnsweredLocally`, collapses block, sends answer to the container API. `ChatPanel`'s `handleFormSubmit` reads whatever is sitting in the composer at that moment (`composerHandleRef.current.extractOrEmpty()`) and sends it alongside the answer as a sibling `note` instead of folding it into the answer text - the transcript matches the wrapped answer with an anchored regex no prefix survives (§1.4, "AskUserQuestion via interrupt()").
 
-**Per-tool formatters**: `utils/toolResultFormatters.js` exposes `buildToolHeader`, `getToolStatus`, `getToolTooltip`, `hasSpecializedFormatter`, and `shouldCollapseByDefault`. Tool routing for the *expanded* content area lives in `ToolContentRenderer` and consults `getToolConfig(toolName).renderer` from `config/toolRegistry.js` (`syntax-or-code`, `code`, `markdown`).
+**Per-tool formatters** live in `utils/toolResultFormatters.js`. Tool routing for the *expanded* content area lives in `ToolContentRenderer` and consults `getToolConfig(toolName).renderer` from `config/toolRegistry.js` (`syntax-or-code`, `code`, `markdown`).
 
 **Bash Command section**: `ToolBlockExpandedContent` renders Bash's raw command in a purpose-built "Command" section (`SyntaxHighlightedCodeBlock`, `language="bash"`) instead of the generic "Input" section - `toolInput` stays `null` for Bash, so the command reaches the component via its own `command` prop. Output gets a matching "Result" section, omitted when empty. `ToolBlock` derives this `command` once and reads it at both expandability gates (`hasExpandableContent`, the pending-content render gate), so the Command section renders while the call is still pending - the only handled tool admitted while pending on a payload other than `toolInput`. Every other handled tool keeps its content suppressed until the result arrives. `SyntaxHighlightedCodeBlock` takes a `showGutter` prop (default on); the Command section is the one caller that passes `showGutter={false}`, since its line numbers index nothing - `CodeBlockRow` drops the gutter cell and tags the content cell `code-block-no-gutter`, the same shape the parsed code-block path (`CodeBlockLine`) already uses for its own no-gutter callers.
 
@@ -1163,6 +1216,8 @@ ToolBlock(toolUse, toolResult, nestedEvents)
 **Hidden tool blocks**: `utils/eventProcessing.js::isHiddenToolSearch(toolUse, toolResult)` is the single predicate deciding whether a tool-schema search (`ToolSearch` / LangGraph's `tool_search`) renders at all - hidden while pending or on success, visible only once the paired result reports an error. Applied at three sites that must agree: `groupBlocks` (top-level, skipped before Todos-run detection so a hidden call neither breaks nor absorbs into a run it interrupts), `processNestedEvents` (subagent Activity sections), and `predictTurnHeight` (indexes `tool_result` events by `tool_use_id` first, then skips priced blocks the predicate hides, so predicted and rendered heights agree). One predicate, one tool - not a general hidden-tools mechanism.
 
 **Open-in-editor affordance**: `ToolBlock` resolves `editorUrl` once per block (`useEditorTemplate()` reads `editor_url_template` from session-defaults, `resolveEditorUrl()` substitutes the block's `filePath`/line) and passes it down to `ToolBlockHeader`, rather than each header or `LookupsGroup` row resolving its own. The header renders the control only when a URL resolves, opening via `window.open` with `stopPropagation` so it never reaches the collapse toggle. Resolution is entirely client-side - the identity workspace mount (§2.4) already makes a bare `file_path` a valid host path.
+
+**Shell-call routing to the terminal column**: `utils/eventProcessing.js::isTopLevelBashCall(toolUse)` is the single predicate deciding what routes to the terminal column instead of rendering inline - `normalizeToolName(toolUse.content) === ToolName.BASH` (covering LangGraph's snake_case `bash` alias) and `!toolUse.parent_tool_use_id`. That absence check keeps a subagent's shell calls inside its Task block's Activity section, since `processNestedEvents` never applies the predicate and renders nested Bash calls unconditionally. Three call sites must agree on it: `groupBlocks`/`turnContent` skip the block from the turn, gated behind a `hideShellCalls` boolean served by `HideShellCallsContext`/`useHideShellCalls` (default off, so turn rendering is unaffected until the split turns it on); `hasVisibleBlock` drops header/footer chrome from a turn whose only content routed away, rather than rendering an empty shell; and `terminalEvents.js::deriveTerminalEntries` builds the column itself in one pass over session events, pairing each routed call with its result via `indexEvents` and stamping `turnId` from the most recent human-opened turn - in the wire format only that turn-opening human event carries a `turn_id`, never the `tool_use`.
 
 ### 5.11 Panel Management
 
@@ -1272,7 +1327,7 @@ StashProvider → (cross-cutting effects + children)
 | Alt+Home/End | Jump to top/bottom |
 | Alt+? or Alt+/ | Toggle help overlay |
 
-**Layout persistence**: Debounced 500ms save to `/api/ui-state` on `onDidLayoutChange`.
+**Layout persistence**: Debounced 500ms save to `/api/ui-state` on `onDidLayoutChange`. A stored layout is a serialized dockview instance and is therefore dockview-version-sensitive; `UIStateService.VERSION` (`domain/ui_state/service.py`) is the lever that discards state from an incompatible version rather than attempting a partial restore.
 
 **Maximize/restore**: Saves both Dockview layout and SidePanelManager state to `preMaximizeLayoutRef` before maximize. On exit, restores both via `api.fromJSON()` (layout) and `manager.fromJSON()` (panel group dimensions and ordering).
 
@@ -1313,7 +1368,6 @@ Brief descriptions of cross-cutting subsystems not covered by dedicated sections
 |-----------|----------|-------------|
 | Message queuing | `managers/MessageQueueManager.js` | Queues user messages during SSE reconnection or while awaiting response; drains on response completion, compaction boundary, or connection restore |
 | Path resolution | `managers/PathResolutionManager.js` | Resolves and highlights file paths in tool output; caches resolved paths for click-to-open. Alt+Click routes the resolved path through the same editor-URL resolution as the tool-block affordance (`utils/editorUrl.js`) instead of the clipboard; plain click is unaffected |
-| Session tabs | `managers/SessionTabManager.js` | Manages dynamic session tabs in the center panel; workspace-scoped storage (`claudebox:sessionTabs:{workspaceId}`); handles creation, naming, and cleanup via Dockview API |
 | Conversation fork | `features/chat/` + daemon `/sessions/{id}/fork` | Branch a session at a specific turn into a child session, optionally reusing the live container (web UI only — leverages the daemon's fork API; rewind itself is the upstream Claude Code CLI's built-in `/rewind` command) |
 | Desktop notifications | `features/chat/hooks/` + `utils/` | Browser Notification API integration; triggers on response completion when tab is not focused; plays chime sound |
 | Dynamic favicon | `features/chat/hooks/` | Updates favicon to reflect assistant state (responding, idle, error) |
@@ -1381,6 +1435,11 @@ Four per-session prefixes (`draft:`, `inputHistory:`, `inline-replies:`, `queue:
 
 The prefixes carry no workspace segment, so a session live in another workspace looks dead from one workspace's own fetched list alone. `collectLiveSessionIdsAcrossWorkspaces` unions every registered workspace's session list before the sweep runs, falling back to the current workspace's own set if that lookup fails.
 
+This section covers browser `localStorage` only. Session-scoped preferences persisted through the
+server-side `/api/ui-state` PATCH contract instead (`minimapPinned`, `terminalSplitEnabled`,
+`terminalSplitRatio`, bottom-panel layout, dockview layout) are documented alongside the feature
+that owns them - see §5.6 for the terminal split keys.
+
 ---
 
 ## 6. Daemon (`claudebox_daemon`)
@@ -1404,13 +1463,13 @@ DaemonService (singleton via domain.current)
     └── BoardService (board listing, mutation, mtime-driven updates)
 ```
 
-**DaemonService** owns the daemon-wide singletons listed above. Lazy-loads WorkspaceService instances from `~/.claudebox/daemon.json`.
+**DaemonService** lazily loads `WorkspaceService` instances from `~/.claudebox/daemon.json`.
 
-**WorkspaceService** provides isolated per-workspace state. Holds ContainerService, SessionService, UIStateService, and BoardService. When the workspace directory is unavailable, the *sub-services* are set to None on the (still non-None) WorkspaceService.
+**WorkspaceService** provides isolated per-workspace state. When the workspace directory is unavailable, the *sub-services* are set to None on the (still non-None) WorkspaceService.
 
-**ContainerService** manages podman lifecycle for containers. Broadcasts `STOPPING` status before initiating stop, then `STOPPED` after completion — two-phase broadcast enables frontend stopping state feedback.
+**ContainerService** broadcasts `STOPPING` status before initiating stop, then `STOPPED` after completion — two-phase broadcast enables frontend stopping state feedback.
 
-**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction and hands that snapshot to `ContainerService` for construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService`. Run-arg settings, by contrast, are re-read per container create: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so a workspace's mounts, ports, env vars, network mode, and nested-containers opt-in reflect the current `settings.toml` on the next created session (new / resume / fork) without a daemon restart. The reload is deliberately scoped: `agent`, `profile`, and `backend` stay bound to the construction-time snapshot and still require a daemon restart to change. This is distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`), never per-workspace `settings.toml`.
+**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction, and that snapshot drives `ContainerService`'s construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService` — so changing any of them needs a daemon restart. Run-arg settings are re-read per container create instead: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so mounts, ports, env vars, network mode, and the nested-containers opt-in follow the current `settings.toml` from the next created session (new / resume / fork) on. Distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`).
 
 **SessionService** orchestrates session lifecycle: listing from disk via `SessionRepository`, spawning containers for new/resumed sessions, forking sessions at turn boundaries. `create()`, `resume()`, and `fork()` all return a unified `SessionInfo` shape (extends `SessionMetadata` with `container_id`, `workspace`, `permission_mode`, `effort_level`) so the frontend can populate the footer from the response without waiting for the SDK init event. `fork(reuse_container=True)` transfers ownership of the live container to the new (child) session by calling `ContainerService.update(container, session_id=new_session_id)` after seeding the child's `session.json` (with `parent_session_id` linking back); `find_by_session()` then resolves the running container under the child id, so the parent's running indicator clears in the sessions panel and stop affects only the child. `parent_session_id` on the child remains the back-link from child to parent across the fork tree.
 
@@ -1530,7 +1589,7 @@ handlers/
 | `/boards/{id}/swimlanes/reorder` | PATCH | Reorder swimlanes |
 | `/boards/{id}/states/reorder` | PATCH | Reorder columns/states |
 | `/boards/{id}/states/{state_id}` | PATCH | Rename a state's display label (`{label: str}` body). Folder name and state ID are intentionally immutable — ticket files are stored under `{folder}/` and the state ID is the column key in board.yaml; only the human-facing label changes. |
-| `/session-defaults` | GET | Workspace path + model / permission / effort defaults a new session would inherit, plus the `available_models` / `available_permission_modes` / `available_effort_levels` choice lists. Sourced from `claudebox.claude.definitions` constants today; future workspace overrides slot in here without changing the response shape. Sole source of these lists in the frontend — consumed by `useSessionDefaults` (footer welcome-screen values) and `SessionDataProvider` (picker dropdown contents). |
+| `/session-defaults` | GET | Workspace path + model / permission / effort defaults a new session would inherit, plus the `available_models` / `available_permission_modes` / `available_effort_levels` choice lists, plus the workspace's live `rate_limits` (§1.5 Persistence) for the footer before any session attaches. Sourced from `claudebox.claude.definitions` constants today; future workspace overrides slot in here without changing the response shape. Sole source of these lists in the frontend — consumed by `useSessionDefaults` (footer welcome-screen values) and `SessionDataProvider` (picker dropdown contents). |
 | `/commands` | GET | Workspace's filesystem-discovered slash commands and skills, payload `{custom, mcp, builtin}` matching the in-session `commands` field shape. `mcp` and `builtin` are always empty for the welcome catalog (the daemon has no visibility into running MCP servers or SDK-emitted built-ins). Funnels through the same `claudebox.claude.parser.load_slash_commands` parser as the in-container session catalog, so naming and metadata stay consistent. Consumed by `useWorkspaceCommandCatalog` and falls into `SessionDataContext.commands` whenever `sessionData?.commands` is null (welcome screen). |
 
 Board change events are broadcast on the daemon-level `/api/daemon/stream` (as `BoardUpdateEvent`) — there is no per-board SSE endpoint.
@@ -1554,7 +1613,16 @@ Two modes selected by `is_dev_mode()`. The user-facing port (`DAEMON_PORT` in pr
 | Development | `DAEMON_DEV_PORT` (Vite) | `DAEMON_DEV_PORT + 1` | Hot reload; HTTP only |
 | Production | `DAEMON_PORT` (Caddy) | `DAEMON_PORT + 1` | Caddy handles H2/TLS via `tls internal`, proxies to uvicorn; Caddyfile written to temp dir |
 
+Caddy is the only externally-bound listener; the uvicorn backend binds loopback only via
+`http_serve`'s `host` parameter. The container API keeps all interfaces, since its port is
+published from inside a container and a loopback bind there would be unreachable from the host.
+
 Startup: banner logged via Rich; Caddy/uvicorn output is captured by the structlog-routed logging stack and lands in the daemon log file (`use_rotating_log_file` in `app.py`).
+
+Shutdown: both the Vite and Caddy subprocesses are launched with `start_new_session=True` and
+stopped by signaling their whole process group (`_stop_subprocess`), not just the immediate
+process — `npm`/`npx` do not forward a received SIGTERM to the `vite` child they spawn, so
+single-process signaling would leave that grandchild running after every dev-mode stop.
 
 ### 6.5 SSE Broadcasting
 
@@ -1609,87 +1677,163 @@ Two pytest trees from `lib/` root: `tests/` for unit tests (mirrors source packa
 
 ```
 tests/
-├── conftest.py                              # anyio_backend (asyncio), tmp_workspace fixture
+├── conftest.py                               # anyio_backend (asyncio), tmp_workspace, isolate_home fixtures
+├── test_pytest_socket_policy.py              # Sentinel - pytest-socket deny-by-default is active
 │
-├── claudebox/                               # Core framework
-│   ├── test_cleanup.py                      # Stale directory cleanup
-│   ├── test_config.py                       # Config discovery, loading, hierarchical merge
-│   ├── test_env.py                          # Dev mode detection
-│   ├── test_paths.py                        # Workspace/session path discovery and naming
-│   ├── test_workspace.py                    # Workspace init, ignore patterns
-│   ├── claude/
-│   │   ├── test_client.py                   # ClaudeSDKClient
-│   │   └── test_parser.py                   # Slash command and skill frontmatter parser
+├── claudebox/
+│   ├── agent_session/
+│   │   ├── langgraph_tools/
+│   │   │   ├── conftest.py                   # Shared fixtures for this tree
+│   │   │   ├── test_filesystem.py            # read_file, write_file, edit_file
+│   │   │   ├── test_mcp.py                   # list_mcp_resources + read_mcp_resource defensive routing
+│   │   │   ├── test_meta.py                  # tool_search keyword discovery over ctx.tool_catalog
+│   │   │   ├── test_middleware.py            # ClaudeboxToolHookMiddleware
+│   │   │   ├── test_notebook.py              # notebook_edit
+│   │   │   ├── test_question.py              # ask_user_question backed by interrupt()
+│   │   │   ├── test_search.py                # glob, grep
+│   │   │   ├── test_shell.py                 # bash
+│   │   │   ├── test_skill.py                 # workspace skill lookup + body return + ARGUMENTS appending
+│   │   │   ├── test_subagent.py              # task() sub-agent dispatcher + agent registry
+│   │   │   ├── test_task_mgmt.py             # 6 wrappers over TaskService
+│   │   │   └── test_web.py                   # web_fetch, web_search
+│   │   ├── orchestration/
+│   │   │   ├── _helpers.py                   # Shared helpers for this tree
+│   │   │   ├── test_async_monitor.py         # AsyncTaskMonitor
+│   │   │   ├── test_async_tasks.py           # background task lifecycle
+│   │   │   ├── test_attachments.py           # path resolution and MIME inference
+│   │   │   ├── test_conversion.py            # message-to-event pipeline
+│   │   │   ├── test_models.py                # event and session data models
+│   │   │   ├── test_persistence.py           # event log I/O
+│   │   │   ├── test_pipeline.py              # result-only turn and echo suppression
+│   │   │   ├── test_pipeline_init.py         # initialization and event processing
+│   │   │   ├── test_pipeline_inject.py       # event injection and buffering
+│   │   │   ├── test_projection.py            # session summary accumulator
+│   │   │   ├── test_projection_runtime_coupling.py # Skill metadata comes from the active runtime, not ClaudeRuntime
+│   │   │   ├── test_session.py               # content block building and internal commands
+│   │   │   ├── test_session_internals.py     # dispose, projection resolution, state tracking
+│   │   │   ├── test_session_lifecycle.py     # send and stop lifecycle
+│   │   │   ├── test_tool_output.py           # file retrieval
+│   │   │   └── test_turn_tracker.py          # turn ID state machine
+│   │   ├── test_capability_transport.py      # Session.get_capabilities, REST endpoint, session-info envelope, SSE init enrichment
+│   │   ├── test_catalogs.py                  # ClaudeRuntime catalog accessors + Skill parser
+│   │   ├── test_config_builder.py            # config -> SDK options round-trip
+│   │   ├── test_event_translation.py         # SDK message -> typed AgentEvent
+│   │   ├── test_events_typed_shapes.py       # Typed init/usage shapes - no escape-hatch dicts
+│   │   ├── test_events_validation.py         # Typed AgentEvent payloads fail loud on contract violations
+│   │   ├── test_factory.py                   # make_agent_session factory + UnknownRuntime dispatch
+│   │   ├── test_hook_adaptation.py           # ClaudeRuntime hook adaptation + delta detection
+│   │   ├── test_profile_hooks.py             # Profile session-start hook resolution and execution
+│   │   ├── test_protocol.py                  # Structural Protocol satisfaction for AgentSession
+│   │   ├── test_providers.py                 # ProviderSpec parsing, install_hint, strategy dispatch, lookup helpers
+│   │   ├── test_registry.py                  # Resolver maps workspace `agent` strings to runtime classes
+│   │   ├── test_runtime_claude.py            # ClaudeRuntime composition adapter
+│   │   ├── test_runtime_langgraph_catalogs.py # Catalog methods - models via Ollama, context-window, defaults
+│   │   ├── test_runtime_langgraph_checkpointer.py # Persistent checkpointer - SqliteSaver per session_dir
+│   │   ├── test_runtime_langgraph_failures.py # Failure modes - Ollama unreachable, model not pulled, tool error, compaction
+│   │   ├── test_runtime_langgraph_hooks.py   # Hook synthesis - on_session_start at connect, compaction start and boundary
+│   │   ├── test_runtime_langgraph_interrupt.py # Interrupt / resume routing
+│   │   ├── test_runtime_langgraph_lifecycle.py # Lifecycle + event assembly + usage telemetry, against a stub model
+│   │   ├── test_runtime_langgraph_providers.py # Universal-provider dispatch
+│   │   ├── test_runtime_langgraph_real_graph.py # Driven through a real compiled graph
+│   │   ├── test_runtime_langgraph_skeleton.py # Capability matrix, Protocol stubs, factory dispatch
+│   │   ├── test_runtime_langgraph_slash_routing.py # `_resolve_slash_skill`/`_tag_slash_command` - LangGraph's take on native slash handling
+│   │   ├── test_runtime_langgraph_tool_binding.py # Binds langgraph_tools/ factories into the compiled graph
+│   │   ├── test_skills.py                    # Shared skill walker - walk_skills, parse helpers, body extraction, source lookup
+│   │   └── test_tasks_service.py             # TaskService - in-memory store + event-replay rebuild
 │   ├── containers/
-│   │   ├── test_backend.py                  # ContainerBackend CLI abstraction
-│   │   ├── test_build.py                    # Image build pipeline
-│   │   └── test_run.py                      # Container run orchestration
+│   │   ├── test_backend.py                   # subprocess abstraction
+│   │   ├── test_build.py                     # build argument generation
+│   │   ├── test_run.py                       # container CLI argument generation
+│   │   └── test_runtime.py                   # facade behavior over backend
 │   ├── core/
-│   │   ├── test_broadcaster.py              # Pub-sub broadcaster
-│   │   ├── test_concurrency.py              # Async/sync bridging
-│   │   ├── test_file_cache.py               # Mtime-based file cache
-│   │   ├── test_fs.py                       # walk_up, touch_dir/file, resolve/remove_path
-│   │   ├── test_http.py                     # HTTP utilities
-│   │   ├── test_io.py                       # File I/O operations
-│   │   ├── test_logging.py                  # Logging configuration, log file rotation
-│   │   ├── test_polling.py                  # AsyncPoller, MtimeWatcher
-│   │   ├── test_serialization.py            # JSONEncoder, deserialize, dumps/loads roundtrip
-│   │   ├── test_structures.py               # DataClass mixin, deep merge, invert
-│   │   └── test_time.py                     # Timestamp generation and parsing
+│   │   ├── test_broadcaster.py               # async pub-sub with replay support
+│   │   ├── test_concurrency.py               # sync/async bridging and call collapsing
+│   │   ├── test_file_cache.py                # mtime-based file cache
+│   │   ├── test_fs.py                        # filesystem utilities
+│   │   ├── test_http.py                      # HTTP proxy client
+│   │   ├── test_io.py                        # file I/O utilities
+│   │   ├── test_log_rendering.py             # ISO timestamp + shape normalization + file-format guard
+│   │   ├── test_logging.py                   # rotating file handler in core logging module
+│   │   ├── test_polling.py                   # async polling primitives - AsyncPoller and MtimeWatcher
+│   │   ├── test_serialization.py             # JSON encoding and deserialization
+│   │   ├── test_structures.py                # DataClass mixin and deep merge
+│   │   └── test_time.py                      # timestamp generation and parsing
 │   ├── extensions/
 │   │   └── tickets/
-│   │       └── test_parser.py               # YAML board parsing, ticket moves, swimlane and state CRUD
+│   │       └── test_parser.py                # board YAML parser
 │   ├── session/
-│   │   ├── test_context.py                  # Session context lifecycle
-│   │   ├── test_metadata.py                 # SessionMetadata model
-│   │   └── test_repository.py               # SessionRepository disk I/O
-│   └── user/
-│       ├── test_hook.py                     # @hook decorator
-│       └── test_statusline.py               # @statusline decorator
+│   │   ├── test_context.py                   # session context and path derivation
+│   │   ├── test_metadata.py                  # shared session metadata model
+│   │   └── test_repository.py                # shared session disk I/O
+│   ├── user/
+│   │   ├── test_hook.py                      # hook decorator and request/response types
+│   │   └── test_statusline.py                # statusline decorator and request type
+│   ├── test_cleanup.py                       # stale directory removal
+│   ├── test_config.py                        # configuration loading and merging
+│   ├── test_config_langgraph_mcp.py          # `[langgraph.mcp.<name>]` blocks -> Config.langgraph_mcp_servers
+│   ├── test_constants.py                     # env-overridable accessors
+│   ├── test_env.py                           # runtime environment checks
+│   ├── test_install.py                       # info formatting (install.format_install_info)
+│   ├── test_paths.py                         # workspace discovery and session naming
+│   ├── test_temp.py                          # session-scoped /tmp symlink management
+│   └── test_workspace.py                     # workspace context and session access
 │
-├── claudebox_container_api/                 # Container API
-│   ├── test_logging.py                      # Container API logging stack
+├── claudebox_cli/
+│   ├── test_containers_targets.py            # ``claudebox containers`` action + target parsing
+│   ├── test_dispatch.py                      # Verb-mode parser dispatches each verb to its handler
+│   ├── test_doctor.py                        # ``doctor`` environment checks
+│   ├── test_help_snapshots.py                # Inline-snapshot --help output for all 12 verbs, stubs included
+│   ├── test_logs_targets.py                  # ``claudebox logs`` target + flag parsing
+│   ├── test_prune_errors.py                  # prune failure reporting - the runtime's own error must reach the user
+│   ├── test_unknown_verb.py                  # Bare, unknown-verb and legacy flag-mode invocations exit 2
+│   ├── test_update_flock.py                  # Anchor for SPEC ``cli:update:concurrent-blocked``
+│   └── test_workspaces_targets.py            # ``claudebox workspaces`` action + arg parsing
+│
+├── claudebox_container_api/
 │   ├── files/
-│   │   ├── test_file_service.py             # FileService.resolve_paths
-│   │   └── test_path_resolver.py            # PathResolver
-│   └── session/
-│       ├── _helpers.py                      # Test utilities
-│       ├── test_async_monitor.py            # Async task monitoring
-│       ├── test_async_tasks.py              # Async task management
-│       ├── test_attachments.py              # Attachment service
-│       ├── test_conversion.py               # Message-to-event conversion pipeline
-│       ├── test_models.py                   # Event, PublishedEvent, SessionSummary
-│       ├── test_persistence.py              # EventLog append/read
-│       ├── test_pipeline.py                 # Event pipeline orchestration
-│       ├── test_pipeline_init.py            # Pipeline initialization
-│       ├── test_pipeline_inject.py          # Pipeline event injection
-│       ├── test_projection.py               # Session summary projection
-│       ├── test_session.py                  # Session facade
-│       ├── test_session_internals.py        # Session internal methods
-│       ├── test_session_lifecycle.py        # Session start/stop/restart
-│       ├── test_tool_output.py              # Tool output reading
-│       └── test_turn_tracker.py             # Turn ID state machine
+│   │   ├── test_file_service.py              # orchestrator facade
+│   │   └── test_path_resolver.py             # path resolution and file indexing
+│   ├── test_handlers_chat.py                 # Chat handlers - stream readiness gating
+│   ├── test_logging.py                       # LogBroadcaster file-based replay
+│   └── test_session.py                       # Session lifespan - log-routing callback wiring
 │
-└── claudebox_daemon/                        # Daemon
-    ├── test_serving.py                      # Dev/production serving modes
-    ├── domain/
-    │   ├── test_config.py                   # DaemonConfig workspace CRUD, persistence
-    │   ├── test_health.py                   # Health monitoring
-    │   ├── test_mutation_observer.py        # SessionMutationObserver polling and broadcast
-    │   ├── test_service.py                  # DaemonService singleton
-    │   ├── boards/
-    │   │   └── test_service.py              # BoardService listing/mutation, watcher integration
-    │   ├── containers/
-    │   │   ├── test_models.py               # Container models
-    │   │   └── test_service.py              # ContainerService lifecycle
-    │   ├── sessions/
-    │   │   └── test_service.py              # SessionService CRUD, fork
-    │   ├── ui_state/
-    │   │   └── test_service.py              # UIStateService patch operations
-    │   └── workspaces/
-    │       └── test_service.py              # WorkspaceService orchestration
-    └── handlers/
-        └── test_sessions.py                 # Session HTTP adapters (CRUD, resume, fork)
+├── claudebox_daemon/
+│   ├── domain/
+│   │   ├── boards/
+│   │   │   └── test_service.py               # BoardService
+│   │   ├── containers/
+│   │   │   ├── test_models.py                # container data models
+│   │   │   ├── test_proxy.py                 # ContainerProxyClient timeout/pool bounds
+│   │   │   └── test_service.py               # container lifecycle
+│   │   ├── sessions/
+│   │   │   └── test_service.py               # session lifecycle
+│   │   ├── ui_state/
+│   │   │   └── test_service.py               # persistent UI state store
+│   │   ├── workspaces/
+│   │   │   └── test_service.py               # workspace management
+│   │   ├── test_broadcaster.py               # daemon event delivery to subscribers
+│   │   ├── test_config.py                    # DaemonConfig persistence and workspace management
+│   │   ├── test_executors.py                 # per-concern pools and admission tracking
+│   │   ├── test_health.py                    # container health monitoring
+│   │   ├── test_mutation_observer.py         # session mutation detection
+│   │   ├── test_service.py                   # daemon service orchestration
+│   │   ├── test_serving.py                   # health must track serving capacity, not just lag
+│   │   └── test_watchdog.py                  # event-loop lag detection
+│   ├── handlers/
+│   │   ├── test_boards.py                    # HTTP adapter responses
+│   │   ├── test_daemon.py                    # HTTP adapter responses
+│   │   ├── test_workspaces.py                # HTTP adapter responses
+│   │   └── test_workspaces_runtime_agnostic.py # Defaults endpoint keys off `agent`: LangGraph its own matrix, unknown agents 422
+│   ├── test_containers_lifecycle.py          # service stop/kill/remove + DELETE composite + POST routes
+│   ├── test_serving.py                       # port calculation
+│   └── test_workspaces_routes.py             # CRUD routes - GET / POST / DELETE /api/workspaces
+│
+├── distribution/
+│   └── test_optional_dependencies.py         # Drift-guards pyproject extras against _providers.PROVIDER_EXTRAS
+│
+└── lint/
+    ├── test_callback_catchall_audit.py       # CallbackCatchAllAudit bans a **kwargs catch-all beside named callbacks
+    └── test_sdk_containment.py               # SdkContainmentAudit enforces SDK import prefix bans outside the allowlists
 ```
 
 **Stack**: pytest, pytest-anyio (async), inline-snapshot (complex assertions), pytest-cov (coverage).

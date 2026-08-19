@@ -5,6 +5,7 @@ import logging
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
+from typing import ClassVar
 
 from claudebox import (
     Broadcaster,
@@ -23,7 +24,14 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
     """
 
     # Fields in the log file JSON that map directly to SSE dict keys.
-    _LOG_FILE_KNOWN_FIELDS = {"event", "level", "logger", "timestamp", "source", "stream"}
+    _LOG_FILE_KNOWN_FIELDS: ClassVar[set[str]] = {
+        "event",
+        "level",
+        "logger",
+        "timestamp",
+        "source",
+        "stream",
+    }
 
     def __init__(self, log_file_path: str | Path) -> None:
         """Pin the log file used as the replay source."""
@@ -69,7 +77,8 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
                 if isinstance(raw_ts, (float, int)):
                     ts = float(raw_ts)
                 elif isinstance(raw_ts, str):
-                    time = datetime.strptime(raw_ts, "%H:%M:%S").time()
+                    # Time-only format has no %z - combines with base_date's own naive convention.
+                    time = datetime.strptime(raw_ts, "%H:%M:%S").time()  # noqa: DTZ007
                     ts = datetime.combine(base_date, time).timestamp()
                 else:
                     continue
@@ -146,7 +155,7 @@ class BroadcastLogHandler(logging.Handler):
 
         try:
             self._broadcaster.schedule_broadcast(record)
-        except Exception:
+        except Exception:  # noqa: BLE001 - Handler.emit() contract: never raise, call handleError
             self.handleError(record)
 
 
