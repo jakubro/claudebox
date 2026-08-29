@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from claudebox.containers.local import LocalRuntime
+from claudebox.containers.local import LocalRuntime, _Process
 
 
 class TestRunContainerHostBinding:
@@ -34,3 +34,34 @@ class TestFindFreePort:
 
         mock_socket.bind.assert_called_once_with(("127.0.0.1", 0))
         assert port == 54321
+
+
+class TestIdentifyContainerFromPid:
+    """Test peer-pid-to-container resolution via process group membership - a local 'container'
+    has no cgroup boundary, so the podman mechanism doesn't apply here."""
+
+    @patch("os.getpgid")
+    def test_matches_the_candidate_whose_pid_is_the_process_group_leader(self, mock_getpgid):
+        runtime = LocalRuntime()
+        runtime._registry["abc"] = _Process(process=MagicMock(pid=500), port=1)
+        runtime._registry["xyz"] = _Process(process=MagicMock(pid=600), port=1)
+        mock_getpgid.return_value = 500
+
+        result = runtime.identify_container_from_pid(9999, ["xyz", "abc"])
+
+        assert result == "abc"
+        mock_getpgid.assert_called_once_with(9999)
+
+    @patch("os.getpgid")
+    def test_returns_none_when_no_candidate_matches(self, mock_getpgid):
+        runtime = LocalRuntime()
+        runtime._registry["abc"] = _Process(process=MagicMock(pid=500), port=1)
+        mock_getpgid.return_value = 999
+
+        assert runtime.identify_container_from_pid(9999, ["abc"]) is None
+
+    @patch("os.getpgid", side_effect=ProcessLookupError)
+    def test_returns_none_when_the_pid_is_already_gone(self, _mock_getpgid):
+        runtime = LocalRuntime()
+
+        assert runtime.identify_container_from_pid(9999, []) is None

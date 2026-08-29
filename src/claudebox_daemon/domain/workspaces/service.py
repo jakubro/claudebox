@@ -10,6 +10,7 @@ from claudebox import (
     resolve_runtime_class,
     serialization,
 )
+from claudebox.constants import SESSIONS_DIR_NAME
 from .models import RegisteredWorkspace
 from ..executors import DaemonExecutors
 
@@ -35,7 +36,7 @@ class WorkspaceService:
 
         from ..boards import BoardService
         from ..containers import ContainerService
-        from ..sessions import SessionService
+        from ..sessions import SessionService, SpawnListener
         from ..ui_state import UIStateService
 
         self._logger = get_logger(__name__)
@@ -48,6 +49,7 @@ class WorkspaceService:
         self._container_service: ContainerService | None = None
         self._session_service: SessionService | None = None
         self._board_service: BoardService | None = None
+        self._spawn_listener: SpawnListener | None = None
 
         if not self.workspace.available:
             self._logger.warning("Workspace directory unavailable", **self._log_context)
@@ -79,6 +81,13 @@ class WorkspaceService:
             containers=self._container_service,
             events=events,
             executor=executors.listing,
+        )
+
+        self._spawn_listener = SpawnListener(
+            workspace=workspace,
+            sessions=self._session_service,
+            containers=self._container_service,
+            socket_dir=self._config.config_dir / SESSIONS_DIR_NAME,
         )
 
     # Sub-service access
@@ -122,7 +131,7 @@ class WorkspaceService:
     # ----------------------------------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Start container and session services if workspace is available."""
+        """Start the container, session, board and spawn-listener services when available."""
 
         self._logger.debug("Starting workspace service...", **self._log_context)
 
@@ -130,15 +139,36 @@ class WorkspaceService:
             await self.container_service.start()
             await self.session_service.start()
             await self.board_service.start()
+            await self._start_spawn_listener()
 
         self._logger.info("Workspace service started", **self._log_context)
 
+    async def _start_spawn_listener(self) -> None:
+        """Bind the spawn listener; a bind failure is logged and swallowed, not raised.
+
+        The listener stays set but unbound: `stop()` no-ops and a dialing container fails clean.
+        """
+
+        assert self._spawn_listener is not None
+
+        try:
+            await self._spawn_listener.start()
+        except OSError as exc:
+            self._logger.warning(
+                "Spawn listener failed to bind - spawn capability unavailable for this workspace",
+                socket_path=str(self._spawn_listener.socket_path),
+                error=str(exc),
+                **self._log_context,
+            )
+
     async def stop(self) -> None:
-        """Stop board, session, and container services."""
+        """Stop the spawn listener, board, session, and container services."""
 
         self._logger.debug("Stopping workspace service...", **self._log_context)
 
         if self.workspace.available:
+            assert self._spawn_listener is not None
+            await self._spawn_listener.stop()
             await self.board_service.stop()
             await self.session_service.stop()
             await self.container_service.stop()

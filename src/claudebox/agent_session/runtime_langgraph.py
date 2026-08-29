@@ -41,6 +41,7 @@ from ._providers import (
     lookup_context_window,
     lookup_price,
 )
+from ._sibling_sessions import SiblingSessionClient
 from ._skills import extract_body, find_skill_source, parse_frontmatter, walk_skills
 from ._tasks import TaskService
 from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
@@ -175,7 +176,6 @@ class LangGraphRuntime:
         supports_context_usage=True,
         supports_cost_telemetry=True,
         supports_manual_compact=False,
-        supports_session_resume=True,
         supports_session_fork=True,
         supports_session_rewind=True,
         supports_ask_user_question=True,
@@ -226,6 +226,12 @@ class LangGraphRuntime:
 
         # Rebuilt from events.jsonl in connect() so resume picks up where the prior container left off.
         self._tasks: TaskService = TaskService(session_id=self._thread_id)
+
+        # Shared verbatim with the Claude adapter - see agent_session/_sibling_sessions.py.
+        self._sibling_sessions = SiblingSessionClient(
+            session_id=self._thread_id,
+            workspace_path=Path(config.cwd),
+        )
 
         # Set when the last turn left the graph paused on an `ask_user_question` interrupt();
         # the next user message then routes via Command(resume=...) instead of a fresh HumanMessage turn.
@@ -1227,15 +1233,13 @@ class LangGraphRuntime:
 
         return ToolContext(
             workspace_path=Path(self._config.cwd),
-            session_id=self._config.session_id or self._thread_id,
-            session_dir=self._config.session_dir,
             config=self._config,
             hooks=self._config.hooks,
             logger=self._logger,
             tool_catalog=ToolCatalog(),
             agent_registry=default_registry(),
             chat_model_factory=self._build_chat_model,
-            daemon_services=DaemonServiceBundle(tasks=self._tasks),
+            daemon_services=DaemonServiceBundle(sessions=self._sibling_sessions, tasks=self._tasks),
             mcp_client=mcp_client,
             record_subagent_usage=self._accumulate_subagent_usage,
             subagent_depth=0,

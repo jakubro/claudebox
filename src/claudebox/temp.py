@@ -39,22 +39,6 @@ def ensure_tmp(session: "Session") -> None:
     tmp.symlink_to(dst)
 
 
-def restore_tmp() -> None:
-    """Restore /tmp as regular empty directory; no-op if CLAUDEBOX_NO_TMP_REMAP is set or /tmp is not our symlink."""
-
-    if os.environ.get("CLAUDEBOX_NO_TMP_REMAP") == "1":
-        return
-
-    tmp = TMP_PATH
-
-    # A /tmp we did not create belongs to another session; removing it destroys their files.
-    if not tmp.is_symlink():
-        return
-
-    tmp.unlink(missing_ok=True)
-    touch_dir(tmp)
-
-
 def _remove_tmp() -> Path:
     """Remove /tmp whether symlink or directory - ensure_tmp owns the replacement."""
 

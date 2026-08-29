@@ -25,6 +25,17 @@
   overflow: hidden;
 }
 
+/* The right slot's positioning ancestor - a view's own scroll element cannot host this, since an
+   absolutely positioned child would scroll away. A view must not re-declare this geometry. */
+.chat-right-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
 .chat-split-divider {
   flex: 0 0 5px;
   cursor: col-resize;
@@ -69,21 +80,25 @@
   justify-content: center;
   gap: 0.75rem;
   z-index: 10;
-  pointer-events: none;
   background: var(--bg-primary);
 }
 
-/* The overlay is inset 1px at the top and left so the panel's frame borders stay visible. Content
-   scrolling underneath would show through that 1px strip, so the transcript is hidden outright,
-   not merely covered. */
-.chat-replay-overlay ~ .chat-messages {
+/* The overlay is inset 1px so the frame borders stay visible, and content would show through that
+   strip - so the transcript is hidden outright, and pointer events land on the overlay. */
+.chat-replay-overlay ~ .chat-transcript-column .chat-messages {
   visibility: hidden;
 }
 
-.chat-replay-overlay ~ .chat-messages .chat-overlay-hoist {
+.chat-replay-overlay ~ .chat-transcript-column .chat-overlay-hoist {
   position: relative;
   z-index: 11;
   visibility: visible;
+}
+
+/* The overlay's top strip runs the full width of the content area, so the right slot's content is
+   as reachable through it as the transcript is - hidden here for the same reason. */
+.chat-replay-overlay ~ .chat-right-slot {
+  visibility: hidden;
 }
 
 .chat-replay-status-text {

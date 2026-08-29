@@ -58,22 +58,14 @@ function ChatInput({
     events: eventsRef,
     composerHandle,
     pendingForm: pendingFormRef,
-  } = refs || {}
-  const { item: editingQueueItem, clear: clearEditingQueueItem } = queueEdit || {}
+  } = refs
+  const { item: editingQueueItem, clear: clearEditingQueueItem } = queueEdit
 
   // Overlay-derived state: textarea stays always-enabled; these flags only gate the submit path.
   const isSendBlocked = overlayMode === 'resuming'
   const isCreating = overlayMode === 'creating'
 
   const textareaRef = useRef(null)
-
-  // Fallback refs if not provided (during transition or testing)
-  const fallbackPanelRef = useRef(null)
-  const fallbackMessagesRef = useRef(null)
-  const fallbackAutoScrollRef = useRef(true)
-  const effectivePanelRef = panelRef || fallbackPanelRef
-  const effectiveMessagesRef = messagesRef || fallbackMessagesRef
-  const effectiveAutoScrollRef = autoScrollEnabledRef || fallbackAutoScrollRef
 
   const isMobile = useIsMobile()
 
@@ -115,9 +107,9 @@ function ChatInput({
 
   const { resizeTextarea } = useTextareaResize(
     textareaRef,
-    effectivePanelRef,
-    effectiveMessagesRef,
-    effectiveAutoScrollRef,
+    panelRef,
+    messagesRef,
+    autoScrollEnabledRef,
   )
 
   const { drafts, saveDrafts, userHasTypedRef } = useDrafts(sessionId, textareaRef, resizeTextarea)

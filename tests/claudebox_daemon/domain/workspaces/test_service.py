@@ -43,6 +43,12 @@ def _make_service(
     if svc._session_service is not None:
         svc._session_service = AsyncMock()
 
+    if svc._board_service is not None:
+        svc._board_service = AsyncMock()
+
+    if svc._spawn_listener is not None:
+        svc._spawn_listener = AsyncMock()
+
     return svc, events
 
 
@@ -62,6 +68,7 @@ class TestInit:
         assert svc._container_service is not None
         assert svc._session_service is not None
         assert svc._board_service is not None
+        assert svc._spawn_listener is not None
 
     def test_unavailable_workspace_leaves_sub_services_none(self, tmp_path):
         """Sub-services remain None when workspace directory is missing."""
@@ -73,6 +80,7 @@ class TestInit:
         assert svc._container_service is None
         assert svc._session_service is None
         assert svc._board_service is None
+        assert svc._spawn_listener is None
 
     def test_property_access_on_unavailable_workspace_raises(self, tmp_path):
         """Accessing a sub-service property on an unavailable workspace raises."""
@@ -118,6 +126,28 @@ class TestStart:
         svc.container_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
         svc.session_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
 
+    @pytest.mark.anyio
+    async def test_start_binds_the_spawn_listener(self, tmp_path):
+        svc, _ = _make_service(tmp_path, available=True)
+
+        await svc.start()
+
+        svc._spawn_listener.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_start_survives_a_spawn_listener_bind_failure(self, tmp_path):
+        """A spawn socket that fails to bind (e.g. AF_UNIX path too long) must not drop the
+        rest of the workspace - sessions/ui-state/resume/board still start."""
+
+        svc, _ = _make_service(tmp_path, available=True)
+        svc._spawn_listener.start.side_effect = OSError("AF_UNIX path too long")  # ty: ignore[unresolved-attribute]
+
+        await svc.start()  # must not raise
+
+        svc.container_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        svc.session_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        svc.board_service.start.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+
 
 # --- stop ---
 
@@ -139,6 +169,21 @@ class TestStop:
         svc.session_service.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]
         svc.container_service.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]
         assert call_order == ["session", "container"]
+
+    @pytest.mark.anyio
+    async def test_stop_unbinds_the_spawn_listener_before_the_rest(self, tmp_path):
+        """Stopped first: nothing should still be able to ask for a sibling session while the
+        rest of the workspace is mid-teardown."""
+
+        svc, _ = _make_service(tmp_path, available=True)
+        call_order = []
+        svc._spawn_listener.stop.side_effect = lambda: call_order.append("spawn_listener")  # ty: ignore[unresolved-attribute]
+        svc.session_service.stop.side_effect = lambda: call_order.append("session")  # ty: ignore[unresolved-attribute]
+
+        await svc.stop()
+
+        svc._spawn_listener.stop.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        assert call_order[0] == "spawn_listener"
 
 
 # --- _log_context ---

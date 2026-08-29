@@ -24,7 +24,7 @@ vi.mock('./SessionHeaderStrip', () => ({
   default: () => <div data-testid="session-header-strip">strip</div>,
 }))
 
-vi.mock('../../chat', () => ({
+vi.mock('../../chat/components/SessionRail', () => ({
   default: () => <div data-testid="panel-chat">chat</div>,
 }))
 
@@ -42,7 +42,7 @@ describe('MainPanel', () => {
     mockWorkspaceId = 'ws'
   })
 
-  it('renders ChatPanel and welcome mode when no session and no board', () => {
+  it('renders SessionRail and welcome mode when no session and no board', () => {
     render(<MainPanel />)
 
     expect(screen.getByTestId('panel-chat')).toBeInTheDocument()
@@ -50,7 +50,7 @@ describe('MainPanel', () => {
     expect(screen.getByTestId('main-panel-content')).toHaveAttribute('data-mode', 'welcome')
   })
 
-  it('renders ChatPanel and chat mode when a session is active', () => {
+  it('renders SessionRail and chat mode when a session is active', () => {
     mockActiveSessionId = 'sess-1'
     render(<MainPanel />)
 

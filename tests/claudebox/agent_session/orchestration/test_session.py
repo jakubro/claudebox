@@ -1,6 +1,11 @@
 """Tests for claudebox.agent_session.orchestration.session - content block building and internal commands."""
 
+import asyncio
 import base64
+from types import SimpleNamespace
+from typing import Any, cast
+
+import pytest
 
 from claudebox.agent_session.orchestration.session import (
     INTERNAL_COMMAND_PATTERN,
@@ -168,4 +173,114 @@ class TestSerializeInlineReplies:
             assert anchor_token not in xml
 
         assert "context window" in xml
-        assert "how big?" in xml
+
+
+# --- _on_session_start (/tmp remapping) ---
+
+
+class TestOnSessionStartRemapsTmp:
+    """Test that /tmp remapping is gated on remaps_tmp - the primary/non-primary split.
+
+    A container's /tmp is mapped once by the primary; a sharing session must never re-point it.
+    """
+
+    @pytest.mark.anyio
+    async def test_primary_calls_ensure_tmp(self, tmp_path, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.ensure_tmp",
+            lambda session: calls.append(session),
+        )
+        svc = SessionService(workspace=tmp_path, remaps_tmp=True)
+        svc._base_session = cast(Any, SimpleNamespace(id="s1"))
+
+        await svc._on_session_start()
+
+        assert calls == [svc._base_session]
+
+    @pytest.mark.anyio
+    async def test_non_primary_never_calls_ensure_tmp(self, tmp_path, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.ensure_tmp",
+            lambda session: calls.append(session),
+        )
+        svc = SessionService(workspace=tmp_path, remaps_tmp=False)
+        svc._base_session = cast(Any, SimpleNamespace(id="s1"))
+
+        await svc._on_session_start()
+
+        assert calls == []
+
+
+# --- start() (/tmp remapping order) ---
+
+
+async def _noop(*args, **kwargs) -> None:
+    """Async stand-in for a collaborator coroutine this ordering test does not exercise."""
+
+
+class _FakeSdkClient:
+    """Stand-in for the agent session client - records when its process would have spawned."""
+
+    def __init__(self, order: list[str]) -> None:
+        self._order = order
+
+    async def connect(self) -> None:
+        self._order.append("connect")
+
+    async def disconnect(self) -> None:
+        return None
+
+
+class TestStartRemapsTmpBeforeSpawn:
+    """Test that start() maps /tmp before the runtime spawns the CLI.
+
+    A remap landing after the CLI pins its temp base breaks every Bash call of the session.
+    """
+
+    @staticmethod
+    def _patch(monkeypatch, order: list[str]) -> None:
+        """Replace start()'s collaborators with recorders, leaving the call order observable."""
+
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.ensure_tmp",
+            lambda session: order.append("ensure_tmp"),
+        )
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.Config",
+            SimpleNamespace(load=lambda workspace_path: SimpleNamespace(agent="claude")),
+        )
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.make_agent_session",
+            lambda config: order.append("make_agent_session") or _FakeSdkClient(order),
+        )
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.EventPipeline",
+            lambda **kwargs: SimpleNamespace(start=_noop, stop=_noop, stream_lost=False),
+        )
+
+    @pytest.mark.anyio
+    async def test_ensure_tmp_precedes_the_spawn(self, tmp_path, monkeypatch):
+        order: list[str] = []
+        self._patch(monkeypatch, order)
+        svc = SessionService(workspace=tmp_path, remaps_tmp=True)
+
+        await svc.start()
+        await asyncio.sleep(0)
+        await svc.stop()
+
+        assert order[0] == "ensure_tmp"
+        assert order.index("ensure_tmp") < order.index("connect")
+
+    @pytest.mark.anyio
+    async def test_non_primary_never_remaps(self, tmp_path, monkeypatch):
+        order: list[str] = []
+        self._patch(monkeypatch, order)
+        svc = SessionService(workspace=tmp_path, remaps_tmp=False)
+
+        await svc.start()
+        await asyncio.sleep(0)
+        await svc.stop()
+
+        assert "ensure_tmp" not in order

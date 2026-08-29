@@ -77,6 +77,31 @@ class TestProbeContainer:
         ws_svc.container_service.update.assert_awaited_once_with(
             container,
             status=ContainerStatus.RUNNING,
+            live_session_ids=[],
+        )
+
+    @pytest.mark.anyio
+    async def test_success_threads_live_session_ids_through(self, tmp_path):
+        container = _make_container()
+        ws_svc = _make_workspace_service([container], path=tmp_path)
+        monitor = _make_monitor([ws_svc])
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "status": "ok",
+            "session_id": "primary-1",
+            "live_session_ids": ["primary-1", "side-1"],
+        }
+        monitor._service.proxy.send = AsyncMock(return_value=mock_response)
+
+        await monitor._probe_container(ws_svc, container)
+
+        ws_svc.container_service.update.assert_awaited_once_with(
+            container,
+            status=ContainerStatus.RUNNING,
+            session_id="primary-1",
+            live_session_ids=["primary-1", "side-1"],
         )
 
     @pytest.mark.anyio
@@ -106,6 +131,26 @@ class TestProbeContainer:
         ws_svc.container_service.update.assert_awaited_once_with(
             container,
             status=ContainerStatus.CRASHED,
+            live_session_ids=[],
+        )
+
+    @pytest.mark.anyio
+    async def test_crash_clears_a_stale_live_set(self, tmp_path):
+        """A dead member shown as live is the failure that matters - clear it on crash."""
+
+        container = _make_container(failure_count=2)
+        container.live_session_ids = ["primary-1", "side-1"]
+        ws_svc = _make_workspace_service([container], path=tmp_path)
+        monitor = _make_monitor([ws_svc])
+
+        monitor._service.proxy.send = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        await monitor._probe_container(ws_svc, container)
+
+        ws_svc.container_service.update.assert_awaited_once_with(
+            container,
+            status=ContainerStatus.CRASHED,
+            live_session_ids=[],
         )
 
     @pytest.mark.anyio
@@ -155,6 +200,7 @@ class TestProbeContainer:
         ws_svc.container_service.update.assert_awaited_once_with(
             container,
             status=ContainerStatus.RUNNING,
+            live_session_ids=[],
         )
 
     @pytest.mark.anyio

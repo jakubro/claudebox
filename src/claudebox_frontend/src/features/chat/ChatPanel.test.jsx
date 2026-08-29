@@ -113,6 +113,33 @@ vi.mock('./hooks/useMessageJump', () => ({
   }),
 }))
 
+// Real by default (activeView null, matching jsdom's zero-width layout), so showWorkView stays
+// false everywhere except the jumpToTaskRef work-view test, which overrides it.
+const mockTerminalSplitLayoutData = vi.hoisted(() => ({
+  contentAreaRef: { current: null },
+  terminalSplit: { view: 'off', ratio: 0.5 },
+  activeView: null,
+  setRightSlotView: vi.fn(),
+  setTerminalSplitRatio: vi.fn(),
+}))
+vi.mock('./hooks/useTerminalSplitLayout', () => ({
+  useTerminalSplitLayout: () => mockTerminalSplitLayoutData,
+}))
+
+// WorkColumn's own rendering is covered by its own test suite; showWorkView tests here exercise
+// only ChatPanel's own routing into jumpToTaskInWorkColumn, not the column's internals.
+vi.mock('./components/work', () => ({
+  default: () => <div data-testid="mock-work-column" />,
+}))
+
+// Real findVisibleToolBlock/jumpToTask; jumpToTaskInWorkColumn is spied on so the work-view
+// wiring test can assert its call args without a real virtualized WorkColumn mount.
+const mockJumpToTaskInWorkColumn = vi.hoisted(() => vi.fn())
+vi.mock('../../utils/taskScroll', async importOriginal => {
+  const actual = await importOriginal()
+  return { ...actual, jumpToTaskInWorkColumn: (...args) => mockJumpToTaskInWorkColumn(...args) }
+})
+
 // Stable identity across renders (mirrors the real useRef-backed context) so effects keyed on
 // these refs fire only on their intended trigger, not per render.
 const mockAppActions = vi.hoisted(() => ({
@@ -120,13 +147,17 @@ const mockAppActions = vi.hoisted(() => ({
   jumpNextRef: { current: null },
   jumpTopRef: { current: null },
   jumpBottomRef: { current: null },
+  rightColumnPrevRef: { current: null },
+  rightColumnNextRef: { current: null },
   chatScrollPositionRef: { current: 0 },
   chatAutoScrollEnabledRef: { current: true },
   autoCollapseEnabledRef: { current: true },
   markUserIntentRef: { current: null },
   scrollToTurnRef: { current: null },
   expandTurnRef: { current: null },
+  jumpToTaskRef: { current: null },
   markProgrammaticScrollRef: { current: null },
+  focusedGroupRootRef: { current: null },
   focusChatTab: vi.fn(),
   addSessionTab: vi.fn(),
   replaceSessionTab: vi.fn(),
@@ -228,6 +259,7 @@ import {
   INITIAL_TURN_GROUPING_STATE,
   isVisibleEvent,
 } from '../../utils/eventProcessing'
+import { RIGHT_SLOT_VIEWS, RightSlotView } from './utils/rightSlotViews'
 
 // --- Helpers ---
 
@@ -630,6 +662,160 @@ describe('ChatPanel', () => {
     })
   })
 
+  describe('jumpToTaskRef', () => {
+    // t1 (collapsed by default) carries the Task block; t2 is the last, open turn.
+    const twoTurnsTaskInFirst = () => ({
+      events: [
+        { type: 'user', is_human: true, content: 'One', turn_id: 't1', ts: '2026-01-01T00:00:01Z' },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          tool_use_id: 'task_1',
+          tool_input: { description: 'Do research' },
+          turn_id: 't1',
+          ts: '2026-01-01T00:00:02Z',
+        },
+        {
+          type: 'user',
+          subtype: 'tool_result',
+          tool_use_id: 'task_1',
+          content: 'Done',
+          turn_id: 't1',
+          ts: '2026-01-01T00:00:03Z',
+        },
+        { type: 'result', subtype: 'success', turn_id: 't1' },
+        { type: 'user', is_human: true, content: 'Two', turn_id: 't2', ts: '2026-01-01T00:00:11Z' },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'A2',
+          turn_id: 't2',
+          ts: '2026-01-01T00:00:12Z',
+        },
+        { type: 'result', subtype: 'success', turn_id: 't2' },
+      ],
+    })
+
+    it('highlights an already-mounted task block in the open turn, without expanding anything', async () => {
+      mockEventsData = defaultEventsData({
+        events: [
+          {
+            type: 'user',
+            is_human: true,
+            content: 'One',
+            turn_id: 't1',
+            ts: '2026-01-01T00:00:01Z',
+          },
+          {
+            type: 'assistant',
+            subtype: 'tool_use',
+            content: 'Task',
+            tool_use_id: 'task_open',
+            tool_input: { description: 'Do research' },
+            turn_id: 't1',
+            ts: '2026-01-01T00:00:02Z',
+          },
+          {
+            type: 'user',
+            subtype: 'tool_result',
+            tool_use_id: 'task_open',
+            content: 'Done',
+            turn_id: 't1',
+            ts: '2026-01-01T00:00:03Z',
+          },
+        ],
+      })
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-tool-use-id="task_open"]')).toBeInTheDocument()
+      })
+
+      await act(async () => {
+        mockAppActions.jumpToTaskRef.current({ id: 'task_open', turnId: 't1' })
+      })
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-tool-use-id="task_open"]')).toHaveClass(
+          'task-highlight',
+        )
+      })
+    })
+
+    it('expands the collapsed turn holding the task block, then highlights it', async () => {
+      mockEventsData = defaultEventsData(twoTurnsTaskInFirst())
+      await render(<ChatPanel />)
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+      })
+
+      await act(async () => {
+        mockAppActions.jumpToTaskRef.current({ id: 'task_1', turnId: 't1' })
+      })
+
+      await waitFor(() => {
+        expect(document.querySelector('[data-turn-id="t1"]')).not.toHaveClass('turn-collapsed')
+      })
+      await waitFor(() => {
+        expect(document.querySelector('[data-tool-use-id="task_1"]')).toHaveClass('task-highlight')
+      })
+    })
+
+    it('does not throw when the task cannot be resolved (no turn id, block absent)', async () => {
+      mockEventsData = defaultEventsData(twoTurnsTaskInFirst())
+      await render(<ChatPanel />)
+
+      await act(async () => {
+        mockAppActions.jumpToTaskRef.current({ id: 'task_missing', turnId: null })
+      })
+
+      expect(document.querySelector('[data-turn-id="t1"]')).toHaveClass('turn-collapsed')
+    })
+
+    describe('work view active', () => {
+      beforeEach(() => {
+        mockTerminalSplitLayoutData.activeView = RIGHT_SLOT_VIEWS[RightSlotView.WORK]
+        mockJumpToTaskInWorkColumn.mockClear()
+      })
+
+      afterEach(() => {
+        mockTerminalSplitLayoutData.activeView = null
+      })
+
+      it('routes to jumpToTaskInWorkColumn with the task turn resolved by index', async () => {
+        mockEventsData = defaultEventsData(twoTurnsTaskInFirst())
+        await render(<ChatPanel />)
+
+        await act(async () => {
+          mockAppActions.jumpToTaskRef.current({ id: 'task_1', turnId: 't1' })
+        })
+
+        expect(mockJumpToTaskInWorkColumn).toHaveBeenCalledWith(
+          0,
+          'task_1',
+          expect.objectContaining({
+            markUserIntent: expect.any(Function),
+            markProgrammaticScroll: expect.any(Function),
+            markReturnedToBottom: expect.any(Function),
+          }),
+        )
+      })
+
+      it('does not call jumpToTaskInWorkColumn when the task turn is not found', async () => {
+        mockEventsData = defaultEventsData(twoTurnsTaskInFirst())
+        await render(<ChatPanel />)
+
+        await act(async () => {
+          mockAppActions.jumpToTaskRef.current({ id: 'task_1', turnId: 'no-such-turn' })
+        })
+
+        expect(mockJumpToTaskInWorkColumn).not.toHaveBeenCalled()
+      })
+    })
+  })
+
   describe('turn grouping', () => {
     it('groups events into turns starting with human user messages', async () => {
       mockEventsData = defaultEventsData({
@@ -916,6 +1102,32 @@ describe('ChatPanel', () => {
       const hoist = document.querySelector('.chat-overlay-hoist')
       expect(hoist).toBeInTheDocument()
       expect(hoist.querySelector('[data-testid="mock-queued-message-bubble"]')).toBeTruthy()
+    })
+
+    it('renders the overlay as a child of chat-content-area, not chat-transcript-column', async () => {
+      mockEventsData = defaultEventsData({
+        isReplaying: true,
+        replayTotal: 10,
+        replayProgress: 5,
+      })
+
+      await render(<ChatPanel />)
+
+      const overlay = document.querySelector('.chat-replay-overlay')
+      expect(overlay.parentElement).toHaveClass('chat-content-area')
+      expect(overlay.closest('.chat-transcript-column')).toBeNull()
+    })
+
+    it('does not render the transcript minimap while the overlay is up', async () => {
+      mockEventsData = defaultEventsData({
+        isReplaying: true,
+        replayTotal: 10,
+        replayProgress: 5,
+      })
+
+      await render(<ChatPanel />)
+
+      expect(screen.queryByTestId('mock-minimap')).not.toBeInTheDocument()
     })
   })
 

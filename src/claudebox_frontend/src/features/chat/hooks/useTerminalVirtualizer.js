@@ -1,14 +1,10 @@
 /** Windowed terminal column - mounts viewport+overscan entries and prices the rest by prediction. */
 
-import { useVirtualizer } from '@tanstack/react-virtual'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { AUTOSCROLL_THRESHOLD, TERMINAL_OVERSCAN } from '../../../config/dimensions'
-import { deriveEntryMetrics, predictTerminalEntryHeight } from '../utils/predictTerminalEntryHeight'
-import {
-  measureRoundedElement,
-  useMirroredScrollElement,
-  useScrollMargin,
-} from './useVirtualListGeometry'
+import { predictTerminalEntryHeight } from '../utils/predictTerminalEntryHeight'
+import { metricsForEntry } from '../utils/terminalEntryMetrics'
+import { useVirtualizerGeometry, useWindowedVirtualizer } from './useVirtualListGeometry'
 
 /**
  * Window the terminal column's entries against its own scroll container, following the same
@@ -16,59 +12,47 @@ import {
  *
  * `entries` here excludes the trailing entry - callers keep it out of the window and render it
  * directly, since it is the one whose height still changes as "Running..." becomes real output.
+ *
+ * @param {object} [metricsCacheRef] - Shared entry-metrics cache, falling back to a local one;
+ *   `TerminalColumn` passes the ref its overview uses so content is extracted once.
  */
-export default function useTerminalVirtualizer({ containerRef, listRef, entries }) {
-  const scrollEl = useMirroredScrollElement(containerRef)
-
-  const initialRect = useMemo(
-    () => ({ width: 0, height: typeof window === 'undefined' ? 0 : window.innerHeight }),
-    [],
-  )
-
+export default function useTerminalVirtualizer({
+  containerEl,
+  listRef,
+  entries,
+  metricsCacheRef: externalMetricsCacheRef,
+}) {
   // `.terminal-column` is itself the scroll element and carries its own padding, so the list's
   // top sits inset from the scroll container's top by that padding - measured, not hardcoded.
-  const scrollMargin = useScrollMargin(scrollEl, listRef)
+  const { scrollEl, initialRect, scrollMargin } = useVirtualizerGeometry(containerEl, listRef)
 
-  // Extraction is the expensive part of pricing an entry - cached by id, not redone per estimate.
-  const metricsCacheRef = useRef(new Map())
-  const metricsFor = useCallback(entry => {
-    if (!entry.result) {
-      return deriveEntryMetrics(entry)
-    }
-
-    const cached = metricsCacheRef.current.get(entry.id)
-    if (cached) {
-      return cached
-    }
-
-    const metrics = deriveEntryMetrics(entry)
-    metricsCacheRef.current.set(entry.id, metrics)
-    return metrics
-  }, [])
+  const ownMetricsCacheRef = useRef(new Map())
+  const metricsCacheRef = externalMetricsCacheRef || ownMetricsCacheRef
 
   const estimateSize = useCallback(
     index => {
       const entry = entries[index]
-      return entry ? predictTerminalEntryHeight(metricsFor(entry)) : 0
+      return entry ? predictTerminalEntryHeight(metricsForEntry(entry, metricsCacheRef)) : 0
     },
-    [entries, metricsFor],
+    [entries, metricsCacheRef],
   )
 
   const getItemKey = useCallback(index => entries[index]?.id ?? index, [entries])
 
-  const virtualizer = useVirtualizer({
+  const virtualizer = useWindowedVirtualizer({
     count: entries.length,
-    getScrollElement: () => scrollEl,
+    scrollEl,
     estimateSize,
     getItemKey,
     initialRect,
     scrollMargin,
     overscan: TERMINAL_OVERSCAN,
     // Stay-put and follow-new-entry-at-bottom, from virtual-core rather than a hand-rolled loop.
-    anchorTo: 'end',
-    followOnAppend: true,
-    scrollEndThreshold: AUTOSCROLL_THRESHOLD,
-    measureElement: measureRoundedElement,
+    extraOptions: {
+      anchorTo: 'end',
+      followOnAppend: true,
+      scrollEndThreshold: AUTOSCROLL_THRESHOLD,
+    },
   })
 
   const virtualItems = virtualizer.getVirtualItems()

@@ -15,19 +15,15 @@ describe('SidePanelManager', () => {
   const CONFIG = {
     sides: {
       sessions: 'left',
-      files: 'left',
       todos: 'right',
       stash: 'right',
       help: 'right',
-      logs: 'bottom',
     },
     canonicalOrder: {
-      left: ['sessions', 'files'],
+      left: ['sessions'],
       right: ['todos', 'stash', 'help'],
-      bottom: ['logs'],
     },
     defaultWidth: 0.15,
-    defaultHeight: 0.25,
   }
 
   let mockApi
@@ -142,16 +138,16 @@ describe('SidePanelManager', () => {
 
   describe('canonical ordering', () => {
     it('inserts panel below existing panel that should be above it', () => {
-      const sessionsPanel = createMockPanel('sessions')
-      mockApi.getPanel.mockImplementation(id => (id === 'sessions' ? sessionsPanel : null))
-      manager.state.left.order = ['sessions']
+      const stashPanel = createMockPanel('stash')
+      mockApi.getPanel.mockImplementation(id => (id === 'stash' ? stashPanel : null))
+      manager.state.right.order = ['stash']
 
-      manager.toggle('files')
+      manager.toggle('help')
 
       expect(mockApi.addPanel).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: 'files',
-          position: { direction: 'below', referencePanel: 'sessions' },
+          id: 'help',
+          position: { direction: 'below', referencePanel: 'stash' },
         }),
       )
     })
@@ -188,31 +184,31 @@ describe('SidePanelManager', () => {
 
   describe('panel detachment tracking', () => {
     it('removes panel from order when moved out of side group', () => {
-      manager.state.left.order = ['sessions', 'files']
+      manager.state.right.order = ['todos', 'stash']
 
-      // 'chat' is not a left-side panel, so this group no longer counts as same-side
+      // 'chat' is not a right-side panel, so this group no longer counts as same-side
       const movedPanel = {
-        id: 'sessions',
-        api: { group: { panels: [{ id: 'chat' }, { id: 'sessions' }] } },
+        id: 'todos',
+        api: { group: { panels: [{ id: 'chat' }, { id: 'todos' }] } },
       }
 
       manager.handlePanelMove(movedPanel)
 
-      expect(manager.state.left.order).toEqual(['files'])
+      expect(manager.state.right.order).toEqual(['stash'])
     })
 
     it('keeps panel in order when still grouped with same-side panels', () => {
-      manager.state.left.order = ['sessions', 'files']
+      manager.state.right.order = ['todos', 'stash']
 
-      // 'files' is also a left-side panel, so the group still counts as same-side
+      // 'stash' is also a right-side panel, so the group still counts as same-side
       const movedPanel = {
-        id: 'sessions',
-        api: { group: { panels: [{ id: 'sessions' }, { id: 'files' }] } },
+        id: 'todos',
+        api: { group: { panels: [{ id: 'todos' }, { id: 'stash' }] } },
       }
 
       manager.handlePanelMove(movedPanel)
 
-      expect(manager.state.left.order).toEqual(['sessions', 'files'])
+      expect(manager.state.right.order).toEqual(['todos', 'stash'])
     })
   })
 
@@ -226,7 +222,6 @@ describe('SidePanelManager', () => {
       expect(json).toEqual({
         left: { width: 200, order: ['sessions'] },
         right: { width: 150, order: ['todos', 'stash'] },
-        bottom: { height: null, order: [] },
       })
     })
 
@@ -257,20 +252,6 @@ describe('SidePanelManager', () => {
 
       expect(manager.state.left).toEqual({ width: 200, order: ['sessions'] })
       expect(manager.state.right).toEqual({ width: 150, order: ['todos'] })
-    })
-
-    it('serializes and restores bottom state, filtering stray logs entries', () => {
-      // 'logs' renders in the full-width strip, so fromJSON strips it from bottom.order (mirrors 'files').
-      manager.state.bottom = { height: 250, order: ['logs'] }
-
-      const json = manager.toJSON()
-
-      expect(json.bottom).toEqual({ height: 250, order: ['logs'] })
-
-      manager.state.bottom = { height: null, order: [] }
-      manager.fromJSON(json)
-
-      expect(manager.state.bottom).toEqual({ height: 250, order: [] })
     })
   })
 
@@ -492,21 +473,6 @@ describe('SidePanelManager', () => {
       expect(manager.state.right.width).toBe(180)
     })
 
-    it('updates height for bottom panels', () => {
-      manager.state.bottom.order = ['logs']
-
-      mockApi.getPanel.mockImplementation(id => {
-        if (id === 'logs') {
-          return createMockPanel('logs', { height: 300 })
-        }
-        return null
-      })
-
-      manager.updateDimensions()
-
-      expect(manager.state.bottom.height).toBe(300)
-    })
-
     it('handles errors gracefully', () => {
       manager.state.left.order = ['sessions']
 
@@ -523,105 +489,6 @@ describe('SidePanelManager', () => {
       }))
 
       expect(() => manager.updateDimensions()).not.toThrow()
-    })
-  })
-
-  describe('bottom side support', () => {
-    it('opens bottom panel with direction below and referencePanel main', () => {
-      mockApi.getPanel.mockReturnValue(null)
-      manager.state.bottom.order = []
-
-      manager.toggle('logs')
-
-      expect(mockApi.addPanel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'logs',
-          component: 'logs',
-          title: 'Logs',
-          position: { direction: 'below', referencePanel: 'main' },
-        }),
-      )
-    })
-
-    it('uses initialHeight for bottom panels', () => {
-      mockApi.getPanel.mockReturnValue(null)
-      manager.state.bottom.order = []
-      global.innerHeight = 800
-
-      manager.toggle('logs')
-
-      expect(mockApi.addPanel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          initialHeight: 200, // 800 * 0.25
-        }),
-      )
-    })
-
-    it('preserves height when reopening bottom panel', () => {
-      manager.state.bottom.height = 350
-      manager.state.bottom.order = []
-      mockApi.getPanel.mockReturnValue(null)
-
-      manager.toggle('logs')
-
-      expect(mockApi.addPanel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          initialHeight: 350,
-        }),
-      )
-    })
-
-    it('closes bottom panel and removes from order', () => {
-      const mockPanel = createMockPanel('logs')
-      mockApi.getPanel.mockReturnValue(mockPanel)
-      manager.state.bottom.order = ['logs']
-
-      manager.toggle('logs')
-
-      expect(mockPanel.api.close).toHaveBeenCalled()
-      expect(manager.state.bottom.order).toEqual([])
-    })
-
-    it('captures height before closing bottom panel', () => {
-      const mockPanel = createMockPanel('logs', { height: 280 })
-      mockApi.panels = [mockPanel]
-      mockApi.getPanel.mockReturnValue(mockPanel)
-      manager.state.bottom.order = ['logs']
-
-      manager.toggle('logs')
-
-      expect(manager.state.bottom.height).toBe(280)
-    })
-
-    it('restores height for bottom panels via rAF', () => {
-      const mockPanel = createMockPanel('logs', { height: 300 })
-      mockApi.panels = [mockPanel]
-      mockApi.getPanel.mockImplementation(id => (id === 'logs' ? mockPanel : null))
-      manager.state.bottom.order = ['logs']
-      manager.state.bottom.height = 300
-
-      // Open a right panel - should restore bottom height too
-      manager.toggle('todos')
-
-      const rafCallback = vi.mocked(globalThis.requestAnimationFrame).mock.calls[0][0]
-      rafCallback()
-
-      expect(mockPanel.api.group.api.setSize).toHaveBeenCalledWith({ height: 300 })
-    })
-
-    it('height 0 falls back to default', () => {
-      manager.state.bottom.height = 0
-      manager.state.bottom.order = []
-      mockApi.getPanel.mockReturnValue(null)
-      global.innerHeight = 800
-
-      manager.toggle('logs')
-
-      expect(mockApi.addPanel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          initialHeight: 200, // 800 * 0.25
-        }),
-      )
     })
   })
 
@@ -758,7 +625,6 @@ describe('SidePanelManager', () => {
         expect(() => manager.handlePanelMove(movedPanel)).not.toThrow()
         expect(manager.state.left.order).toEqual([])
         expect(manager.state.right.order).toEqual([])
-        expect(manager.state.bottom.order).toEqual([])
       })
     })
   })
@@ -872,24 +738,6 @@ describe('SidePanelManager', () => {
       expect(mockApi.fromJSON).toHaveBeenCalledWith(savedLayout)
     })
 
-    it('restores bottom panel groups from server, filtering stray logs entries', async () => {
-      // 'logs' bottom-slot entries are dropped on restore; height is preserved for other panels
-      const savedLayout = { some: 'layout' }
-      const savedPanelGroups = {
-        left: { width: 200, order: ['sessions'] },
-        right: { width: 150, order: ['todos'] },
-        bottom: { height: 250, order: ['logs'] },
-      }
-      getUiState.mockResolvedValue({
-        session: { layout: savedLayout, panelGroups: savedPanelGroups },
-      })
-
-      const result = await manager.restoreFromServer('session-123')
-
-      expect(result).toEqual({ loaded: true })
-      expect(manager.state.bottom).toEqual({ height: 250, order: [] })
-    })
-
     it('stores preMaximizeLayout when present in session data', async () => {
       const savedPreMaxLayout = {
         layout: { panels: { chat: {} } },
@@ -933,56 +781,6 @@ describe('SidePanelManager', () => {
       await manager.restoreFromServer('session-123')
 
       expect(manager.preMaximizeLayout).toBeNull()
-    })
-
-    it('strips session panels from layout before calling fromJSON', async () => {
-      const savedLayout = {
-        panels: {
-          chat: { id: 'chat', title: 'Chat' },
-          'session:abc': { id: 'session:abc', title: 'Old Session' },
-        },
-        grid: {
-          root: {
-            type: 'leaf',
-            data: { id: 'g1', views: ['chat', 'session:abc'], activeView: 'chat' },
-          },
-        },
-      }
-      getUiState.mockResolvedValue({
-        session: { layout: savedLayout, panelGroups: {} },
-      })
-
-      await manager.restoreFromServer('session-123')
-
-      const passedLayout = mockApi.fromJSON.mock.calls[0][0]
-      expect(passedLayout.panels).not.toHaveProperty('session:abc')
-      expect(passedLayout.panels).toHaveProperty('chat')
-      expect(passedLayout.grid.root.data.views).toEqual(['chat'])
-    })
-
-    it('strips session panels when inheriting layout (sessionId=null)', async () => {
-      const savedLayout = {
-        panels: {
-          chat: { id: 'chat', title: 'Inherited' },
-          'session:def': { id: 'session:def' },
-        },
-        grid: {
-          root: {
-            type: 'leaf',
-            data: { id: 'g1', views: ['chat', 'session:def'], activeView: 'session:def' },
-          },
-        },
-      }
-      getUiState.mockResolvedValue({
-        session: { layout: savedLayout, panelGroups: {} },
-      })
-
-      await manager.restoreFromServer(null)
-
-      const passedLayout = mockApi.fromJSON.mock.calls[0][0]
-      expect(passedLayout.panels).not.toHaveProperty('session:def')
-      expect(passedLayout.grid.root.data.views).toEqual(['chat'])
-      expect(passedLayout.grid.root.data.activeView).toBe('chat')
     })
   })
 })

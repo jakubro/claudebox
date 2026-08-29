@@ -86,6 +86,26 @@ test.describe('Visual Regression - Layout', () => {
       OPTS,
     )
   })
+
+  test('sessions panel filter strip overflowing shows a chevron', async ({ page }) => {
+    await mockSSE(page, 'events/simple-chat.jsonl')
+    await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
+    await page.setViewportSize({ width: 1800, height: 800 })
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await openSessionsPanel(page)
+    const strip = page.getByTestId('sessions-tabs')
+    await expect.poll(() => strip.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+    // The chevron's own visibility lags the geometry poll by a render pass - wait for it too so the
+    // shot never lands mid-transition.
+    await expect(page.getByTitle('Scroll filters right')).toBeVisible()
+
+    await expect(page.locator('[data-testid="panel-sessions"]')).toHaveScreenshot(
+      'sessions-panel-filters-overflowing.png',
+      OPTS,
+    )
+  })
 })
 
 // --- Turn States ---

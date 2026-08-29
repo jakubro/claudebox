@@ -3,6 +3,16 @@
 .chat-message-user {
   margin-bottom: 16px;
   position: relative;
+  background: #424245;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+/* This container's own padding stops the first child's top margin (attachment row,
+   inline-replies placeholder) from collapsing through - reset it so the surface stays symmetric. */
+.chat-message-user > :first-child {
+  margin-top: 0;
 }
 
 .message-copy-btn {
@@ -93,10 +103,6 @@
 
 .chat-message-user :is(.message-content, .message-note) {
   display: block;
-  background: #424245;
-  color: var(--text-primary);
-  padding: 8px 12px;
-  border-radius: 6px;
   word-break: break-word;
   white-space: pre-wrap;
   font-family: var(--font-mono);
@@ -108,7 +114,7 @@
 }
 
 /* Highlight flash when jumping to a human message */
-.chat-message-user.jump-highlight :is(.message-content, .message-note) {
+.chat-message-user.jump-highlight {
   animation: jump-highlight-pulse 1.5s ease-out;
 }
 
@@ -170,6 +176,20 @@
   }
 }
 
+/* A live tool-only turn under the work view: no bubble to hold TurnProgress, so it renders bare
+   under the user message, keeping only .turn's horizontal inset - no background, no border. */
+.turn-progress-bare {
+  padding: 8px 12px;
+}
+
+/* A turn that has not started yet: same box as the assistant bubble it will become, so the
+   progress row reads as inside the turn rather than floating beside the user message. */
+.turn-progress-pending {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
 .turn-content {
   padding-top: 0;
 }
@@ -194,22 +214,7 @@
 }
 
 .turn-interrupted {
-  border-left: 3px solid #ffeb3b;
-}
-
-/* Interrupt acknowledgment indicator */
-.interrupt-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0;
-  font-size: 12px;
-  color: #ffeb3b;
-}
-
-.interrupt-dash {
-  color: var(--text-muted);
-  opacity: 0.4;
+  border-left: 3px solid var(--interrupt-border-color);
 }
 
 .turn-text {

@@ -1,9 +1,9 @@
 """Container runtime abstraction for podman and docker backends."""
 
 import json
-import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Literal
 
 from ..constants import DEFAULT_LABELS, PODMAN_COMMAND_TIMEOUT, PODMAN_RUN_TIMEOUT
@@ -148,6 +148,19 @@ class ContainerBackend:
 
         return int(host_port)
 
+    def identify_container_from_pid(self, pid: int, candidate_ids: list[str]) -> str | None:
+        """Return whichever `candidate_ids` entry the given host pid's cgroup names, or None.
+
+        A container's whole process tree inherits its cgroup, which embeds the full container id.
+        """
+
+        try:
+            cgroup = Path(f"/proc/{pid}/cgroup").read_text()
+        except OSError:
+            return None
+
+        return next((cid for cid in candidate_ids if cid in cgroup), None)
+
     def list_containers(self, labels: dict[str, str] | None = None) -> list[dict]:
         """List containers matching a label filter."""
 
@@ -175,11 +188,10 @@ class ContainerBackend:
     def _exec(
         self,
         *args,
-        replace: bool = False,
         timeout: float | None = None,
         **kwargs,
     ) -> subprocess.CompletedProcess | None:
-        """Execute a backend command, optionally replacing the current process.
+        """Execute a backend command.
 
         ``timeout`` bounds the subprocess itself, distinct from any ``--time`` flag passed in ``args``.
         """
@@ -187,26 +199,23 @@ class ContainerBackend:
         if self.verbose:
             print_command(self.name, *args)
 
-        if replace:
-            os.execvp(self.name, [self.name, *args])
-        else:
-            if timeout is not None:
-                kwargs["timeout"] = timeout
+        if timeout is not None:
+            kwargs["timeout"] = timeout
 
-            # Callers opt into check=True individually (build(), etc.).
-            kwargs.setdefault("check", False)
+        # Callers opt into check=True individually.
+        kwargs.setdefault("check", False)
 
-            started = time.monotonic()
+        started = time.monotonic()
 
-            try:
-                # check is set via kwargs.setdefault above - invisible to this rule's syntax check.
-                return subprocess.run([self.name, *args], **kwargs)  # noqa: PLW1510
-            except subprocess.TimeoutExpired:
-                self._logger.warning(
-                    "podman_command_timed_out",
-                    argv=[self.name, *args],
-                    timeout=timeout,
-                    duration_s=round(time.monotonic() - started, 2),
-                )
+        try:
+            # check is set via kwargs.setdefault above - invisible to this rule's syntax check.
+            return subprocess.run([self.name, *args], **kwargs)  # noqa: PLW1510
+        except subprocess.TimeoutExpired:
+            self._logger.warning(
+                "podman_command_timed_out",
+                argv=[self.name, *args],
+                timeout=timeout,
+                duration_s=round(time.monotonic() - started, 2),
+            )
 
-                raise
+            raise

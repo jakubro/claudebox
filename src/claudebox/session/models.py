@@ -14,6 +14,12 @@ class SessionMetadata(DataClass):
 
     ``fork_point_cost_usd`` is the cost inherited from the ancestor at the fork point; 0 for root sessions.
     Rollup consumers subtract it when summing siblings, avoiding double-counting the shared pre-fork transcript.
+
+    ``is_side_thread`` marks a shared-container fork - ``parent_session_id`` alone cannot, since an
+    ordinary fork sets it too.
+
+    ``spawned_from_session_id`` names the session that asked the spawn socket for this one:
+    recorded lineage only, kept off ``parent_session_id`` so it never enters the fork tree.
     """
 
     session_id: str
@@ -30,6 +36,8 @@ class SessionMetadata(DataClass):
     last_message: str | None = None
     parent_session_id: str | None = None
     session_dir: str | None = None
+    is_side_thread: bool = False
+    spawned_from_session_id: str | None = None
 
 
 class SessionNotFound(Exception):

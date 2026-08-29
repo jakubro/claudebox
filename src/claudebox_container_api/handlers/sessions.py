@@ -1,12 +1,14 @@
 """Session handlers - CRUD, restart, attachments."""
 
+import contextlib
 import dataclasses
 
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
+from claudebox import EventLog, SessionEntryNotFound, serialize_event
 from ._models import UpdateSessionPromptRequest
-from ._shared import SessionDep
+from ._shared import RegistryDep, SessionDep
 
 
 router = APIRouter(prefix="/api/sessions")
@@ -16,19 +18,61 @@ router = APIRouter(prefix="/api/sessions")
 
 
 @router.post("/new")
-async def create_session(svc: SessionDep):
-    """Create a new session and return its pre-generated session ID."""
+async def create_session(registry: RegistryDep, primary: bool = True):
+    """Create a new session and return its pre-generated session ID.
 
-    session_id = await svc.restart()
+    primary=false starts it as a member of the container instead of replacing the primary.
+    """
+
+    session_id = await registry.start(None, primary=primary)
 
     return {"session_id": session_id}
 
 
 @router.post("/{session_id}/resume")
-async def restart_session(svc: SessionDep, session_id: str):
-    """Restart with a previous session's history."""
+async def restart_session(registry: RegistryDep, session_id: str, primary: bool = True):
+    """Restart with a previous session's history.
 
-    await svc.restart(session_id)
+    primary=false starts it as a member of the container instead of replacing the primary.
+    """
+
+    await registry.start(session_id, primary=primary)
+
+
+@router.post("/{session_id}/stop")
+async def stop_session(registry: RegistryDep, session_id: str):
+    """Stop one non-primary session and remove it from the registry.
+
+    Idempotent - a session already auto-stopped is a no-op success, not a 404.
+    """
+
+    with contextlib.suppress(SessionEntryNotFound):
+        await registry.stop_session(session_id)
+
+
+@router.post("/{session_id}/promote")
+async def promote_session(registry: RegistryDep, session_id: str):
+    """Cancel a member session's turn-complete auto-stop - it runs until stopped like any other.
+
+    Unlike stop, a missing session id is a 404: promotion has nothing to cancel and must say so.
+    """
+
+    registry.promote_session(session_id)
+
+
+@router.get("/{session_id}/events")
+async def get_session_events(registry: RegistryDep, session_id: str):
+    """Read a session's persisted events without starting anything (unlike /api/stream).
+
+    Reads the directory directly, not through SessionDep; `running` reports registry membership.
+    """
+
+    events = EventLog(session_id=session_id, workspace=registry.workspace).read_all()
+
+    return {
+        "events": [serialize_event(event) for event in events],
+        "running": session_id in registry.live_ids(),
+    }
 
 
 # Current session metadata

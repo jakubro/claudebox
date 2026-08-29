@@ -1,0 +1,34 @@
+/* Terminal and work overview bars - shared overlay/thumb geometry lives in minimap-overlay.css, so
+   this file holds only the bar shape unique to these two (no segments, no human lines). */
+
+.terminal-minimap-bars,
+.work-minimap-bars {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 4px 2px;
+  gap: 0;
+  align-items: flex-end; /* Right-align bars (variable width) */
+}
+
+.terminal-minimap-bar,
+.work-minimap-bar {
+  border-radius: 2px;
+  opacity: 0.9;
+}
+
+.terminal-minimap-bar-passed,
+.work-minimap-bar-passed {
+  background: #3a4a5c;
+}
+
+.terminal-minimap-bar-failed,
+.work-minimap-bar-failed {
+  background: #8b3a3a;
+}
+
+.terminal-minimap-bar-running,
+.work-minimap-bar-running {
+  background: #4a4a4a;
+  opacity: 0.5;
+}

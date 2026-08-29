@@ -166,8 +166,11 @@ function foldEventFlags(state, batch) {
 /**
  * Drains a batch into events/derived state; `batch` is either FLUSH_BATCH's streaming events or one REPLAY_SLICE.
  * Flag fields aren't re-walked here - already applied via STREAMING_FLAGS (streaming) or foldEventFlags (replay).
+ *
+ * Exported so a one-shot, non-streaming consumer can derive the same shape from a persisted event
+ * array in one call - `flushBatch(initialState, events)` - rather than a second turn builder.
  */
-function flushBatch(state, batch) {
+export function flushBatch(state, batch) {
   if (!batch || batch.length === 0) {
     return state
   }

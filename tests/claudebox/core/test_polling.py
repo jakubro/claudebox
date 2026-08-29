@@ -105,29 +105,6 @@ class _StubWatcher(MtimeWatcher):
 class TestMtimeWatcher:
     """Tests for MtimeWatcher file change detection."""
 
-    def test_watch_registers_file(self, tmp_path: Path) -> None:
-        """watch() adds file to watched set."""
-
-        f = tmp_path / "a.txt"
-        f.write_text("hello")
-
-        watcher = _StubWatcher()
-        watcher.watch(f)
-
-        assert str(f) in watcher._watched
-
-    def test_unwatch_removes_file(self, tmp_path: Path) -> None:
-        """unwatch() removes file from watched set."""
-
-        f = tmp_path / "a.txt"
-        f.write_text("hello")
-
-        watcher = _StubWatcher()
-        watcher.watch(f)
-        watcher.unwatch(f)
-
-        assert str(f) not in watcher._watched
-
     def test_sync_watches_replaces_set(self, tmp_path: Path) -> None:
         """sync_watches() replaces the entire watched set."""
 
@@ -137,7 +114,7 @@ class TestMtimeWatcher:
         b.write_text("b")
 
         watcher = _StubWatcher()
-        watcher.watch(a)
+        watcher.sync_watches([a])
         watcher.sync_watches([b])
 
         assert str(a) not in watcher._watched
@@ -153,7 +130,7 @@ class TestMtimeWatcher:
         f.write_text("v1")
 
         watcher = _StubWatcher()
-        watcher.watch(f)
+        watcher.sync_watches([f])
 
         # Force mtime change (sub-second writes may share same mtime)
         orig_mtime = f.stat().st_mtime
@@ -182,7 +159,7 @@ class TestMtimeWatcher:
 
         watcher = _StubWatcher()
         watcher._debounce = 0.03
-        watcher.watch(f)
+        watcher.sync_watches([f])
 
         orig_mtime = f.stat().st_mtime
         f.write_text("v2")

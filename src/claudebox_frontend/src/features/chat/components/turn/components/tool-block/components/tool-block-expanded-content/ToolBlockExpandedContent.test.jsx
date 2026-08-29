@@ -1,6 +1,6 @@
 /** Tests for ToolBlockExpandedContent. */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TurnProvider } from '../../../../TurnContext'
 import ToolBlockExpandedContent from './ToolBlockExpandedContent'
@@ -174,8 +174,8 @@ describe('ToolBlockExpandedContent', () => {
 
   it('renders nested blocks inside Activity collapsible section', () => {
     const nestedBlocks = [
-      { toolUse: { name: 'Read' }, toolResult: {} },
-      { toolUse: { name: 'Write' }, toolResult: {} },
+      { kind: 'tool', toolUse: { name: 'Read' }, toolResult: {} },
+      { kind: 'tool', toolUse: { name: 'Write' }, toolResult: {} },
     ]
 
     renderExpanded({ ...defaultProps, nestedBlocks })
@@ -187,8 +187,8 @@ describe('ToolBlockExpandedContent', () => {
 
   it('hides nested blocks when Activity section is collapsed', () => {
     const nestedBlocks = [
-      { toolUse: { name: 'Read' }, toolResult: {} },
-      { toolUse: { name: 'Write' }, toolResult: {} },
+      { kind: 'tool', toolUse: { name: 'Read' }, toolResult: {} },
+      { kind: 'tool', toolUse: { name: 'Write' }, toolResult: {} },
     ]
 
     renderExpanded({ ...defaultProps, nestedBlocks })
@@ -206,6 +206,22 @@ describe('ToolBlockExpandedContent', () => {
 
     expect(screen.queryByText('Activity')).not.toBeInTheDocument()
     expect(screen.queryByTestId('nested-tool')).not.toBeInTheDocument()
+  })
+
+  it('renders a text block as markdown prose, interleaved with calls in list order', () => {
+    const nestedBlocks = [
+      { kind: 'text', event: { content: 'Starting with the module layout.', ts: null } },
+      { kind: 'tool', toolUse: { name: 'Glob' }, toolResult: {} },
+      { kind: 'text', event: { content: 'Now reading the entry point.', ts: null } },
+    ]
+
+    renderExpanded({ ...defaultProps, nestedBlocks })
+
+    const activity = screen.getByText('Activity').closest('.task-activity')
+    const entries = within(activity).getAllByTestId(/nested-tool|markdown/)
+    expect(entries.map(el => el.dataset.testid)).toEqual(['markdown', 'nested-tool', 'markdown'])
+    expect(screen.getByText('Starting with the module layout.')).toBeInTheDocument()
+    expect(screen.getByText('Now reading the entry point.')).toBeInTheDocument()
   })
 
   it('renders QuestionsDisplay when questions exist', () => {
@@ -336,7 +352,7 @@ describe('ToolBlockExpandedContent', () => {
   })
 
   it('renders tool input in collapsible section when toolInput is provided', () => {
-    const toolInput = { collection_name: 'share', query_texts: ['test query'] }
+    const toolInput = { collection_name: 'notes', query_texts: ['test query'] }
     renderExpanded({ ...defaultProps, toolName: 'mcp__chroma__query', toolInput })
 
     expect(screen.getByText('Input')).toBeInTheDocument()

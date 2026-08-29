@@ -13,7 +13,7 @@ import useMessageJump from './useMessageJump'
 function createHarness(options = {}) {
   const {
     scrollTop = 0,
-    scrollHeight = 2000,
+    scrollHeight = 100000,
     clientHeight = 500,
     // One entry per turn, in scroll-axis order.
     measurements = [],

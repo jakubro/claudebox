@@ -15,6 +15,7 @@ from claude_agent_sdk.types import TextBlock as SdkTextBlock
 from claude_agent_sdk.types import ToolResultBlock as SdkToolResultBlock
 from claude_agent_sdk.types import ToolUseBlock as SdkToolUseBlock
 
+from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
 from claudebox.agent_session.events import (
     AgentEvent,
     AssistantMessagePayload,
@@ -418,6 +419,27 @@ def test_claude_init_translates_to_typed_init_data():
     assert evt.payload.data.cwd == "/repo"
     assert evt.payload.data.mcp_servers == [McpServerInit(name="jina", status="connected")]
     assert evt.payload.data.extra == {}
+
+
+def test_claude_init_hides_the_sibling_session_server():
+    """The in-process sibling-session server never reaches SystemInitData.mcp_servers - it is
+    not one of the workspace's configured servers, and the MCP panel reads this list directly."""
+
+    msg = SystemMessage(
+        subtype="init",
+        data={
+            "session_id": "sess-1",
+            "mcp_servers": [
+                {"name": "jina", "status": "connected"},
+                {"name": SIBLING_MCP_SERVER_NAME, "status": "connected"},
+            ],
+        },
+    )
+    evt = _translate(msg)
+
+    assert isinstance(evt.payload, SystemInitPayload)
+    assert isinstance(evt.payload.data, SystemInitData)
+    assert evt.payload.data.mcp_servers == [McpServerInit(name="jina", status="connected")]
 
 
 def test_claude_init_unknown_data_keys_captured_in_extra():

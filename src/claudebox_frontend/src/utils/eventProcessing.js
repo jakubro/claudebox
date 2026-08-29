@@ -52,6 +52,13 @@ export function computeTimingOffsets(eventTimestamps, turnStartTime, threshold =
   })
 }
 
+/** Per-parent identity for a nested event - subtype with `tool_use_id`, or trimmed content when
+ * there is none. Mirrors the backend's own dedup key. */
+function nestedDedupKey(event) {
+  const identity = event.tool_use_id ?? (event.content ?? '').trim()
+  return JSON.stringify([event.parent_tool_use_id, event.subtype, identity])
+}
+
 /** Index events for fast lookup during block creation - first pass of event processing. */
 export function indexEvents(events) {
   const toolResults = new Map()
@@ -63,6 +70,10 @@ export function indexEvents(events) {
 
   let lastSkillToolUseId = null
   let lastCompactEventId = null
+
+  // A background Task's output can arrive twice, live and tailed - keyed per parent so only a
+  // duplicate from the OTHER source is dropped.
+  const nestedDedupSources = new Map()
 
   for (const event of events) {
     const parentId = event.parent_tool_use_id
@@ -98,10 +109,23 @@ export function indexEvents(events) {
     }
 
     if (parentId) {
-      if (!nestedEvents.has(parentId)) {
-        nestedEvents.set(parentId, [])
+      const dedupKey = nestedDedupKey(event)
+      const isTailed = !!event.source_file
+      const claimedByTailed = nestedDedupSources.get(dedupKey)
+      let isDuplicate = false
+
+      if (claimedByTailed === undefined) {
+        nestedDedupSources.set(dedupKey, isTailed)
+      } else if (claimedByTailed !== isTailed) {
+        isDuplicate = true
       }
-      nestedEvents.get(parentId).push(event)
+
+      if (!isDuplicate) {
+        if (!nestedEvents.has(parentId)) {
+          nestedEvents.set(parentId, [])
+        }
+        nestedEvents.get(parentId).push(event)
+      }
     }
   }
 
@@ -223,7 +247,8 @@ export function processEvents(events) {
   return blocks
 }
 
-/** Process nested (subagent Task) events into tool blocks; skips human-marked events (Task prompts). */
+/** Process nested (subagent Task) events into `kind`-tagged tool and text blocks, in event order;
+ * skips Task prompts and the subagent's own role prompt. */
 export function processNestedEvents(events) {
   if (!events) {
     return []
@@ -245,7 +270,7 @@ export function processNestedEvents(events) {
     }
   }
 
-  // Create blocks for tool_use events only (skip text/thinking in nested)
+  // Create blocks for tool_use calls and the subagent's own narration, in source order.
   for (const event of events) {
     if (event.is_human) {
       continue
@@ -256,7 +281,13 @@ export function processNestedEvents(events) {
       if (isHiddenToolSearch(event, result)) {
         continue
       }
-      blocks.push({ toolUse: event, toolResult: result })
+      blocks.push({ kind: 'tool', toolUse: event, toolResult: result })
+    } else if (
+      event.type === EventType.ASSISTANT &&
+      event.subtype === EventSubtype.TEXT &&
+      event.content?.trim()
+    ) {
+      blocks.push({ kind: 'text', event })
     }
   }
 
@@ -863,21 +894,59 @@ export function isHiddenToolSearch(toolUse, toolResult) {
   return !toolResult?.is_error
 }
 
+/**
+ * Named states for what leaves a turn for the right slot instead of rendering inline - one slot,
+ * one occupant, so they are mutually exclusive. See ARCHITECTURE.md section 5.10.
+ */
+export const TurnRoutingMode = Object.freeze({
+  OFF: 'off',
+  BASH_ONLY: 'bash-only',
+  ALL_TOOLS: 'all-tools',
+})
+
 /** Terminal-column routing predicate; a subagent's nested Bash stays in its Task block. */
 export function isTopLevelBashCall(toolUse) {
   return normalizeToolName(toolUse?.content) === ToolName.BASH && !toolUse?.parent_tool_use_id
 }
 
-/** Any block left after hiding ToolSearch and (if `hideShellCalls`) Bash; else no turn chrome. */
-export function hasVisibleBlock(blocks, hideShellCalls = false) {
+/**
+ * Whether `mode` routes `toolUse` to the right slot instead of inline - the single predicate every
+ * consumer calls, so none can disagree about what left. A legacy boolean maps to BASH_ONLY/OFF.
+ */
+export function blockRoutesToRightSlot(mode, toolUse) {
+  const resolved =
+    mode === true
+      ? TurnRoutingMode.BASH_ONLY
+      : mode === false || mode == null
+        ? TurnRoutingMode.OFF
+        : mode
+  if (resolved === TurnRoutingMode.BASH_ONLY) {
+    return isTopLevelBashCall(toolUse)
+  }
+  if (resolved === TurnRoutingMode.ALL_TOOLS) {
+    return !toolUse?.parent_tool_use_id
+  }
+  return false
+}
+
+/**
+ * Whether one TOOL block survives both hiding rules - an unhidden ToolSearch call, not routed away
+ * by `mode`. `hasVisibleBlock` and `predictTurnHeight` both apply it over their own shapes.
+ */
+export function isToolBlockVisible(mode, toolUse, toolResult) {
+  if (isHiddenToolSearch(toolUse, toolResult)) {
+    return false
+  }
+  return !blockRoutesToRightSlot(mode, toolUse)
+}
+
+/** Any block left after hiding ToolSearch and whatever `mode` routes away; else no turn chrome. */
+export function hasVisibleBlock(blocks, mode = TurnRoutingMode.OFF) {
   return blocks.some(block => {
     if (block.type !== BlockType.TOOL) {
       return true
     }
-    if (isHiddenToolSearch(block.toolUse, block.toolResult)) {
-      return false
-    }
-    return !(hideShellCalls && isTopLevelBashCall(block.toolUse))
+    return isToolBlockVisible(mode, block.toolUse, block.toolResult)
   })
 }
 

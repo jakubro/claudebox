@@ -18,8 +18,8 @@ import TurnBlockList from './components/TurnBlockList'
 import TurnMeta from './components/TurnMeta'
 import TurnProgress from './components/TurnProgress'
 import UserMessageContent from './components/user-message-content'
-import { useHideShellCalls } from './hooks/useHideShellCalls'
 import { useTurnCollapse } from './hooks/useTurnCollapse'
+import { useTurnRoutingMode } from './hooks/useTurnRoutingMode'
 import { TurnProvider } from './TurnContext'
 import { getAssistantTextContent, getTurnPreview, getTurnTimeRange } from './utils/turnContent'
 
@@ -79,11 +79,11 @@ function Turn({
     }
   }
 
-  const hideShellCalls = useHideShellCalls()
+  const routingMode = useTurnRoutingMode()
   const blocks = useMemo(() => processEvents(events), [events])
   const hasVisibleBlocks = useMemo(
-    () => hasVisibleBlock(blocks, hideShellCalls),
-    [blocks, hideShellCalls],
+    () => hasVisibleBlock(blocks, routingMode),
+    [blocks, routingMode],
   )
 
   // Compaction has its own spinner via CompactionBlock, or via isCompacting prop for pending turns with no events
@@ -130,8 +130,8 @@ function Turn({
 
   // Generate preview for collapsed state
   const preview = useMemo(
-    () => getTurnPreview(blocks, duration, hideShellCalls),
-    [blocks, duration, hideShellCalls],
+    () => getTurnPreview(blocks, duration, routingMode),
+    [blocks, duration, routingMode],
   )
 
   // Full assistant text content for copy button (without system reminders)
@@ -140,6 +140,21 @@ function Turn({
   // Don't allow collapsing active/in-progress turns
   const isInProgress = isActive || isStopping || (hasPendingMessages && !hasNextUserMessage)
   const canCollapse = !isInProgress && hasVisibleBlocks
+
+  // Shared between the two mutually exclusive gates below - the bubble's own copy, and the
+  // standalone row that stands in for it (framed while pending, bare once emptied by routing).
+  const progressRow = (
+    <TurnProgress
+      isActive={isActive}
+      isStopping={isStopping}
+      showProgress={showProgress}
+      hasActiveCompaction={hasActiveCompaction}
+      pending={pending}
+      hasPendingMessages={hasPendingMessages}
+      hasNextUserMessage={hasNextUserMessage}
+      duration={duration}
+    />
+  )
 
   return (
     <div
@@ -176,7 +191,7 @@ function Turn({
           />
         </div>
       )}
-      {(hasVisibleBlocks || showProgress) && (
+      {hasVisibleBlocks && (
         <div
           className={`${turnClass}${isAssistantBookmarked ? ' bookmarked' : ''}`}
           data-testid="message-assistant">
@@ -218,20 +233,24 @@ function Turn({
                 duplicateAskUserIds={duplicateAskUserIds}
                 todoDiffs={todoDiffs}
               />
-              <TurnProgress
-                isActive={isActive}
-                isStopping={isStopping}
-                showProgress={showProgress}
-                hasActiveCompaction={hasActiveCompaction}
-                pending={pending}
-                hasPendingMessages={hasPendingMessages}
-                hasNextUserMessage={hasNextUserMessage}
-                duration={duration}
-              />
+              {progressRow}
             </div>
           </TurnProvider>
         </div>
       )}
+      {!hasVisibleBlocks &&
+        showProgress &&
+        // Framed while the turn has said nothing yet; bare once it has blocks, which means its
+        // content is being drawn in the work column instead.
+        (blocks.length === 0 ? (
+          <div className="turn-progress-pending" data-testid="turn-progress-pending">
+            {progressRow}
+          </div>
+        ) : (
+          <div className="turn-progress-bare" data-testid="turn-progress-bare">
+            {progressRow}
+          </div>
+        ))}
     </div>
   )
 }

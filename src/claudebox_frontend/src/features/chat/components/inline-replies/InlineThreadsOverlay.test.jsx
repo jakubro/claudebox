@@ -1,6 +1,6 @@
 /** Integration tests for InlineThreadsOverlay: the clamped position reaches the rendered float. */
 
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InlineThreadsOverlay from './InlineThreadsOverlay'
 
@@ -13,6 +13,11 @@ vi.mock('../../../../context/InteractionContext', () => ({
     completeInterrupt: vi.fn(),
     setError: vi.fn(),
   }),
+}))
+
+// PromotedThreadCard's own fetch, reached by the rail-promoted hover card below.
+vi.mock('../../../../api/sessions', () => ({
+  getSessionEvents: vi.fn().mockResolvedValue({ events: [] }),
 }))
 
 const QUOTE = 'quoted span text'
@@ -128,5 +133,68 @@ describe('InlineThreadsOverlay - edge clamp', () => {
       const left = Number.parseFloat(document.querySelector('.inline-float').style.left)
       expect(left).toBe(200) // well within bounds - passes through unchanged
     })
+  })
+})
+
+describe('InlineThreadsOverlay - rail-promoted click routing', () => {
+  it('clicking a rail-promoted quote focuses its thread instead of pinning a float', async () => {
+    const container = setupContainer()
+    container.getBoundingClientRect = () => ({ left: 0, right: 800, top: 0, bottom: 600 })
+    Range.prototype.getClientRects = () => [{ left: 190, right: 200, top: 20, bottom: 36 }]
+
+    const onFocusRailPromoted = vi.fn()
+    const reply = makeReply({ threadSessionId: 'thread-1', railPromoted: true })
+
+    render(
+      <InlineThreadsOverlay
+        messagesRef={{ current: container }}
+        unsent={[reply]}
+        sentThreads={[]}
+        resolveSignal={0}
+        maxHeight={200}
+        onEditReply={vi.fn()}
+        onRemove={vi.fn()}
+        threadSessions={{ onFocusRailPromoted }}
+      />,
+    )
+
+    // Retry the click until the async resolve() pass has anchored the span - hitTest is a no-op
+    // (and this assertion keeps failing) until then.
+    await waitFor(() => {
+      fireEvent.pointerDown(container, { clientX: 195, clientY: 28 })
+      fireEvent.click(container, { clientX: 195, clientY: 28 })
+      expect(onFocusRailPromoted).toHaveBeenCalledWith('thread-1')
+    })
+
+    expect(document.querySelector('.inline-float')).toBeNull()
+  })
+
+  it('hovering a rail-promoted quote still opens its read-only card', async () => {
+    const container = setupContainer()
+    container.getBoundingClientRect = () => ({ left: 0, right: 800, top: 0, bottom: 600 })
+    Range.prototype.getClientRects = () => [{ left: 190, right: 200, top: 20, bottom: 36 }]
+
+    const reply = makeReply({ threadSessionId: 'thread-1', railPromoted: true })
+
+    render(
+      <InlineThreadsOverlay
+        messagesRef={{ current: container }}
+        unsent={[reply]}
+        sentThreads={[]}
+        resolveSignal={0}
+        maxHeight={200}
+        onEditReply={vi.fn()}
+        onRemove={vi.fn()}
+        threadSessions={{ onFocusRailPromoted: vi.fn() }}
+      />,
+    )
+
+    await waitFor(
+      () => {
+        fireEvent.mouseMove(container, { clientX: 195, clientY: 28, buttons: 0 })
+        expect(document.querySelector('.promoted-thread-card')).not.toBeNull()
+      },
+      { timeout: 2000 },
+    )
   })
 })

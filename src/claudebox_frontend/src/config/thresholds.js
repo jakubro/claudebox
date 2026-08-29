@@ -7,8 +7,9 @@ export const MAX_INPUT_HISTORY_ENTRIES = 200
 export const MAX_INPUT_HISTORY_BYTES = 256 * 1024 // 256 KB, oldest entries evicted first
 
 // Events materialized per drain slice on resume; bounds each commit so the browser keeps a paint/input window.
-// Higher = longer commits; lower = more commits, each re-rendering every TodoWrite/Task-bearing turn.
-export const REPLAY_DRAIN_SLICE_SIZE = 50
+// Also bounds how many turns cross the transcript's unwindowed active-turn slot - turns landing
+// inside one slice go straight to the windowed list, so a larger slice mounts fewer of them.
+export const REPLAY_DRAIN_SLICE_SIZE = 500
 
 // Staleness fade past STALENESS_STALE_PEAK_MS: fraction = 1 - 1 / (1 + STALENESS_FADE_RATE * overflow_ms).
 export const STALENESS_FADE_RATE = 0.00002

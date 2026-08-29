@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Attach the report, a voice memo, and a photo","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"mcp__files__attach","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"mcp__files__attach","tool_input":{"folder":"reports"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"[{\"type\":\"resource_link\",\"name\":\"report.pdf\",\"description\":\"Quarterly report\",\"uri\":\"file:///reports/report.pdf\"},{\"type\":\"audio\",\"data\":\"AAAA\",\"mimeType\":\"audio/mpeg\"},{\"type\":\"resource\",\"resource\":{\"uri\":\"file:///photo.png\",\"mimeType\":\"image/png\",\"blob\":\"AAAA\"}}]","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Attached three items.","ts":"2025-01-18T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

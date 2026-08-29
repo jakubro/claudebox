@@ -4,7 +4,8 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isLookupsGroupingEnabled } from '../../../../../config/features'
 import { BlockType, ToolName } from '../../../../../config/schema'
-import { HideShellCallsContext } from '../HideShellCallsContext'
+import { TurnRoutingMode } from '../../../../../utils/eventProcessing'
+import { TurnRoutingContext } from '../TurnRoutingContext'
 import TurnBlockList from './TurnBlockList'
 
 vi.mock('../../../../../config/features', () => ({
@@ -107,11 +108,21 @@ describe('TurnBlockList', () => {
     expect(screen.getByTestId('lookups-group')).toHaveAttribute('data-count', '2')
   })
 
-  it('drops a top-level Bash block when HideShellCallsContext is true', () => {
+  it('drops a top-level Bash block when TurnRoutingContext is true (legacy boolean)', () => {
     render(
-      <HideShellCallsContext.Provider value={true}>
+      <TurnRoutingContext.Provider value={true}>
         <TurnBlockList blocks={[toolBlock(ToolName.BASH, 'b-1')]} blockOffsets={[]} />
-      </HideShellCallsContext.Provider>,
+      </TurnRoutingContext.Provider>,
+    )
+
+    expect(screen.queryByTestId('tool-block')).not.toBeInTheDocument()
+  })
+
+  it('drops a top-level Bash block when TurnRoutingContext is BASH_ONLY', () => {
+    render(
+      <TurnRoutingContext.Provider value={TurnRoutingMode.BASH_ONLY}>
+        <TurnBlockList blocks={[toolBlock(ToolName.BASH, 'b-1')]} blockOffsets={[]} />
+      </TurnRoutingContext.Provider>,
     )
 
     expect(screen.queryByTestId('tool-block')).not.toBeInTheDocument()
@@ -150,11 +161,5 @@ describe('TurnBlockList', () => {
 
     expect(screen.getByTestId('thinking-block')).toBeInTheDocument()
     expect(screen.getByTestId('compaction-block')).toBeInTheDocument()
-  })
-
-  it('renders an INTERRUPT block as the interrupt indicator', () => {
-    render(<TurnBlockList blocks={[{ type: BlockType.INTERRUPT }]} blockOffsets={[]} />)
-
-    expect(screen.getByText('Interrupted')).toBeInTheDocument()
   })
 })

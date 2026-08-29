@@ -1,3 +1,4 @@
 @import "./SessionsPanel.css";
+@import "./components/SessionsFilterStrip.css";
 @import "./components/session-tree/SessionTree.css";
 @import "./components/session-tree/components/SessionItem.css";

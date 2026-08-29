@@ -16,6 +16,7 @@ from starlette.responses import Response
 from starlette.responses import StreamingResponse as BaseStreamingResponse
 
 from . import serialization
+from .broadcaster import CLOSED
 from .concurrency import maybe_awaitable
 
 
@@ -142,22 +143,30 @@ class BroadcastEventSourceResponse(EventSourceResponse):
     def __init__(
         self,
         broadcaster: BroadcastEventSource | AsyncBroadcastEventSource,
+        subscribe_kwargs: dict | None = None,
         **kwargs,
     ) -> None:
         kwargs.setdefault("ping", 1)
-        super().__init__(content=self._stream(broadcaster), **kwargs)
+        super().__init__(content=self._stream(broadcaster, subscribe_kwargs), **kwargs)
 
     @staticmethod
     async def _stream(
         broadcaster: BroadcastEventSource | AsyncBroadcastEventSource,
+        subscribe_kwargs: dict | None = None,
     ) -> AsyncIterator[dict]:
-        """Yield SSE events until the client disconnects."""
+        """Yield SSE events until the client disconnects or the broadcaster closes."""
 
-        subscriber_id, queue = await maybe_awaitable(broadcaster.subscribe())
+        subscriber_id, queue = await maybe_awaitable(
+            broadcaster.subscribe(**(subscribe_kwargs or {})),
+        )
 
         try:
             while True:
                 event = await queue.get()
+
+                if event is CLOSED:
+                    return
+
                 yield {"data": serialization.dumps(event)}
         except asyncio.CancelledError:
             pass

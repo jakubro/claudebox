@@ -61,7 +61,7 @@ export async function renderMermaidChart(id, source) {
         theme: 'dark',
         themeVariables: MERMAID_THEME_VARIABLES,
         securityLevel: 'strict',
-        // Skip mermaid's own error graphic - we fall back to syntax-highlighted source.
+        // Skip mermaid's own error graphic - the fallback is syntax-highlighted source.
         suppressErrorRendering: true,
         fontFamily:
           '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif',

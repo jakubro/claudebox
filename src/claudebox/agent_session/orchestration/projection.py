@@ -142,8 +142,13 @@ class Projection:
             )
             self._loaded_from_disk = False
 
-    # Fields written externally by the daemon (rename, fork) - not tracked via events.
-    _DAEMON_OWNED_FIELDS = ("name", "parent_session_id")
+    # Fields written externally by the daemon (rename, fork, spawn) - not tracked via events.
+    _DAEMON_OWNED_FIELDS = (
+        "name",
+        "parent_session_id",
+        "is_side_thread",
+        "spawned_from_session_id",
+    )
 
     # Properties
     # ----------------------------------------------------------------------------------------------

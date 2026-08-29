@@ -162,6 +162,8 @@ lint:
     npx biome check 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/frontend-guidelines-audit.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/spec-coverage.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
+    node --test scripts/architecture-drift-check.test.js 2>&1 | tee -a /tmp/claudebox--lint.log
+    node scripts/architecture-drift-check.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     npx knip 2>&1 | tee -a /tmp/claudebox--lint.log
     npx jscpd --exit-code 1 --format python --min-tokens 100 2>&1 | tee -a /tmp/claudebox--lint.log
     npx jscpd --exit-code 1 --format javascript,jsx,typescript,tsx,css,scss,less 2>&1 | tee -a /tmp/claudebox--lint.log

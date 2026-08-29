@@ -30,8 +30,6 @@ class TestBuildToolContext:
         ctx = runtime._build_tool_context()
 
         assert ctx.workspace_path == tmp_path
-        assert ctx.session_id == "sess-1"
-        assert ctx.session_dir == tmp_path
         assert ctx.config is runtime._config
         assert ctx.hooks is runtime._config.hooks
         assert ctx.tool_catalog is not None
@@ -64,6 +62,9 @@ class TestMakeToolsAggregation:
             "task_stop",
             "task_update",
             "ask_user_question",
+            "session_spawn",
+            "session_ask",
+            "session_read",
             "skill",
             "tool_search",
             "list_mcp_resources",
@@ -78,7 +79,7 @@ class TestMakeToolsAggregation:
         tools = make_tools(ctx)
         ctx.tool_catalog.tools.extend(tools)
 
-        assert len(ctx.tool_catalog.tools) == 21
+        assert len(ctx.tool_catalog.tools) == 24
         assert ctx.tool_catalog.tools[0] in tools
 
 
@@ -101,7 +102,7 @@ class TestConnectBindsTools:
             await runtime.connect()
 
         bound_tools = mock_create_agent.call_args.kwargs["tools"]
-        assert len(bound_tools) == 21
+        assert len(bound_tools) == 24
 
     @pytest.mark.anyio
     async def test_connect_degrades_to_chat_only_when_bind_tools_unsupported(self, tmp_path):
@@ -139,7 +140,7 @@ class TestConnectBindsTools:
         assert runtime.ready.is_set()
         # First attempt had the full toolset; rebuild used empty tools=[].
         assert len(call_log) == 2
-        assert len(call_log[0]) == 21
+        assert len(call_log[0]) == 24
         assert call_log[1] == []
 
 

@@ -1,0 +1,39 @@
+/* MCP tool result content blocks - text reuses .tool-details-wrapper/.tool-json from
+   ToolContentRenderer.css; these cover the block-specific presentations only. */
+
+.mcp-content-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-image-block img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.mcp-resource-link {
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.mcp-resource-link a {
+  color: var(--accent);
+}
+
+.mcp-resource-description {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mcp-unviewable-block {
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}

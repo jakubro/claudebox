@@ -431,21 +431,6 @@ describe('ChatInput', () => {
     })
   })
 
-  describe('fallback refs', () => {
-    it('renders without refs and queueEdit props', () => {
-      render(
-        <ChatInput
-          isConnected={true}
-          canInterrupt={false}
-          send={vi.fn()}
-          enqueueMessage={vi.fn()}
-        />,
-      )
-
-      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
-    })
-  })
-
   describe('X11 middle-click paste guard', () => {
     // Helper to create paste event (ClipboardEvent not available in jsdom)
     const createPasteEvent = () => new Event('paste', { bubbles: true, cancelable: true })

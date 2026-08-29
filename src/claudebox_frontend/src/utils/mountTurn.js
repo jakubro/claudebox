@@ -9,9 +9,12 @@ export const MOUNT_FRAMES = 12
  * A windowed-out turn has no DOM element, so this scrolls its index into range first, then polls:
  * `scrollToIndex` only schedules the scroll, so the mount lands on an unpredictable later frame.
  * `turns` is in virtualizer index order; `virtualizer` may be null.
+ *
+ * `root` scopes the lookup to one rail group: `data-index` and `data-turn-id` are not unique
+ * document-wide, so an unscoped query finds the leftmost group's match instead.
  */
-export function withMountedTurn({ turnId, turns, virtualizer, onResolved }) {
-  const existing = findTurnEl(turnId)
+export function withMountedTurn({ turnId, turns, virtualizer, onResolved, root }) {
+  const existing = findTurnEl(turnId, root)
   if (existing) {
     onResolved(existing)
     return
@@ -24,17 +27,23 @@ export function withMountedTurn({ turnId, turns, virtualizer, onResolved }) {
   }
 
   virtualizer.scrollToIndex(index, { align: 'start' })
-  pollFrames(MOUNT_FRAMES, () => findTurnEl(turnId), onResolved)
+  pollFrames(MOUNT_FRAMES, () => findTurnEl(turnId, root), onResolved)
 }
 
-/** Locate a mounted turn element by id. */
-export function findTurnEl(turnId) {
-  return document.querySelector(`[data-turn-id="${CSS.escape(String(turnId))}"]`)
+/**
+ * Locate a mounted turn element by id, scoped to `root` (see withMountedTurn), which falls back to
+ * `document` on a missing argument and on `null`, as an unattached ref reads.
+ */
+export function findTurnEl(turnId, root) {
+  return (root || document).querySelector(`[data-turn-id="${CSS.escape(String(turnId))}"]`)
 }
 
-/** Locate a windowed row by index - preferred over turn id, which older turns often lack. */
-export function findTurnRow(index) {
-  return document.querySelector(`.historical-turn-row[data-index="${index}"]`)
+/**
+ * Locate a windowed row by index - preferred over an id, which older turns lack, and the only
+ * option for a column whose entries carry none. `rowSelector` is the row's own class.
+ */
+export function findTurnRow(index, rowSelector = '.historical-turn-row', root) {
+  return (root || document).querySelector(`${rowSelector}[data-index="${index}"]`)
 }
 
 /** Call `resolve` each frame until it returns something; reports null after `frames` attempts. */

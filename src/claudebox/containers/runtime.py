@@ -104,3 +104,8 @@ class ContainerRuntime:
         """Create a container network idempotently."""
 
         self._backend.create_network(name)
+
+    def identify_container_from_pid(self, pid: int, candidate_ids: list[str]) -> str | None:
+        """Return whichever `candidate_ids` entry the given host pid is running inside, or None."""
+
+        return self._backend.identify_container_from_pid(pid, candidate_ids)

@@ -23,13 +23,6 @@ class DaemonNotReady(DaemonError):
     error_key = "daemon_not_ready"
 
 
-class WorkspaceNotFound(DaemonError):
-    """Workspace ID not in the daemon's active workspace map."""
-
-    status_code = 404
-    error_key = "workspace_not_found"
-
-
 class WorkspaceUnavailable(DaemonError):
     """Workspace exists but is not available (config load failed, etc.)."""
 

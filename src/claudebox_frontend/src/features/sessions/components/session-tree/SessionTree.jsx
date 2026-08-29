@@ -51,9 +51,11 @@ export default function SessionTree({ session, depth, isLastChild = true, contin
     () => ({
       onResume: () => onResume(sessionId),
       onRename: name => onRename(sessionId, name),
-      onTogglePin: () => onTogglePin(sessionId),
-      onKillContainer: () => onKillContainer(sessionId),
-      onOpenInNewTab: () => onOpenInNewTab(sessionId),
+      actions: {
+        onTogglePin: () => onTogglePin(sessionId),
+        onKillContainer: () => onKillContainer(sessionId),
+        onOpenInNewTab: () => onOpenInNewTab(sessionId),
+      },
     }),
     [sessionId, onResume, onRename, onTogglePin, onKillContainer, onOpenInNewTab],
   )

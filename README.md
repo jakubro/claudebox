@@ -1,7 +1,7 @@
 # Claudebox
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](pyproject.toml)
 [![Status](https://img.shields.io/badge/status-actively_developed-green.svg)](#)
 
 Containerized isolation, customizable agent profiles, and a visual web UI — for AI coding agents.
@@ -81,6 +81,10 @@ nested = true
 # "Open in IDE" controls in tool blocks; {path} and {line} are substituted. Omit to disable.
 [editor]
 url_template = "jetbrains://idea/navigate/reference?project=myProject&path={path}:{line}"
+
+# Full-match patterns a link's carried message text must match to auto-submit. Omit to allow none.
+[links]
+allow = ["/scope \\S+"]
 
 # Environment variables passed to the container
 [env]
@@ -186,6 +190,7 @@ Panels toggle from icon strips on the left (Sessions, Containers) and right (Tod
 - Real-time streaming responses with markdown rendering, syntax-highlighted code blocks, and mermaid diagrams
 - Collapsible tool blocks with formatted summaries (file diffs, grep results, search hits)
 - Open a file in your editor from a tool block, or Alt+Click a highlighted path (requires `[editor] url_template`)
+- Open a session from a link carrying its first message, gated by `[links] allow`
 - Inline interactive forms — answer questions and review plans without leaving the chat
 - Drag-drop or paste file/image attachments
 - Input history (Up/Down), draft persistence, and auto-resize textarea

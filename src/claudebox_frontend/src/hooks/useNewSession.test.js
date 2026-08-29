@@ -190,6 +190,42 @@ describe('useNewSession', () => {
     expect(result.current.executeNewSession).toBe(first)
   })
 
+  describe('executeNewSessionFromLink', () => {
+    it('threads messages to newSession and reports what was undelivered', async () => {
+      mockNewSession.mockResolvedValue({
+        session_id: 's4',
+        container_id: 'c4',
+        undelivered_messages: ['/danger'],
+      })
+
+      const { result } = renderHook(() => useNewSession())
+
+      const { success, undeliveredMessages } = await result.current.executeNewSessionFromLink([
+        '/scope claudebox',
+        '/danger',
+      ])
+
+      expect(mockNewSession).toHaveBeenCalledWith({
+        signal: expect.any(AbortSignal),
+        messages: ['/scope claudebox', '/danger'],
+      })
+      expect(success).toBe(true)
+      expect(undeliveredMessages).toEqual(['/danger'])
+    })
+
+    it('defaults undeliveredMessages to empty when the response omits it', async () => {
+      mockNewSession.mockResolvedValue({ session_id: 's5', container_id: 'c5' })
+
+      const { result } = renderHook(() => useNewSession())
+
+      const { undeliveredMessages } = await result.current.executeNewSessionFromLink([
+        '/scope claudebox',
+      ])
+
+      expect(undeliveredMessages).toEqual([])
+    })
+  })
+
   describe('executeNewSessionInNewTab', () => {
     it('does not toggle global isCreating on the originating tab', async () => {
       // Originating tab must stay passive - toggling startCreating here would show the chat overlay on this tab.

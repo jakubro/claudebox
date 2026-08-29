@@ -48,8 +48,8 @@ describe('TodosGroup', () => {
     render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
 
     const summary = document.querySelector('.tool-summary').textContent
-    expect(summary).toMatch(/●1/)
-    expect(summary).toMatch(/◐1/)
+    expect(summary).toMatch(/● 1/)
+    expect(summary).toMatch(/◐ 1/)
     expect(summary).not.toMatch(/○/)
     expect(summary).not.toMatch(/✕/)
   })
@@ -206,7 +206,7 @@ describe('TodosGroup', () => {
 
     const icons = [...document.querySelectorAll('.todo-icon')].map(i => i.textContent)
     expect(icons).toEqual(['◐', '⊘'])
-    expect(document.querySelector('.tool-summary').textContent).toMatch(/⊘1/)
+    expect(document.querySelector('.tool-summary').textContent).toMatch(/⊘ 1/)
   })
 
   it('treats cross-run blockers (taskIds not in the merged set) as resolved', () => {

@@ -22,6 +22,19 @@
   border-left: 1px solid var(--border);
 }
 
+/* A subagent's narration between calls - same vertical rhythm as a sibling nested tool block. */
+.nested-text-entry {
+  margin: 4px 0;
+}
+
+.nested-text-entry > :first-child {
+  margin-top: 0;
+}
+
+.nested-text-entry > :last-child {
+  margin-bottom: 0;
+}
+
 .tool-skill-content,
 .tool-markdown-content {
   margin-top: 8px;

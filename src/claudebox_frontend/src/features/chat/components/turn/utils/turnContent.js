@@ -1,6 +1,6 @@
 /** Pure derivations for Turn - extracted from Turn.jsx, no React APIs. */
 
-import { isHiddenToolSearch, isTopLevelBashCall } from '../../../../../utils/eventProcessing'
+import { isToolBlockVisible, TurnRoutingMode } from '../../../../../utils/eventProcessing'
 import { formatDuration, stripMarkdown } from '../../../../../utils/formatters'
 import { extractSystemReminders } from '../components/tool-block/utils/toolResultFormatters'
 
@@ -24,9 +24,9 @@ export function getTurnTimeRange(events) {
 
 /**
  * One-line preview for a collapsed turn; `duration` is in seconds.
- * `hideShellCalls` excludes top-level Bash blocks - they render in the terminal column.
+ * `mode` excludes whatever it routes away - those blocks render in the right slot instead.
  */
-export function getTurnPreview(blocks, duration, hideShellCalls = false) {
+export function getTurnPreview(blocks, duration, mode = TurnRoutingMode.OFF) {
   const firstTextBlock = blocks.find(b => b.type === 'text')
   if (firstTextBlock) {
     const preview = previewFromTextBlock(firstTextBlock.event.content)
@@ -35,10 +35,7 @@ export function getTurnPreview(blocks, duration, hideShellCalls = false) {
     }
   }
   const toolCount = blocks.filter(
-    b =>
-      b.type === 'tool' &&
-      !isHiddenToolSearch(b.toolUse, b.toolResult) &&
-      !(hideShellCalls && isTopLevelBashCall(b.toolUse)),
+    b => b.type === 'tool' && isToolBlockVisible(mode, b.toolUse, b.toolResult),
   ).length
   if (toolCount > 0) {
     return `${toolCount} tool${toolCount > 1 ? 's' : ''} used`

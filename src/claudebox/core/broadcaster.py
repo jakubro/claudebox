@@ -9,6 +9,10 @@ from typing import TypeVar
 TSource = TypeVar("TSource")
 TTarget = TypeVar("TTarget")
 
+# Pushed to every subscriber queue by close() so a parked stream ends instead of hanging.
+# Distinct from None, which _on_event uses for "filtered, nothing to send".
+CLOSED = object()
+
 
 class Broadcaster[TSource, TTarget]:
     """Manage subscribers and broadcast events with replay support."""
@@ -30,6 +34,16 @@ class Broadcaster[TSource, TTarget]:
         """Remove a subscriber from the broadcast list."""
 
         self._subscribers.pop(subscriber_id, None)
+
+    async def close(self) -> None:
+        """Wake every subscriber with CLOSED so its stream ends instead of hanging.
+
+        Does not remove subscribers itself - each stream's own finally block still calls
+        unsubscribe(), exactly as it does on an ordinary client disconnect.
+        """
+
+        for queue in list(self._subscribers.values()):
+            await queue.put(CLOSED)  # ty: ignore[invalid-argument-type] - sentinel, not a TTarget
 
     async def broadcast(self, event: TSource) -> None:
         """Push event to all subscribers."""

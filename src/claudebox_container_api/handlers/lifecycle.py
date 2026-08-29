@@ -14,14 +14,21 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health")
 async def container_health():
-    """Return container health status for daemon polling."""
+    """Return container health status for daemon polling.
 
-    session_id = None
+    `session_id` is the primary; `live_session_ids` is every registered session, primary included.
+    """
 
-    if session.current and session.current.base_session:
-        session_id = session.current.base_session.id
+    registry = session.registry
+    primary_id = registry.primary_id if registry else None
+    live_session_ids = registry.live_ids() if registry else []
 
-    return {"mode": "container", "status": "ok", "session_id": session_id}
+    return {
+        "mode": "container",
+        "status": "ok",
+        "session_id": primary_id,
+        "live_session_ids": live_session_ids,
+    }
 
 
 # Logs

@@ -140,8 +140,8 @@
   transform: translateY(1px);
 }
 
-/* Scope ResumeControl to the panel: base rule (SessionItem.css) uses align-items: center, but here
-   we want baseline alignment so the Play icon aligns with the row's text baseline. */
+/* Scope ResumeControl to the panel: the base rule (SessionItem.css) uses align-items: center, but
+   this panel needs baseline alignment so the Play icon aligns with the row's text baseline. */
 .containers-actions .sessions-resume-split {
   align-items: baseline;
 }

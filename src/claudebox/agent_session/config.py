@@ -13,7 +13,7 @@ _DEFAULT_PROCESS_BUFFER_SIZE = 1024 * 1024 * 1024
 
 @dataclass
 class RuntimeCapabilities:
-    """Static support matrix for a runtime adapter. All 16 fields required."""
+    """Static support matrix for a runtime adapter; every field is required."""
 
     supports_set_model_mid_session: bool
     supports_set_permission_mode: bool
@@ -27,7 +27,6 @@ class RuntimeCapabilities:
     supports_context_usage: bool
     supports_cost_telemetry: bool
     supports_manual_compact: bool
-    supports_session_resume: bool
     supports_session_fork: bool
     supports_session_rewind: bool
     supports_ask_user_question: bool

@@ -349,7 +349,7 @@ test.describe('Tools Display', () => {
       const toolBlocks = page.locator('[data-testid="tool-block"]')
       await expect(toolBlocks.first()).toBeVisible()
 
-      // Count should be at least 1 (our fixture has one tool)
+      // Count should be at least 1 (the fixture has one tool)
       const count = await toolBlocks.count()
       expect(count).toBeGreaterThanOrEqual(1)
     })
@@ -447,6 +447,9 @@ test.describe('Tools Display', () => {
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(taskBlock).toBeVisible()
 
+      // Task collapses by default - expand to watch nested calls stream in.
+      await taskBlock.locator('.tool-header-area').click()
+
       const nestedBlocks = taskBlock.locator('.tool-nested [data-testid="tool-block"]')
       await expect(nestedBlocks).toHaveCount(0)
 
@@ -485,6 +488,95 @@ test.describe('Tools Display', () => {
 
       // Second nested tool appears progressively
       await expect(nestedBlocks).toHaveCount(2)
+    })
+
+    // SPEC: tool:nested-prose
+    // SPEC: tool:nested-prose-realtime
+    test("a subagent's narration renders as markdown, interleaved with its calls in order", async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Find the parser',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          tool_use_id: 'tool_300',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Find the parser',
+            prompt: 'Locate the parser module.',
+            subagent_type: 'Explore',
+          },
+        },
+      ])
+
+      const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      const nestedContent = taskBlock.locator('.tool-nested')
+      await expect(taskBlock).toBeVisible()
+
+      // Task collapses by default - expand to watch its Activity list.
+      await taskBlock.locator('.tool-header-area').click()
+
+      // Narration arrives live, before any call - it must still appear, not wait on one.
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'text',
+        content: "I'll start with the module layout.",
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_300',
+      })
+      await expect(nestedContent.locator('.nested-text-entry')).toHaveCount(1)
+      await expect(page.getByText("I'll start with the module layout.")).toBeVisible()
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Glob',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_300',
+        tool_use_id: 'tool_301',
+        tool_name: 'Glob',
+        tool_input: { pattern: 'src/**/*.js' },
+      })
+
+      // A second line of narration - markdown must render as elements, not literal characters.
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'text',
+        content: 'The parser is split across **two** files; reading both.',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_300',
+      })
+
+      await expect(nestedContent.locator('.nested-text-entry')).toHaveCount(2)
+      const secondEntry = nestedContent.locator('.nested-text-entry').nth(1)
+      await expect(secondEntry.locator('strong', { hasText: 'two' })).toBeVisible()
+
+      // Source order: prose, call, prose - not calls first with prose trailing.
+      const kinds = await nestedContent.evaluate(el =>
+        Array.from(el.children).map(child =>
+          child.classList.contains('nested-text-entry') ? 'text' : 'tool',
+        ),
+      )
+      expect(kinds).toEqual(['text', 'tool', 'text'])
     })
 
     // SPEC: tool:nested-tool-use
@@ -533,6 +625,10 @@ test.describe('Tools Display', () => {
 
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(taskBlock).toBeVisible()
+
+      // Task collapses by default - expand to see the nested block.
+      await taskBlock.locator('.tool-header-area').click()
+
       const nestedBlock = taskBlock.locator('.tool-nested [data-testid="tool-block"]').first()
       await expect(nestedBlock).toBeVisible()
       await expect(nestedBlock).toContainText('Read')
@@ -583,6 +679,11 @@ test.describe('Tools Display', () => {
       ])
 
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlock).toBeVisible()
+
+      // Task collapses by default - expand to see the nested block.
+      await taskBlock.locator('.tool-header-area').click()
+
       const nestedBlock = taskBlock.locator('.tool-nested [data-testid="tool-block"]').first()
       await expect(nestedBlock).toBeVisible()
       await expect(nestedBlock).toHaveAttribute('data-tool-status', 'pending')
@@ -637,6 +738,9 @@ test.describe('Tools Display', () => {
       // Task is pending (no tool_result yet)
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(taskBlock).toHaveAttribute('data-tool-status', 'pending')
+
+      // Task collapses by default - expand to watch nested calls stream in.
+      await taskBlock.locator('.tool-header-area').click()
 
       // Send nested Glob tool_use while Task is still pending
       await controller.sendEvent({
@@ -706,6 +810,11 @@ test.describe('Tools Display', () => {
 
       // Nested Read tool should be pending (no tool_result sent)
       const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlock).toBeVisible()
+
+      // Task collapses by default - expand to see the nested block.
+      await taskBlock.locator('.tool-header-area').click()
+
       const nestedBlock = taskBlock.locator('.tool-nested [data-testid="tool-block"]').first()
       await expect(nestedBlock).toBeVisible()
       await expect(nestedBlock).toHaveAttribute('data-tool-status', 'pending')
@@ -959,10 +1068,10 @@ test.describe('Tools Display', () => {
       await expect(diffBlock).toBeVisible()
 
       // Each count must appear with its sigil - proves the structured format, not just one symbol.
-      await expect(diffBlock).toContainText(/●\d+/)
-      await expect(diffBlock).toContainText(/◐\d+/)
-      await expect(diffBlock).toContainText(/○\d+/)
-      await expect(diffBlock).toContainText(/✕\d+/)
+      await expect(diffBlock).toContainText(/● \d+/)
+      await expect(diffBlock).toContainText(/◐ \d+/)
+      await expect(diffBlock).toContainText(/○ \d+/)
+      await expect(diffBlock).toContainText(/✕ \d+/)
     })
 
     // SPEC: tool:webfetch
@@ -1060,9 +1169,9 @@ test.describe('Tools Display', () => {
       await expect(toolBlock).toBeVisible()
 
       // Counts map to sigils: 1 completed (●1), 1 in_progress (◐1), 2 pending (○2).
-      await expect(toolBlock).toContainText('●1')
-      await expect(toolBlock).toContainText('◐1')
-      await expect(toolBlock).toContainText('○2')
+      await expect(toolBlock).toContainText('● 1')
+      await expect(toolBlock).toContainText('◐ 1')
+      await expect(toolBlock).toContainText('○ 2')
     })
 
     // SPEC: tool:todos-block-status
@@ -1485,6 +1594,8 @@ test.describe('Tools Display', () => {
       await expect(group.locator('.tool-summary')).toHaveText('Read x2')
 
       const taskBlock = page.locator('[data-testid="tool-block"]').filter({ hasText: 'Task(' })
+      // Task collapses by default - expand to see its nested lookups.
+      await taskBlock.locator('.tool-header-area').click()
       await expect(taskBlock.locator('.tool-nested [data-testid="tool-block"]')).toHaveCount(2)
     })
   })
@@ -2689,6 +2800,12 @@ test.describe('Tools Display', () => {
         },
       ])
 
+      const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlock).toBeVisible()
+
+      // Task collapses by default - expand to see the nested block.
+      await taskBlock.locator('.tool-header-area').click()
+
       // Send nested Read tool_use WITHOUT its result (simulates in-progress)
       await controller.sendEvent({
         type: 'assistant',
@@ -2770,6 +2887,12 @@ test.describe('Tools Display', () => {
         },
       ])
 
+      const taskBlockBg002 = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlockBg002).toBeVisible()
+
+      // Task collapses by default - expand to see the nested block.
+      await taskBlockBg002.locator('.tool-header-area').click()
+
       await expect(page.locator('[data-testid="tool-block"].nested')).toHaveCount(0)
 
       // Send nested Bash tool_use - no result yet, task still running
@@ -2791,6 +2914,227 @@ test.describe('Tools Display', () => {
 
       await expect(nestedBlock).toContainText('Bash')
       await expect(nestedBlock).toContainText('npm run build')
+    })
+
+    // SPEC: tool:bgtask-nested-once
+    test('a tailed copy of a call already delivered live renders once, not twice', async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Run the build',
+          timestamp: 1705600000000,
+          ts: '2025-01-18T12:00:00Z',
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: 1705600002000,
+          ts: '2025-01-18T12:00:02Z',
+          tool_use_id: 'task_bg_003',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Build project',
+            prompt: 'Run npm build and report results',
+            subagent_type: 'Bash',
+            run_in_background: true,
+          },
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_result',
+          content: 'Background task started',
+          timestamp: 1705600003000,
+          ts: '2025-01-18T12:00:03Z',
+          tool_use_id: 'task_bg_003',
+          metadata: { background_task: true, output_file: '/tmp/bg_build.output' },
+          tool_use_result: {
+            isAsync: true,
+            agentId: 'agent_bg_003',
+            outputFile: '/tmp/bg_build.output',
+          },
+        },
+      ])
+
+      const taskBlockBg003 = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlockBg003).toBeVisible()
+
+      // Task collapses by default - expand to see the nested block.
+      await taskBlockBg003.locator('.tool-header-area').click()
+
+      // Live copy first, then the async task monitor's tailed copy of the SAME call.
+      await controller.sendEvents([
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          timestamp: 1705600004000,
+          ts: '2025-01-18T12:00:04Z',
+          parent_tool_use_id: 'task_bg_003',
+          tool_use_id: 'nested_bash_003',
+          tool_name: 'Bash',
+          tool_input: { command: 'npm run build' },
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          timestamp: 1705600004500,
+          ts: '2025-01-18T12:00:04.5Z',
+          parent_tool_use_id: 'task_bg_003',
+          tool_use_id: 'nested_bash_003',
+          tool_name: 'Bash',
+          tool_input: { command: 'npm run build' },
+          source_file: '/tmp/bg_build.output',
+        },
+      ])
+
+      await expect(page.locator('[data-testid="tool-block"].nested')).toHaveCount(1)
+    })
+
+    // SPEC: tool:bgtask-nested-prose
+    test("a background task's subagent narration renders in the Activity list, same as a foreground task's", async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Run the build',
+          timestamp: 1705600001000,
+          ts: '2025-01-18T12:00:01Z',
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: 1705600002000,
+          ts: '2025-01-18T12:00:02Z',
+          tool_use_id: 'task_bg_004',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Build project',
+            prompt: 'Run npm build and report results',
+            subagent_type: 'Bash',
+            run_in_background: true,
+          },
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_result',
+          content: 'Background task started',
+          timestamp: 1705600003000,
+          ts: '2025-01-18T12:00:03Z',
+          tool_use_id: 'task_bg_004',
+          metadata: { background_task: true, output_file: '/tmp/bg_build.output' },
+          tool_use_result: {
+            isAsync: true,
+            agentId: 'agent_bg_004',
+            outputFile: '/tmp/bg_build.output',
+          },
+        },
+      ])
+
+      const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlock).toBeVisible()
+
+      // Task collapses by default - expand to watch its Activity list.
+      await taskBlock.locator('.tool-header-area').click()
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'text',
+        content: 'Kicking off the build now.',
+        timestamp: 1705600004000,
+        ts: '2025-01-18T12:00:04Z',
+        parent_tool_use_id: 'task_bg_004',
+      })
+
+      await expect(taskBlock.locator('.nested-text-entry')).toHaveCount(1)
+      await expect(page.getByText('Kicking off the build now.')).toBeVisible()
+    })
+
+    // SPEC: tool:bgtask-activity-line
+    test("a background task's collapsed header shows the same activity line as a foreground task's", async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Run the build',
+          timestamp: 1705600001000,
+          ts: '2025-01-18T12:00:01Z',
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: 1705600002000,
+          ts: '2025-01-18T12:00:02Z',
+          tool_use_id: 'task_bg_005',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Build project',
+            prompt: 'Run npm build and report results',
+            subagent_type: 'Bash',
+            run_in_background: true,
+          },
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_result',
+          content: 'Background task started',
+          timestamp: 1705600003000,
+          ts: '2025-01-18T12:00:03Z',
+          tool_use_id: 'task_bg_005',
+          metadata: { background_task: true, output_file: '/tmp/bg_build.output' },
+          tool_use_result: {
+            isAsync: true,
+            agentId: 'agent_bg_005',
+            outputFile: '/tmp/bg_build.output',
+          },
+        },
+      ])
+
+      const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      await expect(taskBlock).toBeVisible()
+      await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        timestamp: 1705600004000,
+        ts: '2025-01-18T12:00:04Z',
+        parent_tool_use_id: 'task_bg_005',
+        tool_use_id: 'nested_bash_005',
+        tool_name: 'Bash',
+        tool_input: { command: 'npm run build' },
+      })
+
+      await expect(taskBlock.locator('.tool-activity')).toHaveText('Bash(npm run build)')
     })
   })
 
@@ -2896,7 +3240,7 @@ test.describe('Tools Display', () => {
       await expect(inputSection.locator('.collapsible-label')).toHaveText('Input')
 
       await expect(inputSection).toContainText('collection_name')
-      await expect(inputSection).toContainText('share')
+      await expect(inputSection).toContainText('notes')
     })
 
     // SPEC: tool:input-above-output
@@ -2992,6 +3336,138 @@ test.describe('Tools Display', () => {
       await toolBlock.locator('.tool-header').click()
 
       await expect(toolBlock.locator('.tool-input-section')).not.toBeVisible()
+    })
+  })
+
+  test.describe('MCP Content Blocks', () => {
+    // SPEC: tool:mcp-output-text
+    test('prose text block renders as text, no JSON tree', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-prose.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await toolBlock.locator('.tool-header').click()
+
+      const expanded = toolBlock.locator('.tool-expanded-content')
+      await expect(expanded).toBeVisible()
+      await expect(expanded).toContainText('Found 3 matching files in the docs directory.')
+      await expect(expanded.locator('.tool-output-section .tool-json')).toHaveCount(0)
+      await expect(expanded.locator('.markdown-preview-container')).toHaveCount(0)
+    })
+
+    // SPEC: tool:mcp-output-text
+    test('markdown text block renders as rendered markdown, no JSON tree', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-markdown.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      // Summary line unchanged: the collapsed header already previews the text.
+      await expect(toolBlock.locator('.tool-summary')).toContainText('Results')
+
+      await toolBlock.locator('.tool-header').click()
+
+      const expanded = toolBlock.locator('.tool-expanded-content')
+      await expect(expanded).toBeVisible()
+      await expect(expanded.locator('.markdown-preview-container')).toBeVisible()
+      await expect(expanded.locator('h2')).toHaveText('Results')
+      await expect(expanded.locator('li')).toHaveCount(2)
+      // The Input section's own tool-input JSON view also uses .tool-json - scope to Output.
+      await expect(expanded.locator('.tool-output-section .tool-json')).toHaveCount(0)
+    })
+
+    // SPEC: tool:mcp-output-json
+    test('text block that is itself JSON keeps the JSON tree', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-json.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await toolBlock.locator('.tool-header').click()
+
+      const expanded = toolBlock.locator('.tool-expanded-content')
+      await expect(expanded).toBeVisible()
+      const outputJson = expanded.locator('.tool-output-section .tool-json')
+      await expect(outputJson).toBeVisible()
+      await expect(outputJson).toContainText('distances')
+      await expect(expanded.locator('.markdown-preview-container')).toHaveCount(0)
+    })
+
+    // SPEC: tool:mcp-output-order
+    test('several blocks all render, in the order the result lists them', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-multiple.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await toolBlock.locator('.tool-header').click()
+
+      const blocks = toolBlock.locator('.mcp-content-blocks > *')
+      await expect(blocks).toHaveCount(2)
+      await expect(blocks.nth(0)).toContainText('first block text')
+      await expect(blocks.nth(1)).toContainText('second block text')
+    })
+
+    // SPEC: tool:mcp-output-image
+    test('image block renders as an image, not a placeholder', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-image.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await toolBlock.locator('.tool-header').click()
+
+      const image = toolBlock.locator('.mcp-image-block img')
+      await expect(image).toBeVisible()
+      const src = await image.getAttribute('src')
+      expect(src).toContain('data:image/png;base64,')
+    })
+
+    // SPEC: tool:mcp-output-link
+    test('resource link shows its name, description and uri', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-mixed.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await toolBlock.locator('.tool-header').click()
+
+      const link = toolBlock.locator('.mcp-resource-link a')
+      await expect(link).toHaveText('report.pdf')
+      await expect(link).toHaveAttribute('href', 'file:///reports/report.pdf')
+      await expect(toolBlock.locator('.mcp-resource-description')).toHaveText('Quarterly report')
+    })
+
+    // SPEC: tool:mcp-output-unviewable
+    test('audio and binary resource blocks name their media type, not an empty box', async ({
+      page,
+    }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-mixed.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await toolBlock.locator('.tool-header').click()
+
+      const unviewable = toolBlock.locator('.mcp-unviewable-block')
+      await expect(unviewable).toHaveCount(2)
+      await expect(unviewable.nth(0)).toContainText('audio/mpeg')
+      await expect(unviewable.nth(1)).toContainText('image/png')
+      await expect(unviewable.nth(1)).toContainText('file:///photo.png')
+      await expect(toolBlock.locator('audio')).toHaveCount(0)
+      await expect(toolBlock.locator('.mcp-unviewable-block img')).toHaveCount(0)
+    })
+
+    // SPEC: tool:expand-default-collapsed
+    test('MCP block result starts collapsed, same as a plain JSON result', async ({ page }) => {
+      await mockSSE(page, 'events/tool-mcp-content-blocks-markdown.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const toolBlock = page.locator('[data-testid="tool-block"]').first()
+      await expect(toolBlock).toBeVisible()
+      await expect(toolBlock.locator('.tool-expanded-content')).not.toBeVisible()
     })
   })
 
@@ -3452,8 +3928,8 @@ test.describe('Tools Display', () => {
   })
 
   test.describe('Task Execution Behavior', () => {
-    // SPEC: tool:task-expanded-default
-    test('running Task block is expanded by default', async ({ page }) => {
+    // SPEC: tool:task-collapsed-default
+    test('running Task block is collapsed by default', async ({ page }) => {
       await mockSSE(page, 'events/tool-task-running.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
@@ -3464,34 +3940,13 @@ test.describe('Tools Display', () => {
         .first()
       await expect(taskBlock).toBeVisible()
 
-      // Task is expanded by default during execution - nested tools should be visible
-      await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
-
-      await expect(taskBlock.getByText('Glob').first()).toBeVisible()
-    })
-
-    // SPEC: tool:task-collapse-count
-    test('clicking running Task header collapses it', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-running.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const taskBlock = page
-        .locator('[data-testid="tool-block"][data-tool-status="pending"]')
-        .first()
-      await expect(taskBlock).toBeVisible()
-      await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
-
-      // Click header to collapse (use .tool-header-area to avoid matching nested tool headers)
-      await taskBlock.locator('.tool-header-area').first().click()
-
+      // Collapsed by default, the same as every other tool.
       await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
-
-      await expect(taskBlock).toBeVisible()
+      await expect(taskBlock.getByText('Glob').first()).not.toBeVisible()
     })
 
     // SPEC: tool:task-click-expand
-    test('clicking collapsed Task header expands it again', async ({ page }) => {
+    test('clicking a collapsed running Task header expands it', async ({ page }) => {
       await mockSSE(page, 'events/tool-task-running.jsonl')
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
@@ -3500,16 +3955,287 @@ test.describe('Tools Display', () => {
         .locator('[data-testid="tool-block"][data-tool-status="pending"]')
         .first()
       await expect(taskBlock).toBeVisible()
+      await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
+
+      // Use .tool-header-area to avoid matching nested tool headers.
+      await taskBlock.locator('.tool-header-area').first().click()
+
+      await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
+      await expect(taskBlock.getByText('Glob').first()).toBeVisible()
+    })
+
+    // SPEC: tool:task-expand-toggle
+    test('clicking an expanded running Task header collapses it again', async ({ page }) => {
+      await mockSSE(page, 'events/tool-task-running.jsonl')
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const taskBlock = page
+        .locator('[data-testid="tool-block"][data-tool-status="pending"]')
+        .first()
+      await expect(taskBlock).toBeVisible()
+
+      await taskBlock.locator('.tool-header-area').first().click()
       await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
 
-      // Click header to collapse (use .tool-header-area to avoid matching nested tool headers)
       await taskBlock.locator('.tool-header-area').first().click()
       await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
 
+      await expect(taskBlock).toBeVisible()
+    })
+
+    // SPEC: tool:task-activity-line
+    test("a collapsed running Task's header shows the newest nested call as a status dot and title", async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Investigate the flaky test',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          tool_use_id: 'tool_act_001',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Investigate',
+            prompt: 'Find the flaky test.',
+            subagent_type: 'Explore',
+          },
+        },
+      ])
+
+      const taskBlock = page
+        .locator('[data-testid="tool-block"][data-tool-status="pending"]')
+        .first()
+      await expect(taskBlock).toBeVisible()
+      await expect(taskBlock.locator('.tool-activity')).toHaveCount(0)
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_act_001',
+        tool_use_id: 'tool_act_002',
+        tool_name: 'Bash',
+        tool_input: { command: 'pytest -k flaky' },
+      })
+
+      await expect(taskBlock.locator('.tool-activity')).toHaveText('Bash(pytest -k flaky)')
+      await expect(taskBlock.locator('.tool-result .tool-bullet')).toHaveClass(/pending/)
+    })
+
+    // SPEC: tool:task-activity-follows-newest
+    test('the activity line switches from a call to narration, then follows a later call', async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Investigate the flaky test',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          tool_use_id: 'tool_act_101',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Investigate',
+            prompt: 'Find the flaky test.',
+            subagent_type: 'Explore',
+          },
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          parent_tool_use_id: 'tool_act_101',
+          tool_use_id: 'tool_act_102',
+          tool_name: 'Bash',
+          tool_input: { command: 'pytest -k flaky' },
+        },
+      ])
+
+      const taskBlock = page
+        .locator('[data-testid="tool-block"][data-tool-status="pending"]')
+        .first()
+      const activity = taskBlock.locator('.tool-activity')
+      await expect(activity).toHaveText('Bash(pytest -k flaky)')
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'text',
+        content: 'That test fails once in three runs - looking at the fixture setup.',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_act_101',
+      })
+      await expect(activity).toHaveText(
+        'That test fails once in three runs - looking at the fixture setup.',
+      )
+      // Narration carries no status dot - only a call does.
+      await expect(taskBlock.locator('.tool-result .tool-bullet')).toHaveCount(0)
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Read',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_act_101',
+        tool_use_id: 'tool_act_103',
+        tool_name: 'Read',
+        tool_input: { file_path: 'tests/conftest.py' },
+      })
+      await expect(activity).toHaveText('Read(conftest.py)')
+    })
+
+    // SPEC: tool:task-toggle-sticky
+    test('a hand-expanded running Task stays expanded when a new nested event arrives', async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Investigate the flaky test',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          tool_use_id: 'tool_sticky_001',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Investigate',
+            prompt: 'Find the flaky test.',
+            subagent_type: 'Explore',
+          },
+        },
+      ])
+
+      const taskBlock = page
+        .locator('[data-testid="tool-block"][data-tool-status="pending"]')
+        .first()
+      await expect(taskBlock).toBeVisible()
+
       await taskBlock.locator('.tool-header-area').first().click()
       await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
 
-      await expect(taskBlock.getByText('Glob').first()).toBeVisible()
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_sticky_001',
+        tool_use_id: 'tool_sticky_002',
+        tool_name: 'Bash',
+        tool_input: { command: 'pytest -k flaky' },
+      })
+
+      await expect(taskBlock.locator('.tool-expanded-content')).toBeVisible()
+      await expect(taskBlock.getByText('Bash').first()).toBeVisible()
+    })
+
+    // SPEC: tool:task-toggle-sticky
+    test('a hand-collapsed running Task stays collapsed when a new nested event arrives', async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Investigate the flaky test',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          turn_id: 'turn_001',
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          timestamp: Date.now(),
+          ts: new Date().toISOString(),
+          tool_use_id: 'tool_sticky_101',
+          tool_name: 'Task',
+          tool_input: {
+            description: 'Investigate',
+            prompt: 'Find the flaky test.',
+            subagent_type: 'Explore',
+          },
+        },
+      ])
+
+      const taskBlock = page
+        .locator('[data-testid="tool-block"][data-tool-status="pending"]')
+        .first()
+      await expect(taskBlock).toBeVisible()
+      await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
+
+      // Expand, then collapse by hand - back to the default state, but now user-driven.
+      await taskBlock.locator('.tool-header-area').first().click()
+      await taskBlock.locator('.tool-header-area').first().click()
+      await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
+
+      await controller.sendEvent({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        timestamp: Date.now(),
+        ts: new Date().toISOString(),
+        parent_tool_use_id: 'tool_sticky_101',
+        tool_use_id: 'tool_sticky_102',
+        tool_name: 'Bash',
+        tool_input: { command: 'pytest -k flaky' },
+      })
+
+      await expect(taskBlock.locator('.tool-expanded-content')).not.toBeVisible()
+      await expect(taskBlock.locator('.tool-activity')).toHaveText('Bash(pytest -k flaky)')
     })
 
     // SPEC: tool:task-spinner-align

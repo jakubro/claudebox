@@ -1,0 +1,34 @@
+/* Work panel column - mirrors .terminal-column's own scroll/inset shape */
+
+.work-column {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+/* Reserve space for the pinned overview so entries don't run underneath it - mirrors
+   .terminal-column.minimap-pinned and .chat-messages.minimap-pinned. */
+.work-column.minimap-pinned {
+  padding-right: calc(24px + 1rem);
+}
+
+.work-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.work-entries {
+  position: relative;
+  width: 100%;
+}
+
+.work-entry-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}

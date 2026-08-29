@@ -1,12 +1,16 @@
 """Tests for claudebox.core.http - HTTP proxy client."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from starlette.requests import Request
 
+from claudebox.core import serialization
+from claudebox.core.broadcaster import CLOSED
 from claudebox.core.http import (
+    BroadcastEventSourceResponse,
     JSONResponse,
     ProxyBufferedResponse,
     ProxyClient,
@@ -398,6 +402,62 @@ class TestProxyClientClose:
         client._client.aclose = AsyncMock()
         await client.close()
         client._client.aclose.assert_awaited_once()
+
+
+# --- BroadcastEventSourceResponse ---
+
+
+class TestBroadcastEventSourceStream:
+    """Test the subscribe/yield/unsubscribe generator underlying the SSE response."""
+
+    @pytest.mark.anyio
+    async def test_subscribes_with_no_kwargs_by_default(self):
+        queue = asyncio.Queue()
+        await queue.put(CLOSED)
+        broadcaster = MagicMock()
+        broadcaster.subscribe = AsyncMock(return_value=("sub-1", queue))
+        broadcaster.unsubscribe = AsyncMock()
+
+        async for _event in BroadcastEventSourceResponse._stream(broadcaster):
+            pass
+
+        broadcaster.subscribe.assert_awaited_once_with()
+
+    @pytest.mark.anyio
+    async def test_forwards_subscribe_kwargs(self):
+        """The no-replay attach: a caller passes replay=False through to subscribe()."""
+
+        queue = asyncio.Queue()
+        await queue.put(CLOSED)
+        broadcaster = MagicMock()
+        broadcaster.subscribe = AsyncMock(return_value=("sub-1", queue))
+        broadcaster.unsubscribe = AsyncMock()
+
+        async for _event in BroadcastEventSourceResponse._stream(
+            broadcaster,
+            subscribe_kwargs={"replay": False},
+        ):
+            pass
+
+        broadcaster.subscribe.assert_awaited_once_with(replay=False)
+
+    @pytest.mark.anyio
+    async def test_yields_events_and_stops_on_closed_sentinel(self):
+        queue = asyncio.Queue()
+        await queue.put({"id": "e1"})
+        await queue.put({"id": "e2"})
+        await queue.put(CLOSED)
+        broadcaster = MagicMock()
+        broadcaster.subscribe = AsyncMock(return_value=("sub-1", queue))
+        broadcaster.unsubscribe = AsyncMock()
+
+        yielded = [event async for event in BroadcastEventSourceResponse._stream(broadcaster)]
+
+        assert [e["data"] for e in yielded] == [
+            serialization.dumps({"id": "e1"}),
+            serialization.dumps({"id": "e2"}),
+        ]
+        broadcaster.unsubscribe.assert_awaited_once_with("sub-1")
 
 
 # --- http_serve ---

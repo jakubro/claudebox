@@ -8,6 +8,8 @@ import { getSummaryText, getToolStatus } from '../utils/toolResultFormatters'
 /**
  * @param {string} props.header - Formatted header text (e.g., 'Read(file.txt)').
  * @param {string} [props.editorUrl] - Resolved "open in editor" URI; omit to hide the affordance.
+ * @param {Object} [props.activity] - What to draw beside the spinner while pending: `{kind: 'call',
+ *   status, title}` or `{kind: 'text', text}`. Absent for every tool but a running Task.
  * @param {Object} props.toolStatus - Grouped status object.
  * @param {Object} [props.toolStatus.taskNotification] - Background task notification with status.
  * @param {boolean} [props.toolStatus.isTaskOutputKilled] - Whether TaskOutput's sync result reports killed.
@@ -22,6 +24,7 @@ export default function ToolBlockHeader({
   hasExpandable,
   onToggle,
   editorUrl = null,
+  activity = null,
   toolStatus,
 }) {
   const {
@@ -72,6 +75,19 @@ export default function ToolBlockHeader({
         {isPending ? (
           <span className="tool-pending">
             <Loader2 size={12} className="spinner" />
+            {activity?.kind === 'call' && (
+              <>
+                <span className={`tool-bullet ${activity.status}`}>●</span>
+                <span className="tool-activity" title={activity.title}>
+                  {activity.title}
+                </span>
+              </>
+            )}
+            {activity?.kind === 'text' && (
+              <span className="tool-activity" title={activity.text}>
+                {activity.text}
+              </span>
+            )}
           </span>
         ) : (
           <span className={`tool-summary ${isError ? 'error' : ''}`} title={summary || undefined}>

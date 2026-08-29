@@ -19,28 +19,30 @@ vi.mock('../context/DaemonStreamContext', () => ({
   useDaemonStreamContext: () => mockStream,
 }))
 
+const mockGetContainer = vi.fn()
+vi.mock('../api/containers', () => ({
+  getContainer: (...args) => mockGetContainer(...args),
+}))
+
 describe('useCurrentBackendId', () => {
   beforeEach(() => {
     mockEvents.containerId = null
     mockWorkspace.workspaceId = null
     mockStream.lastContainerEvent = null
-    global.fetch = vi.fn()
+    mockGetContainer.mockReset()
   })
 
   it('stays null when there is no workspace or container attached', () => {
     const { result } = renderHook(() => useCurrentBackendId())
 
     expect(result.current).toBeNull()
-    expect(global.fetch).not.toHaveBeenCalled()
+    expect(mockGetContainer).not.toHaveBeenCalled()
   })
 
   it('resolves the backend id once workspace and container are both set', async () => {
     mockWorkspace.workspaceId = 'ws-1'
     mockEvents.containerId = 'c-1'
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ backend_id: 'backend-abc' }),
-    })
+    mockGetContainer.mockResolvedValue({ backend_id: 'backend-abc' })
 
     const { result } = renderHook(() => useCurrentBackendId())
 
@@ -48,40 +50,39 @@ describe('useCurrentBackendId', () => {
       expect(result.current).toBe('backend-abc')
     })
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/workspaces/ws-1/containers/c-1')
+    expect(mockGetContainer).toHaveBeenCalledWith('c-1', { signal: expect.any(AbortSignal) })
   })
 
-  it('does not parse the response body when the fetch response is not ok', async () => {
+  it('aborts the in-flight lookup when the container changes', async () => {
     mockWorkspace.workspaceId = 'ws-1'
     mockEvents.containerId = 'c-1'
-    const jsonSpy = vi.fn()
-    global.fetch.mockResolvedValue({ ok: false, json: jsonSpy })
+    mockGetContainer.mockReturnValue(new Promise(() => {}))
 
-    renderHook(() => useCurrentBackendId())
+    const { rerender } = renderHook(() => useCurrentBackendId())
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled()
+      expect(mockGetContainer).toHaveBeenCalledTimes(1)
     })
-    // Let the resolved-fetch promise chain run past the ok-check.
-    await new Promise(resolve => setTimeout(resolve, 0))
+    const { signal } = mockGetContainer.mock.calls[0][1]
+    expect(signal.aborted).toBe(false)
 
-    expect(jsonSpy).not.toHaveBeenCalled()
+    mockEvents.containerId = 'c-2'
+    rerender()
+
+    expect(signal.aborted).toBe(true)
   })
 
-  it('falls back to null when a subsequent fetch rejects', async () => {
+  it('falls back to null when a subsequent lookup rejects', async () => {
     mockWorkspace.workspaceId = 'ws-1'
     mockEvents.containerId = 'c-1'
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ backend_id: 'backend-abc' }),
-    })
+    mockGetContainer.mockResolvedValueOnce({ backend_id: 'backend-abc' })
 
     const { result, rerender } = renderHook(() => useCurrentBackendId())
     await waitFor(() => {
       expect(result.current).toBe('backend-abc')
     })
 
-    global.fetch.mockRejectedValueOnce(new Error('network down'))
+    mockGetContainer.mockRejectedValueOnce(new Error('network down'))
     mockEvents.containerId = 'c-2'
     rerender()
 
@@ -93,10 +94,7 @@ describe('useCurrentBackendId', () => {
   it('resets to null when the container detaches', async () => {
     mockWorkspace.workspaceId = 'ws-1'
     mockEvents.containerId = 'c-1'
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ backend_id: 'backend-abc' }),
-    })
+    mockGetContainer.mockResolvedValue({ backend_id: 'backend-abc' })
 
     const { result, rerender } = renderHook(() => useCurrentBackendId())
     await waitFor(() => {

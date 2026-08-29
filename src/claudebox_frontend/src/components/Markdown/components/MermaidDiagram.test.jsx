@@ -277,7 +277,7 @@ describe('MermaidDiagram', () => {
       fireEvent.click(container.querySelector('.mermaid-diagram'))
 
       expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
-      expect(document.body.querySelector('.mermaid-zoom-content').innerHTML).toBe(RENDERED_SVG)
+      expect(document.body.querySelector('.mermaid-zoom-inner').innerHTML).toBe(RENDERED_SVG)
     })
 
     it('closes zoom overlay on close button click', async () => {

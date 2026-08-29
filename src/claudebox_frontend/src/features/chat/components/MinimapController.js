@@ -1,11 +1,12 @@
-/** Pure controller for minimap position, visibility, and drag state. */
+/** Pure controller for minimap position, visibility, and drag state - shared by both overviews. */
 
 import {
+  AUTOSCROLL_THRESHOLD,
   MINIMAP_AUTO_HIDE_DELAY,
   MINIMAP_MIN_THUMB_HEIGHT,
   MINIMAP_MOUSE_LEAVE_DELAY,
   MINIMAP_PROXIMITY_THRESHOLD,
-} from '../../../../config/dimensions'
+} from '../../../config/dimensions'
 
 export default class MinimapController {
   constructor({ onViewportChange, onVisibilityChange }) {
@@ -19,9 +20,10 @@ export default class MinimapController {
     this._containerEl = null
     this._mapEl = null
     this._hideTimeout = null
-    this._autoScrollEnabledRef = null
+    this._getAutoScrollEnabled = null
     this._resizeObserver = null
     this._getLogicalScrollHeight = null
+    this._onScrollLanding = null
     this._handleScroll = this._onScroll.bind(this)
     this._handlePointerMove = this._onPointerMove.bind(this)
   }
@@ -34,13 +36,27 @@ export default class MinimapController {
     return this._visible
   }
 
-  /** Attach scroll, resize, and proximity listeners. */
-  attach(containerEl, mapEl, autoScrollEnabledRef = null, getLogicalScrollHeight = null) {
+  /**
+   * Attach scroll, resize, and proximity listeners.
+   *
+   * @param {function} [getAutoScrollEnabled] - Getter for the owning column's autoscroll state; a
+   *   getter, not a ref, so a hook exposing only a value can still be read here.
+   * @param {function} [onScrollLanding] - Fired after a click or drag-release with whether the
+   *   write landed at the bottom. Omit to leave the scroll owner untouched.
+   */
+  attach(
+    containerEl,
+    mapEl,
+    getAutoScrollEnabled = null,
+    getLogicalScrollHeight = null,
+    onScrollLanding = null,
+  ) {
     this.detach()
     this._containerEl = containerEl
     this._mapEl = mapEl
-    this._autoScrollEnabledRef = autoScrollEnabledRef
+    this._getAutoScrollEnabled = getAutoScrollEnabled
     this._getLogicalScrollHeight = getLogicalScrollHeight
+    this._onScrollLanding = onScrollLanding
     if (!containerEl) {
       return
     }
@@ -65,8 +81,9 @@ export default class MinimapController {
     this._clearHideTimeout()
     this._containerEl = null
     this._mapEl = null
-    this._autoScrollEnabledRef = null
+    this._getAutoScrollEnabled = null
     this._getLogicalScrollHeight = null
+    this._onScrollLanding = null
   }
 
   /** Show minimap and start auto-hide timer (unless persistent or dragging). */
@@ -110,6 +127,7 @@ export default class MinimapController {
     const ratio = clickY / mapHeight
     const targetScroll = ratio * container.scrollHeight
     container.scrollTo({ top: targetScroll, behavior: 'smooth' })
+    this._notifyLanding(targetScroll, container)
   }
 
   /** Begin drag-to-scroll. Returns cleanup function. */
@@ -124,17 +142,22 @@ export default class MinimapController {
     this._clearHideTimeout()
     this._setVisible(true)
 
+    let lastTargetScroll = 0
     const handleDrag = moveEvent => {
       const rect = map.getBoundingClientRect()
       const clickY = moveEvent.clientY - rect.top
       const ratio = Math.max(0, Math.min(1, clickY / rect.height))
-      container.scrollTop = ratio * (container.scrollHeight - container.clientHeight)
+      lastTargetScroll = ratio * (container.scrollHeight - container.clientHeight)
+      container.scrollTop = lastTargetScroll
     }
 
+    // Notified once on release, not per move - a transition on every pointermove would thrash
+    // the owning column's indicator for the whole gesture.
     const handleUp = () => {
       this._dragging = false
       document.removeEventListener('pointermove', handleDrag)
       document.removeEventListener('pointerup', handleUp)
+      this._notifyLanding(lastTargetScroll, container)
       if (!this._persistent) {
         this._scheduleHide(MINIMAP_AUTO_HIDE_DELAY)
       }
@@ -168,9 +191,18 @@ export default class MinimapController {
 
   // --- Private ---
 
+  /** Report whether a click/drag write landed within autoscroll range of the bottom. */
+  _notifyLanding(targetScroll, container) {
+    if (!this._onScrollLanding) {
+      return
+    }
+    const maxScroll = container.scrollHeight - container.clientHeight
+    this._onScrollLanding(targetScroll >= maxScroll - AUTOSCROLL_THRESHOLD)
+  }
+
   _onScroll() {
     this._updateViewport()
-    if (!this._autoScrollEnabledRef?.current || this._streaming) {
+    if (!this._getAutoScrollEnabled?.() || this._streaming) {
       this.show()
     }
   }
@@ -212,14 +244,14 @@ export default class MinimapController {
     if (nativeScrollHeight <= clientHeight) {
       newViewport = { top: 0, height: mapHeight }
     } else {
-      // Size uses logical scrollHeight (cached turn heights) for jitter resistance: off-screen turns
-      // toggle intrinsic-vs-real size under content-visibility:auto.
+      // Size uses logical scrollHeight (cached turn heights) for jitter resistance: off-screen
+      // turns toggle intrinsic-vs-real size under content-visibility:auto.
       const viewportHeight = Math.max(
         MINIMAP_MIN_THUMB_HEIGHT,
         (clientHeight / logicalScrollHeight) * mapHeight,
       )
-      // Position uses native scrollHeight, which caps scrollTop at (nativeScrollHeight - clientHeight).
-      // Math.min guards against fractional rounding.
+      // Position uses native scrollHeight, which caps scrollTop at (nativeScrollHeight -
+      // clientHeight). Math.min guards against fractional rounding.
       const positionRange = nativeScrollHeight - clientHeight
       const trackRange = Math.max(0, mapHeight - viewportHeight)
       const ratio = positionRange > 0 ? Math.min(1, scrollTop / positionRange) : 0

@@ -7,9 +7,7 @@ import { LIVE_TICK_INTERVAL_MS } from '../../config/timing'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useEvents } from '../../context/EventsContext'
 import { extractTasks } from '../../utils/eventProcessing'
-import { MOUNT_FRAMES, pollFrames } from '../../utils/mountTurn'
 import TaskEntry from './components/task-entry'
-import { findVisibleToolBlock, jumpToTask } from './utils/taskScroll'
 
 const FILTERS = [
   { id: TaskStatus.RUNNING, label: 'Active' },
@@ -18,13 +16,7 @@ const FILTERS = [
 
 export default function TasksPanel() {
   const { events, taskNotifications, isResuming, isReplaying } = useEvents()
-  const {
-    focusChatTab,
-    scrollToTurnRef,
-    expandTurnRef,
-    markUserIntentRef,
-    markProgrammaticScrollRef,
-  } = useAppActions()
+  const { focusChatTab, jumpToTaskRef } = useAppActions()
   const [filter, setFilter] = useState('running')
   const [now, setNow] = useState(Date.now())
 
@@ -57,47 +49,13 @@ export default function TasksPanel() {
     return c
   }, [allTasks])
 
+  // jumpToTaskRef resolves the landing column from the active view; the panel just hands off.
   const handleTaskClick = useCallback(
     task => {
       focusChatTab()
-
-      requestAnimationFrame(() => {
-        // Expanding and jumping are independent - a task may need either, both, or neither.
-        const proceed = () => {
-          if (task.turnId) {
-            expandTurnRef.current?.(task.turnId)
-          }
-          pollFrames(
-            MOUNT_FRAMES,
-            () => findVisibleToolBlock(task.id),
-            el => {
-              if (el) {
-                jumpToTask(el, { markUserIntentRef, markProgrammaticScrollRef })
-              }
-            },
-          )
-        }
-
-        // Fast path: a running task's turn is never windowed or collapsed, so it's mounted.
-        if (document.querySelector(`[data-tool-use-id="${CSS.escape(String(task.id))}"]`)) {
-          proceed()
-          return
-        }
-
-        // Windowed out, turn id known: mount it first via the ref ChatPanel publishes.
-        if (task.turnId && scrollToTurnRef.current) {
-          scrollToTurnRef.current(task.turnId, turnEl => {
-            if (turnEl) {
-              proceed()
-            }
-          })
-          return
-        }
-
-        // Unresolvable (no turn id, or absent from the historical array): no crash, no jump.
-      })
+      requestAnimationFrame(() => jumpToTaskRef.current?.(task))
     },
-    [focusChatTab, expandTurnRef, scrollToTurnRef, markUserIntentRef, markProgrammaticScrollRef],
+    [focusChatTab, jumpToTaskRef],
   )
 
   if (isResuming || isReplaying) {

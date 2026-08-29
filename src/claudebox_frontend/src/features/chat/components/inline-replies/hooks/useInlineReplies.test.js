@@ -30,6 +30,8 @@ describe('useInlineReplies', () => {
       suffix: ' after',
       offset: 42,
       response: '',
+      threadSessionId: null,
+      promotedSessionId: null,
     })
   })
 
@@ -90,5 +92,55 @@ describe('useInlineReplies', () => {
       },
     ])
     expect(result.current.unsent).toHaveLength(0)
+  })
+
+  it('links a promoted session id without touching the reply text', () => {
+    const { result } = renderHook(() => useInlineReplies('s1'))
+    act(() => result.current.add({ text: 'q', turnId: 't1', from: 'user' }))
+    const id = result.current.unsent[0].id
+    act(() => result.current.linkThreadSession(id, 'side-1'))
+    act(() => result.current.editReply(id, 'and this one?'))
+
+    act(() => result.current.linkPromotedSession(id, 'promoted-1'))
+
+    expect(result.current.unsent[0]).toMatchObject({
+      threadSessionId: 'side-1',
+      promotedSessionId: 'promoted-1',
+      response: 'and this one?',
+    })
+  })
+
+  it('marks a thread rail-promoted without touching its session link or text', () => {
+    const { result } = renderHook(() => useInlineReplies('s1'))
+    act(() => result.current.add({ text: 'q', turnId: 't1', from: 'user' }))
+    const id = result.current.unsent[0].id
+    act(() => result.current.linkThreadSession(id, 'side-1'))
+
+    expect(result.current.unsent[0].railPromoted).toBe(false)
+
+    act(() => result.current.linkRailPromotion(id))
+
+    expect(result.current.unsent[0]).toMatchObject({
+      threadSessionId: 'side-1',
+      railPromoted: true,
+      promotedSessionId: null,
+    })
+  })
+
+  it('keeps a rail-promoted thread in the buffer across a send, like any other thread-linked reply', () => {
+    const { result } = renderHook(() => useInlineReplies('s1'))
+    act(() => {
+      result.current.add({ text: 'q1', turnId: 't1', from: 'user' })
+      result.current.add({ text: 'q2', turnId: 't2', from: 'assistant' })
+    })
+    const [ordinary, threaded] = result.current.unsent
+    act(() => result.current.editReply(ordinary.id, 'batched reply'))
+    act(() => result.current.linkThreadSession(threaded.id, 'side-1'))
+    act(() => result.current.linkRailPromotion(threaded.id))
+
+    act(() => result.current.markSent())
+
+    expect(result.current.unsent).toHaveLength(1)
+    expect(result.current.unsent[0]).toMatchObject({ id: threaded.id, railPromoted: true })
   })
 })

@@ -268,4 +268,78 @@ describe('ToolBlockHeader', () => {
       openSpy.mockRestore()
     })
   })
+
+  describe('activity line (pending Task)', () => {
+    it('renders no activity content when activity is absent - a bare spinner, like any other tool', () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, isPending: true }}
+        />,
+      )
+
+      expect(document.querySelector('.spinner')).toBeInTheDocument()
+      expect(document.querySelector('.tool-activity')).not.toBeInTheDocument()
+    })
+
+    it('renders a call activity as a status dot plus title', () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, isPending: true }}
+          activity={{ kind: 'call', status: 'pending', title: 'Bash(check pytest status)' }}
+        />,
+      )
+
+      const activity = screen.getByText('Bash(check pytest status)')
+      expect(activity).toHaveClass('tool-activity')
+      // Scoped to .tool-result - the main header carries its own .tool-bullet for the Task itself.
+      const bullets = document.querySelectorAll('.tool-result .tool-bullet')
+      expect(bullets).toHaveLength(1)
+      expect(bullets[0]).toHaveClass('pending')
+    })
+
+    it("a completed call activity carries the completed dot, distinct from the Task's own pending bullet", () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, isPending: true }}
+          activity={{ kind: 'call', status: 'completed', title: 'Read(config.json)' }}
+        />,
+      )
+
+      const bullets = document.querySelectorAll('.tool-result .tool-bullet')
+      expect(bullets).toHaveLength(1)
+      expect(bullets[0]).toHaveClass('completed')
+      // The Task's own bullet stays pending even though the nested call completed.
+      expect(document.querySelector('.tool-header .tool-bullet')).toHaveClass('pending')
+    })
+
+    it('renders a text activity as a single line, no status dot', () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, isPending: true }}
+          activity={{ kind: 'text', text: 'The parser is split across two files; reading both.' }}
+        />,
+      )
+
+      expect(screen.getByText('The parser is split across two files; reading both.')).toHaveClass(
+        'tool-activity',
+      )
+      expect(document.querySelectorAll('.tool-result .tool-bullet')).toHaveLength(0)
+    })
+
+    it('does not render an activity when not pending, even if provided', () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, isPending: false }}
+          activity={{ kind: 'text', text: 'Should not show - the block is no longer pending' }}
+        />,
+      )
+
+      expect(document.querySelector('.tool-activity')).not.toBeInTheDocument()
+    })
+  })
 })

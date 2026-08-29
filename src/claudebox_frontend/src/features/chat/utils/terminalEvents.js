@@ -1,12 +1,12 @@
 /** Pure derivations for the terminal column - session-wide top-level Bash call/result pairing. */
 
-import { normalizeToolName, ToolName } from '../../../config/schema'
 import { isHumanEvent } from '../../../utils/eventPredicates'
-import { indexEvents } from '../../../utils/eventProcessing'
+import { indexEvents, isTopLevelBashCall } from '../../../utils/eventProcessing'
 
 /**
  * Top-level Bash calls paired with their results, in arrival order; pairing from `indexEvents`.
- * Nested (subagent) and non-Bash calls are excluded, as `groupBlocks`'s `hideShellCalls` does.
+ * Nested (subagent) and non-Bash calls are excluded, via the same predicate `groupBlocks` routes
+ * blocks with - this column and the turn's own routing can never disagree about what left.
  * A tool_use carries no `turn_id` - only the turn-opening human event does - so the most recent
  * human `turn_id` applies to every following event.
  */
@@ -23,10 +23,7 @@ export function deriveTerminalEntries(events) {
     if (event.subtype !== 'tool_use') {
       continue
     }
-    if (event.parent_tool_use_id) {
-      continue
-    }
-    if (normalizeToolName(event.content) !== ToolName.BASH) {
+    if (!isTopLevelBashCall(event)) {
       continue
     }
     entries.push({
@@ -36,6 +33,9 @@ export function deriveTerminalEntries(events) {
       description: event.tool_input?.description || null,
       command: event.tool_input?.command ?? '',
       result: toolResults.get(event.tool_use_id) ?? null,
+      // The call's own original timestamp (not arrival time) - the overview derives duration as
+      // result.ts minus this, so it must be the tool_use event's own `ts`, never `event.timestamp`.
+      callTs: event.ts ?? null,
     })
   }
 

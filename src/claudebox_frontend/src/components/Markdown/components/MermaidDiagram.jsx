@@ -13,6 +13,7 @@ import {
 } from '../../../utils/mermaidLoader'
 import CopyButton from '../../CopyButton.jsx'
 import ZoomOverlay from '../../ZoomOverlay.jsx'
+import MermaidZoomViewport from './MermaidZoomViewport.jsx'
 
 // Prefix for the failure notice - the specific reason (mermaid's own error message), when present, follows it.
 const MERMAID_FAILURE_PREFIX = 'Diagram failed to draw'
@@ -32,6 +33,12 @@ function MermaidDiagram({ chart }) {
   const renderRef = useRef(null)
   const reactId = useId()
   const renderIdRef = useRef(0)
+  // Set by a drag that ends over the backdrop, so the click that follows a drag-release is told
+  // apart from a real click - the pointer owns this, not the backdrop (see handleBackdropClick).
+  const zoomDraggedRef = useRef(false)
+  // Populated by the viewport itself; the keydown listener below drives it rather than owning a
+  // second listener or the zoom/pan state, which lives in the viewport so a reopen resets it.
+  const zoomControlsRef = useRef(null)
 
   useEffect(() => {
     // A remounted instance restores immediately - no loading placeholder, no redraw.
@@ -86,22 +93,57 @@ function MermaidDiagram({ chart }) {
   const handleZoomOpen = useCallback(() => setZoomed(true), [])
   const handleZoomClose = useCallback(() => setZoomed(false), [])
 
-  // Document-level Escape listener - div onKeyDown requires focus which overlay doesn't have
+  // Document-level listener - div onKeyDown needs focus the overlay never has. Zoom/pan keys
+  // reach the viewport through zoomControlsRef and are consumed, so the page behind never scrolls.
   useEffect(() => {
     if (!zoomed) {
       return
     }
     const onKeyDown = e => {
-      if (e.key === 'Escape') {
-        handleZoomClose()
+      switch (e.key) {
+        case 'Escape':
+          handleZoomClose()
+          return
+        case '+':
+        case '=':
+          e.preventDefault()
+          zoomControlsRef.current?.zoomIn()
+          return
+        case '-':
+          e.preventDefault()
+          zoomControlsRef.current?.zoomOut()
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          zoomControlsRef.current?.panUp()
+          return
+        case 'ArrowDown':
+          e.preventDefault()
+          zoomControlsRef.current?.panDown()
+          return
+        case 'ArrowLeft':
+          e.preventDefault()
+          zoomControlsRef.current?.panLeft()
+          return
+        case 'ArrowRight':
+          e.preventDefault()
+          zoomControlsRef.current?.panRight()
+          return
+        default:
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [zoomed, handleZoomClose])
 
+  // A drag that ends over the backdrop still fires a click there - the pointer marks it via
+  // zoomDraggedRef so this reads it as a drag-release, not the click that closes the overlay.
   const handleBackdropClick = useCallback(
     e => {
+      if (zoomDraggedRef.current) {
+        zoomDraggedRef.current = false
+        return
+      }
       if (e.target === e.currentTarget) {
         handleZoomClose()
       }
@@ -178,10 +220,10 @@ function MermaidDiagram({ chart }) {
       {zoomed &&
         createPortal(
           <ZoomOverlay onBackdropClick={handleBackdropClick} onClose={handleZoomClose}>
-            <div
-              className="mermaid-zoom-content"
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: mermaid SVG output is sanitized by strict security level
-              dangerouslySetInnerHTML={{ __html: svg }}
+            <MermaidZoomViewport
+              svg={svg}
+              draggedRef={zoomDraggedRef}
+              controlsRef={zoomControlsRef}
             />
           </ZoomOverlay>,
           document.body,

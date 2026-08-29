@@ -21,11 +21,15 @@
   font-size: 12px;
 }
 
+/* Offset matches .tool-bullet's own shape (ToolBlockHeader.css) - the precedent for this
+   correction, copied rather than reinvented; box/weight are this rule's own, unchanged. */
 .todo-icon {
   flex-shrink: 0;
   font-weight: 600;
   width: 14px;
   text-align: center;
+  position: relative;
+  top: -1px;
 }
 
 .todo-content {

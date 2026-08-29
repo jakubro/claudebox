@@ -5,14 +5,12 @@
   margin: 0 0 4px;
 }
 
-/* Local command output blocks */
+/* Local command output blocks. Surface (background/padding/radius) lives on the message
+   container (.chat-message-user in Turn.css) - this only arranges its own segments. */
 .message-content-with-commands {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #424245;
-  padding: 8px 12px;
-  border-radius: 6px;
 }
 
 /* Slash commands: bold always; resolved adds a dotted underline + pointer cursor (hover card affordance). */

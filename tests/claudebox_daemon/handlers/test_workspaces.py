@@ -51,7 +51,7 @@ def test_session_defaults_returns_framework_constants():
     assert body["runtime_name"] == "Claude"
     assert body["editor_url_template"] is None
     assert body["rate_limits"] == []
-    assert len(body["capabilities"]) == 16
+    assert len(body["capabilities"]) == 15
     assert body["capabilities"]["supports_models"] is True
     assert body["model"] == ClaudeRuntime.DEFAULT_MODEL
     assert body["permission_mode"] == ClaudeRuntime.DEFAULT_PERMISSION_MODE

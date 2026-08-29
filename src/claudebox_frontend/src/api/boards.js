@@ -1,5 +1,6 @@
 /** Board API client - workspace-scoped board CRUD operations. */
 
+import { FETCH_TIMEOUT_SESSION_LIFECYCLE_MS } from '../config/timing'
 import { workspaceFetch } from './apiClient'
 
 /** List all discovered boards in the workspace. */
@@ -76,10 +77,14 @@ export async function archiveTicket(boardId, ticketPath) {
 
 /** Batch assign tickets to new sessions. */
 export async function assignTickets(boardId, tickets, { parallel = true } = {}) {
+  // The daemon spawns one session per ticket in sequence when parallel, one shared session
+  // otherwise, so the bound scales with the number of spawns rather than the number of requests.
+  const spawns = parallel ? Math.max(tickets.length, 1) : 1
   const res = await workspaceFetch(`/boards/${boardId}/assign`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tickets, parallel }),
+    timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS * spawns,
   })
   if (!res.ok) {
     throw new Error('Failed to assign tickets')

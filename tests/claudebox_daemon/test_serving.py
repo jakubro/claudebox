@@ -25,7 +25,7 @@ class TestStartupBanner:
             "version": "(unknown)",
             "branch": "v51",
             "commit": "76a76a9",
-            "path": Path("/home/jakub/dev/share/lib/claudebox"),
+            "path": Path("/opt/example/lib/claudebox"),
             "python": "3.12.11",
         }
 
@@ -35,7 +35,7 @@ class TestStartupBanner:
         assert "PosixPath" not in banner
         assert "{'" not in banner
         assert "v51 (76a76a9)" in banner
-        assert "/home/jakub/dev/share/lib/claudebox" in banner
+        assert "/opt/example/lib/claudebox" in banner
 
 
 class TestBackendPort:

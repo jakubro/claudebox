@@ -1,9 +1,13 @@
 #!/bin/bash
-# Installs the agent CLI and LangGraph deps; --update reruns just this layer, skipping a full --rebuild.
+# Installs the agent CLI and LangGraph deps; `build --layer agent` reruns just this layer.
 set -euo pipefail
 
 # Install Claude Code CLI
-mkdir -p ~/.claude
+mkdir -p ~/.claude ~/.config/mise/conf.d
+cat > ~/.config/mise/conf.d/claude-code.toml <<'EOF'
+[tools]
+"npm:@anthropic-ai/claude-code" = { version = "latest", allow_builds = ["@anthropic-ai/claude-code"] }
+EOF
 mise install \
   npm:@anthropic-ai/claude-code
 

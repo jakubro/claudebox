@@ -11,14 +11,13 @@
   backdrop-filter: blur(4px);
 }
 
-.zoom-overlay-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
+/* Shared with the mermaid overlay's own zoom/pan/fit buttons (MermaidDiagram.css) - each keeps
+   only its own sizing (icon-sized close button vs. the fixed-size .mermaid-zoom-btn cluster). */
+.zoom-overlay-close,
+.mermaid-zoom-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -29,6 +28,14 @@
     background 0.15s;
 }
 
-.zoom-overlay-close:hover {
+.zoom-overlay-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 6px;
+}
+
+.zoom-overlay-close:hover,
+.mermaid-zoom-btn:hover:not(:disabled) {
   background: var(--bg-secondary);
 }

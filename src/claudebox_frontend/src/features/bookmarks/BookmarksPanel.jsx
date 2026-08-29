@@ -32,7 +32,8 @@ export default function BookmarksPanel() {
   const { workspaceId } = useWorkspace()
   const { sessions } = useSessionsList()
   const { deriveSessionStatus } = useContainerMap()
-  const { markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef } = useAppActions()
+  const { markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef, focusedGroupRootRef } =
+    useAppActions()
 
   // Brief flash on click - window.open paints with no visible feedback (openSessionInNewTab is sync).
   const [openingKey, setOpeningKey] = useState(null)
@@ -101,7 +102,11 @@ export default function BookmarksPanel() {
         if (!target) {
           target = turnContainer.querySelector('[data-testid="message-assistant"]') || turnContainer
         }
-        const scrollContainer = document.querySelector('[data-testid="chat-messages"]')
+        // Scoped to the focused rail group - with an ancestor mounted alongside, an unscoped
+        // query would risk resolving to its identically-testid'd scroll container instead.
+        const scrollContainer = (focusedGroupRootRef.current ?? document).querySelector(
+          '[data-testid="chat-messages"]',
+        )
         if (scrollContainer) {
           // Mirrors ChatController's autoscroll gate: disengage synchronously if the view won't
           // end at-bottom, so the next streaming tick won't yank it back.
@@ -122,7 +127,7 @@ export default function BookmarksPanel() {
         }
       })
     },
-    [markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef],
+    [markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef, focusedGroupRootRef],
   )
 
   const handleAllBookmarkClick = useCallback(

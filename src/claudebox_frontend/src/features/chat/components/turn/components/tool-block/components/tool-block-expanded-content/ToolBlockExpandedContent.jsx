@@ -10,7 +10,9 @@ import { hasDiffItems } from '../../../../../../../../utils/todoDiff'
 import { useTurn } from '../../../../hooks/useTurn'
 import SystemReminders from '../../../SystemReminders'
 import CollapsibleSection from './components/CollapsibleSection'
+import McpContentBlocks from './components/McpContentBlocks'
 import NestedContent from './components/NestedContent'
+import NestedTextEntry from './components/NestedTextEntry'
 import NestedToolWrapper from './components/NestedToolWrapper'
 import PersistedOutputContent from './components/PersistedOutputContent'
 import QuestionsDisplay from './components/QuestionsDisplay'
@@ -27,7 +29,8 @@ import { SyntaxHighlightedCodeBlock } from './components/tool-content-renderer/c
  * @param {Object} props.contentData - Grouped content data object.
  * @param {Object} [props.contentData.persistedOutput] - Persisted output info with fileSize and previewSize.
  * @param {Object} [props.toolInput] - Raw tool input for unhandled tools (null for handled tools).
- * @param {Array} props.nestedBlocks - Array of nested tool use/result pairs.
+ * @param {Array} props.nestedBlocks - Nested subagent blocks: `{kind: 'tool', toolUse, toolResult}`
+ *   or `{kind: 'text', event}`.
  * @param {string} [props.toolUseId] - Tool use ID for persisted output lookup.
  * @param {number} [props.lineOffset] - Starting line number for Edit tool diffs.
  */
@@ -48,6 +51,7 @@ export default function ToolBlockExpandedContent({
   const {
     details,
     jsonData,
+    contentBlocks,
     skillContent,
     questions,
     plan,
@@ -62,9 +66,10 @@ export default function ToolBlockExpandedContent({
   const isTask = toolName === 'Task'
   const isBash = toolName === 'Bash'
 
-  // Precompute threshold-filtered timing offsets for nested blocks
+  // Precompute threshold-filtered timing offsets for nested blocks - a text block has neither
+  // toolResult nor toolUse, so its own event carries the timestamp instead.
   const nestedOffsets = useMemo(() => {
-    const timestamps = nestedBlocks.map(b => b.toolResult?.ts || b.toolUse?.ts)
+    const timestamps = nestedBlocks.map(b => b.toolResult?.ts || b.toolUse?.ts || b.event?.ts)
     return computeTimingOffsets(timestamps, turnStartTime)
   }, [nestedBlocks, turnStartTime])
 
@@ -114,15 +119,18 @@ export default function ToolBlockExpandedContent({
       {(() => {
         const outputContent = (
           <>
-            {!(isTask || persistedOutput) && (
-              <ToolContentRenderer
-                toolName={toolName}
-                details={details}
-                filePath={filePath}
-                outputMode={outputMode}
-                lineOffset={lineOffset}
-              />
-            )}
+            {!(isTask || persistedOutput) &&
+              (contentBlocks ? (
+                <McpContentBlocks toolName={toolName} blocks={contentBlocks} />
+              ) : (
+                <ToolContentRenderer
+                  toolName={toolName}
+                  details={details}
+                  filePath={filePath}
+                  outputMode={outputMode}
+                  lineOffset={lineOffset}
+                />
+              ))}
             {!isTask && jsonData && (
               <div className="tool-json">
                 <JsonView
@@ -143,7 +151,7 @@ export default function ToolBlockExpandedContent({
             </CollapsibleSection>
           ) : null
         }
-        if (toolInput && (details || jsonData)) {
+        if (toolInput && (details || jsonData || contentBlocks)) {
           return (
             <CollapsibleSection label="Output" defaultExpanded className="tool-output-section">
               {outputContent}
@@ -157,14 +165,18 @@ export default function ToolBlockExpandedContent({
       {hasNested && (
         <CollapsibleSection label="Activity" defaultExpanded className="task-activity">
           <NestedContent className="tool-nested">
-            {nestedBlocks.map((block, i) => (
-              <NestedToolWrapper
-                key={i}
-                toolUse={block.toolUse}
-                toolResult={block.toolResult}
-                blockRelativeTime={nestedOffsets[i]}
-              />
-            ))}
+            {nestedBlocks.map((block, i) =>
+              block.kind === 'text' ? (
+                <NestedTextEntry key={i} event={block.event} />
+              ) : (
+                <NestedToolWrapper
+                  key={i}
+                  toolUse={block.toolUse}
+                  toolResult={block.toolResult}
+                  blockRelativeTime={nestedOffsets[i]}
+                />
+              ),
+            )}
           </NestedContent>
         </CollapsibleSection>
       )}

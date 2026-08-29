@@ -204,7 +204,7 @@ describe('useFavicon', () => {
 
   it('passes a brightened color (not the raw workspaceColor) to drawWorkspaceBadge', () => {
     mockWorkspaceColor = '#2a4a2a'
-    // Capture every fillStyle assignment so we can scan the sequence.
+    // Capture every fillStyle assignment so the sequence can be scanned.
     const fillStyles = []
     Object.defineProperty(mockCtx, 'fillStyle', {
       get: () => fillStyles.at(-1) ?? '',

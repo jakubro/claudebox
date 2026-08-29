@@ -14,7 +14,7 @@
 .tool-bullet {
   font-weight: bold;
   position: relative;
-  top: -2px;
+  top: -1px;
 }
 
 .tool-bullet.pending {
@@ -99,13 +99,25 @@
 .tool-pending {
   display: flex;
   align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .tool-pending .spinner {
   animation: spin 1s linear infinite;
   color: var(--text-muted);
-  position: relative;
-  top: 1px; /* Align spinner with text */
+  flex-shrink: 0;
+}
+
+/* A running Task's newest nested activity - one line, cut at the block's width, never wrapped. */
+.tool-activity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
 }
 
 .tool-summary {

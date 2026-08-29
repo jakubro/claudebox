@@ -6,6 +6,9 @@ vi.mock('../config/timing', () => ({
   FETCH_RETRY_MAX_ATTEMPTS: 3,
   FETCH_RETRY_BASE_DELAY_MS: 10,
   FETCH_RETRY_MAX_DELAY_MS: 100,
+  // Deliberately distinct so a test can tell which tier reached fetch.
+  FETCH_TIMEOUT_ACTION_MS: 400,
+  FETCH_TIMEOUT_LISTING_MS: 40,
 }))
 
 import {
@@ -154,7 +157,32 @@ describe('retryFetch', () => {
 
     await retryFetch('/api/test', options)
 
-    expect(fetch).toHaveBeenCalledWith('/api/test', options)
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/test',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    )
+  })
+
+  it('bounds every attempt with an abort signal', async () => {
+    fetch.mockResolvedValue({ ok: true })
+
+    await retryFetch('/api/test')
+
+    const [, init] = fetch.mock.calls[0]
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('composes the bound with a caller signal rather than replacing it', async () => {
+    fetch.mockResolvedValue({ ok: true })
+    const controller = new AbortController()
+
+    await retryFetch('/api/test', { signal: controller.signal })
+
+    const [, init] = fetch.mock.calls[0]
+    expect(init.signal).not.toBe(controller.signal)
+
+    controller.abort()
+    expect(init.signal.aborted).toBe(true)
   })
 
   it('applies exponential backoff between retries', async () => {
@@ -198,7 +226,7 @@ describe('workspaceFetch', () => {
   it('prefixes path with workspace', async () => {
     await workspaceFetch('/sessions')
 
-    expect(fetch).toHaveBeenCalledWith('/api/workspaces/ws-1/sessions', undefined)
+    expect(fetch).toHaveBeenCalledWith('/api/workspaces/ws-1/sessions', expect.any(Object))
   })
 
   it('throws when workspace ID not set', () => {
@@ -224,7 +252,10 @@ describe('containerFetch', () => {
   it('prefixes path with workspace and container', async () => {
     await containerFetch('/api/send')
 
-    expect(fetch).toHaveBeenCalledWith('/api/workspaces/ws-1/containers/c-1/api/send', undefined)
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/workspaces/ws-1/containers/c-1/api/send',
+      expect.any(Object),
+    )
   })
 
   it('throws when workspace ID not set', () => {
@@ -237,6 +268,21 @@ describe('containerFetch', () => {
     setContainerId(null)
 
     expect(() => containerFetch('/api/send')).toThrow('Container ID not set')
+  })
+
+  it('addresses an explicit container, ignoring the module default', async () => {
+    await containerFetch('/api/send', undefined, 'c-other')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/workspaces/ws-1/containers/c-other/api/send',
+      expect.any(Object),
+    )
+  })
+
+  it('an explicit container id still requires a workspace id', () => {
+    setWorkspaceId(null)
+
+    expect(() => containerFetch('/api/send', undefined, 'c-other')).toThrow('Workspace ID not set')
   })
 })
 
@@ -254,6 +300,12 @@ describe('containerUrl', () => {
   it('builds proxied URL', () => {
     expect(containerUrl('/api/stream')).toBe('/api/workspaces/ws-1/containers/c-1/api/stream')
   })
+
+  it('builds a proxied URL for an explicit container, ignoring the module default', () => {
+    expect(containerUrl('/api/stream', 'c-other')).toBe(
+      '/api/workspaces/ws-1/containers/c-other/api/stream',
+    )
+  })
 })
 
 describe('state accessors', () => {
@@ -270,5 +322,52 @@ describe('state accessors', () => {
   it('get/set container ID', () => {
     setContainerId('c')
     expect(getContainerId()).toBe('c')
+  })
+})
+
+// Real timers: AbortSignal.timeout runs off its own internal clock, which fake timers do not drive.
+describe('bounds reaching fetch', () => {
+  /** Honours the abort contract the real fetch has, so a fired bound is observable. */
+  function hangingFetch() {
+    return vi.fn(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(init.signal.reason))
+        }),
+    )
+  }
+
+  beforeEach(() => {
+    globalThis.fetch = hangingFetch()
+    setWorkspaceId('ws-1')
+    setContainerId('c-1')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    setWorkspaceId(null)
+    setContainerId(null)
+  })
+
+  it('rejects with a timeout once the bound expires, without retrying', async () => {
+    const error = await workspaceFetch('/sessions').catch(e => e)
+
+    expect(error.name).toBe('TimeoutError')
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('applies the listing tier to workspaceFetch and the action tier to containerFetch', async () => {
+    const listing = workspaceFetch('/sessions').catch(() => 'listing')
+    const action = containerFetch('/api/send').catch(() => 'action')
+
+    // The listing tier is an order of magnitude shorter, so it must lose the race outright.
+    expect(await Promise.race([listing, action])).toBe('listing')
+  })
+
+  it('lets a call-site timeoutMs override the wrapper default', async () => {
+    const override = containerFetch('/api/send', { timeoutMs: 20 }).catch(() => 'override')
+    const wrapperDefault = workspaceFetch('/sessions').catch(() => 'wrapper-default')
+
+    expect(await Promise.race([override, wrapperDefault])).toBe('override')
   })
 })

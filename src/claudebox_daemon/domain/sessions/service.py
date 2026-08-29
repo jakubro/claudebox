@@ -23,13 +23,14 @@ from claudebox import (
 )
 from claudebox import SessionNotFound as SharedSessionNotFound
 from claudebox.constants import (
+    SESSION_ATTACHMENTS_DIR,
     SESSION_CHECKPOINT_TURNS_FILE,
     SESSION_EVENTS_FILE,
     SESSION_METADATA_FILE,
 )
-from .errors import SessionNotFound
+from .errors import SessionContainerUnavailable, SessionNotFound
 from .models import SessionInfo, SessionProgressEvent, SessionsChangedEvent
-from ..errors import ListingTimeout
+from ..errors import ListingTimeout, ValidationError
 from ..executors import Admission, ObservedPool, tracked
 from ...constants import (
     CONTAINER_HEALTH_STARTUP_INTERVAL,
@@ -41,7 +42,7 @@ from ...constants import (
 
 
 if TYPE_CHECKING:
-    from ..containers import ContainerService
+    from ..containers import Container, ContainerService
     from ..workspaces import RegisteredWorkspace
 
 
@@ -61,6 +62,44 @@ INHERITED_CONFIG_FIELDS = frozenset(
         "commands",
     },
 )
+
+
+def _resolve_container_id(container: "Container", session_id: str) -> str | None:
+    """Container id for `session_id` if it is genuinely running there, else None.
+
+    Liveness for a member is the health-reported live set - `members` keeps stopped threads forever.
+    """
+
+    if container.session_id == session_id or session_id in container.live_session_ids:
+        return container.id
+
+    return None
+
+
+async def deliver_prompt(
+    logger,
+    containers: "ContainerService",
+    container_id: str,
+    prompt: str,
+    *,
+    session_id: str | None = None,
+) -> None:
+    """Inject one prompt as a session's next turn; a failed delivery is logged, not raised."""
+
+    try:
+        await containers.send(
+            container_id=container_id,
+            method="POST",
+            endpoint="api/send",
+            payload={"prompt": prompt},
+        )
+    except Exception:  # noqa: BLE001 - best-effort; must not fail the caller's larger operation
+        logger.warning(
+            "Failed to send prompt message",
+            prompt=prompt,
+            container_id=container_id,
+            session_id=session_id,
+        )
 
 
 def _jsonl_lines(text: str) -> list[str]:
@@ -111,6 +150,9 @@ class SessionService:
         self._executor = executor
         self._listing_flight = SingleFlight()
         self._admission = Admission()
+        # Serializes concurrent forks off the same source - a shared-container fork's
+        # find_by_session() -> update(members=...) sequence must not interleave with a sibling's.
+        self._fork_locks: dict[str, asyncio.Lock] = {}
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -163,7 +205,9 @@ class SessionService:
             container = await self._containers.find_by_session(metadata.session_id)
 
             data = metadata.asdict()
-            data["container_id"] = container.id if container else None
+            data["container_id"] = (
+                _resolve_container_id(container, metadata.session_id) if container else None
+            )
             sessions.append(SessionInfo.fromdict(data))
             seen_session_ids.add(metadata.session_id)
 
@@ -237,7 +281,7 @@ class SessionService:
         container = await self._containers.find_by_session(session_id)
 
         data = metadata.asdict()
-        data["container_id"] = container.id if container else None
+        data["container_id"] = _resolve_container_id(container, session_id) if container else None
 
         return SessionInfo.fromdict(data)
 
@@ -305,6 +349,92 @@ class SessionService:
             effort_level=cls.get_default_effort_level(),
         )
 
+    async def create_with_prompt(
+        self,
+        prompt: str,
+        *,
+        spawned_from_session_id: str | None = None,
+    ) -> SessionInfo:
+        """Create a session and inject one prompt as its first turn."""
+
+        return await self.create_with_prompts(
+            [prompt],
+            spawned_from_session_id=spawned_from_session_id,
+        )
+
+    async def create_with_prompts(
+        self,
+        prompts: list[str],
+        *,
+        spawned_from_session_id: str | None = None,
+    ) -> SessionInfo:
+        """Create a session and inject each prompt as a turn, in order.
+
+        `spawned_from_session_id` is the caller's claimed lineage: unverified, read by no check.
+        """
+
+        result = await self.create()
+        # create() always synthesizes container_id from the container it just spawned; the
+        # field is Optional only because other SessionInfo call paths (list/get) can lack one.
+        assert result.container_id is not None
+
+        if spawned_from_session_id:
+            self._record_spawn_lineage(result.session_id, spawned_from_session_id)
+            result.spawned_from_session_id = spawned_from_session_id
+
+        for prompt in prompts:
+            await deliver_prompt(
+                self._logger,
+                self._containers,
+                result.container_id,
+                prompt,
+                session_id=result.session_id,
+            )
+
+        return result
+
+    def _record_spawn_lineage(self, session_id: str, spawned_from_session_id: str) -> None:
+        """Merge the claimed spawner id onto the child's session.json.
+
+        Written directly: no record exists to `update()` yet, and `_DAEMON_OWNED_FIELDS` keeps it.
+        """
+
+        workspace = Workspace(self._workspace.path)
+        path = workspace.ensure_session(session_id).path / SESSION_METADATA_FILE
+        data = read_json(path, default={}) or {}
+        data["spawned_from_session_id"] = spawned_from_session_id
+        write_json(path, data)
+
+    def compute_spawn_depth(self, session_id: str) -> int | None:
+        """Walk spawn ancestry from `session_id`, counting only spawn hops (fork hops are free).
+
+        An unreadable own record returns None (fail closed); a missing ancestor just ends the walk.
+        """
+
+        try:
+            current = self._repo.get(session_id)
+        except SharedSessionNotFound:
+            return None
+
+        depth = 0
+        seen = {session_id}
+
+        while True:
+            next_id = current.spawned_from_session_id or current.parent_session_id
+
+            if not next_id or next_id in seen:
+                return depth
+
+            if current.spawned_from_session_id:
+                depth += 1
+
+            seen.add(next_id)
+
+            try:
+                current = self._repo.get(next_id)
+            except SharedSessionNotFound:
+                return depth
+
     async def resume(self, session_id: str) -> SessionInfo:
         """Resume an existing session: reuse running container or spawn new one.
 
@@ -312,6 +442,14 @@ class SessionService:
         """
 
         self._logger.info("Resuming session", session_id=session_id, **self._log_context)
+
+        try:
+            metadata = self._repo.get(session_id)
+        except SharedSessionNotFound as exc:
+            raise SessionNotFound(session_id=exc.session_id) from exc
+
+        if metadata.is_side_thread:
+            return await self._resume_side_thread(session_id, metadata)
 
         existing = await self._containers.find_by_session(session_id, sync=True)
 
@@ -330,6 +468,37 @@ class SessionService:
             timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
         ) as client:
             await client.post(f"{container.base_url}/api/sessions/{session_id}/resume")
+
+        await self._broadcast_sessions_changed()
+
+        return await self._build_session_info(session_id, container.id)
+
+    async def _resume_side_thread(self, session_id: str, metadata) -> SessionInfo:
+        """Start a side thread's session in its parent's container, joining as a member.
+
+        Never restarts the parent nor spawns its own; a parent with no container is a hard failure.
+        """
+
+        parent_id = metadata.parent_session_id
+        container = (
+            await self._containers.find_by_session(parent_id, sync=True) if parent_id else None
+        )
+
+        if not container:
+            raise SessionContainerUnavailable(session_id=session_id, parent_session_id=parent_id)
+
+        if session_id not in container.members:
+            await self._containers.update(container, members=[*container.members, session_id])
+
+        await self._broadcast_progress("Resuming session", session_id=session_id)
+
+        async with httpx.AsyncClient(
+            timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
+        ) as client:
+            await client.post(
+                f"{container.base_url}/api/sessions/{session_id}/resume",
+                params={"primary": "false"},
+            )
 
         await self._broadcast_sessions_changed()
 
@@ -394,11 +563,19 @@ class SessionService:
         turn_id: str | None = None,
         *,
         reuse_container: bool = False,
+        share_container: bool = False,
+        parent_session_id: str | None = None,
     ) -> SessionInfo:
-        """Fork session: copy files, optionally truncate at turn, spawn or reuse container.
+        """Fork session: copy files, optionally truncate at turn, spawn/reuse/share a container.
 
-        turn_id=None forks the complete session without truncation.
+        `parent_session_id` re-parents the child onto a drawable ancestor - what promotion needs.
         """
+
+        if reuse_container and share_container:
+            raise ValidationError(
+                "fork_disposition_conflict",
+                detail="reuse_container and share_container are mutually exclusive",
+            )
 
         new_session_id = str(uuid.uuid4())
         self._logger.info(
@@ -407,6 +584,7 @@ class SessionService:
             turn_id=turn_id,
             new_id=new_session_id,
             reuse_container=reuse_container,
+            share_container=share_container,
             **self._log_context,
         )
 
@@ -438,6 +616,7 @@ class SessionService:
                 workspace,
                 source_session_id,
                 new_session_id,
+                share_container,
             )
             await loop.run_in_executor(
                 None,
@@ -509,12 +688,13 @@ class SessionService:
                 **inherited,
                 **derived,
                 "session_id": new_session_id,
-                "parent_session_id": source_session_id,
+                "parent_session_id": parent_session_id or source_session_id,
                 "session_dir": str(new_session.path),
                 "workspace": str(workspace.path),
                 "started_at": now,
                 "updated_at": now,
                 "fork_point_cost_usd": derived["total_cost_usd"],
+                "is_side_thread": share_container,
             }
 
             write_json(new_session.path / SESSION_METADATA_FILE, seed)
@@ -525,33 +705,57 @@ class SessionService:
 
             raise
 
-        if reuse_container:
-            container = await self._containers.find_by_session(source_session_id)
+        async with self._fork_lock(source_session_id):
+            if reuse_container:
+                container = await self._containers.find_by_session(source_session_id)
 
-            if not container:
-                raise ValueError(f"No running container for source session {source_session_id}")
+                if not container:
+                    raise SessionContainerUnavailable(session_id=source_session_id)
 
-            # Without this, find_by_session() still resolves the parent, so stopping it
-            # would kill the active child.
-            await self._containers.update(container, session_id=new_session_id)
-        else:
-            await self._broadcast_progress("Creating container", session_id=new_session_id)
-            container = await self._containers.create(session_id=new_session_id)
+                # Without this, find_by_session() still resolves the parent, so stopping it
+                # would kill the active child.
+                await self._containers.update(container, session_id=new_session_id)
+                primary = True
+            elif share_container:
+                container = await self._containers.find_by_session(source_session_id)
 
-            await self._broadcast_progress("Waiting for container", session_id=new_session_id)
-            await self._wait_for_health(container.id)
+                if not container:
+                    raise SessionContainerUnavailable(session_id=source_session_id)
 
-        await self._broadcast_progress("Resuming session", session_id=new_session_id)
+                # Build a fresh list, never append in place - update() compares old vs new by
+                # value, so an in-place-mutated list looks unchanged and silently never persists.
+                await self._containers.update(
+                    container,
+                    members=[*container.members, new_session_id],
+                )
+                primary = False
+            else:
+                await self._broadcast_progress("Creating container", session_id=new_session_id)
+                container = await self._containers.create(session_id=new_session_id)
 
-        async with httpx.AsyncClient(
-            timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
-        ) as client:
-            await client.post(f"{container.base_url}/api/sessions/{new_session_id}/resume")
+                await self._broadcast_progress("Waiting for container", session_id=new_session_id)
+                await self._wait_for_health(container.id)
+                primary = True
+
+            await self._broadcast_progress("Resuming session", session_id=new_session_id)
+
+            async with httpx.AsyncClient(
+                timeout=CONTAINER_SESSION_REQUEST_TIMEOUT.total_seconds(),
+            ) as client:
+                await client.post(
+                    f"{container.base_url}/api/sessions/{new_session_id}/resume",
+                    params={"primary": "true" if primary else "false"},
+                )
 
         await self._broadcast_sessions_changed()
 
         # Return full SessionInfo so callers can act without waiting for the SSE-debounced refresh.
         return SessionInfo.fromdict({**seed, "container_id": container.id})
+
+    def _fork_lock(self, source_session_id: str) -> asyncio.Lock:
+        """Lock serializing concurrent forks off the same source session."""
+
+        return self._fork_locks.setdefault(source_session_id, asyncio.Lock())
 
     # Internal
     # ----------------------------------------------------------------------------------------------
@@ -637,17 +841,31 @@ class SessionService:
 
         path.write_text("".join(kept))
 
-    def _copy_claudebox_session(self, workspace: Workspace, source_id: str, new_id: str) -> None:
-        """Copy claudebox session directory, excluding session.json."""
+    def _copy_claudebox_session(
+        self,
+        workspace: Workspace,
+        source_id: str,
+        new_id: str,
+        share_container: bool = False,
+    ) -> None:
+        """Copy claudebox session directory, excluding session.json.
+
+        A shared-container fork also drops tmp/ and attachments/ - nothing would ever read them.
+        """
 
         src = workspace.ensure_session(source_id).path
         dst = workspace.ensure_session(new_id).path
+        excluded = (
+            (SESSION_METADATA_FILE, "tmp", SESSION_ATTACHMENTS_DIR)
+            if share_container
+            else (SESSION_METADATA_FILE,)
+        )
 
         try:
             shutil.copytree(
                 src,
                 dst,
-                ignore=shutil.ignore_patterns(SESSION_METADATA_FILE),
+                ignore=shutil.ignore_patterns(*excluded),
                 ignore_dangling_symlinks=True,
                 dirs_exist_ok=True,
             )

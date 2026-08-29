@@ -173,6 +173,74 @@ test.describe('Tasks Panel', () => {
     await expect(page.locator('[data-tool-use-id="task_probe_001"]')).toBeVisible()
   })
 
+  // SPEC: panel-task:click-work-column
+  // SPEC: chat:work-column-task-click
+  test('with the agent work shown, clicking a task lands it in the work column, not the transcript', async ({
+    page,
+  }) => {
+    await mockAPI(page, { sessionUiStateDefaults: { rightSlotView: 'work' } })
+    const controller = await createSSEController(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    // 15 turns of Bash calls window the work column; the Task sits early so its row starts
+    // unmounted, matching the "windowed out" case the fix must also cover.
+    for (let i = 0; i < 15; i++) {
+      const events = [
+        { type: 'user', subtype: 'text', is_human: true, content: `turn ${i}`, turn_id: `t${i}` },
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          tool_use_id: `tu_fill_${i}`,
+          tool_name: 'Bash',
+          tool_input: { command: `echo fill-${i}` },
+        },
+        {
+          type: 'assistant',
+          subtype: 'tool_result',
+          content: 'line\n'.repeat(10),
+          tool_use_id: `tu_fill_${i}`,
+        },
+      ]
+      if (i === 1) {
+        events.push(
+          {
+            type: 'assistant',
+            subtype: 'tool_use',
+            content: 'Task',
+            tool_use_id: 'task_work_col_001',
+            tool_name: 'Task',
+            tool_input: { description: 'Early research task', prompt: 'Research it' },
+          },
+          {
+            type: 'assistant',
+            subtype: 'tool_result',
+            content: 'Done researching',
+            tool_use_id: 'task_work_col_001',
+          },
+        )
+      }
+      events.push({ type: 'result', subtype: 'success', turn_id: `t${i}` })
+      await controller.sendEvents(events)
+    }
+
+    const transcript = page.locator('[data-testid="chat-messages"]')
+    const scrollBefore = await transcript.evaluate(el => el.scrollTop)
+
+    await openTasksPanel(page)
+    await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+    await page.locator('.task-entry', { hasText: 'Early research task' }).click()
+
+    const block = page.locator('[data-testid="work-column"] [data-tool-use-id="task_work_col_001"]')
+    await expect(block).toBeVisible()
+    await expect(block).toHaveClass(/task-highlight/)
+    await expect(page.locator('.chat-messages [data-tool-use-id="task_work_col_001"]')).toHaveCount(
+      0,
+    )
+    expect(await transcript.evaluate(el => el.scrollTop)).toBe(scrollBefore)
+  })
+
   // SPEC: panel-task:status-indicator
   test('running task has running status class', async ({ page }) => {
     const controller = await createSSEController(page)

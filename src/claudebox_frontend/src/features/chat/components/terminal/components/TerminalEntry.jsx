@@ -1,6 +1,7 @@
 /** One shell-call entry: description comment, command line, and output - flat, no header. */
 
 import { CornerUpLeft } from 'lucide-react'
+import { forwardRef } from 'react'
 import CopyButton from '../../../../../components/CopyButton.jsx'
 import { ToolName } from '../../../../../config/schema'
 import PersistedOutputContent from '../../turn/components/tool-block/components/tool-block-expanded-content/components/PersistedOutputContent'
@@ -8,8 +9,14 @@ import DefaultCodeBlock from '../../turn/components/tool-block/components/tool-b
 import { extractToolResult } from '../../turn/components/tool-block/utils/toolResultFormatters'
 import { resultContentOf } from '../utils/terminalResult'
 
-/** @param {object} props.entry - From deriveTerminalEntries; onClick fires only if entry.turnId. */
-export default function TerminalEntry({ entry, onClick }) {
+/**
+ * @param {object} props.entry - From deriveTerminalEntries; onClick fires only if entry.turnId.
+ * @param {number} [props.index] - Position among every entry, not just windowed ones; carried as
+ *   `data-index` so one selector reaches it in either branch.
+ * @param {object} ref - Forwarded to the root element; the trailing entry uses it to observe its
+ *   own in-place growth (see TerminalColumn).
+ */
+const TerminalEntry = forwardRef(function TerminalEntry({ entry, index, onClick }, ref) {
   const { id, turnId, command, description, result } = entry
   const isPending = !result
 
@@ -20,7 +27,7 @@ export default function TerminalEntry({ entry, onClick }) {
   const output = extracted ? (extracted.details ?? extracted.summary) : ''
 
   return (
-    <div className="terminal-entry" data-testid="terminal-entry">
+    <div className="terminal-entry" data-testid="terminal-entry" data-index={index} ref={ref}>
       {turnId != null && (
         <button
           type="button"
@@ -57,4 +64,6 @@ export default function TerminalEntry({ entry, onClick }) {
       )}
     </div>
   )
-}
+})
+
+export default TerminalEntry

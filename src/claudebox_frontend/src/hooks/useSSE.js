@@ -5,11 +5,14 @@ import SSEConnectionManager from '../managers/SSEConnectionManager'
 
 /**
  * Recreates the manager on `url` change (container switch); connects while non-null, disconnects on unmount.
+ * Also exposes `openKeyed`/`closeKeyed` for subscriptions that coexist with the primary one -
+ * each keyed manager is independent and delivers only to its own `onMessage`.
  *
  * @param {object} options
  * @param {function} options.onMessage - Called with the raw MessageEvent on each SSE message.
  * @param {function} [options.onReconnectExhausted] - Called when maxAttempts reached.
- * @returns {{ connectionStatus: string, connectionError: string|null, reconnectSSE: function, disconnectSSE: function, closeSSE: function }}
+ * @returns {{ connectionStatus: string, connectionError: string|null, reconnectSSE: function,
+ *   disconnectSSE: function, closeSSE: function, openKeyed: function, closeKeyed: function }}
  */
 export default function useSSE({
   onMessage,
@@ -22,6 +25,7 @@ export default function useSSE({
   const [connectionStatus, setConnectionStatus] = useState('disconnected')
   const [connectionError, setConnectionError] = useState(null)
   const managerRef = useRef(null)
+  const keyedManagersRef = useRef(new Map())
 
   // Stable refs so the manager never needs re-creation for callback changes
   const onMessageRef = useRef(onMessage)
@@ -80,5 +84,50 @@ export default function useSSE({
     managerRef.current = null
   }, [])
 
-  return { connectionStatus, connectionError, reconnectSSE, disconnectSSE, closeSSE }
+  const closeKeyedManager = useCallback(key => {
+    keyedManagersRef.current.get(key)?.close()
+    keyedManagersRef.current.delete(key)
+  }, [])
+
+  // Open a keyed subscription alongside the primary one, replacing any prior manager under the
+  // same key. A keyed manager has no cap or status callback unless the caller supplies one.
+  const openKeyed = useCallback(
+    (key, keyedUrl, { onMessage: keyedOnMessage, maxAttempts, onStatusChange } = {}) => {
+      keyedManagersRef.current.get(key)?.close()
+
+      const mgr = new SSEConnectionManager({
+        url: keyedUrl,
+        onMessage: e => keyedOnMessage?.(e),
+        maxAttempts,
+        onStatusChange,
+      })
+      keyedManagersRef.current.set(key, mgr)
+      mgr.connect()
+
+      return () => closeKeyedManager(key)
+    },
+    [closeKeyedManager],
+  )
+
+  // Close every keyed subscription on unmount - the primary manager's own cleanup effect (above)
+  // handles itself.
+  useEffect(() => {
+    const keyedManagers = keyedManagersRef.current
+    return () => {
+      for (const mgr of keyedManagers.values()) {
+        mgr.close()
+      }
+      keyedManagers.clear()
+    }
+  }, [])
+
+  return {
+    connectionStatus,
+    connectionError,
+    reconnectSSE,
+    disconnectSSE,
+    closeSSE,
+    openKeyed,
+    closeKeyed: closeKeyedManager,
+  }
 }

@@ -1,6 +1,6 @@
 /** Tests for SessionHeaderStrip - header chrome above chat with status dot, name, Stop, +, switcher. */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +19,7 @@ let mockRefresh = vi.fn()
 let mockFocusChat = vi.fn()
 let mockMaximizeToggle = vi.fn()
 let mockDeleteContainer = vi.fn(() => Promise.resolve())
+const mockNavigateToSession = vi.fn()
 
 vi.mock('../../../context/SessionDataContext', () => ({
   useSessionData: () => mockSessionData,
@@ -65,6 +66,7 @@ vi.mock('../../../context/SessionRoutingContext', () => ({
     activeBoardId: mockActiveBoardId,
     activeWorkspaceId: mockActiveWorkspaceId,
     clearActiveSession: vi.fn(),
+    navigateToSession: mockNavigateToSession,
   }),
 }))
 
@@ -116,6 +118,8 @@ describe('SessionHeaderStrip', () => {
     mockCopiedRef.current = false
     mockCopy.mockClear()
     mockDeleteContainer = vi.fn(() => Promise.resolve())
+    mockNavigateToSession.mockClear()
+    sessionStorage.clear()
   })
 
   it('renders the strip with right-slot controls in welcome state', () => {
@@ -138,6 +142,19 @@ describe('SessionHeaderStrip', () => {
 
     expect(screen.getByText('Creating…')).toBeInTheDocument()
     expect(screen.queryByTestId('session-header-status-dot')).not.toBeInTheDocument()
+  })
+
+  it('renders Creating… spinner even when creation starts from an already-active session, superseding its chain', () => {
+    // navigateToSession for the new session hasn't fired yet - the OLD session is still what
+    // routing names, so the chain is non-empty; isCreating alone must still win.
+    mockSessions = [{ session_id: 'sess-1', name: 'old', parent_session_id: null }]
+    mockActiveSessionId = 'sess-1'
+    mockEvents = { ...mockEvents, isCreating: true }
+
+    render(<SessionHeaderStrip />)
+
+    expect(screen.getByText('Creating…')).toBeInTheDocument()
+    expect(screen.queryByTestId('session-header-path-entry')).not.toBeInTheDocument()
   })
 
   it('renders status dot, name, and Stop button when session is active with running container', () => {
@@ -327,5 +344,112 @@ describe('SessionHeaderStrip', () => {
 
     fireEvent.click(screen.getByTestId('session-header-stop-btn'))
     expect(mockDeleteContainer).toHaveBeenCalledWith('fallback-container')
+  })
+
+  describe('session rail path', () => {
+    beforeEach(() => {
+      mockSessionData = { sessionId: 'leaf', sessionName: 'Leaf' }
+      mockActiveSessionId = 'leaf'
+      // mid and leaf are both promoted side conversations, so the whole chain renders - see
+      // sessionRail.js deriveAncestorChain.
+      mockSessions = [
+        { session_id: 'root', name: 'Root', container_id: 'container-root' },
+        {
+          session_id: 'mid',
+          name: 'Mid',
+          parent_session_id: 'root',
+          container_id: 'container-mid',
+          is_side_thread: true,
+        },
+        {
+          session_id: 'leaf',
+          name: 'Leaf',
+          parent_session_id: 'mid',
+          container_id: 'container-leaf',
+          is_side_thread: true,
+        },
+      ]
+    })
+
+    it('renders one entry per rail group, ancestry order, with the focused one marked', () => {
+      render(<SessionHeaderStrip />)
+
+      const entries = screen.getAllByTestId('session-header-path-entry')
+      expect(entries.map(e => e.dataset.sessionId)).toEqual(['root', 'mid', 'leaf'])
+      expect(entries.map(e => e.dataset.focused)).toEqual(['false', 'false', 'true'])
+    })
+
+    it('clicking a non-focused entry focuses that group', async () => {
+      const user = userEvent.setup()
+      render(<SessionHeaderStrip />)
+
+      const names = screen.getAllByTestId('session-header-session-name')
+      await user.click(names[0]) // 'root'
+
+      expect(mockNavigateToSession).toHaveBeenCalledWith('ws-1', 'root')
+    })
+
+    it("clicking the focused entry's own name copies the session directory instead of navigating", async () => {
+      const user = userEvent.setup()
+      mockSessionDir = '/tmp/sessions/leaf'
+      render(<SessionHeaderStrip />)
+
+      const names = screen.getAllByTestId('session-header-session-name')
+      await user.click(names[2]) // 'leaf', the focused entry
+
+      expect(mockCopy).toHaveBeenCalledWith('/tmp/sessions/leaf')
+      expect(mockNavigateToSession).not.toHaveBeenCalled()
+    })
+
+    it('a fork made inside a promoted thread and its own ancestor each offer their own Stop control', () => {
+      // leaf is an ordinary fork of mid, not a side thread, so mid drops out of the rendered
+      // chain and both remaining entries are independently stoppable.
+      mockSessions[2] = { ...mockSessions[2], is_side_thread: false }
+
+      render(<SessionHeaderStrip />)
+
+      const entries = screen.getAllByTestId('session-header-path-entry')
+      expect(entries.map(e => e.dataset.sessionId)).toEqual(['root', 'leaf'])
+      expect(screen.getAllByTestId('session-header-stop-btn')).toHaveLength(2)
+    })
+
+    it('an entry sharing the focused container (a side thread) offers no Stop control', () => {
+      render(<SessionHeaderStrip />)
+
+      const entries = screen.getAllByTestId('session-header-path-entry')
+      const midEntry = entries.find(e => e.dataset.sessionId === 'mid')
+      const rootEntry = entries.find(e => e.dataset.sessionId === 'root')
+      expect(midEntry.querySelector('[data-testid="session-header-stop-btn"]')).toBeNull()
+      expect(rootEntry.querySelector('[data-testid="session-header-stop-btn"]')).not.toBeNull()
+    })
+
+    it('stopping a non-focused entry always confirms first, even while idle', async () => {
+      const user = userEvent.setup()
+      render(<SessionHeaderStrip />)
+
+      const stopButtons = screen.getAllByTestId('session-header-stop-btn')
+      await user.click(stopButtons[0]) // 'root', not responding, not focused
+
+      expect(screen.getByTestId('confirm-stop-modal')).toBeInTheDocument()
+      expect(mockDeleteContainer).not.toHaveBeenCalled()
+
+      await user.click(screen.getByTestId('confirm-stop-modal-confirm'))
+      expect(mockDeleteContainer).toHaveBeenCalledWith('container-root')
+    })
+
+    it('stopping the focused entry while idle skips the confirm step, matching the single-session case', async () => {
+      const user = userEvent.setup()
+      // leaf is an ordinary fork here, not a side thread, so it keeps its own Stop control
+      // despite having an ancestor on the rail.
+      mockSessions[2] = { ...mockSessions[2], is_side_thread: false }
+      render(<SessionHeaderStrip />)
+
+      const entries = screen.getAllByTestId('session-header-path-entry')
+      const leafEntry = entries.find(e => e.dataset.sessionId === 'leaf')
+      await user.click(within(leafEntry).getByTestId('session-header-stop-btn'))
+
+      expect(screen.queryByTestId('confirm-stop-modal')).not.toBeInTheDocument()
+      expect(mockDeleteContainer).toHaveBeenCalledWith('container-leaf')
+    })
   })
 })

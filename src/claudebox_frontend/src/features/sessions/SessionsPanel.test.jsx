@@ -1,9 +1,12 @@
 /** Tests for SessionsPanel component. */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SessionsPanel from './SessionsPanel'
+
+// jsdom doesn't implement scrollIntoView
+Element.prototype.scrollIntoView = vi.fn()
 
 // Mock API (network boundary)
 const mockNewSession = vi.fn()
@@ -93,8 +96,12 @@ const mockSessionsList = {
   pinnedSessions: [],
   loading: false,
   error: null,
+  panelFilter: 'conversations',
+  panelFilterPick: 'conversations',
   refresh: vi.fn(),
   togglePin: vi.fn(),
+  setPanelFilter: vi.fn(),
+  setFallbackToAll: vi.fn(),
 }
 
 vi.mock('../../context/SessionsContext', () => ({
@@ -179,8 +186,12 @@ function resetMocks() {
   mockSessionsList.pinnedSessions = []
   mockSessionsList.loading = false
   mockSessionsList.error = null
+  mockSessionsList.panelFilter = 'conversations'
+  mockSessionsList.panelFilterPick = 'conversations'
   mockSessionsList.refresh.mockReset()
   mockSessionsList.togglePin.mockReset()
+  mockSessionsList.setPanelFilter.mockReset()
+  mockSessionsList.setFallbackToAll.mockReset()
 }
 
 describe('SessionsPanel', () => {
@@ -583,5 +594,226 @@ describe('SessionsPanel actions while responding', () => {
 
     expect(screen.queryByText('Claude is working')).not.toBeInTheDocument()
     expect(mockNewSession).toHaveBeenCalled()
+  })
+})
+
+describe('SessionsPanel filters', () => {
+  beforeEach(() => {
+    resetMocks()
+  })
+
+  it('renders all six filters as icon buttons, each named by tooltip/accessible name, none by visible text', () => {
+    mockSessionsList.sessions = [
+      makeSession('a', { parent_session_id: null }),
+      makeSession('b', { name: 'named-one' }),
+    ]
+    mockSessionsList.pinnedSessions = ['b']
+
+    render(<SessionsPanel />)
+
+    const tabs = screen.getByTestId('sessions-tabs')
+    for (const [filter, label] of [
+      ['conversations', 'Conversations'],
+      ['named', 'Named'],
+      ['pinned', 'Pinned'],
+      ['threads', 'Threads'],
+      ['subsessions', 'Subsessions'],
+      ['all', 'All'],
+    ]) {
+      const item = screen.getByTestId(`sessions-filter-${filter}`)
+      expect(item).toHaveAttribute('title', label)
+      expect(item).toHaveAttribute('aria-label', label)
+      expect(tabs).not.toHaveTextContent(label)
+    }
+  })
+
+  it('threads and subsessions read 0 and render the empty-filter message, not a blank area', () => {
+    mockSessionsList.sessions = [makeSession('a')]
+
+    mockSessionsList.panelFilter = 'threads'
+    const { unmount } = render(<SessionsPanel />)
+    expect(screen.getByText('No threads sessions')).toBeInTheDocument()
+    unmount()
+
+    mockSessionsList.panelFilter = 'subsessions'
+    render(<SessionsPanel />)
+    expect(screen.getByText('No subsessions sessions')).toBeInTheDocument()
+  })
+
+  it('named filter shows only sessions with a set name', () => {
+    mockSessionsList.sessions = [
+      makeSession('named-session', { name: 'spike' }),
+      makeSession('unnamed-session'),
+    ]
+    mockSessionsList.panelFilter = 'named'
+
+    render(<SessionsPanel />)
+
+    expect(screen.getAllByTestId('session-item')).toHaveLength(1)
+  })
+
+  it('clicking a filter calls setPanelFilter with that filter id', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [makeSession('a')]
+
+    render(<SessionsPanel />)
+    await user.click(screen.getByTestId('sessions-filter-pinned'))
+
+    expect(mockSessionsList.setPanelFilter).toHaveBeenCalledWith('pinned')
+  })
+
+  it('sets the fallback to All when the newly-opened session is absent from the picked filter', () => {
+    mockSessionsList.sessions = [makeSession('pinned-session'), makeSession('other-session')]
+    mockSessionsList.pinnedSessions = ['pinned-session']
+    mockSessionsList.panelFilter = 'pinned'
+    mockSessionsList.panelFilterPick = 'pinned'
+    mockSessionDataCtx.sessionId = 'pinned-session'
+
+    const { rerender } = render(<SessionsPanel />)
+    expect(mockSessionsList.setFallbackToAll).not.toHaveBeenCalled()
+
+    mockSessionDataCtx.sessionId = 'other-session'
+    rerender(<SessionsPanel />)
+
+    expect(mockSessionsList.setFallbackToAll).toHaveBeenCalledWith(true)
+    expect(mockSessionsList.setPanelFilter).not.toHaveBeenCalled()
+  })
+
+  it('clears the fallback when a session the picked filter lists is opened', () => {
+    mockSessionsList.sessions = [makeSession('pinned-session'), makeSession('other-session')]
+    mockSessionsList.pinnedSessions = ['pinned-session']
+    mockSessionsList.panelFilter = 'all'
+    mockSessionsList.panelFilterPick = 'pinned'
+    mockSessionDataCtx.sessionId = 'other-session'
+
+    const { rerender } = render(<SessionsPanel />)
+    expect(mockSessionsList.setFallbackToAll).not.toHaveBeenCalled()
+
+    mockSessionDataCtx.sessionId = 'pinned-session'
+    rerender(<SessionsPanel />)
+
+    expect(mockSessionsList.setFallbackToAll).toHaveBeenCalledWith(false)
+  })
+
+  it('does not move off a hand-chosen filter when the open session merely ceases to be present under it', () => {
+    mockSessionsList.sessions = [makeSession('pinned-session')]
+    mockSessionsList.pinnedSessions = ['pinned-session']
+    mockSessionsList.panelFilter = 'pinned'
+    mockSessionsList.panelFilterPick = 'pinned'
+    mockSessionDataCtx.sessionId = 'pinned-session'
+
+    const { rerender } = render(<SessionsPanel />)
+
+    // The open session stays the same; only the underlying set changes (unpinned via a refresh).
+    mockSessionsList.pinnedSessions = []
+    rerender(<SessionsPanel />)
+
+    expect(mockSessionsList.setFallbackToAll).not.toHaveBeenCalled()
+  })
+})
+
+describe('SessionsPanel search', () => {
+  beforeEach(() => {
+    resetMocks()
+  })
+
+  it('renders the search toggle between the new-session chevron and refresh', () => {
+    mockSessionsList.sessions = [makeSession('a')]
+    render(<SessionsPanel />)
+
+    const buttons = screen.getByTestId('panel-sessions').querySelectorAll('button')
+    const testIds = Array.from(buttons).map(b => b.dataset.testid)
+    const chevronIndex = testIds.indexOf('session-new-session-chevron')
+    const searchIndex = testIds.indexOf('sessions-search-toggle')
+    const refreshIndex = testIds.indexOf('session-refresh-btn')
+
+    expect(chevronIndex).toBeGreaterThanOrEqual(0)
+    expect(searchIndex).toBeGreaterThan(chevronIndex)
+    expect(refreshIndex).toBeGreaterThan(searchIndex)
+  })
+
+  it('opening search hides the filter icons and focuses the box; the toggle itself hides too', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [makeSession('a')]
+    render(<SessionsPanel />)
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+
+    expect(screen.queryByTestId('sessions-tabs')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sessions-search-toggle')).not.toBeInTheDocument()
+    expect(screen.getByTestId('sessions-search-input')).toHaveFocus()
+  })
+
+  it('matches a session by name, case-insensitively, across every session regardless of the active filter', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [
+      makeSession('a', { name: 'Parser Rewrite' }),
+      makeSession('b', { name: 'unrelated' }),
+    ]
+    mockSessionsList.pinnedSessions = ['b']
+    mockSessionsList.panelFilter = 'pinned'
+    render(<SessionsPanel />)
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+    await user.type(screen.getByTestId('sessions-search-input'), 'PARSER')
+
+    const items = screen.getAllByTestId('session-item')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent('Parser Rewrite')
+  })
+
+  it('matches a session by a pasted full id, not only the eight characters the row shows', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [makeSession('abcdef1234567890', { name: null })]
+    render(<SessionsPanel />)
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+    await user.type(screen.getByTestId('sessions-search-input'), 'abcdef1234567890')
+
+    expect(screen.getAllByTestId('session-item')).toHaveLength(1)
+  })
+
+  it('shows a message, not a blank area, when nothing matches', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [makeSession('a', { name: 'spike' })]
+    render(<SessionsPanel />)
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+    await user.type(screen.getByTestId('sessions-search-input'), 'nothing matches this')
+
+    expect(screen.queryByTestId('session-item')).not.toBeInTheDocument()
+    expect(screen.getByText(/no sessions match/i)).toBeInTheDocument()
+  })
+
+  it('Escape closes the box and restores the filter icons without changing the chosen filter', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [makeSession('a', { name: 'spike' })]
+    mockSessionsList.panelFilter = 'named'
+    render(<SessionsPanel />)
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+    await user.type(screen.getByTestId('sessions-search-input'), 'spike')
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByTestId('sessions-search-input')).not.toBeInTheDocument()
+    expect(screen.getByTestId('sessions-tabs')).toBeInTheDocument()
+    expect(mockSessionsList.setPanelFilter).not.toHaveBeenCalled()
+  })
+
+  it('blurring an empty box closes it; blurring a non-empty one leaves it open', async () => {
+    const user = userEvent.setup()
+    mockSessionsList.sessions = [makeSession('a', { name: 'spike' })]
+    render(<SessionsPanel />)
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+    const input = screen.getByTestId('sessions-search-input')
+    await user.click(input)
+    fireEvent.blur(input)
+    expect(screen.queryByTestId('sessions-search-input')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('sessions-search-toggle'))
+    await user.type(screen.getByTestId('sessions-search-input'), 'spike')
+    fireEvent.blur(screen.getByTestId('sessions-search-input'))
+    expect(screen.getByTestId('sessions-search-input')).toBeInTheDocument()
   })
 })

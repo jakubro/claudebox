@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Hand the pagination work to a sibling session.","ts":"2026-08-22T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"session_spawn","ts":"2026-08-22T12:00:01Z","tool_use_id":"tool_001","tool_name":"session_spawn","tool_input":{"prompt":"Add pagination to the results list"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"{\"session_id\": \"sib-1\", \"container_id\": \"claudebox-demo-sib-1\"}","ts":"2026-08-22T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Spawned a sibling session to take the pagination work.","ts":"2026-08-22T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-08-22T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

@@ -10,6 +10,7 @@ import { getUiState, patchSessionUiState } from '../api/uiState'
 import { getSessionDefaults } from '../api/workspaces'
 import { SESSION_POLL_INTERVAL, SESSION_RETRY_DELAY_MS } from '../config/timing'
 import useWorkspaceCommandCatalog from '../hooks/useWorkspaceCommandCatalog'
+import { createDeferred } from '../utils/deferred'
 import { useDaemonStreamContext } from './DaemonStreamContext'
 import { useEvents } from './EventsContext'
 import { WorkspaceContext } from './WorkspaceContext'
@@ -47,6 +48,18 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   const workspaceCommandCatalog = useWorkspaceCommandCatalog()
   const wasRespondingRef = useRef(false)
   const fetchRetryCountRef = useRef(0)
+  // Coalesces the poll interval, SSE signals and picker confirmations onto one request - the poll
+  // fires faster than its own bound, so overlapping copies would each pin a connection slot.
+  const refreshInFlightRef = useRef(null)
+  // A caller that joined an in-flight request re-fetches once on settle, so a picker confirmation
+  // never reads state captured before its own mutation.
+  const refreshPendingRef = useRef(false)
+  // The container the in-flight request was addressed to. A switch mid-flight must not apply the
+  // old container's session to the new one, so a mismatch issues its own request.
+  const refreshInFlightContainerRef = useRef(null)
+  // Set by the first joiner of an in-flight request; resolves once the re-armed refetch settles -
+  // never the request being joined, which predates the joiner's own call.
+  const nextSettleDeferredRef = useRef(null)
   const isConnectedRef = useRef(isConnected)
   isConnectedRef.current = isConnected
 
@@ -58,47 +71,98 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   const lastSessionIdRef = useRef(null)
 
   // Retains seeded non-null fields when getSession() returns null for them, avoiding a footer regression to "-".
+  // A joiner is handed a deferred for the NEXT settle, not the request it joined; the try/catch
+  // below never re-throws, so it always resolves in practice.
   const refreshSession = useCallback(async () => {
-    try {
-      const data = await getSession()
-      fetchRetryCountRef.current = 0
-      if (data?.session_id) {
-        setSessionData(prev => {
-          if (!prev || prev.session_id !== data.session_id) {
-            return data
-          }
-          const merged = { ...prev }
-          for (const [k, v] of Object.entries(data)) {
-            if (v != null) {
-              merged[k] = v
-            }
-          }
-          return merged
-        })
-        return
+    const addressedContainer = getContainerId()
+
+    if (refreshInFlightRef.current && refreshInFlightContainerRef.current === addressedContainer) {
+      refreshPendingRef.current = true
+      if (!nextSettleDeferredRef.current) {
+        nextSettleDeferredRef.current = createDeferred()
       }
-      // No session_id yet - store partial data (e.g. workspace) and retry
-      if (data && Object.keys(data).length > 0) {
-        setSessionData(prev => (prev ? { ...prev, ...data } : data))
-      }
-      setTimeout(refreshSession, SESSION_RETRY_DELAY_MS)
-    } catch (e) {
-      // Don't retry when SSE is disconnected - container is gone
-      if (!isConnectedRef.current) {
-        return
-      }
-      const attempt = fetchRetryCountRef.current
-      if (attempt < 3) {
-        fetchRetryCountRef.current = attempt + 1
-        const backoff = 1000 * 2 ** attempt
-        console.warn(`SessionDataContext: Retry ${attempt + 1}/3 in ${backoff}ms`, e)
-        setTimeout(refreshSession, backoff)
-      } else {
-        fetchRetryCountRef.current = 0
-        console.warn('SessionDataContext: Failed to refresh session after retries', e)
-        onError?.('Session load failed')
-      }
+      return nextSettleDeferredRef.current.promise
     }
+
+    // A wave armed against a superseded container's request would never settle - the switch has
+    // moved past it, so settle it here rather than let it attach to this unrelated request.
+    if (refreshPendingRef.current) {
+      refreshPendingRef.current = false
+      const orphaned = nextSettleDeferredRef.current
+      nextSettleDeferredRef.current = null
+      orphaned?.resolve()
+    }
+
+    const run = (async () => {
+      try {
+        const data = await getSession()
+        fetchRetryCountRef.current = 0
+        // Only the run that still owns the slot may apply its response - a container switch can
+        // start a second run for a different container while this one is still in flight.
+        if (refreshInFlightRef.current === run) {
+          if (data?.session_id) {
+            setSessionData(prev => {
+              if (!prev || prev.session_id !== data.session_id) {
+                return data
+              }
+              const merged = { ...prev }
+              for (const [k, v] of Object.entries(data)) {
+                if (v != null) {
+                  merged[k] = v
+                }
+              }
+              return merged
+            })
+            return
+          }
+          // No session_id yet - store partial data (e.g. workspace) and retry
+          if (data && Object.keys(data).length > 0) {
+            setSessionData(prev => (prev ? { ...prev, ...data } : data))
+          }
+          setTimeout(refreshSession, SESSION_RETRY_DELAY_MS)
+        }
+      } catch (e) {
+        // Only the run that still owns the slot may act on its failure - a container switch can
+        // start a second run for a different container while this one is still in flight.
+        if (refreshInFlightRef.current !== run) {
+          return
+        }
+        // Don't retry when SSE is disconnected - container is gone
+        if (!isConnectedRef.current) {
+          return
+        }
+        const attempt = fetchRetryCountRef.current
+        if (attempt < 3) {
+          fetchRetryCountRef.current = attempt + 1
+          const backoff = 1000 * 2 ** attempt
+          console.warn(`SessionDataContext: Retry ${attempt + 1}/3 in ${backoff}ms`, e)
+          setTimeout(refreshSession, backoff)
+        } else {
+          fetchRetryCountRef.current = 0
+          console.warn('SessionDataContext: Failed to refresh session after retries', e)
+          onError?.('Session load failed')
+        }
+      } finally {
+        // Only the run that still owns the slot may release it - a container switch can start a
+        // second run alongside this one, and it must keep its own claim.
+        if (refreshInFlightRef.current === run) {
+          refreshInFlightRef.current = null
+          refreshInFlightContainerRef.current = null
+
+          if (refreshPendingRef.current) {
+            refreshPendingRef.current = false
+            const deferred = nextSettleDeferredRef.current
+            nextSettleDeferredRef.current = null
+            refreshSession().then(deferred.resolve, deferred.reject)
+          }
+        }
+      }
+    })()
+
+    refreshInFlightRef.current = run
+    refreshInFlightContainerRef.current = addressedContainer
+
+    return run
   }, [onError])
 
   // Clear session data (used by reconnect composition)

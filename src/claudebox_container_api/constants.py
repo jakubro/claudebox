@@ -19,5 +19,4 @@ PATH_INDEX_LOAD_MAX_AGE = timedelta(hours=24)
 
 
 # Logging
-LOG_REPLAY_BUFFER_SIZE = 1000
-CONTAINER_API_LOG_FILENAME = "container_api.log"  # per-session container API log
+CONTAINER_API_LOG_FILENAME = "container_api.log"  # one per container, never per session

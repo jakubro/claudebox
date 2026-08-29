@@ -1,6 +1,5 @@
-/** Pure functions for minimap segment building and normalization. */
+/** Pure builders for the transcript's segment structure - turn-shaped, not the terminal's. */
 
-import { MINIMAP_MAX_WIDTH, MINIMAP_MIN_WIDTH } from '../../../../../config/dimensions'
 import { EventSubtype } from '../../../../../config/schema'
 
 /** A segment contains all turns until a compact_boundary event appears; that turn starts the next segment. */
@@ -38,20 +37,6 @@ export function buildSegments(groups, turnHeights, userMessageHeights = {}) {
   }
 
   return segments
-}
-
-export function normalizeWidths(segments) {
-  const allDurations = segments.flatMap(s => s.turns.map(t => t.duration))
-  const maxDuration = Math.max(...allDurations, 1) // Avoid divide by zero
-
-  return segments.map(segment => ({
-    ...segment,
-    turns: segment.turns.map(turn => ({
-      ...turn,
-      width:
-        MINIMAP_MIN_WIDTH + (turn.duration / maxDuration) * (MINIMAP_MAX_WIDTH - MINIMAP_MIN_WIDTH),
-    })),
-  }))
 }
 
 export function calculateDuration(events) {

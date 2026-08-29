@@ -5,6 +5,7 @@ import {
   detectLanguage,
   detectLanguageFromContent,
   getLanguageFromPath,
+  looksLikeJson,
   looksLikeMarkdown,
 } from './languageDetection'
 
@@ -116,6 +117,24 @@ print("hello")
   it('returns false for empty/null', () => {
     expect(looksLikeMarkdown('')).toBe(false)
     expect(looksLikeMarkdown(null)).toBe(false)
+  })
+})
+
+describe('looksLikeJson', () => {
+  it('returns true for a leading array bracket', () => {
+    expect(looksLikeJson('[1, 2, 3]')).toBe(true)
+  })
+
+  it('returns true for a leading object brace', () => {
+    expect(looksLikeJson('{"a": 1}')).toBe(true)
+  })
+
+  it('returns false for plain text, even text that mentions JSON', () => {
+    expect(looksLikeJson('here is some json: {"a": 1}')).toBe(false)
+  })
+
+  it('returns false for an empty string', () => {
+    expect(looksLikeJson('')).toBe(false)
   })
 })
 

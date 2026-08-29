@@ -315,6 +315,34 @@ describe('ChatController', () => {
       expect(onAutoScrollChange).toHaveBeenCalledWith(false)
     })
 
+    it('keydown listener: Alt plus a scroll-intent key never latches intent', () => {
+      // Every Alt combination is an application binding, so reacting to one would disengage
+      // autoscroll from a key belonging to another column entirely.
+      const listeners = {}
+      const realEl = {
+        scrollTop: 460, // at-bottom, so a bare key of the same value would otherwise latch
+        scrollHeight: 1000,
+        clientHeight: 500,
+        addEventListener: (type, fn) => {
+          listeners[type] = fn
+        },
+        removeEventListener: () => {},
+      }
+      const onAutoScrollChange = vi.fn()
+      controller = new ChatController({ onAutoScrollChange })
+      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      controller.attachInputListeners(realEl)
+      controller.isAutoScrollEnabled = true
+
+      for (const key of ['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' ']) {
+        listeners.keydown({ key, altKey: true, shiftKey: false, target: realEl })
+      }
+
+      expect(controller.isAutoScrollEnabled).toBe(true)
+      expect(controller.userIntentActive).toBe(false)
+      expect(onAutoScrollChange).not.toHaveBeenCalled()
+    })
+
     it('monotonically re-engages exactly once during scroll-to-bottom sweep with interleaved wheel events', () => {
       // Sweep: latched above threshold, scrolling back toward bottom. Contract: zero flicker
       // while re-engaging.

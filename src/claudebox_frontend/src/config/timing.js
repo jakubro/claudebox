@@ -6,7 +6,6 @@ export const RECONNECT_BASE_DELAY = 1000
 export const RECONNECT_MAX_DELAY = 10000
 export const RECONNECT_MAX_ATTEMPTS = 3
 export const NORMAL_BATCH_INTERVAL = 50
-export const REPLAY_DRAIN_INTERVAL_MS = 50
 export const SESSION_POLL_INTERVAL = 5000
 export const STATUS_POLL_INTERVAL = 60000
 export const SESSIONS_REFRESH_FALLBACK_MS = 60000
@@ -37,6 +36,15 @@ export const STILL_RUNNING_TOAST_DISMISS_MS = 5000
 export const FETCH_RETRY_MAX_ATTEMPTS = 3
 export const FETCH_RETRY_BASE_DELAY_MS = 1000
 export const FETCH_RETRY_MAX_DELAY_MS = 10000
+// Per-attempt fetch bounds. Repeated calls fail fast because the next one recovers; one-shot calls
+// clear the server's own bound so its typed error wins the race rather than a blank client abort.
+export const FETCH_TIMEOUT_INTERACTIVE_MS = 10_000
+export const FETCH_TIMEOUT_LISTING_MS = 20_000
+export const FETCH_TIMEOUT_ACTION_MS = 40_000
+export const FETCH_TIMEOUT_CONTAINER_LIFECYCLE_MS = 90_000
+// Clears the daemon's own worst case for one spawn: 60s podman run + 15s port lookup + 119s health
+// polling (30 attempts x 3s, 29 x 1s sleep) + a 10s SDK call.
+export const FETCH_TIMEOUT_SESSION_LIFECYCLE_MS = 240_000
 export const CREATING_OVERLAY_TIMEOUT_MS = 30_000
 export const SESSION_DEFAULTS_CACHE_TTL_MS = 60_000
 export const ERROR_REPORT_DEDUP_WINDOW_MS = 60_000

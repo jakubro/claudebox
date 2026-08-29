@@ -2,25 +2,23 @@
 
 import { getWorkspaceId } from '../api/apiClient'
 import { getUiState } from '../api/uiState'
-import { stripSessionPanels } from '../utils/layoutPersistence'
 
 // Panel titles that need special casing (acronyms, etc.)
 const PANEL_TITLES = {
   mcp: 'MCP',
 }
 
-const SIDE_DIMENSION = { left: 'width', right: 'width', bottom: 'height' }
-const SIDE_DIRECTION = { left: 'left', right: 'right', bottom: 'below' }
-const ALL_SIDES = ['left', 'right', 'bottom']
+const SIDE_DIMENSION = { left: 'width', right: 'width' }
+const SIDE_DIRECTION = { left: 'left', right: 'right' }
+const ALL_SIDES = ['left', 'right']
 
 export default class SidePanelManager {
   /**
    * @param {object} api - Dockview API instance
    * @param {object} config - Configuration object
-   * @param {object} config.sides - Panel ID to side mapping (e.g., { sessions: 'left', logs: 'bottom' })
-   * @param {object} config.canonicalOrder - Canonical order per side (e.g., { left: ['sessions', 'files'], bottom: ['logs'] })
+   * @param {object} config.sides - Panel ID to side mapping, e.g. { sessions: 'left' }
+   * @param {object} config.canonicalOrder - Order per side, e.g. { left: ['sessions'] }
    * @param {number} config.defaultWidth - Default width as fraction of window (e.g., 0.15 for 15%)
-   * @param {number} [config.defaultHeight] - Default height as fraction of window (e.g., 0.25 for 25%)
    */
   constructor(api, config) {
     this.api = api
@@ -30,7 +28,6 @@ export default class SidePanelManager {
     this.state = {
       left: { width: null, order: [] },
       right: { width: null, order: [] },
-      bottom: { height: null, order: [] },
     }
   }
 
@@ -156,7 +153,6 @@ export default class SidePanelManager {
     return {
       left: { ...this.state.left, order: [...this.state.left.order] },
       right: { ...this.state.right, order: [...this.state.right.order] },
-      bottom: { ...this.state.bottom, order: [...this.state.bottom.order] },
     }
   }
 
@@ -169,9 +165,6 @@ export default class SidePanelManager {
     for (const side of ALL_SIDES) {
       if (data[side]) {
         this.state[side] = { ...this.state[side], ...data[side] }
-        if (data[side].order) {
-          this.state[side].order = data[side].order.filter(id => id !== 'files' && id !== 'logs')
-        }
       }
     }
   }
@@ -200,8 +193,7 @@ export default class SidePanelManager {
         delete session.preMaximizeLayout
       }
 
-      // Strip session view IDs before restoring - only `main` is a center panel.
-      this.api.fromJSON(stripSessionPanels(session.layout))
+      this.api.fromJSON(session.layout)
 
       this.fromJSON(session.panelGroups)
 
@@ -225,7 +217,7 @@ export default class SidePanelManager {
     this.api.exitMaximizedGroup()
     if (snapshot) {
       this.fromJSON(snapshot.panelGroups)
-      // Defer to rAF so the grid finishes its post-exitMaximized layout pass before we set sizes.
+      // Defer to rAF so the grid finishes its post-exitMaximized layout pass before sizes are set.
       requestAnimationFrame(() => {
         this._restoreDimensionsFromSnapshot(snapshot.panelGroups)
       })
@@ -250,7 +242,7 @@ export default class SidePanelManager {
 
   /** Capture current dimensions of all side panel groups. */
   _captureDimensions() {
-    const dimensions = { left: null, right: null, bottom: null }
+    const dimensions = { left: null, right: null }
     this._forEachTrackedPanel((panel, side) => {
       const dim = SIDE_DIMENSION[side]
       dimensions[side] = panel.api.group.api[dim]
@@ -278,12 +270,8 @@ export default class SidePanelManager {
 
   /** Iterate tracked panels, calling callback with (panel, side) for the first panel per side. */
   _forEachTrackedPanel(callback) {
-    const visited = { left: false, right: false, bottom: false }
-    const trackedPanels = new Set([
-      ...this.state.left.order,
-      ...this.state.right.order,
-      ...this.state.bottom.order,
-    ])
+    const visited = { left: false, right: false }
+    const trackedPanels = new Set([...this.state.left.order, ...this.state.right.order])
 
     for (const panel of this.api.panels) {
       const side = this.config.sides[panel.id]
@@ -321,28 +309,16 @@ export default class SidePanelManager {
       const dim = SIDE_DIMENSION[side]
       const savedDim = this.state[side][dim]
       const direction = SIDE_DIRECTION[side]
+      const initialWidth = savedDim || window.innerWidth * this.config.defaultWidth
 
-      if (side === 'bottom') {
-        const initialHeight = savedDim || window.innerHeight * (this.config.defaultHeight || 0.25)
-        this.api.addPanel({
-          id: panelId,
-          component: panelId,
-          title,
-          tabComponent: 'icon',
-          position: { direction, referencePanel: 'main' },
-          initialHeight,
-        })
-      } else {
-        const initialWidth = savedDim || window.innerWidth * this.config.defaultWidth
-        this.api.addPanel({
-          id: panelId,
-          component: panelId,
-          title,
-          tabComponent: 'icon',
-          position: { direction },
-          initialWidth,
-        })
-      }
+      this.api.addPanel({
+        id: panelId,
+        component: panelId,
+        title,
+        tabComponent: 'icon',
+        position: { direction },
+        initialWidth,
+      })
     }
   }
 
@@ -385,7 +361,6 @@ export default class SidePanelManager {
     const dimensions = {
       left: panelGroups.left?.width ?? null,
       right: panelGroups.right?.width ?? null,
-      bottom: panelGroups.bottom?.height ?? null,
     }
     this._restoreDimensions(dimensions)
   }

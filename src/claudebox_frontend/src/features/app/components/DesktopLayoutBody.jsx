@@ -28,6 +28,8 @@ import StillRunningToastSlot from './StillRunningToastSlot'
  * @param {Function} props.exitMaximize - Exit maximized group; no-op when nothing is maximized.
  * @param {Function} props.focusChatTab - Focus the chat textarea.
  * @param {object} props.jumpRefs - Message-jump callback refs.
+ * @param {object} props.rightColumnJumpRefs - Right split slot's step-navigation callback refs.
+ * @param {object} props.railJumpRefs - Session rail's own focus-move navigation callback refs.
  * @param {React.RefObject} props.newSessionRef - New-session-in-current-tab ref.
  * @param {React.RefObject} props.newSessionInNewTabRef - New-session-in-new-browser-tab ref.
  * @param {boolean} props.showHelpOverlay - Help overlay visibility.
@@ -58,6 +60,8 @@ export default function DesktopLayoutBody({
   exitMaximize,
   focusChatTab,
   jumpRefs,
+  rightColumnJumpRefs,
+  railJumpRefs,
   newSessionRef,
   newSessionInNewTabRef,
   showHelpOverlay,
@@ -99,6 +103,10 @@ export default function DesktopLayoutBody({
     jumpNextRef: jumpRefs.next,
     jumpTopRef: jumpRefs.top,
     jumpBottomRef: jumpRefs.bottom,
+    rightColumnPrevRef: rightColumnJumpRefs.prev,
+    rightColumnNextRef: rightColumnJumpRefs.next,
+    railPrevRef: railJumpRefs.prev,
+    railNextRef: railJumpRefs.next,
     onNewSession: () => newSessionRef.current?.(),
     onNewSessionInNewTab: () => newSessionInNewTabRef.current?.(),
   })

@@ -309,6 +309,24 @@ export async function mockAPI(page, options = {}) {
     },
   )
 
+  // GET .../api/sessions/:id/events - read-only side-thread transcript (excludes .../current)
+  await page.route(new RegExp(`${cp}/api/sessions/(?!current)[^/]+/events$`), async route => {
+    if (handlers.getSessionEvents) {
+      await handlers.getSessionEvents(route)
+    } else {
+      await route.fulfill({ json: { events: [], running: false } })
+    }
+  })
+
+  // POST .../api/sessions/:id/stop - session-scoped stop (excludes .../current)
+  await page.route(new RegExp(`${cp}/api/sessions/(?!current)[^/]+/stop$`), async route => {
+    if (handlers.stopSession) {
+      await handlers.stopSession(route)
+    } else {
+      await route.fulfill({ status: 200, json: {} })
+    }
+  })
+
   // PATCH .../api/sessions/current/prompt
   await page.route(new RegExp(`${cp}/api/sessions/current/prompt`), async route => {
     if (handlers.updateSessionPrompt) {
@@ -398,7 +416,6 @@ export async function mockAPIWithError(page, endpoint, { status = 500, body, tim
  * - unset: delete key at dot-path
  * - add: add value to array if not present
  * - remove: remove first occurrence from array
- * - append: append value to array
  */
 function applyOps(target, key, ops) {
   if (!Array.isArray(ops)) {
@@ -436,12 +453,6 @@ function applyOps(target, key, ops) {
             obj[last].splice(idx, 1)
           }
         }
-        break
-      case 'append':
-        if (!Array.isArray(obj[last])) {
-          obj[last] = []
-        }
-        obj[last].push(op.value)
         break
     }
   }

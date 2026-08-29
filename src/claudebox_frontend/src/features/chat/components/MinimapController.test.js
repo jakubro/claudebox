@@ -295,6 +295,55 @@ describe('MinimapController', () => {
     })
   })
 
+  describe('scroll landing notification', () => {
+    // containerEl: scrollHeight 2000, clientHeight 500 -> maxScroll 1500, autoscroll range >= 1450.
+
+    it('handleClick reports landed-at-bottom when the target is within autoscroll range', () => {
+      const onScrollLanding = vi.fn()
+      controller.attach(containerEl, mapEl, null, null, onScrollLanding)
+
+      controller.handleClick(400, 400) // ratio 1 -> target 2000
+
+      expect(onScrollLanding).toHaveBeenCalledWith(true)
+    })
+
+    it('handleClick reports not-at-bottom when the target lands away from the end', () => {
+      const onScrollLanding = vi.fn()
+      controller.attach(containerEl, mapEl, null, null, onScrollLanding)
+
+      controller.handleClick(200, 400) // ratio 0.5 -> target 1000
+
+      expect(onScrollLanding).toHaveBeenCalledWith(false)
+    })
+
+    it('handleClick does not notify when no callback is supplied', () => {
+      controller.attach(containerEl, mapEl)
+      expect(() => controller.handleClick(400, 400)).not.toThrow()
+    })
+
+    it('startDrag notifies once on release, not per move', () => {
+      const onScrollLanding = vi.fn()
+      controller.attach(containerEl, mapEl, null, null, onScrollLanding)
+
+      const cleanup = controller.startDrag({ clientY: 200 }) // ratio 0.5 -> target 750
+      expect(onScrollLanding).not.toHaveBeenCalled()
+
+      cleanup()
+      expect(onScrollLanding).toHaveBeenCalledTimes(1)
+      expect(onScrollLanding).toHaveBeenCalledWith(false)
+    })
+
+    it("startDrag reports landed-at-bottom from the drag's final position", () => {
+      const onScrollLanding = vi.fn()
+      controller.attach(containerEl, mapEl, null, null, onScrollLanding)
+
+      const cleanup = controller.startDrag({ clientY: 400 }) // ratio 1 -> target 1500
+      cleanup()
+
+      expect(onScrollLanding).toHaveBeenCalledWith(true)
+    })
+  })
+
   describe('handleMouseEnter / handleMouseLeave', () => {
     it('handleMouseEnter clears hide timer and shows', () => {
       controller.show()
@@ -361,8 +410,7 @@ describe('MinimapController', () => {
     })
 
     it('shows minimap on scroll during streaming even with autoscroll enabled', () => {
-      const autoScrollRef = { current: true }
-      controller.attach(containerEl, mapEl, autoScrollRef)
+      controller.attach(containerEl, mapEl, () => true)
       controller.setStreaming(true)
 
       const scrollHandler = containerEl.addEventListener.mock.calls.find(c => c[0] === 'scroll')[1]
@@ -374,8 +422,7 @@ describe('MinimapController', () => {
 
   describe('scroll listener integration', () => {
     it('shows minimap on scroll when autoscroll disabled', () => {
-      const autoScrollRef = { current: false }
-      controller.attach(containerEl, mapEl, autoScrollRef)
+      controller.attach(containerEl, mapEl, () => false)
 
       const scrollHandler = containerEl.addEventListener.mock.calls.find(c => c[0] === 'scroll')[1]
 
@@ -385,8 +432,7 @@ describe('MinimapController', () => {
     })
 
     it('does not show on scroll when autoscroll enabled', () => {
-      const autoScrollRef = { current: true }
-      controller.attach(containerEl, mapEl, autoScrollRef)
+      controller.attach(containerEl, mapEl, () => true)
 
       const scrollHandler = containerEl.addEventListener.mock.calls.find(c => c[0] === 'scroll')[1]
 
@@ -449,8 +495,8 @@ describe('MinimapController', () => {
   })
 
   describe('viewport sizing (logical scrollHeight for jitter resistance)', () => {
-    // SIZE uses the logical denominator so thumb HEIGHT doesn't jitter when windowed turns mount and unmount,
-    // moving the container's own scrollHeight even though the conversation hasn't changed.
+    // SIZE uses the logical denominator so thumb HEIGHT doesn't jitter when windowed turns mount
+    // and unmount, moving the container's scrollHeight though the conversation hasn't changed.
 
     it('thumb height uses getLogicalScrollHeight when supplied', () => {
       containerEl.scrollTop = 600
@@ -498,9 +544,8 @@ describe('MinimapController', () => {
   })
 
   describe('viewport positioning (native scrollHeight for accuracy)', () => {
-    // POSITION uses native scrollHeight - it caps scrollTop at (nativeScrollHeight - clientHeight);
-    // a logical estimate that undercounts native (padding, margins, non-turn siblings) would push the ratio past 1
-    // and the thumb past mapHeight.
+    // POSITION uses native scrollHeight, which caps scrollTop; a logical estimate that undercounts
+    // it would push the ratio past 1 and the thumb past mapHeight.
 
     it('thumb top is 0 when scrollTop is 0', () => {
       containerEl.scrollHeight = 100000
@@ -513,7 +558,7 @@ describe('MinimapController', () => {
     })
 
     it('thumb bottom lands at mapHeight at max scroll even when logical undercounts native', () => {
-      // Production divergence: per-turn margins + padding push native scrollHeight above the logical sum.
+      // Production divergence: per-turn margins and padding push native above the logical sum.
       containerEl.scrollHeight = 100000 // native (truth)
       containerEl.clientHeight = 200
       containerEl.scrollTop = 99800 // browser cap = nativeScrollHeight - clientHeight

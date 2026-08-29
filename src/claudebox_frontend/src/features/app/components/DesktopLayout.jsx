@@ -8,8 +8,16 @@ import DesktopLayoutBody from './DesktopLayoutBody'
 
 export default function DesktopLayout() {
   const [showHelpOverlay, setShowHelpOverlay] = useState(false)
-  const { jumpRefs, newSessionRefs, scrollIntentRefs, newSessionRef, newSessionInNewTabRef } =
-    useAppRefs()
+  const {
+    jumpRefs,
+    rightColumnJumpRefs,
+    railJumpRefs,
+    newSessionRefs,
+    scrollIntentRefs,
+    newSessionRef,
+    newSessionInNewTabRef,
+    focusedGroupRootRef,
+  } = useAppRefs()
 
   const {
     onReady,
@@ -22,13 +30,16 @@ export default function DesktopLayout() {
     onSessionAttach,
     handleMaximizeToggle,
     exitMaximize,
-  } = useDockviewLayout()
+  } = useDockviewLayout(focusedGroupRootRef)
 
   return (
     <AppProviders
       jumpRefs={jumpRefs}
+      rightColumnJumpRefs={rightColumnJumpRefs}
+      railJumpRefs={railJumpRefs}
       newSessionRefs={newSessionRefs}
       scrollIntentRefs={scrollIntentRefs}
+      focusedGroupRootRef={focusedGroupRootRef}
       panelCallbacks={{
         onFocusChat: focusChatTab,
         panelSwitchingRef,
@@ -45,6 +56,8 @@ export default function DesktopLayout() {
         exitMaximize={exitMaximize}
         focusChatTab={focusChatTab}
         jumpRefs={jumpRefs}
+        rightColumnJumpRefs={rightColumnJumpRefs}
+        railJumpRefs={railJumpRefs}
         newSessionRef={newSessionRef}
         newSessionInNewTabRef={newSessionInNewTabRef}
         showHelpOverlay={showHelpOverlay}

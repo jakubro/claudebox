@@ -15,7 +15,6 @@ class ContainerStatus(StrEnum):
     STOPPING = "stopping"
     CRASHED = "crashed"
     STOPPED = "stopped"
-    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -29,7 +28,11 @@ class Container(DataClass):
         created_at: Timestamp when the container was registered.
         failure_count: Consecutive health check failures.
         labels: Caller-defined metadata (e.g. instance_id, channel_id).
-        session_id: Session ID currently served by this container.
+        session_id: Session ID currently served by this container - the owner, and the only
+            session a stop/kill/delete or a non-additive fork ever moves.
+        members: Side-thread session ids sharing this container. Addressability, not liveness.
+        live_session_ids: Session ids the container's registry reports as started, refreshed on
+            every health probe. A member's liveness is membership here, never in `members`.
     """
 
     id: str
@@ -40,6 +43,8 @@ class Container(DataClass):
     failure_count: int = 0
     labels: dict[str, str] = field(default_factory=dict)
     session_id: str | None = None
+    members: list[str] = field(default_factory=list)
+    live_session_ids: list[str] = field(default_factory=list)
 
     @property
     def base_url(self) -> str:

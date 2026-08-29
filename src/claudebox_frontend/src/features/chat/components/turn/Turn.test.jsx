@@ -2,9 +2,10 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { HideShellCallsContext } from './HideShellCallsContext'
+import { TurnRoutingMode } from '../../../../utils/eventProcessing'
 import Turn from './Turn'
 import { TurnCollapseProvider } from './TurnCollapseContext'
+import { TurnRoutingContext } from './TurnRoutingContext'
 
 vi.mock('../../../../hooks/useCapabilities', () => ({
   default: () => ({ capabilities: null, runtimeName: null }),
@@ -333,14 +334,26 @@ describe('Turn', () => {
     })
   })
 
-  describe('terminal split (HideShellCallsContext)', () => {
-    it('hides all chrome for a Bash-only turn when the context value is true', () => {
+  describe('right-slot routing (TurnRoutingContext)', () => {
+    it('hides all chrome for a Bash-only turn when the context value is true (legacy boolean)', () => {
       const events = [toolUseEvent('Bash', 'b1', { command: 'ls' })]
 
       render(
-        <HideShellCallsContext.Provider value={true}>
+        <TurnRoutingContext.Provider value={true}>
           <Turn events={events} turnId="t1" isActive={false} />
-        </HideShellCallsContext.Provider>,
+        </TurnRoutingContext.Provider>,
+      )
+
+      expect(screen.queryByTestId('message-assistant')).toBeNull()
+    })
+
+    it('hides all chrome for a Bash-only turn when the context value is BASH_ONLY', () => {
+      const events = [toolUseEvent('Bash', 'b1', { command: 'ls' })]
+
+      render(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.BASH_ONLY}>
+          <Turn events={events} turnId="t1" isActive={false} />
+        </TurnRoutingContext.Provider>,
       )
 
       expect(screen.queryByTestId('message-assistant')).toBeNull()
@@ -358,12 +371,119 @@ describe('Turn', () => {
       const events = [textEvent('hello')]
 
       render(
-        <HideShellCallsContext.Provider value={true}>
+        <TurnRoutingContext.Provider value={true}>
           <Turn events={events} turnId="t1" isActive={false} />
-        </HideShellCallsContext.Provider>,
+        </TurnRoutingContext.Provider>,
       )
 
       expect(screen.getByTestId('message-assistant')).toBeInTheDocument()
+    })
+  })
+
+  describe('bare progress row for an emptied turn (work view)', () => {
+    it('renders a bare progress row and no .turn bubble for a live tool-only turn', () => {
+      const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
+
+      render(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
+          <Turn
+            userMessage="edit the file"
+            events={events}
+            turnId="t1"
+            isActive={true}
+            showProgress={true}
+          />
+        </TurnRoutingContext.Provider>,
+      )
+
+      expect(screen.getByTestId('turn-progress-bare')).toBeInTheDocument()
+      expect(screen.getByText('Working')).toBeInTheDocument()
+      expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
+      expect(document.querySelector('.turn')).not.toBeInTheDocument()
+    })
+
+    it('removes the bare row on completion without touching the user message', () => {
+      const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
+
+      const { rerender } = render(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
+          <Turn
+            userMessage="edit the file"
+            events={events}
+            turnId="t1"
+            isActive={true}
+            showProgress={true}
+          />
+        </TurnRoutingContext.Provider>,
+      )
+      expect(screen.getByTestId('turn-progress-bare')).toBeInTheDocument()
+
+      rerender(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
+          <Turn
+            userMessage="edit the file"
+            events={events}
+            turnId="t1"
+            isActive={false}
+            showProgress={false}
+          />
+        </TurnRoutingContext.Provider>,
+      )
+
+      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
+      expect(screen.getByTestId('message-user')).toBeInTheDocument()
+      expect(screen.getByText('edit the file')).toBeInTheDocument()
+    })
+
+    it('renders the full bubble, not the bare row, once a tool call keeps something visible', () => {
+      const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' }), textEvent('done editing')]
+
+      render(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
+          <Turn events={events} turnId="t1" isActive={true} showProgress={true} />
+        </TurnRoutingContext.Provider>,
+      )
+
+      expect(screen.getByTestId('message-assistant')).toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('framed vs bare progress row: tracks content, not acknowledgement', () => {
+    it('renders a framed progress row, not the bare one, for a pending turn with no content yet', () => {
+      render(<Turn userMessage="fix the bug" events={[]} pending={true} showProgress={true} />)
+
+      expect(screen.getByTestId('turn-progress-pending')).toBeInTheDocument()
+      expect(screen.getByText('Working')).toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
+    })
+
+    it('keeps the bare row for a live tool-only turn that has already started (not pending)', () => {
+      const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
+
+      render(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
+          <Turn events={events} turnId="t1" isActive={true} showProgress={true} pending={false} />
+        </TurnRoutingContext.Provider>,
+      )
+
+      expect(screen.getByTestId('turn-progress-bare')).toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-pending')).not.toBeInTheDocument()
+    })
+
+    it('shows no progress row for a pending turn once showProgress is false', () => {
+      render(<Turn userMessage="fix the bug" events={[]} pending={true} showProgress={false} />)
+
+      expect(screen.queryByTestId('turn-progress-pending')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
+    })
+
+    it('stays framed once acknowledged (not pending) but still has no content - the frame tracks content, not acknowledgement', () => {
+      render(<Turn userMessage="fix the bug" events={[]} pending={false} showProgress={true} />)
+
+      expect(screen.getByTestId('turn-progress-pending')).toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
     })
   })
 
@@ -380,10 +500,9 @@ describe('Turn', () => {
         },
       ]
 
-      const { container } = render(<Turn events={events} />)
+      render(<Turn events={events} />)
 
       expect(screen.queryByText('Interrupted')).not.toBeInTheDocument()
-      expect(container.querySelector('.interrupt-indicator')).not.toBeInTheDocument()
     })
 
     it('applies turn-interrupted class when interrupted prop is true', () => {

@@ -22,11 +22,14 @@ import ResumeSplitButton from './ResumeSplitButton'
  * @param {boolean} props.isPinned - Whether this session is pinned.
  * @param {function} props.onResume - Resume callback.
  * @param {function} props.onRename - Rename callback.
- * @param {function} [props.onTogglePin] - Pin toggle callback (desktop only).
- * @param {function} [props.onKillContainer] - Kill container callback (desktop only).
- * @param {function} [props.onOpenInNewTab] - Open in new browser tab callback (desktop only).
+ * @param {object} [props.actions] - Desktop-only action callbacks.
+ * @param {function} [props.actions.onTogglePin] - Pin toggle callback.
+ * @param {function} [props.actions.onKillContainer] - Kill container callback.
+ * @param {function} [props.actions.onOpenInNewTab] - Open in new browser tab callback.
  * @param {function} [props.onClose] - Close drawer callback (mobile only, fired on current-session tap).
  * @param {boolean} [props.isMobile=false] - Mobile flag - hides pin/kill/resume-split, makes whole card the resume tap target.
+ * @param {string|null} [props.originName] - Under an origin filter, the name of the session this
+ *   one came from; when absent the line reads as absent rather than showing a raw id.
  */
 function SessionItem({
   session,
@@ -34,11 +37,10 @@ function SessionItem({
   isPinned,
   onResume,
   onRename,
-  onTogglePin,
-  onKillContainer,
-  onOpenInNewTab,
+  actions: { onTogglePin, onKillContainer, onOpenInNewTab } = {},
   onClose,
   isMobile = false,
+  originName,
 }) {
   const { deriveSessionStatus } = useContainerMap()
   const status = deriveSessionStatus(session.session_id, undefined, session.container_id)
@@ -226,7 +228,9 @@ function SessionItem({
               <Pin size={12} />
             </button>
           )}
-          {!isMobile && status !== 'none' && (
+          {/* A side thread's status (when live) resolves through its parent's container - killing
+              it here would delete that container and take the parent down too. */}
+          {!isMobile && status !== 'none' && !session.is_side_thread && (
             <button
               type="button"
               className="sessions-kill-btn"
@@ -282,6 +286,12 @@ function SessionItem({
           '\u00A0'
         )}
       </div>
+
+      {originName !== undefined && (
+        <div className="sessions-row sessions-origin" data-testid="session-origin">
+          {originName ? `from: ${originName}` : '\u00A0'}
+        </div>
+      )}
 
       <div className="sessions-row sessions-last">
         {session.last_message && session.last_message !== session.first_message ? (

@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest'
 import { deriveTerminalEntries } from './terminalEvents'
 
 /** A Bash (or LangGraph `bash`) tool_use event. */
-function bashCall(id, { parentId = null, description, command = 'ls' } = {}) {
+function bashCall(id, { parentId = null, description, command = 'ls', ts } = {}) {
   return {
     subtype: 'tool_use',
     content: 'Bash',
     tool_use_id: id,
     parent_tool_use_id: parentId,
     tool_input: { command, description },
+    ts,
   }
 }
 
@@ -108,5 +109,20 @@ describe('deriveTerminalEntries', () => {
 
   it('returns an empty array for no events', () => {
     expect(deriveTerminalEntries([])).toEqual([])
+  })
+
+  it("carries the call event's own ts as callTs, not the result's", () => {
+    const entries = deriveTerminalEntries([
+      bashCall('b-1', { ts: '2024-01-01T00:00:00.000Z' }),
+      toolResult('b-1'),
+    ])
+
+    expect(entries[0].callTs).toBe('2024-01-01T00:00:00.000Z')
+  })
+
+  it('defaults callTs to null when the call event carries none', () => {
+    const entries = deriveTerminalEntries([bashCall('b-1')])
+
+    expect(entries[0].callTs).toBeNull()
   })
 })

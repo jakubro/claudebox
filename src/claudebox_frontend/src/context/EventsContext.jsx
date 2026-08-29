@@ -13,11 +13,7 @@ import { flushSync } from 'react-dom'
 import { getContainerId, getWorkspaceId, setContainerId } from '../api/apiClient'
 import { ConnectionStatus, EventSubtype, EventType } from '../config/schema'
 import { REPLAY_DRAIN_SLICE_SIZE } from '../config/thresholds'
-import {
-  NORMAL_BATCH_INTERVAL,
-  RECONNECT_MAX_ATTEMPTS,
-  REPLAY_DRAIN_INTERVAL_MS,
-} from '../config/timing'
+import { NORMAL_BATCH_INTERVAL, RECONNECT_MAX_ATTEMPTS } from '../config/timing'
 import useSSE from '../hooks/useSSE'
 import { StreamingStatusContext } from './StreamingStatusContext'
 import { eventsReducer, initialState } from './utils/eventsReducer'
@@ -43,37 +39,64 @@ export function EventsProvider({ children }) {
   // Replay buffer: drained in bounded slices so history materializes progressively, not in one blocking commit.
   // Live events during the drain join this same queue, not the streaming path, so a newer event can't jump ahead.
   const replayBufferRef = useRef([])
-  const replayTimeoutRef = useRef(null)
+  const replayScheduledRef = useRef(false)
   const replayServerDoneRef = useRef(false)
+  const replayPortRef = useRef(null)
+  const drainReplaySliceRef = useRef(null)
+
+  // A hidden tab clamps setTimeout to about one call a second, which is what stretches an
+  // unfocused replay into minutes. MessagePort delivery carries no such clamp.
+  const scheduleReplayDrain = useCallback(() => {
+    if (replayScheduledRef.current) {
+      return
+    }
+
+    if (!replayPortRef.current) {
+      const channel = new MessageChannel()
+      channel.port1.onmessage = () => drainReplaySliceRef.current()
+      replayPortRef.current = channel.port2
+    }
+
+    replayScheduledRef.current = true
+    replayPortRef.current.postMessage(null)
+  }, [])
 
   const drainReplaySlice = useCallback(() => {
-    replayTimeoutRef.current = null
+    replayScheduledRef.current = false
 
     const take = replaySliceEnd(
       replayBufferRef.current,
       REPLAY_DRAIN_SLICE_SIZE,
       replayServerDoneRef.current,
     )
+
+    // Zero against a non-empty queue means replaySliceEnd is holding an unclosed compaction run
+    // back, which only happens before the server finishes. Idle rather than spin.
+    if (take === 0 && replayBufferRef.current.length > 0) {
+      return
+    }
+
     if (take > 0) {
       const batchEvents = replayBufferRef.current.slice(0, take)
       replayBufferRef.current = replayBufferRef.current.slice(take)
       dispatch({ type: 'REPLAY_SLICE', batchEvents })
     }
 
-    if (replayBufferRef.current.length > 0 || !replayServerDoneRef.current) {
-      replayTimeoutRef.current = setTimeout(drainReplaySlice, REPLAY_DRAIN_INTERVAL_MS)
+    if (replayBufferRef.current.length > 0) {
+      scheduleReplayDrain()
+      return
+    }
+
+    // Drained ahead of the server: idle, since the next arriving event schedules another slice.
+    if (!replayServerDoneRef.current) {
       return
     }
 
     isReplayingRef.current = false
     dispatch({ type: 'REPLAY_ENDED' })
-  }, [])
+  }, [scheduleReplayDrain])
 
-  const scheduleReplayDrain = useCallback(() => {
-    if (!replayTimeoutRef.current) {
-      replayTimeoutRef.current = setTimeout(drainReplaySlice, REPLAY_DRAIN_INTERVAL_MS)
-    }
-  }, [drainReplaySlice])
+  drainReplaySliceRef.current = drainReplaySlice
 
   // SSE message handler - parses events, manages replay boundaries, batches updates
   const onMessage = useCallback(
@@ -101,11 +124,7 @@ export function EventsProvider({ children }) {
             replayBufferRef.current.push(...eventBufferRef.current)
             eventBufferRef.current = []
           }
-          if (replayTimeoutRef.current) {
-            clearTimeout(replayTimeoutRef.current)
-            replayTimeoutRef.current = null
-          }
-          drainReplaySlice()
+          scheduleReplayDrain()
           return
         }
 
@@ -132,7 +151,7 @@ export function EventsProvider({ children }) {
         console.warn('EventsContext: Failed to parse SSE event', err)
       }
     },
-    [drainReplaySlice, scheduleReplayDrain],
+    [scheduleReplayDrain],
   )
 
   // Container ID is mirrored into React state so sseUrl reacts to changes.
@@ -169,12 +188,49 @@ export function EventsProvider({ children }) {
     reconnectSSE: rawReconnect,
     disconnectSSE: rawDisconnect,
     closeSSE: rawClose,
+    openKeyed,
+    closeKeyed,
   } = useSSE({
     onMessage,
     url: sseUrl,
     maxAttempts: RECONNECT_MAX_ATTEMPTS,
     onReconnectExhausted: handleReconnectExhausted,
   })
+
+  // Open a second, independent stream for a session other than the active one; its events reach
+  // only the caller's callback, and a miss returns 503 rather than the container's primary.
+  const subscribeSession = useCallback(
+    (sessionId, sessionContainerId, onSessionMessage, { replay = true, onError } = {}) => {
+      const wsId = getWorkspaceId()
+      if (!(wsId && sessionContainerId)) {
+        return () => {}
+      }
+      const params = new URLSearchParams({ session_id: sessionId })
+      // replay=false: a float re-attaching to an already-running side thread, which read the
+      // persisted log via the events route first and wants only what arrives from here on.
+      if (!replay) {
+        params.set('replay', 'false')
+      }
+      const url = `/api/workspaces/${wsId}/containers/${sessionContainerId}/api/stream?${params}`
+      return openKeyed(sessionId, url, {
+        onMessage: onSessionMessage,
+        maxAttempts: RECONNECT_MAX_ATTEMPTS,
+        onStatusChange: status => {
+          if (status === 'error') {
+            onError?.()
+          }
+        },
+      })
+    },
+    [openKeyed],
+  )
+
+  const unsubscribeSession = useCallback(
+    sessionId => {
+      closeKeyed(sessionId)
+    },
+    [closeKeyed],
+  )
 
   const isConnected = connectionStatus === ConnectionStatus.CONNECTED
 
@@ -240,10 +296,8 @@ export function EventsProvider({ children }) {
     replayServerDoneRef.current = false
     replayBufferRef.current = []
     eventBufferRef.current = []
-    if (replayTimeoutRef.current) {
-      clearTimeout(replayTimeoutRef.current)
-      replayTimeoutRef.current = null
-    }
+    // An already-posted port message still lands, finds an empty queue, and dispatches nothing.
+    replayScheduledRef.current = false
     if (batchTimeoutRef.current) {
       clearTimeout(batchTimeoutRef.current)
       batchTimeoutRef.current = null
@@ -325,6 +379,8 @@ export function EventsProvider({ children }) {
       containerId,
       notifyContainerChanged,
       containerRecoveryNeeded,
+      subscribeSession,
+      unsubscribeSession,
     }),
     [
       state.events,
@@ -370,6 +426,8 @@ export function EventsProvider({ children }) {
       containerId,
       notifyContainerChanged,
       containerRecoveryNeeded,
+      subscribeSession,
+      unsubscribeSession,
     ],
   )
 

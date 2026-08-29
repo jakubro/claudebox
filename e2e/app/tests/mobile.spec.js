@@ -12,12 +12,15 @@ test.describe('Mobile Layout', () => {
   })
 
   // SPEC: mobile:activation
+  // SPEC: chat:rail-no-touch
   test('mobile layout activates on touch-primary devices', async ({ page }) => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForMobileReady(page)
 
     await expect(page.locator('.mobile-layout')).toBeVisible()
     await expect(page.locator('.dockview-theme-dark')).toHaveCount(0)
+    // The mobile tree renders the chat panel directly - no session rail anywhere in it.
+    await expect(page.locator('[data-testid="chat-rail"]')).toHaveCount(0)
   })
 
   // SPEC: mobile:viewport-change

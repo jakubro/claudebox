@@ -9,6 +9,7 @@ const mockLocalStorage = {}
 
 vi.mock('../api/apiClient', () => ({
   setWorkspaceId: (...args) => mockSetWorkspaceId(...args),
+  retryFetch: (...args) => fetch(...args),
 }))
 
 vi.mock('../config/storage', () => ({

@@ -35,12 +35,15 @@ export function predictTerminalEntryHeight(metrics) {
   return Math.max(TERMINAL_ENTRY_MIN_PREDICTED_HEIGHT_PX, predicted)
 }
 
-/** Extraction-derived metrics for one entry, cached by the caller keyed on `entry.id`. */
+/**
+ * Extraction-derived metrics for one entry, cached by the caller keyed on `entry.id`. `isFailed`
+ * reuses the predicate `TerminalEntry.jsx` renders its failure state from, so the two agree.
+ */
 export function deriveEntryMetrics(entry) {
   const hasComment = !!entry.description
 
   if (!entry.result) {
-    return { hasComment, pending: true, outputText: '', isPersisted: false }
+    return { hasComment, pending: true, outputText: '', isPersisted: false, isFailed: false }
   }
 
   const extracted = extractToolResult(
@@ -55,6 +58,7 @@ export function deriveEntryMetrics(entry) {
     pending: false,
     outputText,
     isPersisted: !!extracted?.persistedOutput,
+    isFailed: !!entry.result?.is_error || !!extracted?.isError,
   }
 }
 

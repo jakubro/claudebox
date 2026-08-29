@@ -221,6 +221,22 @@ test.describe('Attachment Zoom', () => {
     await page.locator('.zoom-overlay-close').click()
     await expect(page.locator('.zoom-overlay')).not.toBeVisible()
   })
+
+  test('the image overlay has no zoom/pan controls and ignores the mermaid keys', async ({
+    page,
+  }) => {
+    await page.locator('.message-attachment-thumb').first().click()
+    await expect(page.locator('.zoom-overlay')).toBeVisible()
+
+    await expect(page.locator('.mermaid-zoom-controls')).toHaveCount(0)
+
+    await page.keyboard.press('+')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('.zoom-overlay')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.zoom-overlay')).not.toBeVisible()
+  })
 })
 
 test.describe('Attachment Input Extras', () => {

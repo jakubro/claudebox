@@ -38,6 +38,9 @@ class Config(DataClass):
     # are substituted client-side.
     editor_url_template: str | None = None
 
+    # [links] allow - full-match regex allowlist for message text a URL may auto-submit.
+    links_allow: list[str] | None = None
+
     # LangGraph adapter knobs, populated when [langgraph] is present; adapter selection is the
     # top-level `agent` field, this section is adapter-private config.
     langgraph_model: str | None = None
@@ -84,6 +87,7 @@ class Config(DataClass):
         mounts = mounts and {resolve_path(k): resolve_path(v) for k, v in mounts.items()}
 
         editor_section = data.get("editor") or {}
+        links_section = data.get("links") or {}
 
         langgraph_section: dict = {}
         raw_langgraph = data.get("langgraph")
@@ -131,6 +135,7 @@ class Config(DataClass):
             env=data.get("env"),
             containers_nested=data.get("containers", {}).get("nested", False),
             editor_url_template=editor_section.get("url_template"),
+            links_allow=links_section.get("allow"),
             langgraph_model=langgraph_section.get("model"),
             langgraph_max_tokens_override=langgraph_section.get("max_tokens_override"),
             langgraph_web_search_provider=web_search_section.get("provider", "duckduckgo"),

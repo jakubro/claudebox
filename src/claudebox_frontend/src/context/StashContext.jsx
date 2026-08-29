@@ -105,6 +105,7 @@ export function StashProvider({ children }) {
       stashCopy,
       stashRemove,
       pendingInsert,
+      setPendingInsert,
       clearPendingInsert,
       clearStash,
     }),

@@ -7,14 +7,24 @@ import useAppRefs from '../../hooks/useAppRefs'
 import MobileLayout from './MobileLayout'
 
 export default function MobileApp() {
-  const { jumpRefs, newSessionRefs, scrollIntentRefs } = useAppRefs()
+  const {
+    jumpRefs,
+    rightColumnJumpRefs,
+    newSessionRefs,
+    scrollIntentRefs,
+    railJumpRefs,
+    focusedGroupRootRef,
+  } = useAppRefs()
   const panelSwitchingRef = useRef(false)
 
   return (
     <AppProviders
       jumpRefs={jumpRefs}
+      rightColumnJumpRefs={rightColumnJumpRefs}
       newSessionRefs={newSessionRefs}
       scrollIntentRefs={scrollIntentRefs}
+      railJumpRefs={railJumpRefs}
+      focusedGroupRootRef={focusedGroupRootRef}
       panelCallbacks={{
         onFocusChat: noop,
         panelSwitchingRef,

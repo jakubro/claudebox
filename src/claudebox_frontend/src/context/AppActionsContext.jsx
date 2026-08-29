@@ -19,8 +19,13 @@ const AppActionsContext = createContext(null)
  * @param {React.RefObject} props.jumpNextRef - Ref for jump-to-next-message callback.
  * @param {React.RefObject} props.jumpTopRef - Ref for jump-to-top callback.
  * @param {React.RefObject} props.jumpBottomRef - Ref for jump-to-bottom callback.
+ * @param {React.RefObject} props.rightColumnPrevRef - Right split slot's step-prev (Alt+PageUp).
+ * @param {React.RefObject} props.rightColumnNextRef - Right split slot's step-next (Alt+PageDown).
  * @param {React.RefObject} props.markUserIntentRef - Cross-panel scroll-intent signal ref.
  * @param {React.RefObject} props.markProgrammaticScrollRef - Brackets programmatic scroll writes from sibling panels.
+ * @param {React.RefObject} props.focusedGroupRootRef - Focused rail group's own root DOM node.
+ * @param {React.RefObject} props.railPrevRef - Rail focus-prev callback (Alt+Shift+Left).
+ * @param {React.RefObject} props.railNextRef - Rail focus-next callback (Alt+Shift+Right).
  */
 export function AppActionsProvider({
   children,
@@ -33,8 +38,13 @@ export function AppActionsProvider({
   jumpNextRef,
   jumpTopRef,
   jumpBottomRef,
+  rightColumnPrevRef,
+  rightColumnNextRef,
   markUserIntentRef,
   markProgrammaticScrollRef,
+  focusedGroupRootRef,
+  railPrevRef,
+  railNextRef,
 }) {
   // Chat scroll state (persists across tab switches)
   const chatScrollPositionRef = useRef(0)
@@ -51,6 +61,10 @@ export function AppActionsProvider({
   // Registered by ChatPanel; lets sibling panels open a collapsed turn before jumping into it.
   const expandTurnRef = useRef(null)
 
+  // Registered by ChatPanel; the Tasks panel jumps to a task's tool block through this and lets
+  // the chat area pick the destination column, rather than resolving the active view itself.
+  const jumpToTaskRef = useRef(null)
+
   const focusChatTab = useCallback(() => onFocusChat?.(), [onFocusChat])
 
   const value = useMemo(
@@ -65,12 +79,18 @@ export function AppActionsProvider({
       chatPanelSwitchingRef: panelSwitchingRef,
       scrollToTurnRef,
       expandTurnRef,
+      jumpToTaskRef,
       jumpPrevRef,
       jumpNextRef,
       jumpTopRef,
       jumpBottomRef,
+      rightColumnPrevRef,
+      rightColumnNextRef,
       markUserIntentRef,
       markProgrammaticScrollRef,
+      focusedGroupRootRef,
+      railPrevRef,
+      railNextRef,
     }),
     [
       focusChatTab,
@@ -82,8 +102,13 @@ export function AppActionsProvider({
       jumpNextRef,
       jumpTopRef,
       jumpBottomRef,
+      rightColumnPrevRef,
+      rightColumnNextRef,
       markUserIntentRef,
       markProgrammaticScrollRef,
+      focusedGroupRootRef,
+      railPrevRef,
+      railNextRef,
     ],
   )
 

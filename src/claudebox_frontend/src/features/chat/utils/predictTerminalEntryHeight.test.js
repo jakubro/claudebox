@@ -135,4 +135,18 @@ describe('deriveEntryMetrics', () => {
     expect(metrics.outputText).toBe('a.txt\nb.txt')
     expect(metrics.isPersisted).toBe(false)
   })
+
+  it('marks a pending entry as not failed - running carries no verdict yet', () => {
+    expect(deriveEntryMetrics(entry({ result: null })).isFailed).toBe(false)
+  })
+
+  it('marks isFailed from result.is_error, the same predicate TerminalEntry renders from', () => {
+    const metrics = deriveEntryMetrics(entry({ result: { content: 'boom', is_error: true } }))
+    expect(metrics.isFailed).toBe(true)
+  })
+
+  it('marks isFailed false for a passing result', () => {
+    const metrics = deriveEntryMetrics(entry({ result: { content: 'ok', is_error: false } }))
+    expect(metrics.isFailed).toBe(false)
+  })
 })

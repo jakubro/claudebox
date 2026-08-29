@@ -1,9 +1,9 @@
 /* Span-anchored inline replies: durable quote highlight + floating reply composers. */
 
-/* Durable highlight painted over a quoted span (CSS Custom Highlight API): a dotted underline over a
-   subtle accent fill, matching the file-path highlight affordance. text-underline-offset is honored on
-   Chromium; other engines draw the underline at the default offset (harmless). */
-::highlight(inline-quote) {
+/* Durable highlight painted over a quoted span (CSS Custom Highlight API): a dotted underline over
+   an accent fill. `inline-quote-ancestor` is the read-only counterpart's own registry entry. */
+::highlight(inline-quote),
+::highlight(inline-quote-ancestor) {
   background-color: color-mix(in srgb, var(--accent) 26%, transparent);
   text-decoration: underline dotted;
   text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
@@ -91,4 +91,118 @@
   word-break: break-word;
   font-size: 13px;
   color: var(--text-primary);
+}
+
+/* A side thread's question/answer history, plus its follow-up field. Capped and internally
+   scrolling - an unbounded history would push neighbouring floats off-stack. */
+.inline-thread-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.inline-thread-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inline-thread-question {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inline-thread-answer {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* Trailing dot after the answer's last-arrived text - the float's stand-in for a spinner. */
+.inline-thread-working {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: inline-thread-working-pulse 1s ease-in-out infinite;
+}
+
+@keyframes inline-thread-working-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.inline-thread-error {
+  font-size: 12px;
+  color: var(--error);
+}
+
+/* Frozen float after promotion: a real <a target="_blank">, not window.open, so the click is
+   native navigation and no popup blocker can trip it. */
+.inline-thread-moved-link {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.inline-thread-moved-link a {
+  color: var(--accent);
+}
+
+.inline-thread-followup-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-thread-followup-row .inline-thread-input {
+  flex: 1;
+}
+
+/* Stop control while an answer arrives - metrics come from App.css's shared chrome-icon-button
+   rule, so it matches the session header's stop button rather than the float's smaller icons. */
+.inline-thread-stop {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.inline-thread-stop:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Read-only card a rail-promoted quote's hover shows (PromotedThreadCard.jsx) - shared by an
+   ancestor's overlay and the live one. */
+.promoted-thread-card-focus {
+  align-self: flex-start;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.promoted-thread-card-focus:hover {
+  background: var(--bg-tertiary);
 }

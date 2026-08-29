@@ -41,8 +41,6 @@ class ToolContext:
     """Frozen DI bundle. Universal fields always populated."""
 
     workspace_path: Path
-    session_id: str
-    session_dir: Path
     config: LangGraphAgentSessionConfig
     hooks: HookCallbacks
     logger: Any

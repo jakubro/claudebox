@@ -1,6 +1,7 @@
 /** Look up the runtime container ID (`backend_id`) for the active session's container. */
 
 import { useEffect, useState } from 'react'
+import { getContainer } from '../api/containers'
 import { useDaemonStreamContext } from '../context/DaemonStreamContext'
 import { useEvents } from '../context/EventsContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -22,24 +23,22 @@ export default function useCurrentBackendId() {
       return
     }
 
-    let cancelled = false
-    fetch(`/api/workspaces/${workspaceId}/containers/${containerId}`)
-      .then(r => (r.ok ? r.json() : null))
+    // Aborted rather than merely ignored on cleanup: this re-runs per container-status event, so
+    // an abandoned request would keep its connection slot against the origin's budget.
+    const controller = new AbortController()
+
+    getContainer(containerId, { signal: controller.signal })
       .then(data => {
-        if (cancelled) {
-          return
-        }
         setBackendId(data?.backend_id ?? null)
       })
       .catch(() => {
-        if (cancelled) {
-          return
+        if (!controller.signal.aborted) {
+          setBackendId(null)
         }
-        setBackendId(null)
       })
 
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [workspaceId, containerId, lastContainerEvent])
 

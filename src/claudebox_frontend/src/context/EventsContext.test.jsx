@@ -9,7 +9,6 @@ vi.mock('../api/apiClient', () => ({
 }))
 
 import { REPLAY_DRAIN_SLICE_SIZE } from '../config/thresholds'
-import { REPLAY_DRAIN_INTERVAL_MS } from '../config/timing'
 import { EventsProvider, useEvents } from './EventsContext'
 
 class MockEventSource {
@@ -61,6 +60,18 @@ describe('EventsContext', () => {
 
   const wrapper = ({ children }) => <EventsProvider>{children}</EventsProvider>
   const getLatestEventSource = () => MockEventSource.instances[MockEventSource.instances.length - 1]
+
+  // The drain yields through a MessagePort no timer mock advances - post a message and wait for
+  // it back. Node runs the whole queue in one turn, so the e2e suite asserts slice pacing.
+  const flushReplayDrain = async () => {
+    await act(async () => {
+      await new Promise(resolve => {
+        const channel = new MessageChannel()
+        channel.port1.onmessage = () => resolve()
+        channel.port2.postMessage(null)
+      })
+    })
+  }
 
   /** Sends events through EventSource and flushes the batch timer. */
   const sendAndFlush = (es, ...events) => {
@@ -627,7 +638,7 @@ describe('EventsContext', () => {
       expect(result.current.isResuming).toBe(true)
     })
 
-    it('cleared on REPLAY_ENDED', () => {
+    it('cleared on REPLAY_ENDED', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -644,6 +655,7 @@ describe('EventsContext', () => {
         es.simulateMessage({ type: 'user', content: 'msg1' })
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
+      await flushReplayDrain()
 
       expect(result.current.isResuming).toBe(false)
       expect(result.current.isReplaying).toBe(false)
@@ -776,7 +788,7 @@ describe('EventsContext', () => {
       expect(result.current.replayTotal).toBe(0)
     })
 
-    it('advances replayProgress as slices drain, not as events arrive', () => {
+    it('advances replayProgress as slices drain, not as events arrive', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -793,14 +805,12 @@ describe('EventsContext', () => {
       // Buffered but not yet materialized - progress reports what is on screen.
       expect(result.current.replayProgress).toBe(0)
 
-      act(() => {
-        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
-      })
+      await flushReplayDrain()
 
       expect(result.current.replayProgress).toBe(2)
     })
 
-    it('sets isReplaying false on replay_ended', () => {
+    it('sets isReplaying false on replay_ended', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -818,11 +828,12 @@ describe('EventsContext', () => {
       act(() => {
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
+      await flushReplayDrain()
 
       expect(result.current.isReplaying).toBe(false)
     })
 
-    it('materializes replayed events progressively, before replay_ended arrives', () => {
+    it('materializes replayed events progressively, before replay_ended arrives', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -837,9 +848,7 @@ describe('EventsContext', () => {
         es.simulateMessage({ type: 'result', success: true })
       })
 
-      act(() => {
-        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
-      })
+      await flushReplayDrain()
 
       // On screen before the server has closed the transcript - the point of draining in slices.
       expect(result.current.events).toHaveLength(3)
@@ -849,12 +858,13 @@ describe('EventsContext', () => {
       act(() => {
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
+      await flushReplayDrain()
 
       expect(result.current.events).toHaveLength(3)
       expect(result.current.isReplaying).toBe(false)
     })
 
-    it('keeps isReplaying true until the buffer finishes draining', () => {
+    it('keeps isReplaying true until the buffer finishes draining', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
       const total = REPLAY_DRAIN_SLICE_SIZE + 10
@@ -871,20 +881,17 @@ describe('EventsContext', () => {
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
 
-      // replay_ended drains one slice synchronously; a tail remains, so the overlay must not
-      // clear yet.
-      expect(result.current.events).toHaveLength(REPLAY_DRAIN_SLICE_SIZE)
+      // The server's replay_ended does not clear the overlay on its own - the queue must drain.
+      expect(result.current.events).toHaveLength(0)
       expect(result.current.isReplaying).toBe(true)
 
-      act(() => {
-        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
-      })
+      await flushReplayDrain()
 
       expect(result.current.events).toHaveLength(total)
       expect(result.current.isReplaying).toBe(false)
     })
 
-    it('keeps a live event arriving mid-drain behind the replayed history', () => {
+    it('keeps a live event arriving mid-drain behind the replayed history', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
       const total = REPLAY_DRAIN_SLICE_SIZE + 10
@@ -901,15 +908,13 @@ describe('EventsContext', () => {
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
 
-      // Transcript is closed but a tail is still draining; a live event arriving now must not
-      // overtake the queued history.
+      // The transcript is closed but its queue has not drained; a live event arriving now must not
+      // overtake the history still waiting in it.
       act(() => {
         es.simulateMessage({ type: 'assistant', content: 'live-after-replay' })
       })
 
-      act(() => {
-        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS)
-      })
+      await flushReplayDrain()
 
       const contents = result.current.events.map(e => e.content)
       expect(contents).toHaveLength(total + 1)
@@ -917,7 +922,7 @@ describe('EventsContext', () => {
       expect(contents.indexOf(`history-${total - 1}`)).toBeLessThan(contents.length - 1)
     })
 
-    it('cancels an in-flight drain when the stream reconnects', () => {
+    it('cancels an in-flight drain when the stream reconnects', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -933,9 +938,7 @@ describe('EventsContext', () => {
       })
 
       // A pending slice must not commit the previous session's events into the freshly cleared chat.
-      act(() => {
-        vi.advanceTimersByTime(REPLAY_DRAIN_INTERVAL_MS * 4)
-      })
+      await flushReplayDrain()
 
       expect(result.current.events).toHaveLength(0)
       expect(result.current.turns).toHaveLength(0)
@@ -1007,7 +1010,7 @@ describe('EventsContext', () => {
       expect(result.current.replayProgress).toBe(0)
     })
 
-    it('replay_started event itself is not added to events array', () => {
+    it('replay_started event itself is not added to events array', async () => {
       const { result } = renderHook(() => useEvents(), { wrapper })
       const es = getLatestEventSource()
 
@@ -1020,6 +1023,7 @@ describe('EventsContext', () => {
         es.simulateMessage({ type: 'user', content: 'msg1' })
         es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
       })
+      await flushReplayDrain()
 
       // Only the user message should be in events, not the system boundary events
       expect(result.current.events).toHaveLength(1)
@@ -1372,6 +1376,127 @@ describe('EventsContext', () => {
 
       expect(result.current.connectionStatus).toBe('connected')
       expect(result.current.connectionError).toBeNull()
+    })
+  })
+
+  describe('subscribeSession', () => {
+    it('opens a second stream that never reaches the primary reducer', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+      const primary = getLatestEventSource()
+      act(() => {
+        primary.simulateOpen()
+      })
+
+      const onSessionMessage = vi.fn()
+      act(() => {
+        result.current.subscribeSession('session-b', 'container-b', onSessionMessage)
+      })
+
+      const secondary = getLatestEventSource()
+      expect(secondary).not.toBe(primary)
+      expect(secondary.url).toBe(
+        '/api/workspaces/test-workspace/containers/container-b/api/stream?session_id=session-b',
+      )
+
+      act(() => {
+        secondary.simulateOpen()
+        secondary.simulateMessage({ type: 'user', subtype: 'message', content: 'from b' })
+      })
+
+      expect(onSessionMessage).toHaveBeenCalledTimes(1)
+      expect(result.current.events).toEqual([])
+      expect(result.current.turns).toEqual([])
+    })
+
+    it('the active session keeps streaming while a second one is open', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+      const primary = getLatestEventSource()
+
+      act(() => {
+        result.current.subscribeSession('session-b', 'container-b', vi.fn())
+      })
+      const secondary = getLatestEventSource()
+
+      sendAndFlush(primary, {
+        id: 'e1',
+        type: 'user',
+        subtype: 'message',
+        content: 'hi',
+        is_human: true,
+        turn_id: 't1',
+      })
+
+      expect(result.current.turns.length).toBe(1)
+
+      act(() => {
+        secondary.simulateMessage({ type: 'user', subtype: 'message', content: 'from b' })
+      })
+
+      // The second session's message does not join the active session's transcript.
+      expect(result.current.turns.length).toBe(1)
+    })
+
+    it("unsubscribeSession closes only that session's stream", () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+      act(() => {
+        result.current.subscribeSession('session-b', 'container-b', vi.fn())
+      })
+      const secondary = getLatestEventSource()
+
+      act(() => {
+        result.current.unsubscribeSession('session-b')
+      })
+
+      expect(secondary.readyState).toBe(2) // CLOSED
+    })
+
+    it('does nothing when no container id is given for the session', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+      const before = MockEventSource.instances.length
+
+      act(() => {
+        result.current.subscribeSession('session-b', null, vi.fn())
+      })
+
+      expect(MockEventSource.instances.length).toBe(before)
+    })
+
+    it('composes session_id and replay=false on the same query string', () => {
+      const { result } = renderHook(() => useEvents(), { wrapper })
+
+      act(() => {
+        result.current.subscribeSession('session-b', 'container-b', vi.fn(), { replay: false })
+      })
+
+      expect(getLatestEventSource().url).toBe(
+        '/api/workspaces/test-workspace/containers/container-b/api/stream?session_id=session-b&replay=false',
+      )
+    })
+
+    it('surfaces onError once the keyed stream exhausts its reconnect attempts, and only once', () => {
+      const onError = vi.fn()
+      const { result } = renderHook(() => useEvents(), { wrapper })
+
+      act(() => {
+        result.current.subscribeSession('session-b', 'container-b', vi.fn(), { onError })
+      })
+
+      act(() => {
+        getLatestEventSource().simulateError()
+      })
+
+      // RECONNECT_MAX_ATTEMPTS reconnects at RECONNECT_BASE_DELAY, doubling each time - erroring
+      // the freshly-opened instance after each delay drives the manager to exhaustion.
+      for (const delay of [1000, 2000, 4000]) {
+        act(() => {
+          vi.advanceTimersByTime(delay)
+        })
+        act(() => {
+          getLatestEventSource().simulateError()
+        })
+      }
+
+      expect(onError).toHaveBeenCalledTimes(1)
     })
   })
 })

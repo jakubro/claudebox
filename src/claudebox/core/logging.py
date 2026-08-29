@@ -1,4 +1,4 @@
-"""Structured logging configuration using structlog with memory buffer pattern."""
+"""Structured logging configuration using structlog."""
 
 import logging
 import logging.handlers
@@ -13,14 +13,10 @@ from .log_rendering import format_timestamp_iso
 from ..core.fs import touch_dir
 
 
-LOG_BUFFER_CAPACITY = 10_000  # in-memory MemoryHandler capacity
-
-
 # Module state
 _lock = threading.Lock()
 _root: logging.Logger | None = None
 _configured = False
-_buffer_enabled = False
 _handlers: dict[str, logging.Handler] = {}
 
 
@@ -45,8 +41,8 @@ structlog.configure(
 )
 
 
-def configure_logging(console: bool = False, buffer: bool = False, debug: bool = False) -> None:
-    """Configure structlog with optional console output and memory buffering."""
+def configure_logging(console: bool = False, debug: bool = False) -> None:
+    """Configure structlog with optional console output."""
 
     global _configured
 
@@ -54,14 +50,14 @@ def configure_logging(console: bool = False, buffer: bool = False, debug: bool =
         if _configured:
             return
 
-        _configure_logging(console, buffer, debug)
+        _configure_logging(console, debug)
         _configured = True
 
 
-def _configure_logging(console: bool, buffer: bool, debug: bool) -> None:
-    """Set up root logger, optional console handler, and optional memory buffer."""
+def _configure_logging(console: bool, debug: bool) -> None:
+    """Set up root logger and optional console handler."""
 
-    global _root, _buffer_enabled
+    global _root
 
     level = logging.DEBUG if debug else logging.INFO
 
@@ -88,10 +84,6 @@ def _configure_logging(console: bool, buffer: bool, debug: bool) -> None:
             ),
         )
         _root.addHandler(handler)
-
-    # Memory buffer for pre-attach logs
-    _buffer_enabled = buffer
-    _use_memory_buffer()
 
     # Quiet noisy third-party loggers
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -167,21 +159,8 @@ def use_rotating_log_file(
     _use_log_file(handler)
 
 
-def close_log_file() -> None:
-    """Close file handler and re-enable memory buffering if configured.
-
-    Safe to call with no file handler attached.
-    """
-
-    if handler := _handlers.pop("file", None):
-        handler.close()
-        _root.removeHandler(handler)  # ty: ignore[unresolved-attribute]
-
-    _use_memory_buffer()
-
-
 def _use_log_file(handler: logging.FileHandler) -> None:
-    """Configure formatter, attach handler to root, and flush memory buffer."""
+    """Configure formatter and attach handler to root."""
 
     handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(
@@ -193,34 +172,3 @@ def _use_log_file(handler: logging.FileHandler) -> None:
         ),
     )
     _root.addHandler(handler)  # ty: ignore[unresolved-attribute]
-
-    memory: logging.handlers.MemoryHandler = _handlers.get("memory")  # type: ignore
-
-    if memory:
-        memory.setTarget(handler)
-        _close_memory_buffer()
-
-
-def _use_memory_buffer() -> None:
-    """Buffer log records in memory until a file handler is attached."""
-
-    if not _buffer_enabled or _handlers.get("memory"):
-        return
-
-    _handlers["memory"] = handler = logging.handlers.MemoryHandler(
-        capacity=LOG_BUFFER_CAPACITY,
-        flushLevel=logging.CRITICAL + 1,  # Never auto-flush
-        target=None,
-    )
-    _root.addHandler(handler)  # ty: ignore[unresolved-attribute]
-
-
-def _close_memory_buffer() -> None:
-    """Flush and close the memory buffer handler."""
-
-    if not _buffer_enabled:
-        return
-
-    if handler := _handlers.pop("memory", None):
-        handler.close()
-        _root.removeHandler(handler)  # ty: ignore[unresolved-attribute]

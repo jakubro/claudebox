@@ -1,0 +1,29 @@
+/* Work panel turn entry: separator + that turn's routed-away blocks */
+
+.work-turn-entry {
+  margin-bottom: 12px;
+}
+
+.work-turn-separator {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-turn-separator:hover {
+  color: var(--text-primary);
+}
+
+.work-interrupted-block {
+  border-left: 3px solid var(--interrupt-border-color);
+  padding-left: 9px;
+  margin-left: -12px;
+}

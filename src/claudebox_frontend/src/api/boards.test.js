@@ -1,6 +1,7 @@
 /** Tests for api/boards.js board CRUD and ticket operations. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { FETCH_TIMEOUT_SESSION_LIFECYCLE_MS } from '../config/timing'
 import {
   archiveTicket,
   assignTickets,
@@ -208,6 +209,8 @@ describe('assignTickets', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tickets: ['t1', 't2'], parallel: true }),
+      // One spawn per ticket, so the bound is two session lifetimes.
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS * 2,
     })
     expect(result).toEqual(data)
   })

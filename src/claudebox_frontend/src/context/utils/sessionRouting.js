@@ -8,7 +8,7 @@
  * autoscroll engaged".
  *
  * @param {string} hash - Window location hash.
- * @returns {{ workspaceId: string, sessionId: string | null, boardId: string | null, turnId: string | null, messageType: 'user' | 'assistant' | null, density: 'comfortable' | 'terse' } | null}
+ * @returns {{ workspaceId: string, sessionId: string | null, boardId: string | null, turnId: string | null, messageType: 'user' | 'assistant' | null, density: 'comfortable' | 'terse', sendMessages: string[] } | null}
  */
 export function parseHash(hash) {
   const hashPath = hash.split('?')[0]
@@ -26,6 +26,7 @@ export function parseHash(hash) {
       turnId: null,
       messageType: null,
       density,
+      sendMessages: [],
     }
   }
 
@@ -43,6 +44,8 @@ export function parseHash(hash) {
     turnId: match[4] ?? null,
     messageType: match[3] === 'u' ? 'user' : match[3] === 'a' ? 'assistant' : null,
     density,
+    // Carried first-message text - only the workspace-only form honors it (never session/board).
+    sendMessages: match[2] ? [] : params.getAll('send'),
   }
 }
 

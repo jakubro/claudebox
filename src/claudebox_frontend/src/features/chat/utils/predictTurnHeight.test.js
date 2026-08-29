@@ -8,11 +8,13 @@ import {
   PX_PER_BASH_TOOL_BLOCK,
   PX_PER_THINKING_BLOCK,
   PX_PER_TOOL_BLOCK,
-  TURN_BASE_HEIGHT_PX,
+  TURN_ASSISTANT_BUBBLE_HEIGHT_PX,
   TURN_HORIZONTAL_PADDING_PX,
   TURN_MIN_PREDICTED_HEIGHT_PX,
+  TURN_USER_MESSAGE_HEIGHT_PX,
 } from '../../../config/dimensions'
 import { isLookupsGroupingEnabled } from '../../../config/features'
+import { TurnRoutingMode } from '../../../utils/eventProcessing'
 import { predictTurnHeight } from './predictTurnHeight'
 
 vi.mock('../../../config/features', () => ({
@@ -24,6 +26,9 @@ beforeEach(() => {
 })
 
 const EFFECTIVE_WIDTH = 800 - TURN_HORIZONTAL_PADDING_PX
+// Local to this file: every existing case below renders both halves (a visible assistant bubble
+// alongside the user message), where the split prices identically to the old single constant.
+const TURN_BASE_HEIGHT_PX = TURN_USER_MESSAGE_HEIGHT_PX + TURN_ASSISTANT_BUBBLE_HEIGHT_PX
 
 describe('predictTurnHeight', () => {
   it('returns MIN for a null turn', () => {
@@ -157,28 +162,63 @@ describe('predictTurnHeight', () => {
   })
 
   it('groups attachments into rows of 3 and adds fixed pixels per row', () => {
-    // 3 attachments fit in one row; 4 spill to two rows.
-    const oneRow = { turn_id: 't', events: [], userMessage: '', attachments: [{}, {}, {}] }
-    const twoRows = { turn_id: 't', events: [], userMessage: '', attachments: [{}, {}, {}, {}] }
+    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
+    const userLines = 3
+    // No assistant events, so no assistant bubble; a padded user message keeps both cases clear of
+    // the MIN floor. 3 attachments fit in one row; 4 spill to two.
+    const oneRow = {
+      turn_id: 't',
+      events: [],
+      userMessage: 'u'.repeat(charsPerLine * userLines),
+      attachments: [{}, {}, {}],
+    }
+    const twoRows = {
+      turn_id: 't',
+      events: [],
+      userMessage: 'u'.repeat(charsPerLine * userLines),
+      attachments: [{}, {}, {}, {}],
+    }
     expect(predictTurnHeight(oneRow, EFFECTIVE_WIDTH)).toBe(
-      Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, TURN_BASE_HEIGHT_PX + PX_PER_ATTACHMENT_ROW),
+      Math.max(
+        TURN_MIN_PREDICTED_HEIGHT_PX,
+        TURN_USER_MESSAGE_HEIGHT_PX + userLines * LINE_HEIGHT_PX + PX_PER_ATTACHMENT_ROW,
+      ),
     )
     expect(predictTurnHeight(twoRows, EFFECTIVE_WIDTH)).toBe(
-      Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, TURN_BASE_HEIGHT_PX + 2 * PX_PER_ATTACHMENT_ROW),
+      Math.max(
+        TURN_MIN_PREDICTED_HEIGHT_PX,
+        TURN_USER_MESSAGE_HEIGHT_PX + userLines * LINE_HEIGHT_PX + 2 * PX_PER_ATTACHMENT_ROW,
+      ),
+    )
+
+    // Attachments price the same way alongside a visible assistant bubble.
+    const withAssistantContent = {
+      turn_id: 't',
+      events: [{ type: 'assistant', subtype: 'text', content: 'ok' }],
+      userMessage: '',
+      attachments: [{}, {}, {}],
+    }
+    expect(predictTurnHeight(withAssistantContent, EFFECTIVE_WIDTH)).toBe(
+      Math.max(
+        TURN_MIN_PREDICTED_HEIGHT_PX,
+        TURN_BASE_HEIGHT_PX + LINE_HEIGHT_PX + PX_PER_ATTACHMENT_ROW,
+      ),
     )
   })
 
   it('counts user message lines toward predicted height', () => {
     const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
-    const turn = {
+    const turnWithLines = lines => ({
       turn_id: 't',
       events: [],
-      userMessage: 'u'.repeat(charsPerLine * 3),
+      userMessage: 'u'.repeat(charsPerLine * lines),
       attachments: null,
-    }
-    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH)).toBe(
-      Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, TURN_BASE_HEIGHT_PX + 3 * LINE_HEIGHT_PX),
-    )
+    })
+    // No assistant events -> no assistant bubble, only the user message's own lines price. 5 and
+    // 8 lines both clear the MIN floor, so the delta isolates the per-line contribution.
+    const five = predictTurnHeight(turnWithLines(5), EFFECTIVE_WIDTH)
+    const eight = predictTurnHeight(turnWithLines(8), EFFECTIVE_WIDTH)
+    expect(eight - five).toBe(3 * LINE_HEIGHT_PX)
   })
 
   it('floors charsPerLine at 20 to avoid runaway predictions on tiny widths', () => {
@@ -264,17 +304,35 @@ describe('predictTurnHeight', () => {
   })
 
   it('prices a top-level Bash lower with the split on, by exactly the bash contribution', () => {
-    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
     const turn = {
       turn_id: 't',
-      events: [{ type: 'assistant', subtype: 'tool_use', content: 'Bash' }],
-      // Padded above the MIN floor: without it, split-on clamps and masks the delta.
-      userMessage: 'u'.repeat(charsPerLine * 2),
+      events: [
+        { type: 'assistant', subtype: 'text', content: 'done' },
+        { type: 'assistant', subtype: 'tool_use', content: 'Bash' },
+      ],
+      // The text keeps the assistant bubble visible under both modes, isolating the Bash block's
+      // own price; a short user message keeps both sides clear of the MIN floor.
+      userMessage: 'ok',
       attachments: null,
     }
     const splitOff = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, false)
     const splitOn = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, true)
     expect(splitOff - splitOn).toBe(PX_PER_BASH_TOOL_BLOCK)
+  })
+
+  it('prices a top-level Bash lower with mode BASH_ONLY than with mode OFF, by the same delta', () => {
+    const turn = {
+      turn_id: 't',
+      events: [
+        { type: 'assistant', subtype: 'text', content: 'done' },
+        { type: 'assistant', subtype: 'tool_use', content: 'Bash' },
+      ],
+      userMessage: 'ok',
+      attachments: null,
+    }
+    const off = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, TurnRoutingMode.OFF)
+    const bashOnly = predictTurnHeight(turn, EFFECTIVE_WIDTH, false, TurnRoutingMode.BASH_ONLY)
+    expect(off - bashOnly).toBe(PX_PER_BASH_TOOL_BLOCK)
   })
 
   it("is unaffected by the split flag when the only Bash call is nested (a subagent's)", () => {
@@ -329,6 +387,54 @@ describe('predictTurnHeight', () => {
     }
     expect(predictTurnHeight(turn, EFFECTIVE_WIDTH)).toBe(
       Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, TURN_BASE_HEIGHT_PX + PX_PER_TOOL_BLOCK),
+    )
+  })
+
+  it('under ALL_TOOLS, a turn of only top-level tool calls prices the same as an empty one', () => {
+    const withTools = {
+      turn_id: 't',
+      events: [
+        { type: 'assistant', subtype: 'tool_use', content: 'Edit' },
+        { type: 'assistant', subtype: 'tool_use', content: 'Read' },
+      ],
+      userMessage: '',
+      attachments: null,
+    }
+    const empty = { turn_id: 't', events: [], userMessage: '', attachments: null }
+    expect(predictTurnHeight(withTools, EFFECTIVE_WIDTH, false, TurnRoutingMode.ALL_TOOLS)).toBe(
+      predictTurnHeight(empty, EFFECTIVE_WIDTH, false, TurnRoutingMode.ALL_TOOLS),
+    )
+  })
+
+  it('under ALL_TOOLS, a tool-only turn sheds the assistant half but keeps the user half', () => {
+    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
+    // 6 lines clears the MIN floor unclamped, so the result isolates the user-side contribution.
+    const turn = {
+      turn_id: 't',
+      events: [{ type: 'assistant', subtype: 'tool_use', content: 'Edit' }],
+      userMessage: 'u'.repeat(charsPerLine * 6),
+      attachments: null,
+    }
+    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH, false, TurnRoutingMode.ALL_TOOLS)).toBe(
+      TURN_USER_MESSAGE_HEIGHT_PX + 6 * LINE_HEIGHT_PX,
+    )
+  })
+
+  it('under ALL_TOOLS, a turn with visible text still prices the full assistant half', () => {
+    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
+    const turn = {
+      turn_id: 't',
+      events: [
+        { type: 'assistant', subtype: 'tool_use', content: 'Edit' },
+        { type: 'assistant', subtype: 'text', content: 'x'.repeat(charsPerLine * 2) },
+      ],
+      userMessage: '',
+      attachments: null,
+    }
+    // The tool call routes away, but the text keeps the turn's assistant bubble alive - only the
+    // tool block's own chrome is shed, not the shared base.
+    expect(predictTurnHeight(turn, EFFECTIVE_WIDTH, false, TurnRoutingMode.ALL_TOOLS)).toBe(
+      TURN_BASE_HEIGHT_PX + 2 * LINE_HEIGHT_PX,
     )
   })
 })

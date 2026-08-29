@@ -5,6 +5,7 @@ import { assertColor, openSessionsPanel, waitForAppReady } from '../helpers.js'
 import {
   DEFAULT_BACKEND_ID,
   DEFAULT_CONTAINER_ID,
+  DEFAULT_SESSION_ID,
   DEFAULT_SESSION_URL,
   DEFAULT_WORKSPACE_ID,
   loadFixture,
@@ -1815,6 +1816,714 @@ test.describe('Sessions Panel', () => {
       await page.waitForTimeout(1100)
       await expect(statusText).toContainText(/Submitting.*\(\d+s\)/)
     })
+  })
+})
+
+test.describe('Sessions Panel Filters', () => {
+  const filtersFixture = {
+    sessions: [
+      {
+        session_id: 'test-session-001',
+        name: null,
+        workspace: '/home/user/project',
+        model: 'claude-sonnet-5',
+        num_turns: 3,
+        total_cost_usd: 0.1,
+        fork_point_cost_usd: 0,
+        total_duration_ms: 1000,
+        last_context_tokens: 100,
+        started_at: '2025-01-18T12:00:00Z',
+        updated_at: '2025-01-18T12:00:00Z',
+        first_message: 'Fix the bug',
+        last_message: 'Done',
+        session_dir: '/tmp/sessions/test-session-001',
+        todos: [],
+        commands: [],
+        parent_session_id: null,
+        container_id: 'test-cid',
+      },
+      {
+        session_id: 'named-session',
+        name: 'Feature Implementation',
+        workspace: '/home/user/project',
+        model: 'claude-sonnet-5',
+        num_turns: 5,
+        total_cost_usd: 0.12,
+        fork_point_cost_usd: 0,
+        total_duration_ms: 15000,
+        last_context_tokens: 5000,
+        started_at: '2025-01-17T10:00:00Z',
+        updated_at: '2025-01-17T11:30:00Z',
+        first_message: 'Help me implement user auth',
+        last_message: 'Commit the changes',
+        session_dir: '/tmp/sessions/named-session',
+        todos: [],
+        commands: [],
+        parent_session_id: null,
+      },
+    ],
+  }
+
+  // SPEC: panel-session:filters
+  // SPEC: panel-session:filter-default
+  test('renders all six filters as icons on the same row as the new-session/refresh buttons, Conversations active by default', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    const tabs = page.locator('[data-testid="sessions-tabs"]')
+    await expect(tabs).toBeVisible()
+
+    const items = {}
+    for (const [filter, label] of [
+      ['conversations', 'Conversations'],
+      ['named', 'Named'],
+      ['pinned', 'Pinned'],
+      ['threads', 'Threads'],
+      ['subsessions', 'Subsessions'],
+      ['all', 'All'],
+    ]) {
+      const item = page.getByTestId(`sessions-filter-${filter}`)
+      await expect(item).toHaveAttribute('title', label)
+      // No filter renders its own name as text, including the active one below.
+      await expect(item).not.toHaveText(label)
+      items[filter] = item
+    }
+    await expect(tabs).not.toContainText('Conversations')
+
+    // Bounding boxes share a y position - one row, not a button row plus a wrapped strip beneath
+    // it, which a DOM-ancestor check would wrongly pass.
+    const refreshBox = await page.getByTestId('session-refresh-btn').boundingBox()
+    for (const item of Object.values(items)) {
+      const box = await item.boundingBox()
+      expect(Math.abs(box.y - refreshBox.y)).toBeLessThan(4)
+    }
+
+    await expect(items.conversations).toHaveClass(/active/)
+  })
+
+  // SPEC: panel-session:filter-named
+  // SPEC: panel-session:filter-count
+  test('named filter lists only the session given a name by hand', async ({ page }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await page.getByTestId('sessions-filter-named').click()
+
+    const items = page.locator('[data-testid="session-item"]')
+    await expect(items).toHaveCount(1)
+    await expect(items.first()).toContainText('Feature Implementation')
+  })
+
+  // SPEC: panel-session:filter-pinned
+  test('pinned filter lists only the pinned session', async ({ page }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await page.locator('[data-testid="session-pin-btn"]').first().click()
+    await page.getByTestId('sessions-filter-pinned').click()
+
+    const items = page.locator('[data-testid="session-item"]')
+    await expect(items).toHaveCount(1)
+    await expect(items.first()).toContainText('test-ses')
+  })
+
+  // SPEC: panel-session:filter-threads
+  // SPEC: panel-session:filter-subsessions
+  // SPEC: panel-session:filter-empty
+  test('threads and subsessions are present, reachable, read 0, and show the empty-filter message', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await page.getByTestId('sessions-filter-threads').click()
+    await expect(page.locator('[data-testid="panel-sessions"]')).toContainText(
+      'No threads sessions',
+    )
+
+    await page.getByTestId('sessions-filter-subsessions').click()
+    await expect(page.locator('[data-testid="panel-sessions"]')).toContainText(
+      'No subsessions sessions',
+    )
+  })
+
+  // SPEC: chat:fork-thread
+  // SPEC: chat:fork-thread-non-disruptive
+  // SPEC: panel-session:filter-threads
+  // SPEC: panel-session:fork-thread-running-indicator
+  // SPEC: panel-session:kill-thread
+  test('a side conversation is listed under Threads, not Conversations, and leaves the running session untouched', async ({
+    page,
+  }) => {
+    const withThread = {
+      sessions: [
+        ...filtersFixture.sessions,
+        {
+          session_id: 'side-thread-001',
+          name: null,
+          workspace: '/home/user/project',
+          model: 'claude-sonnet-5',
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          fork_point_cost_usd: 0.1,
+          total_duration_ms: 500,
+          last_context_tokens: 50,
+          started_at: '2025-01-18T12:05:00Z',
+          updated_at: '2025-01-18T12:05:00Z',
+          first_message: 'why this branch?',
+          last_message: 'because...',
+          session_dir: '/tmp/sessions/side-thread-001',
+          todos: [],
+          commands: [],
+          parent_session_id: 'test-session-001',
+          is_side_thread: true,
+          // Live (resolves to the parent's shared container) - the harder case for the Kill
+          // button guard below, since a bare "no container" check would hide it too.
+          container_id: DEFAULT_CONTAINER_ID,
+        },
+      ],
+    }
+
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: withThread }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    // Conversations (default) - the side thread is absent; the running session keeps its dot.
+    const conversationItems = page.locator('[data-testid="session-item"]')
+    await expect(conversationItems).toHaveCount(2)
+    await expect(page.locator('[data-testid="panel-sessions"]')).not.toContainText(
+      'why this branch?',
+    )
+    const primaryDot = page
+      .locator('[data-testid="session-item"]', { hasText: 'test-ses' })
+      .locator('.container-status-dot')
+    await expect(primaryDot).toHaveClass(/container-status-running/)
+
+    // Threads - the side thread is listed, showing what it came from.
+    await page.getByTestId('sessions-filter-threads').click()
+    const threadItems = page.locator('[data-testid="session-item"]')
+    await expect(threadItems).toHaveCount(1)
+    await expect(threadItems.first()).toContainText('why this branch?')
+    // No Kill button even though it resolves to a running container - that container is the
+    // parent's, and killing it here would take the parent down too.
+    await expect(threadItems.first().locator('[data-testid="session-kill-btn"]')).toHaveCount(0)
+  })
+
+  // SPEC: panel-session:filter-subsessions
+  test('a spawned session is listed under Subsessions, naming the session that started it', async ({
+    page,
+  }) => {
+    const withSubsession = {
+      sessions: [
+        ...filtersFixture.sessions,
+        {
+          session_id: 'spawned-001',
+          name: null,
+          workspace: '/home/user/project',
+          model: 'claude-sonnet-5',
+          num_turns: 2,
+          total_cost_usd: 0.02,
+          fork_point_cost_usd: 0,
+          total_duration_ms: 800,
+          last_context_tokens: 80,
+          started_at: '2025-01-18T12:10:00Z',
+          updated_at: '2025-01-18T12:10:00Z',
+          first_message: 'audit the migration',
+          last_message: 'audit done',
+          session_dir: '/tmp/sessions/spawned-001',
+          todos: [],
+          commands: [],
+          parent_session_id: null,
+          spawned_from_session_id: 'named-session',
+        },
+      ],
+    }
+
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: withSubsession }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await page.getByTestId('sessions-filter-subsessions').click()
+    const items = page.locator('[data-testid="session-item"]')
+    await expect(items).toHaveCount(1)
+    await expect(items.first()).toContainText('audit the migration')
+    // The origin line names the spawner - this session has no fork parent to fall back on.
+    await expect(items.first().getByTestId('session-origin')).toContainText(
+      'from: Feature Implementation',
+    )
+  })
+
+  // SPEC: panel-session:filter-all
+  test('all filter shows every session', async ({ page }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await page.getByTestId('sessions-filter-all').click()
+
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(2)
+  })
+
+  // SPEC: panel-session:filters-scroll
+  // SPEC: panel-session:filters-chevron
+  test('narrow enough that the filters do not fit: the strip scrolls, chevrons mark the overflow, no scrollbar', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.setViewportSize({ width: 900, height: 800 })
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    const strip = page.getByTestId('sessions-tabs')
+    await expect.poll(() => strip.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+    await expect(strip.evaluate(el => getComputedStyle(el).scrollbarWidth)).resolves.toBe('none')
+
+    // Start of the strip: nothing to the left, more to the right.
+    await expect(page.getByTitle('Scroll filters left')).toHaveCount(0)
+    await expect(page.getByTitle('Scroll filters right')).toBeVisible()
+
+    // Scroll fully to the end: the right chevron is gone, the left one appears.
+    await strip.evaluate(el => {
+      el.scrollLeft = el.scrollWidth
+    })
+    await expect(page.getByTitle('Scroll filters right')).toHaveCount(0)
+    await expect(page.getByTitle('Scroll filters left')).toBeVisible()
+  })
+
+  // SPEC: panel-session:filter-scrolled-into-view
+  test('the auto-switch to All brings it fully into the strip, off-screen or not', async ({
+    page,
+  }) => {
+    // A viewport narrow enough that All starts scrolled out of the strip. No click on All itself -
+    // Playwright's pre-click auto-scroll would mask the component's own scroll-into-view effect.
+    let mockCurrentSessionId = DEFAULT_SESSION_ID
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => route.fulfill({ json: filtersFixture }),
+        getSessionStatus: async route => {
+          await route.fulfill({
+            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
+          })
+        },
+        resumeSession: async route => {
+          const [, sid] = route
+            .request()
+            .url()
+            .match(/\/sessions\/([^/]+)\/resume/)
+          mockCurrentSessionId = sid
+          await route.fulfill({
+            status: 200,
+            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
+          })
+        },
+      },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    // Pin the current session, then choose Pinned - it is present, no switch yet. Done at the
+    // default width so the setup clicks land on plain tabs, not ones a chevron overlay may cover.
+    await page.locator('[data-testid="session-pin-btn"]').first().click()
+    await page.getByTestId('sessions-filter-pinned').click()
+    await expect(page.getByTestId('sessions-filter-pinned')).toHaveClass(/active/)
+
+    // Narrow only now, so the strip overflows for the auto-switch this test actually verifies -
+    // wide enough that a tab still fits the scrollport once fully brought into view.
+    await page.setViewportSize({ width: 1400, height: 800 })
+    const strip = page.getByTestId('sessions-tabs')
+    await expect.poll(() => strip.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+
+    // A hash change to a session absent from Pinned drives the real resume call and the auto-
+    // switch to All.
+    const statusResp = page.waitForResponse(
+      async r =>
+        r.url().includes('/sessions/current') && (await r.json()).session_id === 'named-session',
+    )
+    await page.evaluate(wsId => {
+      window.location.hash = `#/workspaces/${wsId}/sessions/named-session`
+    }, DEFAULT_WORKSPACE_ID)
+    await statusResp
+
+    const allTab = page.getByTestId('sessions-filter-all')
+    await expect(allTab).toHaveClass(/active/)
+    await expect
+      .poll(async () => {
+        const [tabBox, stripBox] = await Promise.all([allTab.boundingBox(), strip.boundingBox()])
+        return (
+          tabBox.x >= stripBox.x - 1 && tabBox.x + tabBox.width <= stripBox.x + stripBox.width + 1
+        )
+      })
+      .toBe(true)
+  })
+
+  // SPEC: panel-session:filter-auto-switch
+  test('opening a session absent from the chosen filter shows All; opening one it lists returns to it', async ({
+    page,
+  }) => {
+    // The mocked container's /sessions/current is otherwise static - make it reflect whichever
+    // session the mock most recently resumed, so a resume changes useSessionData().sessionId.
+    let mockCurrentSessionId = DEFAULT_SESSION_ID
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => route.fulfill({ json: filtersFixture }),
+        getSessionStatus: async route => {
+          await route.fulfill({
+            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
+          })
+        },
+        resumeSession: async route => {
+          // App startup resumes the URL's own session on mount too - key off the id the request
+          // actually names, or that mount-time call clobbers mockCurrentSessionId first.
+          const [, sid] = route
+            .request()
+            .url()
+            .match(/\/sessions\/([^/]+)\/resume/)
+          mockCurrentSessionId = sid
+          await route.fulfill({
+            status: 200,
+            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
+          })
+        },
+      },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    // Pin the current session, then choose Pinned - it is present, no switch yet.
+    await page.locator('[data-testid="session-pin-btn"]').first().click()
+    await page.getByTestId('sessions-filter-pinned').click()
+    await expect(page.getByTestId('sessions-filter-pinned')).toHaveClass(/active/)
+
+    // A URL hash change is how a link or history entry opens a session, driving the same resume
+    // call a click takes. The target is by definition absent from Pinned's tree.
+    const awayResp = page.waitForResponse(
+      async r =>
+        r.url().includes('/sessions/current') && (await r.json()).session_id === 'named-session',
+    )
+    await page.evaluate(wsId => {
+      window.location.hash = `#/workspaces/${wsId}/sessions/named-session`
+    }, DEFAULT_WORKSPACE_ID)
+    await awayResp
+
+    await expect(page.getByTestId('sessions-filter-all')).toHaveClass(/active/)
+
+    // Opening a session Pinned lists returns the strip to it - no click, as with the switch away.
+    const backResp = page.waitForResponse(
+      async r =>
+        r.url().includes('/sessions/current') && (await r.json()).session_id === DEFAULT_SESSION_ID,
+    )
+    await page.evaluate(
+      ({ wsId, sid }) => {
+        window.location.hash = `#/workspaces/${wsId}/sessions/${sid}`
+      },
+      { wsId: DEFAULT_WORKSPACE_ID, sid: DEFAULT_SESSION_ID },
+    )
+    await backResp
+
+    await expect(page.getByTestId('sessions-filter-pinned')).toHaveClass(/active/)
+  })
+
+  // SPEC: panel-session:filter-persist
+  test('the chosen filter survives a reload; a switch the panel made for itself does not', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    // The default mock's PATCH handler mutates its in-memory ui-state, which a later GET rehydrates
+    // from - wait for that round trip to land, or the reload races the fire-and-forget write.
+    const patchResponse = page.waitForResponse(
+      res => res.url().includes('/ui-state') && res.request().method() === 'PATCH',
+    )
+    await page.getByTestId('sessions-filter-named').click()
+    await expect(page.getByTestId('sessions-filter-named')).toHaveClass(/active/)
+    await patchResponse
+
+    await page.reload()
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await expect(page.getByTestId('sessions-filter-named')).toHaveClass(/active/)
+  })
+
+  // SPEC: panel-session:filter-persist
+  test('reloading while the panel shows a self-made switch to All returns to the chosen filter, not All', async ({
+    page,
+  }) => {
+    let mockCurrentSessionId = DEFAULT_SESSION_ID
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => route.fulfill({ json: filtersFixture }),
+        getSessionStatus: async route => {
+          await route.fulfill({
+            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
+          })
+        },
+        resumeSession: async route => {
+          const [, sid] = route
+            .request()
+            .url()
+            .match(/\/sessions\/([^/]+)\/resume/)
+          mockCurrentSessionId = sid
+          await route.fulfill({
+            status: 200,
+            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
+          })
+        },
+      },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await page.locator('[data-testid="session-pin-btn"]').first().click()
+    const patchResponse = page.waitForResponse(
+      res => res.url().includes('/ui-state') && res.request().method() === 'PATCH',
+    )
+    await page.getByTestId('sessions-filter-pinned').click()
+    await expect(page.getByTestId('sessions-filter-pinned')).toHaveClass(/active/)
+    await patchResponse
+
+    // Absent from Pinned - the panel switches to All on its own, with no click and no PATCH.
+    const statusResp = page.waitForResponse(
+      async r =>
+        r.url().includes('/sessions/current') && (await r.json()).session_id === 'named-session',
+    )
+    await page.evaluate(wsId => {
+      window.location.hash = `#/workspaces/${wsId}/sessions/named-session`
+    }, DEFAULT_WORKSPACE_ID)
+    await statusResp
+    await expect(page.getByTestId('sessions-filter-all')).toHaveClass(/active/)
+
+    await page.reload()
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    // Reload returns to Pinned - the stored choice - never to the panel's own switch to All.
+    await expect(page.getByTestId('sessions-filter-pinned')).toHaveClass(/active/)
+  })
+})
+
+test.describe('Sessions Panel Search', () => {
+  function searchSession(id, overrides = {}) {
+    return {
+      session_id: id,
+      name: null,
+      workspace: '/home/user/project',
+      model: 'claude-sonnet-5',
+      num_turns: 3,
+      total_cost_usd: 0.1,
+      total_duration_ms: 1000,
+      last_context_tokens: 100,
+      started_at: '2025-01-18T12:00:00Z',
+      updated_at: '2025-01-18T12:00:00Z',
+      first_message: null,
+      last_message: null,
+      session_dir: `/tmp/sessions/${id}`,
+      todos: [],
+      commands: [],
+      parent_session_id: null,
+      ...overrides,
+    }
+  }
+
+  const searchFixture = {
+    sessions: [
+      searchSession('spike-a', { name: 'spike: initial pass' }),
+      searchSession('spike-b', { name: 'spike: retry with sonnet' }),
+      searchSession('plain-parent', { name: 'unrelated parent' }),
+      searchSession('spike-fork', {
+        name: 'spike from a plain parent',
+        parent_session_id: 'plain-parent',
+      }),
+      searchSession('spike-pinned', { name: 'spike pinned', parent_session_id: 'plain-parent' }),
+      searchSession('unnamed-abcdef123456', { session_id: 'unnamed-abcdef123456', name: null }),
+      searchSession('spike-zero-turns', { name: 'spike but empty', num_turns: 0 }),
+    ],
+  }
+
+  async function openWithSearchFixture(page, uiState = {}) {
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => route.fulfill({ json: searchFixture }),
+        getUIState: async route =>
+          route.fulfill({ json: { global: { pinnedSessions: [], ...uiState }, session: {} } }),
+      },
+    })
+    await mockSSE(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+  }
+
+  // SPEC: panel-session:search-control
+  test('the control sits between the chevron and refresh; opening it hides the filter icons and focuses the box', async ({
+    page,
+  }) => {
+    await openWithSearchFixture(page)
+
+    await expect(page.getByTestId('sessions-search-toggle')).toBeVisible()
+    await page.getByTestId('sessions-search-toggle').click()
+
+    await expect(page.getByTestId('sessions-tabs')).not.toBeVisible()
+    await expect(page.getByTestId('sessions-search-input')).toBeFocused()
+    await expect(page.getByTestId('session-new-session-btn')).toBeVisible()
+    await expect(page.getByTestId('session-refresh-btn')).toBeVisible()
+  })
+
+  // SPEC: panel-session:search-match
+  test('matches a name case-insensitively', async ({ page }) => {
+    await openWithSearchFixture(page)
+    await page.getByTestId('sessions-search-toggle').click()
+
+    await page.getByTestId('sessions-search-input').fill('SPIKE:')
+
+    const items = page.locator('[data-testid="session-item"]')
+    await expect(items).toHaveCount(2)
+    await expect(items).toContainText(['spike: initial pass', 'spike: retry with sonnet'])
+  })
+
+  // SPEC: panel-session:search-match
+  test('matches a full pasted id, not only the eight characters the row shows', async ({
+    page,
+  }) => {
+    await openWithSearchFixture(page)
+    await page.getByTestId('sessions-search-toggle').click()
+
+    // The eight-character form the row displays ("unnamed-").
+    await page.getByTestId('sessions-search-input').fill('unnamed-')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(1)
+
+    // A substring past what's displayed - matching only the shown text fails this half.
+    await page.getByTestId('sessions-search-input').fill('def123456')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(1)
+  })
+
+  // SPEC: panel-session:search-spans-filters
+  test('finding an unpinned session while Pinned is chosen - a search wired to the filter fails this', async ({
+    page,
+  }) => {
+    await openWithSearchFixture(page)
+    await page.getByTestId('sessions-filter-pinned').click()
+    await page.getByTestId('sessions-search-toggle').click()
+
+    await page.getByTestId('sessions-search-input').fill('spike: initial')
+
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(1)
+  })
+
+  // SPEC: panel-session:search-flat
+  test('a matched fork of an unmatched parent renders alone; a pinned fork appears once', async ({
+    page,
+  }) => {
+    await openWithSearchFixture(page, { pinnedSessions: ['spike-pinned'] })
+    await page.getByTestId('sessions-search-toggle').click()
+
+    await page.getByTestId('sessions-search-input').fill('spike from a plain')
+
+    const forkItems = page.locator('[data-testid="session-item"]')
+    await expect(forkItems).toHaveCount(1)
+    await expect(page.locator('[data-testid="session-origin"]')).toHaveCount(0)
+
+    await page.getByTestId('sessions-search-input').fill('spike pinned')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(1)
+  })
+
+  // SPEC: panel-session:search-flat
+  // SPEC: panel-session:search-empty
+  test('excludes a zero-turn session even when it matches; shows a message when nothing matches', async ({
+    page,
+  }) => {
+    await openWithSearchFixture(page)
+    await page.getByTestId('sessions-search-toggle').click()
+
+    await page.getByTestId('sessions-search-input').fill('spike but empty')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="panel-sessions"]')).toContainText(/no sessions match/i)
+
+    await page.getByTestId('sessions-search-input').fill('nothing in this fixture matches')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="panel-sessions"]')).toContainText(/no sessions match/i)
+  })
+
+  // SPEC: panel-session:search-close
+  test('Escape closes the box, restores the icons, and leaves the previously chosen filter active', async ({
+    page,
+  }) => {
+    await openWithSearchFixture(page)
+    await page.getByTestId('sessions-filter-named').click()
+    await page.getByTestId('sessions-search-toggle').click()
+    await page.getByTestId('sessions-search-input').fill('spike')
+
+    await page.keyboard.press('Escape')
+
+    await expect(page.getByTestId('sessions-search-input')).not.toBeVisible()
+    await expect(page.getByTestId('sessions-tabs')).toBeVisible()
+    await expect(page.getByTestId('sessions-filter-named')).toHaveClass(/active/)
+  })
+
+  // SPEC: panel-session:search-persist
+  test('the search box is not remembered across a reload', async ({ page }) => {
+    await openWithSearchFixture(page)
+    await page.getByTestId('sessions-search-toggle').click()
+    await page.getByTestId('sessions-search-input').fill('spike')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(4)
+
+    await page.reload()
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+
+    await expect(page.getByTestId('sessions-search-input')).not.toBeVisible()
+    await expect(page.getByTestId('sessions-tabs')).toBeVisible()
+    await expect(page.getByTestId('sessions-filter-conversations')).toHaveClass(/active/)
   })
 })
 

@@ -4,9 +4,10 @@ import time
 
 from fastapi import APIRouter
 
-from claudebox import JSONResponse
-from ._models import ForkSessionRequest, UpdateSessionRequest
+from claudebox import Config, JSONResponse, serialization
+from ._models import ForkSessionRequest, NewSessionRequest, UpdateSessionRequest
 from ._shared import WorkspaceDep
+from ..domain import resolve_link_messages
 
 
 router = APIRouter(prefix="/api/workspaces/{workspace_id}")
@@ -29,10 +30,21 @@ async def list_sessions(svc: WorkspaceDep):
 
 
 @router.post("/sessions/new")
-async def new_session(svc: WorkspaceDep):
-    """Spawn container and start a new session."""
+async def new_session(svc: WorkspaceDep, body: NewSessionRequest | None = None):
+    """Spawn container and start a new session, delivering any allowlisted messages."""
 
-    return await svc.session_service.create()
+    config = Config.load(svc.workspace.path)
+    delivered, blocked = resolve_link_messages(
+        body.messages if body else [],
+        config.links_allow or [],
+    )
+
+    if delivered:
+        result = await svc.session_service.create_with_prompts(delivered)
+    else:
+        result = await svc.session_service.create()
+
+    return {**serialization.serialize(result), "undelivered_messages": blocked}
 
 
 @router.patch("/sessions/{session_id}")
@@ -57,4 +69,6 @@ async def fork_session(svc: WorkspaceDep, session_id: str, body: ForkSessionRequ
         session_id,
         body.turn_id,
         reuse_container=body.reuse_container,
+        share_container=body.share_container,
+        parent_session_id=body.parent_session_id,
     )

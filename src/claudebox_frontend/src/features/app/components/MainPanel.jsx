@@ -3,7 +3,7 @@
 import { useSessionRouting } from '../../../context/SessionRoutingContext'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 import BoardTab from '../../boards/BoardTab'
-import ChatPanel from '../../chat'
+import SessionRail from '../../chat/components/SessionRail'
 import SessionHeaderStrip from './SessionHeaderStrip'
 
 /**
@@ -26,7 +26,7 @@ export default function MainPanel({ api }) {
   // SessionRoutingEffect drives selectWorkspace; once workspaceId catches up, this flips to board view.
   const showBoard = activeBoardId && (!activeWorkspaceId || activeWorkspaceId === workspaceId)
   const mode = showBoard ? 'board' : activeSessionId ? 'chat' : 'welcome'
-  const body = showBoard ? <BoardTab boardId={activeBoardId} /> : <ChatPanel />
+  const body = showBoard ? <BoardTab boardId={activeBoardId} /> : <SessionRail />
 
   return (
     <div className="main-panel" data-testid="main-panel">

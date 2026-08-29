@@ -168,4 +168,111 @@ describe('useSSE', () => {
       })
     }).not.toThrow()
   })
+
+  describe('openKeyed/closeKeyed', () => {
+    it('opens a keyed manager independent of the primary one', () => {
+      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
+      const primary = mockInstances[0]
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b')
+      })
+
+      expect(mockInstances).toHaveLength(2)
+      expect(mockInstances[1].opts.url).toBe('http://b')
+      expect(mockInstances[1].connect).toHaveBeenCalledTimes(1)
+      expect(primary.close).not.toHaveBeenCalled()
+    })
+
+    it("routes a keyed manager's messages only to its own onMessage, never the primary's", () => {
+      const primaryHandler = vi.fn()
+      const keyedHandler = vi.fn()
+      const { result } = renderHook(() =>
+        useSSE({ onMessage: primaryHandler, url: 'http://primary' }),
+      )
+      const primary = mockInstances[0]
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b', { onMessage: keyedHandler })
+      })
+      const keyed = mockInstances[1]
+
+      const keyedEvent = { data: 'from-b' }
+      keyed.opts.onMessage(keyedEvent)
+
+      expect(keyedHandler).toHaveBeenCalledWith(keyedEvent)
+      expect(primaryHandler).not.toHaveBeenCalled()
+
+      const primaryEvent = { data: 'from-primary' }
+      primary.opts.onMessage(primaryEvent)
+
+      expect(primaryHandler).toHaveBeenCalledWith(primaryEvent)
+      expect(keyedHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('passes maxAttempts/onStatusChange through to the keyed manager', () => {
+      const onStatusChange = vi.fn()
+      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b', { maxAttempts: 3, onStatusChange })
+      })
+      const keyed = mockInstances[1]
+
+      expect(keyed.opts.maxAttempts).toBe(3)
+      keyed.opts.onStatusChange('error')
+      expect(onStatusChange).toHaveBeenCalledWith('error')
+    })
+
+    it("closeKeyed closes only that key's manager", () => {
+      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
+      const primary = mockInstances[0]
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b')
+      })
+      const keyed = mockInstances[1]
+
+      act(() => {
+        result.current.closeKeyed('session-b')
+      })
+
+      expect(keyed.close).toHaveBeenCalledTimes(1)
+      expect(primary.close).not.toHaveBeenCalled()
+    })
+
+    it('re-opening the same key closes the prior manager under it', () => {
+      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b-first')
+      })
+      const firstKeyed = mockInstances[1]
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b-second')
+      })
+
+      expect(firstKeyed.close).toHaveBeenCalledTimes(1)
+      expect(mockInstances[2].opts.url).toBe('http://b-second')
+    })
+
+    it('closes every keyed manager on unmount, leaving the primary to its own cleanup', () => {
+      const { result, unmount } = renderHook(() =>
+        useSSE({ onMessage: vi.fn(), url: 'http://primary' }),
+      )
+
+      act(() => {
+        result.current.openKeyed('session-b', 'http://b')
+        result.current.openKeyed('session-c', 'http://c')
+      })
+      const [primary, keyedB, keyedC] = mockInstances
+
+      unmount()
+
+      expect(primary.close).toHaveBeenCalledTimes(1)
+      expect(keyedB.close).toHaveBeenCalledTimes(1)
+      expect(keyedC.close).toHaveBeenCalledTimes(1)
+    })
+  })
 })

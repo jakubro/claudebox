@@ -92,6 +92,7 @@ export default function ToolBlock({
     isAsyncTask,
     isPending,
     jsonData,
+    contentBlocks,
   } = useToolResult(toolUse, toolResult, todoDiff)
 
   // Whether a form can actually render - independent of what the runtime reported for the call.
@@ -122,6 +123,28 @@ export default function ToolBlock({
   const nestedBlocks = useMemo(() => processNestedEvents(nestedEvents), [nestedEvents])
   const hasNested = nestedBlocks.length > 0
 
+  // A collapsed, still-running Task's one line: the newest nested entry, drawn the way the
+  // Activity section would. Empty for every other tool - only a Task populates nestedBlocks.
+  const lastNestedBlock = hasNested ? nestedBlocks[nestedBlocks.length - 1] : null
+  const activity = useMemo(() => {
+    if (!lastNestedBlock) {
+      return null
+    }
+    if (lastNestedBlock.kind === 'text') {
+      return { kind: 'text', text: lastNestedBlock.event.content.split('\n')[0] }
+    }
+    const nestedToolName = normalizeToolName(lastNestedBlock.toolUse?.content || 'Tool')
+    return {
+      kind: 'call',
+      status: getToolStatus(
+        !lastNestedBlock.toolResult,
+        false,
+        lastNestedBlock.toolResult?.is_error,
+      ),
+      title: buildToolHeader(nestedToolName, lastNestedBlock.toolUse?.tool_input ?? {}, false),
+    }
+  }, [lastNestedBlock])
+
   // tool_input for unhandled tools - null for handled tools (they render their own way)
   const toolInput =
     !hasSpecializedFormatter(toolName) && Object.keys(input).length > 0 ? input : null
@@ -135,6 +158,7 @@ export default function ToolBlock({
   const hasExpandable = hasExpandableContent({
     effectiveDetails,
     jsonData,
+    contentBlocks,
     hasNested,
     skillContent,
     questions,
@@ -147,11 +171,12 @@ export default function ToolBlock({
     toolInput,
     command: bashCommand,
   })
-  // Default: collapsed for JSON, Read, Skill, answered AskUserQuestion, completed Task with nested
+  // Default: collapsed for JSON, Read, Skill, answered AskUserQuestion, Task
   const collapseByDefault = shouldStartCollapsed({
     toolName,
     singleLineDuplicate,
     jsonData,
+    contentBlocks,
     hasNested,
     isPending,
     wasAnswered,
@@ -184,16 +209,6 @@ export default function ToolBlock({
     }
     prevPendingRef.current = isPending
   }, [isPending, hasNested, isAsyncTask])
-
-  // Auto-expand when pending Task gets nested events (nested tools streaming in)
-  const prevHasNestedRef = useRef(hasNested)
-  useEffect(() => {
-    if (toolName === ToolName.TASK && isPending && !prevHasNestedRef.current && hasNested) {
-      // Nested events just arrived while Task running - expand to show them
-      setShowDetails(true)
-    }
-    prevHasNestedRef.current = hasNested
-  }, [toolName, isPending, hasNested])
 
   const handleToggle = () => hasExpandable && setShowDetails(!effectiveShowDetails)
 
@@ -252,6 +267,7 @@ export default function ToolBlock({
           hasExpandable={hasExpandable}
           onToggle={handleToggle}
           editorUrl={editorUrl}
+          activity={effectiveShowDetails ? null : activity}
           toolStatus={{
             isPending: effectiveIsPending,
             isAwaitingAnswer,
@@ -294,6 +310,7 @@ export default function ToolBlock({
             contentData={{
               details: effectiveDetails,
               jsonData,
+              contentBlocks,
               skillContent,
               questions,
               plan,

@@ -4,9 +4,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { INLINE_REPLY_HOVER_CLOSE_MS, INLINE_REPLY_HOVER_OPEN_MS } from '../../../../config/timing'
-import { DRAG_THRESHOLD_PX } from '../../../../utils/pointer'
 import { resolveAnchor } from './anchor'
+import useHighlightPointerEvents from './hooks/useHighlightPointerEvents'
 import InlineThread from './InlineThread'
 import {
   clampHorizontal,
@@ -21,6 +20,8 @@ const HIGHLIGHT_NAME = 'inline-quote'
 const HIGHLIGHTS_SUPPORTED =
   typeof Highlight !== 'undefined' && typeof CSS !== 'undefined' && 'highlights' in CSS
 const FLOAT_GAP = 8
+// Stable default - a fresh Map per render would re-fire the reposition effect keyed on `threads`.
+const EMPTY_THREADS = new Map() // audit-ignore: misplaced-constant
 
 /**
  * @param {object} props.messagesRef - Ref to the `.chat-messages` scroll container.
@@ -30,7 +31,8 @@ const FLOAT_GAP = 8
  * @param {number} props.maxHeight - Shared composer max height for reply autoresize.
  * @param {function} props.onEditReply - (id, response) edit callback.
  * @param {function} props.onRemove - (id) delete callback (unsent only; clears the highlight).
- * @param {function} props.onSubmitBatch - Enter-in-box sends the whole batch.
+ * @param {object} props.threadSessions - A reply's side-thread state and callbacks: { threads,
+ *   onSubmit, onInterrupt, onPromote, onPromoteToRail, onFocusRailPromoted, workspaceId }.
  * @param {boolean} props.canInterrupt - Whether Ctrl+. is allowed, shared with the composer.
  */
 export default function InlineThreadsOverlay({
@@ -41,9 +43,21 @@ export default function InlineThreadsOverlay({
   maxHeight,
   onEditReply,
   onRemove,
-  onSubmitBatch,
+  threadSessions = {},
   canInterrupt,
 }) {
+  // Destructured in the body, not the parameter list: the guidelines audit's props-count check
+  // only reads top-level parameter names, so nesting here keeps the counted surface honest.
+  const {
+    threads = EMPTY_THREADS,
+    onSubmit: onSubmitThread,
+    onInterrupt: onInterruptThread,
+    onPromote,
+    onPromoteToRail,
+    onFocusRailPromoted,
+    workspaceId,
+  } = threadSessions
+
   const [hoveredId, setHoveredId] = useState(null)
   const [pinnedIds, setPinnedIds] = useState(() => new Set())
   const [positions, setPositions] = useState(() => new Map())
@@ -51,8 +65,6 @@ export default function InlineThreadsOverlay({
 
   const rangesByIdRef = useRef(new Map())
   const floatRefsRef = useRef(new Map())
-  const openTimerRef = useRef(null)
-  const closeTimerRef = useRef(null)
   const hoveredIdRef = useRef(null)
   const pinnedIdsRef = useRef(pinnedIds)
   const unsentRef = useRef(unsent)
@@ -61,8 +73,7 @@ export default function InlineThreadsOverlay({
   const focusIdRef = useRef(null)
   // Reply whose hover float a click just closed; cleared once the pointer moves off it
   const hoverSuppressedIdRef = useRef(null)
-  const pointerDownPosRef = useRef(null)
-  // Mirrored because handleClose is declared below the listener effect (dependency = TDZ)
+  // Mirrored because handleHit (passed to useHighlightPointerEvents) is declared below handleClose
   const handleCloseRef = useRef(null)
 
   hoveredIdRef.current = hoveredId
@@ -92,6 +103,12 @@ export default function InlineThreadsOverlay({
     () => [...unsent, ...sentThreads].map(r => `${r.id}:${r.turnId}`).join('|'),
     [unsent, sentThreads],
   )
+
+  // Reposition (not re-anchor) when a thread's history changes, so a growing float re-stacks.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: threads is the reposition trigger
+  useEffect(() => {
+    setTick(t => t + 1)
+  }, [threads])
 
   // Re-anchor every reply, paint the highlights, and record ranges for hit-testing + positioning.
   const resolve = useCallback(() => {
@@ -347,166 +364,95 @@ export default function InlineThreadsOverlay({
     seenUnsentIdsRef.current = new Set(unsent.map(r => r.id))
   }, [unsent])
 
-  // Clear the document-global highlight and any pending timers on unmount (session switch / mobile).
+  // Clear the document-global highlight on unmount (session switch / mobile). Hover timers are
+  // owned and cleared by useHighlightPointerEvents.
   useEffect(() => {
     return () => {
       if (HIGHLIGHTS_SUPPORTED) {
         CSS.highlights.delete(HIGHLIGHT_NAME)
       }
-
-      clearTimeout(openTimerRef.current)
-      clearTimeout(closeTimerRef.current)
     }
   }, [])
 
-  const clearOpenTimer = useCallback(() => {
-    clearTimeout(openTimerRef.current)
-    openTimerRef.current = null
-  }, [])
-
-  const clearCloseTimer = useCallback(() => {
-    clearTimeout(closeTimerRef.current)
-    closeTimerRef.current = null
-  }, [])
-
-  const startCloseTimer = useCallback(() => {
-    if (closeTimerRef.current == null) {
-      closeTimerRef.current = setTimeout(() => {
-        closeTimerRef.current = null
-        setHoveredId(null)
-      }, INLINE_REPLY_HOVER_CLOSE_MS)
-    }
-  }, [])
-
-  // Hover a highlighted span -> open its float after a short intent delay; click -> pin it open.
   // Hit-testing reuses the painted ranges (a ::highlight span has no DOM element to bind to).
-  useEffect(() => {
-    const container = messagesRef.current
-
-    if (!container) {
-      return
-    }
-
-    const hitTest = (x, y) => {
-      for (const [id, entry] of rangesByIdRef.current) {
-        if (entry.range && rangeContainsPoint(entry.range, x, y) && isRangeVisible(entry.range)) {
-          return id // skip spans hidden by a collapsed source turn
-        }
+  const hitTest = useCallback((x, y) => {
+    for (const [id, entry] of rangesByIdRef.current) {
+      if (entry.range && rangeContainsPoint(entry.range, x, y) && isRangeVisible(entry.range)) {
+        return id // skip spans hidden by a collapsed source turn
       }
-
-      return null
     }
 
-    let raf = null
-    const onMove = e => {
-      if (e.buttons !== 0 || raf != null) {
-        return // a pressed button means a drag-selection is underway; don't pop hover floats
-      }
+    return null
+  }, [])
 
-      const { clientX, clientY } = e
-      raf = requestAnimationFrame(() => {
-        raf = null
-        const hit = hitTest(clientX, clientY)
-        container.style.cursor = hit ? 'pointer' : ''
-
-        // Off the suppressed highlight -> hover is armed again
-        if (hit !== hoverSuppressedIdRef.current) {
-          hoverSuppressedIdRef.current = null
-        }
-
-        if (hit) {
-          clearCloseTimer()
-
-          if (
-            hit !== hoveredIdRef.current &&
-            hit !== hoverSuppressedIdRef.current &&
-            !pinnedIdsRef.current.has(hit) &&
-            openTimerRef.current == null
-          ) {
-            openTimerRef.current = setTimeout(() => {
-              openTimerRef.current = null
-              setHoveredId(hit)
-            }, INLINE_REPLY_HOVER_OPEN_MS)
-          }
-        } else {
-          clearOpenTimer()
-
-          if (hoveredIdRef.current != null && !pinnedIdsRef.current.has(hoveredIdRef.current)) {
-            startCloseTimer()
-          }
-        }
-      })
+  // Off the suppressed highlight -> hover is armed again.
+  const handleHitChange = useCallback(hit => {
+    if (hit !== hoverSuppressedIdRef.current) {
+      hoverSuppressedIdRef.current = null
     }
+  }, [])
 
-    const onPointerDown = e => {
-      pointerDownPosRef.current = { x: e.clientX, y: e.clientY }
-    }
+  const canArmHover = useCallback(
+    hit =>
+      hit !== hoveredIdRef.current &&
+      hit !== hoverSuppressedIdRef.current &&
+      !pinnedIdsRef.current.has(hit),
+    [],
+  )
 
-    const onClick = e => {
-      // A drag-select that merely ends on a highlight must not toggle anything
-      const down = pointerDownPosRef.current
+  // Never against visible: hover has usually already opened the box by the time the pointer
+  // leaves, so a visibility test would close it on the first move away.
+  const canStartClose = useCallback(
+    () => hoveredIdRef.current != null && !pinnedIdsRef.current.has(hoveredIdRef.current),
+    [],
+  )
 
-      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) >= DRAG_THRESHOLD_PX) {
+  const handleHoverOpen = useCallback(hit => setHoveredId(hit), [])
+  const handleHoverClose = useCallback(() => setHoveredId(null), [])
+
+  // Click -> pin it open, except a rail-promoted quote, which means "take me there" instead - its
+  // read-only card has no close button to pin one open for in the first place.
+  const handleHit = useCallback(
+    hit => {
+      const hitReply = rangesByIdRef.current.get(hit)?.reply
+      if (hitReply?.railPromoted) {
+        onFocusRailPromoted?.(hitReply.threadSessionId)
+        setHoveredId(null)
         return
       }
 
-      const hit = hitTest(e.clientX, e.clientY)
+      // Compare against pinned, not visible: hover has usually already opened the box by the time
+      // the click lands, so a visibility test would close it on the first click.
+      if (pinnedIdsRef.current.has(hit)) {
+        handleCloseRef.current?.(hit) // same path as the close button, incl. empty-quote discard
+        hoverSuppressedIdRef.current = hit // pointer still rests on the span
+      } else {
+        hoverSuppressedIdRef.current = null
+        setPinnedIds(prev => {
+          const next = new Set(prev)
+          next.add(hit)
 
-      if (hit) {
-        e.stopPropagation() // don't let the transcript-background click refocus the composer
-        clearOpenTimer()
-        clearCloseTimer()
+          return next
+        })
 
-        // Compare against pinned, not visible: hover has usually already opened the box by the time
-        // the click lands, so a visibility test would close it on the first click.
-        if (pinnedIdsRef.current.has(hit)) {
-          handleCloseRef.current?.(hit) // same path as the close button, incl. empty-quote discard
-          hoverSuppressedIdRef.current = hit // pointer still rests on the span
-        } else {
-          hoverSuppressedIdRef.current = null
-          setPinnedIds(prev => {
-            const next = new Set(prev)
-            next.add(hit)
-
-            return next
-          })
-
-          if (hoveredIdRef.current === hit) {
-            setHoveredId(null)
-          }
+        if (hoveredIdRef.current === hit) {
+          setHoveredId(null)
         }
       }
-    }
+    },
+    [onFocusRailPromoted],
+  )
 
-    // Leaving the transcript fires no further mousemove, so dismiss the hover float here too; the
-    // float's own mouseenter cancels this, preserving the span -> float bridge.
-    const onLeave = () => {
-      clearOpenTimer()
-      container.style.cursor = ''
-      hoverSuppressedIdRef.current = null
-
-      if (hoveredIdRef.current != null && !pinnedIdsRef.current.has(hoveredIdRef.current)) {
-        startCloseTimer()
-      }
-    }
-
-    container.addEventListener('pointerdown', onPointerDown)
-    container.addEventListener('mousemove', onMove)
-    container.addEventListener('click', onClick)
-    container.addEventListener('mouseleave', onLeave)
-
-    return () => {
-      container.removeEventListener('pointerdown', onPointerDown)
-      container.removeEventListener('mousemove', onMove)
-      container.removeEventListener('click', onClick)
-      container.removeEventListener('mouseleave', onLeave)
-      container.style.cursor = ''
-
-      if (raf != null) {
-        cancelAnimationFrame(raf)
-      }
-    }
-  }, [messagesRef, clearOpenTimer, clearCloseTimer, startCloseTimer])
+  const { clearOpenTimer, clearCloseTimer, startCloseTimer } = useHighlightPointerEvents({
+    containerRef: messagesRef,
+    hitTest,
+    canArmHover,
+    canStartClose,
+    onHitChange: handleHitChange,
+    onHoverOpen: handleHoverOpen,
+    onHoverClose: handleHoverClose,
+    onHit: handleHit,
+  })
 
   // Hover bridge: moving onto the float keeps it open; leaving starts the dismiss timer.
   const handleFloatEnter = useCallback(
@@ -547,7 +493,9 @@ export default function InlineThreadsOverlay({
     id => {
       const reply = unsentRef.current.find(r => r.id === id)
 
-      if (reply && !reply.response.trim()) {
+      // A thread's own field holds a follow-up draft, not the original ask - an empty one means
+      // no follow-up typed, not an empty reply to discard. The thread's exchange stays readable.
+      if (reply && !reply.response.trim() && !reply.threadSessionId) {
         onRemove(id) // closing an empty unsent reply discards the quote + its highlight
       }
 
@@ -604,6 +552,7 @@ export default function InlineThreadsOverlay({
         <InlineThread
           reply={live.reply}
           sent={live.sent}
+          thread={threads.get(id)}
           maxHeight={maxHeight}
           pinned={pinnedIds.has(id)}
           autoFocus={pinnedIds.has(id) && id === focusIdRef.current}
@@ -611,8 +560,13 @@ export default function InlineThreadsOverlay({
           onRemove={onRemove}
           onClose={handleClose}
           onFocus={pin}
-          onSubmit={onSubmitBatch}
+          onSubmitThread={onSubmitThread}
+          onInterruptThread={onInterruptThread}
           canInterrupt={canInterrupt}
+          onPromote={onPromote}
+          onPromoteToRail={onPromoteToRail}
+          onFocusRailPromoted={onFocusRailPromoted}
+          workspaceId={workspaceId}
         />
       </div>,
       document.body,

@@ -177,17 +177,46 @@ class ContainerService:
             raise ContainerNotFound(container_id=container_id)
 
     async def find_by_session(self, session_id: str, *, sync: bool = False) -> Container | None:
-        """Find a container serving the given session."""
+        """Find a container serving the given session - as owner first, then as a member.
+
+        The owner wins when both match: a stop must resolve to it, not to dict iteration order.
+        """
 
         if sync:
             await self.sync_state()
 
         # Match RUNNING and STARTING so in-flight spawns resolve before the health check completes.
+        live = (ContainerStatus.RUNNING, ContainerStatus.STARTING)
+
         for container in self._containers.values():
-            if container.session_id == session_id and container.status in (
-                ContainerStatus.RUNNING,
-                ContainerStatus.STARTING,
-            ):
+            if container.session_id == session_id and container.status in live:
+                return container
+
+        for container in self._containers.values():
+            if session_id in container.members and container.status in live:
+                return container
+
+        return None
+
+    async def find_by_peer_pid(self, pid: int) -> Container | None:
+        """Resolve a unix-socket peer's OS pid to the container it is running inside.
+
+        The pid's place in a container's process tree (cgroup, or process group) is the only truth.
+        """
+
+        candidate_ids = [c.backend_id for c in self._containers.values()]
+
+        loop = asyncio.get_running_loop()
+        backend_id = await loop.run_in_executor(
+            self._executor,
+            functools.partial(self._runtime.identify_container_from_pid, pid, candidate_ids),
+        )
+
+        if not backend_id:
+            return None
+
+        for container in self._containers.values():
+            if container.backend_id == backend_id:
                 return container
 
         return None

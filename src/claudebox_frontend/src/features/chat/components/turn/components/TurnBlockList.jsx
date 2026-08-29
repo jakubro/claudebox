@@ -1,21 +1,12 @@
 /** Render the block list for a conversation turn. */
 
-import CopyButton from '../../../../../components/CopyButton.jsx'
-import Markdown from '../../../../../components/Markdown'
-import { BlockType } from '../../../../../config/schema'
-import { useHideShellCalls } from '../hooks/useHideShellCalls'
+import { useTurnRoutingMode } from '../hooks/useTurnRoutingMode'
 import { groupBlocks } from '../utils/groupBlocks'
-import CompactionBlock from './CompactionBlock'
-import LocalCommandBlock from './LocalCommandBlock'
-import SystemReminders from './SystemReminders'
-import ThinkingBlock from './ThinkingBlock'
-import ToolBlock from './tool-block'
-import LookupsGroup from './tool-block/components/tool-block-expanded-content/components/LookupsGroup'
-import TodosGroup from './tool-block/components/tool-block-expanded-content/components/TodosGroup'
-import { extractSystemReminders } from './tool-block/utils/toolResultFormatters'
+import TurnSegments from './TurnSegments'
 
 /**
- * Dispatches each segment (todos/lookups-group, single block) to its renderer; consumes TurnContext via ToolBlock.
+ * Dispatches each transcript-side segment to its renderer via `TurnSegments`. The segments this
+ * turn routed away render in the work panel's entry, through the same dispatch.
  * @param {Set} [props.duplicateAskUserIds] - Cross-turn duplicate AskUserQuestion IDs to hide.
  */
 export default function TurnBlockList({
@@ -24,96 +15,14 @@ export default function TurnBlockList({
   duplicateAskUserIds = null,
   todoDiffs = null,
 }) {
-  const hideShellCalls = useHideShellCalls()
-  const segments = groupBlocks(blocks, hideShellCalls)
+  const routingMode = useTurnRoutingMode()
+  const { transcript } = groupBlocks(blocks, routingMode)
   return (
-    <>
-      {segments.map((segment, segIdx) => {
-        if (segment.kind === 'todos-group') {
-          return (
-            <TodosGroup
-              key={`tg-${segIdx}`}
-              taskBlocks={segment.blocks.map(b => ({
-                toolUseId: b.toolUse?.tool_use_id,
-                toolUse: b.toolUse,
-              }))}
-            />
-          )
-        }
-        if (segment.kind === 'lookups-group') {
-          return (
-            <LookupsGroup
-              key={`lg-${segIdx}`}
-              entries={segment.entries}
-              blockOffsets={blockOffsets}
-            />
-          )
-        }
-        const { block, index: i } = segment
-        if (block.type === BlockType.TEXT) {
-          const { content: cleanedContent, reminders } = extractSystemReminders(block.event.content)
-          const cmdMatch = cleanedContent.match(
-            /^<local-command-(stdout|stderr)>([\s\S]*)<\/local-command-\1>$/,
-          )
-          return (
-            <div key={i} className="turn-text">
-              {cmdMatch ? (
-                <LocalCommandBlock type={cmdMatch[1]} content={cmdMatch[2].trim()} />
-              ) : (
-                <Markdown>{cleanedContent}</Markdown>
-              )}
-              <CopyButton
-                text={cleanedContent}
-                className="turn-text-copy-btn"
-                title="Copy message"
-                size={12}
-              />
-              {reminders.length > 0 && <SystemReminders reminders={reminders} />}
-            </div>
-          )
-        }
-        if (block.type === BlockType.THINKING) {
-          return <ThinkingBlock key={i} event={block.event} blockRelativeTime={blockOffsets[i]} />
-        }
-        if (block.type === BlockType.TOOL) {
-          const toolUseId = block.toolUse?.tool_use_id
-          if (duplicateAskUserIds?.has(toolUseId)) {
-            return null
-          }
-          const todoDiff = toolUseId && todoDiffs ? todoDiffs.get(toolUseId) : null
-          return (
-            <ToolBlock
-              key={i}
-              toolUse={block.toolUse}
-              toolResult={block.toolResult}
-              nestedEvents={block.nestedEvents}
-              skillContent={block.skillContent}
-              todoDiff={todoDiff}
-              blockRelativeTime={blockOffsets[i]}
-            />
-          )
-        }
-        if (block.type === BlockType.COMPACTION) {
-          return (
-            <CompactionBlock
-              key={i}
-              event={block.event}
-              summary={block.summary}
-              isCompacting={block.isCompacting}
-            />
-          )
-        }
-        if (block.type === BlockType.INTERRUPT) {
-          return (
-            <div key={i} className="interrupt-indicator">
-              <span className="interrupt-dash">──</span>
-              <span>Interrupted</span>
-              <span className="interrupt-dash">──</span>
-            </div>
-          )
-        }
-        return null
-      })}
-    </>
+    <TurnSegments
+      segments={transcript}
+      blockOffsets={blockOffsets}
+      duplicateAskUserIds={duplicateAskUserIds}
+      todoDiffs={todoDiffs}
+    />
   )
 }

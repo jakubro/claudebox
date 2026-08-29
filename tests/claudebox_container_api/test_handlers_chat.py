@@ -32,3 +32,48 @@ async def test_stream_opens_once_the_session_is_ready():
 
     assert response is not None
     svc.ensure_ready.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_stream_replay_true_by_default_subscribes_with_no_kwargs(monkeypatch):
+    svc = MagicMock()
+    svc.ensure_ready.return_value = None
+    captured = {}
+
+    def fake_response(broadcaster, subscribe_kwargs=None, **kwargs):
+        captured["subscribe_kwargs"] = subscribe_kwargs
+
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "claudebox_container_api.handlers.chat.BroadcastEventSourceResponse",
+        fake_response,
+    )
+
+    await chat_stream(svc)
+
+    assert captured["subscribe_kwargs"] is None
+
+
+@pytest.mark.anyio
+async def test_stream_replay_false_forwards_to_subscribe_kwargs(monkeypatch):
+    """A float re-attaching to a running side thread passes replay=false - it already read
+    the persisted log via the events route and wants only what arrives from here on."""
+
+    svc = MagicMock()
+    svc.ensure_ready.return_value = None
+    captured = {}
+
+    def fake_response(broadcaster, subscribe_kwargs=None, **kwargs):
+        captured["subscribe_kwargs"] = subscribe_kwargs
+
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "claudebox_container_api.handlers.chat.BroadcastEventSourceResponse",
+        fake_response,
+    )
+
+    await chat_stream(svc, replay=False)
+
+    assert captured["subscribe_kwargs"] == {"replay": False}

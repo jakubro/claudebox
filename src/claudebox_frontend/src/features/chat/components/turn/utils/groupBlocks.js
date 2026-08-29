@@ -3,7 +3,11 @@
 import { isLookupsGroupingEnabled } from '../../../../../config/features'
 import { BlockType, normalizeToolName, ToolName } from '../../../../../config/schema'
 import { getToolConfig } from '../../../../../config/toolRegistry'
-import { isHiddenToolSearch, isTopLevelBashCall } from '../../../../../utils/eventProcessing'
+import {
+  blockRoutesToRightSlot,
+  isHiddenToolSearch,
+  TurnRoutingMode,
+} from '../../../../../utils/eventProcessing'
 
 // Task-list families in the grouped Todos run; TaskOutput and the bare Task tool are excluded
 // so they render as ordinary blocks and break the run.
@@ -19,11 +23,17 @@ const TASK_LIST_TOOLS = new Set([
 const TASK_MUTATION_TOOLS = new Set([ToolName.TASK_CREATE, ToolName.TASK_UPDATE])
 
 /**
- * Consecutive task-list blocks in one subagent partition form a `'todos-group'`, unless the run is
- * inspection-only (TaskList/TaskGet, no mutation). `gatherLookups` then pools read-only singles.
- * `hideShellCalls` drops top-level Bash blocks - they render in the terminal column instead.
+ * Split a turn's blocks into the transcript's segments and the right slot's, under `mode`. Only a
+ * top-level `BlockType.TOOL` block can leave, and `gatherLookups` runs on the transcript side.
  */
-export function groupBlocks(blocks, hideShellCalls = false) {
+export function groupBlocks(blocks, mode = TurnRoutingMode.OFF) {
+  const transcript = buildSegments(blocks, tu => !(tu && blockRoutesToRightSlot(mode, tu)))
+  const panel = buildSegments(blocks, tu => !!(tu && blockRoutesToRightSlot(mode, tu)))
+  return { transcript: gatherLookups(transcript), panel }
+}
+
+/** One pass over `blocks` keeping what `belongsToThisSide` admits, with run detection. */
+function buildSegments(blocks, belongsToThisSide) {
   const segments = []
   let run = null
   for (let i = 0; i < blocks.length; i++) {
@@ -32,10 +42,10 @@ export function groupBlocks(blocks, hideShellCalls = false) {
       continue
     }
     const tu = block.type === BlockType.TOOL ? block.toolUse : null
-    const toolName = tu ? normalizeToolName(tu.content) : null
-    if (hideShellCalls && tu && isTopLevelBashCall(tu)) {
+    if (!belongsToThisSide(tu)) {
       continue
     }
+    const toolName = tu ? normalizeToolName(tu.content) : null
     const isListTool = !!tu && TASK_LIST_TOOLS.has(toolName)
     if (isListTool) {
       const partition = tu.parent_tool_use_id ?? null
@@ -59,13 +69,20 @@ export function groupBlocks(blocks, hideShellCalls = false) {
   if (run) {
     flushRun(run, segments)
   }
-  return gatherLookups(segments)
+  return segments
 }
 
-/** A run with a mutation emits `'todos-group'`; otherwise singles, keeping payloads visible. */
+/**
+ * A run with a mutation emits `'todos-group'`; otherwise singles, keeping payloads visible.
+ * `index` is the run's first entry, which the work panel's compaction merge sorts against.
+ */
 function flushRun(run, segments) {
   if (run.entries.some(e => isMutation(e.block))) {
-    segments.push({ kind: 'todos-group', blocks: run.entries.map(e => e.block) })
+    segments.push({
+      kind: 'todos-group',
+      blocks: run.entries.map(e => e.block),
+      index: run.entries[0].index,
+    })
     return
   }
   for (const { block, index } of run.entries) {

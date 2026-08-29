@@ -15,7 +15,7 @@ import StashPanel from '../features/stash'
 import TasksPanel from '../features/tasks'
 import TodosPanel from '../features/todos'
 import UsagePanel from '../features/usage'
-import { DEFAULT_PANEL_HEIGHT, DEFAULT_PANEL_WIDTH } from './dimensions'
+import { DEFAULT_PANEL_WIDTH } from './dimensions'
 
 export const HELP_OVERLAY_KEY = '?'
 
@@ -73,9 +73,6 @@ export const SIDE_PANEL_CONFIG = {
   canonicalOrder: {
     left: CANONICAL_LEFT_ORDER,
     right: CANONICAL_RIGHT_ORDER,
-    // Empty - bottom-side machinery preserved for future bottom panels.
-    bottom: [],
   },
   defaultWidth: DEFAULT_PANEL_WIDTH,
-  defaultHeight: DEFAULT_PANEL_HEIGHT,
 }

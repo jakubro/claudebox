@@ -4,14 +4,20 @@
 
 /* Chat panel */
 @import "./ChatPanel.css";
+@import "./components/SessionRail.css";
 @import "./components/chat-control-bar/ChatControlBar.css";
+@import "./components/minimap-overlay.css";
 @import "./components/minimap/MiniMap.css";
 @import "./components/terminal/TerminalColumn.css";
+@import "./components/ColumnMinimap.css";
+@import "./components/work/WorkColumn.css";
+@import "./components/work/components/WorkTurnEntry.css";
 
 @import "./components/WelcomeContent.css";
 
 /* Chat-level components */
 @import "./components/HistoricalTurnList.css";
+@import "./components/ThreadFoldRow.css";
 @import "./components/SettingChangeDivider.css";
 @import "./components/QueuedMessageBubble.css";
 @import "./components/RewindModal.css";
@@ -52,6 +58,7 @@
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/LookupsGroup.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/ToolContentRenderer.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/PersistedOutputContent.css";
+@import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/McpContentBlocks.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/components/code-block/CodeBlock.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/components/code-block/components/InlineDiff.css";
 

@@ -3,6 +3,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { RightSlotView } from '../../utils/rightSlotViews'
 import ChatControlBar from './ChatControlBar'
 
 vi.mock('../../../../hooks/useIsMobile', () => ({
@@ -29,6 +30,7 @@ vi.mock('lucide-react', () => ({
   RefreshCw: () => <span data-testid="icon-refresh">Refresh</span>,
   SquareSplitHorizontal: () => <span data-testid="icon-split">SquareSplitHorizontal</span>,
   StickyNote: () => <span data-testid="icon-sticky-note">StickyNote</span>,
+  Wrench: () => <span data-testid="icon-wrench">Wrench</span>,
   X: () => <span data-testid="icon-x">X</span>,
 }))
 
@@ -101,8 +103,8 @@ describe('ChatControlBar', () => {
       onJumpNext: vi.fn(),
       minimapPinned: false,
       onToggleMinimap: vi.fn(),
-      terminalSplitEnabled: true,
-      onToggleTerminalSplit: vi.fn(),
+      rightSlotView: RightSlotView.TERMINAL,
+      onSelectRightSlotView: vi.fn(),
     }
   })
 
@@ -314,40 +316,88 @@ describe('ChatControlBar', () => {
     })
   })
 
-  describe('terminal split toggle', () => {
-    it('shows pressed state when the split is enabled', () => {
-      render(<ChatControlBar {...defaultProps} terminalSplitEnabled={true} />)
+  describe('right-slot view picker (off / terminal / work)', () => {
+    it('shows the terminal button pressed when the view is terminal', () => {
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.TERMINAL} />)
 
-      const btn = screen.getByTestId('terminal-split-toggle')
-      expect(btn).toHaveClass('pressed')
-      expect(btn).toHaveAttribute('aria-pressed', 'true')
-      expect(btn).toHaveAttribute('title', "Hide agent's terminal")
+      const terminalBtn = screen.getByTestId('right-slot-view-terminal')
+      expect(terminalBtn).toHaveClass('pressed')
+      expect(terminalBtn).toHaveAttribute('aria-pressed', 'true')
+      expect(terminalBtn).toHaveAttribute('title', "Hide agent's terminal")
+      const workBtn = screen.getByTestId('right-slot-view-work')
+      expect(workBtn).not.toHaveClass('pressed')
+      expect(workBtn).toHaveAttribute('aria-pressed', 'false')
     })
 
-    it('shows unpressed state when the split is disabled', () => {
-      render(<ChatControlBar {...defaultProps} terminalSplitEnabled={false} />)
+    it('shows the work button pressed when the view is work', () => {
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.WORK} />)
 
-      const btn = screen.getByTestId('terminal-split-toggle')
-      expect(btn).not.toHaveClass('pressed')
-      expect(btn).toHaveAttribute('aria-pressed', 'false')
-      expect(btn).toHaveAttribute('title', "Show agent's terminal")
+      const workBtn = screen.getByTestId('right-slot-view-work')
+      expect(workBtn).toHaveClass('pressed')
+      expect(workBtn).toHaveAttribute('aria-pressed', 'true')
+      expect(workBtn).toHaveAttribute('title', 'Hide the work panel')
+      const terminalBtn = screen.getByTestId('right-slot-view-terminal')
+      expect(terminalBtn).not.toHaveClass('pressed')
+      expect(terminalBtn).toHaveAttribute('aria-pressed', 'false')
     })
 
-    it('calls onToggleTerminalSplit when clicked', async () => {
+    it('shows neither button pressed when the view is off', () => {
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.OFF} />)
+
+      expect(screen.getByTestId('right-slot-view-terminal')).not.toHaveClass('pressed')
+      expect(screen.getByTestId('right-slot-view-work')).not.toHaveClass('pressed')
+      expect(screen.getByTestId('right-slot-view-terminal')).toHaveAttribute(
+        'title',
+        "Show agent's terminal",
+      )
+      expect(screen.getByTestId('right-slot-view-work')).toHaveAttribute(
+        'title',
+        "Show the agent's work",
+      )
+    })
+
+    it('selecting terminal from off calls onSelectRightSlotView with TERMINAL', async () => {
       const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.OFF} />)
 
-      await user.click(screen.getByTestId('terminal-split-toggle'))
+      await user.click(screen.getByTestId('right-slot-view-terminal'))
 
-      expect(defaultProps.onToggleTerminalSplit).toHaveBeenCalledOnce()
+      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.TERMINAL)
+    })
+
+    it('selecting work from off calls onSelectRightSlotView with WORK', async () => {
+      const user = userEvent.setup()
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.OFF} />)
+
+      await user.click(screen.getByTestId('right-slot-view-work'))
+
+      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.WORK)
+    })
+
+    it('clicking the pressed terminal button turns the view off', async () => {
+      const user = userEvent.setup()
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.TERMINAL} />)
+
+      await user.click(screen.getByTestId('right-slot-view-terminal'))
+
+      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.OFF)
+    })
+
+    it('clicking work while terminal is pressed switches to work', async () => {
+      const user = userEvent.setup()
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.TERMINAL} />)
+
+      await user.click(screen.getByTestId('right-slot-view-work'))
+
+      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.WORK)
     })
 
     it('sits immediately after the auto-collapse button with no separator between them', () => {
       render(<ChatControlBar {...defaultProps} />)
 
       const autoCollapse = screen.getByTestId('autocollapse-toggle')
-      const split = screen.getByTestId('terminal-split-toggle')
-      expect(autoCollapse.nextElementSibling).toBe(split)
+      const picker = screen.getByTestId('right-slot-view-picker')
+      expect(autoCollapse.nextElementSibling).toBe(picker)
     })
   })
 
@@ -531,6 +581,337 @@ describe('ChatControlBar', () => {
       expect(loader).toHaveClass('spin')
       expect(forkBtn.querySelector('[data-testid="icon-git-fork"]')).toBeNull()
       expect(forkBtn).toBeDisabled()
+    })
+  })
+
+  describe('terminal group (split on)', () => {
+    const splitProps = {
+      showTerminalSplit: true,
+      terminalSplitRatio: 0.5,
+      terminalAutoScrollEnabled: true,
+      onTerminalJumpToBottom: vi.fn(),
+      onTerminalJumpPrev: vi.fn(),
+      onTerminalJumpNext: vi.fn(),
+      terminalMinimapPinned: true,
+      onToggleTerminalMinimap: vi.fn(),
+    }
+
+    it('renders exactly one panel-control-bar, divided into two halves', () => {
+      const { container } = render(<ChatControlBar {...defaultProps} {...splitProps} />)
+
+      expect(container.querySelectorAll('.panel-control-bar')).toHaveLength(1)
+      expect(container.querySelector('.panel-control-bar-left')).toBeInTheDocument()
+      expect(container.querySelector('.panel-control-bar-right')).toBeInTheDocument()
+    })
+
+    it('renders an undivided bar when showTerminalSplit is false', () => {
+      const { container } = render(
+        <ChatControlBar {...defaultProps} {...splitProps} showTerminalSplit={false} />,
+      )
+
+      expect(container.querySelector('.panel-control-bar-left')).toBeNull()
+      expect(container.querySelector('.panel-control-bar-right')).toBeNull()
+    })
+
+    it('gives the terminal control a distinct testid from the transcript autoscroll indicator', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} />)
+
+      expect(screen.getByTestId('terminal-autoscroll-indicator')).toBeInTheDocument()
+      expect(screen.getByTestId('autoscroll-indicator')).toBeInTheDocument()
+    })
+
+    it('shows the terminal control pressed and disabled when following', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} terminalAutoScrollEnabled={true} />)
+
+      const btn = screen.getByTestId('terminal-autoscroll-indicator')
+      expect(btn).toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'true')
+      expect(btn).toBeDisabled()
+    })
+
+    it('shows the terminal control unpressed and enabled when not following', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} terminalAutoScrollEnabled={false} />)
+
+      const btn = screen.getByTestId('terminal-autoscroll-indicator')
+      expect(btn).not.toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'false')
+      expect(btn).not.toBeDisabled()
+    })
+
+    it('calls onTerminalJumpToBottom when the terminal control is clicked', async () => {
+      const user = userEvent.setup()
+      const onTerminalJumpToBottom = vi.fn()
+      render(
+        <ChatControlBar
+          {...defaultProps}
+          {...splitProps}
+          terminalAutoScrollEnabled={false}
+          onTerminalJumpToBottom={onTerminalJumpToBottom}
+        />,
+      )
+
+      await user.click(screen.getByTestId('terminal-autoscroll-indicator'))
+
+      expect(onTerminalJumpToBottom).toHaveBeenCalledOnce()
+    })
+
+    it('renders up and down controls left of the autoscroll control, in that order', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} />)
+
+      const prev = screen.getByTestId('terminal-jump-prev')
+      const next = screen.getByTestId('terminal-jump-next')
+      const indicator = screen.getByTestId('terminal-autoscroll-indicator')
+      expect(prev.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(
+        next.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('calls onTerminalJumpPrev when the up control is clicked', async () => {
+      const user = userEvent.setup()
+      const onTerminalJumpPrev = vi.fn()
+      render(
+        <ChatControlBar
+          {...defaultProps}
+          {...splitProps}
+          onTerminalJumpPrev={onTerminalJumpPrev}
+        />,
+      )
+
+      await user.click(screen.getByTestId('terminal-jump-prev'))
+
+      expect(onTerminalJumpPrev).toHaveBeenCalledOnce()
+    })
+
+    it('calls onTerminalJumpNext when the down control is clicked', async () => {
+      const user = userEvent.setup()
+      const onTerminalJumpNext = vi.fn()
+      render(
+        <ChatControlBar
+          {...defaultProps}
+          {...splitProps}
+          onTerminalJumpNext={onTerminalJumpNext}
+        />,
+      )
+
+      await user.click(screen.getByTestId('terminal-jump-next'))
+
+      expect(onTerminalJumpNext).toHaveBeenCalledOnce()
+    })
+
+    it('has no jump-to-top or jump-to-end control in the terminal group', () => {
+      const { container } = render(<ChatControlBar {...defaultProps} {...splitProps} />)
+
+      // prev, next, autoscroll indicator, map toggle - no jump-to-top/jump-to-end pair.
+      const right = container.querySelector('.panel-control-bar-right')
+      expect(right.querySelectorAll('button')).toHaveLength(4)
+    })
+
+    it('renders the map toggle rightmost in the terminal group', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} />)
+
+      const indicator = screen.getByTestId('terminal-autoscroll-indicator')
+      const mapToggle = screen.getByTestId('terminal-minimap-toggle')
+      expect(
+        indicator.compareDocumentPosition(mapToggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('shows the terminal map toggle pressed when the overview is pinned', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} terminalMinimapPinned={true} />)
+
+      const btn = screen.getByTestId('terminal-minimap-toggle')
+      expect(btn).toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('shows the terminal map toggle unpressed when the overview is unpinned', () => {
+      render(<ChatControlBar {...defaultProps} {...splitProps} terminalMinimapPinned={false} />)
+
+      const btn = screen.getByTestId('terminal-minimap-toggle')
+      expect(btn).not.toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('calls onToggleTerminalMinimap when the terminal map toggle is clicked', async () => {
+      const user = userEvent.setup()
+      const onToggleTerminalMinimap = vi.fn()
+      render(
+        <ChatControlBar
+          {...defaultProps}
+          {...splitProps}
+          onToggleTerminalMinimap={onToggleTerminalMinimap}
+        />,
+      )
+
+      await user.click(screen.getByTestId('terminal-minimap-toggle'))
+
+      expect(onToggleTerminalMinimap).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('work group (work view on)', () => {
+    const workProps = {
+      showWorkView: true,
+      terminalSplitRatio: 0.5,
+      workAutoScrollEnabled: true,
+      onWorkJumpToBottom: vi.fn(),
+      onWorkJumpPrev: vi.fn(),
+      onWorkJumpNext: vi.fn(),
+      workMinimapPinned: true,
+      onToggleWorkMinimap: vi.fn(),
+    }
+
+    it('renders exactly one panel-control-bar, divided into two halves', () => {
+      const { container } = render(<ChatControlBar {...defaultProps} {...workProps} />)
+
+      expect(container.querySelectorAll('.panel-control-bar')).toHaveLength(1)
+      expect(container.querySelector('.panel-control-bar-left')).toBeInTheDocument()
+      expect(container.querySelector('.panel-control-bar-right')).toBeInTheDocument()
+    })
+
+    it('renders an undivided bar when showWorkView is false and showTerminalSplit is unset', () => {
+      const { container } = render(
+        <ChatControlBar {...defaultProps} {...workProps} showWorkView={false} />,
+      )
+
+      expect(container.querySelector('.panel-control-bar-left')).toBeNull()
+      expect(container.querySelector('.panel-control-bar-right')).toBeNull()
+    })
+
+    it('gives the work controls testids distinct from the terminal ones', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} />)
+
+      expect(screen.getByTestId('work-jump-prev')).toBeInTheDocument()
+      expect(screen.getByTestId('work-jump-next')).toBeInTheDocument()
+      expect(screen.getByTestId('work-autoscroll-indicator')).toBeInTheDocument()
+      expect(screen.getByTestId('work-minimap-toggle')).toBeInTheDocument()
+      expect(screen.queryByTestId('terminal-autoscroll-indicator')).not.toBeInTheDocument()
+    })
+
+    it('shows the work autoscroll control pressed and disabled when following', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} workAutoScrollEnabled={true} />)
+
+      const btn = screen.getByTestId('work-autoscroll-indicator')
+      expect(btn).toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'true')
+      expect(btn).toBeDisabled()
+    })
+
+    it('shows the work autoscroll control unpressed and enabled when not following', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} workAutoScrollEnabled={false} />)
+
+      const btn = screen.getByTestId('work-autoscroll-indicator')
+      expect(btn).not.toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'false')
+      expect(btn).not.toBeDisabled()
+    })
+
+    it('calls onWorkJumpToBottom when the autoscroll control is clicked', async () => {
+      const user = userEvent.setup()
+      const onWorkJumpToBottom = vi.fn()
+      render(
+        <ChatControlBar
+          {...defaultProps}
+          {...workProps}
+          workAutoScrollEnabled={false}
+          onWorkJumpToBottom={onWorkJumpToBottom}
+        />,
+      )
+
+      await user.click(screen.getByTestId('work-autoscroll-indicator'))
+
+      expect(onWorkJumpToBottom).toHaveBeenCalledOnce()
+    })
+
+    it('renders up and down controls left of the autoscroll control, in that order', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} />)
+
+      const prev = screen.getByTestId('work-jump-prev')
+      const next = screen.getByTestId('work-jump-next')
+      const indicator = screen.getByTestId('work-autoscroll-indicator')
+      expect(prev.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(
+        next.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('calls onWorkJumpPrev when the up control is clicked', async () => {
+      const user = userEvent.setup()
+      const onWorkJumpPrev = vi.fn()
+      render(<ChatControlBar {...defaultProps} {...workProps} onWorkJumpPrev={onWorkJumpPrev} />)
+
+      await user.click(screen.getByTestId('work-jump-prev'))
+
+      expect(onWorkJumpPrev).toHaveBeenCalledOnce()
+    })
+
+    it('calls onWorkJumpNext when the down control is clicked', async () => {
+      const user = userEvent.setup()
+      const onWorkJumpNext = vi.fn()
+      render(<ChatControlBar {...defaultProps} {...workProps} onWorkJumpNext={onWorkJumpNext} />)
+
+      await user.click(screen.getByTestId('work-jump-next'))
+
+      expect(onWorkJumpNext).toHaveBeenCalledOnce()
+    })
+
+    it('has no jump-to-top or jump-to-end control in the work group', () => {
+      const { container } = render(<ChatControlBar {...defaultProps} {...workProps} />)
+
+      // prev, next, autoscroll indicator, map toggle - no jump-to-top/jump-to-end pair.
+      const right = container.querySelector('.panel-control-bar-right')
+      expect(right.querySelectorAll('button')).toHaveLength(4)
+    })
+
+    it('renders the map toggle rightmost in the work group', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} />)
+
+      const indicator = screen.getByTestId('work-autoscroll-indicator')
+      const mapToggle = screen.getByTestId('work-minimap-toggle')
+      expect(
+        indicator.compareDocumentPosition(mapToggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('shows the work map toggle pressed when the overview is pinned', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} workMinimapPinned={true} />)
+
+      const btn = screen.getByTestId('work-minimap-toggle')
+      expect(btn).toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('shows the work map toggle unpressed when the overview is unpinned', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} workMinimapPinned={false} />)
+
+      const btn = screen.getByTestId('work-minimap-toggle')
+      expect(btn).not.toHaveClass('pressed')
+      expect(btn).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('calls onToggleWorkMinimap when the work map toggle is clicked', async () => {
+      const user = userEvent.setup()
+      const onToggleWorkMinimap = vi.fn()
+      render(
+        <ChatControlBar
+          {...defaultProps}
+          {...workProps}
+          onToggleWorkMinimap={onToggleWorkMinimap}
+        />,
+      )
+
+      await user.click(screen.getByTestId('work-minimap-toggle'))
+
+      expect(onToggleWorkMinimap).toHaveBeenCalledOnce()
+    })
+
+    it('renders no terminal-only controls under the work view', () => {
+      render(<ChatControlBar {...defaultProps} {...workProps} />)
+
+      expect(screen.queryByTestId('terminal-jump-prev')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('terminal-jump-next')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('terminal-minimap-toggle')).not.toBeInTheDocument()
     })
   })
 })

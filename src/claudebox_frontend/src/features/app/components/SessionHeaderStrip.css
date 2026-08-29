@@ -73,3 +73,30 @@
   background: var(--accent-hover, var(--bg-tertiary));
   color: var(--text-primary);
 }
+
+/* Session rail path - one entry per group in ancestry order, separated by a light divider glyph. */
+.session-header-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.session-header-path-entry {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.session-header-path-entry:not(:last-child)::after {
+  content: ">";
+  color: var(--text-muted);
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.session-header-path-entry.focused .session-header-strip-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}

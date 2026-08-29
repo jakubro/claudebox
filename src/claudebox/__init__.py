@@ -28,8 +28,14 @@ if TYPE_CHECKING:
     from .agent_session.errors import UnknownRuntime
     from .agent_session.events import AgentEvent
     from .agent_session.hooks import HookCallbacks
-    from .agent_session.orchestration.errors import SessionNotReady
+    from .agent_session.orchestration.conversion import serialize_event
+    from .agent_session.orchestration.errors import (
+        SessionEntryNotFound,
+        SessionNotReady,
+        ValidationError,
+    )
     from .agent_session.orchestration.models import EventSubtype, EventType
+    from .agent_session.orchestration.persistence import EventLog
     from .agent_session.orchestration.session import SessionService
     from .agent_session.protocol import AgentSession
     from .agent_session.rate_limits import RateLimitStore
@@ -85,7 +91,6 @@ if TYPE_CHECKING:
     )
     from .core.log_rendering import render_event
     from .core.logging import (
-        close_log_file,
         configure_logging,
         get_logger,
         use_log_file,
@@ -102,7 +107,7 @@ if TYPE_CHECKING:
     from .session.models import SessionMetadata, SessionNotFound
     from .session.repository import SessionRepository
     from .session.session import Session
-    from .temp import ensure_tmp, restore_tmp
+    from .temp import ensure_tmp
     from .user.hook import HookRequest, HookResponse, hook
     from .user.request import Request
     from .user.statusline import StatuslineRequest, statusline
@@ -135,8 +140,14 @@ _EXPORTS_BY_MODULE = {
     "agent_session.errors": ("UnknownRuntime",),
     "agent_session.events": ("AgentEvent",),
     "agent_session.hooks": ("HookCallbacks",),
-    "agent_session.orchestration.errors": ("SessionNotReady",),
+    "agent_session.orchestration.conversion": ("serialize_event",),
+    "agent_session.orchestration.errors": (
+        "SessionEntryNotFound",
+        "SessionNotReady",
+        "ValidationError",
+    ),
     "agent_session.orchestration.models": ("EventSubtype", "EventType"),
+    "agent_session.orchestration.persistence": ("EventLog",),
     "agent_session.orchestration.session": ("SessionService",),
     "agent_session.protocol": ("AgentSession",),
     "agent_session.rate_limits": ("RateLimitStore",),
@@ -192,7 +203,6 @@ _EXPORTS_BY_MODULE = {
     ),
     "core.log_rendering": ("render_event",),
     "core.logging": (
-        "close_log_file",
         "configure_logging",
         "get_logger",
         "use_log_file",
@@ -208,7 +218,7 @@ _EXPORTS_BY_MODULE = {
     "session.models": ("SessionMetadata", "SessionNotFound"),
     "session.repository": ("SessionRepository",),
     "session.session": ("Session",),
-    "temp": ("ensure_tmp", "restore_tmp"),
+    "temp": ("ensure_tmp",),
     "user.hook": ("HookRequest", "HookResponse", "hook"),
     "user.request": ("Request",),
     "user.statusline": ("StatuslineRequest", "statusline"),

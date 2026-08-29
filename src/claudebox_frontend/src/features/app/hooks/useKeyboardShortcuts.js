@@ -13,6 +13,10 @@ import { HELP_OVERLAY_KEY } from '../../../config/layout'
  * @param {object} params.jumpNextRef - Ref to jump-to-next-message callback.
  * @param {object} params.jumpTopRef - Ref to jump-to-top callback.
  * @param {object} params.jumpBottomRef - Ref to jump-to-bottom callback.
+ * @param {object} params.rightColumnPrevRef - Right split slot's step-prev; null makes it a no-op.
+ * @param {object} params.rightColumnNextRef - Right split slot's step-next callback ref.
+ * @param {object} params.railPrevRef - Rail focus-prev (Alt+Shift+Left); null makes it a no-op.
+ * @param {object} params.railNextRef - Rail focus-next callback (Alt+Shift+Right).
  * @param {Function} params.onNewSession - Create new session in current tab.
  * @param {Function} params.onNewSessionInNewTab - Create new session in new browser tab.
  */
@@ -25,6 +29,10 @@ export default function useKeyboardShortcuts({
   jumpNextRef,
   jumpTopRef,
   jumpBottomRef,
+  rightColumnPrevRef,
+  rightColumnNextRef,
+  railPrevRef,
+  railNextRef,
   onNewSession,
   onNewSessionInNewTab,
 }) {
@@ -51,6 +59,30 @@ export default function useKeyboardShortcuts({
       if (e.altKey && e.key === 'End') {
         e.preventDefault()
         jumpBottomRef.current?.()
+        return
+      }
+
+      // Alt+PageUp/PageDown: step whatever occupies the right split slot, never the transcript.
+      if (e.altKey && e.key === 'PageUp') {
+        e.preventDefault()
+        rightColumnPrevRef.current?.()
+        return
+      }
+      if (e.altKey && e.key === 'PageDown') {
+        e.preventDefault()
+        rightColumnNextRef.current?.()
+        return
+      }
+
+      // Alt+Shift+Left/Right: move focus one group along the session rail; clamps at both ends.
+      if (e.altKey && e.shiftKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        railPrevRef.current?.()
+        return
+      }
+      if (e.altKey && e.shiftKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        railNextRef.current?.()
         return
       }
 
@@ -124,6 +156,10 @@ export default function useKeyboardShortcuts({
     jumpNextRef,
     jumpTopRef,
     jumpBottomRef,
+    rightColumnPrevRef,
+    rightColumnNextRef,
+    railPrevRef,
+    railNextRef,
     onNewSession,
     onNewSessionInNewTab,
   ])

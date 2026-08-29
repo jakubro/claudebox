@@ -77,22 +77,6 @@ class TestApplyOperations:
         )
         assert result["tags"] == ["a", "b"]
 
-    def test_append_allows_duplicates(self):
-        state = {"items": ["a"]}
-        result = UIStateService._apply_operations(
-            state,
-            [{"op": "append", "path": "items", "value": "a"}],
-        )
-        assert result["items"] == ["a", "a"]
-
-    def test_append_creates_list(self):
-        state = {}
-        result = UIStateService._apply_operations(
-            state,
-            [{"op": "append", "path": "items", "value": "x"}],
-        )
-        assert result["items"] == ["x"]
-
     def test_remove_from_list(self):
         state = {"tags": ["a", "b", "c"]}
         result = UIStateService._apply_operations(

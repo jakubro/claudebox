@@ -107,7 +107,7 @@ describe('NestedToolWrapper', () => {
     renderNested({ toolUse: todoToolUse, toolResult: todoResult }, { todoDiffs })
 
     // With todoDiff resolved, ToolBlock summary shows diff counts
-    expect(screen.getByText('●1 ◐1')).toBeInTheDocument()
+    expect(screen.getByText('● 1 ◐ 1')).toBeInTheDocument()
   })
 
   it('handles missing todoDiffs gracefully', () => {

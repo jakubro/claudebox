@@ -1,6 +1,6 @@
 /** Tests for SessionsContext. */
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PINS_CHANGE_SIGNAL_KEY } from '../config/storage'
@@ -30,6 +30,8 @@ function TestConsumer() {
       <span data-testid="pinned">{JSON.stringify(ctx.pinnedSessions)}</span>
       <span data-testid="color">{ctx.workspaceColor || 'none'}</span>
       <span data-testid="error">{ctx.error || 'none'}</span>
+      <span data-testid="panel-filter">{ctx.panelFilter}</span>
+      <span data-testid="panel-filter-pick">{ctx.panelFilterPick}</span>
       <button type="button" data-testid="refresh" onClick={ctx.refresh}>
         Refresh
       </button>
@@ -44,6 +46,15 @@ function TestConsumer() {
       </button>
       <button type="button" data-testid="clear-color" onClick={() => ctx.setWorkspaceColor(null)}>
         Clear
+      </button>
+      <button type="button" data-testid="pick-named" onClick={() => ctx.setPanelFilter('named')}>
+        Pick Named
+      </button>
+      <button type="button" data-testid="fallback-on" onClick={() => ctx.setFallbackToAll(true)}>
+        Fallback On
+      </button>
+      <button type="button" data-testid="fallback-off" onClick={() => ctx.setFallbackToAll(false)}>
+        Fallback Off
       </button>
     </div>
   )
@@ -238,6 +249,78 @@ describe('SessionsContext', () => {
       expect(screen.getByTestId('color').textContent).toBe('none')
     })
     expect(patchGlobalUiState).toHaveBeenCalledWith([{ op: 'unset', path: 'workspaceColor' }])
+  })
+
+  it('hydrates panelFilterPick from stored ui-state; panelFilter matches it with no fallback', async () => {
+    getUiState.mockResolvedValue({ global: { pinnedSessions: [], sessionsPanelFilter: 'pinned' } })
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-filter-pick').textContent).toBe('pinned')
+    })
+    expect(screen.getByTestId('panel-filter').textContent).toBe('pinned')
+  })
+
+  it('setFallbackToAll(true) makes panelFilter read All without touching the stored pick', async () => {
+    const user = userEvent.setup()
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+    patchGlobalUiState.mockClear()
+
+    await user.click(screen.getByTestId('fallback-on'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-filter').textContent).toBe('all')
+    })
+    expect(screen.getByTestId('panel-filter-pick').textContent).toBe('conversations')
+    expect(patchGlobalUiState).not.toHaveBeenCalled()
+  })
+
+  it('setPanelFilter clears a standing fallback and persists only the new pick', async () => {
+    const user = userEvent.setup()
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+    await user.click(screen.getByTestId('fallback-on'))
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-filter').textContent).toBe('all')
+    })
+    patchGlobalUiState.mockClear()
+
+    await user.click(screen.getByTestId('pick-named'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-filter').textContent).toBe('named')
+    })
+    expect(screen.getByTestId('panel-filter-pick').textContent).toBe('named')
+    expect(patchGlobalUiState).toHaveBeenCalledWith([
+      { op: 'set', path: 'sessionsPanelFilter', value: 'named' },
+    ])
+  })
+
+  it('setFallbackToAll(false) returns panelFilter to the untouched pick', async () => {
+    const user = userEvent.setup()
+    renderWithProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+    await user.click(screen.getByTestId('fallback-on'))
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-filter').textContent).toBe('all')
+    })
+
+    await user.click(screen.getByTestId('fallback-off'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-filter').textContent).toBe('conversations')
+    })
+    expect(screen.getByTestId('panel-filter-pick').textContent).toBe('conversations')
   })
 
   it('sweeps dead-session storage keys after a successful fetch, leaving live ones alone', async () => {
@@ -482,5 +565,254 @@ describe('SessionsContext', () => {
     expect(() => render(<TestConsumer />)).toThrow(
       'useSessionsList must be used within SessionsProvider',
     )
+  })
+})
+
+describe('refresh joiner promise contract', () => {
+  const wrapper = ({ children }) => <SessionsProvider>{children}</SessionsProvider>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    mockWorkspaceCtx.workspaceId = 'ws-1'
+    mockDaemonCtx.sessionsChanged = 0
+    mockDaemonCtx.containerStatus = 0
+    getUiState.mockResolvedValue({ global: { pinnedSessions: [], workspaceColor: null } })
+    listWorkspaces.mockRejectedValue(new Error('not registered in this test'))
+    listSessionsForWorkspace.mockRejectedValue(new Error('not registered in this test'))
+  })
+
+  it('does not resolve a joiner until the re-armed refetch settles', async () => {
+    const resolvers = []
+    listSessions.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result } = renderHook(() => useSessionsList(), { wrapper })
+
+    // Mount's own initial fetch is the request already in flight when the joiner below arrives.
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    let joinerSettled = false
+    const joiner = result.current.refresh().then(() => {
+      joinerSettled = true
+    })
+
+    await act(async () => {
+      resolvers[0]({ sessions: [{ session_id: 's1' }] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(2)
+    })
+
+    // Mount's fetch settled and the re-arm issued a second request - the joiner must still be
+    // waiting on that second request, not already resolved on the one it joined.
+    expect(joinerSettled).toBe(false)
+
+    await act(async () => {
+      resolvers[1]({ sessions: [{ session_id: 's1' }, { session_id: 's2' }] })
+      await joiner
+    })
+
+    expect(joinerSettled).toBe(true)
+  })
+
+  it('resolves a joiner with state no older than its own call', async () => {
+    const resolvers = []
+    listSessions.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result } = renderHook(() => useSessionsList(), { wrapper })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    const joiner = result.current.refresh()
+
+    await act(async () => {
+      resolvers[0]({ sessions: [{ session_id: 's1' }] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(2)
+    })
+
+    await act(async () => {
+      resolvers[1]({ sessions: [{ session_id: 's1' }, { session_id: 's2' }] })
+      await joiner
+    })
+
+    // The joiner awaited state as of its own call, which the second (re-armed) response reflects.
+    expect(result.current.sessions).toEqual([{ session_id: 's1' }, { session_id: 's2' }])
+  })
+
+  it('resolves an unjoined caller on its own request, with no extra round trip', async () => {
+    listSessions.mockResolvedValue({ sessions: [{ session_id: 's1' }] })
+
+    const { result } = renderHook(() => useSessionsList(), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+    listSessions.mockClear()
+
+    await act(async () => {
+      await result.current.refresh()
+    })
+
+    expect(listSessions).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for the re-armed refetch even when it errors, rather than settling on the joined one', async () => {
+    const settlers = []
+    listSessions.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          settlers.push({ resolve, reject })
+        }),
+    )
+
+    const { result } = renderHook(() => useSessionsList(), { wrapper })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    let joinerSettled = false
+    const joiner = result.current.refresh().finally(() => {
+      joinerSettled = true
+    })
+
+    await act(async () => {
+      settlers[0].resolve({ sessions: [{ session_id: 's1' }] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(2)
+    })
+
+    // The first request succeeded, but the joiner must still be waiting on the re-armed second
+    // one - even though that errors internally and fetchSessions records it without re-throwing.
+    expect(joinerSettled).toBe(false)
+
+    await act(async () => {
+      settlers[1].reject(new Error('network down'))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    await waitFor(() => {
+      expect(joinerSettled).toBe(true)
+    })
+
+    await expect(joiner).resolves.toBeUndefined()
+  })
+
+  it('ignores a stale workspace response, keeps the new workspace bookkeeping intact, and settles cleanly on its own response', async () => {
+    const resolvers = []
+    listSessions.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result, rerender } = renderHook(() => useSessionsList(), { wrapper })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    mockWorkspaceCtx.workspaceId = 'ws-2'
+    act(() => {
+      rerender()
+    })
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(2)
+    })
+
+    // ws-1's stale response settles after ws-2's own request has already started.
+    await act(async () => {
+      resolvers[0]({ sessions: [{ session_id: 'stale-ws1-session' }] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    // Never painted: ws-2's request is still pending.
+    expect(result.current.sessions).toEqual([])
+
+    // ws-2's bookkeeping survived ws-1's late finally - a fresh call while ws-2's request is
+    // still in flight joins it rather than firing a third, unsolicited fetch.
+    act(() => {
+      result.current.refresh()
+    })
+    expect(listSessions).toHaveBeenCalledTimes(2)
+
+    // ws-2's own response settles cleanly, unaffected by ws-1's stale bookkeeping.
+    await act(async () => {
+      resolvers[1]({ sessions: [{ session_id: 'ws2-session' }] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(result.current.sessions).toEqual([{ session_id: 'ws2-session' }])
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('settles an orphaned joiner when its workspace is switched away, without a spurious extra fetch', async () => {
+    const resolvers = []
+    listSessions.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result, rerender } = renderHook(() => useSessionsList(), { wrapper })
+
+    // Mount's own initial fetch (for ws-1) is the request already in flight when the joiner
+    // below arrives.
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    let joinerSettled = false
+    act(() => {
+      result.current.refresh().then(() => {
+        joinerSettled = true
+      })
+    })
+
+    // Workspace switch: the next request cannot join mount's in-flight ws-1 one, so it must
+    // settle that orphaned joiner immediately rather than carry it into ws-2's settle.
+    mockWorkspaceCtx.workspaceId = 'ws-2'
+    act(() => {
+      rerender()
+    })
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(2)
+    })
+
+    expect(joinerSettled).toBe(true)
+
+    // Mount's ws-1 request settling late, with ownership already lost, must not add a third,
+    // unsolicited call.
+    await act(async () => {
+      resolvers[0]({ sessions: [{ session_id: 's1' }] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    expect(listSessions).toHaveBeenCalledTimes(2)
   })
 })

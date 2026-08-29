@@ -3,8 +3,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { test } from '@playwright/test'
-import { TURN_HORIZONTAL_PADDING_PX } from '../../../src/claudebox_frontend/src/config/dimensions.js'
+import {
+  CHAT_SPLIT_DIVIDER_WIDTH,
+  CHAT_TERMINAL_MIN_WIDTH,
+  CHAT_TRANSCRIPT_MIN_WIDTH,
+  CHAT_WORK_MIN_WIDTH,
+  TURN_HORIZONTAL_PADDING_PX,
+} from '../../../src/claudebox_frontend/src/config/dimensions.js'
 import { predictTurnHeight } from '../../../src/claudebox_frontend/src/features/chat/utils/predictTurnHeight.js'
+import { TurnRoutingMode } from '../../../src/claudebox_frontend/src/utils/eventProcessing.js'
 import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSEDynamic } from '../mocks/sse.js'
@@ -272,18 +279,58 @@ const WIDTHS = [
   { name: 'wide', viewport: { width: 1800, height: 900 } },
 ]
 
-// Split off prices a top-level Bash inline (sole PX_PER_BASH_TOOL_BLOCK calibration); split on: 0.
-const SPLIT_STATES = [
-  { enabled: false, label: 'split off' },
-  { enabled: true, label: 'split on' },
-]
+// mixed-all is dropped for a layout quirk every non-off state shares: halving the transcript
+// column makes the content area's width non-monotonic, a regime the model was never fitted for.
+const MIXED_ALL_LAYOUT_QUIRK = new Set(['cal-mixed-all'])
 
+// Split off prices a top-level Bash inline (sole PX_PER_BASH_TOOL_BLOCK calibration); split on: 0.
 // bash-1/3 are dropped from split-on only: with the command routed out the turn is ~2 text lines,
 // too small a denominator for the 30% bound to mean anything (split off does that isolation).
-// mixed-all is dropped for a layout quirk: halving the transcript column makes
-// .chat-content-area's width (default mock's side panels) non-monotonic in viewport width, a
-// regime the char-count model was never fitted for - not bash routing, which already prices 0.
-const SPLIT_ON_EXCLUDED_FIXTURES = new Set(['cal-bash-1', 'cal-bash-3', 'cal-mixed-all'])
+// Work mode routes every top-level tool, so the Read-only records hit the same small-denominator
+// problem at wide widths that only the Bash ones hit under the narrower split-on predicate.
+const ROUTING_STATES = [
+  {
+    mode: TurnRoutingMode.OFF,
+    label: 'split off',
+    sessionUiState: { rightSlotView: 'off' },
+    excludedFixtures: new Set([...MIXED_ALL_LAYOUT_QUIRK]),
+  },
+  {
+    mode: TurnRoutingMode.BASH_ONLY,
+    label: 'split on',
+    sessionUiState: { rightSlotView: 'terminal' },
+    excludedFixtures: new Set(['cal-bash-1', 'cal-bash-3', ...MIXED_ALL_LAYOUT_QUIRK]),
+  },
+  {
+    mode: TurnRoutingMode.ALL_TOOLS,
+    label: 'work view',
+    sessionUiState: { rightSlotView: 'work' },
+    excludedFixtures: new Set([
+      'cal-bash-1',
+      'cal-bash-3',
+      'cal-tools-1',
+      'cal-tools-3',
+      ...MIXED_ALL_LAYOUT_QUIRK,
+    ]),
+  },
+]
+
+// The same {view id -> minWidth} pairing RIGHT_SLOT_VIEWS holds, duplicated rather than imported:
+// that registry also pulls view components whose ESM build Node's resolver rejects.
+const VIEW_MIN_WIDTHS = { terminal: CHAT_TERMINAL_MIN_WIDTH, work: CHAT_WORK_MIN_WIDTH }
+
+// Mirrors useTerminalSplitLayout's canFit check: a split view collapses to OFF when both minimums
+// plus the divider do not fit, and the predictor must price that effective mode.
+function effectiveModeFor(state, contentAreaWidth) {
+  const minWidth = VIEW_MIN_WIDTHS[state.sessionUiState.rightSlotView]
+  if (minWidth == null) {
+    return state.mode
+  }
+  const canFit =
+    contentAreaWidth == null ||
+    contentAreaWidth >= CHAT_TRANSCRIPT_MIN_WIDTH + minWidth + CHAT_SPLIT_DIVIDER_WIDTH
+  return canFit ? state.mode : TurnRoutingMode.OFF
+}
 
 const DRIFT_BOUND = 0.3
 const DUMP_DIR = '/tmp/predictor-calibration'
@@ -308,28 +355,27 @@ test.describe('predictor accuracy regression', () => {
     fs.mkdirSync(DUMP_DIR, { recursive: true })
   })
 
-  for (const split of SPLIT_STATES) {
+  for (const state of ROUTING_STATES) {
     for (const { name, viewport } of WIDTHS) {
-      test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px), ${split.label}`, async ({
+      test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px), ${state.label}`, async ({
         page,
       }) => {
         // Marginal on the 5s cap: the pinned webfont's metrics push narrow-width wrapping over it.
         test.setTimeout(15000)
         await page.setViewportSize(viewport)
-        await mockAPI(page, { sessionUiStateDefaults: { terminalSplitEnabled: split.enabled } })
+        await mockAPI(page, { sessionUiStateDefaults: state.sessionUiState })
         await mockSSEDynamic(page, () => EVENTS)
         await page.goto(DEFAULT_SESSION_URL)
         await waitForAppReady(page)
         // Predictor estimates expanded heights; keep every turn expanded to match.
         await disableAutoCollapse(page)
 
-        const turnIds = FIXTURES.map(f => f.turnId).filter(
-          id => !(split.enabled && SPLIT_ON_EXCLUDED_FIXTURES.has(id)),
-        )
+        const turnIds = FIXTURES.map(f => f.turnId).filter(id => !state.excludedFixtures.has(id))
 
         // List is windowed - sweep it fully, recording each turn's height as it mounts.
         const captured = await page.evaluate(async ids => {
           const container = document.querySelector('.chat-messages')
+          const contentArea = document.querySelector('.chat-content-area')
           const settle = () =>
             new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
           const measured = {}
@@ -352,6 +398,7 @@ test.describe('predictor accuracy regression', () => {
             turnId: id,
             measured: measured[id] ?? null,
             containerWidth: container.clientWidth,
+            contentAreaWidth: contentArea?.clientWidth ?? null,
           }))
         }, turnIds)
 
@@ -365,11 +412,13 @@ test.describe('predictor accuracy regression', () => {
           const f = FIXTURE_BY_ID.get(c.turnId)
           const turn = turnFromFixture(f)
           const effectiveWidth = Math.max(0, c.containerWidth - TURN_HORIZONTAL_PADDING_PX)
-          const predicted = predictTurnHeight(turn, effectiveWidth, false, split.enabled)
+          const mode = effectiveModeFor(state, c.contentAreaWidth)
+          const predicted = predictTurnHeight(turn, effectiveWidth, false, mode)
           const drift = Math.abs(predicted - c.measured) / c.measured
           records.push({
             turnId: c.turnId,
             containerWidth: c.containerWidth,
+            mode,
             measured: c.measured,
             predicted,
             drift,
@@ -384,16 +433,13 @@ test.describe('predictor accuracy regression', () => {
 
         // Always dump for offline calibration / re-fitting.
         fs.writeFileSync(
-          path.join(
-            DUMP_DIR,
-            `calibration-${name}-${split.enabled ? 'split-on' : 'split-off'}.json`,
-          ),
-          JSON.stringify({ width: viewport.width, splitEnabled: split.enabled, records }, null, 2),
+          path.join(DUMP_DIR, `calibration-${name}-${state.mode}.json`),
+          JSON.stringify({ width: viewport.width, mode: state.mode, records }, null, 2),
         )
 
         if (failures.length > 0) {
           throw new Error(
-            `${failures.length}/${records.length} fixtures exceed ${(DRIFT_BOUND * 100).toFixed(0)}% drift at ${name} width (${viewport.width}px), ${split.label}:\n  ${failures.join('\n  ')}`,
+            `${failures.length}/${records.length} fixtures exceed ${(DRIFT_BOUND * 100).toFixed(0)}% drift at ${name} width (${viewport.width}px), ${state.label}:\n  ${failures.join('\n  ')}`,
           )
         }
       })

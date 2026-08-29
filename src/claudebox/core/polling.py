@@ -71,17 +71,6 @@ class MtimeWatcher(AsyncPoller):
         self._debounce = debounce
         self._watched: dict[str, float] = {}
 
-    def watch(self, path: Path) -> None:
-        """Register a file for watching."""
-
-        key = str(path)
-        self._watched[key] = self._get_mtime(path)
-
-    def unwatch(self, path: Path) -> None:
-        """Remove a file from watching."""
-
-        self._watched.pop(str(path), None)
-
     def sync_watches(self, paths: list[Path]) -> None:
         """Replace watched set with the given paths."""
 

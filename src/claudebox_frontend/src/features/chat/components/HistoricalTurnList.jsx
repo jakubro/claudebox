@@ -2,12 +2,15 @@
 
 // audit-ignore-file: excessive-props
 
-import { memo, useRef } from 'react'
+import { memo, useRef, useState } from 'react'
 import { createPropsComparator, sameIdSet } from '../../../utils/comparators'
 import useTurnVirtualizer from '../hooks/useTurnVirtualizer'
+import { computeFoldBoundary, resolveForkParentId } from '../utils/turnFold'
 import SettingChangeDivider from './SettingChangeDivider'
+import ThreadFoldRow from './ThreadFoldRow'
 import Turn from './turn'
 import { useTurnCollapse } from './turn/hooks/useTurnCollapse'
+import { useTurnRoutingMode } from './turn/hooks/useTurnRoutingMode'
 
 const EMPTY_SET = new Set()
 
@@ -24,10 +27,12 @@ const EMPTY_SET = new Set()
  * @param {string|null} props.boundaryNextUserMessage - Next user message after the last turn here.
  * @param {Set} props.duplicateAskUserIds - Cross-turn duplicate AskUserQuestion IDs to hide.
  * @param {Function} props.isBookmarked - (turnId, messageType) => boolean.
- * @param {boolean} [props.splitEnabled] - Terminal split state - see `useTurnVirtualizer`.
+ * @param {boolean} [props.isSideThread] - This session is a promoted thread; gates the fold below.
+ * @param {boolean} [props.expanded] - Controlled fold-open state; omit to manage it locally.
+ * @param {Function} [props.onToggleExpanded] - Required together with `expanded`.
  */
 function HistoricalTurnList({
-  messagesRef,
+  messagesEl,
   virtualizerRef,
   turns,
   boundaryNextUserMessage,
@@ -42,17 +47,37 @@ function HistoricalTurnList({
   onRewind,
   isBookmarked,
   onToggleBookmark,
-  splitEnabled = false,
+  isSideThread = false,
+  expanded: controlledExpanded,
+  onToggleExpanded,
 }) {
   const collapse = useTurnCollapse()
   const collapsedTurnIds = collapse?.collapsedTurnIds ?? EMPTY_SET
   const listRef = useRef(null)
+  // A genuine context descendant of ChatPanel's Provider (unlike ChatPanel's own useTurnHeights
+  // call, which reads its ancestor's value instead) - the single delivery path this fact needs.
+  const mode = useTurnRoutingMode()
+
+  // Per group, in memory, starts folded. Uncontrolled by default; ChatPanel controls it so its
+  // own useTurnHeights call prices the fold this component is showing.
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const isControlled = controlledExpanded !== undefined
+  const expanded = isControlled ? controlledExpanded : localExpanded
+  const toggleExpanded = isControlled ? onToggleExpanded : () => setLocalExpanded(prev => !prev)
+
+  const foldBoundary = computeFoldBoundary(turns, isSideThread)
+  const hasFold = foldBoundary >= 0
+  const folded = hasFold && !expanded
+  const forkParentSessionId = hasFold ? resolveForkParentId(turns, foldBoundary) : null
+
   const { virtualizer, virtualItems, scrollMargin, windowed } = useTurnVirtualizer({
-    messagesRef,
+    messagesEl,
     listRef,
     turns,
     collapsedTurnIds,
-    splitEnabled,
+    mode,
+    foldBoundary,
+    foldExpanded: expanded,
   })
 
   if (virtualizerRef) {
@@ -67,6 +92,20 @@ function HistoricalTurnList({
   const totalSize = virtualizer.getTotalSize()
 
   const renderTurn = i => {
+    if (folded && i === 0) {
+      return (
+        <ThreadFoldRow
+          turnCount={foldBoundary + 1}
+          sourceSessionId={forkParentSessionId}
+          expanded={false}
+          onToggle={toggleExpanded}
+        />
+      )
+    }
+    if (folded && i > 0 && i <= foldBoundary) {
+      return null
+    }
+
     const turn = turns[i]
     if (!turn) {
       return null
@@ -74,6 +113,14 @@ function HistoricalTurnList({
     const nextMsg = i < turns.length - 1 ? turns[i + 1]?.userMessage : boundaryNextUserMessage
     return (
       <>
+        {hasFold && !folded && i === 0 && (
+          <ThreadFoldRow
+            turnCount={foldBoundary + 1}
+            sourceSessionId={forkParentSessionId}
+            expanded={true}
+            onToggle={toggleExpanded}
+          />
+        )}
         <Turn
           userMessage={turn.userMessage}
           attachments={turn.attachments}

@@ -128,8 +128,9 @@
   text-overflow: ellipsis;
 }
 
-/* Rows 4-5: Message previews */
+/* Rows 4-5: Message previews; origin (threads/subsessions filters) sits between them */
 .sessions-first,
+.sessions-origin,
 .sessions-last {
   font-size: 11px;
   font-style: italic;
@@ -144,6 +145,7 @@
   color: var(--text-secondary);
 }
 
+.sessions-origin,
 .sessions-last {
   color: var(--text-muted);
   opacity: 0.7;

@@ -2,7 +2,13 @@
 
 import { expect, test } from '@playwright/test'
 import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
+import {
+  DEFAULT_CONTAINER_ID,
+  DEFAULT_SESSION_ID,
+  DEFAULT_SESSION_URL,
+  DEFAULT_WORKSPACE_ID,
+  mockAPI,
+} from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
 test.describe('Single-Session Mode', () => {
@@ -128,6 +134,70 @@ test.describe('Single-Session Mode', () => {
     // test-UI harness, and vitest mock-tests cover the gating predicate end-to-end.
     const modal = page.locator('[data-testid="confirm-stop-modal"]')
     await expect(modal).toHaveCount(0) // not visible until Stop is clicked while responding
+  })
+
+  // SPEC: layout:header-stop-thread
+  test('a live side conversation offers no Stop button in the header strip', async ({ page }) => {
+    const sideThreadId = 'side-thread-001'
+
+    await mockAPI(page, {
+      handlers: {
+        resumeSession: async route =>
+          route.fulfill({
+            status: 200,
+            json: { session_id: sideThreadId, container_id: DEFAULT_CONTAINER_ID },
+          }),
+        getSessions: async route =>
+          route.fulfill({
+            json: {
+              sessions: [
+                {
+                  session_id: DEFAULT_SESSION_ID,
+                  name: null,
+                  parent_session_id: null,
+                  container_id: DEFAULT_CONTAINER_ID,
+                },
+                {
+                  session_id: sideThreadId,
+                  name: null,
+                  workspace: '/home/user/project',
+                  model: 'claude-sonnet-5',
+                  num_turns: 1,
+                  total_cost_usd: 0.01,
+                  fork_point_cost_usd: 0.1,
+                  total_duration_ms: 500,
+                  last_context_tokens: 50,
+                  started_at: '2025-01-18T12:05:00Z',
+                  updated_at: '2025-01-18T12:05:00Z',
+                  first_message: 'why this branch?',
+                  last_message: null,
+                  session_dir: '/tmp/sessions/side-thread-001',
+                  todos: [],
+                  commands: [],
+                  parent_session_id: DEFAULT_SESSION_ID,
+                  is_side_thread: true,
+                  container_id: DEFAULT_CONTAINER_ID,
+                },
+              ],
+            },
+          }),
+      },
+    })
+    await mockSSE(page)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${sideThreadId}`)
+    await waitForAppReady(page)
+
+    // The rail shows the parent as an ancestor entry too (a side thread has a parent like any
+    // other session) - assert on the side thread's own (focused) entry specifically.
+    const focusedEntry = page.locator(
+      '[data-testid="session-header-path-entry"][data-focused="true"]',
+    )
+    await expect(focusedEntry.locator('[data-testid="session-header-status-dot"]')).toHaveClass(
+      /container-status-running/,
+    )
+    // Its container_id resolves to the parent's shared container - offering Stop here would
+    // delete that container and take the parent down with it.
+    await expect(focusedEntry.locator('[data-testid="session-header-stop-btn"]')).toHaveCount(0)
   })
 
   // SPEC: layout:confirm-fork-here

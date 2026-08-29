@@ -1,5 +1,6 @@
 /** UI state API for global and session-scoped preferences via daemon. */
 
+import { FETCH_TIMEOUT_INTERACTIVE_MS } from '../config/timing'
 import { workspaceFetch } from './apiClient'
 
 /**
@@ -8,7 +9,7 @@ import { workspaceFetch } from './apiClient'
  */
 export async function getUiState(sessionId = null) {
   const url = getUrl(sessionId)
-  const res = await workspaceFetch(url)
+  const res = await workspaceFetch(url, { timeoutMs: FETCH_TIMEOUT_INTERACTIVE_MS })
   if (!res.ok) {
     throw new Error('Failed to fetch ui-state')
   }

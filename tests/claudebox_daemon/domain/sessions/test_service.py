@@ -13,16 +13,16 @@ import pytest
 
 import claudebox_daemon.domain.sessions.service as service_module
 from claudebox import SessionNotFound as SharedSessionNotFound
-from claudebox import Workspace, write_json
+from claudebox import Workspace, read_json, write_json
 from claudebox.constants import SESSION_METADATA_FILE
 from claudebox.session.models import SessionMetadata
 from claudebox_daemon.domain.containers.errors import ContainerTimeout
 from claudebox_daemon.domain.containers.models import Container, ContainerStatus
-from claudebox_daemon.domain.errors import ListingTimeout
+from claudebox_daemon.domain.errors import ListingTimeout, ValidationError
 from claudebox_daemon.domain.executors import ObservedPool
-from claudebox_daemon.domain.sessions.errors import SessionNotFound
+from claudebox_daemon.domain.sessions.errors import SessionContainerUnavailable, SessionNotFound
 from claudebox_daemon.domain.sessions.models import SessionInfo
-from claudebox_daemon.domain.sessions.service import SessionService
+from claudebox_daemon.domain.sessions.service import SessionService, deliver_prompt
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 
 
@@ -42,6 +42,8 @@ def _make_container(
     port: int = 8080,
     session_id: str | None = None,
     status: ContainerStatus = ContainerStatus.RUNNING,
+    members: list[str] | None = None,
+    live_session_ids: list[str] | None = None,
 ) -> Container:
     """Create a Container with sensible defaults."""
 
@@ -51,6 +53,8 @@ def _make_container(
         port=port,
         status=status,
         session_id=session_id,
+        members=members or [],
+        live_session_ids=live_session_ids or [],
     )
 
 
@@ -90,7 +94,9 @@ class TestListAll:
         svc, repo, containers = _make_service(tmp_path)
         meta = _make_metadata("sess-1", name="first")
         repo.list_all.return_value = [meta]
-        containers.find_by_session = AsyncMock(return_value=_make_container("ctr-1"))
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container("ctr-1", session_id="sess-1"),
+        )
 
         result = await svc.list_all()
 
@@ -131,7 +137,7 @@ class TestListAll:
         ]
         containers.find_by_session = AsyncMock(
             side_effect=[
-                _make_container("ctr-1"),
+                _make_container("ctr-1", session_id="sess-1"),
                 None,
             ],
         )
@@ -141,6 +147,62 @@ class TestListAll:
         assert len(result) == 2
         assert result[0].container_id == "ctr-1"
         assert result[1].container_id is None
+
+    @pytest.mark.anyio
+    async def test_member_container_id_none_once_it_drops_out_of_the_live_set(self, tmp_path):
+        """A stopped side thread stays a member forever - its container_id must not.
+
+        Membership is addressability, not liveness: only the owner or a live session resolves.
+        """
+
+        svc, repo, containers = _make_service(tmp_path)
+        meta = _make_metadata("side-1", parent_session_id="parent-1", is_side_thread=True)
+        repo.list_all.return_value = [meta]
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container(
+                "ctr-1",
+                session_id="parent-1",
+                members=["side-1"],
+                live_session_ids=["parent-1"],
+            ),
+        )
+
+        result = await svc.list_all()
+
+        assert result[0].container_id is None
+
+    @pytest.mark.anyio
+    async def test_member_container_id_set_while_in_the_live_set(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        meta = _make_metadata("side-1", parent_session_id="parent-1", is_side_thread=True)
+        repo.list_all.return_value = [meta]
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container(
+                "ctr-1",
+                session_id="parent-1",
+                members=["side-1"],
+                live_session_ids=["parent-1", "side-1"],
+            ),
+        )
+
+        result = await svc.list_all()
+
+        assert result[0].container_id == "ctr-1"
+
+    @pytest.mark.anyio
+    async def test_owner_container_id_set_regardless_of_the_live_set(self, tmp_path):
+        """The owner's indicator is unaffected by the live-set mechanism, unlike a member's."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        meta = _make_metadata("parent-1")
+        repo.list_all.return_value = [meta]
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container("ctr-1", session_id="parent-1", live_session_ids=[]),
+        )
+
+        result = await svc.list_all()
+
+        assert result[0].container_id == "ctr-1"
 
     @pytest.mark.anyio
     async def test_a_hung_repo_scan_raises_listing_timeout_instead_of_blocking_forever(
@@ -274,7 +336,9 @@ class TestGet:
     async def test_returns_session_info_with_container(self, tmp_path):
         svc, repo, containers = _make_service(tmp_path)
         repo.get.return_value = _make_metadata("sess-1", name="my session")
-        containers.find_by_session = AsyncMock(return_value=_make_container("ctr-1"))
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container("ctr-1", session_id="sess-1"),
+        )
 
         result = await svc.get("sess-1")
 
@@ -290,6 +354,27 @@ class TestGet:
         containers.find_by_session = AsyncMock(return_value=None)
 
         result = await svc.get("sess-1")
+
+        assert result.container_id is None
+
+    @pytest.mark.anyio
+    async def test_member_container_id_none_once_it_drops_out_of_the_live_set(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        repo.get.return_value = _make_metadata(
+            "side-1",
+            parent_session_id="parent-1",
+            is_side_thread=True,
+        )
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container(
+                "ctr-1",
+                session_id="parent-1",
+                members=["side-1"],
+                live_session_ids=["parent-1"],
+            ),
+        )
+
+        result = await svc.get("side-1")
 
         assert result.container_id is None
 
@@ -411,6 +496,255 @@ class TestCreate:
         assert result.session_id == "container-generated-id"
 
 
+# --- create_with_prompt ---
+
+
+class TestCreateWithPrompt:
+    """Test the spawn socket's create-then-inject sequence (shared with BoardService.assign)."""
+
+    @staticmethod
+    def _mocked_create(containers):
+        """Patch the httpx client so create() succeeds, matching TestCreate's own pattern."""
+
+        container = _make_container("ctr-spawn", port=9090)
+        containers.create = AsyncMock(return_value=container)
+        containers.update = AsyncMock()
+        containers.get.return_value = container
+        containers.send = AsyncMock(return_value={})
+
+        return patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient")
+
+    @pytest.mark.anyio
+    async def test_creates_a_session_and_delivers_the_prompt(self, tmp_path):
+        svc, _repo, containers = _make_service(tmp_path)
+
+        with self._mocked_create(containers) as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.create_with_prompt("why this branch?")
+
+        assert result.container_id == "ctr-spawn"
+        containers.send.assert_awaited_once_with(
+            container_id="ctr-spawn",
+            method="POST",
+            endpoint="api/send",
+            payload={"prompt": "why this branch?"},
+        )
+
+    @pytest.mark.anyio
+    async def test_records_claimed_lineage_on_disk_without_verifying_it(self, tmp_path):
+        svc, _repo, containers = _make_service(tmp_path)
+
+        with self._mocked_create(containers) as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.create_with_prompt(
+                "why this branch?",
+                spawned_from_session_id="claimed-spawner",
+            )
+
+        assert result.spawned_from_session_id == "claimed-spawner"
+        path = Workspace(tmp_path).ensure_session(result.session_id).path / SESSION_METADATA_FILE
+        on_disk = read_json(path, default={})
+        assert on_disk["spawned_from_session_id"] == "claimed-spawner"
+
+    @pytest.mark.anyio
+    async def test_no_lineage_field_written_when_not_spawned(self, tmp_path):
+        svc, _repo, containers = _make_service(tmp_path)
+
+        with self._mocked_create(containers) as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.create_with_prompt("hello")
+
+        assert result.spawned_from_session_id is None
+        path = Workspace(tmp_path).ensure_session(result.session_id).path / SESSION_METADATA_FILE
+        assert not path.exists()
+
+    @pytest.mark.anyio
+    async def test_a_failed_prompt_delivery_does_not_strand_the_created_session(self, tmp_path):
+        """The session must still come back usable - see deliver_prompt's own swallow behavior."""
+
+        svc, _repo, containers = _make_service(tmp_path)
+
+        with self._mocked_create(containers) as mock_client_cls:
+            containers.send = AsyncMock(side_effect=RuntimeError("boom"))
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.create_with_prompt("hello")
+
+        assert result.container_id == "ctr-spawn"
+
+
+# --- create_with_prompts ---
+
+
+class TestCreateWithPrompts:
+    """Test the list-taking multi-message case the link-session handler drives."""
+
+    @pytest.mark.anyio
+    async def test_delivers_every_prompt_in_order(self, tmp_path):
+        svc, _repo, containers = _make_service(tmp_path)
+
+        with TestCreateWithPrompt._mocked_create(containers) as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.create_with_prompts(["first", "second"])
+
+        assert result.container_id == "ctr-spawn"
+        assert [call.kwargs["payload"] for call in containers.send.await_args_list] == [
+            {"prompt": "first"},
+            {"prompt": "second"},
+        ]
+
+
+# --- deliver_prompt ---
+
+
+class TestDeliverPrompt:
+    """Test the shared prompt-injection helper directly."""
+
+    @pytest.mark.anyio
+    async def test_sends_the_prompt_payload(self):
+        containers = MagicMock()
+        containers.send = AsyncMock(return_value={})
+        logger = MagicMock()
+
+        await deliver_prompt(logger, containers, "ctr-1", "hello", session_id="sess-1")
+
+        containers.send.assert_awaited_once_with(
+            container_id="ctr-1",
+            method="POST",
+            endpoint="api/send",
+            payload={"prompt": "hello"},
+        )
+        logger.warning.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_a_send_failure_is_logged_and_swallowed(self):
+        containers = MagicMock()
+        containers.send = AsyncMock(side_effect=RuntimeError("boom"))
+        logger = MagicMock()
+
+        await deliver_prompt(logger, containers, "ctr-1", "hello", session_id="sess-1")
+
+        logger.warning.assert_called_once()
+        kwargs = logger.warning.call_args.kwargs
+        assert kwargs["prompt"] == "hello"
+        assert kwargs["container_id"] == "ctr-1"
+        assert kwargs["session_id"] == "sess-1"
+
+
+# --- compute_spawn_depth ---
+
+
+class TestComputeSpawnDepth:
+    """Test the spawn-ancestry walk the socket's depth cap relies on."""
+
+    def test_a_root_session_has_depth_zero(self, tmp_path):
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.return_value = _make_metadata("root")
+
+        assert svc.compute_spawn_depth("root") == 0
+
+    def test_one_spawn_hop_is_depth_one(self, tmp_path):
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.side_effect = [
+            _make_metadata("child", spawned_from_session_id="root"),
+            _make_metadata("root"),
+        ]
+
+        assert svc.compute_spawn_depth("child") == 1
+
+    def test_a_fork_hop_does_not_count(self, tmp_path):
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.side_effect = [
+            _make_metadata("forked", parent_session_id="root"),
+            _make_metadata("root"),
+        ]
+
+        assert svc.compute_spawn_depth("forked") == 0
+
+    def test_a_fork_of_a_spawned_session_inherits_its_spawners_depth(self, tmp_path):
+        """root -> spawn -> child(depth 1) -> fork -> forkedChild; forkedChild sits at depth 1
+        too, and spawning from it would be the spawner's next hop, not a fresh chain."""
+
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.side_effect = [
+            _make_metadata("forkedChild", parent_session_id="child"),
+            _make_metadata("child", spawned_from_session_id="root"),
+            _make_metadata("root"),
+        ]
+
+        assert svc.compute_spawn_depth("forkedChild") == 1
+
+    def test_returns_none_when_the_callers_own_record_is_unreadable(self, tmp_path):
+        """Fail closed: an unreadable caller record is exactly what a laundering attempt
+        produces, so it refuses rather than defaulting to depth zero."""
+
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.side_effect = SharedSessionNotFound(session_id="caller")
+
+        assert svc.compute_spawn_depth("caller") is None
+
+    def test_a_missing_ancestor_mid_walk_ends_the_walk_instead_of_failing(self, tmp_path):
+        """A deleted ancestor must not jam an otherwise legitimate chain."""
+
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.side_effect = [
+            _make_metadata("child", spawned_from_session_id="deleted-root"),
+            SharedSessionNotFound(session_id="deleted-root"),
+        ]
+
+        assert svc.compute_spawn_depth("child") == 1
+
+    def test_a_three_hop_spawn_chain_reaches_the_default_cap(self, tmp_path):
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.side_effect = [
+            _make_metadata("great-grandchild", spawned_from_session_id="grandchild"),
+            _make_metadata("grandchild", spawned_from_session_id="child"),
+            _make_metadata("child", spawned_from_session_id="root"),
+            _make_metadata("root"),
+        ]
+
+        assert svc.compute_spawn_depth("great-grandchild") == 3
+
+
 # --- resume ---
 
 
@@ -422,9 +756,7 @@ class TestResume:
         svc, repo, containers = _make_service(tmp_path)
         existing = _make_container("ctr-existing", session_id="sess-1")
         containers.find_by_session = AsyncMock(return_value=existing)
-        repo.get.side_effect = SharedSessionNotFound(
-            "sess-1",
-        )
+        repo.get.return_value = _make_metadata("sess-1")
 
         result = await svc.resume("sess-1")
 
@@ -442,9 +774,7 @@ class TestResume:
         new_container = _make_container("ctr-new", port=9090)
         containers.create = AsyncMock(return_value=new_container)
         containers.get.return_value = new_container
-        repo.get.side_effect = SharedSessionNotFound(
-            "sess-1",
-        )
+        repo.get.return_value = _make_metadata("sess-1")
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
@@ -470,6 +800,87 @@ class TestResume:
         mock_client.post.assert_awaited_once()
         post_url = mock_client.post.call_args[0][0]
         assert "/api/sessions/sess-1/resume" in post_url
+
+    @pytest.mark.anyio
+    async def test_side_thread_joins_parents_container_as_member(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        repo.get.return_value = _make_metadata(
+            "thread-1",
+            parent_session_id="parent-1",
+            is_side_thread=True,
+        )
+        parent_container = _make_container("ctr-parent", session_id="parent-1")
+        containers.find_by_session = AsyncMock(return_value=parent_container)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.resume("thread-1")
+
+        assert result.container_id == "ctr-parent"
+        containers.find_by_session.assert_awaited_once_with("parent-1", sync=True)
+        containers.update.assert_awaited_once_with(parent_container, members=["thread-1"])
+        mock_client.post.assert_awaited_once()
+        post_args, post_kwargs = mock_client.post.call_args
+        assert "/api/sessions/thread-1/resume" in post_args[0]
+        assert post_kwargs["params"] == {"primary": "false"}
+
+    @pytest.mark.anyio
+    async def test_side_thread_already_a_member_does_not_re_append(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        repo.get.return_value = _make_metadata(
+            "thread-1",
+            parent_session_id="parent-1",
+            is_side_thread=True,
+        )
+        parent_container = _make_container(
+            "ctr-parent",
+            session_id="parent-1",
+            members=["thread-1"],
+        )
+        containers.find_by_session = AsyncMock(return_value=parent_container)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            await svc.resume("thread-1")
+
+        containers.update.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_side_thread_with_no_parent_container_raises_and_creates_nothing(self, tmp_path):
+        """A reply to a side thread whose parent has stopped fails clean - it must never reach
+        create() and become an owner in its own right."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        repo.get.return_value = _make_metadata(
+            "thread-1",
+            parent_session_id="parent-1",
+            is_side_thread=True,
+        )
+        containers.find_by_session = AsyncMock(return_value=None)
+        containers.create = AsyncMock()
+
+        with pytest.raises(SessionContainerUnavailable):
+            await svc.resume("thread-1")
+
+        containers.create.assert_not_called()
 
 
 # --- _wait_for_health ---
@@ -924,7 +1335,7 @@ class TestForkOwnershipTransfer:
         containers.find_by_session = AsyncMock(return_value=None)
         containers.update = AsyncMock()
 
-        with pytest.raises(ValueError, match="No running container"):
+        with pytest.raises(SessionContainerUnavailable):
             await svc.fork(parent_id, reuse_container=True)
 
         containers.update.assert_not_called()
@@ -963,6 +1374,300 @@ class TestForkOwnershipTransfer:
         assert create_call.kwargs.get("session_id") == result.session_id  # ty: ignore[unresolved-attribute]
         # No transfer call: the fresh-container path never touches containers.update.
         containers.update.assert_not_called()
+
+
+class TestForkParentOverride:
+    """Test fork()'s parent_session_id override - promotion re-parents onto a drawable ancestor."""
+
+    @pytest.mark.anyio
+    async def test_defaults_parent_to_source_session(self, tmp_path):
+        """No override: the seed's parent_session_id is the fork source."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        repo.get.return_value = _make_metadata(parent_id, name="Parent")
+
+        new_container = _make_container("ctr-new", session_id="will-be-overwritten")
+        containers.find_by_session = AsyncMock()
+        containers.create = AsyncMock(return_value=new_container)
+        containers.update = AsyncMock()
+        containers.get.return_value = new_container
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            with patch.object(svc, "_wait_for_health", new=AsyncMock()):
+                result = await svc.fork(parent_id)
+
+        assert result.parent_session_id == parent_id
+
+    @pytest.mark.anyio
+    async def test_override_re_parents_the_child(self, tmp_path):
+        """A promoted side thread's child is re-parented to the given ancestor, not its literal
+        source - the source's own hidden node is never listed and would strand the child."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        side_id = "sess-side"
+        main_id = "sess-main"
+        repo.get.return_value = _make_metadata(side_id, name="Side")
+
+        new_container = _make_container("ctr-new", session_id="will-be-overwritten")
+        containers.find_by_session = AsyncMock()
+        containers.create = AsyncMock(return_value=new_container)
+        containers.update = AsyncMock()
+        containers.get.return_value = new_container
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            with patch.object(svc, "_wait_for_health", new=AsyncMock()):
+                result = await svc.fork(side_id, parent_session_id=main_id)
+
+        assert result.parent_session_id == main_id
+        assert result.session_id != side_id
+
+    @pytest.mark.anyio
+    async def test_promoted_child_is_never_marked_a_side_thread(self, tmp_path):
+        """Promotion omits share_container - the promoted session is an ordinary top-level
+        session in its own container, listed like any other, not hidden like its source."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        side_id = "sess-side"
+        repo.get.return_value = _make_metadata(side_id, name="Side")
+
+        new_container = _make_container("ctr-new", session_id="will-be-overwritten")
+        containers.find_by_session = AsyncMock()
+        containers.create = AsyncMock(return_value=new_container)
+        containers.update = AsyncMock()
+        containers.get.return_value = new_container
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            with patch.object(svc, "_wait_for_health", new=AsyncMock()):
+                result = await svc.fork(side_id, parent_session_id="sess-main")
+
+        assert result.is_side_thread is False
+
+
+class TestForkSharesContainer:
+    """Test fork(share_container=True) - the third disposition, no ownership transfer."""
+
+    @pytest.mark.anyio
+    async def test_joins_as_member_without_transferring_ownership(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        repo.get.return_value = _make_metadata(parent_id, name="Parent")
+
+        existing = _make_container("ctr-existing", session_id=parent_id)
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.fork(parent_id, share_container=True)
+
+        # Never the owner-transfer form: session_id keyword is absent, members is a fresh list.
+        containers.update.assert_awaited_once()
+        update_call = containers.update.await_args
+        assert update_call.args[0] is existing  # ty: ignore[unresolved-attribute]
+        assert "session_id" not in update_call.kwargs  # ty: ignore[unresolved-attribute]
+        assert update_call.kwargs.get("members") == [result.session_id]  # ty: ignore[unresolved-attribute]
+        assert result.container_id == "ctr-existing"
+
+        # Joins non-primary: the resume POST carries primary=false.
+        mock_client.post.assert_awaited_once()
+        post_args, post_kwargs = mock_client.post.call_args
+        assert f"/api/sessions/{result.session_id}/resume" in post_args[0]
+        assert post_kwargs["params"] == {"primary": "false"}
+
+    @pytest.mark.anyio
+    async def test_builds_a_fresh_members_list_not_a_mutation(self, tmp_path):
+        """update() compares old vs new by value - an in-place-mutated list looks unchanged and
+        is silently never persisted. The member list passed to update() must be a new object."""
+
+        svc, repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        repo.get.return_value = _make_metadata(parent_id, name="Parent")
+
+        existing = _make_container("ctr-existing", session_id=parent_id, members=["prior-member"])
+        original_members = existing.members
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.fork(parent_id, share_container=True)
+
+        update_call = containers.update.await_args
+        new_members = update_call.kwargs["members"]  # ty: ignore[unresolved-attribute]
+        assert new_members is not original_members
+        assert new_members == ["prior-member", result.session_id]
+
+    @pytest.mark.anyio
+    async def test_no_running_container_raises(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        repo.get.return_value = _make_metadata(parent_id, name="Parent")
+
+        containers.find_by_session = AsyncMock(return_value=None)
+        containers.update = AsyncMock()
+
+        with pytest.raises(SessionContainerUnavailable):
+            await svc.fork(parent_id, share_container=True)
+
+        containers.update.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_reuse_and_share_together_is_rejected(self, tmp_path):
+        svc, repo, _containers = _make_service(tmp_path)
+        repo.get.return_value = _make_metadata("sess-parent", name="Parent")
+
+        with pytest.raises(ValidationError):
+            await svc.fork("sess-parent", reuse_container=True, share_container=True)
+
+    @pytest.mark.anyio
+    async def test_seeds_is_side_thread_marker(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        repo.get.return_value = _make_metadata(parent_id, name="Parent")
+
+        existing = _make_container("ctr-existing", session_id=parent_id)
+        containers.find_by_session = AsyncMock(return_value=existing)
+        containers.update = AsyncMock()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            result = await svc.fork(parent_id, share_container=True)
+
+        assert result.is_side_thread is True
+
+    @pytest.mark.anyio
+    async def test_ordinary_fork_does_not_set_is_side_thread(self, tmp_path):
+        svc, repo, containers = _make_service(tmp_path)
+        parent_id = "sess-parent"
+        repo.get.return_value = _make_metadata(parent_id, name="Parent")
+
+        new_container = _make_container("ctr-new")
+        containers.find_by_session = AsyncMock()
+        containers.create = AsyncMock(return_value=new_container)
+        containers.get.return_value = new_container
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("claudebox_daemon.domain.sessions.service.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            with patch.object(svc, "_wait_for_health", new=AsyncMock()):
+                result = await svc.fork(parent_id)
+
+        assert result.is_side_thread is False
+
+
+class TestCopyClaudeboxSessionExcludesTmpWhenSharing:
+    """A shared-container fork excludes tmp/ and attachments/ - dead bytes, since it never
+    remaps /tmp and therefore never reads either back."""
+
+    def _make_ws(self, tmp_path):
+        ws = MagicMock()
+        src_session = MagicMock()
+        src_session.path = tmp_path / "src-session"
+        dst_session = MagicMock()
+        dst_session.path = tmp_path / "dst-session"
+        dst_session.path.mkdir(parents=True, exist_ok=True)
+        ws.ensure_session = MagicMock(
+            side_effect=lambda sid: {"source": src_session, "dest": dst_session}[sid],
+        )
+
+        return ws, src_session, dst_session
+
+    def test_share_container_excludes_tmp_and_attachments(self, tmp_path):
+        ws, src_session, dst_session = self._make_ws(tmp_path)
+        src_session.path.mkdir(parents=True, exist_ok=True)
+        (src_session.path / "events.jsonl").write_text('{"type":"user"}\n')
+        (src_session.path / "tmp").mkdir()
+        (src_session.path / "tmp" / "scratch.txt").write_text("dead bytes")
+        (src_session.path / "attachments").mkdir()
+        (src_session.path / "attachments" / "photo.png").write_bytes(b"fake")
+
+        SessionService._copy_claudebox_session(
+            MagicMock(),
+            ws,
+            "source",
+            "dest",
+            share_container=True,
+        )
+
+        assert (dst_session.path / "events.jsonl").exists()
+        assert not (dst_session.path / "tmp").exists()
+        assert not (dst_session.path / "attachments").exists()
+
+    def test_ordinary_fork_still_copies_tmp_and_attachments(self, tmp_path):
+        ws, src_session, dst_session = self._make_ws(tmp_path)
+        src_session.path.mkdir(parents=True, exist_ok=True)
+        (src_session.path / "tmp").mkdir()
+        (src_session.path / "tmp" / "scratch.txt").write_text("kept")
+        (src_session.path / "attachments").mkdir()
+        (src_session.path / "attachments" / "photo.png").write_bytes(b"fake")
+
+        SessionService._copy_claudebox_session(MagicMock(), ws, "source", "dest")
+
+        assert (dst_session.path / "tmp" / "scratch.txt").read_text() == "kept"
+        assert (dst_session.path / "attachments" / "photo.png").exists()
 
 
 # --- fork inheritance ---

@@ -1,13 +1,15 @@
-/** Terminal-split toggle + divider ratio - hydrated once per session, persisted via ui-state. */
+/** Right-slot view choice + divider ratio - hydrated once per session, persisted via ui-state. */
 
 import { useEffect, useRef, useState } from 'react'
 import { getUiState, patchSessionUiState } from '../../../api/uiState'
 import { CHAT_SPLIT_DEFAULT_RATIO } from '../../../config/dimensions'
 import { LAYOUT_SAVE_DEBOUNCE_MS } from '../../../config/timing'
+import { RightSlotView, resolveStoredRightSlotView } from '../utils/rightSlotViews'
 
 /**
  * `split` stays `null` until hydration, so first paint renders nothing split-dependent rather than
- * flashing the default. Flat camelCase keys like `minimapPinned`; defaults: split off, ratio 0.5.
+ * flashing the default. `split.view` is a `RightSlotView` value (or `OFF`), persisted as
+ * `rightSlotView`; a stored `terminalSplitEnabled` boolean is read only as a fallback.
  */
 export function useTerminalSplit(sessionId) {
   const [split, setSplit] = useState(null)
@@ -25,13 +27,13 @@ export function useTerminalSplit(sessionId) {
           return
         }
         setSplit({
-          enabled: data.session?.terminalSplitEnabled ?? false,
+          view: resolveStoredRightSlotView(data.session),
           ratio: data.session?.terminalSplitRatio ?? CHAT_SPLIT_DEFAULT_RATIO,
         })
       })
       .catch(() => {
         if (!cancelled) {
-          setSplit({ enabled: false, ratio: CHAT_SPLIT_DEFAULT_RATIO })
+          setSplit({ view: RightSlotView.OFF, ratio: CHAT_SPLIT_DEFAULT_RATIO })
         }
       })
     return () => {
@@ -47,17 +49,15 @@ export function useTerminalSplit(sessionId) {
     }
   }, [])
 
-  /** Local state flips unconditionally; the persistence patch is fire-and-forget. */
-  const toggleEnabled = () => {
+  /** Local state selects unconditionally; the persistence patch is fire-and-forget. */
+  const setView = view => {
     setSplit(prev => {
       if (!prev) {
         return prev
       }
-      const next = { ...prev, enabled: !prev.enabled }
+      const next = { ...prev, view }
       if (sessionId) {
-        patchSessionUiState(sessionId, [
-          { op: 'set', path: 'terminalSplitEnabled', value: next.enabled },
-        ])
+        patchSessionUiState(sessionId, [{ op: 'set', path: 'rightSlotView', value: next.view }])
       }
       return next
     })
@@ -78,5 +78,5 @@ export function useTerminalSplit(sessionId) {
     }, LAYOUT_SAVE_DEBOUNCE_MS)
   }
 
-  return { split, toggleEnabled, setRatio }
+  return { split, setView, setRatio }
 }

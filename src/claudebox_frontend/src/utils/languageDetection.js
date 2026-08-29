@@ -163,6 +163,11 @@ export function looksLikeMarkdown(content) {
   return matches >= 2
 }
 
+/** Whether trimmed text opens like a JSON document (array or object), sniffed from its edge. */
+export function looksLikeJson(trimmed) {
+  return trimmed.startsWith('[') || trimmed.startsWith('{')
+}
+
 /**
  * @param {string} content - Source code or text to analyze.
  * @param {string} [filePath] - File path for extension-based detection.

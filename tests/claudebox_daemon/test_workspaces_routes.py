@@ -51,7 +51,7 @@ def _build_app(daemon: MagicMock):
             content={"error": exc.error_key, **exc.context},
         )
 
-    # Starlette narrows the handler param to BaseException; ours accepts DaemonError specifically.
+    # Starlette types the handler param as BaseException; this one accepts DaemonError specifically.
     app.add_exception_handler(DaemonError, _handle_daemon_error)  # ty: ignore[invalid-argument-type]
 
     return app

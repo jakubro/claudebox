@@ -1,4 +1,4 @@
-/* Mermaid diagram rendering — container, toolbar, zoom overlay */
+/* Mermaid diagram rendering - container, toolbar, zoom overlay */
 
 .mermaid-container {
   position: relative;
@@ -54,22 +54,60 @@
   overflow-wrap: anywhere;
 }
 
-/* Zoom overlay - backdrop chrome lives in zoom-overlay.css's shared .zoom-overlay. */
+/* Zoom overlay - backdrop chrome lives in zoom-overlay.css's shared .zoom-overlay. The transform
+   on .mermaid-zoom-inner owns sizing entirely; this is a clipping viewport, not a scroll box. */
 .mermaid-zoom-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
   width: 90vw;
   height: 90vh;
-  overflow: auto;
-  padding: 24px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
 }
 
-/* Override mermaid's inline max-width on SVG to fill viewport */
-.mermaid-zoom-content svg {
+.mermaid-zoom-content:active {
+  cursor: grabbing;
+}
+
+.mermaid-zoom-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* Neutralize mermaid's own inline max-width so it lays out at its natural (viewBox) size - the
+   transform is what fits it to the viewport, and a leftover CSS cap would make that scale wrong. */
+.mermaid-zoom-inner svg {
   /* biome-ignore lint/complexity/noImportantStyles: required to override mermaid's inline style */
   max-width: none !important;
-  max-height: 90vh;
   width: auto;
   height: auto;
+  display: block;
+}
+
+.mermaid-zoom-controls {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Chrome (background, border, hover) shared with .zoom-overlay-close - see zoom-overlay.css. */
+.mermaid-zoom-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.mermaid-zoom-btn:disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mermaid-zoom-controls-separator {
+  width: 12px;
 }

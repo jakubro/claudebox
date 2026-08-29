@@ -46,7 +46,7 @@ def _wire_send_dependencies(session, tmp_workspace, *, with_base_session=True):
 def _wire_broadcast_surface(session, *, subscriber=None):
     """Attach the components stop() disposes, so subscribe() and stop() both run against a started shape."""
 
-    session._broadcaster = MagicMock()
+    session._broadcaster = MagicMock(close=AsyncMock())
     session._broadcaster.subscribe.return_value = subscriber or ("sub-0", asyncio.Queue())
     session._broadcaster.replay_to = AsyncMock()
 
@@ -200,77 +200,6 @@ class TestSendWithoutAttachments:
         session._event_pipeline.set_prompt.assert_called_once_with("Hey")  # ty: ignore[unresolved-attribute]
 
 
-# --- send_and_wait ---
-
-
-class TestSendAndWait:
-    """send_and_wait() collects assistant events until result, then returns text."""
-
-    @pytest.mark.anyio
-    async def test_collects_assistant_chunks(self, tmp_workspace):
-        session = _make_session(tmp_workspace)
-        _wire_send_dependencies(session, tmp_workspace)
-
-        broadcaster = MagicMock()
-        queue = AsyncMock()
-        queue.get = AsyncMock(
-            side_effect=[
-                {"type": "assistant", "content": "Hello"},
-                {"type": "assistant", "content": " world"},
-                {"type": "result"},
-            ],
-        )
-        broadcaster.subscribe.return_value = ("sub-1", queue)
-        broadcaster.unsubscribe = MagicMock()
-        session._broadcaster = broadcaster
-
-        result = await session.send_and_wait("Hi")
-
-        assert result == "Hello world"
-        broadcaster.unsubscribe.assert_called_once_with("sub-1")
-
-    @pytest.mark.anyio
-    async def test_returns_no_response_when_empty(self, tmp_workspace):
-        session = _make_session(tmp_workspace)
-        _wire_send_dependencies(session, tmp_workspace)
-
-        broadcaster = MagicMock()
-        queue = AsyncMock()
-        queue.get = AsyncMock(side_effect=[{"type": "result"}])
-        broadcaster.subscribe.return_value = ("sub-1", queue)
-        broadcaster.unsubscribe = MagicMock()
-        session._broadcaster = broadcaster
-
-        result = await session.send_and_wait("Hi")
-
-        assert result == "No response"
-
-    @pytest.mark.anyio
-    async def test_skips_non_assistant_events(self, tmp_workspace):
-        """Non-assistant events (system, user) are ignored."""
-
-        session = _make_session(tmp_workspace)
-        _wire_send_dependencies(session, tmp_workspace)
-
-        broadcaster = MagicMock()
-        queue = AsyncMock()
-        queue.get = AsyncMock(
-            side_effect=[
-                {"type": "system", "content": "init"},
-                {"type": "user", "content": "echo"},
-                {"type": "assistant", "content": "Answer"},
-                {"type": "result"},
-            ],
-        )
-        broadcaster.subscribe.return_value = ("sub-1", queue)
-        broadcaster.unsubscribe = MagicMock()
-        session._broadcaster = broadcaster
-
-        result = await session.send_and_wait("Hi")
-
-        assert result == "Answer"
-
-
 # --- send before init ---
 
 
@@ -380,7 +309,7 @@ class TestStopDisposalOrdering:
         session._dispose = tracking_dispose  # ty: ignore[invalid-assignment]
         session._event_pipeline = mock_pipeline
         session._sdk_client = mock_client
-        session._broadcaster = MagicMock()
+        session._broadcaster = MagicMock(close=AsyncMock())
         session._projection = MagicMock(flush=AsyncMock())
         session._tool_output = MagicMock()
         session._attachment_service = MagicMock()
@@ -429,7 +358,7 @@ class TestStopIdempotent:
         session._event_pipeline.stop = AsyncMock()
         session._sdk_client = MagicMock()
         session._sdk_client.disconnect = AsyncMock()
-        session._broadcaster = MagicMock()
+        session._broadcaster = MagicMock(close=AsyncMock())
         session._projection = MagicMock(flush=AsyncMock())
         session._tool_output = MagicMock()
         session._attachment_service = MagicMock()
@@ -458,7 +387,7 @@ class TestUnsubscribeAfterStop:
 
         session = _make_session(tmp_workspace)
 
-        session._broadcaster = MagicMock()
+        session._broadcaster = MagicMock(close=AsyncMock())
         session._event_pipeline = MagicMock()
         session._event_pipeline.stop = AsyncMock()
         session._sdk_client = MagicMock()
@@ -527,6 +456,21 @@ class TestSubscribeReadiness:
         assert subscriber_id == "sub-1"
         assert returned is queue
         session._broadcaster.replay_to.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_subscribe_replay_false_skips_the_replay(self, tmp_workspace):
+        """A caller that already read the persisted log wants only what arrives from here on -
+        a replay would repeat events under ids the restart-reset counter has already used."""
+
+        session = _make_session(tmp_workspace)
+        queue = asyncio.Queue()
+        _wire_broadcast_surface(session, subscriber=("sub-1", queue))
+
+        subscriber_id, returned = await session.subscribe(replay=False)
+
+        assert subscriber_id == "sub-1"
+        assert returned is queue
+        session._broadcaster.replay_to.assert_not_awaited()  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_ensure_ready_tracks_the_session_lifecycle(self, tmp_workspace):

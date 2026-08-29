@@ -11,9 +11,9 @@ from .containers import (
     ContainerStatus,
     ContainerUnavailable,
 )
-from .errors import DaemonError, DaemonNotReady, WorkspaceNotFound, WorkspaceUnavailable
+from .errors import DaemonError, DaemonNotReady, WorkspaceUnavailable
 from .service import DaemonService
-from .sessions import SessionInfo, SessionNotFound, SessionService
+from .sessions import SessionInfo, SessionNotFound, SessionService, resolve_link_messages
 from .ui_state import UIState, UIStateService
 from .workspaces import WorkspaceService
 

@@ -352,6 +352,194 @@ class TestGetContextUsage:
         assert result.max_tokens == 200000
 
 
+class TestMcpServerHiding:
+    """The sibling-session server never reaches MCP status reporting or its guarded routes."""
+
+    @pytest.mark.anyio
+    async def test_get_mcp_status_returns_empty_shape_when_not_ready(self):
+        runtime = _make_runtime()
+
+        assert await runtime.get_mcp_status() == {"mcpServers": []}
+
+    @pytest.mark.anyio
+    async def test_get_mcp_status_filters_sibling_server(self):
+        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+
+        runtime = _make_runtime()
+        runtime.ready.set()
+
+        with patch.object(runtime._sdk, "get_mcp_status", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = {
+                "mcpServers": [
+                    {"name": "jina", "status": "connected"},
+                    {"name": SIBLING_MCP_SERVER_NAME, "status": "connected"},
+                ],
+            }
+            result = await runtime.get_mcp_status()
+
+        assert result["mcpServers"] == [{"name": "jina", "status": "connected"}]
+
+    @pytest.mark.anyio
+    async def test_get_mcp_status_preserves_other_top_level_keys(self):
+        runtime = _make_runtime()
+        runtime.ready.set()
+
+        with patch.object(runtime._sdk, "get_mcp_status", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = {"mcpServers": [], "other": "value"}
+            result = await runtime.get_mcp_status()
+
+        assert result["other"] == "value"
+
+    @pytest.mark.anyio
+    async def test_reconnect_mcp_server_protects_sibling_name(self):
+        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+        from claudebox.agent_session.orchestration.errors import McpServerProtected
+
+        runtime = _make_runtime()
+
+        with pytest.raises(McpServerProtected):
+            await runtime.reconnect_mcp_server(SIBLING_MCP_SERVER_NAME)
+
+        assert list(runtime._pending_calls) == []  # refused outright, never queued for later
+
+    @pytest.mark.anyio
+    async def test_reconnect_mcp_server_forwards_other_names_when_ready(self):
+        runtime = _make_runtime()
+        runtime.ready.set()
+
+        with patch.object(
+            runtime._sdk,
+            "reconnect_mcp_server",
+            new_callable=AsyncMock,
+        ) as mock_reconnect:
+            await runtime.reconnect_mcp_server("jina")
+
+        mock_reconnect.assert_awaited_once_with("jina")
+
+    @pytest.mark.anyio
+    async def test_reconnect_mcp_server_queues_other_names_when_not_ready(self):
+        runtime = _make_runtime()
+
+        await runtime.reconnect_mcp_server("jina")
+
+        assert list(runtime._pending_calls) == [("reconnect_mcp_server", ("jina",), {})]
+
+    @pytest.mark.anyio
+    async def test_toggle_mcp_server_protects_sibling_name(self):
+        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+        from claudebox.agent_session.orchestration.errors import McpServerProtected
+
+        runtime = _make_runtime()
+        runtime.ready.set()
+
+        with pytest.raises(McpServerProtected):
+            await runtime.toggle_mcp_server(SIBLING_MCP_SERVER_NAME, False)
+
+    @pytest.mark.anyio
+    async def test_toggle_mcp_server_forwards_other_names_when_ready(self):
+        runtime = _make_runtime()
+        runtime.ready.set()
+
+        with patch.object(runtime._sdk, "toggle_mcp_server", new_callable=AsyncMock) as mock_toggle:
+            await runtime.toggle_mcp_server("jina", False)
+
+        mock_toggle.assert_awaited_once_with("jina", False)
+
+
+class TestMcpServerBuilding:
+    """_build_mcp_servers/_sibling_sdk_tools - the in-process SDK MCP server construction."""
+
+    def test_build_mcp_servers_keys_on_sibling_server_name(self):
+        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+
+        runtime = _make_runtime()
+
+        servers = runtime._build_mcp_servers()
+
+        assert set(servers) == {SIBLING_MCP_SERVER_NAME}
+        assert servers[SIBLING_MCP_SERVER_NAME]["type"] == "sdk"
+        assert servers[SIBLING_MCP_SERVER_NAME]["name"] == SIBLING_MCP_SERVER_NAME
+
+    def test_sibling_sdk_tools_returns_three_tools_with_expected_names(self):
+        runtime = _make_runtime()
+
+        names = {t.name for t in runtime._sibling_sdk_tools()}
+
+        assert names == {"session_spawn", "session_ask", "session_read"}
+
+    @pytest.mark.anyio
+    async def test_session_spawn_tool_delegates_to_client(self):
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(
+            runtime._sibling_sessions,
+            "spawn",
+            new_callable=AsyncMock,
+        ) as mock_spawn:
+            mock_spawn.return_value = {"session_id": "s1", "container_id": "c1"}
+            result = await tools["session_spawn"].handler({"prompt": "do the thing"})
+
+        mock_spawn.assert_awaited_once_with("do the thing")
+        assert json.loads(result["content"][0]["text"]) == {
+            "session_id": "s1",
+            "container_id": "c1",
+        }
+        assert "is_error" not in result
+
+    @pytest.mark.anyio
+    async def test_session_spawn_tool_reports_sibling_error_without_raising(self):
+        from claudebox.agent_session._sibling_sessions import SiblingSessionError
+
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(
+            runtime._sibling_sessions,
+            "spawn",
+            new_callable=AsyncMock,
+        ) as mock_spawn:
+            mock_spawn.side_effect = SiblingSessionError("depth cap reached")
+            result = await tools["session_spawn"].handler({"prompt": "x"})
+
+        assert result["is_error"] is True
+        assert "depth cap reached" in result["content"][0]["text"]
+
+    @pytest.mark.anyio
+    async def test_session_ask_tool_delegates_to_client(self):
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(runtime._sibling_sessions, "ask", new_callable=AsyncMock) as mock_ask:
+            mock_ask.return_value = {"state": "replied", "text": "done"}
+            result = await tools["session_ask"].handler({"session_id": "s1", "message": "hi"})
+
+        mock_ask.assert_awaited_once_with("s1", "hi")
+        assert json.loads(result["content"][0]["text"]) == {"state": "replied", "text": "done"}
+
+    @pytest.mark.anyio
+    async def test_session_read_tool_defaults_limit_to_fifty(self):
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(runtime._sibling_sessions, "read", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = []
+            await tools["session_read"].handler({"session_id": "s1"})
+
+        mock_read.assert_awaited_once_with("s1", 50)
+
+    @pytest.mark.anyio
+    async def test_session_read_tool_forwards_explicit_limit(self):
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(runtime._sibling_sessions, "read", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = []
+            await tools["session_read"].handler({"session_id": "s1", "limit": 5})
+
+        mock_read.assert_awaited_once_with("s1", 5)
+
+
 class TestConnect:
     """Connection lifecycle - ready event + flush task."""
 

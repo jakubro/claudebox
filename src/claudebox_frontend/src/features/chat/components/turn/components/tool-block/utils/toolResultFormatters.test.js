@@ -5,6 +5,7 @@ import {
   buildToolHeader,
   extractSystemReminders,
   extractToolResult,
+  formatTodoWriteResult,
   generateJsonSummary,
   getSummaryText,
   getToolStatus,
@@ -505,7 +506,7 @@ describe('extractToolResult', () => {
       const result = extractToolResult('TodoWrite', input, 'anything')
 
       // Fallback: shows all todos as added (pending)
-      expect(result.summary).toBe('○4')
+      expect(result.summary).toBe('○ 4')
       expect(result.todoData).toEqual(input.todos)
     })
 
@@ -528,7 +529,7 @@ describe('extractToolResult', () => {
       }
       const result = extractToolResult('TodoWrite', input, 'anything', { todoDiff })
 
-      expect(result.summary).toBe('●1 ◐1 ○2')
+      expect(result.summary).toBe('● 1 ◐ 1 ○ 2')
       expect(result.todoData).toEqual(input.todos)
     })
 
@@ -549,7 +550,7 @@ describe('extractToolResult', () => {
       }
       const result = extractToolResult('TodoWrite', input, 'anything', { todoDiff })
 
-      expect(result.summary).toBe('●2')
+      expect(result.summary).toBe('● 2')
     })
 
     it('handles in_progress only in diff', () => {
@@ -563,7 +564,7 @@ describe('extractToolResult', () => {
       }
       const result = extractToolResult('TodoWrite', input, 'anything', { todoDiff })
 
-      expect(result.summary).toBe('◐1')
+      expect(result.summary).toBe('◐ 1')
     })
   })
 
@@ -705,6 +706,60 @@ Multiple lines</persisted-output>`
 
       // CSS text-overflow: ellipsis handles truncation, not JS
       expect(result.summary).toBe('first line')
+    })
+
+    describe('MCP content-block results', () => {
+      it('routes a content-block array to contentBlocks, not jsonData', () => {
+        const content = JSON.stringify([{ type: 'text', text: '## Results\n\n- alpha\n- beta' }])
+        const result = extractToolResult('mcp__chroma__query', {}, content)
+
+        expect(result.contentBlocks).toEqual([
+          { type: 'text', text: '## Results\n\n- alpha\n- beta' },
+        ])
+        expect(result.jsonData).toBeUndefined()
+        expect(result.details).toBeNull()
+      })
+
+      it('preserves block order in contentBlocks', () => {
+        const content = JSON.stringify([
+          { type: 'text', text: 'first' },
+          { type: 'text', text: 'second' },
+        ])
+        const result = extractToolResult('mcp__server__tool', {}, content)
+
+        expect(result.contentBlocks.map(b => b.text)).toEqual(['first', 'second'])
+      })
+
+      it('keeps the summary line identical to the pre-existing JSON-array behavior', () => {
+        const content = JSON.stringify([{ type: 'text', text: 'first line preview' }])
+        const result = extractToolResult('mcp__server__tool', {}, content)
+
+        expect(result.summary).toBe('first line preview')
+      })
+
+      it('a plain JSON array with no type field on its entries stays on jsonData, not contentBlocks', () => {
+        const content = JSON.stringify([1, 2, 3])
+        const result = extractToolResult('UnknownTool', {}, content)
+
+        expect(result.jsonData).toEqual([1, 2, 3])
+        expect(result.contentBlocks).toBeUndefined()
+      })
+
+      it('an empty array stays on jsonData - there is no block to key the shape off', () => {
+        const content = '[]'
+        const result = extractToolResult('mcp__server__tool', {}, content)
+
+        expect(result.jsonData).toEqual([])
+        expect(result.contentBlocks).toBeUndefined()
+      })
+
+      it('a JSON object result is unaffected - the content-block shape is always an array', () => {
+        const content = JSON.stringify({ type: 'text', text: 'not a list' })
+        const result = extractToolResult('mcp__server__tool', {}, content)
+
+        expect(result.jsonData).toEqual({ type: 'text', text: 'not a list' })
+        expect(result.contentBlocks).toBeUndefined()
+      })
     })
   })
 })
@@ -910,6 +965,14 @@ describe('shouldCollapseByDefault', () => {
       expect(shouldCollapseByDefault('Unknown', { foo: 'bar' }, false, false)).toBe(true)
     })
 
+    it('returns true when contentBlocks is present - an MCP result collapses the same way a plain JSON result always has', () => {
+      expect(
+        shouldCollapseByDefault('mcp__server__tool', null, false, false, false, [
+          { type: 'text', text: 'hi' },
+        ]),
+      ).toBe(true)
+    })
+
     it('returns true for Read tool', () => {
       expect(shouldCollapseByDefault('Read', null, false, false)).toBe(true)
     })
@@ -934,17 +997,17 @@ describe('shouldCollapseByDefault', () => {
       expect(shouldCollapseByDefault('Task', null, true, false)).toBe(true)
     })
 
-    it('returns false for pending Task with nested events', () => {
-      expect(shouldCollapseByDefault('Task', null, true, true)).toBe(false)
+    it('returns true for pending Task with nested events', () => {
+      expect(shouldCollapseByDefault('Task', null, true, true)).toBe(true)
     })
 
-    it('returns false for completed Task without nested events', () => {
-      // Task with no nested and not pending - no special collapse rule
-      expect(shouldCollapseByDefault('Task', null, false, false)).toBe(false)
+    it('returns true for completed Task without nested events', () => {
+      // Every Task collapses by default, regardless of hasNested/isPending.
+      expect(shouldCollapseByDefault('Task', null, false, false)).toBe(true)
     })
 
-    it('returns false for pending Task without nested events', () => {
-      expect(shouldCollapseByDefault('Task', null, false, true)).toBe(false)
+    it('returns true for pending Task without nested events', () => {
+      expect(shouldCollapseByDefault('Task', null, false, true)).toBe(true)
     })
   })
 
@@ -1011,5 +1074,46 @@ describe('extractSystemReminders', () => {
     const result = extractSystemReminders(content)
 
     expect(result.content).toBe('  spaced content  ')
+  })
+})
+
+describe('formatTodoWriteResult', () => {
+  it('separates each pair with a narrower gap than the gap between pairs', () => {
+    const result = formatTodoWriteResult({ todos: [] }, '', {
+      todoDiff: { completed: ['a'], started: ['b'] },
+    })
+
+    expect(result.summary).toBe('● 1 ◐ 1')
+  })
+
+  it('carries every non-zero bucket, in completed/started/added/removed order', () => {
+    const result = formatTodoWriteResult({ todos: [] }, '', {
+      todoDiff: {
+        completed: ['a', 'b'],
+        started: ['c'],
+        added: ['d', 'e', 'f'],
+        removed: ['g'],
+      },
+    })
+
+    expect(result.summary).toBe('● 2 ◐ 1 ○ 3 ✕ 1')
+  })
+
+  it('omits a zero-count bucket entirely', () => {
+    const result = formatTodoWriteResult({ todos: [] }, '', { todoDiff: { completed: ['a'] } })
+
+    expect(result.summary).toBe('● 1')
+  })
+
+  it('falls back to a plain added count when no diff is available', () => {
+    const result = formatTodoWriteResult({ todos: [{}, {}, {}] }, '', {})
+
+    expect(result.summary).toBe('○ 3')
+  })
+
+  it('reports no changes for an empty diff and no todos', () => {
+    const result = formatTodoWriteResult({ todos: [] }, '', { todoDiff: {} })
+
+    expect(result.summary).toBe('No changes')
   })
 })

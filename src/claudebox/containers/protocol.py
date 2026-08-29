@@ -76,3 +76,11 @@ class ContainerRuntimeProtocol(Protocol):
         """Create a container network idempotently."""
 
         ...
+
+    def identify_container_from_pid(self, pid: int, candidate_ids: list[str]) -> str | None:
+        """Return whichever `candidate_ids` entry the given host pid is running inside, or None.
+
+        Backend-specific mechanism, shared contract: trust the OS relationship, never the caller.
+        """
+
+        ...

@@ -15,6 +15,12 @@
   padding: 0;
 }
 
+/* Reserve space for the pinned overview so output doesn't run underneath it. Horizontal padding
+   doesn't feed the height predictor (line-count only), so this costs no recompute. */
+.terminal-column.minimap-pinned {
+  padding-right: calc(24px + 1rem);
+}
+
 /* Holds the full scroll height of every entry, measured or predicted - see HistoricalTurnList.css. */
 .terminal-entries {
   position: relative;
@@ -39,6 +45,21 @@
    would zero every row's margin - only the entry rendered outside the window should lose it. */
 .terminal-column > .terminal-entry:last-child {
   margin-bottom: 0;
+}
+
+/* Step-navigation landing flash - same duration as Turn.css's .turn.jump-highlight, so the two
+   columns' jumps read as the same gesture. Kept in step with MESSAGE_JUMP_HIGHLIGHT_MS (1500ms). */
+.terminal-entry.jump-highlight {
+  animation: terminal-entry-jump-highlight-pulse 1.5s ease-out;
+}
+
+@keyframes terminal-entry-jump-highlight-pulse {
+  0% {
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.5);
+  }
+  100% {
+    box-shadow: none;
+  }
 }
 
 .terminal-entry-comment {

@@ -25,6 +25,12 @@ describe('findTurnEl / findTurnRow', () => {
   it('returns null when no row matches the index', () => {
     expect(findTurnRow(99)).toBeNull()
   })
+
+  it('finds a row under a caller-supplied selector', () => {
+    document.body.innerHTML = '<div class="terminal-entry" data-index="2"></div>'
+    expect(findTurnRow(2, '.terminal-entry')).not.toBeNull()
+    expect(findTurnRow(2, '.historical-turn-row')).toBeNull()
+  })
 })
 
 describe('pollFrames', () => {

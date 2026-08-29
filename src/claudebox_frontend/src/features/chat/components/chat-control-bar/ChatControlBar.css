@@ -42,6 +42,18 @@
   gap: 0;
 }
 
+/* Right-slot view picker (off / terminal / work) - a fieldset for its group role. The group's 4px
+   gap reaches direct children only, so this repeats it and clears the default fieldset chrome. */
+.chat-control-right-slot-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
 .chat-control-fork-chevron {
   padding: 1px 2px;
 }

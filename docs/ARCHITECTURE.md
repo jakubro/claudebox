@@ -10,19 +10,29 @@
 
 ```
 lib/
-├── src/                          # Python packages + claudebox_frontend (React)
-├── tests/                        # Python unit tests — see §7.1
+├── bin/                           # Shell entry points — CLI, daemon, watchdog, installer
+├── container/                     # Container image build + run scripts
+├── docs/                          # ARCHITECTURE.md, GUIDELINES.md, SPEC.md, TEST-UI.md
 ├── e2e/
 │   ├── app/                      # Frontend E2E (Playwright) — own package.json + playwright.config.js
 │   └── cli/                      # CLI E2E (pytest) — invokes claudebox binary as subprocess
-├── scripts/                      # Cross-tree tooling
-│   ├── frontend-guidelines-audit.js  # Frontend convention checks (fails `just lint`)
-│   ├── spec-coverage.js              # SPEC.md claim → test-marker tracking
-│   └── test-ui/                      # In-container test harness — see TEST-UI.md
-├── biome.json, .jscpd.json, knip.json  # JS lint configs (sweep all three JS trees)
+├── etc/                           # Profile/settings samples, systemd unit
+├── scripts/                      # Cross-tree tooling — see TEST-UI.md for scripts/test-ui/
+├── src/                          # Python packages + claudebox_frontend (React)
+├── tests/                        # Python unit tests — see §7.1
+├── biome.json                    # JS lint config (Biome)
+├── .jscpd.json                   # Duplicate-code detection config
+├── justfile                      # Single source of truth for all recipes
+├── knip.json                     # Unused-export detection config
+├── LICENSE
+├── NOTICE.md
 ├── package.json                  # Lib-root JS devDeps (biome + jscpd + knip)
+├── package-lock.json
 ├── pyproject.toml                # Python project — testpaths: tests/, e2e/cli/
-└── justfile                      # Single source of truth for all recipes
+├── README.md
+├── ruff.toml                     # Python lint/format config (Ruff)
+├── ty.toml                       # Python type-checker config (ty)
+└── uv.lock                       # Host-install lockfile — resolved fresh at container build
 ```
 
 ### Lint sweep
@@ -76,6 +86,7 @@ Both decorators: read JSON from stdin → construct typed request → call funct
 ### 1.3 Module Map
 
 ```
+__init__.py               # Re-exports resolve lazily (PEP 562) — see ARCHITECTURE.md "CLI cold path"
 paths.py                  # Workspace/session directory discovery and naming
 workspace.py              # Workspace context — ignore patterns, session listing
 config.py                 # Config.load() — TOML walk-up, deep-merge across hierarchy
@@ -83,9 +94,11 @@ cleanup.py                # cleanup_stale_dirs() — remove orphaned session/tem
 install.py                # CLI epilog and installation metadata utilities
 constants.py              # Path constants, labels, ports, timings, defaults
 env.py                    # is_dev_mode(), set_dev_mode() — runtime environment detection
-temp.py                   # Session /tmp symlink — ensure_tmp(), restore_tmp()
+errors.py                 # Generic API error hierarchy — typed exceptions with HTTP status codes
+temp.py                   # Session /tmp symlink — ensure_tmp()
 
-core/
+core/                      # General-purpose utilities — zero claudebox domain knowledge
+├── __init__.py
 ├── broadcaster.py        # Generic pub-sub Broadcaster with replay support for async event streaming
 ├── cli.py                # CLI entry point utilities — Rich console, HelpFormatter, print_command/print_error
 ├── concurrency.py        # maybe_awaitable() — async/sync bridging helper
@@ -93,6 +106,7 @@ core/
 ├── fs.py                 # walk_up(), touch_dir(), touch_file(), resolve_path(), remove_path(), make_temp_dir(), walk_filtered(), find_files()
 ├── http.py               # JSONResponse, ProxyClient, ProxyStreamingResponse, ProxyBufferedResponse, BroadcastEventSource (Protocol), AsyncBroadcastEventSource (Protocol), BroadcastEventSourceResponse, http_serve()
 ├── io.py                 # write_text(), append_text(), write_json(), append_json(), read_json(), read_jsonl(), read_toml(), count_lines(), calculate_hash()
+├── log_rendering.py      # Shared structlog ConsoleRenderer with ISO timestamps for daemon stderr and `claudebox logs`
 ├── logging.py            # Structured logging — configure_logging(), get_logger(), use_log_file(), use_rotating_log_file(), close_log_file()
 ├── polling.py            # AsyncPoller, MtimeWatcher — base classes for periodic/mtime-driven background loops
 ├── serialization.py      # JSONEncoder (datetime/Path/dataclass/Enum/Decimal), dumps/loads/dump/load wrappers
@@ -100,12 +114,14 @@ core/
 ├── time.py               # TIMESTAMP_FORMAT, get_timestamp(), parse_timestamp()
 └── string.py             # wrap_box() — box-drawing text wrapper
 
-user/
+user/                       # User-facing integration — hook decorator, request context, statusline
+├── __init__.py
 ├── hook.py               # @hook decorator — stdin JSON → HookRequest → HookResponse → stdout
 ├── request.py            # Request context — workspace + session + logger + profile_dir
 └── statusline.py         # @statusline decorator — stdin JSON → StatuslineRequest → stdout text
 
-session/
+session/                    # Session domain: context, metadata, and repository
+├── __init__.py
 ├── session.py            # Session context — directory, paths, lifecycle
 ├── models.py             # SessionMetadata dataclass, SessionNotFound exception
 └── repository.py         # SessionRepository — shared disk I/O for session.json files
@@ -113,12 +129,26 @@ session/
 agent_session/
 ├── __init__.py           # Public re-exports — AgentSession, AgentSessionConfig, ClaudeAgentSessionConfig, ClaudeRuntime, RuntimeCapabilities, AgentEvent, HookCallbacks, catalog dataclasses; make_agent_session factory; UnknownRuntime
 ├── protocol.py           # AgentSession Protocol — the boundary every runtime adapter implements
-├── config.py             # AgentSessionConfig base + ClaudeAgentSessionConfig subclass + RuntimeCapabilities (16-flag matrix)
+├── config.py             # AgentSessionConfig base + ClaudeAgentSessionConfig subclass + RuntimeCapabilities (15-flag matrix)
 ├── events.py             # AgentEvent — kind discriminator + SDK-free payload dict
+├── errors.py             # Typed exception hierarchy for agent-session runtime adapters
 ├── hooks.py              # HookCallbacks — five lifecycle callbacks + CompactStartPayload
 ├── catalogs.py           # Model, PermissionMode, EffortLevel, Skill, ContextUsage dataclasses (runtime-neutral shapes; concrete values live on the adapter)
+├── rate_limits.py        # Per-workspace plan-limit state — written by the container, read by both container and daemon
+├── session.py            # make_agent_session() — constructs the runtime adapter for the configured runtime
 ├── runtime_claude.py     # ClaudeRuntime — only file importing `claude_agent_sdk` (composition wrapping BaseClaudeSDKClient); holds AVAILABLE_MODELS/EFFORT_LEVELS/PERMISSION_MODES class attributes + the Skill YAML-frontmatter parser
+├── runtime_langgraph.py  # LangGraphRuntime — AgentSession adapter wrapping a LangGraph compiled agent graph; sister adapter to ClaudeRuntime, routes model calls via LangChain's universal provider layer
+├── langgraph_tools/      # LangGraph @tool wrappers (filesystem, mcp, search, shell, task_mgmt, etc.) — runtime-neutral, shared with ClaudeRuntime where applicable
+├── _agent_registry.py    # Named AgentDefinitions for sub-agent dispatch — runtime-neutral catalog the LangGraph task tool reads for agent_type lookup
+├── _daemon_services.py   # DaemonServiceBundle — dependency-injection wrapper for cross-process services, read by LangGraph tool factories
+├── _profile_hooks.py     # Profile session-start hook execution, runtime-neutral
+├── _providers.py         # Universal-provider plumbing for LangGraphRuntime — parse-time provider identity, install-hint surface, per-provider probe/catalog
+├── _registry.py          # Runtime class resolver — agent name → runtime class for daemon-side defaults lookup, lazy-imported per runtime
+├── _sibling_sessions.py  # SiblingSessionClient — spawn/ask/read a sibling session, runtime-neutral logic shared by both adapters
+├── _skills.py            # Shared skill catalog walker — filesystem discovery + YAML frontmatter parsing, used by both runtimes
+├── _tasks.py             # TaskService — in-memory agentic task list backing the LangGraph task_* tools
 └── orchestration/        # Session lifecycle, event pipeline, persistence, projection, broadcaster (see §1.5)
+    ├── __init__.py
     ├── session.py        #   Facade — only public interface for the container API
     ├── pipeline.py       #   Orchestrator: AgentEvent loop → enrich → persist → dispatch
     ├── conversion.py     #   dict_message_to_events / to_published_event / serialize_event
@@ -143,7 +173,8 @@ containers/
 ├── run.py                # run_container(), get_container_run_args(), get_volumes(), prepare_volume()
 └── runtime.py            # ContainerRuntime — high-level facade (build + run, delegating to ContainerBackend)
 
-extensions/
+extensions/               # Reusable domain packages
+├── __init__.py
 └── tickets/              # Tickets & Boards domain — Board, BoardState, BoardSummary, BoardTicket, Swimlane models, parser, ticket move/archive/assign, swimlane and state CRUD with FileLock. Consumed by claudebox_daemon.domain.boards.
 ```
 
@@ -175,9 +206,9 @@ BaseClaudeSDKClient            ← external SDK
 | Telemetry | `get_context_usage() -> ContextUsage \| None` | Typed dataclass: `used_tokens`, `max_tokens`. |
 | Event stream | `receive_events() -> AsyncIterator[AgentEvent]` | Backend-neutral typed events; see below. |
 | Catalogs | `get_models()`, `get_effort_levels()`, `get_permission_modes()`, `get_skills()`, `get_default_*()`, `get_model_context_window(model_id)` | Runtime-specific metadata exposed without bypassing the Protocol. |
-| Capabilities | `capabilities -> RuntimeCapabilities` | 16-flag boolean matrix (see below). |
+| Capabilities | `capabilities -> RuntimeCapabilities` | 15-flag boolean matrix (see below). |
 
-**`RuntimeCapabilities`** is a frozen dataclass declaring which optional features a runtime supports. **16 booleans, all required, no defaults** — every adapter is forced to be explicit. Claudebox-core reads the matrix at connect time to decide whether to expose related controls in the frontend; `ClaudeRuntime` returns all `True`. Runtimes that return `False` for an operation tell consumers to hide the affected control. The runtime display name lives on a **sibling field** of the session-info envelope, not on `RuntimeCapabilities` itself, which stays purely boolean.
+**`RuntimeCapabilities`** is a frozen dataclass declaring which optional features a runtime supports. **15 booleans, all required, no defaults** — every adapter is forced to be explicit. Claudebox-core reads the matrix at connect time to decide whether to expose related controls in the frontend; `ClaudeRuntime` returns all `True`. Runtimes that return `False` for an operation tell consumers to hide the affected control. The runtime display name lives on a **sibling field** of the session-info envelope, not on `RuntimeCapabilities` itself, which stays purely boolean.
 
 **`AgentEvent`** is the claudebox-native event yielded by `receive_events()`. Each event carries a `kind` discriminator ("system", "user", "assistant", "result") and a `payload` dict projected by `ClaudeRuntime._translate_sdk_message()` from the SDK message. Downstream of `AgentSession`, no SDK type reaches `EventPipeline`, `conversion`, or any subscriber. A future slice may tighten `payload` to a per-kind frozen-dataclass tagged union; consumers today read it as a typed dict.
 
@@ -190,7 +221,7 @@ BaseClaudeSDKClient            ← external SDK
 1. `claude_agent_sdk` is imported only from `claudebox/agent_session/runtime_claude.py`. The import audit fails `just check` on any other importer.
 2. `AgentSession.receive_events()` yields `AgentEvent` only; SDK message types stay inside `ClaudeRuntime._translate_sdk_message()`.
 3. Hook callbacks receive claudebox-typed payloads — never raw `HookInput` / `HookContext`.
-4. `RuntimeCapabilities` is a frozen 16-boolean dataclass with no defaults. Runtime metadata (display name) lives on a sibling field of the session-info envelope, not on the capability dataclass.
+4. `RuntimeCapabilities` is a frozen 15-boolean dataclass with no defaults. Runtime metadata (display name) lives on a sibling field of the session-info envelope, not on the capability dataclass.
 
 **ClaudeRuntime-specific notes** (not Protocol-level invariants):
 
@@ -216,7 +247,7 @@ BaseClaudeSDKClient            ← external SDK
 
 **Error contract.** All in `agent_session/errors.py`: `ProviderError(Exception)` abstract base; `ProviderPackageMissing(provider, install_hint)` raised when `init_chat_model` hits `ImportError`; `OllamaUnreachable(url)` + `OllamaModelNotPulled(model)` from Ollama probes; `OpenAICompatibleUnreachable(url)` from the OpenAI-compatible probe (distinct class, NOT collapsed into OllamaUnreachable — diagnostic message references the OpenAI-compatible base_url specifically). All four typed exceptions inherit from `ProviderError`; the handler layer maps `isinstance(exc, ProviderError)` to typed HTTP responses (422 for missing-package and model-not-pulled, 503 for unreachable).
 
-**Capability matrix unchanged.** The flat 16-flag `RuntimeCapabilities` matrix is provider-agnostic — no per-provider variation in flags. Provider differences surface via behaviour, not the matrix: catalogless providers return `[]` from `get_models()` (frontend shows empty picker); models with no curated price return `None` cost (frontend hides cost row); chat-only models build a `tools=[]` graph (conversation continues without tool blocks). Frontend's existing capability gating handles all three gracefully.
+**Capability matrix unchanged.** The flat 15-flag `RuntimeCapabilities` matrix is provider-agnostic — no per-provider variation in flags. Provider differences surface via behaviour, not the matrix: catalogless providers return `[]` from `get_models()` (frontend shows empty picker); models with no curated price return `None` cost (frontend hides cost row); chat-only models build a `tools=[]` graph (conversation continues without tool blocks). Frontend's existing capability gating handles all three gracefully.
 
 **Workspace TOML is the single source of truth — no backward-compat shims.** Workspaces declare the explicit `model = "provider:model-id"` form; `[langgraph.<provider>]` sub-tables carry per-provider kwargs forwarded verbatim to `init_chat_model`; `[langgraph.cost]` overrides the curated price table per model_id. `ProviderSpec.parse` rejects bare model ids and malformed input — no auto-prefix, no convenience default URL.
 
@@ -227,7 +258,7 @@ Capability profile (concrete worked example):
 - Catalogs — `supports_models: True` (dynamic from Ollama `/api/tags`); `supports_skills: True` (§ below); `supports_effort_levels: False`; `supports_permission_modes: False`.
 - Telemetry — `supports_context_usage: True` (`usage_metadata` from the latest model call is the occupancy level, not a running sum, since each call re-sends the whole conversation; seeded from the checkpoint's last `AIMessage` on `connect()` so a resumed session reads its real size immediately. Compaction puts its summary at the *head* of the list and preserves the most recent messages after it (`keep` defaults to 20), so a checkpoint written between a compaction and the reply that follows it still carries a pre-compaction `AIMessage` whose `usage_metadata` describes a prompt that no longer exists — and the compaction hook runs before *every* model call, so that state also occurs mid-tool-loop, where the tail is tool results rather than a prompt. Neither shape is distinguishable by position. Each compaction therefore records its own `post_tokens` alongside the length and last message id of what it kept (`{session_dir}/compaction.json`); on resume, anything after that point carries post-compaction usage and wins, and if nothing follows it the recorded count is used. A record whose last message id no longer sits where it was written is discarded, so a fork or rewind cannot seed from a history the thread no longer has). `supports_cost_telemetry: True` (tokens native; USD via per-model `PRICE_PER_MTOK` table — toy registry at v1).
 - Hooks — `supports_pre_compact_hook: True` (synthesized via token-fraction threshold; `SummarizationMiddleware` does the actual compaction). `supports_manual_compact: False`.
-- Session ops — `supports_session_resume: True`, `supports_session_fork: True`, `supports_session_rewind: True`. All native via `AsyncSqliteSaver`; rewind truncates the checkpoint chain at the fork turn (see "Fork" below) so the model's recall matches the truncated transcript, the same contract the Claude runtime gives.
+- Session ops — `supports_session_fork: True`, `supports_session_rewind: True`. All native via `AsyncSqliteSaver`; rewind truncates the checkpoint chain at the fork turn (see "Fork" below) so the model's recall matches the truncated transcript, the same contract the Claude runtime gives.
 
 Selection: per-workspace via `.claudebox/settings.toml` — top-level `agent` selects the adapter, `[langgraph]` carries adapter-private knobs, `[langgraph.<provider>]` carries per-provider kwargs:
 
@@ -284,7 +315,11 @@ Skill - `skill(name, arguments)`: the LangGraph `skill` tool (in `langgraph_tool
 
 Frontmatter gates two distinct paths, not one: the `skill` tool itself refuses (`ToolException`) a `disable-model-invocation` skill, since a model tool call is the only way it can reach this path; a user-typed `/<skill>` never goes through this tool at all - `runtime_langgraph._resolve_slash_skill` (called from `_drive_turn`) resolves it directly against the same `find_skill_source`/`parse_frontmatter` helpers and checks `user-invocable` instead, falling back to literal text for `user-invocable: false` or an unrecognized name. `allowed-tools` / `model` / `effort` are parsed into `catalogs.Skill` but unenforced on either path - LangGraph binds tools and the model at graph construction (`_build_graph`), so scoping either per-skill would mean running the skill as a sub-agent graph rather than turn-level text.
 
-**Display echo matches Claude's tag format.** `runtime_langgraph._tag_slash_command` wraps any leading `/<name> [args]` in the same `<command-message>`/`<command-name>`/`<command-args>` tags Claude's CLI produces (`docs/reference/XML.md`), applied in `_human_message_event` to the DISPLAY event only - independent of whether `_resolve_slash_skill` found a matching skill, matching Claude tagging an unrecognized command the same way. The frontend's `parseSlashCommand` (`utils/parsers.js`) is the single consumer of this format on either runtime, so the bold/underline/hover-card styling (`claim:chat:user-message-slash-command-styling`) now lights up identically regardless of which runtime produced the tags. The model-facing turn never sees these tags - it receives the resolved skill body or the untagged literal prompt, per `_drive_turn`.
+**Sibling sessions - the one family neither runtime owns outright.** `session_spawn(prompt)`, `session_ask(session_id, message)`, `session_read(session_id, limit=50)` let a session hand work to a second session and hold a conversation with it - both sides are ordinary sessions in the ordinary Sessions panel, nothing more. The behavior that would drift if written twice - judging when a sibling's turn has settled, telling a finished answer apart from a blocked question, forming the answer envelope, reporting an unreachable sibling, wording the depth-cap refusal - lives once in `agent_session/_sibling_sessions.py::SiblingSessionClient`, a runtime-neutral module built from `AgentSessionConfig`'s shared `session_id`/`cwd` fields, importing neither `claude_agent_sdk` nor `langchain*`/`langgraph*` (GUIDELINES SDK Containment). Each adapter binds it thinly: `langgraph_tools/sibling.py::make_sibling_tools(ctx)` wraps the three methods as `@tool` functions reading `ctx.daemon_services.sessions`; `ClaudeRuntime._build_mcp_servers()`/`_sibling_sdk_tools()` wrap the same three methods as `SdkMcpTool`s inside an in-process `create_sdk_mcp_server(name="claudebox", ...)`, passed through `ClaudeAgentOptions.mcp_servers` - the first time claudebox populates that field, since a custom tool has no non-MCP path under the SDK. `session_spawn` writes one JSON line to the daemon's spawn socket (§6.1, §6.2) and returns the child's session and container ids. `session_ask` attaches to the sibling's own event stream with `replay=false` *before* POSTing to its `/api/send` - attaching after send risks resolving against a replayed result from an earlier turn - then reads the settling turn for an `AskUserQuestion`/`ask_user_question` tool use and reports `{"state": "asking", ...}` instead of `{"state": "replied", ...}`; the next message to an asking sibling is wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>` by the tool itself, never left to the calling model to emit exactly. `session_read` never goes over HTTP - every session-state route on the container API is `/current`-scoped (§4.3) - so it resolves the sibling's directory via `find_session_dir` and reads `events.jsonl` off the bind-mounted sessions tree directly, which is also why it keeps working while the sibling's container is stopped. Depth is enforced by the daemon's spawn socket (§6.2), not here; a refusal is reformatted to name the cap and the depth reached, mirroring `subagent.py`'s cap-error shape, so the model reads a bound rather than a malfunction and stops instead of retrying.
+
+The server is deliberately invisible. Claudebox now ships exactly one MCP server of its own under a Claude workspace - in-process, always present - and it is not one of the servers §14's MCP panel lists; that panel's subject is what a workspace configured (a `.mcp.json` a user set up), not the runtime's own tooling. `ClaudeRuntime.get_mcp_status()` and `_translate_sdk_message()`'s `SystemInitData.mcp_servers` both filter it out by name before either seam is read downstream, so the panel and the icon-strip badge that shares its source stay exactly what they showed before this family existed. `reconnect_mcp_server`/`toggle_mcp_server` reject the name outright (`McpServerProtected`) rather than merely omitting it from the list - the container API has no authentication, so leaving the toggle reachable would let any sibling on the workspace network silently disable another's ability to delegate.
+
+**Display echo matches Claude's tag format.** `runtime_langgraph._tag_slash_command` wraps any leading `/<name> [args]` in the same `<command-message>`/`<command-name>`/`<command-args>` tags Claude's CLI produces, applied in `_human_message_event` to the DISPLAY event only - independent of whether `_resolve_slash_skill` found a matching skill, matching Claude tagging an unrecognized command the same way. The frontend's `parseSlashCommand` (`utils/parsers.js`) is the single consumer of this format on either runtime, so the bold/underline/hover-card styling (`claim:chat:user-message-slash-command-styling`) now lights up identically regardless of which runtime produced the tags. The model-facing turn never sees these tags - it receives the resolved skill body or the untagged literal prompt, per `_drive_turn`.
 
 Frontend (per §1.5 "Capability-Aware Frontend Wiring") honors LangGraph's profile — footer pickers for effort / permission / model-mid-session, manual compact button, and MCP panel hidden. Token usage bar, cost display, runtime identity pill ("LangGraph"), session resume / fork / rewind controls, skills panel, and slash-command autocomplete render.
 
@@ -316,7 +351,9 @@ Effects:
 
 ### 1.5 Session Orchestration
 
-Session lifecycle, event pipeline, conversion, persistence, projection, and broadcaster all live in `claudebox/agent_session/orchestration/` — adjacent to but distinct from the Protocol seam (§1.4). Orchestration consumes an `AgentSession` runtime adapter via the Protocol; nothing here imports `claude_agent_sdk`. The HTTP plumbing layer (§4) holds the FastAPI lifespan glue (`current` singleton, `managed()` context manager, `get_session` dependency) and the handlers that route REST calls into the `Session` facade — but the orchestration code itself is core, not container-API plumbing.
+Session lifecycle, event pipeline, conversion, persistence, projection, and broadcaster all live in `claudebox/agent_session/orchestration/` — adjacent to but distinct from the Protocol seam (§1.4). Orchestration consumes an `AgentSession` runtime adapter via the Protocol; nothing here imports `claude_agent_sdk`. The HTTP plumbing layer (§4) holds the FastAPI lifespan glue (the `SessionRegistry`, `managed()` context manager, `get_session`/`get_registry` dependencies) and the handlers that route REST calls into a `Session` facade instance — but the orchestration code itself is core, not container-API plumbing.
+
+A container can host more than one `Session` instance concurrently — a *primary*, designated once at the container's first session start and never reassigned by a later one, plus zero or more non-primary members sharing the same container process. `SessionService.__init__` takes `remaps_tmp: bool` (default `True`); only a primary instance's `_on_session_start` hook calls `ensure_tmp` — `/tmp` is mapped once per container by the primary and never restored on any session's stop, primary included (that teardown was removed as dead code and stays removed; a non-primary session simply never remaps `/tmp`, so it transparently reads and writes the primary's). The per-workspace rate-limit store (`rate_limits.py`) is shared by every session in a container, so each stored window now carries the `session_id` that wrote it — `_handle_init`'s reconcile snapshot and `_drop_unannounced_rate_limits`'s prune both scope to windows *this* session wrote, never another session's, closing the cross-session-wipe a shared store would otherwise allow. `Broadcaster.close()` (core, §1.1) pushes a `CLOSED` sentinel to every subscriber's queue; `SessionService.stop()` calls it before dropping the broadcaster reference, so a session-scoped stop (§4.3) ends that session's SSE stream instead of leaving it parked forever — the container-wide teardown that used to make this moot no longer runs for a non-primary session's stop. A non-primary's own `temp_dir` (`claudebox/session/session.py`, still `{session_path}/tmp`) stays unmapped for that session's whole life — nothing in the container ever points at it, since `ensure_tmp` never runs for it. That is also why `SessionService.fork()`'s shared-container disposition (§6.1, daemon-side) excludes `tmp/` from the copy it seeds: bytes nothing will ever read back.
 
 #### Domain Glossary
 
@@ -393,6 +430,16 @@ PublishedEvent(Event) (persisted + broadcast)
 
 **Attachment / inline-reply send divergence**: user messages carrying attachments or inline replies reuse one pattern in `SessionService.send` — inject a display-only synthetic user event (`content=prompt` plus display metadata: attachment chips and/or `inline_replies` quote/reply pairs), call `suppress_next_user_echo()` so the pipeline drops the SDK's echo, and send the SDK a single richer content-block turn (the free-text prompt, then the serialized `<inline-replies>` envelope, then attachment blocks). The display event keeps `content=prompt` (never the serialized envelope) so the frontend's optimistic pending turn reconciles by content. Client-side, inline replies render as span-anchored floating composers: quoting paints a durable highlight (CSS Custom Highlight API - a dotted underline over the accent fill) on the quoted span and opens its reply box in a z-axis popover pinned to that span's client rect, tracked on scroll/resize and on the re-anchor pass; there is no in-transcript dock or side bar. Quoting covers any selectable turn text including tool-block and thinking-block output (non-text media excluded). Hovering a highlight shows its composer transiently (read-only once sent, editable while unsent) via a span-to-composer hover bridge; clicking toggles the pinned state through the same close path as the close button (closing an empty one discards the quote), testing the pinned set rather than visibility because hover usually opened the composer first, and suppressing hover for that highlight until the pointer leaves it; the click is drag-distance-gated so a selection merely ending on a highlight toggles nothing; crowding composers auto-offset so they never overlap. A collapsed source turn hides its composer (source turns are not exempt from auto-collapse). A single `InlineThreadsOverlay` owns the document-global highlight registry and the floating composers (both live outside the memoized turn render path), re-anchoring on each transcript mutation. The unsent buffer persists per session in `localStorage` with each reply's text-quote anchor (quote + prefix/suffix context + char offset); sent-reply anchors ride the display-only user event, so composers re-anchor at their source turns on reload. Anchors reach the event and reload but are stripped from the Claude wire by the `<inline-replies>` allowlist (`from`/`quote`/`response`), leaving the wire payload unchanged.
 
+A reply answered on its own opens a shared-container side thread (`share_container=True`), which stops on its turn's `result` event via the registry's `on_turn_complete` disposition (§4.2). Promoting it onto the rail (§5.6) calls `promote_session()` and clears that disposition, so the session lives on the ordinary terms from then on and stops only when the reader stops it. What promotion does not touch: the session's identity (no new session, no fork), its `is_side_thread` marker, or its listing in the sessions panel - a promoted thread stays a thread under every filter that already read that marker.
+
+**Per-thread submit, a second send path alongside the batch one above.** Pressing Enter in a float no longer sends the batch - it forks the source session into the same container (`SessionService.fork(share_container=True)`, §6.1's shared disposition), sends the typed text there as one ordinary prompt via `POST /api/send?session_id=<id>` (`_shared.py`'s `SessionDep` resolves the query param on any route with no `{session_id}` path segment of its own - the same mechanism `/api/interrupt` and `/api/stream` use), and subscribes to that session's own stream (`EventsContext.subscribeSession`, §5.2) so the answer accumulates into the float instead of the transcript. The reply text goes as a plain prompt, never wrapped in the `<inline-replies>` envelope: there is exactly one reply and no turn being annotated, so `SessionService.send` falls through to its ordinary no-attachment branch unchanged. A reply already answered in its own float never joins a batch send; `markSent` filters it out alongside blank replies, and it stays in the same per-session `localStorage` record with a link to its side session (§5.20) rather than moving to a separate structure. The link is the only carrier - a side thread never produces an injected event, so there is nothing for it to ride on reload the way a batch-sent reply's anchor does.
+
+**A side thread's session ends with its answer, however that answer ends.** `SessionService.__init__` takes an `on_turn_complete` callback (`Callable[[str], Coroutine]`), wired only for a non-primary (member) instance by the registry's `start()` - never for the primary, which never stops itself on turn completion. Three triggers schedule it, each exactly once per turn: a `result` event and an injected `system`/`error` event both reach it through `_handle_event`; the runtime stream ending outright (no result, no injected event - `EventPipeline._run` setting `stream_lost` and returning) reaches it through a second done-callback on the pipeline task, since that exit produces no event at all. The callback is always scheduled via `asyncio.create_task`, never awaited inline: `_handle_event` and the pipeline's own done-callback both run on tasks that `stop()` cancels (the pipeline task itself, in the stream-lost case), so an inline stop would cancel the very task calling it. The scheduled task calls the registry's own `stop_session()` - the session-scoped stop §4.3 already exposes over HTTP, reached here as a direct method call instead. A `_turn_complete_scheduled` flag makes the schedule idempotent, since the three triggers can fire in combination for one turn ending (a `result` immediately followed by the pipeline task completing, for instance).
+
+**The read-only events route serves what `/api/stream` cannot: a stopped session's transcript.** `/api/stream` requires a live pipeline to attach to (`ensure_ready` raises once `stop()` has nulled the broadcaster), and a side thread spends most of its life stopped between turns. `GET /api/sessions/{id}/events` reads the session directory directly - `EventLog(session_id, workspace).read_all()`, the same read `EventPipeline.get_events()` does, but with no pipeline required - and reports whether that session is currently registered (`session_id in registry.live_ids()`) beside the events, since the events alone cannot say whether the exchange they end on is finished or still arriving. It bypasses `SessionDep` entirely, taking `RegistryDep` instead, because the whole point is reading a session that may have no live instance. A float resolves through this route on mount or reload; when it reports the session still running, the float also opens a stream subscription with `replay=False` (`SessionService.subscribe(replay=...)`, threaded through `BroadcastEventSourceResponse`'s `subscribe_kwargs`) - it has already read the persisted log through this route, so replaying it again would duplicate events under ids a side thread's per-restart event counter has likely already reused.
+
+**Promoting a side thread to its own session.** A side thread that outgrows its popup can be forked again - `SessionService.fork(reuse_container=False)`, the same fresh-container disposition the "fork in new browser tab" control already uses, opened the same way (`openSessionInNewTab`) - with two differences from an ordinary browser-tab fork. First, the promoted session's `parent_session_id` is overridden to the *source thread's own parent* rather than the side thread itself: a side thread is never drawn in the sessions tree, so a literal parent link would leave the promoted session's ancestor un-nested and undrawable; `fork()`'s new `parent_session_id` keyword defaults to the fork source when omitted, so every other caller is unaffected. Second, the side session is stopped (the same session-scoped stop above) before the fork copies its files, not after - `fork()` copies the session directory from disk, and `stop()` is what flushes the projection and closes the event log, so forking a still-running side thread would copy a half-written transcript. The float that hosted the conversation is kept, not torn down, and frozen: it re-reads the now-closed transcript through the read-only events route above (so what it shows is a fact about the stopped session on disk, not whatever the live stream last delivered) and stops offering a reply field or a promote control, showing a link to the promoted session instead. The freeze is written into the same per-session `localStorage` record the side-thread link already occupies - the promoted session's id sits beside it - because a stopped-but-unpromoted thread must keep its reply field on reload (replying resumes it), and only that extra field distinguishes the two cases.
+
 **Float placement clamps before it stacks.** `.inline-float` carries a definite CSS `width` (not `max-width`) so a box near the transcript edge doesn't shrink-fit into a narrow column. `overlayDom.js`'s `clampHorizontal(box, bounds)` pulls `left` inside the transcript's own bounds (not the viewport, since the float is portalled to `document.body`) before `stackFloats` resolves vertical collisions. `useSelectionQuote`'s floating quote button applies the same clamp against an approximate fixed footprint, since it has no ref to measure before mount.
 
 **Event types**: `user`, `assistant`, `system`, `result`.
@@ -436,10 +483,10 @@ POST /api/sessions/{id}/resume
 Monitors background Task agents spawned by the SDK:
 
 1. **Detection**: `tool_result` with `isAsync=true` → `AsyncTaskManager._start_monitor()`
-2. **Monitoring**: `AsyncTaskMonitor` tails the task's output file (JSONL), converts lines via `dict_message_to_events()`, emits as nested events with `parent_tool_use_id`
+2. **Monitoring**: `AsyncTaskMonitor` tails the task's output file (JSONL), converts lines via `dict_message_to_events()`, emits as nested events with `parent_tool_use_id`. The live SDK stream carries the same nested calls in real time, so both paths can deliver one event twice; `EventPipeline._process_event` reconciles them, keeping whichever of the two arrives first per `(parent_tool_use_id, subtype, tool_use_id-or-trimmed-content)` key and dropping a later cross-source match
 3. **Enrichment**: `task_notification` system events get their generic summary replaced with actual agent output from the output file
 4. **Completion**: `task_notification` → `_stop_monitor()` → graceful drain
-5. **Resume**: `reattach()` scans historical events for in-progress tasks, restarts monitors from last known file offset
+5. **Resume**: `reattach()` scans historical events for in-progress tasks, restarts monitors from last known file offset; `EventPipeline._initialize()` seeds the same reconciliation map from those historical events first, so a monitor's post-restart replay isn't mistaken for a fresh call
 
 #### Persistence
 
@@ -484,7 +531,7 @@ The boundary: **event persistence and projection writes own the default executor
 
 The frontend consumes the runtime capability surface (§1.4) to gate UI affordances that depend on optional features. The wiring is intentionally narrow:
 
-- **Source of truth** — the session-info envelope (`GET /api/sessions/current`) and the workspace session-defaults endpoint (`GET /api/workspaces/{id}/session-defaults`) both carry `capabilities` (the 16-flag matrix) and `runtime_name` as sibling fields. The SSE init event payload also carries them on session-start.
+- **Source of truth** — the session-info envelope (`GET /api/sessions/current`) and the workspace session-defaults endpoint (`GET /api/workspaces/{id}/session-defaults`) both carry `capabilities` (the 15-flag matrix) and `runtime_name` as sibling fields. The SSE init event payload also carries them on session-start.
 - **Storage** — `SessionDataContext` exposes both fields on its read-only value. `useSessionDefaults` returns the daemon's pre-session response (used by the welcome screen before any container attaches).
 - **Hook** — `useCapabilities()` returns `{capabilities, runtimeName}`, preferring the in-session source and falling back to session-defaults so the welcome screen behaves correctly before a session is alive.
 - **Race window** — `capabilities === null` while neither source has resolved. Consumers default to **show-all** in that window so new sessions never flash an empty UI.
@@ -573,7 +620,7 @@ Attachment is keyed on presence in the container list, not on having a live task
 
 ### 2.1 Config Hierarchy
 
-TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional).
+TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional), `links_allow` (`[links] allow`, optional).
 
 `ContainerRuntime` combines `Config` + `ContainerBackend` + CLI flags into a single runtime object.
 
@@ -608,7 +655,7 @@ Mount types yielded by `get_volumes()` (in `claudebox.containers.run`):
 | Runtime overlay | `lib/container/run/fs/*` | `/*` | Entrypoint, scripts, .bash_env |
 | Library source | `lib/` | `/root/.claudebox/lib` | Python packages + tests + config |
 | Profile | `profile/` | `/root/.claudebox/profile` | User config, hooks, prompt |
-| Sessions | `.claudebox/sessions` | `/root/.claudebox/sessions` | Session data persistence |
+| Sessions | `.claudebox/sessions` | `/root/.claudebox/sessions` | Session data persistence, and (§6.3) the workspace's vertical control channel - the spawn socket lives directly in this directory |
 | Claude configs† | `.claudebox/fs/root/.claude` | `/root/.claude` | Claude Code settings dir |
 | Claude config file† | `.claudebox/fs/root/.claude.json` | `/root/.claude.json` | Claude Code config file |
 
@@ -630,6 +677,9 @@ Container shutdown is split into three daemon-side operations:
 | `ContainerService.kill_container(id)` | `POST /api/workspaces/{ws}/containers/{id}/kill` | `runtime.kill_container(...)` → `backend.kill` (SIGKILL) | Immediate kill; leave it STOPPED in the registry |
 | `ContainerService.remove(id)` | (none — internal) | `runtime.remove_container(...)` → `podman rm --force` | Delete the registry entry + the container record |
 | (composite) | `DELETE /api/workspaces/{ws}/containers/{id}` | `stop_container() → remove(id)` | Used by the web UI's tab-close behavior — preserved as a single round-trip |
+| — (proxied, no daemon method) | `POST .../containers/{id}/api/sessions/{session_id}/stop` | Container API's own `SessionRegistry.stop_session()` (§4.2/§4.3) | Stop and remove one non-primary session inside the container; the container process, the primary, every other session, `/tmp` and the log stream are untouched |
+
+All three daemon-side operations above act on **every session the container hosts** — a container-wide stop, kill or delete ends the primary and every non-primary session together. The session-scoped stop is a distinct, narrower verb: one entry, not the container.
 
 CLI verbs:
 - `containers stop <id>` → POST `/stop` (graceful SIGTERM with default 10s grace).
@@ -732,28 +782,29 @@ The toolchain shares the session container's network namespace (`netns = "host"`
 
 ## 4. Container API (`claudebox_container_api`)
 
-HTTP plumbing only: the FastAPI app, the handlers that route REST calls into the `Session` facade (§1.5), the file service, the lifespan glue around the active session singleton, and the structlog wiring with the SSE log broadcaster. All session orchestration lives in `claudebox/agent_session/orchestration/` (§1.5); this layer consumes the `Session` interface and the Protocol, never the SDK directly.
+HTTP plumbing only: the FastAPI app, the handlers that route REST calls into a `Session` facade instance (§1.5), the file service, the lifespan glue around the container's session registry, and the structlog wiring with the SSE log broadcaster. All session orchestration lives in `claudebox/agent_session/orchestration/` (§1.5); this layer consumes the `Session` interface and the Protocol, never the SDK directly.
 
 ### 4.1 Module Map
 
 ```
+__init__.py             # Package entry — re-exports run_container_api()
 app.py                  # FastAPI factory, lifespan, ApiError exception handler
 logging.py              # structlog configuration: configure_logging(), get_logger(), LogBroadcaster, attach/detach session file log
-constants.py            # FILE_INDEX_CACHE_TTL, LOG_REPLAY_BUFFER_SIZE, CONTAINER_API_LOG_FILENAME (HTTP-layer only — session vocabulary moved to claudebox/constants.py)
-session_lifespan.py     # `current` Session singleton + managed() async context manager + get_session() dependency
+constants.py            # FILE_INDEX_CACHE_TTL, CONTAINER_API_LOG_FILENAME (HTTP-layer only — session vocabulary moved to claudebox/constants.py)
+session.py              # SessionRegistry (keyed Session instances, one primary) + managed() async context manager + get_session()/get_registry() dependencies
 
 files/
+├── __init__.py
 ├── path_resolver.py    # PathResolver — resolve file references for click-to-open
 ├── file_service.py     # FileService — wraps PathResolver and exposes resolve_paths() to handlers
 └── errors.py           # FileServiceNotReady and other file-related error types
 
 handlers/
+├── __init__.py         # Aggregates every sub-router into api_router
 ├── chat.py             # Send, stream (SSE), interrupt, model/permission-mode/effort-level switching
 ├── sessions.py         # Session CRUD: list, current, new, resume, attachments, tool output (current-prefixed)
 ├── files.py            # /api/files/resolve-paths — bulk path resolution for the frontend's click-to-open
-├── info.py             # Workspace metadata
-├── lifecycle.py        # Health check, graceful shutdown
-├── logs.py             # SSE log streaming
+├── lifecycle.py        # Health check, log streaming
 ├── mcp.py              # /api/mcp/{reconnect,toggle,status} — manage MCP servers used by the SDK
 ├── _shared.py          # FastAPI dependency injection (SessionDep, FilesDep annotated types)
 └── _models.py          # Pydantic request/response models
@@ -765,45 +816,82 @@ PathResolver's file index persists to `{workspace}/.claudebox/path-index.json` (
 
 ```python
 # session.py
-current: Session | None = None
+class SessionRegistry:
+    """Keyed Session instances sharing one container; one is primary."""
+
+    def get(self, session_id: str | None = None) -> Session:
+        """Resolve by id, or the primary when unaddressed."""
+
+    async def start(self, resume_session_id, *, primary: bool = True) -> str:
+        """primary=True stops the current primary first (replacing); primary=False joins
+        the container as a member and never stops or redesignates anything - and if the id
+        it names is already registered, hands back that running entry instead of building
+        a second one over it."""
+
+    async def stop_session(self, session_id: str) -> None:
+        """Stop and remove one non-primary entry. Refuses the primary."""
+
+    def promote_session(self, session_id: str) -> None:
+        """Cancel a member's turn-complete auto-stop - it runs until stopped like any other."""
+
+    async def stop_all(self) -> None:
+        """Stop and remove every entry - the lifespan's shutdown contract."""
 
 
-def get_session() -> Session:
-    """Return the active session, raising SessionNotReady if uninitialized."""
+registry: SessionRegistry | None = None
+
+
+def get_session(session_id: str | None = None) -> Session:
+    """Resolve the addressed session, or the primary. Raises SessionNotReady if unset."""
+
+
+def get_registry() -> SessionRegistry:
+    """Return the active registry, raising SessionNotReady if unset."""
 
 
 def managed(**kwargs):
     """Async context manager for FastAPI lifespan.
 
-    Creates a Session instance but does NOT auto-start a session.
-    The daemon explicitly triggers session creation via
-    POST /api/sessions/new or POST /api/sessions/{id}/resume
-    after the container is healthy.
+    Constructs the registry but starts no session. The daemon explicitly triggers the
+    first session via POST /api/sessions/new or POST /api/sessions/{id}/resume after the
+    container is healthy; later ones may join non-primary via ?primary=false.
     """
-    # Startup: current = Session(...)
-    # Shutdown: await current.stop(); current = None
+    # Startup: registry = SessionRegistry(...); container-scoped logging starts here too
+    # Shutdown: await registry.stop_all(); registry = None
 ```
 
-`Session` is imported from `claudebox.agent_session.orchestration.session`. All handlers access `session_lifespan.current` via the `get_session()` dependency injected through `SessionDep` in `handlers/_shared.py`.
+Two rules govern the registry, and nowhere else states them: the primary is fixed at the container's first session start and is never re-designated by a later one — the daemon's `HealthMonitor` writes whatever `/api/health` reports straight onto the container record every poll, so a re-designation would silently re-perform the ownership transfer this rule exists to prevent; and the primary is the only entry that maps `/tmp` (§1.5).
+
+`Session` is imported from `claudebox.agent_session.orchestration.session`. Handlers access an addressed or primary `Session` instance via the `get_session()` dependency injected through `SessionDep`, or the registry itself via `get_registry()` through `RegistryDep`, both in `handlers/_shared.py`. `get_session`'s `session_id` parameter resolves from a path segment where a route declares one (e.g. the session-scoped stop below) and from an optional query parameter everywhere else — the parallel addressing form every existing `/current`-scoped route gained without changing its body.
+
+Container-scoped logging (§1.1 `Broadcaster`, `logging.py`'s `start_logging`/`stop_logging`) is wired once in `managed()`, not per session: one log file and one SSE broadcaster for the container's whole life, independent of any session's start or stop, so a non-primary session's stop can never take `/api/logs` down for sessions still running.
+
+**The daemon's shared-container fork calls `start(primary=False)`, never `resume()`/`restart()`.** `resume()` (§4.3) is `restart()` — `stop()` then `start()` — which is exactly the mechanism a shared fork must not trigger against the container's primary. `SessionService.fork(share_container=True)` (`claudebox_daemon/domain/sessions/service.py`) instead POSTs to `/api/sessions/{id}/resume` with `?primary=false`, reaching the same registry `start()` verb documented above: the new session joins the container without stopping or redesignating anything. A side thread's registry entry churns independently of its container membership — `stop_session()` removes the entry every time the thread finishes answering, and a later reply recreates it via the same `?primary=false` start — while the daemon-side `Container.members` list it belongs to is written once, at first join, and never touched again for that thread's life. The two lifetimes track different things: registry entries track *is this session's process live right now*, membership tracks *is this session addressable in this container at all*. Registry churn is therefore ordinary traffic for a container hosting side threads rather than an edge case: a thread's entry is created and destroyed once per turn (`on_turn_complete`, §1.5), not once per session, so a container with several open floats sees entries appearing and disappearing constantly while its member list only ever grows.
+
+**Promoting a thread onto the session rail (§5.6) is the one exception to that per-turn churn.** `on_turn_complete` is wired once, at construction, from a bare `Callable | None` parameter with no setter — nothing before this reached back into an already-running entry to change its disposition after the fact. `promote_session()` adds exactly that: it clears the callback on the addressed entry so its next (and every later) `result` no longer triggers `stop_session()`, without touching the entry itself, its container membership, or the side-thread marker `is_side_thread` reads. A container hosting a promoted thread therefore has both lifetimes live in its registry at once — most member entries still churning per turn, one or more promoted entries living exactly as long as the primary does, until stopped by hand like any other session.
+
+**One entry per session id.** A member start (`primary=False`) naming an id already registered — including the primary's own — settles that entry's in-flight `on_turn_complete` disposition and returns the entry still running, never a fresh one built over it; a primary start's replacing semantics are unconditional and unaffected by this guard.
 
 ### 4.3 API Endpoints
 
-All session-state endpoints address the *currently active* session via the `/current` path segment; only `/resume` carries an explicit session ID (because that ID is the resume target, not the current session).
+All session-state endpoints address the *primary* session by default via the `/current` path segment. Every one of them also accepts an explicit `session_id` — as a query parameter where the route has no `{session_id}` path segment of its own (`SessionDep`'s `get_session(session_id=...)` resolves it either way), or from the path where one exists. `/new` and `/{id}/resume` additionally take a `primary` query flag (default `true`): `primary=false` starts a session that joins the container as a member instead of replacing the primary. Consequence: a peer on the workspace network can drive a container's *active* session through these routes, but there is no route that *reads* a different session's transcript — a sibling reads another session's history from the bind-mounted sessions tree instead (§1.4 "Sibling sessions").
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/send` | POST | Queue prompt for SDK processing |
-| `/api/stream` | GET (SSE) | Event stream with replay |
-| `/api/interrupt` | POST | Stop current SDK processing |
-| `/api/model` | POST | Switch active model |
-| `/api/permission-mode` | POST | Switch permission mode |
-| `/api/effort-level` | POST | Switch effort level |
-| `/api/sessions` | GET | List all sessions on disk |
-| `/api/sessions/new` | POST | Create new session (returns pre-generated `session_id`) |
-| `/api/sessions/current` | GET | Active session summary |
-| `/api/sessions/current` | PATCH | Update current session metadata |
+| `/api/send` | POST | Queue prompt for SDK processing (primary, or `?session_id=`) |
+| `/api/stream` | GET (SSE) | Event stream (primary, or `?session_id=`); replays persisted history unless `?replay=false` |
+| `/api/interrupt` | POST | Stop current SDK processing (primary, or `?session_id=`) |
+| `/api/model` | POST | Switch active model (primary, or `?session_id=`) |
+| `/api/permission-mode` | POST | Switch permission mode (primary, or `?session_id=`) |
+| `/api/effort-level` | POST | Switch effort level (primary, or `?session_id=`) |
+| `/api/sessions/new` | POST | Start a session; `?primary=false` joins as a member instead of replacing the primary |
+| `/api/sessions/current` | GET | Active session summary (primary, or `?session_id=`) |
+| `/api/sessions/current/capabilities` | GET | Capability matrix + runtime name + per-capability catalogs |
 | `/api/sessions/current/prompt` | PATCH | Update current session prompt text |
-| `/api/sessions/{id}/resume` | POST | Resume a previous session as current |
+| `/api/sessions/{id}/resume` | POST | Resume a session; `?primary=false` joins as a member instead of replacing the primary |
+| `/api/sessions/{id}/stop` | POST | Stop and remove one non-primary session; refuses the primary (400 `cannot_stop_primary`) |
+| `/api/sessions/{id}/promote` | POST | Cancel a member session's turn-complete auto-stop; runs until stopped like any other session from then on |
+| `/api/sessions/{id}/events` | GET | Persisted events for a named session plus whether it is currently registered - reads the session directory directly, no live instance required |
 | `/api/sessions/current/attachments/{filename}` | GET | Serve attachment from current session |
 | `/api/sessions/current/tool-output/{tool_use_id}` | GET | Fetch tool output content |
 | `/api/sessions/current/tool-output/{tool_use_id}/download` | GET | Download tool output file |
@@ -811,10 +899,8 @@ All session-state endpoints address the *currently active* session via the `/cur
 | `/api/mcp/status` | GET | MCP server status snapshot |
 | `/api/mcp/reconnect` | POST | Reconnect a configured MCP server |
 | `/api/mcp/toggle` | POST | Enable/disable a configured MCP server |
-| `/api/info` | GET | Workspace metadata |
-| `/api/health` | GET | Health check |
-| `/api/shutdown` | POST | Graceful shutdown |
-| `/api/logs` | GET (SSE) | Container API log streaming |
+| `/api/health` | GET | Health check - reports the primary's `session_id` (the daemon's ownership authority) plus `live_session_ids`, every session currently registered |
+| `/api/logs` | GET (SSE) | Container API log streaming - container-scoped, unaffected by any session's start or stop |
 
 ---
 
@@ -831,16 +917,18 @@ src/
 ├── context/          # React Context providers (split contexts — see §5.3)
 ├── features/         # Feature modules (self-contained)
 │   ├── app/          # App shell, AppProviders, cross-cutting effects
-│   ├── chat/         # ChatPanel, ChatController, terminal column (components/terminal/)
+│   ├── chat/         # ChatPanel, ChatController, session rail (components/SessionRail.jsx, AncestorGroup.jsx, hooks/useSessionRail.js, hooks/useAncestorTranscript.js, utils/sessionRail.js - see §5.6), right-slot view registry (utils/rightSlotViews.js) - one directory per view under components/ (components/terminal/, components/work/)
 │   ├── boards/       # BoardsPanel, BoardTab
 │   ├── bookmarks/    # BookmarksPanel
-│   ├── commands/     # CommandsPanel
+│   ├── containers/   # ContainersPanel, ContainerRow
 │   ├── footer/       # Footer bar
 │   ├── help/         # HelpPanel
 │   ├── icon-strip/   # Panel toggle icon strips (left + right)
+│   ├── layout/       # BottomPanelContainer — fixed-position bottom-panel strip
 │   ├── logs/         # LogsPanel
 │   ├── mcp/          # McpPanel
 │   ├── sessions/     # SessionsPanel
+│   ├── skills/       # SkillsPanel
 │   ├── stash/        # StashPanel
 │   ├── tasks/        # TasksPanel
 │   ├── todos/        # TodosPanel
@@ -848,22 +936,29 @@ src/
 ├── components/       # Cross-feature React components (CopyButton, ConfirmSwitchModal, Dropdown, Markdown, MermaidDiagram, PanelControlBar, PanelListItem, PathHighlighter)
 ├── hooks/            # Cross-feature hooks (useBookmarks, useBottomAutoscroll, useDaemonStream, useDropdown, useIsMobile, useLocalStorage, useNewSession, usePathResolution, usePointerDragHandle, useSSE)
 ├── managers/         # Coordination logic classes — see §5.5
-├── utils/            # Cross-feature pure functions (event processing, predicates, formatters, parsers, language detection, diff, xml block folding, scroll, color, comparators, collections, attachment helpers, layout persistence, mermaid loader, path candidates, bookmark IDs, categorization, navigation, flash status)
+├── test-utils/       # Shared test render helpers and fixtures
+├── utils/            # Cross-feature pure functions (event processing, predicates, formatters, parsers, language detection, diff, xml block folding, scroll, scroll-intent latch, nested-scrollable detection, color, comparators, collections, attachment helpers, layout persistence, mermaid loader, path candidates, bookmark IDs, categorization, navigation, flash status)
 ├── main.jsx          # React entry point
 └── main.css          # Cascade orchestrator (imports all feature index.css in order)
 ```
 
 ### 5.2 SSE Connection
 
-`SSEConnectionManager` manages the `EventSource` to the container SSE endpoint (routed via daemon as `/api/workspaces/{wsId}/containers/{cId}/api/stream`):
+One `SSEConnectionManager` instance owns one `EventSource` — that part is unchanged, and the manager class itself needs no reshaping to support more than one. What changed is what owns the instances: `useSSE` holds a single "primary" manager (the active session's stream, recreated on URL change — a switch, not a second connection) plus an independent, keyed `Map` of additional managers via `openKeyed(key, url, { onMessage })` / `closeKeyed(key)`. `EventsContext.subscribeSession(sessionId, containerId, onMessage)` is the first consumer of the keyed form: it opens a second stream, routed via daemon as `/api/workspaces/{wsId}/containers/{cId}/api/stream` exactly like the primary, whose events reach only the caller-supplied callback — never this context's own reducer, so the active session's transcript cannot absorb another session's events.
+
+Each manager, primary or keyed, follows the same lifecycle:
 
 1. Connect → dispatch `connecting`
 2. `onopen` → dispatch `connected`
-3. `onmessage` → parse JSON, handle replay boundaries, buffer into the streaming batch or the replay queue
+3. `onmessage` → parse JSON, handle replay boundaries, buffer into the streaming batch or the replay queue (primary only — a keyed manager's messages go straight to its own callback, no batching or replay handling)
 4. `onerror` → close, auto-reconnect with exponential backoff (1s–10s)
 5. `close()` → permanent shutdown (`_closed` flag prevents reconnect)
 
-**Daemon Reconnect Recovery**: `DaemonReconnectEffect` monitors the daemon SSE connection and triggers automatic session recovery when the daemon restarts — tracked as a non-initial `connected` transition, so the first connect never fires it. If the container SSE is still alive, recovery is skipped; otherwise it calls the resume endpoint for a fresh container ID and reconnects the container SSE. Failure shows the user a "Session reconnect failed" error.
+**Daemon Reconnect Recovery**: `DaemonReconnectEffect` monitors the daemon SSE connection and triggers automatic session recovery when the daemon restarts — tracked as a non-initial `connected` transition, so the first connect never fires it. If the container SSE is still alive, recovery is skipped; otherwise it calls the resume endpoint for a fresh container ID and reconnects the container SSE. Recovery acts on the primary manager only; a keyed subscription for another session is the opening caller's own concern to reconnect, since the effect has no way to know which sessions have one open.
+
+**No-replay attach.** `subscribeSession` takes a third option, `{ replay: true }` by default, forwarded as `?replay=false` on the keyed stream URL when a caller passes `false`. A per-thread float in the inline-replies overlay is the first caller to pass it: on submit it opens the keyed stream fresh (nothing persisted yet, so nothing to replay), and on mount or reload it reads the persisted transcript through the read-only events route first (§1.5) before opening the stream, so replaying the same log a second time would duplicate content under ids a restarted side thread's event counter has likely already reused. The primary's own subscription always replays; only a keyed caller that already knows what it has read chooses otherwise.
+
+The session rail (§5.6) opens no subscription of its own. An ancestor group is a static read (`getSessionEvents`, the same read-only route above) taken once on mount; it never calls `subscribeSession`, so a rail with several ancestor groups on screen still holds exactly one live connection — the focused group's primary.
 
 ### 5.3 State Management
 
@@ -874,16 +969,16 @@ Split contexts ordered by update frequency:
 | AppActionsContext | NEVER (stable) | Stable refs (scroll position, autoscroll, jump targets) + action callbacks (`focusChatTab`, `maximizeToggle`, `closePanel`) |
 | WorkspaceContext | LOW (mount + selection) | workspaceId, workspaces, selectWorkspace — daemon workspace discovery and selection |
 | DaemonStreamContext | LOW (SSE events) | progressMessage, sessionsChanged, containerStatus, lastContainerEvent — single daemon SSE connection shared by all consumers |
-| SessionsContext | LOW (SSE-driven) | sessions list, pinned sessions — refetches on sessions_changed and container_status events |
-| SessionRoutingContext | MEDIUM (hash changes) | `activeWorkspaceId`, `activeSessionId`, `activeBoardId`, `density`, `navigateToSession`, `navigateToBoard`, `navigateToWorkspace`, `navigateHome`, `setDensity` — pure hash-based routing; density preference (`?density=terse` query) threaded through board navigation and persisted via `replaceState` to avoid history pollution |
-| EventsContext | HIGH (SSE stream) | event log, turn grouping, visible-events filter, responding state, connection status, replay flag, turn-derived state (results, task notifications, todo diffs, subagent labels, todos-by-subagent), transient lifecycle flags consumed by the footer status indicator (`isCreating`/`isResuming`/`isForking`/`isOpeningBoard`/`isOpeningWorkspace`) |
+| SessionsContext | LOW (SSE-driven) | sessions list, pinned sessions, panel filter — refetches on sessions_changed and container_status events. The sessions panel's filter strip narrows this one fetched list client-side rather than requesting a filtered list per tab; usage aggregation and per-session browser-storage collection both derive from the same full list, so a filtered fetch would silently drop spend and skip live storage for sessions outside the chosen filter. The panel's search box bypasses `buildSessionTree` entirely and matches the same fetched list flat, ignoring the active filter - the tree reaches a child only through its own root, so a matched fork whose parent does not match would otherwise never render; search state (query, open/closed) lives in the panel component itself, never in this context, since unlike the filter it is not meant to survive a reload. The exposed panel filter is derived: a stored pick plus an unstored fallback flag the panel sets when the open session is absent from the pick, so a fallback the context makes for itself can never be written back as the reader's own choice |
+| SessionRoutingContext | MEDIUM (hash changes) | `activeWorkspaceId`, `activeSessionId`, `activeBoardId`, `density`, `navigateToSession`, `navigateToBoard`, `navigateToWorkspace`, `navigateHome`, `setDensity` — pure hash-based routing; density preference (`?density=terse` query) threaded through board navigation and persisted via `replaceState` to avoid history pollution. `activeSessionId` is the session rail's FOCUSED group (§5.6), not necessarily the only group on screen — `useSessionRail` (`features/chat/hooks/`) derives the rail's ancestor chain from this plus the fetched sessions list, counting only the hops that began a new conversation inside another; the rail itself holds no routing state of its own |
+| EventsContext | HIGH (SSE stream) | event log, turn grouping, visible-events filter, responding state, connection status, replay flag, turn-derived state (results, task notifications, todo diffs, subagent labels, todos-by-subagent), transient lifecycle flags consumed by the footer status indicator (`isCreating`/`isResuming`/`isForking`/`isOpeningBoard`/`isOpeningWorkspace`). The reducer-derived state above stays single-session — addressable per session is `subscribeSession`/`unsubscribeSession` (§5.2) alone, a raw side channel a caller drains itself; the active session's turns/events/replay state are global and unaffected by any keyed subscription. Unchanged by the session rail: an ancestor group reads its transcript through `useAncestorTranscript`'s own one-shot fetch (§5.2), never through this context |
 | LogsStreamContext | LOW (SSE events) | Aggregated log stream from the container API for the LogsPanel |
 | InteractionContext | MEDIUM (user actions) | isSubmitting, isAwaitingResponse, interruptStatus, errorMessage |
 | SessionDataContext | LOW (polling) | sessionData, availableModels, availablePermissionModes, availableEffortLevels, notificationsEnabled. Bootstrap data is seeded from the `/sessions/new` create-response (full `SessionInfo` shape) so the footer renders populated from frame 1. `refreshSession`'s subsequent partial `getSession()` responses merge defensively — when prev and data carry the same `session_id`, non-null prev fields are retained against null data fields, preventing footer fields from regressing as the projection settles. |
 | SessionActionsContext | NEVER (stable) | Stable action callbacks co-defined alongside `SessionDataContext` in `SessionDataContext.jsx` |
 | BookmarksContext | LOW (user actions) | Per-workspace bookmark list, server-persisted |
 | StashContext | LOW (user actions) | stash items, server-persisted |
-| ContainerMapContext | LOW (daemon events) | containerMap, stoppingSessions — maps session IDs to container IDs; tracks sessions in stopping state. Exposes `deriveSessionStatus(sessionId, sessions, fallbackContainerId)` — the single status source (stopping > running > none) all dot surfaces (sessions panel, header strip, bookmarks) route through so they cannot diverge |
+| ContainerMapContext | LOW (daemon events) | containerMap, stoppingSessions — maps session IDs to container IDs; tracks sessions in stopping state. Exposes `deriveSessionStatus(sessionId, sessions, fallbackContainerId)` — the single status source (stopping > running > none) all dot surfaces (sessions panel, header strip, bookmarks) route through so they cannot diverge. This map is also the request path's addressing source: `containerFetch`/`containerUrl` (`api/apiClient.js`) take an optional explicit container id, and a caller resolves it by reading `containerMap[sessionId]` before naming a session other than the active one — a promotion from feeding only the status dots to being the lookup non-primary requests go through |
 
 ### 5.4 Event Batching
 
@@ -905,7 +1000,8 @@ Replay path:
   Drain tick → replaySliceEnd() picks a cut ≤ REPLAY_DRAIN_SLICE_SIZE
             → REPLAY_SLICE { batchEvents }
               → fold applyEventFlags over the slice, then flushBatch
-            → reschedule while the queue is non-empty or the server has not finished
+            → post a port message for the next slice while the queue is non-empty
+  Queue empty, server still sending → idle; the next arriving event schedules the next slice
   Queue empty + replay_ended seen → REPLAY_ENDED (flags only, carries no events)
 ```
 
@@ -913,8 +1009,12 @@ Replay path:
 `replay_ended`. The commit phase is atomic, so one commit carrying an entire transcript cannot be
 interrupted — on a heavy session it never finishes and the tab locks until the browser discards the page.
 Draining in slices trades one unusable commit for many tolerable ones, giving the browser a paint and
-input window between each. `REPLAY_DRAIN_SLICE_SIZE` (50) is tuned on the longest single main-thread
-block, not on total load time; total time is bounded by the windowed turn list instead.
+input window between each. Each slice reaches the next macrotask through a `MessageChannel` port rather
+than a timer, because a hidden tab clamps `setTimeout` to one call a second — and to roughly one a minute
+once Chrome's intensive throttling engages — which paced an unfocused replay by the clamp rather than by
+the work. `REPLAY_DRAIN_SLICE_SIZE` bounds the longest single main-thread block, and with it how many turns
+cross the transcript's unwindowed active-turn slot: turns landing inside one slice go straight to the
+windowed list, so a larger slice fully mounts fewer of them on the way past.
 
 Three invariants hold the drain together:
 
@@ -927,8 +1027,9 @@ Three invariants hold the drain together:
    buffer at end of batch. A cut placed inside an open run would therefore attach the compaction block to
    the preceding turn. `replaySliceEnd` (`context/utils/replaySlice.js`) walks the candidate slice and
    extends or withholds the cut so every run resolves inside one slice.
-3. **The drain is cancellable.** `CLEAR_EVENTS`, reconnect, and close all clear the queue and its timer, so
-   a pending slice cannot commit the previous session's events into a freshly cleared chat.
+3. **The drain is cancellable.** `CLEAR_EVENTS`, reconnect, and close all clear the queue and drop the
+   scheduled slice, so a pending slice cannot commit the previous session's events into a freshly cleared
+   chat. An already-posted port message still lands, finds the queue empty, and returns without dispatching.
 
 Replay progress reports events *materialized*, not events received, so the indicator tracks what is
 actually on screen.
@@ -979,11 +1080,13 @@ Measurement is rounded to whole pixels, and a measurement of zero is refused in 
 
 Whether the list is windowed at all is decided by what the virtualizer produced, not by a second reading of the container. The two disagree readily - the virtualizer sizes itself from `offsetHeight`, while an element also reports `clientHeight` and a bounding rect - and the disagreement surfaces as a chat with a full scroll extent and nothing in it. An empty window where turns exist means no window could be computed, so the list renders all of them. Before the container attaches there is nothing to read at all, so the virtualizer is given the window height as its `initialRect`: without it the first commit after any remount renders the entire transcript before the ref lands.
 
-**Known limitation.** A session of roughly 200+ turns can still trip React's maximum-update-depth guard and leave the chat blank, intermittently. This predates windowing: the same session reproduces it on builds from before both the chunked replay drain and this list, where it rendered nothing at all rather than a bounded window. Windowing bounds the cost and gets the session on screen in seconds, but does not remove the underlying cycle. Note that no shipped test fixture is long enough to reach the failing condition - the largest is 16 turns - so a green suite says nothing about it.
+**Scroll-element attachment.** The scroll container reaches the virtualizer through a callback ref (`useScrollElementRef` in `useVirtualListGeometry.js`), attached at `.chat-messages` (transcript), `.terminal-column`, and `.work-column`. React invokes a callback ref only on a genuine mount, unmount, or node swap, so the element enters state exactly once per attachment - never on an unrelated re-render. It also writes the caller's own ref object (`externalRef.current = node`), so every other reader of that ref (scroll ownership, jump targeting, minimaps) keeps working unchanged; the callback is an additional way to reach the element, not a replacement for the ref.
+
+This replaced an earlier mirror that read the ref into state from a layout effect with no dependency array, so it ran on every commit regardless of whether anything had changed. Its `prev === el ? prev : el` guard suppressed the resulting re-render but not the dispatch: React's eager bail-out for an identity-guarded update only applies while the fiber has no other pending work, and react-virtual's own `rerender()` dispatch (fired from a row's `measureElement` ref earlier in the same layout phase) marked the fiber's lanes non-zero first - so the guard's bail-out failed and the mirror rescheduled on every commit it shared with a real measurement. Riding along with a session's own legitimate re-measurement cascade, that redundant reschedule was enough to cross React's fifty-nested-update limit, which is what actually threw and blanked the chat. `e2e/app/fixtures/events/perf-350.jsonl` is the fixture that reaches that scale; no shipped fixture did before it, so a green suite said nothing about this class of failure.
 
 **Minimap sizing**: every turn's segment is priced by `predictTurnHeight` - a content-derived estimate scaled to chat column width (text wrap, tool/thinking blocks, attachment rows, collapsed strips), the same estimator the virtualizer uses for unmounted rows. Coefficients live in `config/dimensions.js`; `e2e/app/tests/predictor-calibration.spec.js` holds per-fixture drift under 30% across three viewport widths, each swept with the terminal split both on and off, by scrolling each fixture turn into view and measuring it while mounted.
 
-`predictTurnHeight`'s 4th parameter, `splitEnabled`, routes through the `isTopLevelBashCall` predicate `groupBlocks` uses (§5.10), so a top-level Bash call is priced at zero while the split is on and a subagent's nested one keeps the ordinary tool-row price either way - predicted and rendered heights agree in both states. `useTurnVirtualizer` calls `virtualizer.measure()` on the flag's edge rather than every render, so mounted turns re-price immediately instead of holding a pre-flip cached height until they happen to remount.
+`predictTurnHeight`'s 4th parameter, `mode`, routes through `isToolBlockVisible` - the same predicate `hasVisibleBlock` gates the assistant bubble on (§5.6, §5.10) - so a routed-away top-level call prices at zero while a subagent's nested one keeps the ordinary tool-row price regardless of mode, and a turn `hasVisibleBlock` reports empty sheds the assistant half of its split base height in the predictor too. `useTurnVirtualizer` calls `virtualizer.measure()` on the mode's own edge (any transition, not only an on/off flip) rather than every render, so mounted turns re-price immediately instead of holding a pre-flip cached height until they happen to remount.
 
 Heights are deliberately NOT sourced from real measurements. With the list windowed only a handful of turns have a height at any moment, and feeding those back into state re-renders the list, which mounts and measures more turns, which publishes again - a cycle that does not settle. Predictions are complete and independent of what happens to be on screen, so minimap proportions no longer depend on where the user has scrolled. Heights are keyed by `turn_id`, so a turn keeps its size when the list shifts underneath it (a compaction dropping an earlier turn, a rewind). The human-message marker drawn inside each segment is predicted the same way, for the same reason: measuring it needs the turn mounted, and sizing only the mounted few would flatten every other marker to its minimum.
 
@@ -1016,7 +1119,22 @@ bar above the footer when at least one bottom-slot panel is open and shrinks
 └────────────────────────────────────────────┘
 ```
 
-**Panel registry**: `config/layout.js` is the central panel configuration — maps panel IDs → components, defines side assignments (left/right/bottom), and canonical ordering per side. Bottom-slot panels are intentionally absent from `PANEL_SIDES` for dockview routing — they route through `BottomPanelsContext`, not `SidePanelManager`. The bottom-side membership is published dynamically by `<IconStrip>`: each strip with `bottomPanels=[...]` calls `setBottomPanelIds(position, ids)` to declare everything its side owns, and clears its side on unmount, so `useBottomPanels().panelSideMap` always reflects the current membership.
+**Session rail**: the `ChatPanel` box above is a simplification — `MainPanel`'s chat branch (§5.18) renders `SessionRail`, not a bare `ChatPanel`, whenever a session is routed. Depth lives on its own horizontal axis, orthogonal to the vertical right-slot split described below — drilling into a child session pushes a new group onto the rail rather than replacing the current view. The rail holds one live group and any number of read-only ancestor groups:
+
+- **Focused group** — the routed session (`SessionRoutingContext`'s `activeSessionId`, §5.3), rendered as an ordinary live `ChatPanel`: messages, message box, right-slot split, minimap. Exactly one group is ever live.
+- **Ancestor groups** (`features/chat/components/AncestorGroup.jsx`) — every session the climb marks as a drill-down hop between the chain's root and the focused one (a side thread promoted to its own session, or a sibling an agent started — never a fork), rendered read-only: a single fixed-width column (`CHAT_RAIL_ANCESTOR_WIDTH`, `config/dimensions.js`) showing that session's persisted transcript via `useAncestorTranscript`, which reads it through the read-only events route side threads already use (§1.5) and derives turns with `flushBatch` (`context/utils/eventsReducer.js`) — the same one-shot reducer the live path uses, so there is no second turn renderer. An ancestor mounts no message box, minimap, or right-slot split, and pins `TurnRoutingContext` to `OFF` regardless of the focused group's own routing mode.
+
+The focused group's *identity* is a separate concern from whether `ChatPanel` itself remounts. The focused slot is a fixed position in `SessionRail`'s JSX — never a keyed list entry — so a session moving from unrouted (welcome, or routed but not yet present in the fetched sessions list mid-creation) to routed never remounts it: the same `ChatPanel` instance that held a welcome-composer draft, or a pending auto-send, carries it through. Only a focus move BETWEEN two already-routed sessions swaps which session's group is the live `ChatPanel` (its former occupant becomes an `AncestorGroup`, and vice versa) — which does remount, intentionally, so per-session hooks (e.g. `useTerminalSplit`'s stored right-slot view, below) rehydrate for the newly-focused session rather than carrying over the previous one's.
+
+A chain longer than `CHAT_RAIL_MAX_DEPTH - 1` ancestors caps what the rail RENDERS (keeping the root and the ancestors nearest to focus, dropping the middle); `SessionHeaderStrip`'s left slot (§5.18) always shows the full, uncapped ancestry path regardless, so a capped-out ancestor stays one click away. Walking back to an earlier group in the current chain, then focusing forward again, restores the branch that continued past it (the "walked-back tail") for the life of the browser tab — persisted to `sessionStorage` keyed by the chain's root id (§5.20), never serialized into the URL, so it does not survive opening the same session in a second tab or a fresh deep link. `features/chat/utils/sessionRail.js` holds this derivation as a pure module (`deriveAncestorChain`, `capAncestors`, `deriveVisitedPath`); `hooks/useSessionRail.js` is its only React consumer, called independently by both `SessionRail` and `SessionHeaderStrip` rather than lifted and prop-threaded — this codebase's established convention for cross-cutting derived state, at the accepted cost of computing the derivation twice per render. The climb reads each hop's kind from the child's own side-thread marker: a drill-down hop pushes its parent onto the chain, a fork hop passes through without drawing one, so a fork inherits its source's position and its source's ancestors rather than truncating the chain at the fork point. `SessionService.compute_spawn_depth` (§6.1) has walked lineage the same way since the spawn socket landed — spawn hops count, fork hops are free — so the two walkers read as one rule rather than two conventions.
+
+DOM queries that used to assume a single mounted `ChatPanel` (scroll-container lookups, task/bookmark jump targets, turn-scroll resolution) now scope to `focusedGroupRootRef` — a ref to the focused group's own root node, populated by `ChatPanel` on mount and threaded through `AppActionsContext` — so an ancestor's identically-classed elements are never matched by mistake once more than one group is on screen.
+
+A task jump has two possible destinations, resolved inside `ChatPanel` itself rather than by the Tasks panel: the transcript (unchanged - resolve, mount via `scrollToTurnRef` if windowed out, expand via the turn-collapse state if needed, then land and flash) or the work column, when that view is showing (resolve the task's turn to a virtualizer index, mount the row via `scrollToTurnRef`'s own mount-then-land shape, then land on the specific block inside it and flash that, not the row). `AppActionsContext`'s `jumpToTaskRef` is the single entry point the Tasks panel calls; `utils/taskScroll.js` (`jumpToTask`, `jumpToTaskInWorkColumn`) holds the destination-agnostic scroll/highlight primitives both paths share.
+
+A reply answered on its own (§1.5, §5.16) can be promoted onto the rail as an ordinary child session, focused, with the conversation it was quoted from immediately beside it as an ordinary ancestor - promotion is a navigation plus a float dismissal, not a second rendering path or a rail-specific concept of its own. The promoted group opens at its own exchange, with what it inherited from that ancestor folded behind one row.
+
+**Panel registry**: `config/layout.js` is the central panel configuration — maps panel IDs → components, defines side assignments (left/right), and canonical ordering per side. Bottom-slot panels are intentionally absent from `PANEL_SIDES` for dockview routing — they route through `BottomPanelsContext`, not `SidePanelManager`, which has no bottom-side concept of its own. The bottom-side membership is published dynamically by `<IconStrip>`: each strip with `bottomPanels=[...]` calls `setBottomPanelIds(position, ids)` to declare everything its side owns, and clears its side on unmount, so `useBottomPanels().panelSideMap` always reflects the current membership.
 
 That call is declarative rather than a per-id register/unregister pair for a specific reason. `panelSideMap` feeds the context value, so any write re-renders every consumer — including `DesktopLayoutBody`, which renders the strips. An effect that removed each id and immediately re-added it produced two new `Map` identities for unchanged content, re-rendered the layout body, rebuilt the `bottomPanels` array literal it passes, and re-ran the effect: a closed loop that React eventually aborted, blanking the page. Stating the whole set at once makes a repeat with unchanged ids return the previous map and cost nothing, the strips' effects are keyed on id content rather than array identity, and the arrays themselves are module constants.
 
@@ -1027,18 +1145,50 @@ That call is declarative rather than a per-id register/unregister pair for a spe
 Panel state (widths, heights, visibility, ordering) persisted to `/api/ui-state` with 500ms debounce.
 
 **Chat content area split**: `.chat-content-area` holds the transcript (`.chat-transcript-column`)
-and, when the split is on, the terminal column
-(`features/chat/components/terminal/TerminalColumn.jsx`), separated by a repo-authored
-`ChatSplitDivider.jsx` rather than a dockview sash - the terminal column is not a dockview panel and
-has no side/bottom slot membership. `useTerminalSplit` hydrates `{enabled, ratio}` from
-`session.terminalSplitEnabled` / `session.terminalSplitRatio` (defaults: off, 0.5) on session attach,
-mirroring `minimapPinned`'s flat camelCase key shape; `enabled` patches on toggle, `ratio` debounced
-(`LAYOUT_SAVE_DEBOUNCE_MS`) on drag. `useTerminalSplitLayout` derives `showTerminalSplit` from that
+and a right slot - the chat content area's own generalized mount point, resolved to a registered
+view rather than hard-wired to one component. `features/chat/utils/rightSlotViews.js` holds the
+registry (§5.10): the terminal (`features/chat/components/terminal/TerminalColumn.jsx`) and the
+work panel (`features/chat/components/work/WorkColumn.jsx`) are both registered, mutually exclusive
+- one right slot, one occupant - mounted inside `.chat-right-slot` (`RightSlotColumns.jsx` branches
+on which is active) and separated from the transcript by a repo-authored `ChatSplitDivider.jsx`
+rather than a dockview sash - the slot is not a dockview panel and has no side/bottom slot
+membership of its own. `useTerminalSplit` hydrates `{view, ratio}` from `session.rightSlotView` /
+`session.terminalSplitRatio` (defaults: off, 0.5) on session attach, mirroring `minimapPinned`'s
+flat camelCase key shape; `view` (one of `RightSlotView`'s values, `OFF` included) patches on
+selection, `ratio` debounced (`LAYOUT_SAVE_DEBOUNCE_MS`) on drag. `resolveStoredRightSlotView`
+reads an older session's boolean `terminalSplitEnabled` as a one-time fallback when `rightSlotView`
+is absent (`true` opens on the terminal, `false` or missing opens off) - a session this build
+writes to always carries `rightSlotView`, so the boolean is never read as an override once the
+newer key exists. `resolveRightSlotRoutingMode(activeView)` derives the routing mode from the
+resolved view record's own `routingMode`, OFF when no view is active - the single place a view
+resolves to a mode, so the two can never desync. The terminal's own overview toggle
+(`terminalMinimapPinned`) follows that same flat-key shape and hydrates from the same `getUiState`
+call `ChatPanel` already makes for `minimapPinned`, kept as a separate key so pinning one overview
+never touches the other. `useTerminalSplitLayout` derives `activeView` from the stored preference
 plus a measured `.chat-content-area` width: mobile always suppresses it, and any width under
-`CHAT_TRANSCRIPT_MIN_WIDTH + CHAT_TERMINAL_MIN_WIDTH + CHAT_SPLIT_DIVIDER_WIDTH` collapses to the
-transcript alone without touching the persisted `enabled` flag. `ChatSplitDivider` shares
-`usePointerDragHandle` (pointer capture, axis-parameterized) with `BottomPanelContainer`'s handle - see
-§5.10 for what routes into the column.
+`CHAT_TRANSCRIPT_MIN_WIDTH + <requested view>.minWidth + CHAT_SPLIT_DIVIDER_WIDTH` collapses to the
+transcript alone without touching the persisted `view` - composed from the requested view's own
+declared minimum (`RIGHT_SLOT_VIEWS[id].minWidth`) rather than a view-named constant imported
+directly, so each view supplies its own without changing this hook. `ChatSplitDivider` shares
+`usePointerDragHandle` (pointer capture, axis-parameterized) with `BottomPanelContainer`'s handle -
+see §5.10 for what routes into the slot. The loading screen (`.chat-replay-overlay`) mounts
+against `.chat-content-area` rather than the transcript column, so it spans both columns and the
+divider together; the split's geometry is already settled underneath it while it is up, so lifting
+it reveals the finished layout instead of triggering a reflow.
+
+`ChatControlBar`'s bar is a third consumer of this state, and a sibling of `.chat-content-area`
+under `.chat-panel` rather than a child of it - the same relationship the split columns have to
+each other. It reads the effective `showTerminalSplit` flag (derived in `ChatPanel` as `activeView?.id
+=== RightSlotView.TERMINAL`) for the terminal-only nav group's own visibility and division, not the
+raw `view` preference (which drives only the picker's pressed button), and receives the ratio as a
+prop from `ChatPanel` rather than measuring anything itself, so it re-renders in the same commit as
+the columns during a drag. `PanelControlBar` divides into two flex halves at that ratio when given
+one (`splitRatio`/`rightContent` props) - still exactly one `.panel-control-bar` element - with the
+halves' padding at their outer edges only, so the percentage split lands at the same x as
+`.chat-transcript-column`'s. The bar joins the suppression that already covers welcome and replay:
+`useTerminalSplit`'s `split` state resets to `null` on every session change before an async
+`getUiState` resolves it, so the bar is absent for that one frame rather than painting whole and
+then dividing.
 
 `TerminalColumn` is windowed the same way `HistoricalTurnList` windows turns (`useTerminalVirtualizer`,
 `@tanstack/react-virtual`): only entries near the viewport plus `TERMINAL_OVERSCAN` mount, priced by
@@ -1046,10 +1196,111 @@ transcript alone without touching the persisted `enabled` flag. `ChatSplitDivide
 stays one line and scrolls sideways within its own block - so the predictor is a pure line count,
 independent of column width, so a divider drag that resizes the column needs no re-measure pass.
 The trailing entry stays outside the window and renders directly, mirroring `ChatPanel`'s active turn,
-since it is the one whose height still changes as "Running..." becomes real output. Autoscroll (follow
-new entries at the bottom, hold position when scrolled up) comes from the virtualizer's own
-`anchorTo`/`followOnAppend` options rather than a scroll listener; `LogsPanel` is `useBottomAutoscroll`'s
-only remaining consumer, unwindowed.
+since it is the one whose height still changes as "Running..." becomes real output. The virtualizer's
+own `anchorTo`/`followOnAppend` options handle one case only - following a newly landed entry once the
+view is already at the end. Initial position, in-place growth of the trailing entry, and the
+user-intent latch belong to a scroll owner instead (`useColumnScroll`/`ColumnScrollController`,
+mirroring `useChatController`/`ChatController`'s shape for the transcript) - one instance per
+right-slot column, both owned by `ChatPanel` beside the transcript's own controller and handed into
+`TerminalColumn`/`WorkColumn` as a `containerRef` prop. The columns share the controller class and
+the hook that wires it up; they do not share a single piece of state, since a column mounts and
+unmounts on its own visibility edge and each needs its own latch. That state cannot live inside the
+column component itself - every consumer of it (the control bar's autoscroll indicator, the overview,
+step navigation) is the column's sibling, not its child, so `ChatPanel` is the lowest point that can
+hand it to all of them. `useColumnScroll` lands the column at its newest entry both on a session
+change and on the column's own visibility edge - a column turned on mid-session gets the same landing
+a freshly opened one does, rather than sitting wherever an earlier, now-torn-down mount left it. The
+column takes its scroll container rather than creating one, the same arrangement `HistoricalTurnList`
+uses for the transcript. `LogsPanel` is `useBottomAutoscroll`'s only remaining consumer, unwindowed.
+
+Step navigation (up/down buttons, Alt+PageUp/PageDown) resolves targets from the virtualizer's
+measurements rather than mounted elements, for the same reason the transcript's jumps do - a
+windowed-out entry has no DOM. `jumpTargets`/`useColumnStep` (`features/chat/utils`,
+`features/chat/hooks`) are shared between all three columns: each caller supplies its own row
+selector (`.historical-turn-row`, `.terminal-entry`, or `.work-row`), highlight target, and
+trailing-element resolver, since the trailing entry's DOM position differs between them (the
+transcript's active turn is always the sole `:scope >` child of its container; the terminal's
+newest entry moves depending on whether the column is windowed at all, so `TerminalColumn` tracks
+it via ref and the caller reads that ref rather than querying for it; the work column renders no
+entry outside its own window at all, so its resolver returns nothing, which `useColumnStep`
+tolerates). `useColumnStep` also takes an optional `isTargetable(index)` predicate, applied to
+`jumpTargets`' own output before either step direction searches it - `useWorkJump` is the one
+caller that supplies it, filtering to turns `turnHasWorkPanelContent` (`predictWorkEntryHeight.js`)
+accepts, so a turn that routed nothing away is never a step target even though it still occupies a
+virtualizer index. Every terminal entry carries `data-index` (`TerminalEntry.jsx`), including the
+trailing one and every entry in the un-windowed branch, so the same selector-based row finder
+reaches it regardless of which branch rendered it; `WorkColumn` carries the equivalent `.work-row`
+marker class on both branches' rows, kept deliberately separate from `.work-entry-row` (the
+windowed branch's own transform-positioned layout class) so the un-windowed branch's statically
+flowed rows are never given absolute positioning they were never laid out for.
+
+`ColumnMinimap` (`features/chat/components/`, generalized from the terminal-only `TerminalMinimap`)
+is shared by all three right-slot overviews via a `variant` prop that names every class and testid
+it renders (`${variant}-minimap-overlay`, `-bars`, `-bar`, `-thumb`) - `variant="terminal"`
+reproduces the terminal's own pre-existing DOM contract byte for byte, so its SPEC claims and e2e
+selectors needed no change. Bars are priced from the same estimates the windowing uses -
+`metricsForEntry` (`features/chat/utils/terminalEntryMetrics.js`) for the terminal, a `turn_id`-keyed
+cache inside `predictWorkEntryHeight`/`buildWorkMinimapBars` for the work column - shared between the
+virtualizer and the overview's own bar builder via one cache Map threaded down from `ChatPanel`
+(`useColumnMinimapData`, generalized from the terminal-only `useTerminalMinimapData`), so an entry's
+content is extracted once regardless of which side asks first. The work column's cache withholds the
+trailing (still-growing) turn specifically - a settled turn's height is safe to remember, but the
+active turn's grows on every landed call, so caching it would serve a stale bar until the next
+divider-drag-triggered cache clear happened to catch up. A bar's duration comes from
+`deriveTerminalEntries`' own `callTs` field (the tool_use event's original `ts`, never
+`event.timestamp`) minus the paired result's `ts` for the terminal, and from `getTurnTimeRange`
+(`features/chat/components/turn/utils/turnContent.js`, the same span `WorkTurnEntry` already uses
+for its own `turnStartTime`) for the work column - never from any rendered element, since the
+height predictors already proved rendered elements aren't reliably present. A work bar's status
+walks the turn's own tool_use/tool_result pairs through `extractToolResult` - the exact function a
+block's own failure marking reads from - rather than a second failure check, so the overview can
+never disagree with the column about which turn went wrong. `MinimapController`
+(`features/chat/components/`, moved up from `components/minimap/` as a multi-consumer promotion) is
+reused as-is for all three overviews' geometry; `useMinimapOverlay` (same directory) wraps its React
+wiring - attach/detach, the pointer handlers, persistence - so the three overview instances differ
+only in what they render, not in how they talk to the controller. Each overview is a second DRIVER
+of its own column's scroll owner (`useColumnScroll`), not a second writer of its scroll position:
+`MinimapController.attach` takes a zero-argument getter for the owner's engaged state (never a ref,
+since the owner exposes a value plus transitions rather than a mutable ref to share) and an
+`onScrollLanding` callback fired once per click or drag-release with whether the write landed within
+autoscroll range of the end - the same off-bottom-raises-intent, at-bottom-marks-return choice every
+column's own step hook makes.
+
+`WorkColumn` windows the same way (`useWorkPanelVirtualizer`), but its unit is a turn entry
+(`WorkTurnEntry` - separator plus that turn's routed-away blocks) where the terminal's unit is a
+single entry; `turns` (the full session list, unfiltered) feeds the virtualizer directly, since a
+turn that routed nothing away predicts and later measures at zero height and its entry renders
+nothing, so no separate membership pass runs before windowing. Unlike the terminal's line-count
+predictor, `predictWorkEntryHeight` is width-dependent: tool blocks wrap where terminal output does
+not, so a divider drag invalidates every cached height and `useWorkPanelVirtualizer` re-measures on
+the container's own width edge (`useElementWidth`), not on a mode transition - the column only ever
+mounts under one mode, so nothing changes that mid-life. `WorkColumn` owns a scroll position the same
+way `TerminalColumn` does (`useColumnScroll`, above); its trailing row's in-place growth is far more
+frequent than the terminal's, since every call the active turn makes resizes it, not just one
+resolving output - the re-pinning `ResizeObserver` attaches and detaches directly from the row's own
+ref callback rather than from a separate effect, because the trailing row sits inside whichever of
+the windowed/unwindowed branches is currently rendering rather than at a fixed JSX position outside
+both (contrast the terminal's trailing entry, which does), so only the ref callback itself sees every
+node swap. `useTurnVirtualizer`, `useTerminalVirtualizer`,
+and `useWorkPanelVirtualizer` share their `useVirtualizer(...)` call shape through
+`useVirtualizerGeometry`/`useWindowedVirtualizer`/`useTurnKeyedVirtualizer`
+(`hooks/useVirtualListGeometry.js`) rather than each repeating it - the geometry preamble
+(mirrored scroll element, initial rect, scroll margin), the virtualizer call itself, and the
+turn-id-keyed `getItemKey` each factor out once, so the terminal's own extra `anchorTo`/`followOnAppend`
+options are the only per-list variation exception.
+
+`predictTurnHeight` and `predictWorkEntryHeight` price the same turn's blocks once, not twice - the
+mirror-image check that the transcript's partition and the panel's own agree. `predictTurnHeight`
+splits what was one constant (`TURN_BASE_HEIGHT_PX`) into `TURN_USER_MESSAGE_HEIGHT_PX` (every turn
+pays it) and `TURN_ASSISTANT_BUBBLE_HEIGHT_PX` (paid only when the turn renders an assistant
+bubble), because a turn whose blocks all routed to the right slot renders no bubble at all
+(`Turn.jsx`'s `hasVisibleBlocks` gate) - conflated, the constant could not be conditioned on
+anything. Whether the assistant half applies is decided by the same visibility rule the renderer
+gates the bubble on: `isToolBlockVisible` (`utils/eventProcessing.js`) is the one predicate both
+`hasVisibleBlock` (over processed blocks) and `predictTurnHeight`'s own `countVisibleContent` (over
+paired `tool_use`/`tool_result` events) apply, so a routing change can never widen one and leave the
+other stale - one implementation of the rule, two call shapes for the two data forms each caller
+already holds.
 
 ### 5.7 Build System
 
@@ -1197,27 +1448,38 @@ ToolBlock(toolUse, toolResult, nestedEvents)
 ├─ shouldCollapseByDefault(toolName, jsonData, hasNested, isPending, wasAnswered)
 │  └─ Tool-driven collapse policy: tools whose result is summarizable collapse;
 │     interactive tools (AskUserQuestion, ExitPlanMode) stay expanded until answered;
-│     Task expands once nested events arrive.
+│     Task collapses by default too, pending or complete, the same as any other tool.
 │
 └─ Effect-driven transitions
    ├─ [pending → complete + hasNested] → collapse
-   ├─ [Task + pending + nested arrives] → expand
    └─ [awaiting + user types in chat] → mark skipped
 ```
+
+**Running Task activity line**: with the block collapsed, `ToolBlock` derives an `activity` prop from `nestedBlocks`' last entry - `{kind: 'call', status, title}` (via `getToolStatus`/`buildToolHeader`) for a tool block, or `{kind: 'text', text}` (first line only) for a narration block - and passes it to `ToolBlockHeader`, which renders it in place of the bare pending spinner. The prop always reflects the newest nested entry, live or replayed, foreground or background task alike; a hand-expanded Task renders the full Activity list instead and the prop goes unused. A hand toggle (expanded or collapsed) is ordinary component state, untouched by new nested events arriving - nothing re-collapses or re-expands it once the user has chosen.
 
 **Interactive tools**: AskUserQuestion and ExitPlanMode render forms via InteractiveQuestions. Form submit sets `wasAnsweredLocally`, collapses block, sends answer to the container API. `ChatPanel`'s `handleFormSubmit` reads whatever is sitting in the composer at that moment (`composerHandleRef.current.extractOrEmpty()`) and sends it alongside the answer as a sibling `note` instead of folding it into the answer text - the transcript matches the wrapped answer with an anchored regex no prefix survives (§1.4, "AskUserQuestion via interrupt()").
 
 **Per-tool formatters** live in `utils/toolResultFormatters.js`. Tool routing for the *expanded* content area lives in `ToolContentRenderer` and consults `getToolConfig(toolName).renderer` from `config/toolRegistry.js` (`syntax-or-code`, `code`, `markdown`).
 
+**MCP content-block results**: no `mcp__*` name has a `TOOL_REGISTRY` entry, so every MCP call reaches `defaultFormatter`. There the result string may parse into an array of typed objects (`{type: 'text' | 'image' | 'audio' | 'resource_link' | 'resource', ...}`) rather than plain text or a JSON document - this is the MCP server's own content list, forwarded verbatim by the backend and JSON-stringified onto the wire, not something the frontend builds. `defaultFormatter` recognizes the shape and returns it as `contentBlocks` (a third alternative alongside `details`/`jsonData`, carried through `useToolResult` and `ToolBlock` the same way); `ToolBlockExpandedContent` renders it via `McpContentBlocks`, which walks the array in order and dispatches per block's own `type`, falling back to a JSON view for a type it does not recognize. A `text` block routes through `ToolContentRenderer`'s own default branch, so markdown detection, JSON-in-text detection, syntax highlighting and the copy button are the same code the non-MCP default path already uses, not a second implementation.
+
 **Bash Command section**: `ToolBlockExpandedContent` renders Bash's raw command in a purpose-built "Command" section (`SyntaxHighlightedCodeBlock`, `language="bash"`) instead of the generic "Input" section - `toolInput` stays `null` for Bash, so the command reaches the component via its own `command` prop. Output gets a matching "Result" section, omitted when empty. `ToolBlock` derives this `command` once and reads it at both expandability gates (`hasExpandableContent`, the pending-content render gate), so the Command section renders while the call is still pending - the only handled tool admitted while pending on a payload other than `toolInput`. Every other handled tool keeps its content suppressed until the result arrives. `SyntaxHighlightedCodeBlock` takes a `showGutter` prop (default on); the Command section is the one caller that passes `showGutter={false}`, since its line numbers index nothing - `CodeBlockRow` drops the gutter cell and tags the content cell `code-block-no-gutter`, the same shape the parsed code-block path (`CodeBlockLine`) already uses for its own no-gutter callers.
 
-**Segment grouping**: `groupBlocks` (`utils/groupBlocks.js`) runs two passes over a turn's blocks - the existing positional pass emitting consecutive Todos runs, then a whole-turn gather that pulls every read-only tool block out and appends one trailing `LookupsGroup` segment (rows re-render via `ToolBlock`). Categorisation (`category: 'read-only' | 'default'`) lives in `config/toolRegistry.js`, consulted via `getToolConfig`. The gather only sees top-level blocks, so a subagent's nested lookups are excluded by construction. The gather is switchable via `config/features.js::isLookupsGroupingEnabled()`; `predictTurnHeight.js` reads the same switch so predicted and rendered heights agree.
+**Segment grouping**: `groupBlocks` (`utils/groupBlocks.js`) splits a turn's blocks into two sides under a routing mode - `buildSegments` runs its positional pass (consecutive Todos runs, otherwise singles) independently over each side's own filtered sequence, so a run can merge across a block that routed to the other side the same way it would merge across one that never existed. `TurnBlockList` renders the `transcript` side through `TurnSegments` (`components/turn/components/TurnSegments.jsx`, the shared per-segment dispatch both columns use); the work panel's own turn entry renders the `panel` side through the same component (§5.6). Only a top-level `BlockType.TOOL` block can land on the panel side - text, thinking and compaction always stay on the transcript side, by construction of the same `belongsToThisSide` predicate both `buildSegments` calls share. A whole-turn gather then appends one trailing `LookupsGroup` segment on the **transcript side only** - a routed-away single was never a candidate for it, so under the work view every read-only call it would have gathered already left at the partition step, one pass earlier. Categorisation (`category: 'read-only' | 'default'`) lives in `config/toolRegistry.js`, consulted via `getToolConfig`. The gather only sees top-level blocks, so a subagent's nested lookups are excluded by construction. The gather is switchable via `config/features.js::isLookupsGroupingEnabled()`; `predictTurnHeight.js` reads the same switch so predicted and rendered heights agree.
 
 **Hidden tool blocks**: `utils/eventProcessing.js::isHiddenToolSearch(toolUse, toolResult)` is the single predicate deciding whether a tool-schema search (`ToolSearch` / LangGraph's `tool_search`) renders at all - hidden while pending or on success, visible only once the paired result reports an error. Applied at three sites that must agree: `groupBlocks` (top-level, skipped before Todos-run detection so a hidden call neither breaks nor absorbs into a run it interrupts), `processNestedEvents` (subagent Activity sections), and `predictTurnHeight` (indexes `tool_result` events by `tool_use_id` first, then skips priced blocks the predicate hides, so predicted and rendered heights agree). One predicate, one tool - not a general hidden-tools mechanism.
 
+`processNestedEvents` emits two discriminated block kinds in source order - `{kind: 'tool', toolUse, toolResult}` for a call (subject to the hidden-ToolSearch predicate above) and `{kind: 'text', event}` for the subagent's own non-empty assistant prose - so a consumer switches on `kind` rather than sniffing for `toolUse`. It still drops the human-marked Task prompt (shown separately by `TaskPrompt`) and the subagent's own non-human user text (its role prompt, not its output); neither ever reaches the Activity section.
+
+**Background Task nested-event dedup**: `indexEvents` (§1's Async Task System covers the backend half) is the frontend choke point for every parented event, upstream of both the Activity section and the subtitle - one dedup check here cannot be disagreed with by a second consumer. `nestedDedupKey(event)` pairs `parent_tool_use_id` with the subtype-scoped identity (`tool_use_id` for a call or its result, trimmed `content` for a text event with none) before pushing into `nestedEvents`; a `Map` from that key to whether the claiming copy carried `source_file` (tailed) or not (live) lets a later cross-source match be dropped while two genuinely repeated lines from the same source both stay. This is a client-side mirror of the backend's own reconciliation, not a second source of truth - it is what makes an already-recorded, pre-fix-duplicated session render clean without any backend replay.
+
 **Open-in-editor affordance**: `ToolBlock` resolves `editorUrl` once per block (`useEditorTemplate()` reads `editor_url_template` from session-defaults, `resolveEditorUrl()` substitutes the block's `filePath`/line) and passes it down to `ToolBlockHeader`, rather than each header or `LookupsGroup` row resolving its own. The header renders the control only when a URL resolves, opening via `window.open` with `stopPropagation` so it never reaches the collapse toggle. Resolution is entirely client-side - the identity workspace mount (§2.4) already makes a bare `file_path` a valid host path.
 
-**Shell-call routing to the terminal column**: `utils/eventProcessing.js::isTopLevelBashCall(toolUse)` is the single predicate deciding what routes to the terminal column instead of rendering inline - `normalizeToolName(toolUse.content) === ToolName.BASH` (covering LangGraph's snake_case `bash` alias) and `!toolUse.parent_tool_use_id`. That absence check keeps a subagent's shell calls inside its Task block's Activity section, since `processNestedEvents` never applies the predicate and renders nested Bash calls unconditionally. Three call sites must agree on it: `groupBlocks`/`turnContent` skip the block from the turn, gated behind a `hideShellCalls` boolean served by `HideShellCallsContext`/`useHideShellCalls` (default off, so turn rendering is unaffected until the split turns it on); `hasVisibleBlock` drops header/footer chrome from a turn whose only content routed away, rather than rendering an empty shell; and `terminalEvents.js::deriveTerminalEntries` builds the column itself in one pass over session events, pairing each routed call with its result via `indexEvents` and stamping `turnId` from the most recent human-opened turn - in the wire format only that turn-opening human event carries a `turn_id`, never the `tool_use`.
+**Right-slot routing**: `utils/eventProcessing.js::TurnRoutingMode` names the states a turn's content can be in - `OFF` (nothing leaves), `BASH_ONLY` (a top-level Bash call leaves - the terminal view), `ALL_TOOLS` (every top-level tool leaves - the work view) - resolved once per render in `ChatPanel` and read everywhere else via `TurnRoutingContext`/`useTurnRoutingMode` (default `OFF`, so a tree with no provider mounted, e.g. a bare `<Turn>` in a test, behaves as off). `blockRoutesToRightSlot(mode, toolUse)` is the single predicate deciding whether a call leaves at all: for `BASH_ONLY` it delegates to `isTopLevelBashCall(toolUse)` - `normalizeToolName(toolUse.content) === ToolName.BASH` (covering LangGraph's snake_case `bash` alias) and `!toolUse.parent_tool_use_id`; for `ALL_TOOLS` the same absence check alone - any top-level call, not just Bash. That absence check keeps a subagent's calls inside its Task block's Activity section in both modes, since `processNestedEvents` never applies the predicate and renders nested calls unconditionally. It also accepts a legacy boolean (`true`/`false`/nullish), mapped to `BASH_ONLY`/`OFF`, as the compatibility record for a caller not yet moved onto the mode. `isToolBlockVisible(mode, toolUse, toolResult)` layers the hidden-ToolSearch check on top - a block is visible only when it is neither hidden nor routed away - and is the one predicate `hasVisibleBlock` (over processed blocks) and `predictTurnHeight`'s `countVisibleContent` (over paired events) both call, so the two can never disagree about whether a block renders. Five call sites must agree on the routing rule itself: `groupBlocks` partitions the block onto the panel side instead of the transcript side; `turnContent.js::getTurnPreview` excludes it from the collapsed preview's tool count; `hasVisibleBlock` drops header/footer chrome from a turn whose only content routed away, rather than rendering an empty shell; `predictTurnHeight` (§5.6) sheds the assistant half of its split base height for the same turn; and `terminalEvents.js::deriveTerminalEntries` builds the terminal column itself in one pass over session events - not itself a mode consumer (it runs off `events` alone, regardless of whether the column is shown, and only ever needs the `BASH_ONLY` predicate since the terminal never lists non-Bash calls), but calling `isTopLevelBashCall` directly rather than re-implementing it keeps it unable to disagree with the other four about what counts as routable. It pairs each routed call with its result via `indexEvents` and stamps `turnId` from the most recent human-opened turn - in the wire format only that turn-opening human event carries a `turn_id`, never the `tool_use`.
+
+**Why the work panel is a list of turns, not a flat list of blocks**: `ToolBlock` opens with `useTurn()` unconditionally (`ToolBlock.jsx`) and `useInteractiveState` calls it again - `useTurn` throws outside a `TurnProvider`. The values `TurnContext` carries are per-turn facts (`hasNextUserMessage`, `nextUserMessageIsFormResponse`, `nextUserMessage`, `turnStartTime`, `now`, `isActiveTurn`), not session-wide ones, so a routed-away block can only render inside its own turn's provider. The consequence: the work panel reuses the transcript's own turn assembly (`ChatPanel`'s `turns`, already built by `appendTurns`) and runs `processEvents` per turn inside each entry, rather than re-deriving turn membership from the raw event stream the way `deriveTerminalEntries` does - `WorkTurnEntry` (`components/work/components/WorkTurnEntry.jsx`) is a separator plus a `TurnProvider` carrying that turn's values (sourced from the same place `HistoricalTurnList`/`ChatPanel`'s active-turn mount source them, never recomputed) around that turn's `TurnSegments`.
+
+**Right slot view registry**: `features/chat/utils/rightSlotViews.js::RIGHT_SLOT_VIEWS` holds one object literal per view the chat content area's right slot can mount - an id, the label/title text its own control uses, the `TurnRoutingMode` it implies, the component the slot mounts, and its own minimum width (`RightSlotView.TERMINAL` composes `CHAT_TERMINAL_MIN_WIDTH`, `RightSlotView.WORK` composes `CHAT_WORK_MIN_WIDTH`, declared independently rather than reused). `useTerminalSplitLayout`'s collapse-width threshold reads the requested view's own declared minimum rather than importing a view-named constant directly, so each view supplies its own without changing that hook. The persisted preference is `session.rightSlotView`, one of `RightSlotView`'s values (`OFF` included) - `resolveStoredRightSlotView` reads an older session's boolean `terminalSplitEnabled` as a one-time fallback when the newer key is absent (`true` -> `TERMINAL`, `false`/missing -> `OFF`) - and `resolveRightSlotRoutingMode(activeView)` maps the *resolved view record*, not the raw preference, to a mode: `activeView?.routingMode ?? TurnRoutingMode.OFF`. `ChatPanel`'s `showWorkView` (`activeView?.id === RightSlotView.WORK`) is what a task jump reads to pick its destination - see §5.6's `focusedGroupRootRef` paragraph.
 
 ### 5.11 Panel Management
 
@@ -1315,17 +1577,29 @@ StashProvider → (cross-cutting effects + children)
 | Alt+Shift+N | Create new session in a new browser tab |
 | Alt+0 | Toggle logs panel |
 | Alt+1 | Toggle sessions panel |
-| Alt+2 | Toggle bookmarks panel |
-| Alt+3 | Toggle boards panel |
-| Alt+4 | Toggle todos panel |
-| Alt+5 | Toggle stash panel |
-| Alt+6 | Toggle tasks panel |
+| Alt+2 | Toggle todos panel |
+| Alt+3 | Toggle stash panel |
+| Alt+4 | Toggle tasks panel |
+| Alt+5 | Toggle bookmarks panel |
+| Alt+6 | Toggle boards panel |
 | Alt+7 | Toggle usage panel |
 | Alt+8 | Toggle mcp panel |
 | Alt+9 | Toggle commands panel |
-| Alt+↑/↓ | Previous/next message |
-| Alt+Home/End | Jump to top/bottom |
+| Alt+↑/↓ | Previous/next message (transcript) |
+| Alt+Home/End | Jump to top/bottom (transcript) |
+| Alt+PageUp/PageDown | Step the right split slot's own column (the terminal today) |
 | Alt+? or Alt+/ | Toggle help overlay |
+
+The app-level jump refs are keyed per navigable slot rather than being one shared set:
+`jumpPrevRef`/`jumpNextRef`/`jumpTopRef`/`jumpBottomRef` (`useAppRefs.js`) are always the
+transcript's; `rightColumnPrevRef`/`rightColumnNextRef` belong to whatever currently occupies the
+right split slot, registered by `ChatPanel` only while that slot's column is visible and cleared
+the moment it isn't, so Alt+PageUp/PageDown never call into a dead closure after a toggle or a
+width collapse. Every Alt combination in this app is an application binding rather than a scroll
+gesture, and `isScrollIntentKeydown` (`utils/scrollIntentLatch.js`, shared by the transcript's and
+each right-slot column's own scroll owner) enforces that as one rule: it returns `false` outright whenever
+`event.altKey` is set, before any other check, so an Alt binding's keydown can never also raise
+scroll intent on its way to that binding's handler.
 
 **Layout persistence**: Debounced 500ms save to `/api/ui-state` on `onDidLayoutChange`. A stored layout is a serialized dockview instance and is therefore dockview-version-sensitive; `UIStateService.VERSION` (`domain/ui_state/service.py`) is the lever that discards state from an incompatible version rather than attempting a partial restore.
 
@@ -1374,6 +1648,7 @@ Brief descriptions of cross-cutting subsystems not covered by dedicated sections
 | Session prompt editor | `features/sessions/` | Inline editor for per-session system prompt; persisted via container API |
 | Model/permission switching | `features/chat/` | Dropdown selectors for model and permission mode; changes dispatched as setting change events rendered as dividers in chat |
 | Attachment handling | `features/chat/` | File attachment via drag-and-drop or button; reads files as base64; previews before send |
+| Inline replies | `features/chat/components/inline-replies/` | Span-anchored quote + reply, its own side thread, and the thread's three destinations (float, rail, own session) - see §1.5. A side conversation's session is a full copy of the conversation it was quoted from; the group that draws it folds everything above the injected divider carrying the fork parent, so the copy stays available to the agent without being drawn beside the original. A box asking on its own listens to its reply's own thread by addressing it (`EventsContext.subscribeSession`, session id on the stream's own query string); an unaddressed listen resolves to the container's primary conversation instead, which is why the address - not just the container - is what a box's live subscription carries. Both of the box's drawing paths - the live one appending as events arrive, and a reload's rebuild from the persisted log - start one event past that same injected divider, so a reload draws exactly what the live path already showed rather than everything the thread inherited; §5.6's rail fold reads the same divider for its own history, and both readers take the last matching one, since a thread forked from an already-forked conversation inherits its ancestor's divider too |
 | Markdown preview | `features/chat/components/` | Renders markdown content in tool blocks with toggle to raw source; mirrors MermaidDiagram pattern |
 | Mermaid rendering | `features/chat/` | Renders Mermaid diagram syntax in assistant messages as inline SVGs |
 | Minimap | `features/chat/components/minimap/` | Conversation overview sidebar; proportional sub-bars per turn, click/drag navigation, auto-show/hide with pin toggle. Reads per-turn heights from `useTurnHeights`, which prices every turn from content rather than from the DOM - a windowed-out turn has no element to measure |
@@ -1381,6 +1656,8 @@ Brief descriptions of cross-cutting subsystems not covered by dedicated sections
 | Slash command autocomplete | `features/chat/` | Autocomplete dropdown for `/` commands in chat input; populated from container API command list |
 | Workspace session-defaults cache | `hooks/useSessionDefaults.js` | Module-level cache + in-flight-request map keyed by workspace id, TTL `SESSION_DEFAULTS_CACHE_TTL_MS`, so `useCapabilities`'s many call sites share one request instead of one each. A rejection is never cached |
 | Render failure containment | `components/ErrorBoundary.jsx` | The only class component in the codebase - hooks can't express `componentDidCatch`. Wraps every dockview panel (`features/app/components/withPanelBoundary.jsx`, reset on session change), plus a nested boundary around just the chat transcript so a transcript-only throw leaves the composer usable, and a root backstop in `main.jsx`. Errors log via `utils/errorReporting.js`, reaching the daemon log |
+
+**Two `InlineThreadsOverlay`-shaped mounts can be on screen at once** the moment a rail group exists (§5.6): `InlineThreadsOverlay` itself, unchanged, owns the focused group's interactive floats and quote highlights under the CSS Custom Highlight name `inline-quote`; a separate, read-only `AncestorQuoteHighlights` mounts once per ancestor group, painting that ancestor's own sent quotes (ordinary ones inert, a rail-promoted one clickable) under a second name, `inline-quote-ancestor`. The two names exist because `CSS.highlights` is one document-global registry per name - two live `InlineThreadsOverlay` instances would silently overwrite each other's ranges, and this is the reason there is still only ever one of those. Any number of `AncestorQuoteHighlights` instances, however, legitimately coexist (one per ancestor on the rail), so a THIRD collision is possible among themselves: `ancestorHighlightRegistry.js` (`features/chat/components/inline-replies/`) is the one owner of `inline-quote-ancestor`, a plain-JS module-level `Map` keyed by ancestor session id that each instance registers its own ranges into on mount/update and clears on unmount, repainting the full union on every change rather than each instance calling `CSS.highlights.set()` directly.
 
 ### 5.17 URL hash schema and scroll synchronization
 
@@ -1390,6 +1667,8 @@ The browser URL hash is the source of truth for "what is this browser tab showin
 - `#/workspaces/{id}/sessions/{sessionId}` — active session at bottom (autoscroll engaged)
 - `#/workspaces/{id}/sessions/{sessionId}/turns/<role>-<turnId>` — active session paused at a specific turn (autoscroll disengaged); `<role>` is `u` for user message, `a` for assistant message
 - `#/workspaces/{id}/boards/{boardId}` — active board
+
+The session rail's (§5.6) `sessionId` segment names the FOCUSED group only — the same single `activeSessionId` the hash always carried. Ancestors are derived from `parent_session_id` via the fetched sessions list, counting only the hops that began a new conversation inside another, never serialized into the hash, so a chain of any depth still produces the same one-segment URL. Moving focus along the rail (click, or Alt+Shift+Left/Right) is ordinary `navigateToSession` — same hash write, same history entry — so back/forward needs no rail-specific handling. The walked-back tail (§5.6) is not expressible in a link: opening a bookmarked or deep-linked URL always starts fresh, tail empty.
 
 A throttled scroll listener on the chat scroll container calls `replaceTurnInUrl(turnId | null, role | null)` (defined in `src/context/SessionRoutingContext.jsx`) to keep the hash in sync with the topmost-visible turn. `history.replaceState` is used so back/forward history is not polluted, and no `hashchange` event fires (preventing routing loops).
 
@@ -1401,11 +1680,13 @@ Cross-session navigation (bookmarks, deep-links) carries the turn target through
 
 The dockview center group hosts a single `main` panel registered in `config/layout.js` and added to dockview by `features/app/utils/default-layout.js`. The panel renders `features/app/components/MainPanel.jsx`, which selects content based on the active URL read from `SessionRoutingContext`:
 
-- bare workspace URL → the welcome view (`ChatPanel`'s internal welcome branch)
-- `/sessions/{sid}` segment → `ChatPanel` for that session
+- bare workspace URL → the welcome view (`ChatPanel`'s internal welcome branch, reached through a rail of no groups — see §5.6)
+- `/sessions/{sid}` segment → `SessionRail` for that session (§5.6) — a bare single-`ChatPanel` view is the special case of a rail with no ancestors and no walked-back tail
 - `/boards/{bid}` segment → `BoardTab` for that board
 
 `MainPanel` always renders `SessionHeaderStrip` as its chrome above the URL-driven body. There is no tab bar on the main panel and there are no per-board sibling panels — switching content (e.g., chat to board) happens through the existing URL-routing mechanism: bookmark click, board sidebar click, deep-link, browser back/forward.
+
+The rail's ancestor and focused groups are plain React children of `SessionRail`, not dockview panels of their own. Side panels already anchor to the single `main` dockview panel via `referencePanel: 'main'` (below); giving each rail group its own dockview panel would multiply that anchor point and hand dockview's own layout persistence (widths, ordering, maximize) a second, competing owner over state the rail's depth cap and walked-back-tail logic (§5.6) already fully own. The rail's horizontal scroll and per-group widths are plain CSS (`SessionRail.css`), independent of dockview's layout engine entirely.
 
 Side panels (Sessions, Bookmarks, Boards, Todos, Stash, Tasks, Usage, MCP, Commands, Help, Logs) anchor to the `main` panel via `referencePanel: 'main'` in `default-layout.js` and `SidePanelManager._openPanel`. The save path inside `useDockviewLayout.onDidLayoutChange` consults `sessionIdRef.current` — bound by `onSessionAttach(sessionId)` — to know which session's UI state to PATCH on every layout change.
 
@@ -1433,12 +1714,22 @@ Outside-click detection (`useDropdown`, `useAttachments`) and prevent-blur handl
 
 Four per-session prefixes (`draft:`, `inputHistory:`, `inline-replies:`, `queue:`; registered in `config/storage.js`) hold session-scoped state; only `inputHistory:` is capped, via `utils/inputHistoryCap.js`'s oldest-first eviction. `utils/sessionStorageGc.js`'s `sweepDeadSessionStorage` removes entries once their session no longer exists, run from `SessionsContext.jsx` after each successful session fetch.
 
+**`inline-replies:` records a third state.** Each buffered reply now carries a `threadSessionId` alongside the anchor fields it always had - set once a reply is asked in its own float, `null` for an ordinary unsent one. The record persists in the same place either way, so a thread survives reload the same way an unsent reply does. `sweepDeadSessionStorage` still matches this prefix's key against the *main* session's id, never opens the record, and so never sees a side session's id inside one - the GC needs no change, and the reason is worth stating rather than assumed: a side thread's own liveness is not what this sweep is protecting, only the main session's presence in the fetched list is.
+
+**Promoting a thread onto the rail adds a fourth field to the same record, `railPromoted`, rather than a fifth storage prefix.** A promoted thread's identity is exactly the `threadSessionId` it already carried; nothing about where it is persisted changes, only a flag on the existing record (`useInlineReplies.linkRailPromotion`) and a server-side disposition change on the session itself (§4.2). The rail's own ancestry (§5.6) is re-derived from `parent_session_id` on every load, counting only the hops that began a new conversation inside another, same as any other group - a promoted thread needs no `sessionStorage` entry of its own, and its `localStorage` record exists for the same reason an unpromoted thread's does: so its quote and highlight survive a reload.
+
 The prefixes carry no workspace segment, so a session live in another workspace looks dead from one workspace's own fetched list alone. `collectLiveSessionIdsAcrossWorkspaces` unions every registered workspace's session list before the sweep runs, falling back to the current workspace's own set if that lookup fails.
 
-This section covers browser `localStorage` only. Session-scoped preferences persisted through the
-server-side `/api/ui-state` PATCH contract instead (`minimapPinned`, `terminalSplitEnabled`,
+**`sessionStorage`** holds one additional store, distinct from the `localStorage` prefixes above: the session rail's walked-back tail (§5.6), keyed `chat-rail-tail:{rootSessionId}` via `railTailStorageKey` (`features/chat/utils/sessionRail.js`) — one array of visited session ids per chain root. `sessionStorage` is inherently per-tab (never shared across tabs, never touched by `sweepDeadSessionStorage`), which is the point: a tab's own walked-back branch is a convenience for that tab alone, not state a fresh tab or a reload elsewhere should inherit. A read/write failure (quota, private mode) is swallowed silently, same as `useLocalStorage`'s degrade-on-failure above — losing the tail loses only the walked-back convenience, never the ancestry itself, which is re-derived from `parent_session_id` on every load regardless, counting only the hops that began a new conversation inside another. A fork becomes its own chain root the moment it stands where its source stood, so it starts with an empty tail rather than inheriting its source's - there is nothing to migrate.
+
+This section covers browser `localStorage` and `sessionStorage` only. Session-scoped preferences persisted through the
+server-side `/api/ui-state` PATCH contract instead (`minimapPinned`, `rightSlotView`,
 `terminalSplitRatio`, bottom-panel layout, dockview layout) are documented alongside the feature
-that owns them - see §5.6 for the terminal split keys.
+that owns them - see §5.6 for the right-slot keys. `rightSlotView` holds a `RightSlotView` value
+(`off`/`terminal`/`work`); a session written before this key existed carries the older boolean
+`terminalSplitEnabled` instead, read as a one-time fallback (`resolveStoredRightSlotView`) - `true`
+opens on the terminal, `false` or a missing key opens off - never as an override once a build has
+written the newer key.
 
 ---
 
@@ -1460,7 +1751,10 @@ DaemonService (singleton via domain.current)
     ├── ContainerService (podman lifecycle, registry)
     ├── SessionService (session CRUD, fork, container orchestration)
     ├── UIStateService (layout/panel state persistence)
-    └── BoardService (board listing, mutation, mtime-driven updates)
+    ├── BoardService (board listing, mutation, mtime-driven updates)
+    └── SpawnListener (unix-socket spawn verb - a sibling session with a prompt, no container
+                        parameters in its vocabulary; started and stopped with the workspace,
+                        same as the board watcher)
 ```
 
 **DaemonService** lazily loads `WorkspaceService` instances from `~/.claudebox/daemon.json`.
@@ -1469,11 +1763,17 @@ DaemonService (singleton via domain.current)
 
 **ContainerService** broadcasts `STOPPING` status before initiating stop, then `STOPPED` after completion — two-phase broadcast enables frontend stopping state feedback.
 
-**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction, and that snapshot drives `ContainerService`'s construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService` — so changing any of them needs a daemon restart. Run-arg settings are re-read per container create instead: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so mounts, ports, env vars, network mode, and the nested-containers opt-in follow the current `settings.toml` from the next created session (new / resume / fork) on. Distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`).
+**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction, and that snapshot drives `ContainerService`'s construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService` — so changing any of them needs a daemon restart. Run-arg settings are re-read per container create instead: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so mounts, ports, env vars, network mode, and the nested-containers opt-in follow the current `settings.toml` from the next created session (new / resume / fork) on. Distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`). The `POST /sessions/new` handler follows the same per-request pattern for `links_allow`: it calls `Config.load(workspace.path)` itself rather than reading `WorkspaceService.config`'s snapshot, so an edited allowlist governs the very next link opened, no daemon restart needed.
 
-**SessionService** orchestrates session lifecycle: listing from disk via `SessionRepository`, spawning containers for new/resumed sessions, forking sessions at turn boundaries. `create()`, `resume()`, and `fork()` all return a unified `SessionInfo` shape (extends `SessionMetadata` with `container_id`, `workspace`, `permission_mode`, `effort_level`) so the frontend can populate the footer from the response without waiting for the SDK init event. `fork(reuse_container=True)` transfers ownership of the live container to the new (child) session by calling `ContainerService.update(container, session_id=new_session_id)` after seeding the child's `session.json` (with `parent_session_id` linking back); `find_by_session()` then resolves the running container under the child id, so the parent's running indicator clears in the sessions panel and stop affects only the child. `parent_session_id` on the child remains the back-link from child to parent across the fork tree.
+**SessionService** orchestrates session lifecycle: listing from disk via `SessionRepository`, spawning containers for new/resumed sessions, forking sessions at turn boundaries. `create()`, `resume()`, and `fork()` all return a unified `SessionInfo` shape (extends `SessionMetadata` with `container_id`, `workspace`, `permission_mode`, `effort_level`) so the frontend can populate the footer from the response without waiting for the SDK init event. `fork(reuse_container=True)` transfers ownership of the live container to the new (child) session by calling `ContainerService.update(container, session_id=new_session_id)` after seeding the child's `session.json` (with `parent_session_id` linking back); `find_by_session()` then resolves the running container under the child id, so the parent's running indicator clears in the sessions panel and stop affects only the child. `parent_session_id` on the child remains the back-link from child to parent across the fork tree. That transfer is correct for the reuse disposition and stays exactly as described above — the third disposition below answers a different question, not a walk-back of it.
+
+`fork(share_container=True)` is the third disposition: the child joins the source's container as a member rather than taking it over. `Container.session_id` (the owner) is untouched, `Container.members` gains the new id via a freshly-built list (`update()` compares old value to new, so an in-place append never persists — see `ContainerService.update()` below), and no restart is issued against the source — both sessions serve traffic concurrently in the same container from that point on. Membership is addressability, not liveness: a member id outlives the process it names, so `find_by_session()` resolving a side thread's id says nothing about whether that thread is currently running. Running is read from the container's own health report instead — `HealthMonitor` threads `/api/health`'s `live_session_ids` (§4.2) onto `Container.live_session_ids` every poll, cleared on a crash transition rather than left stale, and `SessionService.list_all()`/`get()` resolve a session's `container_id` through `_resolve_container_id`: the owner's `container_id` is authoritative on its own — unaffected by any of this, exactly as it was before this disposition existed — while a member's requires presence in `live_session_ids` too. A stale or missing report degrades to *not running*, never the reverse.
 
 **Fork seed — three sources.** The child's `session.json` is composed from three sources rather than spread verbatim from the parent: (1) identity fresh — `session_id`, `parent_session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`; (2) `INHERITED_CONFIG_FIELDS` from the parent's `session.json` — `name`, `model`, `permission_mode`, `effort_level`, `session_prompt`, `first_message`, `context_window`, `commands`; (3) accumulated counters and last-value snapshots derived from the child's (possibly truncated) `events.jsonl` via `_compute_derived_fields` — `total_cost_usd`, `total_duration_ms`, `num_turns`, `last_message`, `last_context_tokens`, `todos`. Truncation runs BEFORE the derivation step so the totals reflect the events the child's transcript will actually contain, not the parent's tail. The seed also carries `fork_point_cost_usd` (= the derived `total_cost_usd` at fork moment) — a snapshot consumed at rollup time by the usage panel: the panel deducts each session's snapshot from its reported total so the shared pre-fork cost is attributed once to the ancestor, not double-counted across siblings. Missing or unparseable parent metadata falls back to a minimal seed (identity fields only, derived counters from the file if present).
+
+**Re-parenting a fork whose source is itself a side thread.** `fork()`'s `parent_session_id` keyword overrides the identity-fresh field seeded at (1) above, defaulting to `source_session_id` when omitted so every ordinary fork is unaffected. Promoting a side thread supplies the thread's own `parent_session_id` instead of the thread's id: a side thread is never drawn in the sessions tree (§1.5), so parenting the promoted child to it literally would leave the child present in the fetched list but nested nowhere. The override is a fork *parameter*, resolved in the same seed write that creates `session.json` - never a follow-up `PATCH`, which would leave a window between the fork returning and the correction landing in which the child is un-drawable and the frontend's optimistic list insert (`seedSession`) would show it that way. The caller also stops the source session before calling `fork()`: `fork()` reads the source's session directory from disk, and the same session-scoped stop that closes the event log is what makes that read see a quiescent transcript rather than one still being appended to mid-copy.
+
+**The spawn socket's depth cap is derived, never trusted.** `SpawnListener` (`domain/sessions/spawn.py`) resolves its caller from the connection itself - `SO_PEERCRED` gives the peer's OS pid, `ContainerService.find_by_peer_pid` maps that to a registered `Container` via `ContainerRuntimeProtocol.identify_container_from_pid` (cgroup membership under podman/docker, process-group membership under the local subprocess runtime), and `Container.session_id` gives the caller's session id - never anything the request payload states. `SessionService.compute_spawn_depth` then walks that session's ancestry: `spawned_from_session_id` hops count toward the depth, `parent_session_id` (fork) hops are free, so a fork of a spawned session inherits its spawner's depth rather than resetting to zero. A caller whose own record cannot be read fails closed (`None`, refused); an ancestor missing further up the chain just ends the walk at the depth reached, since that is a deleted ancestor, not a broken chain. `SpawnListener` refuses at `depth + 1 > MAX_SPAWN_DEPTH` (3, matching `_MAX_SUBAGENT_DEPTH` in `agent_session/langgraph_tools/subagent.py` by magnitude, not by import - the two bound the same failure mode, an agent recursing through agents, in different layers). `SessionService.create_with_prompt` is the shared create-then-inject sequence both the spawn socket and `BoardService.assign()` use (via the module-level `deliver_prompt` helper) - a failed prompt delivery is logged, never raised, so a created session is never stranded over one failed message.
 
 ### 6.1.1 Blocking-Path Contract
 
@@ -1498,39 +1798,54 @@ Board/session **mutation** paths stay on the loop, bounded only by their own loc
 ### 6.2 Module Map
 
 ```
+__init__.py               # Package entry — host-side multi-container orchestrator
 app.py                    # FastAPI factory, uvicorn entry
 serving.py                # Dev (uvicorn+reload+Vite) vs production (uvicorn+Caddy reverse proxy)
 constants.py              # health/lifecycle timings, registry filenames (paths live in claudebox.constants)
 
-domain/
+domain/                    # Daemon domain facade — re-exports service, lifecycle, and singleton
+├── __init__.py
 ├── service.py            # DaemonService — top-level singleton
 ├── config.py             # DaemonConfig — daemon.json loader (registered workspaces)
 ├── errors.py             # DaemonError base class (status_code, error_key)
 ├── health.py             # HealthMonitor — periodic workspace/container polling (extends AsyncPoller)
 ├── mutation_observer.py  # SessionMutationObserver — polls each container's session state and broadcasts SessionsChangedEvent on changes
+├── _locking.py           # Shared FileLock helper — bounded acquisition with a typed timeout error
+├── broadcaster.py        # Daemon event broadcaster — serializes domain events for SSE subscribers
+├── executors.py          # Blocking-work pools, split by concern (listing/podman/state) so one saturated class cannot starve the others
+├── serving.py            # Serving-capacity probe — can the daemon still get work done, not just schedule callbacks
+├── watchdog.py           # Event-loop lag detection, exposed via /api/daemon/health for host-side supervision
 ├── workspaces/
+│   ├── __init__.py
 │   ├── models.py         # RegisteredWorkspace dataclass
 │   └── service.py        # WorkspaceService — per-workspace orchestration (Container/Session/UIState/Board services)
 ├── containers/
+│   ├── __init__.py
 │   ├── models.py         # Container, ContainerStatus, ContainerStatusEvent
 │   ├── service.py        # ContainerService — podman lifecycle (backed by ContainerRuntime or LocalRuntime)
 │   ├── proxy.py          # ContainerProxyClient — reverse proxy via httpx
 │   └── errors.py         # ContainerNotFound, ContainerTimeout, ContainerUnavailable
 ├── sessions/
+│   ├── __init__.py
 │   ├── models.py         # SessionInfo(SessionMetadata), SessionProgressEvent, SessionsChangedEvent
 │   ├── service.py        # SessionService — session CRUD, fork, container orchestration
+│   ├── spawn.py          # SpawnListener — per-workspace unix-socket spawn verb
+│   ├── links.py          # resolve_link_messages — link-carried message allowlist matching
 │   └── errors.py         # SessionNotFound, session-specific errors
 ├── ui_state/
+│   ├── __init__.py
 │   ├── models.py         # UIState dataclass (global_state + session_state)
 │   └── service.py        # UIStateService — versioned JSON state with dot-path PATCH operations
 └── boards/
+    ├── __init__.py
     ├── models.py         # BoardUpdateEvent — daemon-emitted SSE event.
     │                     # Re-exports Board, BoardState, BoardSummary, BoardTicket, Swimlane from claudebox.extensions.tickets
     ├── service.py        # BoardService — board listing/mutation; delegates parsing and YAML I/O to claudebox.extensions.tickets
     ├── watcher.py        # BoardWatcher — extends MtimeWatcher, polls board directories for mtime changes (deliberately mtime-based for NFS/container-mount reliability)
     └── errors.py         # BoardNotFound, BoardParseError, TicketNotFound, SwimlaneNotFound
 
-handlers/
+handlers/                  # Daemon HTTP handler package
+├── __init__.py
 ├── daemon.py             # /api/daemon/* — health, stream, workspaces
 ├── containers.py         # /api/workspaces/{id}/containers/* — container CRUD + reverse proxy
 ├── sessions.py           # /api/workspaces/{id}/sessions/* — session CRUD, resume, fork
@@ -1558,19 +1873,19 @@ handlers/
 | `/api/workspaces` | GET | List registered workspaces with container counts |
 | `/api/workspaces` | POST | Register a workspace |
 | `/api/workspaces/{id}` | DELETE | Deregister a workspace |
-| `/api/containers` | GET | Aggregate containers across all workspaces |
 
 **Workspace-scoped** (`/api/workspaces/{workspace_id}/...`):
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/containers` | GET | List all containers for a workspace |
-| `/containers` | POST | Spawn a new container |
 | `/containers/{id}` | GET | Get container details |
+| `/containers/{id}/stop` | POST | Stop a container |
+| `/containers/{id}/kill` | POST | Force-kill a container |
 | `/containers/{id}` | DELETE | Stop and remove a container |
 | `/containers/{id}/{path}` | * | Reverse-proxy to container backend |
 | `/sessions` | GET | List all sessions from workspace disk |
-| `/sessions/new` | POST | Spawn container and start new session — returns full `SessionInfo` (workspace, session_dir, model, effort_level defaults populated) |
+| `/sessions/new` | POST | Spawn container and start new session — returns full `SessionInfo` (workspace, session_dir, model, effort_level defaults populated) plus `undelivered_messages`; an optional body message list is checked against `links_allow` before delivery |
 | `/sessions/{id}` | PATCH | Update session metadata |
 | `/sessions/{id}/resume` | POST | Resolve or spawn container, resume session — returns full `SessionInfo` (reads on-disk metadata via `_build_session_info` and overlays defaults) |
 | `/sessions/{id}/fork` | POST | Fork session at turn, optionally reusing the source's container — returns full `SessionInfo`. With `reuse_container=true`, transfers `Container.session_id` to the new session so the running indicator moves to the child. |
@@ -1599,6 +1914,14 @@ Board change events are broadcast on the daemon-level `/api/daemon/stream` (as `
 `Container.base_url` is deliberately `/api`-less (`http://localhost:{port}`), and the proxy forwards to `f"{container.base_url}/{path}"` using the caller-supplied trailing path verbatim. **The caller therefore supplies the container's own `/api` prefix.** A container endpoint declared as `/api/logs` is reached at `/api/workspaces/{ws}/containers/{id}/api/logs` — the doubled `api` is correct, not a typo.
 
 Both callers follow this: the frontend (`LogsStreamContext`, `SSEConnectionManager`) and the CLI (`cmd_logs._container_logs_url`). Do not "fix" the omission by injecting `/api` inside the proxy — that would break every other proxied path.
+
+#### Spawn socket (not HTTP)
+
+One unix-socket listener per workspace, not a route on the table above — `SpawnListener` binds at `{config_dir}/sessions/spawn.sock` on the host, visible inside every container of that workspace at `/root/.claudebox/sessions/spawn.sock` (the same mount §2.4's Sessions row documents). Request, exactly three keys, unknown keys refused rather than ignored: `{"verb": "spawn", "caller_session_id": "<uuid>", "prompt": "<text>"}`. Response: `{"session_id": "<uuid>", "container_id": "<uuid>"}` — enough to address the new session over the container network (`http://{container_id}:{WEB_CONTAINER_PORT}`), never a host port or a filesystem path outside the sessions tree. No mount, run-arg, image, or privilege parameter exists in this vocabulary; the handler calls `SessionService.create_with_prompt()`, which forwards nothing from the request into container creation.
+
+The whole sessions tree is mounted into every container, so the socket path scopes the *workspace*, never the caller — any container in the workspace can reach it. Since the path cannot identify the caller, the recursion cap identifies it from the connection instead: `SO_PEERCRED` gives the OS pid, and the daemon walks connection → container → session → ancestry to compute a depth it trusts, never the request's own `caller_session_id` (recorded lineage only — see §6.1's spawn-depth paragraph).
+
+A bind failure (e.g. the socket path exceeding `AF_UNIX`'s `sun_path` limit on a deeply-nested workspace) is scoped to spawn capability alone: `WorkspaceService.start()` catches it around the spawn listener's own start and logs it, so sessions, ui-state, resume, and boards still load for that workspace. A container dialing the unbound socket path fails immediately (`FileNotFoundError`/`ConnectionRefusedError`) rather than hanging; `SiblingSessionClient.spawn()` additionally bounds the dial with a timeout as a backstop.
 
 #### Welcome → session config buffer drain
 
@@ -1692,6 +2015,7 @@ tests/
 │   │   │   ├── test_question.py              # ask_user_question backed by interrupt()
 │   │   │   ├── test_search.py                # glob, grep
 │   │   │   ├── test_shell.py                 # bash
+│   │   │   ├── test_sibling.py                # session_spawn/session_ask/session_read @tool bindings
 │   │   │   ├── test_skill.py                 # workspace skill lookup + body return + ARGUMENTS appending
 │   │   │   ├── test_subagent.py              # task() sub-agent dispatcher + agent registry
 │   │   │   ├── test_task_mgmt.py             # 6 wrappers over TaskService
@@ -1725,6 +2049,7 @@ tests/
 │   │   ├── test_profile_hooks.py             # Profile session-start hook resolution and execution
 │   │   ├── test_protocol.py                  # Structural Protocol satisfaction for AgentSession
 │   │   ├── test_providers.py                 # ProviderSpec parsing, install_hint, strategy dispatch, lookup helpers
+│   │   ├── test_rate_limits.py                # Per-workspace plan-limit store
 │   │   ├── test_registry.py                  # Resolver maps workspace `agent` strings to runtime classes
 │   │   ├── test_runtime_claude.py            # ClaudeRuntime composition adapter
 │   │   ├── test_runtime_langgraph_catalogs.py # Catalog methods - models via Ollama, context-window, defaults
@@ -1733,16 +2058,19 @@ tests/
 │   │   ├── test_runtime_langgraph_hooks.py   # Hook synthesis - on_session_start at connect, compaction start and boundary
 │   │   ├── test_runtime_langgraph_interrupt.py # Interrupt / resume routing
 │   │   ├── test_runtime_langgraph_lifecycle.py # Lifecycle + event assembly + usage telemetry, against a stub model
+│   │   ├── test_runtime_langgraph_migration.py # events_to_messages (pure) and the Claude->LangGraph migration seed path
 │   │   ├── test_runtime_langgraph_providers.py # Universal-provider dispatch
 │   │   ├── test_runtime_langgraph_real_graph.py # Driven through a real compiled graph
 │   │   ├── test_runtime_langgraph_skeleton.py # Capability matrix, Protocol stubs, factory dispatch
 │   │   ├── test_runtime_langgraph_slash_routing.py # `_resolve_slash_skill`/`_tag_slash_command` - LangGraph's take on native slash handling
 │   │   ├── test_runtime_langgraph_tool_binding.py # Binds langgraph_tools/ factories into the compiled graph
+│   │   ├── test_sibling_sessions.py          # SiblingSessionClient spawn/ask/read against a fake transport
 │   │   ├── test_skills.py                    # Shared skill walker - walk_skills, parse helpers, body extraction, source lookup
 │   │   └── test_tasks_service.py             # TaskService - in-memory store + event-replay rebuild
 │   ├── containers/
 │   │   ├── test_backend.py                   # subprocess abstraction
 │   │   ├── test_build.py                     # build argument generation
+│   │   ├── test_local.py                     # LocalRuntime subprocess spawn
 │   │   ├── test_run.py                       # container CLI argument generation
 │   │   └── test_runtime.py                   # facade behavior over backend
 │   ├── core/
@@ -1779,6 +2107,7 @@ tests/
 │   └── test_workspace.py                     # workspace context and session access
 │
 ├── claudebox_cli/
+│   ├── test_completers.py                    # argcomplete completers - must never raise out of the completion subprocess
 │   ├── test_containers_targets.py            # ``claudebox containers`` action + target parsing
 │   ├── test_dispatch.py                      # Verb-mode parser dispatches each verb to its handler
 │   ├── test_doctor.py                        # ``doctor`` environment checks
@@ -1793,7 +2122,9 @@ tests/
 │   ├── files/
 │   │   ├── test_file_service.py              # orchestrator facade
 │   │   └── test_path_resolver.py             # path resolution and file indexing
+│   ├── test_app.py                           # App factory - host binding forwarded to http_serve
 │   ├── test_handlers_chat.py                 # Chat handlers - stream readiness gating
+│   ├── test_handlers_sessions.py             # Sessions handler - /current response shape
 │   ├── test_logging.py                       # LogBroadcaster file-based replay
 │   └── test_session.py                       # Session lifespan - log-routing callback wiring
 │
@@ -1806,7 +2137,9 @@ tests/
 │   │   │   ├── test_proxy.py                 # ContainerProxyClient timeout/pool bounds
 │   │   │   └── test_service.py               # container lifecycle
 │   │   ├── sessions/
-│   │   │   └── test_service.py               # session lifecycle
+│   │   │   ├── test_service.py               # session lifecycle
+│   │   │   ├── test_spawn.py                 # SpawnListener - request validation, depth cap, socket lifecycle
+│   │   │   └── test_links.py                 # resolve_link_messages - allowlist matching
 │   │   ├── ui_state/
 │   │   │   └── test_service.py               # persistent UI state store
 │   │   ├── workspaces/
@@ -1822,6 +2155,7 @@ tests/
 │   ├── handlers/
 │   │   ├── test_boards.py                    # HTTP adapter responses
 │   │   ├── test_daemon.py                    # HTTP adapter responses
+│   │   ├── test_sessions.py                  # HTTP adapter responses
 │   │   ├── test_workspaces.py                # HTTP adapter responses
 │   │   └── test_workspaces_runtime_agnostic.py # Defaults endpoint keys off `agent`: LangGraph its own matrix, unknown agents 422
 │   ├── test_containers_lifecycle.py          # service stop/kill/remove + DELETE composite + POST routes

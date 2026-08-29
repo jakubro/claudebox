@@ -30,10 +30,15 @@
   border-bottom: none;
 }
 
+/* Box/weight/offset converged with chat's own .todo-icon (TodoList.css) - one glyph, one metric
+   set, across both surfaces; only the inherited text size stays per-surface. */
 .todo-status {
   flex-shrink: 0;
-  width: 16px;
+  width: 14px;
   text-align: center;
+  font-weight: 600;
+  position: relative;
+  top: -1px;
 }
 
 .todo-content {

@@ -24,6 +24,12 @@ describe('normalizeToolName', () => {
     expect(normalizeToolName('task')).toBe(ToolName.TASK)
   })
 
+  it('maps LangGraph sibling-session names to their mcp__claudebox__ equivalents', () => {
+    expect(normalizeToolName('session_spawn')).toBe(ToolName.SESSION_SPAWN)
+    expect(normalizeToolName('session_ask')).toBe(ToolName.SESSION_ASK)
+    expect(normalizeToolName('session_read')).toBe(ToolName.SESSION_READ)
+  })
+
   it('returns Claude canonical names unchanged', () => {
     expect(normalizeToolName('TaskCreate')).toBe('TaskCreate')
     expect(normalizeToolName('Read')).toBe('Read')

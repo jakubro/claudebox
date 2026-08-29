@@ -27,9 +27,17 @@
 
 .sessions-panel-header {
   display: flex;
-  justify-content: flex-end;
-  gap: 0;
-  padding: 8px 12px 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sessions-panel-buttons {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* Metrics, radius, and remaining chrome live in App.css shared `.sessions-*` blocks. */
@@ -39,9 +47,30 @@
 
 .sessions-new:hover,
 .sessions-new-chevron:hover,
-.sessions-refresh:hover {
+.sessions-refresh:hover,
+.sessions-search-toggle:hover {
   color: var(--text-primary);
   background: var(--bg-tertiary);
+}
+
+/* Takes the header row in place of the filter strip while open - sized against the same chrome
+   metrics as the buttons beside it (App.css) so it sits level with them. */
+.sessions-search-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--chrome-btn-h);
+  margin: var(--chrome-btn-mar-y) 0;
+  padding: 0 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.sessions-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Split-button for new session + chevron */
@@ -56,15 +85,22 @@
   z-index: 9999;
 }
 
+.sessions-filter-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .sessions-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 12px 4px;
+  padding: 8px 8px 12px 4px;
   container-type: inline-size;
   container-name: sessions-panel;
 }
 
-/* Container status dot — shared between session tabs and session items */
+/* Container status dot - shared between session tabs and session items */
 .container-status-dot {
   display: inline-block;
   width: 6px;
@@ -95,7 +131,7 @@
   opacity: 0.5;
 }
 
-/* No container — subtle gray dot */
+/* No container - subtle gray dot */
 .container-status-none {
   background: var(--text-muted, #6b7280);
   opacity: 0.3;

@@ -12,6 +12,10 @@ describe('useKeyboardShortcuts', () => {
   let jumpNextRef
   let jumpTopRef
   let jumpBottomRef
+  let rightColumnPrevRef
+  let rightColumnNextRef
+  let railPrevRef
+  let railNextRef
 
   beforeEach(() => {
     handleTogglePanel = vi.fn()
@@ -21,6 +25,10 @@ describe('useKeyboardShortcuts', () => {
     jumpNextRef = { current: vi.fn() }
     jumpTopRef = { current: vi.fn() }
     jumpBottomRef = { current: vi.fn() }
+    rightColumnPrevRef = { current: vi.fn() }
+    rightColumnNextRef = { current: vi.fn() }
+    railPrevRef = { current: vi.fn() }
+    railNextRef = { current: vi.fn() }
   })
 
   function createProps(overrides = {}) {
@@ -33,6 +41,10 @@ describe('useKeyboardShortcuts', () => {
       jumpNextRef,
       jumpTopRef,
       jumpBottomRef,
+      rightColumnPrevRef,
+      rightColumnNextRef,
+      railPrevRef,
+      railNextRef,
       ...overrides,
     }
   }
@@ -147,6 +159,93 @@ describe('useKeyboardShortcuts', () => {
       renderHook(() => useKeyboardShortcuts(createProps()))
       fireKey('End', { altKey: true })
       expect(jumpBottomRef.current).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('right split slot navigation', () => {
+    it('Alt+PageUp calls rightColumnPrevRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('PageUp', { altKey: true })
+      expect(rightColumnPrevRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('Alt+PageDown calls rightColumnNextRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('PageDown', { altKey: true })
+      expect(rightColumnNextRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('is a no-op, not a throw, when the slot has no occupant (ref is null)', () => {
+      renderHook(() =>
+        useKeyboardShortcuts(
+          createProps({
+            rightColumnPrevRef: { current: null },
+            rightColumnNextRef: { current: null },
+          }),
+        ),
+      )
+      expect(() => fireKey('PageUp', { altKey: true })).not.toThrow()
+      expect(() => fireKey('PageDown', { altKey: true })).not.toThrow()
+    })
+
+    it('Alt+PageUp/PageDown never invoke the transcript jump refs', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('PageUp', { altKey: true })
+      fireKey('PageDown', { altKey: true })
+      expect(jumpPrevRef.current).not.toHaveBeenCalled()
+      expect(jumpNextRef.current).not.toHaveBeenCalled()
+      expect(jumpTopRef.current).not.toHaveBeenCalled()
+      expect(jumpBottomRef.current).not.toHaveBeenCalled()
+    })
+
+    it('Alt+Up/Down/Home/End never invoke the right-column refs', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowUp', { altKey: true })
+      fireKey('ArrowDown', { altKey: true })
+      fireKey('Home', { altKey: true })
+      fireKey('End', { altKey: true })
+      expect(rightColumnPrevRef.current).not.toHaveBeenCalled()
+      expect(rightColumnNextRef.current).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('session rail focus navigation', () => {
+    it('Alt+Shift+Left calls railPrevRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowLeft', { altKey: true, shiftKey: true })
+      expect(railPrevRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('Alt+Shift+Right calls railNextRef', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowRight', { altKey: true, shiftKey: true })
+      expect(railNextRef.current).toHaveBeenCalledOnce()
+    })
+
+    it('is a no-op, not a throw, when the rail has one group (ref is null)', () => {
+      renderHook(() =>
+        useKeyboardShortcuts(
+          createProps({ railPrevRef: { current: null }, railNextRef: { current: null } }),
+        ),
+      )
+      expect(() => fireKey('ArrowLeft', { altKey: true, shiftKey: true })).not.toThrow()
+      expect(() => fireKey('ArrowRight', { altKey: true, shiftKey: true })).not.toThrow()
+    })
+
+    it('plain Alt+Left/Right (no Shift) never invoke the rail refs - Alt+Left stays unbound', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowLeft', { altKey: true })
+      fireKey('ArrowRight', { altKey: true })
+      expect(railPrevRef.current).not.toHaveBeenCalled()
+      expect(railNextRef.current).not.toHaveBeenCalled()
+    })
+
+    it('Alt+Shift+Left/Right never invoke the transcript jump refs', () => {
+      renderHook(() => useKeyboardShortcuts(createProps()))
+      fireKey('ArrowLeft', { altKey: true, shiftKey: true })
+      fireKey('ArrowRight', { altKey: true, shiftKey: true })
+      expect(jumpPrevRef.current).not.toHaveBeenCalled()
+      expect(jumpNextRef.current).not.toHaveBeenCalled()
     })
   })
 

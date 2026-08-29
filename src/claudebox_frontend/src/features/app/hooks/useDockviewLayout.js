@@ -8,7 +8,11 @@ import SidePanelManager from '../../../managers/SidePanelManager'
 import { buildSaveOps } from '../../../utils/layoutPersistence'
 import { applyMainGroupMarker, buildDefaultLayout } from '../utils/default-layout'
 
-export default function useDockviewLayout() {
+/**
+ * @param {React.RefObject} [focusedGroupRootRef] - Focused rail group's root DOM node, scoping the
+ *   `.chat-messages` snapshot below; defaults to `document` when absent, as on mobile.
+ */
+export default function useDockviewLayout(focusedGroupRootRef) {
   const apiRef = useRef(null)
   const sidePanelRef = useRef(null)
   const saveTimeoutRef = useRef(null)
@@ -28,11 +32,7 @@ export default function useDockviewLayout() {
   const updateActivePanels = useCallback(() => {
     const manager = sidePanelRef.current
     if (manager) {
-      setActivePanels([
-        ...manager.state.left.order,
-        ...manager.state.right.order,
-        ...manager.state.bottom.order,
-      ])
+      setActivePanels([...manager.state.left.order, ...manager.state.right.order])
     }
   }, [])
 
@@ -112,7 +112,7 @@ export default function useDockviewLayout() {
     panelSwitchingRef.current = true
 
     // Snapshot scroll position from DOM before any internal layout reflow can reset it.
-    const messagesEl = document.querySelector('.chat-messages')
+    const messagesEl = (focusedGroupRootRef?.current ?? document).querySelector('.chat-messages')
     const savedScrollTop = messagesEl?.scrollTop ?? 0
 
     requestAnimationFrame(() => {
@@ -125,7 +125,7 @@ export default function useDockviewLayout() {
         panelSwitchingRef.current = false
       })
     })
-  }, [])
+  }, [focusedGroupRootRef])
 
   /**
    * Bind sessionIdRef and run the one-shot per-tab layout restore on first session attach; the

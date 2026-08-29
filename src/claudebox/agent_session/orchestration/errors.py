@@ -10,6 +10,16 @@ class SessionNotReady(ApiError):
     error_key = "session_not_ready"
 
 
+class SessionEntryNotFound(ApiError):
+    """No registry entry for the given session id in this container.
+
+    Distinct from session.models.SessionNotFound, which is about the on-disk session set.
+    """
+
+    status_code = 404
+    error_key = "session_entry_not_found"
+
+
 class ValidationError(ApiError):
     """Required field missing or invalid in request body."""
 
@@ -42,3 +52,16 @@ class ToolOutputNotFound(ApiError):
 
     status_code = 404
     error_key = "tool_output_not_found"
+
+
+class McpServerProtected(ApiError):
+    """Reconnect/toggle named claudebox's own in-process sibling-session server.
+
+    Hidden from the MCP panel for the same reason: an agent must not lose its delegation tools.
+    """
+
+    status_code = 400
+    error_key = "mcp_server_protected"
+
+    def __init__(self, server_name: str) -> None:
+        super().__init__(server_name=server_name)

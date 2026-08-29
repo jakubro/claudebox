@@ -17,6 +17,11 @@ const EFFORT_COLOR = '#9a7ec8'
 const RESTART_COLOR = '#c89060'
 const MISMATCH_COLOR = '#e05c5c'
 
+/** A session's own name, or its id when unnamed or absent from the fetched list. */
+export function resolveSessionName(sessions, sessionId) {
+  return sessions.find(s => s.session_id === sessionId)?.name || sessionId
+}
+
 /** Label + color for a setting-change / container-restart divider event. */
 export function getSettingChangeInfo(
   event,
@@ -58,9 +63,8 @@ export function getSettingChangeInfo(
     }
     const forkParentId = event.message_data?.fork_parent_session_id
     if (forkParentId) {
-      const parent = sessions.find(s => s.session_id === forkParentId)
       return {
-        label: `Forked from ${parent?.name || forkParentId}`,
+        label: `Forked from ${resolveSessionName(sessions, forkParentId)}`,
         color: RESTART_COLOR,
       }
     }

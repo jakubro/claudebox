@@ -26,7 +26,6 @@ export const EventSubtype = Object.freeze({
   INIT: 'init',
   COMPACT_START: 'compact_start',
   COMPACT_BOUNDARY: 'compact_boundary',
-  RATE_LIMIT: 'rate_limit',
 })
 
 // --- Tool names (event.content for tool_use events) ---
@@ -51,6 +50,11 @@ export const ToolName = Object.freeze({
   WEB_FETCH: 'WebFetch',
   MCP_SEARCH: 'MCPSearch',
   TOOL_SEARCH: 'ToolSearch',
+  // Claude reaches these through claudebox's own in-process MCP server, so its wire name
+  // carries the SDK's mcp__{server}__{tool} convention; LangGraph's plain names alias to it below.
+  SESSION_SPAWN: 'mcp__claudebox__session_spawn',
+  SESSION_ASK: 'mcp__claudebox__session_ask',
+  SESSION_READ: 'mcp__claudebox__session_read',
 })
 
 // --- LangGraph tool-name aliases ---
@@ -73,6 +77,9 @@ export const TOOL_NAME_ALIASES = Object.freeze({
   task_list: ToolName.TASK_LIST,
   task_output: ToolName.TASK_OUTPUT,
   tool_search: ToolName.TOOL_SEARCH,
+  session_spawn: ToolName.SESSION_SPAWN,
+  session_ask: ToolName.SESSION_ASK,
+  session_read: ToolName.SESSION_READ,
 })
 
 /** Falls back to the input unchanged when no alias applies. */
@@ -86,7 +93,6 @@ export const BlockType = Object.freeze({
   THINKING: 'thinking',
   TOOL: 'tool',
   COMPACTION: 'compaction',
-  INTERRUPT: 'interrupt',
 })
 
 // --- Task status ---

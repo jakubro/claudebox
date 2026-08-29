@@ -1744,7 +1744,8 @@ test.describe('Board prompt sequence', () => {
   test('move into active column triggers assign with prompt sequence config in board', async ({
     page,
   }) => {
-    // Board has prompt.sequence; backend expands {ticket} server-side, so we verify via the assign ticket paths.
+    // Board has prompt.sequence; the backend expands {ticket} server-side, so the assertion
+    // reads the assign ticket paths.
     const PROMPT_BOARD = {
       ...MOCK_BOARD_DETAIL,
       states: MOCK_BOARD_DETAIL.states.map(s =>

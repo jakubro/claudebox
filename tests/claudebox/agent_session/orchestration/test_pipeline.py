@@ -655,3 +655,189 @@ class TestNoDuplicateOnMidStreamCrash:
         await pipeline._run()
 
         assert len(self._assistant_texts(pipeline, "Unknown command")) == 1
+
+
+# --- Nested event dedup (background Task, live stream vs tailed monitor) ---
+
+
+def _make_nested_event(
+    subtype: str,
+    *,
+    parent_tool_use_id: str = "task_1",
+    tool_use_id: str | None = None,
+    content: str | None = None,
+    source_file: str | None = None,
+    event_id: str = "evt_000000001",
+) -> PublishedEvent:
+    """A nested event under a background Task - `source_file` set marks a tailed copy, unset
+    marks the live stream."""
+
+    return PublishedEvent(
+        type="assistant" if subtype != "tool_result" else "user",
+        subtype=subtype,
+        content=content,
+        primary=True,
+        is_human=False,
+        raw={},
+        id=event_id,
+        ts=datetime(2026, 3, 7, 12, 0, 0, tzinfo=UTC),
+        turn_id="t1",
+        parent_tool_use_id=parent_tool_use_id,
+        tool_use_id=tool_use_id,
+        source_file=source_file,
+    )
+
+
+class TestNestedEventDedup:
+    """A tailed copy of an already-published live nested event (or vice versa) is dropped;
+    same-source repeats and events under different parents are not."""
+
+    @pytest.mark.anyio
+    async def test_tailed_copy_of_live_call_is_dropped(self):
+        pipeline = _make_pipeline()
+        live = _make_nested_event("tool_use", tool_use_id="tu_1", event_id="evt_000000001")
+        tailed = _make_nested_event(
+            "tool_use",
+            tool_use_id="tu_1",
+            source_file="agent.jsonl",
+            event_id="evt_000000002",
+        )
+
+        await pipeline._process_event(live)
+        await pipeline._process_event(tailed)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [live]
+
+    @pytest.mark.anyio
+    async def test_live_copy_arriving_second_is_also_dropped(self):
+        """Symmetric: whichever source arrives first wins, live included."""
+
+        pipeline = _make_pipeline()
+        tailed = _make_nested_event(
+            "tool_use",
+            tool_use_id="tu_1",
+            source_file="agent.jsonl",
+            event_id="evt_000000001",
+        )
+        live = _make_nested_event("tool_use", tool_use_id="tu_1", event_id="evt_000000002")
+
+        await pipeline._process_event(tailed)
+        await pipeline._process_event(live)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [tailed]
+
+    @pytest.mark.anyio
+    async def test_a_call_and_its_own_result_both_persist(self):
+        """Same tool_use_id, different subtype - the key must include subtype or a result would
+        look like a duplicate of its own call."""
+
+        pipeline = _make_pipeline()
+        call = _make_nested_event("tool_use", tool_use_id="tu_1", event_id="evt_000000001")
+        result = _make_nested_event(
+            "tool_result",
+            tool_use_id="tu_1",
+            source_file="agent.jsonl",
+            event_id="evt_000000002",
+        )
+
+        await pipeline._process_event(call)
+        await pipeline._process_event(result)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [call, result]
+
+    @pytest.mark.anyio
+    async def test_repeated_live_narration_both_persist(self):
+        """Two genuinely repeated lines from the SAME source are never deduped against each
+        other - only a cross-source match is dropped."""
+
+        pipeline = _make_pipeline()
+        first = _make_nested_event("text", content="Checking files...", event_id="evt_000000001")
+        second = _make_nested_event("text", content="Checking files...", event_id="evt_000000002")
+
+        await pipeline._process_event(first)
+        await pipeline._process_event(second)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [first, second]
+
+    @pytest.mark.anyio
+    async def test_tailed_copy_of_live_narration_is_dropped(self):
+        pipeline = _make_pipeline()
+        live = _make_nested_event("text", content="Checking files...", event_id="evt_000000001")
+        tailed = _make_nested_event(
+            "text",
+            content="  Checking files...  ",
+            source_file="agent.jsonl",
+            event_id="evt_000000002",
+        )
+
+        await pipeline._process_event(live)
+        await pipeline._process_event(tailed)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [live]
+
+    @pytest.mark.anyio
+    async def test_different_parents_are_never_deduped_against_each_other(self):
+        pipeline = _make_pipeline()
+        under_a = _make_nested_event(
+            "tool_use",
+            parent_tool_use_id="task_a",
+            tool_use_id="tu_1",
+            event_id="evt_000000001",
+        )
+        under_b = _make_nested_event(
+            "tool_use",
+            parent_tool_use_id="task_b",
+            tool_use_id="tu_1",
+            source_file="agent.jsonl",
+            event_id="evt_000000002",
+        )
+
+        await pipeline._process_event(under_a)
+        await pipeline._process_event(under_b)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [under_a, under_b]
+
+    @pytest.mark.anyio
+    async def test_seeds_from_historical_events_so_a_reattached_replay_is_dropped(self):
+        """A session resuming with a live-only nested event already on disk must not republish it
+        when the reattached monitor tails the same call for the first time post-restart."""
+
+        historical_live = _make_nested_event(
+            "tool_use",
+            tool_use_id="tu_1",
+            event_id="evt_000000001",
+        )
+
+        mock_log = MagicMock(
+            read_all=MagicMock(return_value=[historical_live]),
+            open=AsyncMock(),
+            append=AsyncMock(),
+        )
+        pipeline = EventPipeline(
+            sdk_client=MagicMock(),
+            workspace=MagicMock(),
+            on_init=AsyncMock(),
+            on_event=AsyncMock(),
+        )
+
+        with patch(
+            "claudebox.agent_session.orchestration.pipeline.EventLog",
+            return_value=mock_log,
+        ):
+            await pipeline._initialize(session_id="s1")
+
+        replay = _make_nested_event(
+            "tool_use",
+            tool_use_id="tu_1",
+            source_file="agent.jsonl",
+            event_id="evt_000000002",
+        )
+        await pipeline._process_event(replay)
+
+        pipeline._on_event.assert_not_called()  # ty: ignore[unresolved-attribute]

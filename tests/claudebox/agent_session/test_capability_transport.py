@@ -108,7 +108,7 @@ class TestCapabilitiesEndpoint:
 
         body = client.get("/api/sessions/current/capabilities").json()
 
-        assert len(body["capabilities"]) == 16
+        assert len(body["capabilities"]) == 15
         assert all(isinstance(v, bool) for v in body["capabilities"].values())
         assert body["runtime_name"] == "Claude"
 
@@ -168,7 +168,7 @@ class TestSessionInfoEnvelope:
 
         assert body["session_id"] == "sess-abc"
         assert body["runtime_name"] == "Claude"
-        assert len(body["capabilities"]) == 16
+        assert len(body["capabilities"]) == 15
         assert body["capabilities"]["supports_models"] is True
 
     def test_envelope_empty_when_no_session(self, tmp_workspace, monkeypatch):
@@ -209,7 +209,7 @@ class TestSystemInitEnrichment:
         assert event.runtime_name == "Claude"
         assert event.capabilities is not None
         assert event.capabilities["supports_models"] is True
-        assert len(event.capabilities) == 16
+        assert len(event.capabilities) == 15
 
     def test_non_init_event_unchanged(self):
         runtime = _runtime_double()

@@ -2,24 +2,18 @@
 
 import { AUTOSCROLL_THRESHOLD } from '../../config/dimensions'
 import { PROGRAMMATIC_SCROLL_HOLD_MS } from '../../config/timing'
+import {
+  hasNestedScrollableAncestor,
+  isNestedScrollableConsuming,
+} from '../../utils/nestedScrollable'
 import { isPrimaryPointer } from '../../utils/pointer'
-
-/** Keys on `.chat-messages` that count as user-scroll intent, matching native scroll-key behaviour. */
-const SCROLL_INTENT_KEYS = new Set([
-  'PageUp',
-  'PageDown',
-  'Home',
-  'End',
-  'ArrowUp',
-  'ArrowDown',
-  ' ', // Space (Shift+Space scrolls up)
-])
-
-/**
- * Keys whose native direction is downward; at-bottom they're a no-op, not intent. Plain Space
- * belongs here too (Shift+Space scrolls up, handled separately).
- */
-const SCROLL_DOWN_KEYS = new Set(['PageDown', 'End', 'ArrowDown'])
+import {
+  applyMarkProgrammaticScroll,
+  applyMarkReturnedToBottom,
+  applyMarkUserIntent,
+  disposeScrollController,
+  isScrollIntentKeydown,
+} from '../../utils/scrollIntentLatch'
 
 export default class ChatController {
   /**
@@ -77,14 +71,7 @@ export default class ChatController {
       this._rafHandle = null
       this._scrollScheduled = false
     }
-    if (this._progTimer != null) {
-      clearTimeout(this._progTimer)
-      this._progTimer = null
-    }
-    for (const cleanup of this.disposables) {
-      cleanup()
-    }
-    this.disposables = []
+    disposeScrollController(this)
   }
 
   /** Check if scroll is at or near bottom. */
@@ -104,14 +91,7 @@ export default class ChatController {
    * their scroll writes do not raise user-intent in the onScroll handler.
    */
   markProgrammaticScroll() {
-    this.isProgrammaticScroll = true
-    if (this._progTimer != null) {
-      clearTimeout(this._progTimer)
-    }
-    this._progTimer = setTimeout(() => {
-      this.isProgrammaticScroll = false
-      this._progTimer = null
-    }, PROGRAMMATIC_SCROLL_HOLD_MS)
+    applyMarkProgrammaticScroll(this, PROGRAMMATIC_SCROLL_HOLD_MS)
   }
 
   /** Programmatically scroll to bottom (coalesced via single rAF). */
@@ -153,11 +133,7 @@ export default class ChatController {
    * intent.
    */
   markUserIntent() {
-    this.userIntentActive = true
-    if (this.isAutoScrollEnabled) {
-      this.isAutoScrollEnabled = false
-      this.options.onAutoScrollChange?.(false)
-    }
+    applyMarkUserIntent(this)
   }
 
   /**
@@ -168,9 +144,7 @@ export default class ChatController {
    * engaged - the onAutoScrollChange callback still fires.
    */
   markReturnedToBottom() {
-    this.userIntentActive = false
-    this.isAutoScrollEnabled = true
-    this.options.onAutoScrollChange?.(true)
+    applyMarkReturnedToBottom(this)
   }
 
   /**
@@ -217,7 +191,7 @@ export default class ChatController {
       }
       // Inner scrollable consumes this wheel; outer listener defers (code blocks, tables, any
       // nested overflow:auto/scroll container under .chat-messages).
-      if (this._isNestedScrollableConsuming(e, messagesEl, e.deltaX, e.deltaY)) {
+      if (isNestedScrollableConsuming(e, messagesEl, e.deltaX, e.deltaY)) {
         return
       }
       this.markUserIntent()
@@ -228,7 +202,7 @@ export default class ChatController {
       if (e.pointerType !== 'touch' || !isPrimaryPointer(e)) {
         return
       }
-      if (this._hasNestedScrollableAncestor(e, messagesEl)) {
+      if (hasNestedScrollableAncestor(e, messagesEl)) {
         return
       }
       this.markUserIntent()
@@ -237,21 +211,13 @@ export default class ChatController {
       if (e.pointerType !== 'touch' || !isPrimaryPointer(e)) {
         return
       }
-      if (this._hasNestedScrollableAncestor(e, messagesEl)) {
+      if (hasNestedScrollableAncestor(e, messagesEl)) {
         return
       }
       this.markUserIntent()
     }
     const onKeyDown = e => {
-      // Don't raise intent for keys typed into a text field inside .chat-messages.
-      if (e.target?.matches?.('textarea, input, [contenteditable="true"]')) {
-        return
-      }
-      if (!SCROLL_INTENT_KEYS.has(e.key)) {
-        return
-      }
-      // At-bottom + scroll-down key is a no-op, not intent. Plain Space scrolls down; Shift+Space passes through.
-      if (this.isAtBottom() && (SCROLL_DOWN_KEYS.has(e.key) || (e.key === ' ' && !e.shiftKey))) {
+      if (!isScrollIntentKeydown(e, this.isAtBottom())) {
         return
       }
       this.markUserIntent()
@@ -332,62 +298,5 @@ export default class ChatController {
     if (this.isAutoScrollEnabled) {
       this._requestScroll()
     }
-  }
-
-  /**
-   * Walk from event.target up to (but not including) messagesEl. Return true
-   * iff some ancestor along the way is itself scrollable on an axis the wheel
-   * delta is moving along AND has scroll room in that direction. When true,
-   * the inner container will consume the gesture and the outer .chat-messages
-   * listener must NOT raise user intent.
-   */
-  _isNestedScrollableConsuming(event, messagesEl, deltaX, deltaY) {
-    let node = event.target
-    while (node && node !== messagesEl && node.nodeType === 1) {
-      const style = window.getComputedStyle(node)
-      const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
-      const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
-
-      if (scrollableY && deltaY !== 0) {
-        const roomDown = node.scrollTop + node.clientHeight < node.scrollHeight - 1
-        const roomUp = node.scrollTop > 0
-        if ((deltaY > 0 && roomDown) || (deltaY < 0 && roomUp)) {
-          return true
-        }
-      }
-      if (scrollableX && deltaX !== 0) {
-        const roomRight = node.scrollLeft + node.clientWidth < node.scrollWidth - 1
-        const roomLeft = node.scrollLeft > 0
-        if ((deltaX > 0 && roomRight) || (deltaX < 0 && roomLeft)) {
-          return true
-        }
-      }
-      node = node.parentElement
-    }
-    return false
-  }
-
-  /**
-   * Coarse variant of _isNestedScrollableConsuming for touch events where no
-   * delta is available. Returns true if any ancestor between target and
-   * messagesEl declares overflow in {auto, scroll} on either axis. Browsers
-   * route touch panning to the innermost scrollable ancestor, so any such
-   * ancestor implies the outer listener should defer.
-   */
-  _hasNestedScrollableAncestor(event, messagesEl) {
-    let node = event.target
-    while (node && node !== messagesEl && node.nodeType === 1) {
-      const style = window.getComputedStyle(node)
-      if (
-        style.overflowY === 'auto' ||
-        style.overflowY === 'scroll' ||
-        style.overflowX === 'auto' ||
-        style.overflowX === 'scroll'
-      ) {
-        return true
-      }
-      node = node.parentElement
-    }
-    return false
   }
 }

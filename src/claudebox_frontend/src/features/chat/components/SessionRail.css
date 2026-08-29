@@ -1,0 +1,48 @@
+/* Session rail - horizontal scroller holding ancestor groups and the one focused, live group. */
+
+.chat-rail {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* The one live group - takes the rail's remaining width, never below CHAT_TRANSCRIPT_MIN_WIDTH;
+   its own split collapses first when space runs short. */
+.chat-rail-focused {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 320px;
+  height: 100%;
+}
+
+.chat-rail-focused > .chat-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* An ancestor's own column - fixed width (see CHAT_RAIL_ANCESTOR_WIDTH), no control bar, no
+   divider, no message box; the flex-basis itself is set inline so both share one constant. */
+.chat-rail-ancestor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.chat-rail-ancestor-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chat-rail-ancestor-unavailable {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}

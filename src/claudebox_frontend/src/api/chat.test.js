@@ -1,7 +1,7 @@
 /** Tests for api/chat.js send and interrupt functions. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { interrupt, sendMessage } from './chat'
+import { interrupt, interruptSide, sendMessage, sendSideMessage } from './chat'
 
 vi.mock('./apiClient', () => ({
   containerFetch: vi.fn(),
@@ -103,5 +103,59 @@ describe('interrupt', () => {
     containerFetch.mockRejectedValue(new Error('Network error'))
 
     await expect(interrupt()).rejects.toThrow('Network error')
+  })
+})
+
+describe('sendSideMessage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('posts to /api/send with the session_id query param and prompt body', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await sendSideMessage('side-1', 'why this branch?')
+
+    expect(containerFetch).toHaveBeenCalledWith('/api/send?session_id=side-1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'why this branch?' }),
+    })
+  })
+
+  it('encodes a session id containing reserved URL characters', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await sendSideMessage('side/with?chars', 'hi')
+
+    expect(containerFetch.mock.calls[0][0]).toBe('/api/send?session_id=side%2Fwith%3Fchars')
+  })
+
+  it('throws ContainerGoneError on a stale-container status', async () => {
+    containerFetch.mockResolvedValue({ ok: false, status: 404 })
+
+    await expect(sendSideMessage('side-1', 'hi')).rejects.toThrow('Container no longer exists')
+  })
+
+  it('throws a generic error on any other failure status', async () => {
+    containerFetch.mockResolvedValue({ ok: false, status: 500 })
+
+    await expect(sendSideMessage('side-1', 'hi')).rejects.toThrow('Failed to send message')
+  })
+})
+
+describe('interruptSide', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('posts to /api/interrupt with the session_id query param', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await interruptSide('side-1')
+
+    expect(containerFetch).toHaveBeenCalledWith('/api/interrupt?session_id=side-1', {
+      method: 'POST',
+    })
   })
 })

@@ -363,6 +363,64 @@ test.describe('Container Status Indicators', () => {
     await expect(page.locator('.container-status-dot.container-status-stopping')).toHaveCount(0)
   })
 
+  // SPEC: container:thread-stop-independent
+  test('a side conversation finishing its answer clears only its own dot', async ({ page }) => {
+    const daemon = await createDaemonSSEController(page)
+    await mockAPI(page)
+
+    const sideThreadId = 'side-thread-001'
+    // The side thread starts live (resolves to the parent's container); the daemon's health poll
+    // later drops it from the container's live set while the container itself never stops.
+    let sideThreadLive = true
+    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback()
+        return
+      }
+      const base = loadFixture('sessions/default.json').sessions[0]
+      await route.fulfill({
+        json: {
+          sessions: [
+            { ...base, num_turns: 1, container_id: DEFAULT_CONTAINER_ID },
+            {
+              ...base,
+              session_id: sideThreadId,
+              parent_session_id: DEFAULT_SESSION_ID,
+              is_side_thread: true,
+              num_turns: 1,
+              container_id: sideThreadLive ? DEFAULT_CONTAINER_ID : null,
+            },
+          ],
+        },
+      })
+    })
+    // No mockSSE() here - the controllable mock already auto-connects chat SSE, and layering
+    // another EventSource override on top would clobber the daemon stream sendEvent() uses.
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await openSessionsPanel(page)
+    // Threads is an origin filter - a flat list, unlike Conversations/All where a side thread
+    // renders nested under its parent and is collapsed out of the DOM by default.
+    await page.getByTestId('sessions-filter-threads').click()
+
+    // The primary is the active session throughout - its dot lives in the header strip.
+    const primaryDot = page.locator('[data-testid="session-header-status-dot"]')
+    const threadDot = page
+      .locator('[data-testid="session-item"]', { hasText: sideThreadId.slice(0, 8) })
+      .locator('.container-status-dot')
+
+    await expect(primaryDot).toHaveAttribute('data-status', 'running')
+    await expect(threadDot).toHaveClass(/container-status-running/)
+
+    // The side thread finishes answering and drops out of the container's live set - no
+    // container-level event fires at all, since the container itself never stops.
+    sideThreadLive = false
+    await daemon.sendEvent({ type: 'sessions_changed' })
+
+    await expect(threadDot).toHaveClass(/container-status-none/)
+    await expect(primaryDot).toHaveAttribute('data-status', 'running')
+  })
+
   // SPEC: container:dot-states
   test('CSS rules render distinct, non-equal colors for each documented dot state', async ({
     page,
@@ -437,7 +495,7 @@ test.describe('Session Creation Overlay', () => {
   // SPEC: container:creation-textarea
   // SPEC: container:creation-messages-inline
   test('shows creation overlay with header-strip Creating… and progress', async ({ page }) => {
-    // Delay the newSession response so we can observe the overlay.
+    // Delay the newSession response so the overlay stays observable.
     let resolveNewSession
     const newSessionPromise = new Promise(resolve => {
       resolveNewSession = resolve
@@ -581,6 +639,102 @@ test.describe('Session Resume Overlay', () => {
     expect(sends).toHaveLength(0)
   })
 
+  // SPEC: chat:loading-covers-split
+  test('the loading screen covers transcript, divider and right view together, settled beneath it', async ({
+    page,
+  }) => {
+    // resuming.jsonl stays in the resuming state: replay_started without replay_ended.
+    await mockSSE(page, 'events/resuming.jsonl')
+    await mockAPI(page, { sessionUiStateDefaults: { rightSlotView: 'terminal' } })
+    await page.goto(DEFAULT_SESSION_URL)
+    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+
+    const overlay = page.locator('.chat-replay-overlay')
+    await expect(overlay).toBeVisible()
+    // The overlay is inset 1px top/left (CSS) to keep the panel frame's own border visible.
+    const contentAreaBox = await page.locator('.chat-content-area').boundingBox()
+    expect(await overlay.boundingBox()).toEqual({
+      x: contentAreaBox.x + 1,
+      y: contentAreaBox.y + 1,
+      width: contentAreaBox.width - 1,
+      height: contentAreaBox.height - 1,
+    })
+
+    // The screen takes pointer events, not the divider beneath it - a drag at its coordinates
+    // reaches the screen instead, so the split ratio never moves.
+    const divider = page.locator('[data-testid="chat-split-divider"]')
+    const dividerBox = await divider.boundingBox()
+    const midY = dividerBox.y + dividerBox.height / 2
+    await page.mouse.move(dividerBox.x + dividerBox.width / 2, midY)
+    await page.mouse.down()
+    await page.mouse.move(dividerBox.x + 150, midY)
+    await page.mouse.up()
+    expect((await divider.boundingBox()).x).toBe(dividerBox.x)
+
+    // The overlay's top strip runs the full content-area width, so the right slot's own content
+    // is exactly as reachable through it as the transcript is - hidden, not merely covered.
+    await expect(page.getByTestId('terminal-column')).not.toBeVisible()
+
+    const widthWhileLoading = (await page.locator('.chat-transcript-column').boundingBox()).width
+
+    // Manually complete the replay - resuming.jsonl deliberately never sends replay_ended itself.
+    await page.evaluate(() => {
+      const instance = window.__sseChatInstance
+      const msg = { data: JSON.stringify({ type: 'system', subtype: 'replay_ended' }) }
+      if (instance?.readyState === 1) {
+        instance.onmessage?.(msg)
+        instance._emit('message', msg)
+      }
+    })
+    await expect(overlay).not.toBeVisible()
+
+    // No reflow: the split was already settled underneath, so lifting the screen changes nothing.
+    expect((await page.locator('.chat-transcript-column').boundingBox()).width).toBe(
+      widthWhileLoading,
+    )
+    await expect(page.getByTestId('terminal-column')).toBeVisible()
+  })
+
+  // SPEC: chat:loading-covers-split
+  test('a pinned right-view overview is not visible while the loading screen is up, and returns once it lifts', async ({
+    page,
+  }) => {
+    // resuming.jsonl stays in the resuming state: replay_started without replay_ended.
+    await mockSSE(page, 'events/resuming.jsonl')
+    await mockAPI(page, {
+      sessionUiStateDefaults: { rightSlotView: 'terminal', terminalMinimapPinned: true },
+    })
+    await page.goto(DEFAULT_SESSION_URL)
+    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+    await expect(page.locator('.chat-replay-overlay')).toBeVisible()
+
+    await expect(page.getByTestId('terminal-minimap')).not.toBeVisible()
+
+    await page.waitForFunction(() => window.__sseChatInstance?.readyState === 1)
+    await page.evaluate(() => {
+      const instance = window.__sseChatInstance
+      const send = event => {
+        const msg = { data: JSON.stringify(event) }
+        instance.onmessage?.(msg)
+        instance._emit('message', msg)
+      }
+      // The overview needs at least one bar to render at all - a resumed session's replay would
+      // carry its own prior terminal entries; this stands in for one.
+      send({
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        tool_use_id: 'tu_1',
+        tool_name: 'Bash',
+        tool_input: { command: 'echo hi' },
+      })
+      send({ type: 'assistant', subtype: 'tool_result', content: 'hi', tool_use_id: 'tu_1' })
+      send({ type: 'system', subtype: 'replay_ended' })
+    })
+    await expect(page.locator('.chat-replay-overlay')).not.toBeVisible()
+    await expect(page.getByTestId('terminal-minimap')).toBeVisible()
+  })
+
   // SPEC: chat:replay-stays-responsive
   test('history materializes while the transcript is still loading', async ({ page }) => {
     await mockAPI(page)
@@ -620,7 +774,7 @@ test.describe('Session Resume Overlay', () => {
 
   // SPEC: container:resume-daemon-phase
   test('resume shows daemon phase progress before replay', async ({ page }) => {
-    // Delayed new-session lets us observe the daemon progress phase that precedes resume.
+    // A delayed new-session exposes the daemon progress phase that precedes resume.
     let resolveNewSession
     const newSessionPromise = new Promise(resolve => {
       resolveNewSession = resolve

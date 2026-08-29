@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
+    from ._sibling_sessions import SiblingSessionClient
     from ._tasks import TaskService
 
 
@@ -24,4 +25,5 @@ class DaemonServiceBundle:
     remote daemon would swap each field for an HTTP client of the same shape, tool code unchanged.
     """
 
+    sessions: "SiblingSessionClient | None" = None
     tasks: "TaskService | None" = None

@@ -143,12 +143,6 @@ class UIStateService:
 
                 if value not in parent[key]:
                     parent[key].append(value)
-            elif op == "append":
-                # Array semantics: always append (allows duplicates)
-                if key not in parent or not isinstance(parent[key], list):
-                    parent[key] = []
-
-                parent[key].append(value)
             elif op == "remove" and key in parent and isinstance(parent[key], list):
                 try:
                     parent[key].remove(value)

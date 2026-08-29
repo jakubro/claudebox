@@ -1,14 +1,14 @@
 /** Windowed turn list - mounts viewport+overscan turns and prices the rest by prediction. */
 
-import { useVirtualizer } from '@tanstack/react-virtual'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { TURN_HORIZONTAL_PADDING_PX, TURN_OVERSCAN } from '../../../config/dimensions'
-import { predictTurnHeight } from '../utils/predictTurnHeight'
+import { useCallback, useEffect, useRef } from 'react'
 import {
-  measureRoundedElement,
-  useMirroredScrollElement,
-  useScrollMargin,
-} from './useVirtualListGeometry'
+  THREAD_FOLD_ROW_HEIGHT_PX,
+  TURN_HORIZONTAL_PADDING_PX,
+  TURN_OVERSCAN,
+} from '../../../config/dimensions'
+import { TurnRoutingMode } from '../../../utils/eventProcessing'
+import { predictTurnHeight } from '../utils/predictTurnHeight'
+import { useTurnKeyedVirtualizer, useVirtualizerGeometry } from './useVirtualListGeometry'
 
 const EMPTY_SET = new Set()
 
@@ -23,59 +23,70 @@ const EMPTY_SET = new Set()
  * `windowed: false` means no window could be computed and the caller must render every turn - an
  * unwindowed chat is slow, an empty one is broken. Covers layout-less environments; frames before
  * the container attaches are covered by `initialRect`.
+ *
+ * `foldBoundary` and `foldExpanded` override pricing while folded: index 0 prices as the fold row,
+ * `1..foldBoundary` as zero, the rest normally - leaving the turn-index space itself unchanged.
  */
 export default function useTurnVirtualizer({
-  messagesRef,
+  messagesEl,
   listRef,
   turns,
   collapsedTurnIds = EMPTY_SET,
-  splitEnabled = false,
+  mode = TurnRoutingMode.OFF,
+  foldBoundary = -1,
+  foldExpanded = false,
 }) {
-  const scrollEl = useMirroredScrollElement(messagesRef)
-
-  // The scroll element does not exist during the first render, so the virtualizer has no viewport to compute a
-  // range from and would fall back to rendering every turn. Hand it the window height instead: one frame of a
-  // roughly-sized window costs a handful of turns, where the fallback costs the whole transcript - the exact cost
-  // windowing exists to remove.
-  const initialRect = useMemo(
-    () => ({ width: 0, height: typeof window === 'undefined' ? 0 : window.innerHeight }),
-    [],
-  )
-
   // Jump targeting compares measurements against real `scrollTop` values - and against the active turn, which is
   // measured from its own element - so the two coordinate spaces need the same margin baked in.
-  const scrollMargin = useScrollMargin(scrollEl, listRef)
+  const { scrollEl, initialRect, scrollMargin } = useVirtualizerGeometry(messagesEl, listRef)
+
+  const folded = foldBoundary >= 0 && !foldExpanded
 
   const estimateSize = useCallback(
     index => {
+      if (folded) {
+        if (index === 0) {
+          return THREAD_FOLD_ROW_HEIGHT_PX
+        }
+        if (index <= foldBoundary) {
+          return 0
+        }
+      }
       const turn = turns[index]
       const width = Math.max(0, (scrollEl?.clientWidth || 0) - TURN_HORIZONTAL_PADDING_PX)
-      return predictTurnHeight(turn, width, collapsedTurnIds.has(turn?.turn_id), splitEnabled)
+      return predictTurnHeight(turn, width, collapsedTurnIds.has(turn?.turn_id), mode)
     },
-    [turns, collapsedTurnIds, scrollEl, splitEnabled],
+    [turns, collapsedTurnIds, scrollEl, mode, folded, foldBoundary],
   )
 
-  const getItemKey = useCallback(index => turns[index]?.turn_id ?? index, [turns])
-
-  const virtualizer = useVirtualizer({
-    count: turns.length,
-    getScrollElement: () => scrollEl,
+  const virtualizer = useTurnKeyedVirtualizer({
+    turns,
+    scrollEl,
     estimateSize,
-    getItemKey,
     initialRect,
     scrollMargin,
     overscan: TURN_OVERSCAN,
-    measureElement: measureRoundedElement,
   })
 
-  // A split flip leaves cached heights stale; re-measure on its edge only, never every render.
-  const prevSplitEnabledRef = useRef(splitEnabled)
+  // A mode transition leaves cached heights stale; re-measure on its edge only. Keyed on the mode
+  // value, so any transition between two modes fires it, not just an on/off edge.
+  const prevModeRef = useRef(mode)
   useEffect(() => {
-    if (prevSplitEnabledRef.current !== splitEnabled) {
+    if (prevModeRef.current !== mode) {
       virtualizer.measure()
     }
-    prevSplitEnabledRef.current = splitEnabled
-  }, [splitEnabled, virtualizer])
+    prevModeRef.current = mode
+  }, [mode, virtualizer])
+
+  // The fold toggle changes heights of rows that are mostly unmounted (nothing to fire a
+  // ResizeObserver), so it needs the same explicit re-measure the mode transition above gets.
+  const prevFoldedRef = useRef(folded)
+  useEffect(() => {
+    if (prevFoldedRef.current !== folded) {
+      virtualizer.measure()
+    }
+    prevFoldedRef.current = folded
+  }, [folded, virtualizer])
 
   // Windowing is decided by what the virtualizer actually produced, not by a separate reading of the container.
   // Asking the element for its height and letting the virtualizer size itself from its own rect gives two

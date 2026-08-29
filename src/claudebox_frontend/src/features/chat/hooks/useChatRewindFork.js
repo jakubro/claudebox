@@ -1,7 +1,7 @@
 /** Rewind / fork orchestration for ChatPanel - extracted to keep the panel below the complexity gate. */
 
 import { useCallback, useState } from 'react'
-import { forkSession } from '../../../api/sessions'
+import { forkSession, stopSession } from '../../../api/sessions'
 import { openSessionInNewTab } from '../../../utils/navigation'
 
 /**
@@ -40,33 +40,57 @@ export default function useChatRewindFork({
   // control-bar forks are tracked separately here, mirroring RewindSplitButton's per-turn spinner.
   const [controlBarForking, setControlBarForking] = useState(false)
 
-  /** Execute a fork with the given turnId and mode. */
+  /**
+   * Execute a fork with the given turnId and mode.
+   * @param {string|null} turnId
+   * @param {string} mode - 'fork-browser-tab' or 'fork-here'.
+   * @param {object} [opts]
+   * @param {string} [opts.sourceId] - Fork source session; defaults to the current session.
+   * @param {string} [opts.parentSessionId] - Overrides the child's recorded parent.
+   * @param {boolean} [opts.stopSourceFirst] - Stop the source first, so its tail is not copied
+   *   mid-write.
+   * @param {string} [opts.failureMessage] - Error text on failure.
+   * @returns {Promise<object|null>} The fork response plus `tabOpened`; null on failure.
+   */
   const executeFork = useCallback(
-    async (turnId, mode) => {
+    async (
+      turnId,
+      mode,
+      { sourceId, parentSessionId, stopSourceFirst = false, failureMessage = 'Rewind failed' } = {},
+    ) => {
+      const forkSourceId = sourceId ?? sessionId
       setForkingTurnId(turnId)
       startForking()
       try {
-        if (mode === 'fork-browser-tab') {
-          const data = await forkSession(sessionId, turnId)
-          if (data?.session_id) {
-            seedSession(data)
-            if (workspaceId) {
-              openSessionInNewTab(workspaceId, data.session_id)
-            }
-          }
-        } else {
-          // fork-here (default) - reuse the live container, replace current view.
-          const data = await forkSession(sessionId, turnId, { reuse_container: true })
-          if (data?.session_id) {
-            seedSession(data)
-            if (workspaceId) {
-              navigateToSession(workspaceId, data.session_id)
-            }
-          }
-          focusChatTab()
+        if (stopSourceFirst) {
+          await stopSession(forkSourceId)
         }
+        if (mode === 'fork-browser-tab') {
+          const data = await forkSession(forkSourceId, turnId, {
+            parent_session_id: parentSessionId,
+          })
+          let tabOpened = true
+          if (data?.session_id) {
+            seedSession(data)
+            if (workspaceId) {
+              tabOpened = Boolean(openSessionInNewTab(workspaceId, data.session_id))
+            }
+          }
+          return data ? { ...data, tabOpened } : null
+        }
+        // fork-here (default) - reuse the live container, replace current view.
+        const data = await forkSession(forkSourceId, turnId, { reuse_container: true })
+        if (data?.session_id) {
+          seedSession(data)
+          if (workspaceId) {
+            navigateToSession(workspaceId, data.session_id)
+          }
+        }
+        focusChatTab()
+        return data
       } catch {
-        setError('Rewind failed')
+        setError(failureMessage)
+        return null
       } finally {
         setForkingTurnId(null)
         clearForking()
@@ -152,5 +176,6 @@ export default function useChatRewindFork({
     handleForkRequest,
     handleRewindConfirm,
     closeRewindModal,
+    executeFork,
   }
 }

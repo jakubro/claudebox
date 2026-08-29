@@ -1,6 +1,7 @@
 /** Tests for api/uiState.js UI state persistence via daemon. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { FETCH_TIMEOUT_INTERACTIVE_MS } from '../config/timing'
 import { getUiState, patchGlobalUiState, patchSessionUiState, patchUiState } from './uiState'
 
 const mockWorkspaceFetch = vi.fn()
@@ -20,7 +21,9 @@ describe('getUiState', () => {
 
     const result = await getUiState()
 
-    expect(mockWorkspaceFetch).toHaveBeenCalledWith('/ui-state')
+    expect(mockWorkspaceFetch).toHaveBeenCalledWith('/ui-state', {
+      timeoutMs: FETCH_TIMEOUT_INTERACTIVE_MS,
+    })
     expect(result).toEqual(data)
   })
 
@@ -30,7 +33,9 @@ describe('getUiState', () => {
 
     const result = await getUiState('sess-1')
 
-    expect(mockWorkspaceFetch).toHaveBeenCalledWith('/ui-state?session_id=sess-1')
+    expect(mockWorkspaceFetch).toHaveBeenCalledWith('/ui-state?session_id=sess-1', {
+      timeoutMs: FETCH_TIMEOUT_INTERACTIVE_MS,
+    })
     expect(result).toEqual(data)
   })
 

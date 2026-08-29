@@ -317,6 +317,20 @@ describe('useSessionRouting', () => {
 
     replaceStateSpy.mockRestore()
   })
+
+  it('consumeSendMessages strips send from the hash and clears sendMessages', () => {
+    window.location.hash = '#/workspaces/ws?send=/scope+claudebox'
+
+    const { result } = renderHook(() => useSessionRouting(), { wrapper })
+    expect(result.current.sendMessages).toEqual(['/scope claudebox'])
+
+    act(() => {
+      result.current.consumeSendMessages()
+    })
+
+    expect(window.location.hash).toBe('#/workspaces/ws')
+    expect(result.current.sendMessages).toEqual([])
+  })
 })
 
 describe('parseHash', () => {
@@ -328,6 +342,7 @@ describe('parseHash', () => {
       turnId: null,
       messageType: null,
       density: 'comfortable',
+      sendMessages: [],
     })
   })
 
@@ -339,6 +354,7 @@ describe('parseHash', () => {
       turnId: null,
       messageType: null,
       density: 'comfortable',
+      sendMessages: [],
     })
   })
 
@@ -350,6 +366,7 @@ describe('parseHash', () => {
       turnId: null,
       messageType: null,
       density: 'comfortable',
+      sendMessages: [],
     })
   })
 
@@ -361,6 +378,7 @@ describe('parseHash', () => {
       turnId: 'tid-1',
       messageType: 'user',
       density: 'comfortable',
+      sendMessages: [],
     })
   })
 
@@ -372,7 +390,26 @@ describe('parseHash', () => {
       turnId: 'tid-2',
       messageType: 'assistant',
       density: 'comfortable',
+      sendMessages: [],
     })
+  })
+
+  it('extracts ordered send values on the workspace-only form', () => {
+    const parsed = parseHash('#/workspaces/ws?send=/scope+claudebox&send=go')
+
+    expect(parsed.sendMessages).toEqual(['/scope claudebox', 'go'])
+  })
+
+  it('ignores send on the session form', () => {
+    const parsed = parseHash('#/workspaces/ws/sessions/sess?send=/scope+claudebox')
+
+    expect(parsed.sendMessages).toEqual([])
+  })
+
+  it('ignores send on the board form', () => {
+    const parsed = parseHash('#/workspaces/ws/boards/my-board?send=/scope+claudebox')
+
+    expect(parsed.sendMessages).toEqual([])
   })
 
   it('returns null for invalid hash', () => {

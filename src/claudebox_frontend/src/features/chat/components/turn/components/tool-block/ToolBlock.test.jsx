@@ -41,6 +41,9 @@ vi.mock('./components/ToolBlockHeader', () => ({
       data-summary={props.summary || ''}
       data-answer-label={props.toolStatus?.answerLabel || ''}
       data-editor-url={props.editorUrl || ''}
+      data-activity-kind={props.activity?.kind || ''}
+      data-activity-status={props.activity?.status || ''}
+      data-activity-content={props.activity?.title ?? props.activity?.text ?? ''}
       onClick={props.onToggle}>
       {props.header}
     </div>
@@ -265,7 +268,7 @@ describe('ToolBlock', () => {
       expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
     })
 
-    it('shows expanded content for pending Task with nested events', () => {
+    it('hides expanded content for a pending Task - collapsed by default like every other tool', () => {
       const taskToolUse = {
         content: 'Task',
         tool_use_id: 'tu-task',
@@ -277,14 +280,14 @@ describe('ToolBlock', () => {
         nestedEvents: [{ type: 'nested-event' }],
       })
 
-      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
+      expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
     })
 
     it('shows expanded content with toolInput for pending unhandled tool', () => {
       const mcpToolUse = {
         content: 'mcp__chroma__chroma_query_documents',
         tool_use_id: 'tu-mcp',
-        tool_input: { collection_name: 'share', query_texts: ['test'] },
+        tool_input: { collection_name: 'notes', query_texts: ['test'] },
       }
       renderToolBlock({ toolUse: mcpToolUse, toolResult: null })
 
@@ -317,20 +320,21 @@ describe('ToolBlock', () => {
   })
 
   describe('auto-collapse on Task completion', () => {
-    it('collapses when Task transitions from pending to completed with nested events', async () => {
+    it('collapses a hand-expanded running Task once it completes', async () => {
+      const user = userEvent.setup()
       const taskToolUse = {
         content: 'Task',
         tool_use_id: 'tu-task',
         tool_input: { prompt: 'do something' },
       }
 
-      // Pending with nested events -> expanded
+      // Pending Task starts collapsed like any other tool - expand it by hand.
       const { rerender } = renderToolBlock({
         toolUse: taskToolUse,
         toolResult: null,
         nestedEvents: [{ type: 'nested-event' }],
       })
-
+      await user.click(screen.getByTestId('tool-block-header'))
       expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
 
       // Complete the task
@@ -342,41 +346,214 @@ describe('ToolBlock', () => {
         })
       })
 
-      // Auto-collapse on completion
+      // Auto-collapse on completion overrides the hand-expand
       expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
     })
   })
 
-  describe('auto-expand on nested events arrival', () => {
-    it('expands when pending Task receives nested events', async () => {
-      const user = userEvent.setup()
-      const taskToolUse = {
-        content: 'Task',
-        tool_use_id: 'tu-task',
-        tool_input: { prompt: 'do something' },
-      }
+  describe('a hand toggle on a running Task survives its next nested event', () => {
+    const taskToolUse = {
+      content: 'Task',
+      tool_use_id: 'tu-task',
+      tool_input: { prompt: 'do something' },
+    }
+    const nestedCall = { subtype: 'tool_use', content: 'Bash', tool_use_id: 'nested-1' }
+    const secondNestedCall = { subtype: 'tool_use', content: 'Read', tool_use_id: 'nested-2' }
 
-      // Pending Task without nested events (expanded by default)
+    it('a hand expand is not pulled shut when the next nested event arrives', async () => {
+      const user = userEvent.setup()
+
+      const { rerender } = renderToolBlock({
+        toolUse: taskToolUse,
+        toolResult: null,
+        nestedEvents: [nestedCall],
+      })
+      await user.click(screen.getByTestId('tool-block-header'))
+      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
+
+      await act(async () => {
+        rerenderToolBlock(rerender, {
+          toolUse: taskToolUse,
+          toolResult: null,
+          nestedEvents: [nestedCall, secondNestedCall],
+        })
+      })
+
+      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
+    })
+
+    it('a hand collapse is not pulled open when the next nested event arrives', async () => {
       const { rerender } = renderToolBlock({
         toolUse: taskToolUse,
         toolResult: null,
         nestedEvents: [],
       })
-
-      // User manually collapses
-      await user.click(screen.getByTestId('tool-block-header'))
+      // Collapsed by default already - no click needed to get there.
       expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
 
-      // Nested events arrive -> auto-expand
       await act(async () => {
         rerenderToolBlock(rerender, {
           toolUse: taskToolUse,
           toolResult: null,
-          nestedEvents: [{ type: 'nested-event' }],
+          nestedEvents: [nestedCall],
         })
       })
 
-      expect(screen.getByTestId('tool-block-expanded')).toBeInTheDocument()
+      expect(screen.queryByTestId('tool-block-expanded')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('activity line for a running Task', () => {
+    // processNestedEvents is mocked to pass its input straight through, so nestedEvents is
+    // authored directly in the block shape the real function would have produced.
+    const taskToolUse = {
+      content: 'Task',
+      tool_use_id: 'tu-task',
+      tool_input: { prompt: 'do something' },
+    }
+
+    it('shows a bare spinner when nothing nested has arrived yet', () => {
+      renderToolBlock({ toolUse: taskToolUse, toolResult: null, nestedEvents: [] })
+
+      const header = screen.getByTestId('tool-block-header')
+      expect(header).toHaveAttribute('data-activity-kind', '')
+    })
+
+    it("shows the newest call's own status dot and title", () => {
+      const bashCall = {
+        kind: 'tool',
+        toolUse: {
+          content: 'Bash',
+          tool_use_id: 'nested-1',
+          tool_input: { command: 'pytest --status' },
+        },
+        toolResult: null,
+      }
+      renderToolBlock({ toolUse: taskToolUse, toolResult: null, nestedEvents: [bashCall] })
+
+      const header = screen.getByTestId('tool-block-header')
+      expect(header).toHaveAttribute('data-activity-kind', 'call')
+      expect(header).toHaveAttribute('data-activity-status', 'pending')
+      expect(header).toHaveAttribute('data-activity-content', 'Bash(pytest --status)')
+    })
+
+    it("the newest call's dot turns completed once its own result lands, title unchanged", () => {
+      const bashCall = {
+        kind: 'tool',
+        toolUse: {
+          content: 'Bash',
+          tool_use_id: 'nested-1',
+          tool_input: { command: 'pytest --status' },
+        },
+        toolResult: { tool_use_id: 'nested-1', content: 'passed' },
+      }
+      renderToolBlock({ toolUse: taskToolUse, toolResult: null, nestedEvents: [bashCall] })
+
+      const header = screen.getByTestId('tool-block-header')
+      expect(header).toHaveAttribute('data-activity-status', 'completed')
+      expect(header).toHaveAttribute('data-activity-content', 'Bash(pytest --status)')
+    })
+
+    it('follows a later call, replacing the earlier one', async () => {
+      const firstCall = {
+        kind: 'tool',
+        toolUse: {
+          content: 'Glob',
+          tool_use_id: 'nested-1',
+          tool_input: { pattern: 'src/**/*.js' },
+        },
+        toolResult: null,
+      }
+      const { rerender } = renderToolBlock({
+        toolUse: taskToolUse,
+        toolResult: null,
+        nestedEvents: [firstCall],
+      })
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-activity-content',
+        'Glob(src/**/*.js)',
+      )
+
+      const secondCall = {
+        kind: 'tool',
+        toolUse: {
+          content: 'Read',
+          tool_use_id: 'nested-2',
+          tool_input: { file_path: 'src/app.js' },
+        },
+        toolResult: null,
+      }
+      await act(async () => {
+        rerenderToolBlock(rerender, {
+          toolUse: taskToolUse,
+          toolResult: null,
+          nestedEvents: [firstCall, secondCall],
+        })
+      })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-activity-content',
+        'Read(app.js)',
+      )
+    })
+
+    it("shows the subagent's narration in place of a call once it says something", async () => {
+      const call = {
+        kind: 'tool',
+        toolUse: { content: 'Glob', tool_use_id: 'nested-1' },
+        toolResult: null,
+      }
+      const { rerender } = renderToolBlock({
+        toolUse: taskToolUse,
+        toolResult: null,
+        nestedEvents: [call],
+      })
+
+      const narration = {
+        kind: 'text',
+        event: { content: 'The parser is split across two files; reading both.' },
+      }
+      await act(async () => {
+        rerenderToolBlock(rerender, {
+          toolUse: taskToolUse,
+          toolResult: null,
+          nestedEvents: [call, narration],
+        })
+      })
+
+      const header = screen.getByTestId('tool-block-header')
+      expect(header).toHaveAttribute('data-activity-kind', 'text')
+      expect(header).toHaveAttribute(
+        'data-activity-content',
+        'The parser is split across two files; reading both.',
+      )
+    })
+
+    it('drives the same activity line for a background Task', () => {
+      const call = {
+        kind: 'tool',
+        toolUse: {
+          content: 'Bash',
+          tool_use_id: 'nested-1',
+          tool_input: { command: 'npm run build' },
+        },
+        toolResult: null,
+      }
+      const backgroundToolResult = {
+        content: 'Background task started',
+        tool_use_result: { isAsync: true, agentId: 'agent_1', outputFile: '/tmp/out.jsonl' },
+      }
+      renderToolBlock({
+        toolUse: taskToolUse,
+        toolResult: backgroundToolResult,
+        nestedEvents: [call],
+      })
+
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-tool-status', 'pending')
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-activity-content',
+        'Bash(npm run build)',
+      )
     })
   })
 

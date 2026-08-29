@@ -4,6 +4,7 @@ export const PINNED_PATH = 'pinnedSessions'
 export const BOOKMARKED_TURNS_PATH = 'bookmarkedTurns'
 export const BOOKMARK_META_PATH = 'bookmarkMeta'
 export const WORKSPACE_COLOR_PATH = 'workspaceColor'
+export const SESSIONS_PANEL_FILTER_PATH = 'sessionsPanelFilter'
 export const WORKSPACE_STORAGE_KEY = 'claudebox-workspace-id'
 // Nothing writes this key; useRateLimitStatus removes it on mount.
 export const RATE_LIMITS_STORAGE_KEY = 'claudebox-rate-limits'

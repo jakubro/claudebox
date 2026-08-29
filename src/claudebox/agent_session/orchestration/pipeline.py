@@ -61,6 +61,10 @@ class EventPipeline:
         # Historical events from resumed session (for replay only, not re-persisted)
         self._historical_events: list[PublishedEvent] = []
 
+        # Per-parent dedup keys for published nested events, mapped to whether the claiming copy
+        # was tailed (source_file set) or live. Seeded from history on resume. See _process_event.
+        self._seen_nested_keys: dict[tuple[str, str, str], bool] = {}
+
         # Buffering before session_id available
         self._buffer: list[PublishedEvent] = []
         self._initialized = False
@@ -381,6 +385,12 @@ class EventPipeline:
 
         self._event_log = EventLog(session_id=self._session_id, workspace=self._workspace)
         self._historical_events = list(self._event_log.read_all())
+
+        for event in self._historical_events:
+            if event.parent_tool_use_id is not None:
+                key = self._nested_dedup_key(event, event.parent_tool_use_id)
+                self._seen_nested_keys.setdefault(key, event.source_file is not None)
+
         await self._event_log.open()
 
         await self._on_init(self._session_id)
@@ -394,15 +404,38 @@ class EventPipeline:
         self._buffer.clear()
 
     async def _process_event(self, event: PublishedEvent) -> None:
-        """Persist event and notify callback, or buffer if not yet initialized."""
+        """Persist event and notify callback, or buffer if not yet initialized.
+
+        A nested event is dropped only when the other source already claimed its dedup key.
+        """
 
         if not self._initialized:
             self._buffer.append(event)
 
             return
 
+        if event.parent_tool_use_id is not None:
+            key = self._nested_dedup_key(event, event.parent_tool_use_id)
+            is_tailed = event.source_file is not None
+            claimed_by_tailed = self._seen_nested_keys.get(key)
+
+            if claimed_by_tailed is None:
+                self._seen_nested_keys[key] = is_tailed
+            elif claimed_by_tailed != is_tailed:
+                return
+
         await self._event_log.append(event)  # ty: ignore[unresolved-attribute]
         await self._on_event(event)
+
+    @staticmethod
+    def _nested_dedup_key(event: PublishedEvent, parent_tool_use_id: str) -> tuple[str, str, str]:
+        """Per-parent identity: subtype with `tool_use_id`, or with trimmed content when unset."""
+
+        identity = (
+            event.tool_use_id if event.tool_use_id is not None else (event.content or "").strip()
+        )
+
+        return (parent_tool_use_id, event.subtype, identity)
 
     async def _process_nested_event(
         self,

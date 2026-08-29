@@ -144,4 +144,185 @@ describe('useBoardData', () => {
 
     expect(result.current.board).toEqual(updatedBoard)
   })
+
+  it('coalesces signals that arrive while a request is in flight', async () => {
+    let resolveFetch
+    mockGetBoard.mockReturnValue(
+      new Promise(resolve => {
+        resolveFetch = resolve
+      }),
+    )
+
+    const { rerender } = renderHook(({ id }) => useBoardData(id), {
+      initialProps: { id: 'b1' },
+    })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledTimes(1)
+    })
+
+    mockStreamContext.sessionsChanged = 1
+    rerender({ id: 'b1' })
+    mockStreamContext.sessionsChanged = 2
+    rerender({ id: 'b1' })
+    mockStreamContext.containerStatus = 1
+    rerender({ id: 'b1' })
+
+    // Three signals arrived while the first request was still outstanding - none started a
+    // second request; they joined the one already running.
+    expect(mockGetBoard).toHaveBeenCalledTimes(1)
+
+    resolveFetch({ id: 'b1', name: 'Sprint', columns: [] })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('re-fetches exactly once after settling, however many signals joined', async () => {
+    const resolvers = []
+    mockGetBoard.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { rerender } = renderHook(({ id }) => useBoardData(id), {
+      initialProps: { id: 'b1' },
+    })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledTimes(1)
+    })
+
+    mockStreamContext.sessionsChanged = 1
+    rerender({ id: 'b1' })
+    mockStreamContext.containerStatus = 1
+    rerender({ id: 'b1' })
+
+    resolvers[0]({ id: 'b1', name: 'Sprint', columns: [] })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledTimes(2)
+    })
+
+    resolvers[1]({ id: 'b1', name: 'Sprint v2', columns: [] })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    // Two signals joined the first request; still only one re-fetch, not one per signal.
+    expect(mockGetBoard).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not apply the previous board response after switching boards mid-request', async () => {
+    let resolveB1
+    mockGetBoard.mockImplementation(id => {
+      if (id === 'b1') {
+        return new Promise(resolve => {
+          resolveB1 = resolve
+        })
+      }
+      return Promise.resolve({ id: 'b2', name: 'Board 2', columns: [] })
+    })
+
+    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
+      initialProps: { id: 'b1' },
+    })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledWith('b1')
+    })
+
+    rerender({ id: 'b2' })
+
+    await waitFor(() => {
+      expect(result.current.board).toEqual({ id: 'b2', name: 'Board 2', columns: [] })
+    })
+
+    // Resolving b1 triggers a state update outside any render/waitFor call - act() is what
+    // makes React flush it before the assertion below reads result.current.
+    await act(async () => {
+      resolveB1({ id: 'b1', name: 'Sprint', columns: [] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    // b1's late response must not overwrite b2's already-applied state.
+    expect(result.current.board).toEqual({ id: 'b2', name: 'Board 2', columns: [] })
+  })
+
+  it('keeps loading true for the new board while the previous board settles late', async () => {
+    let resolveB1
+    mockGetBoard.mockImplementation(id => {
+      if (id === 'b1') {
+        return new Promise(resolve => {
+          resolveB1 = resolve
+        })
+      }
+      return new Promise(() => {})
+    })
+
+    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
+      initialProps: { id: 'b1' },
+    })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledWith('b1')
+    })
+
+    rerender({ id: 'b2' })
+
+    await act(async () => {
+      resolveB1({ id: 'b1', name: 'Sprint', columns: [] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    // b1's late settle must not clear loading while b2's own fetch is still outstanding.
+    expect(result.current.loading).toBe(true)
+  })
+
+  it('settles an orphaned joiner when its board is switched away, without a spurious extra fetch', async () => {
+    let resolveB1
+    mockGetBoard.mockImplementation(id => {
+      if (id === 'b1') {
+        return new Promise(resolve => {
+          resolveB1 = resolve
+        })
+      }
+      return Promise.resolve({ id: 'b2', name: 'Board 2', columns: [] })
+    })
+
+    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
+      initialProps: { id: 'b1' },
+    })
+
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledWith('b1')
+    })
+
+    let joinerSettled = false
+    act(() => {
+      result.current.refresh().then(() => {
+        joinerSettled = true
+      })
+    })
+
+    rerender({ id: 'b2' })
+
+    // b2 resolves immediately, so both outcomes are checkable: the orphaned joiner must not still
+    // be waiting, and the leftover pending flag must not have triggered a second fetch.
+    await waitFor(() => {
+      expect(result.current.board).toEqual({ id: 'b2', name: 'Board 2', columns: [] })
+    })
+
+    expect(joinerSettled).toBe(true)
+    expect(mockGetBoard).toHaveBeenCalledTimes(2)
+
+    // b1's late, ownership-less settle must not add a third call either.
+    await act(async () => {
+      resolveB1({ id: 'b1', name: 'Sprint', columns: [] })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    expect(mockGetBoard).toHaveBeenCalledTimes(2)
+  })
 })

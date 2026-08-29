@@ -14,6 +14,7 @@ import {
   Pin,
   RefreshCw,
   SquareSplitHorizontal,
+  Wrench,
 } from 'lucide-react'
 import { useCallback } from 'react'
 import { sendMessage } from '../../../../api/chat'
@@ -23,14 +24,29 @@ import { useSessionsList } from '../../../../context/SessionsContext'
 import useCapabilities from '../../../../hooks/useCapabilities'
 import useDropdown from '../../../../hooks/useDropdown'
 import useIsMobile from '../../../../hooks/useIsMobile'
+import { RightSlotView } from '../../utils/rightSlotViews'
 import SessionPromptEditor from '../session-prompt'
 import SessionNameEditor from './components/SessionNameEditor'
 
 /**
  * @param {Object} props
  * @param {Function} props.onFork - Receives a fork mode string.
- * @param {boolean} props.terminalSplitEnabled - Split preference, independent of a width-driven
- *   collapse.
+ * @param {string} props.rightSlotView - Right-slot preference; drives only the picker's button.
+ * @param {boolean} props.showTerminalSplit - Width-aware visibility of the terminal view.
+ * @param {boolean} props.showWorkView - Width-aware visibility of the work view.
+ * @param {number} props.terminalSplitRatio - Transcript column's share, 0-1; sets the division.
+ * @param {boolean} props.terminalAutoScrollEnabled - Terminal column's own following state.
+ * @param {Function} props.onTerminalJumpToBottom - Returns the terminal to its newest entry.
+ * @param {Function} props.onTerminalJumpPrev - Steps the terminal to the nearest entry above.
+ * @param {Function} props.onTerminalJumpNext - Steps the terminal to the next entry below.
+ * @param {boolean} props.terminalMinimapPinned - Terminal overview's own pin state.
+ * @param {Function} props.onToggleTerminalMinimap - Toggles the terminal overview's pin.
+ * @param {boolean} props.workAutoScrollEnabled - Work column's own following state.
+ * @param {Function} props.onWorkJumpToBottom - Returns the work column to its newest entry.
+ * @param {Function} props.onWorkJumpPrev - Steps the work column to the nearest working turn above.
+ * @param {Function} props.onWorkJumpNext - Steps the work column to the next working turn below.
+ * @param {boolean} props.workMinimapPinned - Work overview's own pin state.
+ * @param {Function} props.onToggleWorkMinimap - Toggles the work overview's pin.
  */
 export default function ChatControlBar({
   onReload,
@@ -45,8 +61,23 @@ export default function ChatControlBar({
   onJumpNext,
   minimapPinned,
   onToggleMinimap,
-  terminalSplitEnabled,
-  onToggleTerminalSplit,
+  rightSlotView,
+  onSelectRightSlotView,
+  showTerminalSplit,
+  showWorkView,
+  terminalSplitRatio,
+  terminalAutoScrollEnabled,
+  onTerminalJumpToBottom,
+  onTerminalJumpPrev,
+  onTerminalJumpNext,
+  terminalMinimapPinned,
+  onToggleTerminalMinimap,
+  workAutoScrollEnabled,
+  onWorkJumpToBottom,
+  onWorkJumpPrev,
+  onWorkJumpNext,
+  workMinimapPinned,
+  onToggleWorkMinimap,
 }) {
   const isMobile = useIsMobile()
   const { capabilities } = useCapabilities()
@@ -106,7 +137,91 @@ export default function ChatControlBar({
   }
 
   return (
-    <PanelControlBar>
+    <PanelControlBar
+      splitRatio={showTerminalSplit || showWorkView ? terminalSplitRatio : undefined}
+      rightContent={
+        showTerminalSplit ? (
+          <div className="panel-control-group">
+            <button
+              type="button"
+              className="panel-control-btn"
+              onClick={onTerminalJumpPrev}
+              data-testid="terminal-jump-prev"
+              title="Previous entry (Alt+PageUp)">
+              <ChevronUp size={12} />
+            </button>
+            <button
+              type="button"
+              className="panel-control-btn"
+              onClick={onTerminalJumpNext}
+              data-testid="terminal-jump-next"
+              title="Next entry (Alt+PageDown)">
+              <ChevronDown size={12} />
+            </button>
+            <span className="panel-control-separator" />
+            <button
+              type="button"
+              className={`panel-control-btn${terminalAutoScrollEnabled ? ' pressed' : ''}`}
+              onClick={onTerminalJumpToBottom}
+              disabled={terminalAutoScrollEnabled}
+              aria-pressed={terminalAutoScrollEnabled}
+              data-testid="terminal-autoscroll-indicator"
+              title={terminalAutoScrollEnabled ? 'Autoscroll enabled' : 'Jump to newest entry'}>
+              <ArrowDownToLine size={12} />
+            </button>
+            <span className="panel-control-separator" />
+            <button
+              type="button"
+              className={`panel-control-btn${terminalMinimapPinned ? ' pressed' : ''}`}
+              onClick={onToggleTerminalMinimap}
+              aria-pressed={terminalMinimapPinned}
+              data-testid="terminal-minimap-toggle"
+              title={terminalMinimapPinned ? 'Hide terminal overview' : 'Show terminal overview'}>
+              <MapIcon size={12} />
+            </button>
+          </div>
+        ) : showWorkView ? (
+          <div className="panel-control-group">
+            <button
+              type="button"
+              className="panel-control-btn"
+              onClick={onWorkJumpPrev}
+              data-testid="work-jump-prev"
+              title="Previous turn (Alt+PageUp)">
+              <ChevronUp size={12} />
+            </button>
+            <button
+              type="button"
+              className="panel-control-btn"
+              onClick={onWorkJumpNext}
+              data-testid="work-jump-next"
+              title="Next turn (Alt+PageDown)">
+              <ChevronDown size={12} />
+            </button>
+            <span className="panel-control-separator" />
+            <button
+              type="button"
+              className={`panel-control-btn${workAutoScrollEnabled ? ' pressed' : ''}`}
+              onClick={onWorkJumpToBottom}
+              disabled={workAutoScrollEnabled}
+              aria-pressed={workAutoScrollEnabled}
+              data-testid="work-autoscroll-indicator"
+              title={workAutoScrollEnabled ? 'Autoscroll enabled' : 'Jump to newest entry'}>
+              <ArrowDownToLine size={12} />
+            </button>
+            <span className="panel-control-separator" />
+            <button
+              type="button"
+              className={`panel-control-btn${workMinimapPinned ? ' pressed' : ''}`}
+              onClick={onToggleWorkMinimap}
+              aria-pressed={workMinimapPinned}
+              data-testid="work-minimap-toggle"
+              title={workMinimapPinned ? 'Hide work overview' : 'Show work overview'}>
+              <MapIcon size={12} />
+            </button>
+          </div>
+        ) : undefined
+      }>
       <SessionNameEditor sessionId={sessionId} sessionName={sessionName} onSaved={handleSaved}>
         {({ renameButton }) => (
           <div className="panel-control-group">
@@ -203,15 +318,47 @@ export default function ChatControlBar({
               title={autoCollapseEnabled ? 'Disable auto-collapse' : 'Enable auto-collapse'}>
               <ChevronsDownUp size={12} />
             </button>
-            <button
-              type="button"
-              className={`panel-control-btn${terminalSplitEnabled ? ' pressed' : ''}`}
-              onClick={onToggleTerminalSplit}
-              aria-pressed={terminalSplitEnabled}
-              data-testid="terminal-split-toggle"
-              title={terminalSplitEnabled ? "Hide agent's terminal" : "Show agent's terminal"}>
-              <SquareSplitHorizontal size={12} />
-            </button>
+            <fieldset
+              className="chat-control-right-slot-picker"
+              aria-label="Right column view"
+              data-testid="right-slot-view-picker">
+              <button
+                type="button"
+                className={`panel-control-btn${rightSlotView === RightSlotView.TERMINAL ? ' pressed' : ''}`}
+                onClick={() =>
+                  onSelectRightSlotView(
+                    rightSlotView === RightSlotView.TERMINAL
+                      ? RightSlotView.OFF
+                      : RightSlotView.TERMINAL,
+                  )
+                }
+                aria-pressed={rightSlotView === RightSlotView.TERMINAL}
+                data-testid="right-slot-view-terminal"
+                title={
+                  rightSlotView === RightSlotView.TERMINAL
+                    ? "Hide agent's terminal"
+                    : "Show agent's terminal"
+                }>
+                <SquareSplitHorizontal size={12} />
+              </button>
+              <button
+                type="button"
+                className={`panel-control-btn${rightSlotView === RightSlotView.WORK ? ' pressed' : ''}`}
+                onClick={() =>
+                  onSelectRightSlotView(
+                    rightSlotView === RightSlotView.WORK ? RightSlotView.OFF : RightSlotView.WORK,
+                  )
+                }
+                aria-pressed={rightSlotView === RightSlotView.WORK}
+                data-testid="right-slot-view-work"
+                title={
+                  rightSlotView === RightSlotView.WORK
+                    ? 'Hide the work panel'
+                    : "Show the agent's work"
+                }>
+                <Wrench size={12} />
+              </button>
+            </fieldset>
           </div>
         )}
       </SessionNameEditor>

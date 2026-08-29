@@ -18,9 +18,9 @@ export function mockCapabilities(overrides = {}) {
     supports_context_usage: true,
     supports_cost_telemetry: true,
     supports_manual_compact: true,
-    supports_session_resume: true,
     supports_session_fork: true,
     supports_session_rewind: true,
+    supports_ask_user_question: true,
     ...overrides,
   }
 }

@@ -79,7 +79,11 @@ test.describe('Mini-map', () => {
     const box = await messages.boundingBox()
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
 
-    await page.mouse.wheel(0, -99999)
+    // Several -10000 dispatches rather than one huge delta: Chromium rate-limits an oversized
+    // wheel delta over a non-deterministic number of frames.
+    for (let i = 0; i < 10; i++) {
+      await page.mouse.wheel(0, -10000)
+    }
     await expect.poll(() => thumb.evaluate(el => parseFloat(getComputedStyle(el).top))).toBe(0)
 
     await page.mouse.wheel(0, 300)
@@ -99,7 +103,7 @@ test.describe('Mini-map', () => {
 
     const messages = page.locator('.chat-messages').first()
 
-    // Scroll chat to top first so we have room to scroll down
+    // Scroll chat to top first to leave room to scroll down
     await messages.evaluate(el => {
       el.scrollTop = 0
     })

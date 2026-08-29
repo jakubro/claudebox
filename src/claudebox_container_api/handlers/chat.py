@@ -18,14 +18,17 @@ async def send(svc: SessionDep, body: SendRequest):
 
 
 @router.get("/stream")
-async def chat_stream(svc: SessionDep):
-    """Stream session events via SSE, replaying history on connect."""
+async def chat_stream(svc: SessionDep, replay: bool = True):
+    """Stream session events via SSE, replaying history on connect by default.
+
+    `replay=false` re-attaches without it, for a caller that already read the persisted log.
+    """
 
     # Checked here, not in subscribe(): the body is a lazy generator, so subscribe() runs after headers are sent.
     # A raise inside subscribe() would arrive too late to become this typed response.
     svc.ensure_ready()
 
-    return BroadcastEventSourceResponse(svc)
+    return BroadcastEventSourceResponse(svc, subscribe_kwargs=None if replay else {"replay": False})
 
 
 @router.post("/interrupt")

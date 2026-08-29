@@ -5,7 +5,9 @@ import { getToolConfig, TOOL_REGISTRY } from '../../../../../../../config/toolRe
 import { generateDiff } from '../../../../../../../utils/diff'
 import { isInteractiveTool } from '../../../../../../../utils/eventPredicates'
 import { formatFilePath } from '../../../../../../../utils/formatters'
+import { looksLikeJson } from '../../../../../../../utils/languageDetection'
 import { parsePersistedOutput } from '../../../../../../../utils/parsers'
+import { PAIR_GAP } from '../components/tool-block-expanded-content/components/utils/formatCounts'
 
 // ####################################################################################################
 // Public API - consumed by ToolBlock, ToolBlockHeader, useToolResult, index barrel
@@ -56,17 +58,19 @@ export function shouldCollapseByDefault(
   hasNested,
   isPending,
   wasAnswered = false,
+  contentBlocks = null,
 ) {
   const config = getToolConfig(toolName)
   const collapse = config.collapseByDefault
 
   // Function-based collapse: tool has full control (interactive tools use this)
   if (typeof collapse === 'function') {
-    return collapse({ jsonData, hasNested, isPending, wasAnswered })
+    return collapse({ jsonData, hasNested, isPending, wasAnswered, contentBlocks })
   }
 
-  // Cross-cutting rules (apply when tool uses static boolean)
-  if (jsonData) {
+  // Cross-cutting rules (apply when tool uses static boolean) - a content-block result collapses
+  // the same way a plain JSON result does; jsonData does not cover this shape.
+  if (jsonData || contentBlocks) {
     return true
   }
   if (hasNested && !isPending) {
@@ -349,21 +353,21 @@ export function formatTodoWriteResult(input, _content, options = {}) {
     const removedCount = todoDiff.removed?.length || 0
 
     if (completedCount > 0) {
-      parts.push(`●${completedCount}`)
+      parts.push(`●${PAIR_GAP}${completedCount}`)
     }
     if (startedCount > 0) {
-      parts.push(`◐${startedCount}`)
+      parts.push(`◐${PAIR_GAP}${startedCount}`)
     }
     if (addedCount > 0) {
-      parts.push(`○${addedCount}`)
+      parts.push(`○${PAIR_GAP}${addedCount}`)
     }
     if (removedCount > 0) {
-      parts.push(`✕${removedCount}`)
+      parts.push(`✕${PAIR_GAP}${removedCount}`)
     }
   } else {
     const count = todos.length
     if (count > 0) {
-      parts.push(`○${count}`)
+      parts.push(`○${PAIR_GAP}${count}`)
     }
   }
   const summary = parts.length > 0 ? parts.join(' ') : 'No changes'
@@ -554,9 +558,19 @@ export function defaultHeaderFormatter(name, input) {
 /** Default result formatter - parse JSON or show text preview. */
 export function defaultFormatter(_input, content) {
   const trimmed = content.trim()
-  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+  if (looksLikeJson(trimmed)) {
     try {
       const parsed = JSON.parse(trimmed)
+      // An MCP tool result arrives as a JSON-stringified content-block list; every element naming
+      // its own type is what tells it from a plain array a non-MCP tool returned.
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isContentBlock)) {
+        return {
+          summary: generateJsonSummary(parsed),
+          isError: false,
+          details: null,
+          contentBlocks: parsed,
+        }
+      }
       return {
         summary: generateJsonSummary(parsed),
         isError: false,
@@ -575,6 +589,16 @@ export function defaultFormatter(_input, content) {
     isError: false,
     details: content,
   }
+}
+
+/** True for a plausible MCP content block - a plain object naming its own type. */
+function isContentBlock(entry) {
+  return (
+    entry != null &&
+    typeof entry === 'object' &&
+    !Array.isArray(entry) &&
+    typeof entry.type === 'string'
+  )
 }
 
 // Private helpers

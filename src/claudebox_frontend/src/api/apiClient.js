@@ -4,6 +4,8 @@ import {
   FETCH_RETRY_BASE_DELAY_MS,
   FETCH_RETRY_MAX_ATTEMPTS,
   FETCH_RETRY_MAX_DELAY_MS,
+  FETCH_TIMEOUT_ACTION_MS,
+  FETCH_TIMEOUT_LISTING_MS,
 } from '../config/timing'
 
 let _workspaceId = null
@@ -30,11 +32,14 @@ export function getContainerId() {
 /**
  * Fetch with automatic retry for transient errors (network failures, cert expiry, gateway errors);
  * retries with exponential backoff; non-retryable errors propagate immediately.
+ * Each attempt is bounded by `timeoutMs`, and an expired bound is not retryable - an unanswered
+ * request surfaces as an error instead of holding a connection slot for the life of the page.
  * @param {string} url - Request URL.
- * @param {RequestInit} [options] - Standard fetch options.
+ * @param {RequestInit & {timeoutMs?: number}} [options] - Fetch options plus the attempt bound.
  * @returns {Promise<Response>}
  */
 export async function retryFetch(url, options) {
+  const { timeoutMs = FETCH_TIMEOUT_ACTION_MS, signal, ...init } = options || {}
   let lastResponse
 
   for (let attempt = 0; attempt <= FETCH_RETRY_MAX_ATTEMPTS; attempt++) {
@@ -46,8 +51,14 @@ export async function retryFetch(url, options) {
       await new Promise(r => setTimeout(r, delay))
     }
 
+    // Minted per attempt, so a retry gets the whole bound rather than the remainder.
+    const bound = AbortSignal.timeout(timeoutMs)
+
     try {
-      const response = await fetch(url, options)
+      const response = await fetch(url, {
+        ...init,
+        signal: signal ? AbortSignal.any([signal, bound]) : bound,
+      })
       if (isRetryable(null, response) && attempt < FETCH_RETRY_MAX_ATTEMPTS) {
         lastResponse = response
         continue
@@ -65,45 +76,57 @@ export async function retryFetch(url, options) {
 }
 
 /**
+ * Daemon-local calls, bounded above DISK_LISTING_TIMEOUT by default so a listing's typed error
+ * arrives instead of a client abort. Slower classes pass their own `timeoutMs`.
  * @param {string} path - Relative path (e.g., '/sessions').
- * @param {RequestInit} options - Standard fetch options.
+ * @param {RequestInit & {timeoutMs?: number}} [options] - Standard fetch options.
  * @returns {Promise<Response>}
  */
 export function workspaceFetch(path, options) {
   if (!_workspaceId) {
     throw new Error('Workspace ID not set')
   }
-  return retryFetch(`/api/workspaces/${_workspaceId}${path}`, options)
+  return retryFetch(`/api/workspaces/${_workspaceId}${path}`, {
+    timeoutMs: FETCH_TIMEOUT_LISTING_MS,
+    ...options,
+  })
 }
 
 /**
+ * Container-proxied calls. The default clears one stale-port refresh and retry, so a one-shot
+ * action survives a container that moved; repeated reads pass a shorter `timeoutMs`.
  * @param {string} path - Path including /api prefix (e.g., '/api/send').
- * @param {RequestInit} options - Standard fetch options.
+ * @param {RequestInit & {timeoutMs?: number}} [options] - Standard fetch options.
+ * @param {string} [containerId] - Explicit container to address; defaults to the module-level one.
  * @returns {Promise<Response>}
  */
-export function containerFetch(path, options) {
+export function containerFetch(path, options, containerId = _containerId) {
   if (!_workspaceId) {
     throw new Error('Workspace ID not set')
   }
-  if (!_containerId) {
+  if (!containerId) {
     throw new Error('Container ID not set')
   }
-  return retryFetch(`/api/workspaces/${_workspaceId}/containers/${_containerId}${path}`, options)
+  return retryFetch(`/api/workspaces/${_workspaceId}/containers/${containerId}${path}`, {
+    timeoutMs: FETCH_TIMEOUT_ACTION_MS,
+    ...options,
+  })
 }
 
 /**
  * Build a container-proxied URL (for EventSource construction).
  * @param {string} path - Path including /api prefix (e.g., '/api/stream').
+ * @param {string} [containerId] - Explicit container to address; defaults to the module-level one.
  * @returns {string}
  */
-export function containerUrl(path) {
+export function containerUrl(path, containerId = _containerId) {
   if (!_workspaceId) {
     throw new Error('Workspace ID not set')
   }
-  if (!_containerId) {
+  if (!containerId) {
     throw new Error('Container ID not set')
   }
-  return `/api/workspaces/${_workspaceId}/containers/${_containerId}${path}`
+  return `/api/workspaces/${_workspaceId}/containers/${containerId}${path}`
 }
 
 /**

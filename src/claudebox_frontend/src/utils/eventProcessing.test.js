@@ -7,6 +7,7 @@ import {
   appendTodoDiffs,
   appendTurnResults,
   appendTurns,
+  blockRoutesToRightSlot,
   computeDuplicateAskUserIds,
   computeTimingOffsets,
   extractTasks,
@@ -21,6 +22,7 @@ import {
   isVisibleEvent,
   processEvents,
   processNestedEvents,
+  TurnRoutingMode,
 } from './eventProcessing'
 
 describe('computeTimingOffsets', () => {
@@ -120,6 +122,82 @@ describe('indexEvents', () => {
 
       expect(nestedEvents.get('parent_1')).toHaveLength(1)
       expect(nestedEvents.get('parent_2')).toHaveLength(1)
+    })
+
+    it('drops a tailed copy of a call already delivered live', () => {
+      const events = [
+        { subtype: 'tool_use', tool_use_id: 'tu_1', parent_tool_use_id: 'task_1' },
+        {
+          subtype: 'tool_use',
+          tool_use_id: 'tu_1',
+          parent_tool_use_id: 'task_1',
+          source_file: 'agent.jsonl',
+        },
+      ]
+
+      const { nestedEvents } = indexEvents(events)
+
+      expect(nestedEvents.get('task_1')).toEqual([events[0]])
+    })
+
+    it('drops a tailed copy of narration already delivered live, matched on trimmed content', () => {
+      const events = [
+        { subtype: 'text', content: 'Checking files...', parent_tool_use_id: 'task_1' },
+        {
+          subtype: 'text',
+          content: '  Checking files...  ',
+          parent_tool_use_id: 'task_1',
+          source_file: 'agent.jsonl',
+        },
+      ]
+
+      const { nestedEvents } = indexEvents(events)
+
+      expect(nestedEvents.get('task_1')).toEqual([events[0]])
+    })
+
+    it('keeps a call and its own result - subtype is part of the key', () => {
+      const events = [
+        { subtype: 'tool_use', tool_use_id: 'tu_1', parent_tool_use_id: 'task_1' },
+        {
+          subtype: 'tool_result',
+          tool_use_id: 'tu_1',
+          parent_tool_use_id: 'task_1',
+          source_file: 'agent.jsonl',
+        },
+      ]
+
+      const { nestedEvents } = indexEvents(events)
+
+      expect(nestedEvents.get('task_1')).toEqual(events)
+    })
+
+    it('keeps two genuinely repeated lines from the same source', () => {
+      const events = [
+        { subtype: 'text', content: 'Checking files...', parent_tool_use_id: 'task_1' },
+        { subtype: 'text', content: 'Checking files...', parent_tool_use_id: 'task_1' },
+      ]
+
+      const { nestedEvents } = indexEvents(events)
+
+      expect(nestedEvents.get('task_1')).toEqual(events)
+    })
+
+    it('does not dedup the same call across different parents', () => {
+      const events = [
+        { subtype: 'tool_use', tool_use_id: 'tu_1', parent_tool_use_id: 'task_a' },
+        {
+          subtype: 'tool_use',
+          tool_use_id: 'tu_1',
+          parent_tool_use_id: 'task_b',
+          source_file: 'agent.jsonl',
+        },
+      ]
+
+      const { nestedEvents } = indexEvents(events)
+
+      expect(nestedEvents.get('task_a')).toEqual([events[0]])
+      expect(nestedEvents.get('task_b')).toEqual([events[1]])
     })
   })
 
@@ -849,6 +927,67 @@ describe('processNestedEvents', () => {
     expect(blocks).toHaveLength(1)
     expect(blocks[0].toolUse.content).toBe('ToolSearch')
   })
+
+  it("creates a text block for the subagent's own narration", () => {
+    const events = [{ type: 'assistant', subtype: 'text', content: "I'll check the tests." }]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks).toEqual([{ kind: 'text', event: events[0] }])
+  })
+
+  it('interleaves prose and calls in source order', () => {
+    const events = [
+      { type: 'assistant', subtype: 'text', content: 'Starting with the module layout.' },
+      { subtype: 'tool_use', content: 'Glob', tool_use_id: 'tu_1' },
+      { subtype: 'tool_result', tool_use_id: 'tu_1' },
+      { type: 'assistant', subtype: 'text', content: 'Now reading the entry point.' },
+      { subtype: 'tool_use', content: 'Read', tool_use_id: 'tu_2' },
+    ]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks.map(b => b.kind)).toEqual(['text', 'tool', 'text', 'tool'])
+    expect(blocks[0].event.content).toBe('Starting with the module layout.')
+    expect(blocks[2].event.content).toBe('Now reading the entry point.')
+  })
+
+  it('drops an empty narration event', () => {
+    const events = [
+      { type: 'assistant', subtype: 'text', content: '' },
+      { type: 'assistant', subtype: 'text', content: '   ' },
+      { subtype: 'tool_use', content: 'Bash', tool_use_id: 'tu_1' },
+    ]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].kind).toBe('tool')
+  })
+
+  it("drops a non-human user text event - a role prompt, not the subagent's output", () => {
+    const events = [
+      { type: 'user', subtype: 'text', is_human: false, content: 'You are a research agent.' },
+      { subtype: 'tool_use', content: 'Bash', tool_use_id: 'tu_1' },
+    ]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].kind).toBe('tool')
+  })
+
+  it('drops the human-marked Task prompt - shown separately by TaskPrompt', () => {
+    const events = [
+      { type: 'user', subtype: 'message', is_human: true, content: 'Find where the parser...' },
+      { subtype: 'tool_use', content: 'Bash', tool_use_id: 'tu_1' },
+    ]
+
+    const blocks = processNestedEvents(events)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].kind).toBe('tool')
+  })
 })
 
 describe('isHiddenToolSearch', () => {
@@ -963,6 +1102,61 @@ describe('hasVisibleBlock - hideShellCalls (terminal column routing)', () => {
     ]
 
     expect(hasVisibleBlock(blocks, true)).toBe(true)
+  })
+
+  it('is false when the only block is a top-level Bash call and the mode is BASH_ONLY', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'Bash', tool_use_id: 'b-1' }, toolResult: null },
+    ]
+
+    expect(hasVisibleBlock(blocks, TurnRoutingMode.BASH_ONLY)).toBe(false)
+  })
+
+  it('is true for a top-level Bash call when the mode is OFF', () => {
+    const blocks = [
+      { type: 'tool', toolUse: { content: 'Bash', tool_use_id: 'b-1' }, toolResult: null },
+    ]
+
+    expect(hasVisibleBlock(blocks, TurnRoutingMode.OFF)).toBe(true)
+  })
+})
+
+describe('TurnRoutingMode / blockRoutesToRightSlot', () => {
+  it('routes nothing away when the mode is OFF', () => {
+    expect(blockRoutesToRightSlot(TurnRoutingMode.OFF, { content: 'Bash' })).toBe(false)
+  })
+
+  it('routes a top-level Bash call away when the mode is BASH_ONLY', () => {
+    expect(blockRoutesToRightSlot(TurnRoutingMode.BASH_ONLY, { content: 'Bash' })).toBe(true)
+  })
+
+  it('leaves a nested Bash call alone even when the mode is BASH_ONLY', () => {
+    const toolUse = { content: 'Bash', parent_tool_use_id: 'subagent-X' }
+    expect(blockRoutesToRightSlot(TurnRoutingMode.BASH_ONLY, toolUse)).toBe(false)
+  })
+
+  it('leaves a non-Bash top-level tool alone when the mode is BASH_ONLY', () => {
+    expect(blockRoutesToRightSlot(TurnRoutingMode.BASH_ONLY, { content: 'Read' })).toBe(false)
+  })
+
+  it('routes every top-level tool away when the mode is ALL_TOOLS, Bash or not', () => {
+    expect(blockRoutesToRightSlot(TurnRoutingMode.ALL_TOOLS, { content: 'Read' })).toBe(true)
+    expect(blockRoutesToRightSlot(TurnRoutingMode.ALL_TOOLS, { content: 'Bash' })).toBe(true)
+  })
+
+  it('leaves a nested tool alone even when the mode is ALL_TOOLS', () => {
+    const toolUse = { content: 'Read', parent_tool_use_id: 'subagent-X' }
+    expect(blockRoutesToRightSlot(TurnRoutingMode.ALL_TOOLS, toolUse)).toBe(false)
+  })
+
+  it('treats a legacy boolean true as BASH_ONLY, for callers not yet moved', () => {
+    expect(blockRoutesToRightSlot(true, { content: 'Bash' })).toBe(true)
+    expect(blockRoutesToRightSlot(true, { content: 'Read' })).toBe(false)
+  })
+
+  it('treats a legacy boolean false, or an omitted mode, as OFF', () => {
+    expect(blockRoutesToRightSlot(false, { content: 'Bash' })).toBe(false)
+    expect(blockRoutesToRightSlot(undefined, { content: 'Bash' })).toBe(false)
   })
 })
 

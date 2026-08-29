@@ -10,8 +10,10 @@ import json
 import logging
 import shutil
 import time
+import uuid
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable
+from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
 from claude_agent_sdk import (
@@ -20,6 +22,8 @@ from claude_agent_sdk import (
 from claude_agent_sdk import (
     ClaudeAgentOptions,
     HookMatcher,
+    SdkMcpTool,
+    create_sdk_mcp_server,
 )
 from claude_agent_sdk import (
     ClaudeSDKClient as BaseClaudeSDKClient,
@@ -48,7 +52,15 @@ from claude_agent_sdk import (
 from claude_agent_sdk import (
     UserMessage as SdkUserMessage,
 )
+from claude_agent_sdk import (
+    tool as sdk_tool,
+)
 
+from ._sibling_sessions import (
+    SIBLING_MCP_SERVER_NAME,
+    SiblingSessionClient,
+    SiblingSessionError,
+)
 from ._skills import walk_skills
 from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
 from .config import ClaudeAgentSessionConfig, RuntimeCapabilities
@@ -75,6 +87,7 @@ from .hooks import (
     PostToolUsePayload,
     PreToolUsePayload,
 )
+from .orchestration.errors import McpServerProtected
 from ..constants import SDK_CONTROL_REQUEST_TIMEOUT, claude_settings_file
 from ..core.fs import touch_dir
 from ..core.io import read_json, write_json
@@ -216,7 +229,6 @@ class ClaudeRuntime:
         supports_context_usage=True,
         supports_cost_telemetry=True,
         supports_manual_compact=True,
-        supports_session_resume=True,
         supports_session_fork=True,
         supports_session_rewind=True,
         supports_ask_user_question=True,
@@ -264,10 +276,18 @@ class ClaudeRuntime:
         self._config = config
         self._logger = get_logger(__name__)
 
+        # Shared verbatim with the LangGraph adapter - see agent_session/_sibling_sessions.py.
+        # Falls back to a generated id when unset, mirroring LangGraphRuntime's self._thread_id.
+        self._sibling_sessions = SiblingSessionClient(
+            session_id=config.session_id or str(uuid.uuid4()),
+            workspace_path=Path(config.cwd),
+        )
+
         options = self._build_sdk_options(config)
         options.stderr = self._stderr
-        # Hooks built post-options so adapters bind to this instance.
+        # Hooks and MCP servers built post-options so adapters bind to this instance.
         options.hooks = self._build_sdk_hooks(self)
+        options.mcp_servers = self._build_mcp_servers()
         self._sdk = BaseClaudeSDKClient(options)
 
         # Gates `_fire_*_changed` callbacks against first-call baseline + no-op writes.
@@ -394,7 +414,13 @@ class ClaudeRuntime:
             self._pending_calls.append(("set_effort_level", (level,), {}))
 
     async def reconnect_mcp_server(self, server_name: str) -> None:
-        """Reconnect an MCP server. Queued if not ready."""
+        """Reconnect an MCP server. Queued if not ready.
+
+        Refuses claudebox's own sibling-session server, which the MCP panel also hides.
+        """
+
+        if server_name == SIBLING_MCP_SERVER_NAME:
+            raise McpServerProtected(server_name)
 
         if self.ready.is_set():
             await self._sdk.reconnect_mcp_server(server_name)
@@ -402,7 +428,13 @@ class ClaudeRuntime:
             self._pending_calls.append(("reconnect_mcp_server", (server_name,), {}))
 
     async def toggle_mcp_server(self, server_name: str, enabled: bool) -> None:
-        """Toggle an MCP server enabled/disabled. Queued if not ready."""
+        """Toggle an MCP server enabled/disabled. Queued if not ready.
+
+        Refuses claudebox's own sibling-session server by name - see reconnect_mcp_server.
+        """
+
+        if server_name == SIBLING_MCP_SERVER_NAME:
+            raise McpServerProtected(server_name)
 
         if self.ready.is_set():
             await self._sdk.toggle_mcp_server(server_name, enabled)
@@ -410,12 +442,21 @@ class ClaudeRuntime:
             self._pending_calls.append(("toggle_mcp_server", (server_name, enabled), {}))
 
     async def get_mcp_status(self) -> dict:
-        """Return current MCP server status. Empty shape if not ready."""
+        """Return current MCP server status, minus claudebox's own sibling-session server.
 
-        if self.ready.is_set():
-            return await self._sdk.get_mcp_status()  # ty: ignore[invalid-return-type]
+        Empty shape if not ready.
+        """
 
-        return {"mcpServers": []}
+        if not self.ready.is_set():
+            return {"mcpServers": []}
+
+        status = await self._sdk.get_mcp_status()
+        servers = status.get("mcpServers") or []
+
+        return {
+            **status,
+            "mcpServers": [s for s in servers if s.get("name") != SIBLING_MCP_SERVER_NAME],
+        }
 
     async def get_context_usage(self) -> ContextUsage | None:
         """Return current context-window usage. None if not ready, timed out, or no data."""
@@ -574,7 +615,7 @@ class ClaudeRuntime:
                 mcp_servers=[
                     McpServerInit(name=s.get("name", ""), status=s.get("status", ""))
                     for s in (data.get("mcp_servers") or [])
-                    if isinstance(s, dict)
+                    if isinstance(s, dict) and s.get("name") != SIBLING_MCP_SERVER_NAME
                 ],
                 memory_paths=data.get("memory_paths") or {},
                 output_style=data.get("output_style"),
@@ -1107,3 +1148,77 @@ class ClaudeRuntime:
             ]
 
         return hooks
+
+    # Sibling-session tools
+    # ----------------------------------------------------------------------------------------------
+    # In-process SDK MCP server wrapping SiblingSessionClient - see _sibling_sessions.py for
+    # the shared spawn/ask/read logic and why it lives outside both runtime adapters.
+
+    def _build_mcp_servers(self) -> dict:
+        """Build the in-process MCP server carrying the sibling-session tools.
+
+        A workspace's own `.mcp.json` servers are unaffected: the SDK merges, never replaces.
+        """
+
+        server = create_sdk_mcp_server(
+            name=SIBLING_MCP_SERVER_NAME,
+            tools=self._sibling_sdk_tools(),
+        )
+
+        return {SIBLING_MCP_SERVER_NAME: server}
+
+    def _sibling_sdk_tools(self) -> list[SdkMcpTool]:
+        """Bind session_spawn/session_ask/session_read against this instance's client.
+
+        Same names, arguments and result shape as `langgraph_tools/sibling.py`.
+        """
+
+        client = self._sibling_sessions
+
+        @sdk_tool(
+            "session_spawn",
+            "Spawn a sibling session seeded with a prompt; returns its session and container "
+            "ids. The sibling is an ordinary session - it appears in the Sessions and "
+            "Containers panels immediately, and can be opened in a tab at any time.",
+            {"prompt": str},
+        )
+        async def session_spawn(args: dict) -> dict:
+            try:
+                result = await client.spawn(args["prompt"])
+
+                return {"content": [{"type": "text", "text": json.dumps(result)}]}
+            except SiblingSessionError as exc:
+                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+
+        @sdk_tool(
+            "session_ask",
+            "Ask a sibling session something and wait for its turn to settle. Returns "
+            '{"state": "replied", "text": "..."} once it answers, or '
+            '{"state": "asking", "text": "..."} if it ends by asking a question instead - call '
+            "again with the answer to resume it.",
+            {"session_id": str, "message": str},
+        )
+        async def session_ask(args: dict) -> dict:
+            try:
+                result = await client.ask(args["session_id"], args["message"])
+
+                return {"content": [{"type": "text", "text": json.dumps(result)}]}
+            except SiblingSessionError as exc:
+                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+
+        @sdk_tool(
+            "session_read",
+            "Read a sibling session's transcript as {role, content} turns, oldest first, "
+            "capped at `limit` (default 50). Works even while the sibling's container is "
+            "stopped - reads its persisted log directly, no network call.",
+            {"session_id": str, "limit": int},
+        )
+        async def session_read(args: dict) -> dict:
+            try:
+                turns = await client.read(args["session_id"], args.get("limit") or 50)
+
+                return {"content": [{"type": "text", "text": json.dumps(turns)}]}
+            except SiblingSessionError as exc:
+                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+
+        return [session_spawn, session_ask, session_read]

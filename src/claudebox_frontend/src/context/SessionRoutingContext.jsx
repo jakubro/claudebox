@@ -71,6 +71,17 @@ export function SessionRoutingProvider({ children }) {
     setRouteState(parseHash(newHash))
   }, [routeState?.workspaceId])
 
+  /** Strip a link's carried `send` values from the hash once creation has consumed them. */
+  const consumeSendMessages = useCallback(() => {
+    const ws = routeState?.workspaceId
+    if (!ws) {
+      return
+    }
+    const newHash = `#/workspaces/${ws}`
+    history.replaceState(null, '', window.location.pathname + window.location.search + newHash)
+    setRouteState(parseHash(newHash))
+  }, [routeState?.workspaceId])
+
   const setDensity = useCallback(density => {
     const [hashPath, hashQuery = ''] = window.location.hash.split('?')
     const params = new URLSearchParams(hashQuery)
@@ -115,6 +126,7 @@ export function SessionRoutingProvider({ children }) {
       activeTurnId: routeState?.turnId ?? null,
       activeMessageType: routeState?.messageType ?? null,
       density: routeState?.density ?? 'comfortable',
+      sendMessages: routeState?.sendMessages ?? [],
       navigateToSession,
       navigateToBoard,
       navigateToWorkspace,
@@ -122,6 +134,7 @@ export function SessionRoutingProvider({ children }) {
       clearActiveSession,
       setDensity,
       replaceTurnInUrl,
+      consumeSendMessages,
     }),
     [
       routeState,
@@ -132,6 +145,7 @@ export function SessionRoutingProvider({ children }) {
       clearActiveSession,
       setDensity,
       replaceTurnInUrl,
+      consumeSendMessages,
     ],
   )
 

@@ -1,6 +1,6 @@
 /** Best-effort frontend failure reporting to the daemon log. */
 
-import { ERROR_REPORT_DEDUP_WINDOW_MS } from '../config/timing'
+import { ERROR_REPORT_DEDUP_WINDOW_MS, FETCH_TIMEOUT_INTERACTIVE_MS } from '../config/timing'
 import { DAEMON_REPORT_URL } from '../config/urls'
 
 const _recentSignatures = new Map()
@@ -33,6 +33,9 @@ export function reportError({ kind, message, stack }) {
       app_version: null,
       client_timestamp: new Date().toISOString(),
     }),
+    // Bare fetch, not retryFetch: this must not retry. The bound only stops an unanswered report
+    // from holding a connection slot against the origin for the life of the page.
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_INTERACTIVE_MS),
   }).catch(() => {
     // Intentional: reporting is best-effort and must not itself become a failure.
   })

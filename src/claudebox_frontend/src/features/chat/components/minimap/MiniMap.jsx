@@ -2,10 +2,11 @@
 
 // audit-ignore-file: excessive-props
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { MINIMAP_MIN_WIDTH } from '../../../../config/dimensions'
-import MinimapController from './MinimapController'
-import { buildSegments, normalizeWidths } from './utils/minimap'
+import { normalizeWidths } from '../../utils/normalizeMinimapWidths'
+import { useMinimapOverlay } from '../useMinimapOverlay'
+import { buildSegments } from './utils/minimap'
 
 const SEGMENT_COLORS = ['#3a4a5c', '#5c3a5b']
 
@@ -23,6 +24,8 @@ const EMPTY_HEIGHTS = {}
  * @param {boolean} props.isStreaming - Whether assistant is actively streaming a response
  * @param {Function} props.isTurnBookmarked - Check if any message in a turn is bookmarked
  * @param {Function} props.getLogicalScrollHeight - Thumb-size denominator across mount/unmount, unlike position.
+ * @param {Function} [props.onScrollLanding] - Fired after a click/drag with whether it landed at
+ *   the bottom; omitted here, so such a write bypasses the transcript's scroll owner.
  */
 export default function MiniMap({
   groups,
@@ -36,36 +39,37 @@ export default function MiniMap({
   isStreaming = false,
   isTurnBookmarked = null,
   getLogicalScrollHeight = null,
+  onScrollLanding = null,
 }) {
-  const mapRef = useRef(null)
-  const [visible, setVisible] = useState(false)
-  const [viewport, setViewport] = useState({ top: 0, height: 100 })
-
-  const controllerRef = useRef(null)
-  if (!controllerRef.current) {
-    controllerRef.current = new MinimapController({
-      onViewportChange: v => setViewport(v),
-      onVisibilityChange: v => setVisible(v),
-    })
-  }
-  const controller = controllerRef.current
-
   const segments = useMemo(() => {
     const raw = buildSegments(groups, turnHeights, userMessageHeights)
     return normalizeWidths(raw)
   }, [groups, turnHeights, userMessageHeights])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: segments.length ensures re-attach when mapRef transitions from null to DOM element
-  useEffect(() => {
-    const container = messagesRef?.current
-    const map = mapRef.current
-    controller.attach(container, map, autoScrollEnabledRef, getLogicalScrollHeight)
-    return () => controller.detach()
-  }, [messagesRef, controller, autoScrollEnabledRef, getLogicalScrollHeight, segments.length])
+  // Stable across renders (autoScrollEnabledRef itself never changes identity), so it doesn't
+  // thrash the overlay hook's attach effect on every render.
+  const getAutoScrollEnabled = useCallback(
+    () => autoScrollEnabledRef?.current,
+    [autoScrollEnabledRef],
+  )
 
-  useEffect(() => {
-    controller.setPersistent(persistent)
-  }, [persistent, controller])
+  const {
+    mapRef,
+    visible,
+    viewport,
+    controller,
+    handleClick,
+    handlePointerDown,
+    handlePointerEnter,
+    handlePointerLeave,
+  } = useMinimapOverlay({
+    containerRef: messagesRef,
+    getAutoScrollEnabled,
+    getLogicalScrollHeight,
+    onScrollLanding,
+    persistent,
+    reattachTrigger: segments.length,
+  })
 
   // Forces visibility in non-persistent mode during active streaming.
   useEffect(() => {
@@ -91,29 +95,6 @@ export default function MiniMap({
     })
     return () => cancelAnimationFrame(id)
   }, [groups, turnHeights, controller])
-
-  const handleClick = useCallback(
-    e => {
-      const map = mapRef.current
-      if (!map) {
-        return
-      }
-      const rect = map.getBoundingClientRect()
-      controller.handleClick(e.clientY - rect.top, rect.height)
-    },
-    [controller],
-  )
-
-  const handlePointerDown = useCallback(
-    e => {
-      e.preventDefault()
-      controller.startDrag(e)
-    },
-    [controller],
-  )
-
-  const handlePointerEnter = useCallback(() => controller.handleMouseEnter(), [controller])
-  const handlePointerLeave = useCallback(() => controller.handleMouseLeave(), [controller])
 
   const hasContent = segments.length > 0 || pendingCount > 0
   if (!hasContent) {

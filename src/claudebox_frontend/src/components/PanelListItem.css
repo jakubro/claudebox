@@ -1,4 +1,4 @@
-/* Panel list item — tab/filter button with active state */
+/* Panel list item - tab/filter button with active state */
 
 .panel-list-item {
   display: flex;
@@ -26,4 +26,18 @@
 .panel-list-item-count {
   font-size: 10px;
   opacity: 0.7;
+}
+
+/* Icon presentation - sized against the shared chrome-button metrics (App.css) rather than the
+   text item above, so it sits level with icon buttons on the same row. */
+.panel-list-item-icon {
+  height: var(--chrome-btn-h);
+  margin: var(--chrome-btn-mar-y) 0;
+  padding: var(--chrome-btn-pad-y) 6px;
+  gap: 4px;
+  border-radius: 4px;
+}
+
+.panel-list-item-icon:hover {
+  background: var(--bg-tertiary);
 }

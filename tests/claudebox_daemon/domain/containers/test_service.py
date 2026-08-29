@@ -44,6 +44,46 @@ def _make_service(tmp_path: Path) -> tuple[ContainerService, MagicMock]:
 # --- get ---
 
 
+class TestFindByPeerPid:
+    """Test peer-pid-to-container resolution - what the spawn socket uses to identify its
+    caller, never trusting anything the request payload claims."""
+
+    @pytest.mark.anyio
+    async def test_resolves_the_matching_container(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        svc._containers = {
+            "c1": Container(id="c1", backend_id="b1", port=8080),
+            "c2": Container(id="c2", backend_id="b2", port=8081),
+        }
+        svc._runtime.identify_container_from_pid = MagicMock(return_value="b2")
+
+        result = await svc.find_by_peer_pid(4242)
+
+        assert result is svc._containers["c2"]
+        svc._runtime.identify_container_from_pid.assert_called_once_with(4242, ["b1", "b2"])
+
+    @pytest.mark.anyio
+    async def test_returns_none_when_the_runtime_cannot_identify_the_pid(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        svc._containers = {"c1": Container(id="c1", backend_id="b1", port=8080)}
+        svc._runtime.identify_container_from_pid = MagicMock(return_value=None)
+
+        assert await svc.find_by_peer_pid(4242) is None
+
+    @pytest.mark.anyio
+    async def test_returns_none_when_the_identified_id_matches_no_registered_container(
+        self,
+        tmp_path,
+    ):
+        """Defensive: the runtime named an id that is not (or is no longer) registered."""
+
+        svc, _ = _make_service(tmp_path)
+        svc._containers = {"c1": Container(id="c1", backend_id="b1", port=8080)}
+        svc._runtime.identify_container_from_pid = MagicMock(return_value="unregistered-id")
+
+        assert await svc.find_by_peer_pid(4242) is None
+
+
 class TestGet:
     """Test container lookup by ID."""
 
@@ -85,6 +125,21 @@ class TestSaveLoad:
         svc, _ = _make_service(tmp_path)
         svc._load()
         assert svc._containers == {}
+
+    @pytest.mark.anyio
+    async def test_members_survive_a_daemon_restart(self, tmp_path):
+        """A side thread's membership must persist the same way session_id already does -
+        sync_state() rewrites only backend_id/status/failure_count on an existing entry."""
+
+        svc, _ = _make_service(tmp_path)
+        c = Container(id="c1", backend_id="b1", port=8080, members=["thread-1", "thread-2"])
+        svc._containers["c1"] = c
+        await svc.save()
+
+        svc2, _ = _make_service(tmp_path)
+        svc2._load()
+
+        assert svc2._containers["c1"].members == ["thread-1", "thread-2"]
 
 
 # --- list_all ---
@@ -521,6 +576,62 @@ class TestFindBySession:
         with patch.object(svc, "sync_state", new_callable=AsyncMock) as mock_sync:
             await svc.find_by_session("sess-1", sync=True)
             mock_sync.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_resolves_a_member_session(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        c = Container(
+            id="c1",
+            backend_id="b1",
+            port=8080,
+            session_id="owner-sess",
+            status=ContainerStatus.RUNNING,
+            members=["thread-1", "thread-2"],
+        )
+        svc._containers["c1"] = c
+
+        assert await svc.find_by_session("thread-1") is c
+        assert await svc.find_by_session("thread-2") is c
+
+    @pytest.mark.anyio
+    async def test_owner_wins_over_a_member_match_on_another_container(self, tmp_path):
+        """The owner is what a stop must resolve to - it must never lose to a member match
+        on a different container, regardless of dict iteration order."""
+
+        svc, _ = _make_service(tmp_path)
+        owner_container = Container(
+            id="c-owner",
+            backend_id="b1",
+            port=8080,
+            session_id="sess-1",
+            status=ContainerStatus.RUNNING,
+        )
+        member_container = Container(
+            id="c-member",
+            backend_id="b2",
+            port=8081,
+            session_id="other-owner",
+            status=ContainerStatus.RUNNING,
+            members=["sess-1"],
+        )
+        svc._containers["c-member"] = member_container
+        svc._containers["c-owner"] = owner_container
+
+        assert await svc.find_by_session("sess-1") is owner_container
+
+    @pytest.mark.anyio
+    async def test_ignores_membership_on_a_stopped_container(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        svc._containers["c1"] = Container(
+            id="c1",
+            backend_id="b1",
+            port=8080,
+            session_id="owner-sess",
+            status=ContainerStatus.STOPPED,
+            members=["thread-1"],
+        )
+
+        assert await svc.find_by_session("thread-1") is None
 
 
 # --- config reload at container-create (staleness regression) ---

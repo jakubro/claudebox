@@ -28,7 +28,10 @@ class RateLimitStore:
         self._path = workspace_path / CONFIG_DIR_NAME / RATE_LIMITS_FILE
 
     def get(self) -> list[dict]:
-        """Live entries as `{status, resets_at, rate_limit_type, utilization}`, reset ones pruned."""
+        """Live entries, with reset ones pruned.
+
+        Each is `{status, resets_at, rate_limit_type, utilization, session_id}`.
+        """
 
         try:
             with self._locked():
@@ -47,8 +50,9 @@ class RateLimitStore:
         status: str | None,
         resets_at: int | None,
         utilization: float | None,
+        session_id: str | None = None,
     ) -> None:
-        """Upsert one window's entry."""
+        """Upsert one window's entry, stamped with the session that wrote it."""
 
         try:
             with self._locked():
@@ -57,21 +61,31 @@ class RateLimitStore:
                     "status": status,
                     "resets_at": resets_at,
                     "utilization": utilization,
+                    "session_id": session_id,
                 }
                 self._save(entries)
         except Timeout:
             logger.warning("Rate-limit store lock timed out on write", path=str(self._path))
 
-    def remove(self, rate_limit_type: str) -> None:
-        """Drop one window's entry; no-op if absent."""
+    def remove(self, rate_limit_type: str, *, session_id: str | None = None) -> None:
+        """Drop one window's entry; no-op if absent, or if owned by a different session_id.
+
+        `session_id=None` removes unconditionally - an "allowed" signal is account-wide.
+        """
 
         try:
             with self._locked():
                 entries = self._load_live()
+                entry = entries.get(rate_limit_type)
 
-                if rate_limit_type in entries:
-                    del entries[rate_limit_type]
-                    self._save(entries)
+                if entry is None:
+                    return
+
+                if session_id is not None and entry.get("session_id") != session_id:
+                    return
+
+                del entries[rate_limit_type]
+                self._save(entries)
         except Timeout:
             logger.warning("Rate-limit store lock timed out on remove", path=str(self._path))
 

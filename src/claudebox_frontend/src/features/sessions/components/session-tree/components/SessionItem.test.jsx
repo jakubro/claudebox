@@ -265,7 +265,7 @@ describe('SessionItem', () => {
         isPinned={false}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={vi.fn()}
+        actions={{ onTogglePin: vi.fn() }}
       />,
     )
 
@@ -350,7 +350,7 @@ describe('SessionItem', () => {
         isCurrent={false}
         onResume={onResume}
         onRename={vi.fn()}
-        onOpenInNewTab={onOpenInNewTab}
+        actions={{ onOpenInNewTab }}
       />,
     )
 
@@ -383,7 +383,7 @@ describe('SessionItem', () => {
         isPinned={false}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={vi.fn()}
+        actions={{ onTogglePin: vi.fn() }}
       />,
     )
 
@@ -398,7 +398,7 @@ describe('SessionItem', () => {
         isPinned={false}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={vi.fn()}
+        actions={{ onTogglePin: vi.fn() }}
       />,
     )
 
@@ -413,7 +413,7 @@ describe('SessionItem', () => {
         isPinned={true}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={vi.fn()}
+        actions={{ onTogglePin: vi.fn() }}
       />,
     )
 
@@ -429,7 +429,7 @@ describe('SessionItem', () => {
         isPinned={false}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={vi.fn()}
+        actions={{ onTogglePin: vi.fn() }}
       />,
     )
 
@@ -447,7 +447,7 @@ describe('SessionItem', () => {
         isPinned={false}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={onTogglePin}
+        actions={{ onTogglePin }}
       />,
     )
 
@@ -464,7 +464,7 @@ describe('SessionItem', () => {
         isPinned={true}
         onResume={vi.fn()}
         onRename={vi.fn()}
-        onTogglePin={vi.fn()}
+        actions={{ onTogglePin: vi.fn() }}
       />,
     )
 
@@ -480,8 +480,7 @@ describe('SessionItem', () => {
           isPinned={false}
           onResume={vi.fn()}
           onRename={vi.fn()}
-          onTogglePin={vi.fn()}
-          onKillContainer={vi.fn()}
+          actions={{ onTogglePin: vi.fn(), onKillContainer: vi.fn() }}
         />,
       )
 
@@ -496,8 +495,7 @@ describe('SessionItem', () => {
           isPinned={false}
           onResume={vi.fn()}
           onRename={vi.fn()}
-          onTogglePin={vi.fn()}
-          onKillContainer={vi.fn()}
+          actions={{ onTogglePin: vi.fn(), onKillContainer: vi.fn() }}
         />,
       )
 
@@ -514,8 +512,7 @@ describe('SessionItem', () => {
           isPinned={false}
           onResume={vi.fn()}
           onRename={vi.fn()}
-          onTogglePin={vi.fn()}
-          onKillContainer={onKillContainer}
+          actions={{ onTogglePin: vi.fn(), onKillContainer }}
         />,
       )
 

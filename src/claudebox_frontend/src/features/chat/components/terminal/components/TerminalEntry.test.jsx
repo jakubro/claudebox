@@ -2,6 +2,7 @@
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import TerminalEntry from './TerminalEntry'
 
@@ -143,6 +144,26 @@ describe('TerminalEntry', () => {
     await user.click(screen.getByTitle('Copy command'))
 
     expect(onClick).not.toHaveBeenCalled()
+  })
+
+  it('forwards a ref to its root element', () => {
+    const ref = createRef()
+    render(<TerminalEntry entry={entry()} ref={ref} />)
+
+    expect(ref.current).toBeInstanceOf(HTMLElement)
+    expect(ref.current).toHaveClass('terminal-entry')
+  })
+
+  it('carries its index as data-index, for step navigation to find it in either render branch', () => {
+    const { container } = render(<TerminalEntry entry={entry()} index={7} />)
+
+    expect(container.querySelector('.terminal-entry')).toHaveAttribute('data-index', '7')
+  })
+
+  it('renders no data-index attribute when none is given', () => {
+    const { container } = render(<TerminalEntry entry={entry()} />)
+
+    expect(container.querySelector('.terminal-entry')).not.toHaveAttribute('data-index')
   })
 
   it('renders both jump and copy buttons whether or not the entry has a description', () => {

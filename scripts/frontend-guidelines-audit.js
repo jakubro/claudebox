@@ -215,6 +215,58 @@ function* findComponentDeclarations(lines) {
   }
 }
 
+/**
+ * Net `{`/`}` count for `line`, plus whether it opens a brace at all - ignoring braces inside
+ * string/template literals and `//` comments, which a plain character scan would miscount.
+ */
+function scanBraces(line) {
+  let delta = 0
+  let sawOpen = false
+  let quote = null
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (quote) {
+      if (ch === '\\') {
+        i++
+      } else if (ch === quote) {
+        quote = null
+      }
+      continue
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch
+    } else if (ch === '/' && line[i + 1] === '/') {
+      break
+    } else if (ch === '{') {
+      delta++
+      sawOpen = true
+    } else if (ch === '}') {
+      delta--
+    }
+  }
+  return { delta, sawOpen }
+}
+
+/**
+ * Scans forward from `startIndex` for the line closing the brace block opened at or after it -
+ * `endIndex` for that line, `startedAt` for the first `{`. Falls back to the file's last line.
+ */
+function findBlockEnd(lines, startIndex) {
+  let depth = 0
+  let startedAt = -1
+  for (let j = startIndex; j < lines.length; j++) {
+    const { delta, sawOpen } = scanBraces(lines[j])
+    depth += delta
+    if (sawOpen && startedAt === -1) {
+      startedAt = j
+    }
+    if (startedAt !== -1 && depth === 0) {
+      return { endIndex: j, startedAt }
+    }
+  }
+  return { endIndex: lines.length - 1, startedAt: startedAt === -1 ? startIndex : startedAt }
+}
+
 /** Flag a .jsx file exporting multiple components; private helpers under 30 body lines are fine. */
 function checkMultipleComponents(filePath, lines, type) {
   const violations = []
@@ -229,25 +281,8 @@ function checkMultipleComponents(filePath, lines, type) {
     // Measure function body length for non-exported helpers
     let bodyLines = 0
     if (!isExported) {
-      let braceDepth = 0
-      let started = false
-      for (let j = i; j < lines.length; j++) {
-        for (const ch of lines[j]) {
-          if (ch === '{') {
-            braceDepth++
-            started = true
-          }
-          if (ch === '}') {
-            braceDepth--
-          }
-        }
-        if (started) {
-          bodyLines++
-        }
-        if (started && braceDepth === 0) {
-          break
-        }
-      }
+      const { endIndex, startedAt } = findBlockEnd(lines, i)
+      bodyLines = endIndex - startedAt + 1
     }
 
     components.push({ name, line: i + 1, isExported, bodyLines })
@@ -330,24 +365,8 @@ function checkPureModuleHelpers(filePath, lines, type) {
       continue
     }
 
-    // Walk forward until the function body closes, tracking brace depth.
-    let depth = 0
-    let started = false
-    let bodyEnd = i
-    for (let j = i; j < lines.length; j++) {
-      for (const ch of lines[j]) {
-        if (ch === '{') {
-          depth++
-          started = true
-        } else if (ch === '}') {
-          depth--
-        }
-      }
-      if (started && depth === 0) {
-        bodyEnd = j
-        break
-      }
-    }
+    // Walk forward until the function body closes.
+    const { endIndex: bodyEnd } = findBlockEnd(lines, i)
 
     const body = lines.slice(i, bodyEnd + 1).join('\n')
     if (!REACT_API_RE.test(body)) {
@@ -1012,14 +1031,17 @@ function checkOrphanedTestFiles(testFiles, sourceFiles) {
   for (const testFile of testFiles) {
     const dir = dirname(testFile)
     const name = basename(testFile)
-    // strip `.test.` from the name to derive the source basename
-    const sourceName = name.replace(/\.test\./, '.')
-    const expected = join(dir, sourceName)
-    if (!sourceSet.has(expected)) {
+    // A test's extension reflects what the test itself needs, not the source's - strip
+    // `.test.<ext>` and accept a sibling under any recognized source extension.
+    const base = name.replace(/\.test\.(jsx?|tsx?)$/, '')
+    const hasSibling = ['js', 'jsx', 'ts', 'tsx'].some(ext =>
+      sourceSet.has(join(dir, `${base}.${ext}`)),
+    )
+    if (!hasSibling) {
       violations.push({
         file: relative(SRC, testFile),
         rule: 'orphaned-test-file',
-        message: `no sibling source file \`${sourceName}\` - orphaned test (likely after rename/move)`,
+        message: `no sibling source file \`${base}.{js,jsx}\` - orphaned test (likely after rename/move)`,
       })
     }
   }

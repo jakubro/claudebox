@@ -8,8 +8,6 @@ import IconTab from './IconTab'
 vi.mock('lucide-react', () => ({
   Archive: () => <span data-testid="icon-stash">📦</span>,
   Command: () => <span data-testid="icon-commands">⌘</span>,
-  FileText: () => <span data-testid="icon-file">📄</span>,
-  FolderTree: () => <span data-testid="icon-files">📁</span>,
   HelpCircle: () => <span data-testid="icon-help">❓</span>,
   History: () => <span data-testid="icon-sessions">⏰</span>,
   Kanban: () => <span data-testid="icon-boards">📋</span>,
@@ -17,7 +15,6 @@ vi.mock('lucide-react', () => ({
   Pin: () => <span data-testid="icon-pin">📌</span>,
   Plug: () => <span data-testid="icon-mcp">🔌</span>,
   SquareKanban: () => <span data-testid="icon-tasks">📊</span>,
-  Terminal: () => <span data-testid="icon-logs">💻</span>,
   Bookmark: () => <span data-testid="icon-bookmarks">🔖</span>,
   TrendingUp: () => <span data-testid="icon-usage">📈</span>,
   X: () => <span data-testid="icon-close">✕</span>,
@@ -30,18 +27,6 @@ vi.mock('../../../context/AppActionsContext', () => ({
     maximizeToggle: mockMaximizeToggle,
     closePanel: mockClosePanel,
   }),
-}))
-
-vi.mock('../../../context/WorkspaceContext', () => ({
-  useWorkspace: () => ({ workspaceId: 'test-ws' }),
-}))
-
-vi.mock('../../../api/boards', () => ({
-  renameBoard: vi.fn(),
-}))
-
-vi.mock('../../../utils/navigation', () => ({
-  openBoardInNewTab: vi.fn(),
 }))
 
 describe('IconTab', () => {
@@ -68,19 +53,9 @@ describe('IconTab', () => {
     expect(screen.getByTestId('icon-tasks')).toBeInTheDocument()
   })
 
-  it('renders Terminal icon for logs panel', () => {
-    render(<IconTab api={createApi('logs', 'Logs')} />)
-    expect(screen.getByTestId('icon-logs')).toBeInTheDocument()
-  })
-
   it('renders Command icon for commands panel', () => {
     render(<IconTab api={createApi('commands', 'Skills')} />)
     expect(screen.getByTestId('icon-commands')).toBeInTheDocument()
-  })
-
-  it('renders FileText icon for file tabs', () => {
-    render(<IconTab api={createApi('file:/path/to/file.js', 'file.js')} />)
-    expect(screen.getByTestId('icon-file')).toBeInTheDocument()
   })
 
   it('renders the close button on every tab', () => {

@@ -3,12 +3,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { listSessions } from '../api/sessions'
 import { getUiState, patchGlobalUiState } from '../api/uiState'
-import { PINNED_PATH, PINS_CHANGE_SIGNAL_KEY, WORKSPACE_COLOR_PATH } from '../config/storage'
+import { SESSION_FILTERS } from '../config/sessionFilters'
+import {
+  PINNED_PATH,
+  PINS_CHANGE_SIGNAL_KEY,
+  SESSIONS_PANEL_FILTER_PATH,
+  WORKSPACE_COLOR_PATH,
+} from '../config/storage'
 import {
   SESSION_STORAGE_SWEEP_INTERVAL_MS,
   SESSIONS_CHANGED_DEBOUNCE_MS,
   SESSIONS_REFRESH_FALLBACK_MS,
 } from '../config/timing'
+import { createDeferred } from '../utils/deferred'
 import {
   collectLiveSessionIdsAcrossWorkspaces,
   sweepDeadSessionStorage,
@@ -31,6 +38,12 @@ export function SessionsProvider({ children }) {
   const [sessions, setSessions] = useState([])
   const [pinnedSessions, setPinnedSessions] = useState([])
   const [workspaceColor, setWorkspaceColorState] = useState(null)
+  // The reader's own choice - stored, hydrated, written only by setPanelFilter.
+  const [panelFilterPick, setPanelFilterPickState] = useState(SESSION_FILTERS.CONVERSATIONS)
+  // Unstored: true while the open session is absent from panelFilterPick. SessionsPanel owns when
+  // this flips; a click always clears it, so it can never outlive the session change that set it.
+  const [fallbackToAll, setFallbackToAll] = useState(false)
+  const panelFilterHydratedRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const debounceRef = useRef(null)
@@ -41,29 +54,51 @@ export function SessionsProvider({ children }) {
   const fetchInFlightWorkspaceRef = useRef(null)
   const lastFetchCompletedAtRef = useRef(0)
   // A signal arriving mid-flight may predate that fetch's snapshot - re-fetch on settle rather than
-  // lose it until the fallback poll. Armed only by external-signal callers (SSE, cross-tab sync).
+  // lose it until the fallback poll.
   const pendingSignalRef = useRef(false)
+  // Set by the first joiner of an in-flight request; resolves once the re-armed refetch settles -
+  // never the request being joined, which predates the joiner's own call.
+  const nextSettleDeferredRef = useRef(null)
   const sweepLastRunAtRef = useRef(0)
 
-  const fetchSessions = useCallback(
-    async ({ armPendingOnJoin = false } = {}) => {
-      if (!workspaceId) {
-        return
+  const fetchSessions = useCallback(async () => {
+    if (!workspaceId) {
+      return
+    }
+    if (fetchInFlightRef.current && fetchInFlightWorkspaceRef.current === workspaceId) {
+      pendingSignalRef.current = true
+      if (!nextSettleDeferredRef.current) {
+        nextSettleDeferredRef.current = createDeferred()
       }
-      if (fetchInFlightRef.current && fetchInFlightWorkspaceRef.current === workspaceId) {
-        if (armPendingOnJoin) {
-          pendingSignalRef.current = true
-        }
-        return fetchInFlightRef.current
-      }
+      return nextSettleDeferredRef.current.promise
+    }
 
-      const run = (async () => {
-        try {
-          const [sessionsData, uiStateData] = await Promise.all([listSessions(), getUiState()])
+    // A wave armed against a superseded workspace's request would never settle - the switch has
+    // moved past it, so settle it here rather than let it attach to this unrelated request.
+    if (pendingSignalRef.current) {
+      pendingSignalRef.current = false
+      const orphaned = nextSettleDeferredRef.current
+      nextSettleDeferredRef.current = null
+      orphaned?.resolve()
+    }
+
+    const run = (async () => {
+      try {
+        const [sessionsData, uiStateData] = await Promise.all([listSessions(), getUiState()])
+        // Only the run that still owns the slot may apply its response - a workspace switch can
+        // start a second run for a different workspace while this one is still in flight.
+        if (fetchInFlightRef.current === run) {
           const liveSessions = sessionsData.sessions || []
           setSessions(liveSessions)
           setPinnedSessions(uiStateData.global?.pinnedSessions || [])
           setWorkspaceColorState(uiStateData.global?.workspaceColor || null)
+          // Hydrate once - a later refetch must not stomp a filter the reader picked meanwhile.
+          if (!panelFilterHydratedRef.current) {
+            panelFilterHydratedRef.current = true
+            setPanelFilterPickState(
+              uiStateData.global?.sessionsPanelFilter || SESSION_FILTERS.CONVERSATIONS,
+            )
+          }
           setError(null)
 
           const now = Date.now()
@@ -76,26 +111,37 @@ export function SessionsProvider({ children }) {
             )
             sweepDeadSessionStorage(liveAcrossWorkspaces)
           }
-        } catch (err) {
+        }
+      } catch (err) {
+        if (fetchInFlightRef.current === run) {
           setError(err.message)
-        } finally {
+        }
+      } finally {
+        if (fetchInFlightRef.current === run) {
           setLoading(false)
           fetchInFlightRef.current = null
           fetchInFlightWorkspaceRef.current = null
           lastFetchCompletedAtRef.current = Date.now()
           if (pendingSignalRef.current) {
             pendingSignalRef.current = false
-            fetchSessions()
+            // The debounced-signal effect below can arm this flag directly, without going
+            // through the join branch above, so a deferred isn't guaranteed to exist here.
+            const deferred = nextSettleDeferredRef.current
+            nextSettleDeferredRef.current = null
+            if (deferred) {
+              fetchSessions().then(deferred.resolve, deferred.reject)
+            } else {
+              fetchSessions()
+            }
           }
         }
-      })()
+      }
+    })()
 
-      fetchInFlightRef.current = run
-      fetchInFlightWorkspaceRef.current = workspaceId
-      return run
-    },
-    [workspaceId],
-  )
+    fetchInFlightRef.current = run
+    fetchInFlightWorkspaceRef.current = workspaceId
+    return run
+  }, [workspaceId])
 
   // Fetch when workspace becomes available
   useEffect(() => {
@@ -134,7 +180,7 @@ export function SessionsProvider({ children }) {
   useEffect(() => {
     const handleStorage = e => {
       if (e.key === PINS_CHANGE_SIGNAL_KEY) {
-        fetchSessions({ armPendingOnJoin: true })
+        fetchSessions()
       }
     }
     window.addEventListener('storage', handleStorage)
@@ -149,6 +195,14 @@ export function SessionsProvider({ children }) {
     } else {
       patchGlobalUiState([{ op: 'unset', path: WORKSPACE_COLOR_PATH }])
     }
+  }, [])
+
+  // Optimistic, fire-and-forget filter choice; persists so a reload returns to the same tab.
+  // Clears any standing fallback - a click is the reader overriding whatever the panel picked.
+  const setPanelFilter = useCallback(filter => {
+    setPanelFilterPickState(filter)
+    setFallbackToAll(false)
+    patchGlobalUiState([{ op: 'set', path: SESSIONS_PANEL_FILTER_PATH, value: filter }])
   }, [])
 
   // Optimistic insert/update: fork uses this to populate the panel before the sessions_changed SSE lands.
@@ -186,27 +240,37 @@ export function SessionsProvider({ children }) {
     })
   }, [])
 
+  // The strip renders and the list filters by this - the pick, or All while the fallback is set.
+  const panelFilter = fallbackToAll ? SESSION_FILTERS.ALL : panelFilterPick
+
   const value = useMemo(
     () => ({
       sessions,
       pinnedSessions,
       workspaceColor,
+      panelFilter,
+      panelFilterPick,
       loading,
       error,
       refresh: fetchSessions,
       togglePin,
       setWorkspaceColor,
+      setPanelFilter,
+      setFallbackToAll,
       seedSession,
     }),
     [
       sessions,
       pinnedSessions,
       workspaceColor,
+      panelFilter,
+      panelFilterPick,
       loading,
       error,
       fetchSessions,
       togglePin,
       setWorkspaceColor,
+      setPanelFilter,
       seedSession,
     ],
   )

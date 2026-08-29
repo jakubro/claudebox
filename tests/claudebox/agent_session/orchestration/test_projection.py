@@ -316,6 +316,19 @@ class TestRefreshDaemonFields:
 
         assert proj.value.parent_session_id == "parent-abc"
 
+    def test_spawned_from_session_id_updated_from_disk(self, tmp_workspace, monkeypatch):
+        """A spawn socket child's lineage, written directly before session.json exists, survives
+        this projection's first save the same way parent_session_id already does."""
+
+        proj = self._make_projection(tmp_workspace, monkeypatch)
+        assert proj.value.spawned_from_session_id is None
+
+        proj.save()
+        data = {"session_id": "test-session", "spawned_from_session_id": "spawner-abc"}
+        write_json(proj._path, data)
+
+        assert proj.value.spawned_from_session_id == "spawner-abc"
+
     def test_projection_fields_not_overwritten(self, tmp_workspace, monkeypatch):
         """Verify projection-tracked fields (cost, turns) remain authoritative from memory."""
 

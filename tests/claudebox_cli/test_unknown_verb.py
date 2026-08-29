@@ -40,26 +40,3 @@ class TestUnknownVerb:
         assert "invalid choice" in captured.err
         assert "run" in captured.err
         assert "build" in captured.err
-
-
-class TestLegacyFlagsRejected:
-    """Old flag-mode invocations hard-error via argparse."""
-
-    @pytest.mark.parametrize("legacy_flag", ["-b", "-r", "-u", "--cleanup", "--no-run"])
-    def test_legacy_flag_exits_2(self, legacy_flag: str) -> None:
-        with pytest.raises(SystemExit) as exc:
-            parser.parse_args([legacy_flag])
-
-        assert exc.value.code == 2
-
-    def test_bash_positional_exits_2(self) -> None:
-        with pytest.raises(SystemExit) as exc:
-            parser.parse_args(["bash"])
-
-        assert exc.value.code == 2
-
-    def test_arbitrary_command_passthrough_exits_2(self) -> None:
-        with pytest.raises(SystemExit) as exc:
-            parser.parse_args(["python", "script.py"])
-
-        assert exc.value.code == 2

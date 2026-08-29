@@ -159,6 +159,7 @@ DAEMON_PORT = 41820
 DAEMON_DEV_PORT = 41920
 GIT_SUBPROCESS_TIMEOUT = timedelta(seconds=5)
 SDK_CONTROL_REQUEST_TIMEOUT = timedelta(seconds=30)  # ceiling on a single SDK control round-trip
+SPAWN_SOCKET_CONNECT_TIMEOUT_SECONDS = 5.0  # bound on dialing the daemon's spawn socket
 
 
 def daemon_base_url() -> str:
@@ -177,6 +178,7 @@ SESSION_MAX_AGE = timedelta(days=365)  # stale threshold for cleanup
 SESSION_STALL_TIMEOUT = timedelta(minutes=15)  # runtime silence mid-turn before it is reported
 SESSION_STALL_CHECK_INTERVAL = timedelta(seconds=15)  # how often the stall watchdog samples
 SESSIONS_DIR_NAME = "sessions"  # subdirectory under config_dir
+SPAWN_SOCKET_NAME = "spawn.sock"  # unix socket in {config_dir}/sessions/, one per workspace
 SESSION_METADATA_FILE = "session.json"  # per-session metadata file
 SESSION_EVENTS_FILE = "events.jsonl"  # per-session event log
 SESSION_COMPACTION_FILE = "compaction.json"

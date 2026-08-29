@@ -49,7 +49,6 @@ class TestCapabilityDeclaration:
             supports_context_usage=True,
             supports_cost_telemetry=True,
             supports_manual_compact=False,
-            supports_session_resume=True,
             supports_session_fork=True,
             supports_session_rewind=True,
             supports_ask_user_question=True,

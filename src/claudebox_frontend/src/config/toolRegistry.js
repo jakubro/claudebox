@@ -121,7 +121,7 @@ export const TOOL_REGISTRY = {
   [ToolName.TASK]: {
     formatter: formatTaskResult,
     headerFormatter: formatTaskHeader,
-    collapseByDefault: false,
+    collapseByDefault: true,
     tooltip: input => input?.prompt || null,
     renderer: 'default',
     codeParser: null,

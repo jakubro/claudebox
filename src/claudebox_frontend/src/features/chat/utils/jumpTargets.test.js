@@ -32,7 +32,7 @@ function lazyMeasurements(count, materialized = []) {
   })
 }
 
-const container = { querySelector: () => null }
+const container = {}
 
 describe('jumpTargets', () => {
   it('resolves a target for every turn, not just the mounted window', () => {
@@ -69,19 +69,64 @@ describe('jumpTargets', () => {
     expect(jumpTargets(container, { current: null })).toEqual([])
   })
 
-  it('appends the active turn, which lives outside the windowed list', () => {
-    const activeEl = { id: 'active' }
-    const withActive = {
-      querySelector: sel => (sel.includes('turn-container') ? activeEl : null),
-      scrollTop: 0,
-      getBoundingClientRect: () => ({ top: 0 }),
-    }
-    activeEl.getBoundingClientRect = () => ({ top: 500 })
+  it('appends a caller-supplied trailing element, which lives outside the windowed list', () => {
+    const trailingContainer = { scrollTop: 0, getBoundingClientRect: () => ({ top: 0 }) }
+    const trailingEl = { getBoundingClientRect: () => ({ top: 500 }) }
     const virtualizerRef = { current: { measurementsCache: lazyMeasurements(3) } }
 
-    const targets = jumpTargets(withActive, virtualizerRef)
+    const targets = jumpTargets(trailingContainer, virtualizerRef, trailingEl)
 
     expect(targets).toHaveLength(4)
-    expect(targets[3].el).toBe(activeEl)
+    expect(targets[3].el).toBe(trailingEl)
+  })
+
+  it('omits the trailing target when the caller supplies none', () => {
+    const virtualizerRef = { current: { measurementsCache: lazyMeasurements(3) } }
+
+    expect(jumpTargets(container, virtualizerRef).every(t => t.el === undefined)).toBe(true)
+  })
+
+  it('clamps the trailing target to the container max scrollTop, when it would otherwise be unreachable', () => {
+    // Container already at its true max (scrollTop 190). The trailing entry's unclamped top-aligned
+    // destination (250) exceeds the reachable max (200), so it would always compare as "ahead".
+    const trailingContainer = {
+      scrollTop: 190,
+      scrollHeight: 300,
+      clientHeight: 100,
+      getBoundingClientRect: () => ({ top: 0 }),
+    }
+    const trailingEl = { getBoundingClientRect: () => ({ top: 60 }) }
+    const virtualizerRef = { current: { measurementsCache: lazyMeasurements(0) } }
+
+    const targets = jumpTargets(trailingContainer, virtualizerRef, trailingEl)
+
+    expect(targets[0].start).toBe(200)
+  })
+
+  it('clamps a windowed entry whose cached start overshoots the real max (still-estimated siblings)', () => {
+    // A cached start is a cumulative sum that can include not-yet-measured (estimated) sibling
+    // heights near the end of the list, overshooting the container's real scrollable range.
+    const shortContainer = { scrollHeight: 1000, clientHeight: 500 }
+    const cache = [{ index: 0, start: 1200 }]
+    const virtualizerRef = { current: { measurementsCache: cache } }
+
+    const targets = jumpTargets(shortContainer, virtualizerRef)
+
+    expect(targets[0].start).toBe(500)
+  })
+
+  it('does not clamp a trailing target that is genuinely reachable', () => {
+    const trailingContainer = {
+      scrollTop: 0,
+      scrollHeight: 1000,
+      clientHeight: 500,
+      getBoundingClientRect: () => ({ top: 0 }),
+    }
+    const trailingEl = { getBoundingClientRect: () => ({ top: 300 }) }
+    const virtualizerRef = { current: { measurementsCache: lazyMeasurements(0) } }
+
+    const targets = jumpTargets(trailingContainer, virtualizerRef, trailingEl)
+
+    expect(targets[0].start).toBe(300)
   })
 })

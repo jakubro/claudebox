@@ -113,6 +113,25 @@ class LocalRuntime:
 
         return entry.port
 
+    def identify_container_from_pid(self, pid: int, candidate_ids: list[str]) -> str | None:
+        """Return whichever `candidate_ids` entry the given pid's process group belongs to.
+
+        `start_new_session=True` makes a local container's own pid its process group id.
+        """
+
+        try:
+            pgid = os.getpgid(pid)
+        except ProcessLookupError:
+            return None
+
+        for cid in candidate_ids:
+            entry = self._registry.get(cid)
+
+            if entry and entry.process.pid == pgid:
+                return cid
+
+        return None
+
     def list_containers(self, labels: dict[str, str] | None = None) -> list[dict]:
         """Return in-memory registry as synthetic podman-format dicts."""
 

@@ -57,9 +57,15 @@ just install-shared-js  # npm ci at lib root (biome + jscpd + knip)
 ```
 
 Linting and auto-fix are whole-repo only: `just lint` runs ruff check + ruff format --check + ty +
-python-guidelines-audit + biome + frontend-guidelines-audit + spec-coverage + knip + jscpd, and `just fix`
-runs ruff check --fix + ruff format + ty --fix + biome check --fix. There are no per-language `lint-*` /
-`fix-*` recipes - reach for a tool directly (`npx biome check <path>`) when iterating on one file.
+python-guidelines-audit + biome + frontend-guidelines-audit + spec-coverage + architecture-drift-check +
+knip + jscpd, and `just fix` runs ruff check --fix + ruff format + ty --fix + biome check --fix. There
+are no per-language `lint-*` / `fix-*` recipes - reach for a tool directly (`npx biome check <path>`)
+when iterating on one file.
+
+`architecture-drift-check.js` checks ARCHITECTURE.md's fenced tree/module-map blocks and HTTP route
+tables against the filesystem and the registered routers, both directions - an entry naming a file
+that doesn't exist and a real file the doc omits are both failures. Its own fixture tests
+(`architecture-drift-check.test.js`, run via `node --test`) run ahead of it in `just lint`.
 
 ### Frontend (vite + vitest)
 
@@ -120,6 +126,8 @@ Prefix-pattern enforcement matters because the LangChain ecosystem ships new pro
 
 When adding a new runtime (`runtime_<name>.py`), add a `_ContainmentRule` to `SdkContainmentAudit.RULES` in `lib/scripts/python-guidelines-audit.py` with the package regex, allowlist, and containment message — same shape as existing rules. No other config changes needed.
 
+A tool family whose *behavior* (not its SDK-typed construction) is shared across runtimes never gets written twice to satisfy this rule: SDK-typed construction (`tool()`/`create_sdk_mcp_server()`, `@tool` decorators) stays inside its adapter file, but the logic it wraps lives in a plain-Python, runtime-neutral module each adapter imports and binds thinly — see `agent_session/_sibling_sessions.py` and its two bindings (`runtime_claude.py`, `langgraph_tools/sibling.py`) for the pattern.
+
 ### Runtime Resolution
 
 Daemon-side code that needs a workspace's runtime — capability matrix, catalog defaults, classmethod-callable helpers — resolves through `claudebox.agent_session._registry.resolve_runtime_class(agent)` rather than importing a specific runtime directly. This keeps the workspace's `agent` TOML key authoritative: a LangGraph workspace's daemon endpoints return LangGraph's capability matrix and defaults, not the inverse-of-the-default.
@@ -140,7 +148,7 @@ Adding a new runtime means: (a) implement the adapter file per §SDK Containment
 
 ### Orchestration Boundary
 
-`claudebox_container_api/` is HTTP plumbing only — FastAPI handlers, the app wiring, the lifespan context manager (`session_lifespan.py`), and the file service. All session orchestration (lifecycle, event pipeline, conversion, persistence, projection, broadcaster) lives in `claudebox/agent_session/orchestration/` and is part of core, not the container API. Handlers import from `claudebox.agent_session.orchestration`, never the inverse — orchestration code that needs container-API-layer behavior (e.g., the per-session log file attach/detach hooks) carries an explicit, sanctioned back-arrow import documented in the source.
+`claudebox_container_api/` is HTTP plumbing only — FastAPI handlers, the app wiring, the lifespan context manager (`session.py`), and the file service. All session orchestration (lifecycle, event pipeline, conversion, persistence, projection, broadcaster) lives in `claudebox/agent_session/orchestration/` and is part of core, not the container API. Handlers import from `claudebox.agent_session.orchestration`, never the inverse — orchestration code that needs container-API-layer behavior (e.g., the per-session log file attach/detach hooks) carries an explicit, sanctioned back-arrow import documented in the source.
 
 ### Capability-Gated UI
 
@@ -404,8 +412,8 @@ CLAUDEBOX_DEV=1 container_api_launcher.sh
 - ✅ **Always** use the facade pattern — `session.py` is the only public interface to the session package
 - ✅ **Always** use callbacks for child→parent notification — components don't import their parents
 - ✅ **Always** use dependency injection — components receive dependencies via constructor
-- 🚫 **Never** import session internals (pipeline, broadcaster, persistence) from handlers — go through `session.current`
-- 🚫 **Never** access `session.current` from within the session package — handlers-only
+- 🚫 **Never** import session internals (pipeline, broadcaster, persistence) from handlers — go through `session.get_session()` / `session.get_registry()`
+- 🚫 **Never** access `session.registry` from within the session package — handlers-only
 
 ### Event Architecture
 
@@ -700,6 +708,37 @@ rest of the time.
 - 🚫 **Never** mock a context's writers to `vi.fn()` in the only test that renders the component —
   the real provider never runs, and this entire class of bug stays invisible
 
+**The same loop closes without a context, from a single dep-less effect.** An identity-guarded
+`setState` inside a `useLayoutEffect` with no dependency array looks harmless - it runs every
+commit, but only dispatches when the value actually changed:
+
+```jsx
+// 🚫 the shape that loops - no context in sight, but the same mechanism
+useLayoutEffect(() => {
+  const value = ref.current
+  setValue(prev => (prev === value ? prev : value))   // guarded... but the guard is not enough
+})
+```
+
+The guard is checked inside the updater, but React only *consults* the updater's return value
+after deciding it cannot bail out eagerly - and the eager bail-out itself only applies while the
+fiber carries no other pending work. The instant anything else dispatches from the same commit
+(another effect, a child's `useReducer`, a measurement callback firing earlier in the same layout
+phase), the bail-out fails and this "guarded" call schedules a real update anyway, despite
+returning an unchanged value. Riding along with whatever legitimate churn is already happening,
+that redundant reschedule is what pushes a session past React's fifty-nested-update limit - see
+`useMirroredScrollElement`'s history in `useVirtualListGeometry.js` for the production instance,
+and its `useVirtualListGeometry.test.jsx` for a reproduction of the mechanism in isolation.
+
+- ✅ **Always** hold the last-seen value in a `ref` and gate the dispatch *before* calling the
+  setter, not inside the updater - `if (ref.current !== value) { ref.current = value; setValue(value) }`
+- ✅ **Always** prefer driving the write from attachment (a stable callback ref, fired by React
+  only on a real mount/unmount/node-swap) over mirroring a ref into state on every commit, when the
+  value in question is a DOM node or anything else React already has an attachment hook for
+- 🚫 **Never** trust an identity-guarded updater alone to make a dep-less effect free - it is only
+  free until something else on the same fiber has pending work, which is not an edge case in a
+  tree with virtualizers, ResizeObservers, or streaming updates nearby
+
 ### Hook Scope
 
 Same single-responsibility rule applies to hooks:
@@ -729,13 +768,15 @@ Same single-responsibility rule applies to hooks:
 
 When the frontend communicates with the daemon (multi-workspace mode), these conventions apply:
 
-**Workspace-scoped API calls**: All container endpoints are prefixed with `/api/workspaces/{workspace_id}/`. Use `workspaceFetch(path, options)` from `api/apiClient.js` — it auto-injects the workspace prefix. Container-scoped calls use `containerFetch(path, options)` which further adds the container ID prefix. For daemon-level endpoints (`/api/daemon/*`), use plain `fetch()`.
+**Workspace-scoped API calls**: All container endpoints are prefixed with `/api/workspaces/{workspace_id}/`. Use `workspaceFetch(path, options)` from `api/apiClient.js` — it auto-injects the workspace prefix. Container-scoped calls use `containerFetch(path, options, containerId?)`, which further adds the container ID prefix: the active session's by default, or an explicit `containerId` (resolved from `ContainerMapContext`'s session→container map) to address a session other than the active one. `containerUrl(path, containerId?)` takes the same optional third argument for SSE URL construction. For daemon-level endpoints (`/api/daemon/*`), use plain `fetch()`.
 
 **Daemon SSE stream**: The daemon broadcasts events via `GET /api/daemon/stream`. Current event types: `container_status` (container lifecycle changes), `session_progress` (progress during create/resume/fork), and `sessions_changed` (session list mutations). The frontend subscribes via `useDaemonStream()` hook (`hooks/useDaemonStream.js`), which wraps `useSSE`. New daemon-level push events should be added as dataclasses in the appropriate domain models module and broadcast via the shared `Broadcaster`.
 
 **Frontend failure reporting**: `api/errorReport.js`'s `reportError({ kind, message, stack })` best-effort-POSTs to `/api/daemon/report`, deduplicated client-side by `kind:message`, and logs to the daemon log via `DaemonService.report_frontend_error`. A `catch` that only degrades silently or `console.warn`s should call this instead — see `ErrorBoundary`'s `componentDidCatch` and `useLocalStorage`'s persist-failure catch. Never pass message text, draft content, or file contents — `message` identifies the failure, not the conversation.
 
 **Testing daemon-facing code**: Mock `workspaceFetch`/`containerFetch` at the `api/apiClient` module level. For contexts, mock the API modules they call. For hooks, mock both the context and API modules.
+
+**Coalescing a signal-driven refetch**: when an external signal (SSE event, poll interval, cross-tab storage event) can trigger the same fetch faster than it resolves, coalesce onto one in-flight request rather than firing one per signal. Shape: an in-flight-promise ref, an identity ref recording what the request addressed (workspace, container, board id), a pending flag a joiner sets, and an ownership check in the settling `finally` (`if (inFlightRef.current === run)`) so a request superseded by a fresh one for a different identity neither clears the new one's bookkeeping nor applies its own stale response to state. A joiner awaits `createDeferred()` (`utils/deferred.js`), resolved once the re-armed refetch settles — never the in-flight promise it joined, which resolves on data older than the joiner's own request. See `context/SessionDataContext.jsx`, `features/boards/hooks/useBoardData.js`, and `context/SessionsContext.jsx`.
 
 ---
 
@@ -791,7 +832,7 @@ rendered output, via `just update-e2e-app-snapshots` (runs the suite with
 - 🚫 Don't test language guarantees — enum names, dataclass defaults, `default_factory` execution, kwarg/keyword enforcement, class constant values, `isinstance` on typed constructs
 - 🚫 Don't re-implement production logic in tests — if suppression logic is `flag and isinstance(msg, X) and msg.field is None`, don't copy that condition into the test; call the actual code path
 
-**Anti-patterns** — if your test fits one of these shapes, delete it or rewrite it. We've shipped each of these and regretted it.
+**Anti-patterns** — if your test fits one of these shapes, delete it or rewrite it. Each of these has shipped here and been regretted.
 
 | Shape | Example | Why useless | Where it belongs |
 |-------|---------|-------------|------------------|

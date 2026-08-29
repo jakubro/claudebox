@@ -79,7 +79,13 @@ class HealthMonitor(AsyncPoller):
             )
 
             if crashed:
-                await svc.container_service.update(container, status=ContainerStatus.CRASHED)
+                # A dead member shown as live is the failure that matters - clear the live set
+                # along with the status transition rather than leaving it at its last poll.
+                await svc.container_service.update(
+                    container,
+                    status=ContainerStatus.CRASHED,
+                    live_session_ids=[],
+                )
         else:
             container.failure_count = 0
             update_kwargs = {"status": ContainerStatus.RUNNING}
@@ -88,5 +94,7 @@ class HealthMonitor(AsyncPoller):
 
             if session_id := data.get("session_id"):
                 update_kwargs["session_id"] = session_id
+
+            update_kwargs["live_session_ids"] = data.get("live_session_ids", [])
 
             await svc.container_service.update(container, **update_kwargs)

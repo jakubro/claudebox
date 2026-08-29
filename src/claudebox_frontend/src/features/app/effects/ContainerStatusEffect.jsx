@@ -75,5 +75,15 @@ export default function ContainerStatusEffect() {
     }
   }, [sessions, stoppingSessions, removeStoppingSession, removeSessionContainer])
 
+  // A side thread emits no container-level stop event - only its registry entry goes - so neither
+  // reconciliation above reaches its mapping. Drop it once the live set no longer reports it.
+  useEffect(() => {
+    for (const session of sessions) {
+      if (session.is_side_thread && containerMap[session.session_id] && !session.container_id) {
+        removeSessionContainer(session.session_id)
+      }
+    }
+  }, [sessions, containerMap, removeSessionContainer])
+
   return null
 }

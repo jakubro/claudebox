@@ -11,11 +11,19 @@ class UpdateSessionRequest(BaseModel):
     name: str | None = None
 
 
+class NewSessionRequest(BaseModel):
+    """Body for POST /sessions/new."""
+
+    messages: list[str] = []
+
+
 class ForkSessionRequest(BaseModel):
     """Body for POST /sessions/{session_id}/fork."""
 
     turn_id: str | None = None
     reuse_container: bool = False
+    share_container: bool = False
+    parent_session_id: str | None = None
 
 
 class StopContainerRequest(BaseModel):
@@ -27,7 +35,7 @@ class StopContainerRequest(BaseModel):
 class UIStateOperation(BaseModel):
     """Single UI state patch operation."""
 
-    op: Literal["set", "unset", "add", "append", "remove"]
+    op: Literal["set", "unset", "add", "remove"]
     path: str
     value: Any = None
 

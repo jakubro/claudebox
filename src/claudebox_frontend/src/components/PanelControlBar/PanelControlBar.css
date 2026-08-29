@@ -1,4 +1,4 @@
-/* Shared panel control bar — outer chrome reused across chat, board, etc. */
+/* Shared panel control bar - outer chrome reused across chat, board, etc. */
 .panel-control-bar {
   display: flex;
   align-items: center;
@@ -50,4 +50,36 @@
   width: 1px;
   height: 12px;
   background: var(--border);
+}
+
+/* Divided bar: padding moves onto each half's outer edge, so the flex-basis percentages resolve
+   against the same unpadded width the content columns use and the division lands at their x. */
+.panel-control-bar-split {
+  padding: 0;
+  justify-content: flex-start;
+}
+
+.panel-control-bar-half {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+
+.panel-control-bar-left {
+  justify-content: space-between;
+  padding-left: 6px;
+}
+
+.panel-control-bar-divider-spacer {
+  flex: 0 0 5px; /* CHAT_SPLIT_DIVIDER_WIDTH - matches .chat-split-divider's own width */
+}
+
+.panel-control-bar-right {
+  flex-grow: 1;
+  flex-shrink: 1;
+  justify-content: flex-end;
+  padding-right: 6px;
+  overflow: hidden;
 }

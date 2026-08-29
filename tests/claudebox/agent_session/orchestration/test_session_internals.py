@@ -418,6 +418,181 @@ class TestHandleEvent:
         session._sdk_client.query.assert_not_awaited()
 
 
+class TestTurnCompleteScheduling:
+    """A side thread's on_turn_complete fires once per turn, however that turn ends."""
+
+    def _member_session(self, tmp_workspace):
+        """A session wired the way the registry wires a non-primary member."""
+
+        on_turn_complete = AsyncMock()
+        session = SessionService(workspace=tmp_workspace, on_turn_complete=on_turn_complete)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._sdk_client = MagicMock()
+        session._base_session = MagicMock(id="side-1")
+
+        return session, on_turn_complete
+
+    @pytest.mark.anyio
+    async def test_result_schedules_turn_complete_for_a_member(self, tmp_workspace):
+        session, on_turn_complete = self._member_session(tmp_workspace)
+
+        await session._handle_event(_make_event(type="result", subtype="success"))
+        await session._turn_complete_task
+
+        on_turn_complete.assert_awaited_once_with("side-1")
+
+    @pytest.mark.anyio
+    async def test_injected_error_schedules_turn_complete(self, tmp_workspace):
+        session, on_turn_complete = self._member_session(tmp_workspace)
+
+        await session._handle_event(_make_event(type="system", subtype="error"))
+        await session._turn_complete_task
+
+        on_turn_complete.assert_awaited_once_with("side-1")
+
+    @pytest.mark.anyio
+    async def test_unrelated_events_do_not_schedule(self, tmp_workspace):
+        session, on_turn_complete = self._member_session(tmp_workspace)
+
+        await session._handle_event(_make_event(subtype="text"))
+        await session._handle_event(_make_event(subtype="tool_use"))
+
+        assert session._turn_complete_task is None
+        on_turn_complete.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_scheduling_is_idempotent_within_a_turn(self, tmp_workspace):
+        """Result and injected-error can both fire for one turn; only one schedule happens."""
+
+        session, on_turn_complete = self._member_session(tmp_workspace)
+
+        await session._handle_event(_make_event(type="result", subtype="success"))
+        await session._handle_event(_make_event(type="system", subtype="error"))
+        await session._turn_complete_task
+
+        on_turn_complete.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_a_primary_never_schedules(self, tmp_workspace):
+        """No on_turn_complete callback means a primary session - the default, unwired."""
+
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._sdk_client = MagicMock()
+        session._base_session = MagicMock(id="primary-1")
+
+        await session._handle_event(_make_event(type="result", subtype="success"))
+
+        assert session._turn_complete_task is None
+
+    @pytest.mark.anyio
+    async def test_cancel_turn_complete_stops_a_member_from_scheduling(self, tmp_workspace):
+        """Promotion's one state change: a cancelled member behaves like a primary from then on."""
+
+        session, on_turn_complete = self._member_session(tmp_workspace)
+
+        session.cancel_turn_complete()
+        await session._handle_event(_make_event(type="result", subtype="success"))
+
+        assert session._turn_complete_task is None
+        on_turn_complete.assert_not_awaited()
+
+    def test_cancel_turn_complete_is_a_harmless_no_op_on_a_primary(self, tmp_workspace):
+        """A primary has no disposition to cancel - calling it anyway raises nothing."""
+
+        session = _make_session(tmp_workspace)
+
+        session.cancel_turn_complete()
+
+        assert session._on_turn_complete is None
+
+    @pytest.mark.anyio
+    async def test_settle_turn_complete_awaits_a_scheduled_disposition(self, tmp_workspace):
+        """The registry's guard against resuming into a stopping entry: settling waits for an
+        already-fired disposition rather than returning while it is still in flight."""
+
+        session, on_turn_complete = self._member_session(tmp_workspace)
+        await session._handle_event(_make_event(type="result", subtype="success"))
+
+        await session.settle_turn_complete()
+
+        assert session._turn_complete_task.done()
+        on_turn_complete.assert_awaited_once_with("side-1")
+
+    @pytest.mark.anyio
+    async def test_settle_turn_complete_is_a_no_op_when_nothing_was_scheduled(self, tmp_workspace):
+        session, _ = self._member_session(tmp_workspace)
+
+        await session.settle_turn_complete()  # must not raise
+
+        assert session._turn_complete_task is None
+
+    @pytest.mark.anyio
+    async def test_settle_turn_complete_swallows_a_failed_disposition(self, tmp_workspace):
+        """The done-callback already logs a failed disposition - settling only needs to know
+        it finished, not that it succeeded."""
+
+        on_turn_complete = AsyncMock(side_effect=RuntimeError("boom"))
+        session = SessionService(workspace=tmp_workspace, on_turn_complete=on_turn_complete)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._sdk_client = MagicMock()
+        session._base_session = MagicMock(id="side-1")
+
+        await session._handle_event(_make_event(type="result", subtype="success"))
+
+        await session.settle_turn_complete()  # must not raise
+
+    @pytest.mark.anyio
+    async def test_pipeline_task_done_schedules_on_stream_loss(self, tmp_workspace):
+        """Trigger #3: the consumer loop exiting on stream loss - no event ever fires for it."""
+
+        session, on_turn_complete = self._member_session(tmp_workspace)
+        session._event_pipeline = MagicMock(stream_lost=True)
+        task = asyncio.create_task(asyncio.sleep(0))
+        await task
+
+        session._on_pipeline_task_done(task)
+        await session._turn_complete_task
+
+        on_turn_complete.assert_awaited_once_with("side-1")
+
+    @pytest.mark.anyio
+    async def test_pipeline_task_done_no_op_when_stream_is_not_lost(self, tmp_workspace):
+        session, _on_turn_complete = self._member_session(tmp_workspace)
+        session._event_pipeline = MagicMock(stream_lost=False)
+        task = asyncio.create_task(asyncio.sleep(0))
+        await task
+
+        session._on_pipeline_task_done(task)
+
+        assert session._turn_complete_task is None
+
+    @pytest.mark.anyio
+    async def test_pipeline_task_done_ignores_a_cancelled_task(self, tmp_workspace):
+        """A cancelled pipeline task means stop() is already tearing this session down -
+        not a turn ending on its own."""
+
+        session, _on_turn_complete = self._member_session(tmp_workspace)
+        session._event_pipeline = MagicMock(stream_lost=True)
+        task = asyncio.create_task(asyncio.sleep(10))
+        task.cancel()
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        session._on_pipeline_task_done(task)
+
+        assert session._turn_complete_task is None
+
+
 # --- _fold_rate_limit / _drop_unannounced_rate_limits (via _handle_event) ---
 
 
@@ -450,8 +625,31 @@ class TestFoldRateLimit:
                 "status": "allowed_warning",
                 "resets_at": None,
                 "utilization": 0.86,
+                "session_id": None,
             },
         ]
+
+    @pytest.mark.anyio
+    async def test_upsert_stamps_the_sessions_own_id(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = MagicMock()
+        session._base_session = MagicMock(id="session-a")
+
+        event = _make_event(
+            type="system",
+            subtype="rate_limit",
+            message_data={
+                "rate_limit_type": "five_hour",
+                "status": "allowed_warning",
+                "resets_at": None,
+                "utilization": 0.86,
+            },
+        )
+        await session._handle_event(event)
+
+        assert session._rate_limit_store.get()[0]["session_id"] == "session-a"
 
     @pytest.mark.anyio
     async def test_allowed_status_clears_the_window(self, tmp_workspace):
@@ -847,10 +1045,11 @@ class TestHandleInitCapabilityGuards:
 
 
 class TestHandleInitRateLimitSnapshot:
-    """At session start, every currently-stored window is marked unannounced."""
+    """At session start, this session's own previously-stored windows are marked unannounced -
+    never another session's, since the store is shared across a multi-session container."""
 
     @pytest.mark.anyio
-    async def test_snapshots_stored_windows_as_pending(self, tmp_workspace):
+    async def test_snapshots_this_sessions_own_windows_as_pending(self, tmp_workspace):
         session, projection = TestHandleInitCapabilityGuards._session_with(
             tmp_workspace,
             supported=False,
@@ -860,12 +1059,14 @@ class TestHandleInitRateLimitSnapshot:
             status="allowed_warning",
             resets_at=None,
             utilization=0.9,
+            session_id="resumed",
         )
         session._rate_limit_store.set(
             "seven_day",
             status="allowed_warning",
             resets_at=None,
             utilization=0.5,
+            session_id="resumed",
         )
 
         with (
@@ -878,6 +1079,34 @@ class TestHandleInitRateLimitSnapshot:
             await session._handle_init("resumed")
 
         assert session._rate_limit_pending_reconcile == {"five_hour", "seven_day"}
+
+    @pytest.mark.anyio
+    async def test_does_not_snapshot_another_sessions_windows(self, tmp_workspace):
+        """A shared store must not hand this session another session's window to prune on its
+        own first turn."""
+
+        session, projection = TestHandleInitCapabilityGuards._session_with(
+            tmp_workspace,
+            supported=False,
+        )
+        session._rate_limit_store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.9,
+            session_id="a-different-session",
+        )
+
+        with (
+            patch("claudebox.agent_session.orchestration.session.BaseSession"),
+            patch(
+                "claudebox.agent_session.orchestration.session.Projection",
+                return_value=projection,
+            ),
+        ):
+            await session._handle_init("resumed")
+
+        assert session._rate_limit_pending_reconcile == set()
 
     @pytest.mark.anyio
     async def test_empty_store_snapshots_to_empty_pending(self, tmp_workspace):

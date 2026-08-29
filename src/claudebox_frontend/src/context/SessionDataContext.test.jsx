@@ -418,6 +418,46 @@ describe('useSessionData polling', () => {
     expect(mockGetSession).toHaveBeenCalledTimes(3)
   })
 
+  it('does not start a second request while one is still in flight', async () => {
+    mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
+    mockGetSession.mockReturnValue(new Promise(() => {}))
+
+    renderHook(() => useSessionData(), { wrapper })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(mockGetSession).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000)
+    })
+
+    expect(mockGetSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not join an in-flight request addressed to a different container', async () => {
+    mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
+    mockGetSession.mockReturnValue(new Promise(() => {}))
+
+    renderHook(() => useSessionData(), { wrapper })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(mockGetSession).toHaveBeenCalledTimes(1)
+
+    mockGetContainerId.mockReturnValue('other-container')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    expect(mockGetSession).toHaveBeenCalledTimes(2)
+  })
+
   it('fetches once more when responding stops', async () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
 
@@ -777,5 +817,281 @@ describe('useSessionActions', () => {
     })
 
     expect(result.current.data.sessionName).toBe('Updated')
+  })
+})
+
+describe('refreshSession joiner promise contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // isConnected: false - the provider's own initial-fetch effect must stay silent so every
+    // refreshSession() call in these tests is the one driving the assertions, not a joiner of it.
+    mockEventsData = makeEventsData({ isConnected: false })
+    mockGetUiState.mockResolvedValue({ session: { notificationsEnabled: false } })
+    mockGetContainerId.mockReturnValue('test-container')
+  })
+
+  const wrapper = ({ children }) => <SessionDataProvider>{children}</SessionDataProvider>
+
+  it('does not resolve a joiner until the re-armed refetch settles, then reads its state', async () => {
+    const resolvers = []
+    mockGetSession.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result } = renderHook(
+      () => ({ data: useSessionData(), actions: useSessionActions() }),
+      { wrapper },
+    )
+    const { refreshSession } = result.current.actions
+
+    let joinerSettled = false
+    const first = refreshSession()
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(1)
+    })
+
+    const joiner = refreshSession().then(() => {
+      joinerSettled = true
+    })
+
+    await act(async () => {
+      resolvers[0](SESSION_DATA)
+      await first
+    })
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(2)
+    })
+
+    // The first request settled and the re-arm issued a second one - the joiner must still be
+    // waiting on that second request, not already resolved on the one it joined.
+    expect(joinerSettled).toBe(false)
+
+    await act(async () => {
+      resolvers[1]({ ...SESSION_DATA, name: 'Updated' })
+      await joiner
+    })
+
+    expect(joinerSettled).toBe(true)
+    // The joiner awaited state as of its own call, which the second (re-armed) response reflects.
+    expect(result.current.data.sessionName).toBe('Updated')
+  })
+
+  it('resolves an unjoined caller on its own request, with no extra round trip', async () => {
+    mockGetSession.mockResolvedValue(SESSION_DATA)
+
+    const { result } = renderHook(() => useSessionActions(), { wrapper })
+
+    await act(async () => {
+      await result.current.refreshSession()
+    })
+
+    expect(mockGetSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for the re-armed refetch even when it errors, rather than settling on the joined one', async () => {
+    const settlers = []
+    mockGetSession.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          settlers.push({ resolve, reject })
+        }),
+    )
+
+    const { result } = renderHook(() => useSessionActions(), { wrapper })
+    const { refreshSession } = result.current
+
+    const first = refreshSession()
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(1)
+    })
+
+    let joinerSettled = false
+    const joiner = refreshSession().finally(() => {
+      joinerSettled = true
+    })
+
+    await act(async () => {
+      settlers[0].resolve(SESSION_DATA)
+      await first
+    })
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(2)
+    })
+
+    // The first request succeeded, but the joiner must still be waiting on the re-armed second
+    // one - even though that errors internally and refreshSession swallows it without retrying.
+    expect(joinerSettled).toBe(false)
+
+    await act(async () => {
+      settlers[1].reject(new Error('network down'))
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    await waitFor(() => {
+      expect(joinerSettled).toBe(true)
+    })
+
+    await expect(joiner).resolves.toBeUndefined()
+  })
+
+  it('settles an orphaned joiner when its container is switched away, without a spurious extra fetch', async () => {
+    const resolvers = []
+    mockGetSession.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result } = renderHook(() => useSessionActions(), { wrapper })
+    const { refreshSession } = result.current
+
+    const first = refreshSession()
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(1)
+    })
+
+    let joinerSettled = false
+    act(() => {
+      refreshSession().then(() => {
+        joinerSettled = true
+      })
+    })
+
+    // Container switch: the next call is addressed elsewhere, so it cannot join call #1 - it
+    // must find call #1's joiner orphaned and settle it immediately rather than carry it forward.
+    mockGetContainerId.mockReturnValue('other-container')
+
+    act(() => {
+      refreshSession()
+    })
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(2)
+    })
+
+    expect(joinerSettled).toBe(true)
+
+    // Call #1 settling late, with ownership already lost, must not add a third, unsolicited call.
+    await act(async () => {
+      resolvers[0](SESSION_DATA)
+      await first
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(mockGetSession).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not apply a stale container response to sessionData when the container is switched mid-flight', async () => {
+    const resolvers = []
+    mockGetSession.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const { result } = renderHook(
+      () => ({ data: useSessionData(), actions: useSessionActions() }),
+      { wrapper },
+    )
+    const { refreshSession } = result.current.actions
+
+    const first = refreshSession()
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(1)
+    })
+
+    // Container switch before call #1 settles - its response must not paint sessionData for the
+    // container reading it now.
+    mockGetContainerId.mockReturnValue('other-container')
+
+    act(() => {
+      refreshSession()
+    })
+
+    await waitFor(() => {
+      expect(mockGetSession).toHaveBeenCalledTimes(2)
+    })
+
+    await act(async () => {
+      resolvers[0]({ ...SESSION_DATA, name: 'stale-container-1-session' })
+      await first
+    })
+
+    // Call #1's response never reached sessionData - call #2's own request is still pending.
+    expect(result.current.data.sessionData).toBeNull()
+
+    await act(async () => {
+      resolvers[1]({ ...SESSION_DATA, name: 'other-container-session' })
+    })
+
+    await waitFor(() => {
+      expect(result.current.data.sessionName).toBe('other-container-session')
+    })
+  })
+
+  it('a stale container response that rejects does not corrupt the newer container run or report onError', async () => {
+    vi.useFakeTimers()
+
+    try {
+      mockEventsData = makeEventsData({ isConnected: true })
+      const onError = vi.fn()
+      const errorWrapper = ({ children }) => (
+        <SessionDataProvider onError={onError}>{children}</SessionDataProvider>
+      )
+
+      const settlers = []
+      mockGetSession.mockImplementation(
+        () =>
+          new Promise((resolve, reject) => {
+            settlers.push({ resolve, reject })
+          }),
+      )
+
+      const { result } = renderHook(() => useSessionActions(), { wrapper: errorWrapper })
+      const { refreshSession } = result.current
+
+      refreshSession()
+      await vi.waitFor(() => {
+        expect(mockGetSession).toHaveBeenCalledTimes(1)
+      })
+
+      // Container switch: the next call is addressed elsewhere, so call #1 is superseded.
+      mockGetContainerId.mockReturnValue('other-container')
+      act(() => {
+        refreshSession()
+      })
+      await vi.waitFor(() => {
+        expect(mockGetSession).toHaveBeenCalledTimes(2)
+      })
+
+      // Call #1's stale rejection must not schedule a retry: it would join container #2's
+      // in-flight request and arm a re-fetch that fires again once #2 settles.
+      await act(async () => {
+        settlers[0].reject(new Error('stale container network error'))
+        await vi.advanceTimersByTimeAsync(10000)
+      })
+
+      // Container #2's own response settles normally - no unsolicited re-arm fetch should follow.
+      await act(async () => {
+        settlers[1].resolve(SESSION_DATA)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(mockGetSession).toHaveBeenCalledTimes(2)
+      expect(onError).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -28,8 +28,6 @@ def tool_ctx(tmp_path: Path) -> ToolContext:
 
     return ToolContext(
         workspace_path=tmp_path,
-        session_id="test-session",
-        session_dir=tmp_path / ".session",
         config=config,
         hooks=HookCallbacks(),
         logger=None,

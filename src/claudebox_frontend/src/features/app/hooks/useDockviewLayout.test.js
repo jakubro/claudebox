@@ -13,7 +13,7 @@ vi.mock('../../../constants/timing', () => ({
 
 vi.mock('../../../managers/SidePanelManager', () => ({
   default: class MockSidePanelManager {
-    state = { left: { order: [] }, right: { order: [] }, bottom: { order: [] } }
+    state = { left: { order: [] }, right: { order: [] } }
     preMaximizeLayout = null
     restoreFromServer = vi.fn().mockResolvedValue({ loaded: false })
     toggle = vi.fn()

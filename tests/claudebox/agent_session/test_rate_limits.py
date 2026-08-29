@@ -36,8 +36,21 @@ class TestGetSetRemove:
                 "status": "allowed_warning",
                 "resets_at": None,
                 "utilization": 0.86,
+                "session_id": None,
             },
         ]
+
+    def test_set_stamps_the_writing_session(self, tmp_path):
+        store = _make_store(tmp_path)
+        store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.5,
+            session_id="session-a",
+        )
+
+        assert store.get()[0]["session_id"] == "session-a"
 
     def test_set_upserts_existing_window(self, tmp_path):
         store = _make_store(tmp_path)
@@ -66,6 +79,55 @@ class TestGetSetRemove:
     def test_remove_missing_window_noop(self, tmp_path):
         store = _make_store(tmp_path)
         store.remove("five_hour")  # never set - must not raise
+
+        assert store.get() == []
+
+
+class TestRemoveOwnership:
+    """A session may only remove entries it wrote - the multi-session store-sharing guard."""
+
+    def test_owner_session_id_removes_its_own_entry(self, tmp_path):
+        store = _make_store(tmp_path)
+        store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.8,
+            session_id="session-a",
+        )
+
+        store.remove("five_hour", session_id="session-a")
+
+        assert store.get() == []
+
+    def test_other_session_id_leaves_the_entry_alone(self, tmp_path):
+        store = _make_store(tmp_path)
+        store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.8,
+            session_id="session-a",
+        )
+
+        store.remove("five_hour", session_id="session-b")
+
+        assert len(store.get()) == 1
+        assert store.get()[0]["session_id"] == "session-a"
+
+    def test_unconditional_remove_ignores_ownership(self, tmp_path):
+        """The `session_id=None` form - an authoritative "allowed" signal - clears any owner."""
+
+        store = _make_store(tmp_path)
+        store.set(
+            "five_hour",
+            status="allowed_warning",
+            resets_at=None,
+            utilization=0.8,
+            session_id="session-a",
+        )
+
+        store.remove("five_hour")
 
         assert store.get() == []
 

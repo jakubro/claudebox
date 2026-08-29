@@ -1,14 +1,17 @@
 /** Tests for api/sessions.js session management functions. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { FETCH_TIMEOUT_INTERACTIVE_MS, FETCH_TIMEOUT_SESSION_LIFECYCLE_MS } from '../config/timing'
 import {
   forkSession,
   getSession,
+  getSessionEvents,
   getToolOutput,
   getToolOutputDownloadUrl,
   listSessions,
   newSession,
   resumeSession,
+  stopSession,
   updateSession,
   updateSessionPrompt,
 } from './sessions'
@@ -16,6 +19,7 @@ import {
 vi.mock('./apiClient', () => ({
   containerFetch: vi.fn(),
   containerUrl: vi.fn(path => path),
+  retryFetch: vi.fn(),
   workspaceFetch: vi.fn(),
 }))
 
@@ -56,7 +60,10 @@ describe('newSession', () => {
 
     const result = await newSession()
 
-    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/new', { method: 'POST' })
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/new', {
+      method: 'POST',
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+    })
     expect(result).toEqual(data)
   })
 
@@ -64,6 +71,32 @@ describe('newSession', () => {
     workspaceFetch.mockResolvedValue({ ok: false })
 
     await expect(newSession()).rejects.toThrow('Failed to start new session')
+  })
+
+  it('sends messages as a JSON body when provided', async () => {
+    const data = { session_id: 'new-2', container_id: 'c2', undelivered_messages: [] }
+    workspaceFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(data) })
+
+    const result = await newSession({ messages: ['/scope claudebox'] })
+
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/new', {
+      method: 'POST',
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: ['/scope claudebox'] }),
+    })
+    expect(result).toEqual(data)
+  })
+
+  it('omits the body when messages is an empty array', async () => {
+    workspaceFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) })
+
+    await newSession({ messages: [] })
+
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/new', {
+      method: 'POST',
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+    })
   })
 })
 
@@ -102,7 +135,10 @@ describe('resumeSession', () => {
 
     const result = await resumeSession('s1')
 
-    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/s1/resume', { method: 'POST' })
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/s1/resume', {
+      method: 'POST',
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+    })
     expect(result).toEqual(data)
   })
 
@@ -126,7 +162,9 @@ describe('getSession', () => {
 
     const result = await getSession()
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/current')
+    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/current', {
+      timeoutMs: FETCH_TIMEOUT_INTERACTIVE_MS,
+    })
     expect(result).toEqual(data)
   })
 
@@ -152,6 +190,7 @@ describe('forkSession', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ turn_id: 't3' }),
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
     })
     expect(result).toEqual(data)
   })
@@ -160,6 +199,80 @@ describe('forkSession', () => {
     workspaceFetch.mockResolvedValue({ ok: false })
 
     await expect(forkSession('s1', 't1')).rejects.toThrow('Failed to fork session')
+  })
+
+  it('sends share_container when set, alongside a null turn_id', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ session_id: 'side-1' }),
+    })
+
+    await forkSession('s1', null, { share_container: true })
+
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/s1/fork', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ share_container: true }),
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+    })
+  })
+
+  it('sends parent_session_id when set, alongside a null turn_id', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ session_id: 'promoted-1' }),
+    })
+
+    await forkSession('side-1', null, { parent_session_id: 'main-1' })
+
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/side-1/fork', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_session_id: 'main-1' }),
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+    })
+  })
+})
+
+describe('stopSession', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sends POST to the session-scoped stop endpoint', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await stopSession('side-1')
+
+    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/side-1/stop', { method: 'POST' })
+  })
+
+  it('throws when response is not ok', async () => {
+    containerFetch.mockResolvedValue({ ok: false })
+
+    await expect(stopSession('side-1')).rejects.toThrow('Failed to stop session')
+  })
+})
+
+describe('getSessionEvents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('fetches a named session persisted events and running flag', async () => {
+    const data = { events: [{ id: 'e1', type: 'assistant' }], running: true }
+    containerFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(data) })
+
+    const result = await getSessionEvents('side-1')
+
+    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/side-1/events')
+    expect(result).toEqual(data)
+  })
+
+  it('throws when response is not ok', async () => {
+    containerFetch.mockResolvedValue({ ok: false })
+
+    await expect(getSessionEvents('side-1')).rejects.toThrow('Failed to fetch session events')
   })
 })
 

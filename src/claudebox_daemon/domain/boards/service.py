@@ -26,6 +26,7 @@ from .models import Board, BoardState, BoardSummary, BoardUpdateEvent, Swimlane
 from .watcher import BoardWatcher
 from ..errors import ListingTimeout
 from ..executors import Admission, ObservedPool, tracked
+from ..sessions.service import deliver_prompt
 from ...constants import BOARD_FILENAME, DISK_LISTING_TIMEOUT
 
 
@@ -363,20 +364,13 @@ class BoardService:
                 ticket_ref = "\n" + "\n".join(ticket_paths)
                 message = re.sub(r"[ \t]*\{ticket\}", ticket_ref, template)
 
-            try:
-                await self._containers.send(
-                    container_id=session_result.container_id,
-                    method="POST",
-                    endpoint="api/send",
-                    payload={"prompt": message},
-                )
-            except Exception:  # noqa: BLE001 - best-effort; must not fail the board mutation
-                self._logger.warning(
-                    "Failed to send prompt message",
-                    message=message,
-                    session_id=session_result.session_id,
-                    **self._log_context,
-                )
+            await deliver_prompt(
+                self._logger,
+                self._containers,
+                session_result.container_id,
+                message,
+                session_id=session_result.session_id,
+            )
 
     async def _broadcast_update(self, board_id: str) -> None:
         """Broadcast that a board has been updated."""

@@ -1,17 +1,12 @@
-/* Queued message bubble */
+/* Queued message bubble. Stripe sits on the bubble itself - the message surface (Turn.css's
+   .chat-message-user, which this bubble also carries) owns the edge. */
 .queued-message-bubble {
   opacity: 0.5;
-}
-
-.queued-message-bubble .message-content {
   border-right: 3px solid var(--text-muted);
 }
 
 .queued-message-bubble.paused {
   opacity: 0.4;
-}
-
-.queued-message-bubble.paused .message-content {
   border-right-color: #ffeb3b;
 }
 

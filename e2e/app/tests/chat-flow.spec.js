@@ -53,7 +53,10 @@ test.describe('Chat Flow', () => {
   })
 
   // SPEC: turn:pending-show
-  test('shows pending message immediately', async ({ page }) => {
+  // SPEC: turn:progress-pending-framed
+  test('shows pending message immediately, with its progress row inside the turn, surviving acknowledgement', async ({
+    page,
+  }) => {
     // Use dynamic SSE that returns empty initially (connection established but no events)
     await mockSSEDynamic(page, () => [])
     await page.goto(DEFAULT_SESSION_URL)
@@ -63,6 +66,33 @@ test.describe('Chat Flow', () => {
     await page.locator('[data-testid="chat-input"]').press('Enter')
 
     await expect(page.getByText('My pending message')).toBeVisible()
+    await expect(page.getByTestId('turn-progress-pending')).toBeVisible()
+    await expect(page.getByTestId('turn-progress-bare')).toHaveCount(0)
+
+    // The server echoes the human message back (acknowledgement) - the frame must survive this,
+    // since it tracks whether the turn has produced content, not whether it has been seen.
+    await page.evaluate(() => {
+      const instance = window.__sseChatInstance
+      if (instance && instance.readyState === 1) {
+        const msg = {
+          data: JSON.stringify({
+            type: 'user',
+            subtype: 'text',
+            is_human: true,
+            content: 'My pending message',
+            timestamp: Date.now(),
+          }),
+        }
+        if (instance.onmessage) {
+          instance.onmessage(msg)
+        }
+        instance._emit('message', msg)
+      }
+    })
+
+    await expect(page.locator('.turn-container.pending')).not.toBeVisible()
+    await expect(page.getByTestId('turn-progress-pending')).toBeVisible()
+    await expect(page.getByTestId('turn-progress-bare')).toHaveCount(0)
   })
 
   // SPEC: turn:pending-remove

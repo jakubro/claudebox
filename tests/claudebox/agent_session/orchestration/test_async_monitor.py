@@ -143,7 +143,7 @@ class TestRun:
         }
         output_file.write_text(json.dumps(line1) + "\n" + json.dumps(line2) + "\n")
 
-        # Wrap on_event so we stop after receiving events
+        # Wrap on_event to stop after receiving events
         original_cb = AsyncMock()
         call_count = 0
 
@@ -152,7 +152,7 @@ class TestRun:
             call_count += 1
             await original_cb(event, path, offset)
 
-            # line2 produces multiple events (text block); stop once we have some
+            # line2 produces multiple events (text block); stop once some have arrived
             if call_count >= 2:
                 monitor.stop()
 

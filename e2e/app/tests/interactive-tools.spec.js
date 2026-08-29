@@ -747,45 +747,49 @@ test.describe('AskUserQuestion - XML Response Rendering', () => {
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    // turn_001's opening message is a plain send with no note - the ground truth here.
-    const plainMessage = page
-      .locator('[data-testid="message-user"]')
-      .nth(0)
-      .locator('.message-content')
-    const note = page.locator('[data-testid="message-user"]').nth(1).locator('.message-note')
+    // turn_001's opening message is a plain send with no note - the ground truth here. The surface
+    // lives on the message container; fontFamily and whiteSpace stay on the text child.
+    const plainBubble = page.locator('[data-testid="message-user"]').nth(0)
+    const plainMessage = plainBubble.locator('.message-content')
+    const noteBubble = page.locator('[data-testid="message-user"]').nth(1)
+    const note = noteBubble.locator('.message-note')
     await expect(note).toBeVisible()
 
-    const plainStyles = await plainMessage.evaluate(el => {
+    const plainBubbleStyles = await plainBubble.evaluate(el => {
       const s = getComputedStyle(el)
       return {
         backgroundColor: s.backgroundColor,
         padding: s.padding,
         borderRadius: s.borderRadius,
-        fontFamily: s.fontFamily,
-        whiteSpace: s.whiteSpace,
       }
+    })
+    const noteBubbleStyles = await noteBubble.evaluate(el => {
+      const s = getComputedStyle(el)
+      return {
+        backgroundColor: s.backgroundColor,
+        padding: s.padding,
+        borderRadius: s.borderRadius,
+      }
+    })
+    const plainMessageStyles = await plainMessage.evaluate(el => {
+      const s = getComputedStyle(el)
+      return { fontFamily: s.fontFamily, whiteSpace: s.whiteSpace }
     })
     const noteStyles = await note.evaluate(el => {
       const s = getComputedStyle(el)
-      return {
-        backgroundColor: s.backgroundColor,
-        padding: s.padding,
-        borderRadius: s.borderRadius,
-        fontFamily: s.fontFamily,
-        whiteSpace: s.whiteSpace,
-      }
+      return { fontFamily: s.fontFamily, whiteSpace: s.whiteSpace }
     })
 
-    // A bare .message-note would carry only a margin, leaving backgroundColor transparent.
-    expect(noteStyles.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
-    expect(noteStyles.backgroundColor).toBe(plainStyles.backgroundColor)
-    expect(noteStyles.padding).toBe(plainStyles.padding)
-    expect(noteStyles.borderRadius).toBe(plainStyles.borderRadius)
-    expect(noteStyles.fontFamily).toBe(plainStyles.fontFamily)
+    // A bubble carrying no surface would leave backgroundColor transparent.
+    expect(noteBubbleStyles.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(noteBubbleStyles.backgroundColor).toBe(plainBubbleStyles.backgroundColor)
+    expect(noteBubbleStyles.padding).toBe(plainBubbleStyles.padding)
+    expect(noteBubbleStyles.borderRadius).toBe(plainBubbleStyles.borderRadius)
+    expect(noteStyles.fontFamily).toBe(plainMessageStyles.fontFamily)
     expect(noteStyles.whiteSpace).toBe('pre-wrap')
 
     // The rule must not have widened past the message: the plain bubble's own styles are unchanged.
-    expect(plainStyles.whiteSpace).toBe('pre-wrap')
+    expect(plainMessageStyles.whiteSpace).toBe('pre-wrap')
 
     // A turn with no note shows no extra surface - no empty bubble.
     const plainTurnNoteCount = await page

@@ -1,4 +1,4 @@
-/* App shell — global foundation, theme, layout */
+/* App shell - global foundation, theme, layout */
 
 /* .spin: rotate clockwise, one turn per --spin-duration (default 1s) - single spinner-motion source. */
 @keyframes spin {
@@ -26,6 +26,9 @@
   --bg-hover: #2a2d2e;
   --error: #f44747;
   --success: #22c55e;
+  /* Interrupted-turn border - shared by the transcript's .turn-interrupted and the work panel's
+     matching block border, so the two columns can never mean two different yellows. */
+  --interrupt-border-color: #ffeb3b;
 
   /* Pinned webfonts - the OS-stack tail is a fallback for the brief window before the self-hosted
      font finishes loading, never the norm. */
@@ -51,18 +54,19 @@
   --header-icon-color: var(--text-primary);
 }
 
-/* Shared chrome-icon-button metrics for the sessions panel header and per-row icon buttons -
-   centralised here to avoid duplication between SessionsPanel.css and SessionItem.css; each
-   component's CSS keeps only its own color/hover specifics. */
+/* Shared chrome-icon-button metrics for the sessions panel header, per-row icon buttons and the
+   inline-thread stop control; each component's CSS keeps only its own colour and hover rules. */
 .sessions-new,
 .sessions-refresh,
+.sessions-search-toggle,
 .sessions-new-chevron,
 .sessions-edit-btn,
 .sessions-pin-btn,
 .sessions-kill-btn,
 .sessions-resume-btn,
 .sessions-resume-chevron,
-.containers-action-btn {
+.containers-action-btn,
+.inline-thread-stop {
   height: var(--chrome-btn-h);
   margin: var(--chrome-btn-mar-y) 0;
   line-height: var(--chrome-btn-line-height);
@@ -79,6 +83,7 @@
 /* Rest of the sessions-panel header icon-button chrome; components keep their own spacing. */
 .sessions-new,
 .sessions-refresh,
+.sessions-search-toggle,
 .sessions-new-chevron,
 .sessions-resume-chevron {
   display: flex;

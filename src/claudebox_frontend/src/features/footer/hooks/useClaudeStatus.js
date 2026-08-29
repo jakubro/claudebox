@@ -1,7 +1,7 @@
 /** Hook for fetching Claude service status. */
 
 import { useEffect, useRef, useState } from 'react'
-import { STATUS_POLL_INTERVAL } from '../../../config/timing'
+import { FETCH_TIMEOUT_INTERACTIVE_MS, STATUS_POLL_INTERVAL } from '../../../config/timing'
 import { STATUS_URL } from '../../../config/urls'
 import { formatClaudeStatusResponse } from '../utils/claudeStatus'
 
@@ -18,7 +18,11 @@ export default function useClaudeStatus() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const response = await fetch(STATUS_URL)
+        // Cross-origin, so it cannot exhaust this origin's budget, but an unanswered poll would
+        // still hold a socket every minute for the life of the page.
+        const response = await fetch(STATUS_URL, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_INTERACTIVE_MS),
+        })
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
         }

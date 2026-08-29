@@ -159,6 +159,9 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
       }
       window.__sseChatInstance = null
       window.__sseLogsInstance = null
+      // Keyed session streams (subscribeSession's ?session_id=... address), kept distinct from
+      // the primary chat stream so a bleed assertion targets the right one.
+      window.__sseSessionInstances = {}
 
       class MockEventSource extends window.MockEventSourceBase {
         constructor(url) {
@@ -170,11 +173,15 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
 
           const isDaemon = opts.trackDaemon && url.includes('/api/daemon/stream')
           const isLogs = url.includes('/api/logs')
+          const sessionMatch = url.match(/[?&]session_id=([^&]+)/)
+          const sessionId = sessionMatch ? decodeURIComponent(sessionMatch[1]) : null
 
           if (isDaemon) {
             window.__daemonSSEInstance = this
           } else if (isLogs) {
             window.__sseLogsInstance = this
+          } else if (sessionId) {
+            window.__sseSessionInstances[sessionId] = this
           } else {
             window.__sseChatInstance = this
           }
@@ -182,8 +189,9 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
           if (opts.autoConnect) {
             setTimeout(() => {
               // Honor the kill flag set by chat.kill(): simulates a container death where the
-              // stream never reconnects until a fresh container_id arrives.
-              if (!(isDaemon || isLogs) && window.__chatSSEKilled) {
+              // stream never reconnects until a fresh container_id arrives. A keyed session
+              // stream is a separate connection and is never subject to this flag.
+              if (!(isDaemon || isLogs || sessionId) && window.__chatSSEKilled) {
                 this.readyState = 2
                 if (this.onerror) {
                   this.onerror(new Event('error'))
@@ -200,8 +208,9 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
               }
               this._emit('open', new Event('open'))
 
-              // Chat SSE needs replay boundaries to clear isResuming
-              if (!(isLogs || isDaemon)) {
+              // Chat SSE needs replay boundaries to clear isResuming; a keyed session stream
+              // always dials with replay=false, so it never sees them, as against the backend.
+              if (!(isLogs || isDaemon || sessionId)) {
                 const emitReplay = (event, delay) => {
                   setTimeout(() => {
                     if (this.readyState === 1 && window.__sseChatInstance === this) {
@@ -231,6 +240,11 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
           if (window.__sseLogsInstance === this) {
             window.__sseLogsInstance = null
           }
+          for (const [id, instance] of Object.entries(window.__sseSessionInstances)) {
+            if (instance === this) {
+              delete window.__sseSessionInstances[id]
+            }
+          }
         }
       }
 
@@ -255,6 +269,24 @@ async function sendToInstance(page, instanceName, event) {
       }
     },
     { instanceName, eventJson: JSON.stringify(event) },
+  )
+}
+
+/** Send a message to a keyed session SSE stream (subscribeSession's own address). */
+async function sendToSessionInstance(page, sessionId, event) {
+  await page.evaluate(
+    ({ sessionId, eventJson }) => {
+      const event = JSON.parse(eventJson)
+      const instance = window.__sseSessionInstances[sessionId]
+      if (instance?.readyState === 1) {
+        const msg = { data: JSON.stringify(event) }
+        if (instance.onmessage) {
+          instance.onmessage(msg)
+        }
+        instance._emit('message', msg)
+      }
+    },
+    { sessionId, eventJson: JSON.stringify(event) },
   )
 }
 
@@ -338,6 +370,40 @@ export async function createSSEController(page, { autoConnect = true } = {}) {
     /** Get connection count (for verifying reconnects) */
     async getConnectionCount() {
       return page.evaluate(() => window.__sseConnectionCount)
+    },
+
+    /** Send an event to a keyed session stream (a float asking on its own). */
+    async sendToSession(sessionId, event) {
+      await sendToSessionInstance(page, sessionId, event)
+    },
+
+    /** Send multiple events to a keyed session stream, in order. */
+    async sendEventsToSession(sessionId, events) {
+      for (const event of events) {
+        await this.sendToSession(sessionId, event)
+      }
+    },
+
+    /** Whether a keyed session stream is currently open. */
+    async hasOpenSession(sessionId) {
+      return page.evaluate(id => window.__sseSessionInstances[id]?.readyState === 1, sessionId)
+    },
+
+    /**
+     * Error the current instance behind a keyed session stream once. Each reconnect opens a fresh
+     * MockEventSource under the same key, so repeat calls drive the stream toward exhaustion.
+     */
+    async errorSessionOnce(sessionId) {
+      await page.evaluate(id => {
+        const instance = window.__sseSessionInstances[id]
+        if (instance) {
+          instance.readyState = 2
+          if (instance.onerror) {
+            instance.onerror(new Event('error'))
+          }
+          instance._emit('error', new Event('error'))
+        }
+      }, sessionId)
     },
   }
 }

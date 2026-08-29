@@ -2,14 +2,15 @@
 
 import asyncio
 import base64
+import contextlib
 import os
 import re
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from functools import partial
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from xml.sax.saxutils import escape, quoteattr
 
 from .attachments import AttachmentInfo, AttachmentService
@@ -63,12 +64,22 @@ class SessionService:
         permission_mode: str | None = None,
         on_start: Callable[[BaseSession], None] | None = None,
         on_stop: Callable[[], None] | None = None,
+        *,
+        remaps_tmp: bool = True,
+        on_turn_complete: Callable[[str], Coroutine[Any, Any, None]] | None = None,
     ):
-        """Initialize session state. Components attach in start(); lifecycle hooks fire from start()/stop()."""
+        """Initialize session state; components attach in start(), hooks fire from start()/stop().
+
+        `remaps_tmp=False` leaves /tmp to whoever mapped it; `on_turn_complete` fires per turn end.
+        """
 
         self._logger = get_logger(__name__)
 
         self._workspace = Workspace(workspace)
+        self._remaps_tmp = remaps_tmp
+        self._on_turn_complete = on_turn_complete
+        self._turn_complete_scheduled = False
+        self._turn_complete_task: asyncio.Task | None = None
         self._rate_limit_store = RateLimitStore(self._workspace.path)
         # Windows announced at the last session start, not yet re-announced or ruled normal here.
         self._rate_limit_pending_reconcile: set[str] = set()
@@ -182,6 +193,11 @@ class SessionService:
         if self._on_start is not None:
             self._on_start(session)
 
+        # The CLI pins its temp base at startup and refuses task output once that dir is replaced.
+        # Remap here, before the runtime spawns it - the SessionStart callback is already too late.
+        if self._remaps_tmp:
+            ensure_tmp(session)
+
         workspace_config = Config.load(workspace_path=self._workspace.path)
 
         # Provider is LangGraph-only; None under Claude. See _emit_container_restarted_if_resumed.
@@ -271,6 +287,7 @@ class SessionService:
 
         self._client_task.add_done_callback(partial(self._log_task_exit, "client"))
         self._pipeline_task.add_done_callback(partial(self._log_task_exit, "pipeline"))
+        self._pipeline_task.add_done_callback(self._on_pipeline_task_done)
         self._stall_watchdog_task.add_done_callback(partial(self._log_task_exit, "stall watchdog"))
 
         self._logger.info("Session started", session_id=session_id, **self._log_context)
@@ -294,6 +311,11 @@ class SessionService:
 
         if self._projection:
             await self._projection.flush()
+
+        if self._broadcaster:
+            # Wake queued SSE subscribers before dropping the reference - a session-scoped stop
+            # no longer tears down the transport underneath them, so nothing else would.
+            await self._broadcaster.close()
 
         self._projection = cast(Projection, None)
         self._summary_cache = cast(FileCache, None)
@@ -379,6 +401,54 @@ class SessionService:
                 exc_info=exc,
                 **self._log_context,
             )
+
+    def _on_pipeline_task_done(self, task: asyncio.Task) -> None:
+        """Turn-complete trigger #3: the consumer loop exiting on stream loss.
+
+        Stream loss emits no event, so this is its only signal; a cancelled task is a stop.
+        """
+
+        if task.cancelled():
+            return
+
+        if self._event_pipeline is not None and self._event_pipeline.stream_lost:
+            self._schedule_turn_complete()
+
+    def _schedule_turn_complete(self) -> None:
+        """Schedule `on_turn_complete` off the loop; a no-op for a primary or a repeat.
+
+        Never await it inline: the detecting callback runs on a task `stop()` cancels.
+        """
+
+        if self._on_turn_complete is None or self._turn_complete_scheduled:
+            return
+
+        self._turn_complete_scheduled = True
+        session_id = self._base_session.id if self._base_session else None
+
+        if session_id is None:
+            return
+
+        self._turn_complete_task = asyncio.create_task(self._on_turn_complete(session_id))
+        self._turn_complete_task.add_done_callback(partial(self._log_task_exit, "turn complete"))
+
+    def cancel_turn_complete(self) -> None:
+        """Cancel this session's `on_turn_complete` disposition - promotion's one state change.
+
+        A disposition already scheduled still fires: that narrow race is accepted, not guarded.
+        """
+
+        self._on_turn_complete = None
+
+    async def settle_turn_complete(self) -> None:
+        """Wait for an in-flight `on_turn_complete` disposition to finish, if one is running.
+
+        Exceptions are swallowed: the done-callback logs them, and only "no longer running" matters.
+        """
+
+        if self._turn_complete_task is not None and not self._turn_complete_task.done():
+            with contextlib.suppress(Exception):
+                await self._turn_complete_task
 
     # Session Manager API
     # ----------------------------------------------------------------------------------------------
@@ -799,36 +869,6 @@ class SessionService:
 
         return attachment_meta
 
-    async def send_and_wait(self, prompt: str) -> str:
-        """Send prompt and wait for the assistant's complete response.
-
-        Used by MCP tool calls that need a synchronous response.
-        """
-
-        subscriber_id, queue = self._broadcaster.subscribe()
-
-        try:
-            await self.send(prompt)
-
-            chunks: list[str] = []
-
-            while True:
-                event = await queue.get()
-
-                if not isinstance(event, dict):
-                    continue
-
-                event_type = event.get("type", "")
-
-                if event_type == "assistant" and event.get("content"):
-                    chunks.append(event["content"])
-                elif event_type == "result":
-                    break
-
-            return "".join(chunks) or "No response"
-        finally:
-            self._broadcaster.unsubscribe(subscriber_id)
-
     async def interrupt(self) -> None:
         """Interrupt current response. Emits interrupt_sent event for frontend visualization."""
 
@@ -926,8 +966,10 @@ class SessionService:
         if self._broadcaster is None or self._event_pipeline is None:
             raise SessionNotReady()
 
-    async def subscribe(self) -> tuple[str, asyncio.Queue]:
-        """Subscribe to SSE events, replaying history to the new subscriber.
+    async def subscribe(self, *, replay: bool = True) -> tuple[str, asyncio.Queue]:
+        """Subscribe to SSE events, replaying history to the new subscriber by default.
+
+        `replay=False` suits a caller that already read the log; ids repeat across restarts.
 
         Raises SessionNotReady before start() and after stop().
         """
@@ -936,8 +978,9 @@ class SessionService:
 
         subscriber_id, queue = self._broadcaster.subscribe()
 
-        events = (serialize_event(event) for event in self._event_pipeline.get_events())
-        await self._broadcaster.replay_to(queue, events)
+        if replay:
+            events = (serialize_event(event) for event in self._event_pipeline.get_events())
+            await self._broadcaster.replay_to(queue, events)
 
         return subscriber_id, queue
 
@@ -957,9 +1000,12 @@ class SessionService:
 
         self._base_session = BaseSession(session_id=session_id, workspace=self._workspace)
 
-        # Mark every currently-stored window unannounced until this session re-announces it.
+        # Mark this session's own previously-stored windows unannounced until re-announced -
+        # never another session's, since the store is shared across every session in a container.
         self._rate_limit_pending_reconcile = {
-            entry["rate_limit_type"] for entry in self._rate_limit_store.get()
+            entry["rate_limit_type"]
+            for entry in self._rate_limit_store.get()
+            if entry.get("session_id") == session_id
         }
 
         self._projection = Projection(
@@ -1065,6 +1111,11 @@ class SessionService:
             self._schedule_context_refresh()
             self._drop_unannounced_rate_limits()
 
+        # Turn-complete triggers #1 and #2: a result, or a pipeline failure surfaced as an
+        # injected system/error (the only other way a turn ends without a stream-loss exit).
+        if event.type == "result" or (event.type == "system" and event.subtype == "error"):
+            self._schedule_turn_complete()
+
         # Send session prompt to Claude after compaction boundary
         if event.subtype == "compact_boundary":
             self._pending_compact_trigger = None
@@ -1090,6 +1141,7 @@ class SessionService:
 
         try:
             if message_data.get("status") == "allowed":
+                # Authoritative account-wide signal - clears the window regardless of owner.
                 self._rate_limit_store.remove(rate_limit_type)
             else:
                 self._rate_limit_store.set(
@@ -1097,19 +1149,25 @@ class SessionService:
                     status=message_data.get("status"),
                     resets_at=message_data.get("resets_at"),
                     utilization=message_data.get("utilization"),
+                    session_id=self._base_session.id if self._base_session else None,
                 )
         except Exception as exc:  # noqa: BLE001 - best-effort persistence, never fatal
             self._logger.warning("Rate-limit store update failed", error=str(exc))
 
     def _drop_unannounced_rate_limits(self) -> None:
-        """At the first exchange's end, drop windows this session never re-announced."""
+        """At the first exchange's end, drop this session's own windows it never re-announced.
+
+        Ownership is re-checked at removal, so a window another session re-wrote since survives.
+        """
 
         if not self._rate_limit_pending_reconcile:
             return
 
+        session_id = self._base_session.id if self._base_session else None
+
         try:
             for rate_limit_type in self._rate_limit_pending_reconcile:
-                self._rate_limit_store.remove(rate_limit_type)
+                self._rate_limit_store.remove(rate_limit_type, session_id=session_id)
         except Exception as exc:  # noqa: BLE001 - best-effort persistence, never fatal
             self._logger.warning("Rate-limit store reconcile failed", error=str(exc))
         finally:
@@ -1157,9 +1215,9 @@ class SessionService:
     # detection, so handlers emit pipeline events unconditionally.
 
     async def _on_session_start(self) -> None:
-        """Callback: mount /tmp to current session's temp directory."""
+        """Callback: mount /tmp to this session's temp directory, unless it is non-primary."""
 
-        if self._base_session:
+        if self._base_session and self._remaps_tmp:
             ensure_tmp(self._base_session)
 
     async def _on_compact_start(self, payload: CompactStartPayload) -> None:

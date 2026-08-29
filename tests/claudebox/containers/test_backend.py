@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -21,12 +22,6 @@ class TestExec:
         backend = ContainerBackend("podman")
         backend._exec("ps", check=True)
         mock_run.assert_called_once_with(["podman", "ps"], check=True)
-
-    @patch("os.execvp")
-    def test_exec_replace_calls_execvp(self, mock_execvp):
-        backend = ContainerBackend("podman")
-        backend._exec("run", "--rm", "img", replace=True)
-        mock_execvp.assert_called_once_with("podman", ["podman", "run", "--rm", "img"])
 
     @patch("subprocess.run")
     @patch("claudebox.containers.backend.print_command")
@@ -321,3 +316,38 @@ class TestPodmanCommandTimeouts:
         ContainerBackend("podman").build_image("--file", "Containerfile", ".")
 
         assert "timeout" not in mock_run.call_args.kwargs
+
+
+# --- identify_container_from_pid ---
+
+
+class TestIdentifyContainerFromPid:
+    """Test peer-pid-to-container resolution via cgroup membership - the spawn socket's only
+    way to identify its caller, since the payload is never trusted for that."""
+
+    def test_matches_the_candidate_whose_id_appears_in_the_cgroup_path(self, monkeypatch):
+        monkeypatch.setattr(
+            Path,
+            "read_text",
+            lambda self: "0::/machine.slice/libpod-abc123.scope\n",
+        )
+        backend = ContainerBackend("podman")
+
+        assert backend.identify_container_from_pid(1234, ["xyz789", "abc123"]) == "abc123"
+
+    def test_returns_none_when_no_candidate_matches(self, monkeypatch):
+        monkeypatch.setattr(Path, "read_text", lambda self: "0::/user.slice/session-1.scope\n")
+        backend = ContainerBackend("podman")
+
+        assert backend.identify_container_from_pid(1234, ["abc123"]) is None
+
+    def test_returns_none_when_the_proc_entry_is_unreadable(self, monkeypatch):
+        """The pid has already exited, or /proc is otherwise inaccessible - never a guess."""
+
+        def _raise(self):
+            raise OSError("no such process")
+
+        monkeypatch.setattr(Path, "read_text", _raise)
+        backend = ContainerBackend("podman")
+
+        assert backend.identify_container_from_pid(999999, ["abc123"]) is None

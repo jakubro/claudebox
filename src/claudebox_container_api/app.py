@@ -74,8 +74,8 @@ def api_lifespan(workspace: str, **cli_args) -> Callable:
         # noinspection PyAbstractClass
         async with contextlib.AsyncExitStack() as stack:
             await stack.enter_async_context(session.managed(workspace=workspace, **cli_args)(app))
-            assert session.current is not None
-            await stack.enter_async_context(files.managed(session.current.workspace)(app))
+            assert session.registry is not None
+            await stack.enter_async_context(files.managed(session.registry.workspace)(app))
             yield
 
     return handler

@@ -25,6 +25,7 @@ export function isSingleLineDuplicate(effectiveDetails, effectiveSummary) {
 export function hasExpandableContent({
   effectiveDetails,
   jsonData,
+  contentBlocks,
   hasNested,
   skillContent,
   questions,
@@ -40,6 +41,7 @@ export function hasExpandableContent({
   return Boolean(
     effectiveDetails ||
       jsonData ||
+      contentBlocks ||
       hasNested ||
       skillContent ||
       questions ||
@@ -59,13 +61,14 @@ export function shouldStartCollapsed({
   toolName,
   singleLineDuplicate,
   jsonData,
+  contentBlocks,
   hasNested,
   isPending,
   wasAnswered,
 }) {
   return (
     singleLineDuplicate ||
-    shouldCollapseByDefault(toolName, jsonData, hasNested, isPending, wasAnswered)
+    shouldCollapseByDefault(toolName, jsonData, hasNested, isPending, wasAnswered, contentBlocks)
   )
 }
 

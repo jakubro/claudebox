@@ -40,86 +40,100 @@ export default function useNewSession() {
   const creatingRef = useRef(false)
   const abortRef = useRef(null)
 
-  const executeNewSession = useCallback(async () => {
-    if (creatingRef.current) {
-      return false
-    }
-    creatingRef.current = true
-    clearProgress()
-
-    // Snapshot the prior session so the still-running toast can offer a return jump if Claude was responding.
-    const prevSessionId = currentSessionId
-    const prevSessionName = currentSessionName
-    const prevWasResponding = isResponding
-
-    abortRef.current?.abort()
-    const abortController = new AbortController()
-    abortRef.current = abortController
-
-    // Drop stale sessionData now - the create response reseeds a full SessionInfo below:
-    // workspace, session_dir, effort_level, zeroed stats.
-    clearSessionData()
-    startCreating()
-    focusChatTab()
-
-    try {
-      const data = await newSession({ signal: abortController.signal })
-
-      if (data?.session_id) {
-        // Seed the full SessionInfo response so the footer populates immediately.
-        seedSessionData(data)
+  const createSession = useCallback(
+    async messages => {
+      if (creatingRef.current) {
+        return { success: false, undeliveredMessages: [] }
       }
-      if (data?.container_id) {
-        setContainerId(data.container_id)
-        notifyContainerChanged()
-        reconnectSSE()
-        if (data.session_id) {
-          setSessionContainer(data.session_id, data.container_id)
-        }
-      }
-      if (data?.session_id && workspaceId) {
-        // Set before navigating - SessionRoutingEffect must see it on its first reaction to the id.
-        markJustCreatedSession(data.session_id)
-        navigateToSession(workspaceId, data.session_id)
-        if (prevWasResponding && prevSessionId && prevSessionId !== data.session_id) {
-          showStillRunningToast({
-            sessionName: prevSessionName || prevSessionId.slice(0, 8),
-            onReturn: () => navigateToSession(workspaceId, prevSessionId),
-          })
-        }
-      }
-      // Don't clearCreating() here - ChatPanel effect clears when SSE connects
+      creatingRef.current = true
+      clearProgress()
+
+      // Snapshot the prior session so the still-running toast can offer a return jump.
+      const prevSessionId = currentSessionId
+      const prevSessionName = currentSessionName
+      const prevWasResponding = isResponding
+
+      abortRef.current?.abort()
+      const abortController = new AbortController()
+      abortRef.current = abortController
+
+      // Drop stale sessionData now - the create response reseeds a full SessionInfo below:
+      // workspace, session_dir, effort_level, zeroed stats.
+      clearSessionData()
+      startCreating()
       focusChatTab()
-      return true
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        return false
+
+      try {
+        const data = await newSession({ signal: abortController.signal, messages })
+
+        if (data?.session_id) {
+          // Seed the full SessionInfo response so the footer populates immediately.
+          seedSessionData(data)
+        }
+        if (data?.container_id) {
+          setContainerId(data.container_id)
+          notifyContainerChanged()
+          reconnectSSE()
+          if (data.session_id) {
+            setSessionContainer(data.session_id, data.container_id)
+          }
+        }
+        if (data?.session_id && workspaceId) {
+          // Set before navigating - SessionRoutingEffect must see it on its first reaction to the id.
+          markJustCreatedSession(data.session_id)
+          navigateToSession(workspaceId, data.session_id)
+          if (prevWasResponding && prevSessionId && prevSessionId !== data.session_id) {
+            showStillRunningToast({
+              sessionName: prevSessionName || prevSessionId.slice(0, 8),
+              onReturn: () => navigateToSession(workspaceId, prevSessionId),
+            })
+          }
+        }
+        // Don't clearCreating() here - ChatPanel effect clears when SSE connects
+        focusChatTab()
+        return { success: true, undeliveredMessages: data?.undelivered_messages ?? [] }
+      } catch (err) {
+        if (err?.name === 'AbortError') {
+          return { success: false, undeliveredMessages: [] }
+        }
+        clearCreating()
+        setError('New session failed')
+        return { success: false, undeliveredMessages: [] }
+      } finally {
+        creatingRef.current = false
       }
-      clearCreating()
-      setError('New session failed')
-      return false
-    } finally {
-      creatingRef.current = false
-    }
-  }, [
-    clearProgress,
-    clearSessionData,
-    seedSessionData,
-    notifyContainerChanged,
-    reconnectSSE,
-    navigateToSession,
-    workspaceId,
-    focusChatTab,
-    setError,
-    setSessionContainer,
-    startCreating,
-    clearCreating,
-    markJustCreatedSession,
-    currentSessionId,
-    currentSessionName,
-    isResponding,
-    showStillRunningToast,
-  ])
+    },
+    [
+      clearProgress,
+      clearSessionData,
+      seedSessionData,
+      notifyContainerChanged,
+      reconnectSSE,
+      navigateToSession,
+      workspaceId,
+      focusChatTab,
+      setError,
+      setSessionContainer,
+      startCreating,
+      clearCreating,
+      markJustCreatedSession,
+      currentSessionId,
+      currentSessionName,
+      isResponding,
+      showStillRunningToast,
+    ],
+  )
+
+  const executeNewSession = useCallback(async () => {
+    const { success } = await createSession()
+    return success
+  }, [createSession])
+
+  /** Create a session from a link's carried messages; returns which ones the allowlist blocked. */
+  const executeNewSessionFromLink = useCallback(
+    messages => createSession(messages),
+    [createSession],
+  )
 
   const cancelCreation = useCallback(() => {
     abortRef.current?.abort()
@@ -146,6 +160,7 @@ export default function useNewSession() {
 
   return {
     executeNewSession,
+    executeNewSessionFromLink,
     executeNewSessionInNewTab,
     cancelCreation,
     isCreating,

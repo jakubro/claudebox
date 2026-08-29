@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { BlockType } from '../../../../../config/schema'
+import { TurnRoutingMode } from '../../../../../utils/eventProcessing'
 import { getTurnPreview } from './turnContent'
 
 /** Make a TEXT block. */
@@ -147,5 +148,15 @@ describe('getTurnPreview - hideShellCalls (terminal column routing)', () => {
   it('falls through past an all-hidden turn (Bash + ToolSearch) when hideShellCalls is true', () => {
     const preview = getTurnPreview([bashToolBlock(), hiddenToolSearchBlock()], 5, true)
     expect(preview).toBe('Worked for 5s')
+  })
+
+  it('excludes a top-level Bash call from the tool count when the mode is BASH_ONLY', () => {
+    const preview = getTurnPreview([toolBlock(), bashToolBlock()], null, TurnRoutingMode.BASH_ONLY)
+    expect(preview).toBe('1 tool used')
+  })
+
+  it('counts a top-level Bash call when the mode is OFF', () => {
+    const preview = getTurnPreview([toolBlock(), bashToolBlock()], null, TurnRoutingMode.OFF)
+    expect(preview).toBe('2 tools used')
   })
 })
