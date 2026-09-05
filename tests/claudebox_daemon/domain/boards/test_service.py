@@ -153,7 +153,7 @@ class TestSendPromptSequence:
 
         await svc._send_prompt_sequence(
             result,
-            ["/scope claudebox", "/implement {ticket}"],
+            ["review the board", "start on {ticket}"],
             ["tickets/active/foo.md"],
         )
 
@@ -162,8 +162,8 @@ class TestSendPromptSequence:
         first_payload = containers.send.await_args_list[0].kwargs["payload"]
         second_payload = containers.send.await_args_list[1].kwargs["payload"]
 
-        assert first_payload == {"prompt": "/scope claudebox"}
-        assert second_payload == {"prompt": "/implement tickets/active/foo.md"}
+        assert first_payload == {"prompt": "review the board"}
+        assert second_payload == {"prompt": "start on tickets/active/foo.md"}
 
     @pytest.mark.anyio
     async def test_substitutes_single_ticket_placeholder(self, tmp_path):
@@ -172,12 +172,12 @@ class TestSendPromptSequence:
 
         await svc._send_prompt_sequence(
             result,
-            ["/implement {ticket}"],
+            ["start on {ticket}"],
             ["path/to/ticket.md"],
         )
 
         payload = containers.send.await_args_list[0].kwargs["payload"]
-        assert payload == {"prompt": "/implement path/to/ticket.md"}
+        assert payload == {"prompt": "start on path/to/ticket.md"}
 
     @pytest.mark.anyio
     async def test_substitutes_multi_ticket_placeholder_as_newline_list(self, tmp_path):
@@ -188,13 +188,13 @@ class TestSendPromptSequence:
 
         await svc._send_prompt_sequence(
             result,
-            ["/implement {ticket}"],
+            ["start on {ticket}"],
             ["tickets/active/A.md", "tickets/active/B.md"],
         )
 
         payload = containers.send.await_args_list[0].kwargs["payload"]
         assert payload == {
-            "prompt": "/implement\ntickets/active/A.md\ntickets/active/B.md",
+            "prompt": "start on\ntickets/active/A.md\ntickets/active/B.md",
         }
 
     @pytest.mark.anyio

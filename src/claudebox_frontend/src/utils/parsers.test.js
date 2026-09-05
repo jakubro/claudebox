@@ -62,9 +62,9 @@ describe('parseSlashCommand', () => {
 
   it('captures args containing angle brackets', () => {
     const result = parseSlashCommand(
-      '<command-name>/scope</command-name><command-args>claudebox <web></command-args>',
+      '<command-name>/greet</command-name><command-args>ada <web></command-args>',
     )
-    expect(result).toEqual({ cmd: '/scope', args: 'claudebox <web>' })
+    expect(result).toEqual({ cmd: '/greet', args: 'ada <web>' })
   })
 
   it('captures args with multiple angle brackets', () => {

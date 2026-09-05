@@ -329,12 +329,12 @@ describe('useAutocomplete', () => {
   it('handles object-shaped commands', () => {
     const ref = createTextareaRef()
     const textareaRef = { current: ref.current }
-    const commands = { custom: [{ name: 'scope' }, { name: 'deploy' }], mcp: [], builtin: [] }
+    const commands = { custom: [{ name: 'greet' }, { name: 'deploy' }], mcp: [], builtin: [] }
 
     const { result } = renderHook(() => useAutocomplete(textareaRef, commands))
 
     expect(result.current.items).toHaveLength(2)
-    expect(result.current.items[0].name).toBe('scope')
+    expect(result.current.items[0].name).toBe('greet')
     ref.cleanup()
   })
 

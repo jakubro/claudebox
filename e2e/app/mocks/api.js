@@ -17,6 +17,48 @@ export const DEFAULT_SESSION_ID = 'test-session-001'
 /** Hash URL for navigating to the default test session. */
 export const DEFAULT_SESSION_URL = `/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`
 
+/** Served unless a spec passes its own; the switcher lists rows only past one workspace. */
+const DEFAULT_WORKSPACES = [
+  { id: DEFAULT_WORKSPACE_ID, path: '/home/user/project', containers: { running: 0, stopped: 0 } },
+]
+
+const BOARD_LIST = {
+  boards: [{ id: 'sprint-1', name: 'sprint-1', path: 'docs/tickets/board.yaml' }],
+}
+
+const BOARD_DETAIL = {
+  id: 'sprint-1',
+  name: 'sprint-1',
+  yaml_path: '/workspace/docs/tickets/board.yaml',
+  prompt: {},
+  states: [
+    { id: 'backlog', label: 'Backlog', folder: 'backlog', terminal: false },
+    { id: 'in-progress', label: 'In Progress', folder: 'in-progress', terminal: false },
+    { id: 'review', label: 'Review', folder: 'review', terminal: false },
+    { id: 'done', label: 'Done', folder: 'completed', terminal: true },
+  ],
+  swimlanes: [
+    { id: 'frontend', name: 'Frontend' },
+    { id: 'backend', name: 'Backend' },
+  ],
+  columns: {
+    backlog: [
+      { path: 'docs/tickets/active/setup.md', title: 'Setup infra', swimlane: 'frontend' },
+      { path: 'docs/tickets/active/boards.md', title: 'Boards', swimlane: 'backend' },
+    ],
+    'in-progress': [
+      {
+        path: 'docs/tickets/active/polish.md',
+        title: 'Polish UI',
+        swimlane: 'frontend',
+        session: 'session-001',
+      },
+    ],
+    review: [],
+    done: [{ path: 'docs/tickets/active/init.md', title: 'Init project' }],
+  },
+}
+
 /** Workspace-scoped URL prefix. */
 function wsPrefix(wsId = DEFAULT_WORKSPACE_ID) {
   return `/api/workspaces/${wsId}`
@@ -44,6 +86,7 @@ export async function mockAPI(page, options = {}) {
   // each empty by default so most tests never see a footer item.
   const sessionDefaultsRateLimits = options.sessionDefaultsRateLimits || []
   const sessionRateLimits = options.sessionRateLimits || []
+  const workspaces = options.workspaces || DEFAULT_WORKSPACES
 
   const ws = wsPrefix()
   const cp = cPrefix()
@@ -52,17 +95,7 @@ export async function mockAPI(page, options = {}) {
 
   // GET /api/workspaces - Workspace discovery
   await page.route('**/api/workspaces', async route => {
-    await route.fulfill({
-      json: {
-        workspaces: [
-          {
-            id: DEFAULT_WORKSPACE_ID,
-            path: '/home/user/project',
-            containers: { running: 0, stopped: 0 },
-          },
-        ],
-      },
-    })
+    await route.fulfill({ json: { workspaces } })
   })
 
   // --- Workspace-scoped endpoints (via workspaceFetch) ---
@@ -155,6 +188,7 @@ export async function mockAPI(page, options = {}) {
           capabilities: mockCapabilities(),
           rate_limits: sessionDefaultsRateLimits,
           available_models: [
+            { id: 'claude-fable-5-1', name: 'Fable 5.1', context_window: 1000000 },
             { id: 'claude-fable-5', name: 'Fable 5', context_window: 1000000 },
             { id: 'claude-opus-5', name: 'Opus 5', context_window: 1000000 },
             { id: 'claude-sonnet-5', name: 'Sonnet 5', context_window: 1000000 },
@@ -388,6 +422,34 @@ export async function mockAPI(page, options = {}) {
     } else {
       await route.fulfill({ json: { resolved: {} } })
     }
+  })
+}
+
+/**
+ * Mock the board list, detail and ticket-content endpoints; mockAPI routes none, so a spec leaving
+ * the Boards panel open renders its error state until this is called.
+ */
+export async function mockBoards(page, wsId = DEFAULT_WORKSPACE_ID) {
+  const ws = wsPrefix(wsId)
+
+  await page.route(`**${ws}/boards`, async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: BOARD_LIST })
+    } else {
+      await route.continue()
+    }
+  })
+
+  await page.route(new RegExp(`${ws}/boards/[^/]+$`), async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: BOARD_DETAIL })
+    } else {
+      await route.continue()
+    }
+  })
+
+  await page.route(new RegExp(`${ws}/boards/[^/]+/tickets/.+/content`), async route => {
+    await route.fulfill({ body: '# Setup infra\n\nTicket body content for the visual test.' })
   })
 }
 

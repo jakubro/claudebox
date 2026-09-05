@@ -50,41 +50,41 @@ class TestMakeSkillTools:
 class TestSkillInvocation:
     def test_returns_body_post_frontmatter(self, tool_ctx, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "refine body content\nmore lines")
+        _seed_skill(skills_dir, "greet", "greet body content\nmore lines")
 
         skill_tool = make_skill_tools(tool_ctx)[0]
 
-        result = skill_tool.invoke({"name": "refine"})
+        result = skill_tool.invoke({"name": "greet"})
 
-        assert result == "refine body content\nmore lines"
+        assert result == "greet body content\nmore lines"
 
     def test_appends_arguments_line_when_args_given(self, tool_ctx, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "scope", "the body")
+        _seed_skill(skills_dir, "greet", "the body")
 
         skill_tool = make_skill_tools(tool_ctx)[0]
 
-        result = skill_tool.invoke({"name": "scope", "arguments": "claudebox"})
+        result = skill_tool.invoke({"name": "greet", "arguments": "ada"})
 
-        assert result == "the body\n\nARGUMENTS: claudebox\n"
+        assert result == "the body\n\nARGUMENTS: ada\n"
 
     def test_omits_arguments_line_when_args_none(self, tool_ctx, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "scope", "the body")
+        _seed_skill(skills_dir, "greet", "the body")
 
         skill_tool = make_skill_tools(tool_ctx)[0]
 
-        result = skill_tool.invoke({"name": "scope"})
+        result = skill_tool.invoke({"name": "greet"})
 
         assert "ARGUMENTS:" not in result
 
     def test_omits_arguments_line_when_args_empty(self, tool_ctx, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "scope", "the body")
+        _seed_skill(skills_dir, "greet", "the body")
 
         skill_tool = make_skill_tools(tool_ctx)[0]
 
-        result = skill_tool.invoke({"name": "scope", "arguments": ""})
+        result = skill_tool.invoke({"name": "greet", "arguments": ""})
 
         assert "ARGUMENTS:" not in result
 
@@ -107,17 +107,17 @@ class TestDisableModelInvocation:
         tmp_path,
     ):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        target = skills_dir / "scope" / "SKILL.md"
+        target = skills_dir / "greet" / "SKILL.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
-            "---\ndescription: scope-desc\ndisable-model-invocation: true\n---\nbody",
+            "---\ndescription: greet-desc\ndisable-model-invocation: true\n---\nbody",
             encoding="utf-8",
         )
 
         skill_tool = make_skill_tools(tool_ctx)[0]
 
         with pytest.raises(ToolException, match="disable-model-invocation"):
-            skill_tool.invoke({"name": "scope"})
+            skill_tool.invoke({"name": "greet"})
 
     def test_model_call_allowed_when_disable_model_invocation_unset(
         self,
@@ -126,11 +126,11 @@ class TestDisableModelInvocation:
         tmp_path,
     ):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "refine body")
+        _seed_skill(skills_dir, "greet", "greet body")
 
         skill_tool = make_skill_tools(tool_ctx)[0]
 
-        assert skill_tool.invoke({"name": "refine"}) == "refine body"
+        assert skill_tool.invoke({"name": "greet"}) == "greet body"
 
 
 class TestUnknownName:

@@ -201,13 +201,13 @@ describe('useNewSession', () => {
       const { result } = renderHook(() => useNewSession())
 
       const { success, undeliveredMessages } = await result.current.executeNewSessionFromLink([
-        '/scope claudebox',
+        '/greet ada',
         '/danger',
       ])
 
       expect(mockNewSession).toHaveBeenCalledWith({
         signal: expect.any(AbortSignal),
-        messages: ['/scope claudebox', '/danger'],
+        messages: ['/greet ada', '/danger'],
       })
       expect(success).toBe(true)
       expect(undeliveredMessages).toEqual(['/danger'])
@@ -218,9 +218,7 @@ describe('useNewSession', () => {
 
       const { result } = renderHook(() => useNewSession())
 
-      const { undeliveredMessages } = await result.current.executeNewSessionFromLink([
-        '/scope claudebox',
-      ])
+      const { undeliveredMessages } = await result.current.executeNewSessionFromLink(['/greet ada'])
 
       expect(undeliveredMessages).toEqual([])
     })

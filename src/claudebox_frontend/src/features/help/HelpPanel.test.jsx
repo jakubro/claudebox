@@ -35,6 +35,14 @@ describe('HelpPanel', () => {
           "New line",
         ],
         [
+          "Tab",
+          "Indent",
+        ],
+        [
+          "Shift+Tab",
+          "Dedent",
+        ],
+        [
           "Ctrl+.",
           "Interrupt",
         ],
@@ -83,6 +91,14 @@ describe('HelpPanel', () => {
           "First/last message",
         ],
         [
+          "Alt+PageUp / PageDown",
+          "Prev/next entry in the right column",
+        ],
+        [
+          "Alt+Shift+← / →",
+          "Focus prev/next group on the session rail",
+        ],
+        [
           "Alt+N",
           "New session",
         ],
@@ -93,10 +109,6 @@ describe('HelpPanel', () => {
         [
           "Alt+C",
           "Focus Chat",
-        ],
-        [
-          "Alt+0",
-          "Toggle Logs",
         ],
         [
           "Alt+1",
@@ -128,11 +140,15 @@ describe('HelpPanel', () => {
         ],
         [
           "Alt+8",
-          "Toggle MCP",
+          "Toggle MCP Servers",
         ],
         [
           "Alt+9",
           "Toggle Skills",
+        ],
+        [
+          "Alt+0",
+          "Toggle Logs",
         ],
         [
           "Alt+?",

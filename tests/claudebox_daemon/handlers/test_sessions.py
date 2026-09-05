@@ -105,14 +105,14 @@ def test_new_session_delivers_messages_matching_the_allowlist():
 
     client = TestClient(_build_app(session_service))
 
-    with _patched_links_allow([r"/scope \S+"]):
+    with _patched_links_allow([r"/greet \S+"]):
         resp = client.post(
             "/api/workspaces/myws/sessions/new",
-            json={"messages": ["/scope claudebox"]},
+            json={"messages": ["/greet ada"]},
         )
 
     assert resp.status_code == 200
-    session_service.create_with_prompts.assert_awaited_once_with(["/scope claudebox"])
+    session_service.create_with_prompts.assert_awaited_once_with(["/greet ada"])
     assert resp.json()["undelivered_messages"] == []
 
 
@@ -124,16 +124,16 @@ def test_new_session_blocks_the_whole_batch_on_one_disallowed_message():
 
     client = TestClient(_build_app(session_service))
 
-    with _patched_links_allow([r"/scope \S+"]):
+    with _patched_links_allow([r"/greet \S+"]):
         resp = client.post(
             "/api/workspaces/myws/sessions/new",
-            json={"messages": ["/scope claudebox", "/danger"]},
+            json={"messages": ["/greet ada", "/danger"]},
         )
 
     assert resp.status_code == 200
     session_service.create.assert_awaited_once()
     session_service.create_with_prompts.assert_not_called()
-    assert resp.json()["undelivered_messages"] == ["/scope claudebox", "/danger"]
+    assert resp.json()["undelivered_messages"] == ["/greet ada", "/danger"]
 
 
 def test_new_session_with_no_allowlist_configured_blocks_everything():
@@ -147,12 +147,12 @@ def test_new_session_with_no_allowlist_configured_blocks_everything():
     with _patched_links_allow(None):
         resp = client.post(
             "/api/workspaces/myws/sessions/new",
-            json={"messages": ["/scope claudebox"]},
+            json={"messages": ["/greet ada"]},
         )
 
     assert resp.status_code == 200
     session_service.create.assert_awaited_once()
-    assert resp.json()["undelivered_messages"] == ["/scope claudebox"]
+    assert resp.json()["undelivered_messages"] == ["/greet ada"]
 
 
 def test_new_session_invalid_regex_does_not_take_down_the_endpoint():
@@ -166,12 +166,12 @@ def test_new_session_invalid_regex_does_not_take_down_the_endpoint():
     with _patched_links_allow([r"(unclosed"]):
         resp = client.post(
             "/api/workspaces/myws/sessions/new",
-            json={"messages": ["/scope claudebox"]},
+            json={"messages": ["/greet ada"]},
         )
 
     assert resp.status_code == 200
     session_service.create.assert_awaited_once()
-    assert resp.json()["undelivered_messages"] == ["/scope claudebox"]
+    assert resp.json()["undelivered_messages"] == ["/greet ada"]
 
 
 def test_list_sessions_logs_the_measured_response_size_and_duration():

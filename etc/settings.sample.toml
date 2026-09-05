@@ -39,6 +39,10 @@ root = true
 ## URI template for "open in IDE" tool-block affordances.
 # url_template = "jetbrains://idea/navigate/reference?project=myProject&path={path}:{line}"
 
+## Full-match patterns a link's carried message text must match to auto-submit. Omit to allow none.
+[links]
+#allow = ["/greet \\S+"]
+
 ###############################################################################
 ## LangGraph runtime (alternative to the default Claude Agent SDK)            #
 ## Set `agent = "langgraph"` above, then configure the model + provider here. #
@@ -85,7 +89,7 @@ root = true
 ## Web-search backend for the web_search tool
 [langgraph.web_search]
 #provider = "duckduckgo"          # default; no API key required
-#provider = "tavily"              # opt-in; needs the web-search-tavily extra
+##provider = "tavily"             # opt-in; needs the web-search-tavily extra
 #api_key_env = "TAVILY_API_KEY"   # env var holding the key
 
 ## MCP servers: one [langgraph.mcp.<name>] block per server connection.

@@ -2,6 +2,12 @@
 
 import { useEffect } from 'react'
 import { HELP_OVERLAY_KEY } from '../../../config/layout'
+import PANEL_CONFIGS from '../../../config/panel'
+
+// Each toggle's key comes from the panel that owns it, so the binding is declared once.
+const PANEL_TOGGLE_KEYS = Object.values(PANEL_CONFIGS)
+  .filter(panel => panel.shortcut?.startsWith('Alt+'))
+  .map(panel => [panel.shortcut.slice('Alt+'.length), panel.id])
 
 /**
  * @param {object} params
@@ -118,16 +124,9 @@ export default function useKeyboardShortcuts({
         C: focusChatTab,
         n: () => onNewSession?.(),
         N: () => onNewSessionInNewTab?.(),
-        0: () => handleTogglePanel('logs'),
-        1: () => handleTogglePanel('sessions'),
-        2: () => handleTogglePanel('todos'),
-        3: () => handleTogglePanel('stash'),
-        4: () => handleTogglePanel('tasks'),
-        5: () => handleTogglePanel('bookmarks'),
-        6: () => handleTogglePanel('boards'),
-        7: () => handleTogglePanel('usage'),
-        8: () => handleTogglePanel('mcp'),
-        9: () => handleTogglePanel('commands'),
+        ...Object.fromEntries(
+          PANEL_TOGGLE_KEYS.map(([key, id]) => [key, () => handleTogglePanel(id)]),
+        ),
       }
 
       const handler = keyMap[e.key]

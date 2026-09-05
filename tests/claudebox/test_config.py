@@ -3,7 +3,7 @@
 import pytest
 
 from claudebox.config import Config
-from claudebox.constants import CLAUDEBOX_SETTINGS_FILE
+from claudebox.constants import CLAUDEBOX_SETTINGS_FILE, profile_dir
 from ..conftest import bounded_walk_up
 
 
@@ -119,6 +119,27 @@ class TestConfigLoad:
 
         config = Config.load(workspace_path=tmp_workspace)
         assert config.profile == profile_dir.resolve()
+
+    def test_profile_falls_back_to_installed_profile_dir(self, tmp_workspace):
+        profile_dir().mkdir(parents=True)
+
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.profile == profile_dir()
+
+    def test_profile_none_when_installed_profile_dir_absent(self, tmp_workspace):
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.profile is None
+
+    def test_explicit_profile_key_wins_over_installed_dir(self, tmp_workspace):
+        profile_dir().mkdir(parents=True)
+        explicit = tmp_workspace / "my-profile"
+        explicit.mkdir()
+        settings_path = tmp_workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(f'profile = "{explicit}"\n')
+
+        config = Config.load(workspace_path=tmp_workspace)
+        assert config.profile == explicit.resolve()
 
 
 class TestConfigEditorTemplate:

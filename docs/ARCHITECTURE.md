@@ -18,6 +18,7 @@ lib/
 │   └── cli/                      # CLI E2E (pytest) — invokes claudebox binary as subprocess
 ├── etc/                           # Profile/settings samples, systemd unit
 ├── scripts/                      # Cross-tree tooling — see TEST-UI.md for scripts/test-ui/
+├── site/                         # Astro/Starlight docs site, renders docs/ unmodified — `just site`
 ├── src/                          # Python packages + claudebox_frontend (React)
 ├── tests/                        # Python unit tests — see §7.1
 ├── biome.json                    # JS lint config (Biome)
@@ -620,7 +621,7 @@ Attachment is keyed on presence in the container list, not on having a live task
 
 ### 2.1 Config Hierarchy
 
-TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional), `links_allow` (`[links] allow`, optional).
+TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional), `links_allow` (`[links] allow`, optional). `profile` falls back to `profile_dir()` (`~/.claudebox/profile`) when no explicit key is set and that directory exists - the installer copies `etc/profile.sample/` there on first run (`bin/install.sh` `install_profile()`).
 
 `ContainerRuntime` combines `Config` + `ContainerBackend` + CLI flags into a single runtime object.
 
@@ -2103,6 +2104,8 @@ tests/
 │   ├── test_env.py                           # runtime environment checks
 │   ├── test_install.py                       # info formatting (install.format_install_info)
 │   ├── test_paths.py                         # workspace discovery and session naming
+│   ├── test_profile_sample.py                # every etc/profile.sample/ command and skill is discovered
+│   ├── test_settings_sample_drift.py         # settings.sample.toml <-> Config field drift, both directions
 │   ├── test_temp.py                          # session-scoped /tmp symlink management
 │   └── test_workspace.py                     # workspace context and session access
 │
@@ -2167,6 +2170,8 @@ tests/
 │
 └── lint/
     ├── test_callback_catchall_audit.py       # CallbackCatchAllAudit bans a **kwargs catch-all beside named callbacks
+    ├── test_generated_reference_drift.py     # docs/reference/{cli,shortcuts}.md vs their generators, and vs SPEC.md
+    ├── test_image_layer_table_drift.py       # README/ARCHITECTURE.md image-layer tables vs the Containerfile, both directions
     └── test_sdk_containment.py               # SdkContainmentAudit enforces SDK import prefix bans outside the allowlists
 ```
 

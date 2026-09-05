@@ -1,5 +1,6 @@
 *.egg-info/
 *.pyc
+.astro/
 .coverage/
 .pytest_cache/
 .ruff_cache/
@@ -10,4 +11,5 @@ coverage/
 dist/
 node_modules/
 playwright-report/
+site/public/demo.gif
 test-results/

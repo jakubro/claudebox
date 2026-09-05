@@ -2,7 +2,7 @@
 
 /**
  * @param {string} value - Textarea value.
- * @returns {{token: string, end: number}|null} Token (e.g. `/scope`) and index past it, or null.
+ * @returns {{token: string, end: number}|null} Token (e.g. `/greet`) and index past it, or null.
  */
 export function leadingCommand(value) {
   const m = value.match(/^\/(\S*)/)

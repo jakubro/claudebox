@@ -11,7 +11,7 @@ LOCK_INFO="$HOME/.claudebox/update.lock.info"
 # Core
 # --------------------------------------------------------------------------------------------------
 
-# Routes to remote or local installation based on execution context
+# Route to remote or local installation based on execution context
 install_lib() {
   mkdir -p ~/.claudebox
 
@@ -30,7 +30,7 @@ install_lib() {
   fi
 }
 
-# Clones or updates library from remote git repository
+# Clone or update library from remote git repository
 install_lib_remote() {
   local source=$1
 
@@ -60,7 +60,7 @@ install_lib_remote() {
   )
 }
 
-# Creates symlink to local library source for development
+# Create symlink to local library source for development
 install_lib_symlink() {
   local source=$1
 
@@ -86,7 +86,7 @@ install_lib_symlink() {
 # Config
 # --------------------------------------------------------------------------------------------------
 
-# Copies sample configuration to user home directory
+# Copy sample configuration to user home directory
 install_config() {
   print_header "💾 Installing configuration to ~/.claudebox/settings.toml"
 
@@ -98,7 +98,21 @@ install_config() {
   print_success "Installed"
 }
 
-# Resolves backend: env var > settings.toml > default, persists to config
+# Copy the sample profile to ~/.claudebox/profile unless one already exists
+install_profile() {
+  print_header "🗂️  Installing profile to ~/.claudebox/profile"
+
+  if [[ -e ~/.claudebox/profile ]]; then
+    print_skip "profile already exists"
+    return
+  fi
+
+  cp -r ~/.claudebox/lib/etc/profile.sample ~/.claudebox/profile
+  print_success "Installed"
+  print_hint "container-start.sh will symlink its agents/, commands/ and skills/ into ~/.claude/ each session"
+}
+
+# Resolve backend: env var > settings.toml > default, persist to config
 resolve_backend() {
   if [[ -z $CLAUDEBOX_BACKEND ]]; then
     local backend
@@ -109,7 +123,7 @@ resolve_backend() {
   write_config_backend "$CLAUDEBOX_BACKEND"
 }
 
-# Reads backend value from settings.toml, empty if commented or absent
+# Read backend value from settings.toml, empty if commented or absent
 read_config_backend() {
   local settings=~/.claudebox/settings.toml
   if [[ -f $settings ]]; then
@@ -117,7 +131,7 @@ read_config_backend() {
   fi
 }
 
-# Writes or updates backend value in settings.toml
+# Write or update backend value in settings.toml
 write_config_backend() {
   local value=$1
   local settings=~/.claudebox/settings.toml
@@ -135,7 +149,7 @@ write_config_backend() {
 # Apps
 # --------------------------------------------------------------------------------------------------
 
-# Installs CLI and daemon wrappers, ensures uv is available, updates PATH if needed
+# Install CLI and daemon wrappers, ensure uv is available, update PATH if needed
 install_cli() {
   print_header "🔧 Installing CLI to ~/.local/bin/claudebox"
 
@@ -180,7 +194,7 @@ install_cli() {
   fi
 }
 
-# Builds the frontend for host-side daemon serving
+# Build the frontend for host-side daemon serving
 build_frontend() {
   print_header "🌐 Building frontend"
 
@@ -195,7 +209,7 @@ build_frontend() {
   print_success "Built"
 }
 
-# Installs systemd service for the daemon process
+# Install systemd service for the daemon process
 install_daemon_service() {
   print_header "🔧 Installing daemon service to ~/.config/systemd/user/"
 
@@ -216,7 +230,7 @@ install_daemon_service() {
   print_success "Installed"
 }
 
-# Installs systemd timer for daily automatic maintenance
+# Install systemd timer for daily automatic maintenance
 install_maintenance_timer() {
   print_header "⌚️ Installing maintenance timer to ~/.config/systemd/user/"
 
@@ -237,7 +251,7 @@ install_maintenance_timer() {
   print_success "Installed"
 }
 
-# Installs systemd timer that polls daemon health and restarts it when unresponsive
+# Install systemd timer that polls daemon health and restarts it when unresponsive
 install_watchdog_timer() {
   print_header "🩺 Installing daemon watchdog timer to ~/.config/systemd/user/"
 
@@ -262,7 +276,7 @@ install_watchdog_timer() {
 # Containers
 # --------------------------------------------------------------------------------------------------
 
-# Builds container image via claudebox CLI in a temporary directory
+# Build container image via claudebox CLI in a temporary directory
 build_image() {
   print_header "🐳 Building container image"
 
@@ -296,7 +310,7 @@ run_prune() {
 # Runtimes
 # --------------------------------------------------------------------------------------------------
 
-# Ensures uv is available
+# Ensure uv is available
 ensure_uv() {
   print_header "📦 Installing uv"
 
@@ -309,7 +323,7 @@ ensure_uv() {
   print_success "Installed"
 }
 
-# Ensures Node.js is available
+# Ensure Node.js is available
 ensure_nodejs() {
   local node_version
   node_version=$(cat ~/.claudebox/lib/.nvmrc)
@@ -327,7 +341,7 @@ ensure_nodejs() {
   nvm use "$node_version"
 }
 
-# Ensures nvm is available
+# Ensure nvm is available
 ensure_nvm() {
   print_header "📦 Installing nvm"
 
@@ -341,7 +355,7 @@ ensure_nvm() {
   print_success "Installed"
 }
 
-# Loads nvm as a shell function
+# Load nvm as a shell function
 source_nvm() {
   if type nvm &>/dev/null; then
     return 0
@@ -356,7 +370,7 @@ source_nvm() {
   return 1
 }
 
-# Ensures Caddy reverse proxy binary is available
+# Ensure Caddy reverse proxy binary is available
 ensure_caddy() {
   print_header "📦 Installing Caddy"
 
@@ -395,7 +409,7 @@ ensure_caddy() {
 # UI
 # --------------------------------------------------------------------------------------------------
 
-# Prints a banner box with title, subtitle, and optional footer text (dimmed)
+# Print a banner box with title, subtitle, and optional footer text (dimmed)
 print_banner() {
   local title=$1
   local subtitle=$2
@@ -416,7 +430,7 @@ print_banner() {
   echo "└${border}┘"
 }
 
-# Prints a two-line result box in green
+# Print a two-line result box in green
 print_result() {
   local border
   border=$(printf '\033[92m─\033[0m%.0s' $(seq 1 $((COLS - 2))))
@@ -427,7 +441,7 @@ print_result() {
   echo -e "\033[92m└\033[0m${border}\033[92m┘\033[0m"
 }
 
-# Prints a header with a horizontal rule and bold title
+# Print a header with a horizontal rule and bold title
 print_header() {
   local border
   border=$(printf '─%.0s' $(seq 1 "$COLS"))
@@ -436,37 +450,37 @@ print_header() {
   printf '  \033[1m%s\033[0m\n' "$1"
 }
 
-# Prints a 3-space-indented progress line
+# Print a 3-space-indented progress line
 print_step() {
   echo "   $1"
 }
 
-# Prints a 3-space-indented "skipped" line with the ○ glyph
+# Print a 3-space-indented "skipped" line with an open-circle glyph
 print_skip() {
   echo "   ○ Skipped — $1"
 }
 
-# Prints a 3-space-indented success line with the ✓ glyph in light green
+# Print a 3-space-indented success line with a check-mark glyph in light green
 print_success() {
   echo -e "   \033[92m✓\033[0m $1"
 }
 
-# Prints a 3-space-indented warning line (lowercase 'warning:', ⚠ glyph in yellow)
+# Print a 3-space-indented warning line (lowercase 'warning:', warning-sign glyph, yellow)
 print_warn() {
   echo -e "   \033[93m⚠\033[0m warning: $1"
 }
 
-# Prints a 3-space-indented failure line (lowercase 'error:', ✗ glyph in red)
+# Print a 3-space-indented failure line (lowercase 'error:', cross-mark glyph in red)
 print_fail() {
   echo -e "   \033[91m✗\033[0m error: $1"
 }
 
-# Prints a 3-space-indented follow-up hint (dim → glyph)
+# Print a 3-space-indented follow-up hint (dim arrow glyph)
 print_hint() {
   echo -e "   \033[2m→\033[0m $1"
 }
 
-# Prints a top-level abort message (0-space indent, lowercase 'error:', stderr)
+# Print a top-level abort message (0-space indent, lowercase 'error:', stderr)
 print_error_top() {
   echo "error: $1" >&2
 }
@@ -475,7 +489,7 @@ print_error_top() {
 # Main
 # --------------------------------------------------------------------------------------------------
 
-# Acquires a non-blocking update lock; on contention, prints caller/timestamp/pid from update.lock.info
+# Acquire a non-blocking update lock; on contention, print caller/timestamp/pid from update.lock.info
 acquire_update_lock() {
   mkdir -p "$(dirname "$LOCK_FILE")"
   exec 200>"$LOCK_FILE"
@@ -565,6 +579,7 @@ BANNER
 
   install_lib
   install_config
+  install_profile
   resolve_backend
 
   ensure_uv

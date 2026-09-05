@@ -85,6 +85,7 @@ MODEL_CONTEXT_WINDOW: dict[str, int] = {
     "mistral:7b": 32_768,
     "phi3.5:3.8b": 128_000,
     # Anthropic - dated id and alias both resolve to the same window
+    "claude-fable-5-1": 1_000_000,
     "claude-fable-5": 1_000_000,
     "claude-opus-5": 1_000_000,
     "claude-sonnet-5": 1_000_000,
@@ -133,6 +134,7 @@ PRICE_PER_MTOK: dict[str, dict[str, float]] = {
     "mistral:7b": {"input": 0.0, "output": 0.0},
     "phi3.5:3.8b": {"input": 0.0, "output": 0.0},
     # Anthropic - dated id and alias both resolve to the same rates
+    "claude-fable-5-1": {"input": 10.0, "output": 50.0},
     "claude-fable-5": {"input": 10.0, "output": 50.0},
     "claude-opus-5": {"input": 5.0, "output": 25.0},
     "claude-sonnet-5": {"input": 3.0, "output": 15.0},

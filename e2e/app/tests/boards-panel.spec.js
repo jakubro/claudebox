@@ -169,7 +169,10 @@ test.describe('Boards Panel', () => {
   test('on fresh page load before workspace selected, panel shows loading not error', async ({
     page,
   }) => {
-    // Delay the workspaces endpoint so the panel mounts before workspaceId resolves.
+    await mockAPI(page)
+    await mockSSE(page)
+    // Delay the workspaces endpoint so the panel mounts before workspaceId resolves; registered
+    // after mockAPI because Playwright resolves routes last-first.
     await page.route('**/api/workspaces', async route => {
       await new Promise(resolve => setTimeout(resolve, 200))
       await route.fulfill({
@@ -178,8 +181,6 @@ test.describe('Boards Panel', () => {
         },
       })
     })
-    await mockAPI(page)
-    await mockSSE(page)
     await page.goto('/')
 
     const panel = page.locator('[data-testid="panel-boards"]')
@@ -1751,7 +1752,7 @@ test.describe('Board prompt sequence', () => {
       states: MOCK_BOARD_DETAIL.states.map(s =>
         s.id === 'in-progress' ? { ...s, active: true } : s,
       ),
-      prompt: { sequence: ['/scope claudebox', '/implement {ticket}'] },
+      prompt: { sequence: ['review the board', 'start on {ticket}'] },
     }
     await page.route(`**${WS_PREFIX}/boards`, async route => {
       if (route.request().method() === 'GET') {

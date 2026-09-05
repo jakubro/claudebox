@@ -576,7 +576,7 @@ describe('useChatKeyboard - Ctrl+S stash', () => {
 
 // useAutocomplete listens for the same input event, so its caret-position rule applies here too.
 describe('useChatKeyboard - picker consequence of dispatching', () => {
-  const dictCommands = { custom: [{ name: 'implement', description: 'Implement a ticket' }] }
+  const dictCommands = { custom: [{ name: 'greet', description: 'Greet by name' }] }
 
   it('an editing key that leaves the caret inside a leading command opens the picker', () => {
     const { textarea, params, cleanup } = setup()
@@ -585,15 +585,15 @@ describe('useChatKeyboard - picker consequence of dispatching', () => {
       useAutocomplete({ current: textarea }, dictCommands),
     )
 
-    // Wrapping stays inside "implement", so the leading command is still intact.
-    setTextarea(textarea, '/implement', 1, 5)
+    // Wrapping stays inside "greet", so the leading command is still intact.
+    setTextarea(textarea, '/greet', 1, 4)
     expect(autocomplete.current.visible).toBe(false)
 
     act(() => {
       result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
     })
 
-    expect(textarea.value).toBe('/<this>impl</this>ement')
+    expect(textarea.value).toBe('/<this>gre</this>et')
     expect(autocomplete.current.visible).toBe(true)
     cleanup()
   })
@@ -605,19 +605,19 @@ describe('useChatKeyboard - picker consequence of dispatching', () => {
       useAutocomplete({ current: textarea }, dictCommands),
     )
 
-    setTextarea(textarea, '/implement extra', 1, 1)
+    setTextarea(textarea, '/greet extra', 1, 1)
     act(() => {
       textarea.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(autocomplete.current.visible).toBe(true)
 
     // Wrap "extra", well past the leading command's end - caret lands outside it.
-    setTextarea(textarea, '/implement extra', 11, 16)
+    setTextarea(textarea, '/greet extra', 7, 12)
     act(() => {
       result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
     })
 
-    expect(textarea.value).toBe('/implement <this>extra</this>')
+    expect(textarea.value).toBe('/greet <this>extra</this>')
     expect(autocomplete.current.visible).toBe(false)
     cleanup()
   })

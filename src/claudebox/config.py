@@ -4,7 +4,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
-from .constants import CLAUDEBOX_SETTINGS_FILE, CONFIG_DIR_NAME, DEFAULT_AGENT, DEFAULT_BACKEND
+from .constants import (
+    CLAUDEBOX_SETTINGS_FILE,
+    CONFIG_DIR_NAME,
+    DEFAULT_AGENT,
+    DEFAULT_BACKEND,
+    profile_dir,
+)
 from .core.fs import resolve_path, walk_up
 from .core.io import read_toml
 from .core.structures import DataClass, merge
@@ -81,7 +87,11 @@ class Config(DataClass):
         data = cls._load_config_files(work_dir)
 
         profile = data.get("profile")
-        profile = profile and resolve_path(profile)
+
+        if profile:
+            profile = resolve_path(profile)
+        elif profile_dir().is_dir():
+            profile = profile_dir()
 
         mounts = data.get("mounts")
         mounts = mounts and {resolve_path(k): resolve_path(v) for k, v in mounts.items()}

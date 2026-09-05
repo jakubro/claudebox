@@ -34,6 +34,9 @@ just outdated        # report current-vs-latest per direct dependency; never fai
 just test            # run all tests (python unit + frontend unit + frontend e2e + CLI e2e)
 just coverage        # all tests with coverage enforcement
 just build           # production build (frontend → dist/)
+just docs            # write docs/reference/{cli,shortcuts}.md from the CLI parser and the binding registry; golden-tested by check
+just site            # build the docs site (Astro/Starlight over docs/); its own job, not part of check
+just preview         # serve the docs site with live reload
 ```
 
 ### Python (ruff + ty + pytest)
@@ -66,6 +69,10 @@ when iterating on one file.
 tables against the filesystem and the registered routers, both directions - an entry naming a file
 that doesn't exist and a real file the doc omits are both failures. Its own fixture tests
 (`architecture-drift-check.test.js`, run via `node --test`) run ahead of it in `just lint`.
+
+`tests/lint/test_image_layer_table_drift.py` checks README.md's and ARCHITECTURE.md's image-layer
+tables against the Containerfile's real install steps, and the README's rebuild-control prose
+against `cmd_build.py`'s `--layer` choices - a fifth install layer or a renamed flag value fails it.
 
 ### Frontend (vite + vitest)
 
@@ -821,6 +828,31 @@ Regenerate reference images only when a change is intended to alter the
 rendered output, via `just update-e2e-app-snapshots` (runs the suite with
 `--update-snapshots`).
 
+### Documentation Screenshots
+
+Every image on a documentation page is recorded from the mock harness, never from a real session.
+
+```bash
+just docs-captures         # check the committed captures against the app; fails on drift
+just update-docs-captures  # re-record every one of them
+```
+
+- Captures live beside the pages that embed them (`docs/features/images/`, `docs/guide/images/`), one
+  PNG per capture, named for what it shows. The file Playwright writes IS the committed artifact -
+  the `docs` project's `snapshotPathTemplate` points there, so nothing is copied by hand.
+- ✅ **Always** pass the snapshot name as an array (`['features', 'images', 'x.png']`). A
+  slash-bearing string is sanitised and the capture lands flat in `docs/`.
+- ✅ **Always** compare at the default zero tolerance. The visual suite's one-percent allowance is
+  for antialiasing; a docs capture that drifts is a stale picture, and widening the tolerance hides
+  exactly the staleness the gate exists to catch.
+- ✅ **Always** drive state from a fixture with fixed timestamps. Anything reading the wall clock -
+  a running turn's elapsed counter above all - moves between runs and cannot be captured.
+- 🚫 **Never** mask a region: a mask paints a solid box into a PNG that ships. Choose a state with
+  nothing live in frame instead.
+- 🚫 **Never** capture a panel in its empty or error state unless the empty state is the subject.
+- Three captures per page is the ceiling, not a quota, and content is invented - no real workspace,
+  employer or personal vocabulary, and no `foo`/`test123` placeholders either.
+
 ### Principles
 
 **Test behavior, not implementation:**
@@ -1131,6 +1163,8 @@ def serialize(obj: Any) -> Any:
 | `@dataclass` | Data containers (Event, Config, SessionSummary) |
 | Regular class | Stateful/behavioral objects (Session, Pipeline, Backend) |
 | `enum.Enum` | Finite sets (BuildMode, NodeType) |
+
+Adding a field to `Config` means adding it to `etc/settings.sample.toml` too - `tests/claudebox/test_settings_sample_drift.py` fails the build otherwise.
 
 ### Constants
 

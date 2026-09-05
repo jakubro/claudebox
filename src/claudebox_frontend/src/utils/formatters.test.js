@@ -281,8 +281,8 @@ describe('formatUserMessageForCopy', () => {
     })
 
     it('formats command with args', () => {
-      const message = '<command-name>scope</command-name><command-args>add test</command-args>'
-      expect(formatUserMessageForCopy(message)).toBe('/scope add test')
+      const message = '<command-name>greet</command-name><command-args>add test</command-args>'
+      expect(formatUserMessageForCopy(message)).toBe('/greet add test')
     })
 
     it('formats command with empty args', () => {
@@ -291,15 +291,13 @@ describe('formatUserMessageForCopy', () => {
     })
 
     it('handles command with leading slash already present', () => {
-      const message =
-        '<command-name>/scope</command-name><command-args>claudebox web ui</command-args>'
-      expect(formatUserMessageForCopy(message)).toBe('/scope claudebox web ui')
+      const message = '<command-name>/greet</command-name><command-args>ada web ui</command-args>'
+      expect(formatUserMessageForCopy(message)).toBe('/greet ada web ui')
     })
 
     it('formats command with angle brackets in args', () => {
-      const message =
-        '<command-name>/scope</command-name><command-args>claudebox <web></command-args>'
-      expect(formatUserMessageForCopy(message)).toBe('/scope claudebox <web>')
+      const message = '<command-name>/greet</command-name><command-args>ada <web></command-args>'
+      expect(formatUserMessageForCopy(message)).toBe('/greet ada <web>')
     })
   })
 

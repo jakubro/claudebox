@@ -43,6 +43,24 @@ test.describe('Layout', () => {
       expect(ys['icon-logs']).toBeGreaterThan(ys['icon-boards'])
     })
 
+    // SPEC: layout:left-strip
+    // SPEC: layout:panel-order-left
+    test('containers sits at the bottom of the left strip, below sessions', async ({ page }) => {
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      const sessions = page.locator('[data-testid="icon-sessions"]')
+      const containers = page.locator('[data-testid="icon-containers"]')
+      await expect(containers).toBeVisible()
+
+      const sessionsBox = await sessions.boundingBox()
+      const containersBox = await containers.boundingBox()
+
+      // Equal x puts both on the same strip; the greater y puts containers in its bottom group.
+      expect(containersBox.x).toBe(sessionsBox.x)
+      expect(containersBox.y).toBeGreaterThan(sessionsBox.y)
+    })
+
     // SPEC: layout:right-strip
     test('right strip lists todos->stash->tasks->usage->mcp->commands->help top-to-bottom', async ({
       page,

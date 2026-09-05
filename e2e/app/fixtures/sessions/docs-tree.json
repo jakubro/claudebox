@@ -1,0 +1,58 @@
+{
+  "sessions": [
+    {
+      "session_id": "test-session-001",
+      "name": "reports rollup",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-5",
+      "num_turns": 9,
+      "total_cost_usd": 0.42,
+      "total_duration_ms": 214000,
+      "started_at": "2025-01-18T12:00:00Z",
+      "updated_at": "2025-01-18T12:24:00Z",
+      "first_message": "Loading the reports page takes twelve seconds.",
+      "last_message": "Reports open in about a quarter of a second.",
+      "parent_session_id": null,
+      "session_dir": "/tmp/sessions/reports-rollup",
+      "todos": [],
+      "commands": [],
+      "container_id": "test-cid"
+    },
+    {
+      "session_id": "fork-cache",
+      "name": "cache invalidation",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-5",
+      "num_turns": 4,
+      "total_cost_usd": 0.11,
+      "total_duration_ms": 62000,
+      "started_at": "2025-01-18T12:08:00Z",
+      "updated_at": "2025-01-18T12:16:00Z",
+      "first_message": "What invalidates the cached rollup?",
+      "last_message": "The writer, on every append.",
+      "parent_session_id": "test-session-001",
+      "session_dir": "/tmp/sessions/cache-invalidation",
+      "todos": [],
+      "commands": [],
+      "container_id": "cid-cache"
+    },
+    {
+      "session_id": "fork-index",
+      "name": "events index",
+      "workspace": "/home/user/project",
+      "model": "claude-sonnet-5",
+      "num_turns": 2,
+      "total_cost_usd": 0.03,
+      "total_duration_ms": 41000,
+      "started_at": "2025-01-18T12:18:00Z",
+      "updated_at": "2025-01-18T12:19:00Z",
+      "first_message": "Add the index on the events table",
+      "last_message": "Cold path is 1.4s with the index.",
+      "parent_session_id": "test-session-001",
+      "session_dir": "/tmp/sessions/events-index",
+      "todos": [],
+      "commands": [],
+      "container_id": "cid-index"
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "session_id": "test-session-001",
+  "name": "reports rollup",
+  "workspace": "/home/user/project",
+  "permission_mode": "default",
+  "model": "claude-sonnet-5",
+  "num_turns": 9,
+  "total_cost_usd": 0.42,
+  "total_duration_ms": 214000,
+  "last_context_tokens": 31000,
+  "context_window": 200000,
+  "started_at": "2025-01-18T12:00:00Z",
+  "updated_at": "2025-01-18T12:24:00Z",
+  "first_message": "Loading the reports page takes twelve seconds. Where is the time going?",
+  "last_message": "Reports open in about a quarter of a second.",
+  "todos": [],
+  "commands": {
+    "custom": [
+      {
+        "name": "review",
+        "usage": "/review <path>",
+        "description": "Read a change and report what it breaks"
+      },
+      {
+        "name": "changelog",
+        "usage": "/changelog",
+        "description": "Draft the entry for what landed today"
+      },
+      {
+        "name": "bench",
+        "usage": "/bench <endpoint>",
+        "description": "Measure cold and warm response times"
+      },
+      {
+        "name": "scaffold",
+        "usage": "/scaffold <name>",
+        "description": "Create a module from the house template"
+      }
+    ],
+    "mcp": [
+      {
+        "name": "search",
+        "usage": "/search <query>",
+        "description": "Query the documentation index"
+      }
+    ],
+    "builtin": [
+      {
+        "name": "compact",
+        "usage": "/compact",
+        "description": "Summarise the conversation so far"
+      }
+    ]
+  },
+  "session_dir": "/tmp/sessions/reports-rollup",
+  "parent_session_id": null,
+  "session_prompt": null,
+  "runtime_name": "Claude",
+  "capabilities": {
+    "supports_set_model_mid_session": true,
+    "supports_set_permission_mode": true,
+    "supports_set_effort_level": true,
+    "supports_pre_compact_hook": true,
+    "supports_mcp_delegation": true,
+    "supports_models": true,
+    "supports_effort_levels": true,
+    "supports_permission_modes": true,
+    "supports_skills": true,
+    "supports_context_usage": true,
+    "supports_cost_telemetry": true,
+    "supports_manual_compact": true,
+    "supports_session_fork": true,
+    "supports_session_rewind": true
+  }
+}

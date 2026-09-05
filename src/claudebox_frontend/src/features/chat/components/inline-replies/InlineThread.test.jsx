@@ -255,9 +255,9 @@ describe('InlineThread - shared text-editing keys', () => {
     const input = screen.getByTestId('inline-thread-input')
 
     await user.click(input)
-    await user.keyboard('/implement')
+    await user.keyboard('/greet')
 
-    expect(input.value).toBe('/implement')
+    expect(input.value).toBe('/greet')
     expect(document.querySelector('.command-autocomplete')).toBeNull()
   })
 

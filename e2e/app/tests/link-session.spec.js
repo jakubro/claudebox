@@ -10,8 +10,8 @@ import {
 } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
-// Test-only stand-in for the real allowlist: messages starting with "/scope" are allowed.
-const ALLOWED_PREFIX = '/scope'
+// Test-only stand-in for the real allowlist: messages starting with "/greet" are allowed.
+const ALLOWED_PREFIX = '/greet'
 
 /** Mock POST /sessions/new under the same all-or-nothing contract the daemon enforces. */
 function mockNewSessionAllowlist(page, { onRequest } = {}) {
@@ -49,11 +49,11 @@ test.describe('New Session From a Link', () => {
     const requests = []
     await mockNewSessionAllowlist(page, { onRequest: m => requests.push(m) })
 
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/scope+claudebox`)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/greet+ada`)
     await waitForAppReady(page)
 
     await expect.poll(() => page.url()).toContain(`/sessions/${DEFAULT_SESSION_ID}`)
-    expect(requests).toEqual([['/scope claudebox']])
+    expect(requests).toEqual([['/greet ada']])
   })
 
   // SPEC: url:link-send-order
@@ -61,11 +61,11 @@ test.describe('New Session From a Link', () => {
     const requests = []
     await mockNewSessionAllowlist(page, { onRequest: m => requests.push(m) })
 
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/scope+first&send=/scope+second`)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/greet+first&send=/greet+second`)
     await waitForAppReady(page)
 
     await expect.poll(() => requests.length).toBeGreaterThan(0)
-    expect(requests[0]).toEqual(['/scope first', '/scope second'])
+    expect(requests[0]).toEqual(['/greet first', '/greet second'])
   })
 
   // SPEC: url:link-allowlist
@@ -90,19 +90,17 @@ test.describe('New Session From a Link', () => {
   }) => {
     await mockNewSessionAllowlist(page)
 
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/scope+claudebox&send=/danger`)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/greet+ada&send=/danger`)
     await waitForAppReady(page)
 
-    await expect(page.locator('[data-testid="chat-input"]')).toHaveValue(
-      '/scope claudebox\n\n/danger',
-    )
+    await expect(page.locator('[data-testid="chat-input"]')).toHaveValue('/greet ada\n\n/danger')
   })
 
   // SPEC: url:link-consumed-once
   test('reloading the URL the link produced does not create a second session', async ({ page }) => {
     const getCallCount = await mockNewSessionAllowlist(page)
 
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/scope+claudebox`)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=/greet+ada`)
     await waitForAppReady(page)
     await expect.poll(() => page.url()).toContain(`/sessions/${DEFAULT_SESSION_ID}`)
     await expect.poll(getCallCount).toBe(1)
@@ -116,7 +114,7 @@ test.describe('New Session From a Link', () => {
   test('a link naming an unregistered workspace creates no session', async ({ page }) => {
     const getCallCount = await mockNewSessionAllowlist(page)
 
-    await page.goto('/#/workspaces/no-such-workspace?send=/scope+claudebox')
+    await page.goto('/#/workspaces/no-such-workspace?send=/greet+ada')
     await waitForAppReady(page)
 
     expect(getCallCount()).toBe(0)
@@ -126,7 +124,7 @@ test.describe('New Session From a Link', () => {
     const getCallCount = await mockNewSessionAllowlist(page)
 
     await page.goto(
-      `/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}?send=/scope+claudebox`,
+      `/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}?send=/greet+ada`,
     )
     await waitForAppReady(page)
 

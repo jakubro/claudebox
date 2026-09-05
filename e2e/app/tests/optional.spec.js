@@ -97,6 +97,12 @@ test.describe('Optional Features', () => {
       const tables = helpPanel.locator('table')
       const tableCount = await tables.count()
       expect(tableCount).toBeGreaterThan(1)
+
+      // The panel draws the whole binding registry, so bindings outside the composer reach it too.
+      const keys = await helpPanel.locator('.help-key').allTextContents()
+      for (const binding of ['Tab', 'Shift+Tab', 'Alt+PageUp / PageDown', 'Alt+Shift+← / →']) {
+        expect(keys).toContain(binding)
+      }
     })
   })
 

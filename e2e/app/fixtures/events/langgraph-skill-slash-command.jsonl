@@ -1,3 +1,3 @@
-{"type":"user","subtype":"text","is_human":true,"content":"<command-message>refine</command-message><command-name>/refine</command-name><command-args>break down this idea</command-args>","ts":"2026-06-08T11:05:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
-{"type":"assistant","subtype":"text","content":"Here's the idea broken down per the refine skill's structure.","ts":"2026-06-08T11:05:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"<command-message>greet</command-message><command-name>/greet</command-name><command-args>break down this idea</command-args>","ts":"2026-06-08T11:05:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Here's the idea broken down per the greet skill's structure.","ts":"2026-06-08T11:05:01Z","id":"evt_002","primary":true,"is_human":false}
 {"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-06-08T11:05:02Z","id":"evt_003","primary":false,"is_human":false}

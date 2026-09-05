@@ -36,9 +36,11 @@ class TestModels:
         assert "claude-opus-5" in ids
         assert ClaudeRuntime.get_default_model() == "claude-opus-5"
 
-    def test_fable_5_present(self):
-        ids = {m.id for m in ClaudeRuntime.get_models()}
-        assert {"claude-fable-5"} <= ids
+    def test_both_fable_ids_present_newest_first(self):
+        ids = [m.id for m in ClaudeRuntime.get_models()]
+        assert {"claude-fable-5-1", "claude-fable-5"} <= set(ids)
+        assert ids.index("claude-fable-5-1") < ids.index("claude-fable-5")
+        assert ClaudeRuntime.get_model_context_window("claude-fable-5-1") == 1_000_000
         assert ClaudeRuntime.get_model_context_window("claude-fable-5") == 1_000_000
 
     def test_no_explicit_1m_variant_ids(self):

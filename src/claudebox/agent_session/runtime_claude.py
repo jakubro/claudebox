@@ -235,6 +235,7 @@ class ClaudeRuntime:
     )
 
     AVAILABLE_MODELS: ClassVar[list[Model]] = [
+        Model(id="claude-fable-5-1", name="Fable 5.1", context_window=1_000_000),
         Model(id="claude-fable-5", name="Fable 5", context_window=1_000_000),
         Model(id="claude-opus-5", name="Opus 5", context_window=1_000_000),
         Model(id="claude-sonnet-5", name="Sonnet 5", context_window=1_000_000),

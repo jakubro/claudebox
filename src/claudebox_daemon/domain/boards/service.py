@@ -356,7 +356,7 @@ class BoardService:
 
         for template in prompt_sequence:
             if single:
-                # Single ticket: substitutes the path, preserving ``/implement <path>`` shape.
+                # Single ticket: substitutes the path, preserving the ``<prompt> <path>`` shape.
                 message = template.replace("{ticket}", ticket_paths[0])
             else:
                 # Multi-ticket: newline-prefixed list like a human batch-listing tickets; strips

@@ -1,0 +1,359 @@
+# Claudebox CLI reference
+
+Complete `--help` for `claudebox` and every verb it registers, captured from the parser itself.
+This file is generated - run `just docs` to bring it back in step after changing a verb's
+description, its options or its epilog.
+
+## `claudebox`
+
+```text
+Usage: claudebox [-h] [-v] <command> ...
+
+Run AI coding agents in a containerized dev environment.
+
+Positional Arguments:
+  <command>
+    run          Launch agent session in container
+    build        Build container image
+    update       Update Claudebox itself (re-runs install.sh)
+    shell        Open bash shell in fresh container
+    prune        Remove stopped containers, dangling images, stale dirs
+    logs         Stream logs (daemon | all)
+    status       Show daemon + containers + workspace state
+    doctor       Diagnose environment
+    version      Print version
+    daemon       Manage host daemon (start|stop|restart|status)
+    containers   Manage containers (list|stop|kill)
+    workspaces   Manage registered workspaces (list|register|deregister)
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+run "claudebox <command> --help" for command-specific help
+
+see also:
+  https://github.com/jakubro/claudebox
+
+install:
+  <branch> (<commit>) @ <path>
+```
+
+## `claudebox run`
+
+```text
+Usage: claudebox run [-h] [-v] ...
+
+Launch agent session in container
+
+Positional Arguments:
+  agent_args     Arguments forwarded to the agent (place after `--`)
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox run                  launch interactive agent session
+  claudebox run -- --resume      resume the most recent agent conversation
+  claudebox run -- -p "prompt"   run a non-interactive prompt through the agent
+
+Arguments:
+  Everything after `--` is forwarded to the agent wrapper inside the container.
+
+Notes:
+  The project root is found by walking up for a `.workspace` marker, falling back to
+  the current directory when there is none - no error, no prompt, and no automatic
+  registration with the daemon.
+```
+
+## `claudebox build`
+
+```text
+Usage: claudebox build [-h] [-v] [--layer {all,agent}]
+
+Build container image
+
+Options:
+  -h, --help           show this help message and exit
+  -v, --verbose        Increase output verbosity (verb-dependent - see per-verb help)
+  --layer {all,agent}  Which image layer to rebuild (default: cached build)
+
+Examples:
+  claudebox build                cached build (reuses all layers)
+  claudebox build --layer all    full rebuild from base
+  claudebox build --layer agent  rebuild agent layer only
+```
+
+## `claudebox update`
+
+```text
+Usage: claudebox update [-h] [-v]
+
+Update Claudebox itself (re-runs install.sh)
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox update               refresh Claudebox itself
+  claudebox -v update            forward --verbose to install.sh
+
+Notes:
+  Spawns `~/.claudebox/lib/bin/install.sh`, surfaces its output live, and propagates
+  its exit code. Concurrent invocations are blocked by install.sh's lock - the second
+  exits non-zero immediately.
+
+Build vs update:
+  build   rebuilds the container image (the agent layer inside it)
+  update  refreshes Claudebox's own library on the host
+```
+
+## `claudebox shell`
+
+```text
+Usage: claudebox shell [-h] [-v]
+
+Open bash shell in fresh container
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox shell                open a shell in a fresh container
+```
+
+## `claudebox prune`
+
+```text
+Usage: claudebox prune [-h] [-v]
+
+Remove stopped containers, dangling images, stale dirs
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox prune                summary count only
+  claudebox -v prune             list each removed item
+
+Removes:
+  stale session and temp directories under ~/.claudebox and /tmp
+  dangling claudebox container images
+  stopped claudebox containers (typically none under auto-removal)
+
+Notes:
+  Each removal is independent: a failure in one category does not abort the rest.
+  The command exits non-zero if any item failed.
+```
+
+## `claudebox logs`
+
+```text
+Usage: claudebox logs [-h] [-v] [--tail TAIL] [--no-follow] [{daemon,all}]
+
+Stream logs (daemon | all)
+
+Positional Arguments:
+  {daemon,all}   Log source (default: daemon)
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+  --tail TAIL    Number of trailing lines to backfill before following (default: 100)
+  --no-follow    Print the backfilled lines and exit instead of following
+
+Examples:
+  claudebox logs                    tail daemon log, then follow
+  claudebox logs daemon             same as above (explicit target)
+  claudebox logs --tail 50          backfill 50 lines, then follow
+  claudebox logs --tail 50 --no-follow   backfill 50 lines and exit
+  claudebox logs all                multiplex daemon log + every container's stream
+  claudebox logs all --no-follow    backfill across daemon + containers, then exit
+
+Prefixes (on the `all` target):
+  [daemon]            cyan prefix for daemon-log lines
+  [container <id>]    magenta prefix for container lines (12-char short id)
+
+Notes:
+  Reads `~/.claudebox/logs/daemon-<port>.log`. When the daemon is not running, the
+  backfill prints and the command exits without following. When the log file is
+  missing entirely, `no daemon logs available` prints and the command exits 0.
+
+  Each record occupies exactly one line: date and time, level, logger name, and any
+  extra fields. Errors appear red, warnings yellow, regular lines default; colour is
+  suppressed under NO_COLOR or when output is not a terminal.
+
+  On the `all` target, containers that start later are picked up while running, and a
+  short notice names each container as it starts and stops streaming.
+```
+
+## `claudebox status`
+
+```text
+Usage: claudebox status [-h] [-v]
+
+Show daemon + containers + workspace state
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox status               three rows: DAEMON, CONTAINERS, WORKSPACE
+
+Rows:
+  DAEMON      running or stopped, with pid + uptime when running
+  CONTAINERS  aggregate counts across all registered workspaces
+  WORKSPACE   resolved workspace for the current directory, plus its registration
+              state (its id, or `not yet registered`)
+
+Notes:
+  When the daemon is not running, CONTAINERS falls back to direct runtime queries and
+  WORKSPACE reads `~/.claudebox/daemon.json` directly. Exit code is always 0 - status
+  is a query.
+```
+
+## `claudebox doctor`
+
+```text
+Usage: claudebox doctor [-h] [-v]
+
+Diagnose environment
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox doctor               run all environment checks
+  claudebox -v doctor            show the probe command behind each check
+
+Checks (in order, one row each):
+  runtime, runtime info, uv, daemon http, daemon unit, watchdog timer,
+  ~/.claudebox/lib, profile, workspace (.workspace marker), permissions,
+  disk (/tmp free)
+
+Icons:
+  ✓  the check passed
+  ✗  the check failed
+  ○  informational only (no profile configured, no workspace marker)
+
+Notes:
+  Exit code is 1 if any check failed, 0 otherwise.
+```
+
+## `claudebox version`
+
+```text
+Usage: claudebox version [-h] [-v]
+
+Print version
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox version              print version, branch, commit, install path, python
+```
+
+## `claudebox daemon`
+
+```text
+Usage: claudebox daemon [-h] [-v] <action> ...
+
+Manage host daemon (start|stop|restart|status)
+
+Positional Arguments:
+  <action>
+    start        Start the host daemon
+    stop         Stop the host daemon
+    restart      Restart the host daemon
+    status       Show daemon state
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox daemon start         start the host daemon
+  claudebox daemon stop          stop the host daemon
+  claudebox daemon restart       atomic restart (no-downtime when possible)
+  claudebox daemon status        one-line state with pid + uptime
+
+Notes:
+  Actions are systemd --user wrappers around `claudebox-daemon.service`.
+
+  Bare `claudebox daemon` prints this list and exits non-zero.
+```
+
+## `claudebox containers`
+
+```text
+Usage: claudebox containers [-h] [-v] <action> ...
+
+Manage containers (list|stop|kill)
+
+Positional Arguments:
+  <action>
+    list         Enumerate all containers across all workspaces
+    stop         SIGTERM a container (10s grace) - accepts <id>, prefix, or all
+    kill         SIGKILL a container immediately - accepts <id>, prefix, or all
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox containers list                  table across all workspaces
+  claudebox containers stop abc123456789     SIGTERM by full id
+  claudebox containers stop abc1             SIGTERM by unique prefix
+  claudebox containers kill abc1             SIGKILL immediately
+  claudebox containers stop all              graceful stop every running container
+  claudebox containers kill all              hard-kill every running container
+
+Notes:
+  Prefix resolution is CLI-side: an ambiguous prefix surfaces the matching rows in
+  containers-list format and exits non-zero.
+
+  `all` filters to running containers labeled app=claudebox and fans out concurrently.
+  Partial failures are reported per container; the command exits non-zero if any failed.
+```
+
+## `claudebox workspaces`
+
+```text
+Usage: claudebox workspaces [-h] [-v] <action> ...
+
+Manage registered workspaces (list|register|deregister)
+
+Positional Arguments:
+  <action>
+    list         Enumerate registered workspaces
+    register     Register a workspace (defaults to cwd); creates .workspace marker if missing
+    deregister   Remove a workspace from the daemon's registry (.workspace marker preserved)
+
+Options:
+  -h, --help     show this help message and exit
+  -v, --verbose  Increase output verbosity (verb-dependent - see per-verb help)
+
+Examples:
+  claudebox workspaces list                  table of all registered workspaces
+  claudebox workspaces register              register cwd as a workspace
+  claudebox workspaces register ~/dev/bar    register a specific path
+  claudebox workspaces deregister foo        remove from the daemon's registry
+
+Notes:
+  Register creates the `.workspace` marker file if absent, then registers with the
+  daemon. Re-registering an already-registered path is idempotent and exits 0.
+  Basename collisions are disambiguated by an 8-char path-hash suffix on the id.
+
+  Deregister removes the workspace from the daemon's registry only - the `.workspace`
+  marker file on disk is preserved.
+
+  Bare `claudebox workspaces` prints this list and exits non-zero.
+```

@@ -16,7 +16,7 @@ import {
   waitForAppReady,
   waitForMobileReady,
 } from '../helpers.js'
-import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
+import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI, mockBoards } from '../mocks/api.js'
 import {
   createDaemonSSEController,
   createLogsSSEController,
@@ -828,26 +828,30 @@ test.describe('Visual Regression - Side Panels', () => {
     await waitForAppReady(page)
 
     await openLogsPanel(page)
+    // Epoch seconds, the shape the log stream carries; anything else renders as "Invalid Date".
     await logs.sendLog({
-      timestamp: '2025-01-18T12:00:00.000Z',
+      timestamp: 1737201600,
       level: 'info',
       logger: 'claudebox.session',
       message: 'Session started successfully',
     })
     await logs.sendLog({
-      timestamp: '2025-01-18T12:00:01.000Z',
+      timestamp: 1737201601,
       level: 'debug',
       logger: 'claudebox.pipeline',
       message: 'Processing event batch (5 events)',
     })
     await logs.sendLog({
-      timestamp: '2025-01-18T12:00:02.000Z',
+      timestamp: 1737201602,
       level: 'error',
       logger: 'claudebox.containers',
       message: 'Container health check failed: timeout',
     })
 
-    await expect(page.locator('.logs-panel')).toHaveScreenshot('panel-logs.png', OPTS)
+    const panel = page.locator('.logs-panel')
+    await expect(panel.locator('.log-timestamp')).toHaveText(['12:00:00', '12:00:01', '12:00:02'])
+
+    await expect(panel).toHaveScreenshot('panel-logs.png', OPTS)
   })
 
   test('stash panel with items', async ({ page }) => {
@@ -1128,26 +1132,23 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
 
   test('workspace switcher with multiple workspaces', async ({ page }) => {
     await mockSSE(page, 'events/simple-chat.jsonl')
-    await page.route('**/api/workspaces', async route => {
-      await route.fulfill({
-        json: {
-          workspaces: [
-            { id: 'ws-main', path: '/home/user/project', name: 'project' },
-            { id: 'ws-docs', path: '/home/user/docs', name: 'docs' },
-            { id: 'ws-infra', path: '/home/user/infrastructure', name: 'infrastructure' },
-          ],
-        },
-      })
+    await mockAPI(page, {
+      workspaces: [
+        { id: DEFAULT_WORKSPACE_ID, path: '/home/user/project', name: 'project' },
+        { id: 'ws-docs', path: '/home/user/docs', name: 'docs' },
+        { id: 'ws-infra', path: '/home/user/infrastructure', name: 'infrastructure' },
+      ],
     })
-    await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
 
-    const switcher = page.locator('[data-testid="workspace-switcher"]')
-    await switcher.click()
-    await page.waitForTimeout(200)
+    await page.locator('[data-testid="workspace-switcher"]').click()
+    const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
+    await expect(dropdown.locator('.workspace-switcher-option')).toHaveCount(3)
 
-    await expect(page).toHaveScreenshot('workspace-switcher-open.png', OPTS)
+    // The dropdown, not the viewport: the whole list is a fraction of a percent of a full frame,
+    // which this suite's one-percent tolerance absorbs entirely.
+    await expect(dropdown).toHaveScreenshot('workspace-switcher-open.png', OPTS)
   })
 })
 
@@ -1549,69 +1550,6 @@ test.describe('Visual Regression - Special States', () => {
 
 // --- Boards ---
 
-const BOARDS_WS_PREFIX = `/api/workspaces/${DEFAULT_WORKSPACE_ID}`
-
-const BOARD_LIST = {
-  boards: [{ id: 'sprint-1', name: 'sprint-1', path: 'docs/tickets/board.yaml' }],
-}
-
-const BOARD_DETAIL = {
-  id: 'sprint-1',
-  name: 'sprint-1',
-  yaml_path: '/workspace/docs/tickets/board.yaml',
-  prompt: {},
-  states: [
-    { id: 'backlog', label: 'Backlog', folder: 'backlog', terminal: false },
-    { id: 'in-progress', label: 'In Progress', folder: 'in-progress', terminal: false },
-    { id: 'review', label: 'Review', folder: 'review', terminal: false },
-    { id: 'done', label: 'Done', folder: 'completed', terminal: true },
-  ],
-  swimlanes: [
-    { id: 'frontend', name: 'Frontend' },
-    { id: 'backend', name: 'Backend' },
-  ],
-  columns: {
-    backlog: [
-      { path: 'docs/tickets/active/setup.md', title: 'Setup infra', swimlane: 'frontend' },
-      { path: 'docs/tickets/active/boards.md', title: 'Boards', swimlane: 'backend' },
-    ],
-    'in-progress': [
-      {
-        path: 'docs/tickets/active/polish.md',
-        title: 'Polish UI',
-        swimlane: 'frontend',
-        session: 'session-001',
-      },
-    ],
-    review: [],
-    done: [{ path: 'docs/tickets/active/init.md', title: 'Init project' }],
-  },
-}
-
-/** Inline board API mock for visual regression - kept self-contained. */
-async function mockBoardsForVisuals(page) {
-  await page.route(`**${BOARDS_WS_PREFIX}/boards`, async route => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({ json: BOARD_LIST })
-    } else {
-      await route.continue()
-    }
-  })
-  await page.route(new RegExp(`${BOARDS_WS_PREFIX}/boards/[^/]+$`), async route => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({ json: BOARD_DETAIL })
-    } else {
-      await route.continue()
-    }
-  })
-  await page.route(
-    new RegExp(`${BOARDS_WS_PREFIX}/boards/[^/]+/tickets/.+/content`),
-    async route => {
-      await route.fulfill({ body: '# Setup infra\n\nTicket body content for the visual test.' })
-    },
-  )
-}
-
 /** Lighter-weight ready check for board routes - the boards URL has no active session so waitForAppReady's chat-input enabled wait stalls; this waits for footer + workspace label + fonts only. */
 async function waitForBoardReady(page) {
   await expect(page.locator('[data-testid="footer"]')).toBeVisible()
@@ -1623,7 +1561,7 @@ test.describe('Visual Regression - Boards', () => {
   test('board view - kanban with swimlanes', async ({ page }) => {
     await mockSSE(page)
     await mockAPI(page)
-    await mockBoardsForVisuals(page)
+    await mockBoards(page)
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
     await waitForBoardReady(page)
 
@@ -1634,7 +1572,7 @@ test.describe('Visual Regression - Boards', () => {
   test('board view - terse density', async ({ page }) => {
     await mockSSE(page)
     await mockAPI(page)
-    await mockBoardsForVisuals(page)
+    await mockBoards(page)
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1?density=terse`)
     await waitForBoardReady(page)
 
@@ -1645,7 +1583,7 @@ test.describe('Visual Regression - Boards', () => {
   test('board view - ticket detail overlay open', async ({ page }) => {
     await mockSSE(page)
     await mockAPI(page)
-    await mockBoardsForVisuals(page)
+    await mockBoards(page)
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
     await waitForBoardReady(page)
 

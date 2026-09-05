@@ -39,13 +39,13 @@ test.describe('LangGraph Skill', () => {
     // The typed command renders with the same slash-command styling Claude workspaces use.
     const slashToken = page.locator('.slash-command').first()
     await expect(slashToken).toBeVisible()
-    await expect(slashToken).toHaveText('/refine')
+    await expect(slashToken).toHaveText('/greet')
     await expect(page.getByText('break down this idea')).toBeVisible()
 
     // No tool block for this turn - the skill's instructions became the model's own turn text.
     await expect(page.locator('[data-testid="tool-block"]')).toHaveCount(0)
     await expect(
-      page.getByText("Here's the idea broken down per the refine skill's structure."),
+      page.getByText("Here's the idea broken down per the greet skill's structure."),
     ).toBeVisible()
   })
 })

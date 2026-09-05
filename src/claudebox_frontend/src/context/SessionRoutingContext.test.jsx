@@ -319,10 +319,10 @@ describe('useSessionRouting', () => {
   })
 
   it('consumeSendMessages strips send from the hash and clears sendMessages', () => {
-    window.location.hash = '#/workspaces/ws?send=/scope+claudebox'
+    window.location.hash = '#/workspaces/ws?send=/greet+ada'
 
     const { result } = renderHook(() => useSessionRouting(), { wrapper })
-    expect(result.current.sendMessages).toEqual(['/scope claudebox'])
+    expect(result.current.sendMessages).toEqual(['/greet ada'])
 
     act(() => {
       result.current.consumeSendMessages()
@@ -395,19 +395,19 @@ describe('parseHash', () => {
   })
 
   it('extracts ordered send values on the workspace-only form', () => {
-    const parsed = parseHash('#/workspaces/ws?send=/scope+claudebox&send=go')
+    const parsed = parseHash('#/workspaces/ws?send=/greet+ada&send=go')
 
-    expect(parsed.sendMessages).toEqual(['/scope claudebox', 'go'])
+    expect(parsed.sendMessages).toEqual(['/greet ada', 'go'])
   })
 
   it('ignores send on the session form', () => {
-    const parsed = parseHash('#/workspaces/ws/sessions/sess?send=/scope+claudebox')
+    const parsed = parseHash('#/workspaces/ws/sessions/sess?send=/greet+ada')
 
     expect(parsed.sendMessages).toEqual([])
   })
 
   it('ignores send on the board form', () => {
-    const parsed = parseHash('#/workspaces/ws/boards/my-board?send=/scope+claudebox')
+    const parsed = parseHash('#/workspaces/ws/boards/my-board?send=/greet+ada')
 
     expect(parsed.sendMessages).toEqual([])
   })

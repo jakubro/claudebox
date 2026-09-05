@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './tests',
   // A project's own testIgnore/testMatch replaces this, so each must repeat it or demo-video runs.
-  testIgnore: ['**/demo-video*'],
+  testIgnore: ['**/demo-video*', '**/docs-captures*'],
 
   workers: process.env.CLAUDEBOX_AGENT ? '20%' : '20%',
   fullyParallel: true,
@@ -27,12 +27,25 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
+    // Pinned so a shot carrying a clock reads the same everywhere, not in the runner's own zone.
+    timezoneId: 'UTC',
   },
 
   projects: [
     {
       name: 'desktop',
-      testIgnore: ['**/mobile.spec.js', '**/demo-video*'],
+      testIgnore: ['**/mobile.spec.js', '**/demo-video*', '**/docs-captures*'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Documentation screenshots. The template drops the project and platform tokens and points at
+      // docs/, so what the pages embed IS the baseline rather than a copy kept in step by hand.
+      name: 'docs',
+      testMatch: ['**/docs-captures*'],
+      // A project inherits the top-level testIgnore unless it declares its own, and that one names
+      // this spec - without this line the project resolves to no tests at all.
+      testIgnore: ['**/demo-video*'],
+      snapshotPathTemplate: '../../docs/{arg}{ext}',
       use: { ...devices['Desktop Chrome'] },
     },
     {

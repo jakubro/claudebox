@@ -12,13 +12,13 @@ describe('TABS', () => {
 describe('categorizeCommands', () => {
   it('builds custom, mcp, builtin, and all categories', () => {
     const commands = {
-      custom: [{ name: 'scope' }, { name: 'implement' }],
+      custom: [{ name: 'greet' }, { name: 'farewell' }],
       mcp: [{ name: 'mcp__jina__search' }],
       builtin: [{ name: 'compact' }, { name: 'cost' }],
     }
     const result = categorizeCommands(commands)
 
-    expect(result.custom).toEqual([{ name: 'scope' }, { name: 'implement' }])
+    expect(result.custom).toEqual([{ name: 'greet' }, { name: 'farewell' }])
     expect(result.mcp).toEqual([{ name: 'mcp__jina__search' }])
     expect(result.builtin).toEqual([{ name: 'compact' }, { name: 'cost' }])
     expect(result.all).toHaveLength(5)
@@ -26,14 +26,14 @@ describe('categorizeCommands', () => {
 
   it('passes through object entries with metadata', () => {
     const commands = {
-      custom: [{ name: 'scope', usage: '/scope [target]', description: 'Set scope' }],
+      custom: [{ name: 'greet', usage: '/greet [name]', description: 'Greet by name' }],
       mcp: [],
       builtin: [],
     }
     const result = categorizeCommands(commands)
 
     expect(result.custom).toEqual([
-      { name: 'scope', usage: '/scope [target]', description: 'Set scope' },
+      { name: 'greet', usage: '/greet [name]', description: 'Greet by name' },
     ])
   })
 
@@ -59,14 +59,14 @@ describe('categorizeCommands', () => {
 describe('flattenCommands', () => {
   it('flattens categorized commands with category metadata', () => {
     const categorized = {
-      custom: [{ name: 'scope', description: 'Set scope' }],
+      custom: [{ name: 'greet', description: 'Greet by name' }],
       mcp: [{ name: 'mcp__jina__search' }],
       builtin: [{ name: 'compact' }],
     }
     const result = flattenCommands(categorized)
 
     expect(result).toEqual([
-      { name: 'scope', description: 'Set scope', category: 'custom' },
+      { name: 'greet', description: 'Greet by name', category: 'custom' },
       { name: 'compact', category: 'builtin' },
       { name: 'mcp__jina__search', category: 'mcp' },
     ])
@@ -81,7 +81,7 @@ describe('flattenCommands', () => {
   it('excludes non-invocable commands when option set', () => {
     const categorized = {
       custom: [
-        { name: 'scope', user_invocable: true },
+        { name: 'greet', user_invocable: true },
         { name: 'internal', user_invocable: false },
       ],
       mcp: [],
@@ -89,7 +89,7 @@ describe('flattenCommands', () => {
     }
     const result = flattenCommands(categorized, { excludeNonInvocable: true })
 
-    expect(result.map(r => r.name)).toEqual(['scope', 'compact'])
+    expect(result.map(r => r.name)).toEqual(['greet', 'compact'])
   })
 
   it('includes non-invocable commands by default', () => {

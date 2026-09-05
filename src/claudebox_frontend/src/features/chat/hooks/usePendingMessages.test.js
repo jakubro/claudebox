@@ -190,10 +190,9 @@ describe('usePendingMessages', () => {
       initialProps: { events: EMPTY_EVENTS },
     })
 
-    // User types /thoughts followed by newlines and args
     act(() => {
       vi.setSystemTime(1000)
-      result.current.addPendingMessage('/thoughts \n\n<this>and what about this</this>?')
+      result.current.addPendingMessage('/greet \n\n<this>and what about this</this>?')
     })
 
     act(() => {
@@ -206,7 +205,7 @@ describe('usePendingMessages', () => {
         type: 'user',
         is_human: true,
         content:
-          '<command-name>/thoughts</command-name><command-args>\n\n<this>and what about this</this>?</command-args>',
+          '<command-name>/greet</command-name><command-args>\n\n<this>and what about this</this>?</command-args>',
         timestamp: 1100,
       },
     ]

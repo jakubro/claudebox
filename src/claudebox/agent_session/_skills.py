@@ -13,6 +13,7 @@ from ruamel.yaml import YAML
 
 from .catalogs import Skill
 from ..constants import claude_commands_dir, claude_skills_dir
+from ..core.logging import get_logger
 
 
 _yaml = YAML(typ="safe")
@@ -27,7 +28,13 @@ def walk_skills(
     Defaults to in-container bind-mount paths (`claude_commands_dir()`/`claude_skills_dir()`);
     daemon callers pass profile-relative paths. Resolved at call time so test monkeypatching of
     `Path.home()` takes effect (see GUIDELINES.md "Home-derived paths").
+
+    A `commands_dir` file whose frontmatter fails to parse is dropped and logged with the reason.
     """
+
+    # Resolved here, not at module scope: a module-level get_logger() runs configure_logging()
+    # at import time and its once-only guard then blocks the daemon's own console reconfigure.
+    logger = get_logger(__name__)
 
     commands_dir = commands_dir or claude_commands_dir()
     skills_dir = skills_dir or claude_skills_dir()
@@ -42,6 +49,12 @@ def walk_skills(
 
                 if skill:
                     metadata[skill.name] = skill
+                else:
+                    logger.warning(
+                        "command_frontmatter_invalid",
+                        path=str(md_file),
+                        reason=_frontmatter_failure_reason(content),
+                    )
             except OSError:
                 continue
 
@@ -190,6 +203,25 @@ def extract_body(content: str) -> str:
         body_start += 1
 
     return content[body_start:]
+
+
+def _frontmatter_failure_reason(content: str) -> str:
+    """Classify why `parse_frontmatter` rejected `content`, for the discovery-drop log line."""
+
+    if not content.startswith("---"):
+        return "no frontmatter"
+
+    end = content.find("---", 3)
+
+    if end == -1:
+        return "unterminated frontmatter"
+
+    fm = _yaml.load(content[3:end])
+
+    if not isinstance(fm, dict) or not fm.get("name"):
+        return "frontmatter missing 'name'"
+
+    return "unknown"
 
 
 __all__ = [

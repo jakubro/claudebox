@@ -36,16 +36,16 @@ describe('UserMessageContent', () => {
 
   it('renders slash command with args', () => {
     render(
-      <UserMessageContent message="<command-name>/scope</command-name><command-args>src/app</command-args>" />,
+      <UserMessageContent message="<command-name>/greet</command-name><command-args>src/app</command-args>" />,
     )
 
-    expect(screen.getByText(/\/scope/)).toBeInTheDocument()
+    expect(screen.getByText(/\/greet/)).toBeInTheDocument()
     expect(screen.getByText(/src\/app/)).toBeInTheDocument()
   })
 
   it('wraps slash command + args in a single message-content bubble', () => {
     const { container } = render(
-      <UserMessageContent message="<command-name>/scope</command-name><command-args>src/app</command-args>" />,
+      <UserMessageContent message="<command-name>/greet</command-name><command-args>src/app</command-args>" />,
     )
 
     // One outer .message-content bubble, not two: an inline slash token can't be split by display: block.
@@ -164,12 +164,12 @@ describe('UserMessageContent', () => {
     const attachments = [{ name: 'image.jpg', type: 'image/jpeg', data: '/9j/4AAQ=' }]
     render(
       <UserMessageContent
-        message="<command-name>/scope</command-name><command-args>src</command-args>"
+        message="<command-name>/greet</command-name><command-args>src</command-args>"
         attachments={attachments}
       />,
     )
 
-    expect(screen.getByText(/\/scope/)).toBeInTheDocument()
+    expect(screen.getByText(/\/greet/)).toBeInTheDocument()
     expect(screen.getByAltText('image.jpg')).toBeInTheDocument()
   })
 

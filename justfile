@@ -19,7 +19,7 @@ RUN_BOUNDED := justfile_directory() / "scripts/run-bounded.sh"
 default:
     @just --list
 
-# ─── Composite ──────────────────────────────────────────
+# --- Composite ------------------------------------------
 
 # Install all dependencies
 install: install-py install-shared-js install-fe install-e2e-app
@@ -36,7 +36,7 @@ test: test-py test-fe test-e2e-cli test-e2e-app
 # Run all tests with coverage
 coverage: test-py-cov test-fe-cov test-e2e-app test-e2e-cov
 
-# ─── Python ─────────────────────────────────────────────
+# --- Python ---------------------------------------------
 
 # Install Python dependencies
 [group('python')]
@@ -53,14 +53,14 @@ test-py *ARGS:
 test-py-cov *ARGS:
     just test-py --cov=src --cov-report=term-missing {{ ARGS }}
 
-# ─── JS ─────────────────────────────────────────────────
+# --- JS -------------------------------------------------
 
 # Install JS lint tooling
 [group('js')]
 install-shared-js:
     npm ci 2>&1 | tee /tmp/claudebox--install-shared-js.log
 
-# ─── Frontend ───────────────────────────────────────────
+# --- Frontend -------------------------------------------
 
 # Install frontend dependencies
 [group('frontend')]
@@ -86,7 +86,7 @@ test-fe *ARGS:
 test-fe-cov:
     just test-fe --coverage
 
-# ─── E2E ───────────────────────────────────────────────
+# --- E2E -----------------------------------------------
 
 # Install E2E dependencies
 [group('e2e/app')]
@@ -118,7 +118,19 @@ test-e2e-cov:
 update-e2e-app-snapshots:
     npx playwright test visual-regression --update-snapshots=all 2>&1 | tee /tmp/claudebox--update-e2e-app-snapshots.log
 
-# ─── Test UI (In-Container) ────────────────────────────
+# Check the documentation screenshots against the app; fails on drift, naming the stale capture
+[group('e2e/app')]
+[working-directory('e2e/app')]
+docs-captures *ARGS: build-fe
+    npx playwright test --project=docs {{ ARGS }} 2>&1 | tee /tmp/claudebox--docs-captures.log
+
+# Re-record every documentation screenshot from the mock harness
+[group('e2e/app')]
+[working-directory('e2e/app')]
+update-docs-captures *ARGS: build-fe
+    npx playwright test --project=docs --update-snapshots=all {{ ARGS }} 2>&1 | tee /tmp/claudebox--update-docs-captures.log
+
+# --- Test UI (In-Container) ----------------------------
 
 # Start test UI environment
 [group('test-ui')]
@@ -140,7 +152,7 @@ test-ui-browse *ARGS:
 test-ui-run SCRIPT *ARGS:
     UV_PROJECT_ENVIRONMENT="/tmp/claudebox-test/.venv" uv run --directory "{{ justfile_directory() }}" {{ SCRIPT }} {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-ui-run.log
 
-# ─── Demo ───────────────────────────────────────────────
+# --- Demo -----------------------------------------------
 
 # Record and assemble the README demo GIF (docs/demo.gif) from a fresh run
 [group('demo')]
@@ -150,7 +162,32 @@ demo: (build-fe)
     npx playwright test --config=playwright.demo.config.js --reporter=list 2>&1 | tee /tmp/claudebox--demo-record.log
     uv run --directory "{{ justfile_directory() }}" --script scripts/demo-gif.py --frames-dir /tmp/claudebox--demo-frames --output docs/demo.gif 2>&1 | tee /tmp/claudebox--demo-gif.log
 
-# ─── Lint ───────────────────────────────────────────────
+# --- Docs -----------------------------------------------
+
+# Regenerate the generated reference pages from the CLI parser and the binding registry
+[group('docs')]
+docs:
+    rm -f /tmp/claudebox--docs.log
+    PYTHONPATH="{{ justfile_directory() }}/src" {{ UV_RUN }} python scripts/gen-cli-docs.py 2>&1 | tee -a /tmp/claudebox--docs.log
+    node scripts/gen-shortcuts-docs.js 2>&1 | tee -a /tmp/claudebox--docs.log
+
+# --- Site -----------------------------------------------
+
+# Build the documentation site (Astro + Starlight over docs/); its own job, not part of check
+[group('site')]
+[working-directory('site')]
+site:
+    npm ci 2>&1 | tee /tmp/claudebox--site.log
+    npm run build 2>&1 | tee -a /tmp/claudebox--site.log
+
+# Serve docs/ with live reload at the configured base; HOST=0.0.0.0 to reach it from outside
+[group('site')]
+[working-directory('site')]
+preview HOST="127.0.0.1" PORT="4321":
+    npm ci
+    npm run dev -- --host {{ HOST }} --port {{ PORT }}
+
+# --- Lint -----------------------------------------------
 
 # Lint all code
 lint:

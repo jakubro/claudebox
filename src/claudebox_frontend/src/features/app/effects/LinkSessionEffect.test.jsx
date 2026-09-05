@@ -89,7 +89,7 @@ describe('LinkSessionEffect', () => {
   })
 
   it('waits for workspace discovery to finish before acting', () => {
-    mockSendMessages = ['/scope claudebox']
+    mockSendMessages = ['/greet ada']
     mockLoading = true
 
     render()
@@ -99,7 +99,7 @@ describe('LinkSessionEffect', () => {
   })
 
   it('consumes silently when the named workspace is not registered', () => {
-    mockSendMessages = ['/scope claudebox']
+    mockSendMessages = ['/greet ada']
     mockActiveWorkspaceId = 'unknown-ws'
     mockWorkspaces = [{ id: 'ws' }]
     mockWorkspaceId = 'ws'
@@ -112,7 +112,7 @@ describe('LinkSessionEffect', () => {
   })
 
   it('switches workspace first when the link names a different registered one, without creating yet', () => {
-    mockSendMessages = ['/scope claudebox']
+    mockSendMessages = ['/greet ada']
     mockActiveWorkspaceId = 'other-ws'
     mockWorkspaces = [{ id: 'ws' }, { id: 'other-ws' }]
     mockWorkspaceId = 'ws'
@@ -125,7 +125,7 @@ describe('LinkSessionEffect', () => {
   })
 
   it('consumes the hash and creates a session with ordered messages once the workspace is active', async () => {
-    mockSendMessages = ['/scope claudebox', 'go']
+    mockSendMessages = ['/greet ada', 'go']
     mockActiveWorkspaceId = 'ws'
     mockWorkspaces = [{ id: 'ws' }]
     mockWorkspaceId = 'ws'
@@ -134,29 +134,29 @@ describe('LinkSessionEffect', () => {
 
     expect(mockConsumeSendMessages).toHaveBeenCalledTimes(1)
     await waitFor(() => {
-      expect(mockExecuteNewSessionFromLink).toHaveBeenCalledWith(['/scope claudebox', 'go'])
+      expect(mockExecuteNewSessionFromLink).toHaveBeenCalledWith(['/greet ada', 'go'])
     })
   })
 
   it('populates the composer and shows a notice when messages were blocked', async () => {
-    mockSendMessages = ['/scope claudebox']
+    mockSendMessages = ['/greet ada']
     mockActiveWorkspaceId = 'ws'
     mockWorkspaces = [{ id: 'ws' }]
     mockWorkspaceId = 'ws'
     mockExecuteNewSessionFromLink.mockResolvedValue({
-      undeliveredMessages: ['/scope claudebox'],
+      undeliveredMessages: ['/greet ada'],
     })
 
     render()
 
     await waitFor(() => {
-      expect(mockSetPendingInsert).toHaveBeenCalledWith('/scope claudebox')
+      expect(mockSetPendingInsert).toHaveBeenCalledWith('/greet ada')
     })
     expect(mockSetError).toHaveBeenCalledWith('Message not allowed by workspace settings')
   })
 
   it('does not touch the composer when nothing was blocked', async () => {
-    mockSendMessages = ['/scope claudebox']
+    mockSendMessages = ['/greet ada']
     mockActiveWorkspaceId = 'ws'
     mockWorkspaces = [{ id: 'ws' }]
     mockWorkspaceId = 'ws'
@@ -171,7 +171,7 @@ describe('LinkSessionEffect', () => {
   })
 
   it('does not fire twice under React StrictMode double-invoked effects', async () => {
-    mockSendMessages = ['/scope claudebox']
+    mockSendMessages = ['/greet ada']
     mockActiveWorkspaceId = 'ws'
     mockWorkspaces = [{ id: 'ws' }]
     mockWorkspaceId = 'ws'

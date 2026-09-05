@@ -77,13 +77,13 @@ describe('newSession', () => {
     const data = { session_id: 'new-2', container_id: 'c2', undelivered_messages: [] }
     workspaceFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(data) })
 
-    const result = await newSession({ messages: ['/scope claudebox'] })
+    const result = await newSession({ messages: ['/greet ada'] })
 
     expect(workspaceFetch).toHaveBeenCalledWith('/sessions/new', {
       method: 'POST',
       timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: ['/scope claudebox'] }),
+      body: JSON.stringify({ messages: ['/greet ada'] }),
     })
     expect(result).toEqual(data)
   })

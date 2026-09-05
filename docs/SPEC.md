@@ -43,8 +43,8 @@ When two bottom-slot panels are open at the same time, they split the bottom str
 
 ### 1.2 Icon Strips
 
-- **Left strip**: Sessions (top, only icon) <!-- claim:layout:left-strip -->
-- **Right strip**: Todos, Stash, Tasks, Bookmarks, Boards, Usage, MCP, Commands, Help (top to bottom); Logs sits at the bottom of the right strip <!-- claim:layout:right-strip -->
+- **Left strip**: Sessions (top); Containers sits at the bottom of the left strip <!-- claim:layout:left-strip -->
+- **Right strip**: Todos, Stash, Tasks, Bookmarks, Boards, Usage, MCP, Skills, Help (top to bottom); Logs sits at the bottom of the right strip <!-- claim:layout:right-strip -->
 - The Logs icon lives at the bottom of the right strip <!-- claim:layout:logs-right-bottom -->
 - Icons show badge counts for Todos (incomplete) and Stash (item count) <!-- claim:layout:badges -->
 - Clicking toggles panel visibility <!-- claim:layout:icon-toggle -->
@@ -71,8 +71,8 @@ When two bottom-slot panels are open at the same time, they split the bottom str
 
 Panels maintain consistent vertical stacking within each side: <!-- claim:layout:panel-order-stack -->
 
-- **Left**: Sessions <!-- claim:layout:panel-order-left -->
-- **Right**: Todos (top), Stash, Tasks, Bookmarks, Boards, Usage, MCP, Commands, Help (bottom) <!-- claim:layout:panel-order-right -->
+- **Left**: Sessions (top), Containers (bottom) <!-- claim:layout:panel-order-left -->
+- **Right**: Todos (top), Stash, Tasks, Bookmarks, Boards, Usage, MCP, Skills, Help (bottom) <!-- claim:layout:panel-order-right -->
 
 Opening a panel inserts it at correct position relative to visible panels. <!-- claim:layout:panel-order-insert -->
 
@@ -139,7 +139,7 @@ A workspace-only URL may also carry one or more messages, opening a new session 
 | Alt+6    | Toggle Boards    | <!-- claim:shortcut:alt6 -->
 | Alt+7    | Toggle Usage     | <!-- claim:shortcut:alt7 -->
 | Alt+8    | Toggle MCP       | <!-- claim:shortcut:alt8 -->
-| Alt+9    | Toggle Commands  | <!-- claim:shortcut:alt9 -->
+| Alt+9    | Toggle Skills    | <!-- claim:shortcut:alt9 -->
 | Alt+? (or Alt+/) | Help overlay (toggle) | <!-- claim:shortcut:alt-question -->
 | Alt+N    | New session (current browser tab) | <!-- claim:shortcut:alt-n -->
 | Alt+Shift+N | New session (new browser tab) | <!-- claim:shortcut:alt-shift-n -->
@@ -1854,7 +1854,7 @@ Real-time log viewer:
 
 ---
 
-## 19. Commands Panel
+## 19. Skills Panel
 
 ### 19.1 Panel Content
 

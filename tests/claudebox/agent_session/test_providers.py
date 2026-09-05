@@ -474,6 +474,11 @@ class TestLookupContextWindow:
 
         assert lookup_context_window(spec, None) == 1_000_000
 
+    def test_table_hit_anthropic_fable_5_1(self):
+        spec = ProviderSpec.parse("anthropic:claude-fable-5-1", {})
+
+        assert lookup_context_window(spec, None) == 1_000_000
+
     def test_haiku_alias_matches_dated_id(self):
         """The alias the Anthropic API accepts resolves to the same window as the dated id."""
 
@@ -516,6 +521,11 @@ class TestLookupPrice:
         spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
 
         assert lookup_price(spec, {}) == {"input": 3.0, "output": 15.0}
+
+    def test_table_hit_anthropic_fable_5_1(self):
+        spec = ProviderSpec.parse("anthropic:claude-fable-5-1", {})
+
+        assert lookup_price(spec, {}) == {"input": 10.0, "output": 50.0}
 
     def test_haiku_alias_matches_dated_id(self):
         """The alias the Anthropic API accepts prices the same as the dated catalog id."""

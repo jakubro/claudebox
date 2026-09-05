@@ -281,13 +281,13 @@ test.describe('Inline Replies (floating composer)', () => {
     await quote(page, 'context window')
 
     const input = page.locator('[data-testid="inline-thread-input"]').first()
-    await input.fill('/implement')
-    await expect(input).toHaveValue('/implement')
+    await input.fill('/greet')
+    await expect(input).toHaveValue('/greet')
     await expect(page.locator('.command-autocomplete')).toHaveCount(0)
 
     // Arrow keys move the caret rather than loading composer history.
     await input.press('ArrowUp')
-    await expect(input).toHaveValue('/implement')
+    await expect(input).toHaveValue('/greet')
   })
 
   // SPEC: chat:inline-replies-collapse-expands-on-send

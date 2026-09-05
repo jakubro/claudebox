@@ -1,11 +1,17 @@
-# /example
+---
+name: greet
+description: Example command showing the profile command format.
+argument-hint: [name]
+---
+
+# /greet
 
 Example command showing the profile command format.
 
 ## Usage
 
 ```
-/example [name]
+/greet [name]
 ```
 
 ## Workflow

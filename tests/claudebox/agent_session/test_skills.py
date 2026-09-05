@@ -91,11 +91,11 @@ class TestWalkSkills:
 
     def test_walks_skills_dir_with_dirname_fallback(self, tmp_path):
         skills_dir = tmp_path / "skills"
-        _write(skills_dir / "implement" / "SKILL.md", "---\ndescription: d\n---\nbody")
+        _write(skills_dir / "greet" / "SKILL.md", "---\ndescription: d\n---\nbody")
 
         skills = walk_skills(tmp_path / "no-cmds", skills_dir)
 
-        assert [s.name for s in skills] == ["implement"]
+        assert [s.name for s in skills] == ["greet"]
         assert skills[0].description == "d"
 
     def test_skills_dir_overrides_commands_dir_on_name_collision(self, tmp_path):
@@ -108,6 +108,36 @@ class TestWalkSkills:
 
         assert len(skills) == 1
         assert skills[0].description == "from-skills"
+
+    def test_command_with_no_frontmatter_is_dropped_and_logged(self, tmp_path, caplog):
+        import logging
+
+        cmds = tmp_path / "commands"
+        _write(cmds / "broken.md", "# /broken\n\nno frontmatter here")
+
+        with caplog.at_level(logging.WARNING):
+            skills = walk_skills(cmds, tmp_path / "no-skills")
+
+        assert skills == []
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any("command_frontmatter_invalid" in r.getMessage() for r in warnings), (
+            f"expected command_frontmatter_invalid warning, got: {[r.getMessage() for r in warnings]}"
+        )
+
+    def test_command_with_frontmatter_missing_name_is_dropped_and_logged(self, tmp_path, caplog):
+        import logging
+
+        cmds = tmp_path / "commands"
+        _write(cmds / "unnamed.md", "---\ndescription: no name here\n---\nbody")
+
+        with caplog.at_level(logging.WARNING):
+            skills = walk_skills(cmds, tmp_path / "no-skills")
+
+        assert skills == []
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any("command_frontmatter_invalid" in r.getMessage() for r in warnings), (
+            f"expected command_frontmatter_invalid warning, got: {[r.getMessage() for r in warnings]}"
+        )
 
 
 class TestFindSkillSource:
@@ -130,8 +160,8 @@ class TestFindSkillSource:
     def test_returns_path_for_skills_dir_match(self, tmp_path):
         cmds = tmp_path / "commands"
         skills_dir = tmp_path / "skills"
-        _write(skills_dir / "implement" / "SKILL.md", "---\ndescription: d\n---\nbody")
+        _write(skills_dir / "greet" / "SKILL.md", "---\ndescription: d\n---\nbody")
 
-        source = find_skill_source("implement", cmds, skills_dir)
+        source = find_skill_source("greet", cmds, skills_dir)
 
-        assert source == skills_dir / "implement" / "SKILL.md"
+        assert source == skills_dir / "greet" / "SKILL.md"

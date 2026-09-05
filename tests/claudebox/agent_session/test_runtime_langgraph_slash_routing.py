@@ -45,23 +45,23 @@ def _patch_default_dirs(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
 class TestResolveSlashSkill:
     def test_expands_a_user_invocable_skill(self, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "refine body content")
+        _seed_skill(skills_dir, "greet", "greet body content")
 
-        assert _resolve_slash_skill("/refine") == "refine body content"
+        assert _resolve_slash_skill("/greet") == "greet body content"
 
     def test_appends_arguments_when_trailing_text_given(self, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "the body")
+        _seed_skill(skills_dir, "greet", "the body")
 
-        result = _resolve_slash_skill("/refine claudebox")
+        result = _resolve_slash_skill("/greet ada")
 
-        assert result == "the body\n\nARGUMENTS: claudebox\n"
+        assert result == "the body\n\nARGUMENTS: ada\n"
 
     def test_returns_none_for_a_non_invocable_skill(self, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "scope", "scope body", user_invocable=False)
+        _seed_skill(skills_dir, "farewell", "farewell body", user_invocable=False)
 
-        assert _resolve_slash_skill("/scope") is None
+        assert _resolve_slash_skill("/farewell") is None
 
     def test_returns_none_for_an_unknown_skill(self, monkeypatch, tmp_path):
         _patch_default_dirs(monkeypatch, tmp_path)
@@ -70,7 +70,7 @@ class TestResolveSlashSkill:
 
     def test_returns_none_for_plain_text(self, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "refine body")
+        _seed_skill(skills_dir, "greet", "greet body")
 
         assert _resolve_slash_skill("no leading slash") is None
 
@@ -82,17 +82,17 @@ class TestResolveSlashSkill:
 
 class TestTagSlashCommand:
     def test_tags_a_bare_command(self):
-        assert _tag_slash_command("/refine") == (
-            "<command-message>refine</command-message>"
-            "<command-name>/refine</command-name>"
+        assert _tag_slash_command("/greet") == (
+            "<command-message>greet</command-message>"
+            "<command-name>/greet</command-name>"
             "<command-args></command-args>"
         )
 
     def test_tags_a_command_with_arguments(self):
-        assert _tag_slash_command("/refine claudebox") == (
-            "<command-message>refine</command-message>"
-            "<command-name>/refine</command-name>"
-            "<command-args>claudebox</command-args>"
+        assert _tag_slash_command("/greet ada") == (
+            "<command-message>greet</command-message>"
+            "<command-name>/greet</command-name>"
+            "<command-args>ada</command-args>"
         )
 
     def test_tags_regardless_of_whether_the_name_is_a_real_skill(self):
@@ -145,18 +145,18 @@ class TestDriveTurnRoutesSlashSkill:
     @pytest.mark.anyio
     async def test_recognized_command_sends_the_skill_body(self, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "refine body content")
+        _seed_skill(skills_dir, "greet", "greet body content")
 
         captured: dict[str, Any] = {}
         runtime = LangGraphRuntime(_config(tmp_path))
         runtime._graph = _stub_graph_capturing(captured)
 
-        async for _ in runtime._drive_turn("/refine"):
+        async for _ in runtime._drive_turn("/greet"):
             pass
 
         first_message = captured["graph_input"]["messages"][0]
         assert isinstance(first_message, HumanMessage)
-        assert first_message.content == "refine body content"
+        assert first_message.content == "greet body content"
 
     @pytest.mark.anyio
     async def test_unrecognized_command_falls_back_to_literal_text(self, monkeypatch, tmp_path):
@@ -175,17 +175,17 @@ class TestDriveTurnRoutesSlashSkill:
     @pytest.mark.anyio
     async def test_non_invocable_skill_falls_back_to_literal_text(self, monkeypatch, tmp_path):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "scope", "scope body", user_invocable=False)
+        _seed_skill(skills_dir, "farewell", "farewell body", user_invocable=False)
 
         captured: dict[str, Any] = {}
         runtime = LangGraphRuntime(_config(tmp_path))
         runtime._graph = _stub_graph_capturing(captured)
 
-        async for _ in runtime._drive_turn("/scope claudebox"):
+        async for _ in runtime._drive_turn("/farewell ada"):
             pass
 
         first_message = captured["graph_input"]["messages"][0]
-        assert first_message.content == "/scope claudebox"
+        assert first_message.content == "/farewell ada"
 
     @pytest.mark.anyio
     async def test_ordinary_prose_is_unaffected(self, monkeypatch, tmp_path):
@@ -212,23 +212,23 @@ class TestDriveTurnTagsDisplayEcho:
         tmp_path,
     ):
         _commands_dir, skills_dir = _patch_default_dirs(monkeypatch, tmp_path)
-        _seed_skill(skills_dir, "refine", "refine body content")
+        _seed_skill(skills_dir, "greet", "greet body content")
 
         captured: dict[str, Any] = {}
         runtime = LangGraphRuntime(_config(tmp_path))
         runtime._graph = _stub_graph_capturing(captured)
 
-        events = [event async for event in runtime._drive_turn("/refine claudebox")]
+        events = [event async for event in runtime._drive_turn("/greet ada")]
 
         display_event = events[0]
         assert isinstance(display_event.payload, UserMessagePayload)
         assert display_event.payload.content == (
-            "<command-message>refine</command-message>"
-            "<command-name>/refine</command-name>"
-            "<command-args>claudebox</command-args>"
+            "<command-message>greet</command-message>"
+            "<command-name>/greet</command-name>"
+            "<command-args>ada</command-args>"
         )
         first_message = captured["graph_input"]["messages"][0]
-        assert first_message.content == "refine body content\n\nARGUMENTS: claudebox\n"
+        assert first_message.content == "greet body content\n\nARGUMENTS: ada\n"
 
     @pytest.mark.anyio
     async def test_unrecognized_command_display_is_tagged_too(self, monkeypatch, tmp_path):
