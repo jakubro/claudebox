@@ -85,6 +85,7 @@ export default defineConfig({
       expressiveCode: { emitExternalStylesheet: false },
       sidebar: SIDEBAR,
       customCss: ['./src/styles/custom.css'],
+      social: [{ icon: 'github', label: 'GitHub', href: REPOSITORY }],
     }),
   ],
 })
