@@ -2,6 +2,8 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SWITCH } from '../test-utils/sessionSequences'
+import { createDeferred } from '../utils/deferred'
 
 let mockGetUiState = vi.fn()
 let mockPatchGlobalUiState = vi.fn()
@@ -12,6 +14,14 @@ vi.mock('../api/uiState', () => ({
 }))
 
 import useBookmarks from './useBookmarks'
+
+async function renderEmptyBookmarks() {
+  mockGetUiState.mockResolvedValue({ global: {} })
+  const hook = renderHook(() => useBookmarks('session-1', 'ws-1'))
+  await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+
+  return hook
+}
 
 describe('useBookmarks', () => {
   beforeEach(() => {
@@ -163,21 +173,39 @@ describe('useBookmarks', () => {
     ])
   })
 
-  it('signals cross-tab via localStorage after toggle', async () => {
-    mockGetUiState.mockResolvedValue({ global: {} })
-
+  it('signals other tabs only after a toggle write lands', async () => {
+    const write = createDeferred()
+    mockPatchGlobalUiState.mockReturnValue(write.promise)
     const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
-
     await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
 
     act(() => {
       result.current.toggleBookmark('turn-1', 'user', 'Test')
     })
+    await Promise.resolve()
+    expect(localStorage.setItem).not.toHaveBeenCalled()
 
+    await act(async () => write.resolve())
+    expect(localStorage.setItem).toHaveBeenCalledTimes(1)
     expect(localStorage.setItem).toHaveBeenCalledWith(
       'claudebox-bookmarks-changed',
       expect.any(String),
     )
+  })
+
+  it('writes and signals a toggle once under StrictMode', async () => {
+    const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'), {
+      reactStrictMode: true,
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      result.current.toggleBookmark('turn-1', 'user', 'Test')
+    })
+
+    expect(mockPatchGlobalUiState).toHaveBeenCalledTimes(1)
+    expect(localStorage.setItem).toHaveBeenCalledTimes(1)
+    expect(result.current.allBookmarks['session-1']).toEqual(['turn-1:user'])
   })
 
   it('does nothing when sessionId is null', async () => {
@@ -193,11 +221,7 @@ describe('useBookmarks', () => {
   })
 
   it('does nothing when messageType is missing', async () => {
-    mockGetUiState.mockResolvedValue({ global: {} })
-
-    const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
-
-    await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+    const { result } = await renderEmptyBookmarks()
 
     act(() => {
       result.current.toggleBookmark('turn-1')
@@ -295,11 +319,9 @@ describe('useBookmarks', () => {
   })
 
   it('truncates preview to 80 characters', async () => {
-    mockGetUiState.mockResolvedValue({ global: {} })
     const longPreview = 'A'.repeat(100)
 
-    const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
-    await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+    const { result } = await renderEmptyBookmarks()
 
     act(() => {
       result.current.toggleBookmark('turn-1', 'user', longPreview)
@@ -312,9 +334,7 @@ describe('useBookmarks', () => {
 
   describe('removeBookmark', () => {
     it('does nothing when targetSessionId, turnId, or messageType is missing', async () => {
-      mockGetUiState.mockResolvedValue({ global: {} })
-      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
-      await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+      const { result } = await renderEmptyBookmarks()
 
       act(() => result.current.removeBookmark(null, 'turn-1', 'user'))
       act(() => result.current.removeBookmark('session-1', null, 'user'))
@@ -381,9 +401,7 @@ describe('useBookmarks', () => {
     })
 
     it('is a no-op on allBookmarks when the target session has no entries', async () => {
-      mockGetUiState.mockResolvedValue({ global: {} })
-      const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
-      await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
+      const { result } = await renderEmptyBookmarks()
 
       act(() => {
         result.current.removeBookmark('session-3', 'turn-z', 'user')
@@ -393,21 +411,79 @@ describe('useBookmarks', () => {
       expect(mockPatchGlobalUiState).toHaveBeenCalled()
     })
 
-    it('signals cross-tab via localStorage', async () => {
+    it('signals other tabs only after the write lands', async () => {
       mockGetUiState.mockResolvedValue({
         global: { bookmarkedTurns: { 'session-2': ['turn-x:user'] } },
       })
+      const write = createDeferred()
+      mockPatchGlobalUiState.mockReturnValue(write.promise)
       const { result } = renderHook(() => useBookmarks('session-1', 'ws-1'))
       await waitFor(() => expect(mockGetUiState).toHaveBeenCalled())
 
       act(() => {
         result.current.removeBookmark('session-2', 'turn-x', 'user')
       })
+      await Promise.resolve()
+      expect(localStorage.setItem).not.toHaveBeenCalled()
 
+      await act(async () => write.resolve())
       expect(localStorage.setItem).toHaveBeenCalledWith(
         'claudebox-bookmarks-changed',
         expect.any(String),
       )
     })
+  })
+})
+
+describe('useBookmarks with reads answering out of order', () => {
+  let reads
+
+  beforeEach(() => {
+    reads = []
+    mockGetUiState = vi.fn(() => {
+      const read = createDeferred()
+      reads.push(read)
+
+      return read.promise
+    })
+    mockPatchGlobalUiState = vi.fn()
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {})
+  })
+
+  const STORED = { global: { bookmarkedTurns: { A: ['a1:user'], B: ['t1:user'] } } }
+
+  it("keeps the session's own bookmarks when the session left answers late", async () => {
+    const { result, rerender } = renderHook(({ id }) => useBookmarks(id, 'ws-1'), {
+      initialProps: { id: SWITCH[0] },
+    })
+    for (const id of SWITCH.slice(1)) {
+      rerender({ id })
+    }
+
+    await act(async () => {
+      reads.at(-1).resolve(STORED)
+    })
+    await act(async () => {
+      reads[0].resolve(STORED)
+    })
+
+    expect(result.current.isBookmarked('t1', 'user')).toBe(true)
+    act(() => {
+      result.current.toggleBookmark('t1', 'user')
+    })
+    expect(mockPatchGlobalUiState.mock.calls[0][0][0].op).toBe('remove')
+  })
+
+  it('keeps a toggle made while a read is in flight', async () => {
+    const { result } = renderHook(() => useBookmarks('B', 'ws-1'))
+    act(() => {
+      result.current.toggleBookmark('t2', 'user')
+    })
+
+    await act(async () => {
+      reads[0].resolve({ global: {} })
+    })
+
+    expect(result.current.isBookmarked('t2', 'user')).toBe(true)
   })
 })

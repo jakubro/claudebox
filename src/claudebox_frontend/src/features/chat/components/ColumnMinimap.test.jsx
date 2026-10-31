@@ -20,6 +20,14 @@ const createMockRef = () => ({
   },
 })
 
+function renderTerminalMap(containerRef) {
+  render(<ColumnMinimap variant="terminal" bars={[bar('a')]} containerRef={containerRef} />)
+  const map = screen.getByTestId('terminal-minimap')
+  map.getBoundingClientRect = () => ({ top: 0, height: 400, left: 0, right: 20, bottom: 400 })
+
+  return map
+}
+
 describe('ColumnMinimap', () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -105,10 +113,7 @@ describe('ColumnMinimap', () => {
         bottom: 500,
         left: 0,
       })
-      render(<ColumnMinimap variant="terminal" bars={[bar('a')]} containerRef={containerRef} />)
-
-      const map = screen.getByTestId('terminal-minimap')
-      map.getBoundingClientRect = () => ({ top: 0, height: 400, left: 0, right: 20, bottom: 400 })
+      const map = renderTerminalMap(containerRef)
       map.click()
 
       expect(containerRef.current.scrollTo).toHaveBeenCalled()
@@ -118,10 +123,7 @@ describe('ColumnMinimap', () => {
   describe('drag scrolling', () => {
     it('sets scrollTop on pointerdown (drag start)', () => {
       const containerRef = createMockRef()
-      render(<ColumnMinimap variant="terminal" bars={[bar('a')]} containerRef={containerRef} />)
-
-      const map = screen.getByTestId('terminal-minimap')
-      map.getBoundingClientRect = () => ({ top: 0, height: 400, left: 0, right: 20, bottom: 400 })
+      const map = renderTerminalMap(containerRef)
       fireEvent.pointerDown(map, { clientY: 200 })
 
       expect(containerRef.current.scrollTop).not.toBe(0)
@@ -150,10 +152,7 @@ describe('ColumnMinimap', () => {
 
     it('does not throw when no landing callback is supplied', () => {
       const containerRef = createMockRef()
-      render(<ColumnMinimap variant="terminal" bars={[bar('a')]} containerRef={containerRef} />)
-
-      const map = screen.getByTestId('terminal-minimap')
-      map.getBoundingClientRect = () => ({ top: 0, height: 400, left: 0, right: 20, bottom: 400 })
+      const map = renderTerminalMap(containerRef)
       expect(() => map.click()).not.toThrow()
     })
   })

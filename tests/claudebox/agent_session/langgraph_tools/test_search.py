@@ -1,5 +1,7 @@
 """search.py @tool tests - glob, grep."""
 
+from __future__ import annotations
+
 import subprocess
 from unittest.mock import patch
 

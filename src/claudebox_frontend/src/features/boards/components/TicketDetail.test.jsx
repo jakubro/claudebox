@@ -2,7 +2,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getTicketContent } from '../../../api/boards'
 import TicketDetail from './TicketDetail'
 
@@ -155,16 +155,7 @@ describe('TicketDetail', () => {
   })
 
   it('calls onClose on close button click', async () => {
-    const user = userEvent.setup()
-    const onClose = vi.fn()
-    render(
-      <TicketDetail
-        ticket={baseTicket}
-        states={defaultStates}
-        swimlanes={defaultSwimlanes}
-        onClose={onClose}
-      />,
-    )
+    const { user, onClose } = renderClosable()
 
     await user.click(screen.getByTestId('icon-close').closest('button'))
 
@@ -172,16 +163,7 @@ describe('TicketDetail', () => {
   })
 
   it('calls onClose on backdrop click', async () => {
-    const user = userEvent.setup()
-    const onClose = vi.fn()
-    const { container } = render(
-      <TicketDetail
-        ticket={baseTicket}
-        states={defaultStates}
-        swimlanes={defaultSwimlanes}
-        onClose={onClose}
-      />,
-    )
+    const { user, onClose, container } = renderClosable()
 
     await user.click(container.querySelector('.ticket-detail-backdrop'))
 
@@ -189,19 +171,78 @@ describe('TicketDetail', () => {
   })
 
   it('calls onClose on Escape key', async () => {
-    const user = userEvent.setup()
-    const onClose = vi.fn()
-    render(
-      <TicketDetail
-        ticket={baseTicket}
-        states={defaultStates}
-        swimlanes={defaultSwimlanes}
-        onClose={onClose}
-      />,
-    )
+    const { user, onClose } = renderClosable()
 
     await user.keyboard('{Escape}')
 
     expect(onClose).toHaveBeenCalled()
   })
+
+  describe('a reload on version', () => {
+    function detail(version) {
+      return (
+        <TicketDetail
+          ticket={baseTicket}
+          states={defaultStates}
+          swimlanes={defaultSwimlanes}
+          onClose={vi.fn()}
+          version={version}
+        />
+      )
+    }
+
+    it('refetches content when version changes', async () => {
+      vi.mocked(getTicketContent).mockResolvedValueOnce('# First').mockResolvedValueOnce('# Second')
+      const { rerender } = render(detail(0))
+      await waitFor(() => expect(screen.getByText('# First')).toBeInTheDocument())
+
+      rerender(detail(1))
+
+      await waitFor(() => expect(screen.getByText('# Second')).toBeInTheDocument())
+    })
+
+    it('keeps the last content when a refetch fails', async () => {
+      vi.mocked(getTicketContent)
+        .mockResolvedValueOnce('# First')
+        .mockRejectedValueOnce(new Error('gone'))
+      const { rerender } = render(detail(0))
+      await waitFor(() => expect(screen.getByText('# First')).toBeInTheDocument())
+
+      rerender(detail(1))
+      await waitFor(() => expect(getTicketContent).toHaveBeenCalledTimes(2))
+
+      expect(screen.getByText('# First')).toBeInTheDocument()
+      expect(screen.queryByText('Failed to load ticket content.')).not.toBeInTheDocument()
+    })
+
+    it('does not show Loading... on a refetch', async () => {
+      let resolveSecond
+      vi.mocked(getTicketContent)
+        .mockResolvedValueOnce('# First')
+        .mockReturnValueOnce(new Promise(resolve => (resolveSecond = resolve)))
+      const { rerender } = render(detail(0))
+      await waitFor(() => expect(screen.getByText('# First')).toBeInTheDocument())
+
+      rerender(detail(1))
+
+      expect(screen.queryByText(/Loading/)).not.toBeInTheDocument()
+      resolveSecond('# Second')
+      await waitFor(() => expect(screen.getByText('# Second')).toBeInTheDocument())
+    })
+  })
 })
+
+function renderClosable() {
+  const user = userEvent.setup()
+  const onClose = vi.fn()
+  const { container } = render(
+    <TicketDetail
+      ticket={baseTicket}
+      states={defaultStates}
+      swimlanes={defaultSwimlanes}
+      onClose={onClose}
+    />,
+  )
+
+  return { user, onClose, container }
+}

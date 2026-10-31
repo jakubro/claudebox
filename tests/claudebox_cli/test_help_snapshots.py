@@ -3,6 +3,8 @@
 Populated via ``pytest --inline-snapshot=create``; the ``install:`` footer is normalized so text stays stable.
 """
 
+from __future__ import annotations
+
 import re
 
 import pytest
@@ -93,7 +95,7 @@ Positional Arguments:
     build        Build container image
     update       Update Claudebox itself (re-runs install.sh)
     shell        Open bash shell in fresh container
-    prune        Remove stopped containers, dangling images, stale dirs
+    prune        Remove stopped containers, dangling images, build leftovers, stale dirs
     logs         Stream logs (daemon | all)
     status       Show daemon + containers + workspace state
     doctor       Diagnose environment
@@ -177,7 +179,7 @@ Examples:
         assert _capture_help("prune", capsys) == snapshot("""\
 Usage: claudebox prune [-h] [-v]
 
-Remove stopped containers, dangling images, stale dirs
+Remove stopped containers, dangling images, build leftovers, stale dirs
 
 Options:
   -h, --help     show this help message and exit
@@ -188,12 +190,19 @@ Examples:
   claudebox -v prune             list each removed item
 
 Removes:
-  stale session and temp directories under ~/.claudebox and /tmp
+  stale session directories of every registered workspace, ~/.claudebox and the current one
+  what an idle session's /tmp holds, keeping the session
+  stale temp directories under /tmp
   dangling claudebox container images
+  leftovers of interrupted claudebox image builds (podman; skipped while a build runs)
   stopped claudebox containers (typically none under auto-removal)
 
 Notes:
   Each removal is independent: a failure in one category does not abort the rest.
+  A session whose container runs, or that is pinned, is never touched.
+  A workspace whose sessions cannot be swept is named; the others are still swept.
+  A registered workspace whose directory no longer exists is skipped with a note.
+  With the local backend only stale directories are pruned; there is no container runtime.
   The command exits non-zero if any item failed.
 """)
 
@@ -227,8 +236,8 @@ Examples:
 
 Checks (in order, one row each):
   runtime, runtime info, uv, daemon http, daemon unit, watchdog timer,
-  ~/.claudebox/lib, profile, workspace (.workspace marker), permissions,
-  disk (/tmp free)
+  ~/.claudebox/lib, profile, tmp mounts, workspace (.workspace marker),
+  permissions, disk (/tmp free)
 
 Icons:
   ✓  the check passed

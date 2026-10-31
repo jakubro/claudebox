@@ -8,6 +8,7 @@ import {
   getSessionEvents,
   getToolOutput,
   getToolOutputDownloadUrl,
+  listSessionSchedules,
   listSessions,
   newSession,
   resumeSession,
@@ -16,14 +17,19 @@ import {
   updateSessionPrompt,
 } from './sessions'
 
-vi.mock('./apiClient', () => ({
+vi.mock('./apiClient', async importOriginal => ({
+  ...(await importOriginal()),
   containerFetch: vi.fn(),
   containerUrl: vi.fn(path => path),
   retryFetch: vi.fn(),
   workspaceFetch: vi.fn(),
 }))
 
-import { containerFetch, workspaceFetch } from './apiClient'
+import { containerFetch, setAddress, workspaceFetch } from './apiClient'
+
+beforeEach(() => {
+  setAddress('c-1', 'addressed-1')
+})
 
 // Workspace-scoped endpoints
 
@@ -46,6 +52,26 @@ describe('listSessions', () => {
     workspaceFetch.mockResolvedValue({ ok: false })
 
     await expect(listSessions()).rejects.toThrow('Failed to fetch sessions')
+  })
+})
+
+describe('listSessionSchedules', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('fetches the running sessions schedule events', async () => {
+    const data = { sessions: [{ session_id: 's1', responding_since: null, events: [] }] }
+    workspaceFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(data) })
+
+    expect(await listSessionSchedules()).toEqual(data)
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/schedules')
+  })
+
+  it('throws when response is not ok', async () => {
+    workspaceFetch.mockResolvedValue({ ok: false })
+
+    await expect(listSessionSchedules()).rejects.toThrow('Failed to fetch session schedules')
   })
 })
 
@@ -86,6 +112,27 @@ describe('newSession', () => {
       body: JSON.stringify({ messages: ['/greet ada'] }),
     })
     expect(result).toEqual(data)
+  })
+
+  it('sends the bundle alone as the body when no messages are given', async () => {
+    workspaceFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) })
+
+    await newSession({ bundle: 'research' })
+
+    expect(workspaceFetch).toHaveBeenCalledWith('/sessions/new', {
+      method: 'POST',
+      timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"bundle":"research"}',
+    })
+  })
+
+  it('sends messages and bundle together', async () => {
+    workspaceFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) })
+
+    await newSession({ messages: ['/greet ada'], bundle: 'ops' })
+
+    expect(workspaceFetch.mock.calls[0][1].body).toBe('{"messages":["/greet ada"],"bundle":"ops"}')
   })
 
   it('omits the body when messages is an empty array', async () => {
@@ -162,7 +209,7 @@ describe('getSession', () => {
 
     const result = await getSession()
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/current', {
+    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/current?session_id=addressed-1', {
       timeoutMs: FETCH_TIMEOUT_INTERACTIVE_MS,
     })
     expect(result).toEqual(data)
@@ -287,7 +334,7 @@ describe('getToolOutput', () => {
 
     const result = await getToolOutput('tu_1')
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/current/tool-output/tu_1')
+    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/addressed-1/tool-output/tu_1')
     expect(result).toEqual(data)
   })
 
@@ -295,6 +342,14 @@ describe('getToolOutput', () => {
     containerFetch.mockResolvedValue({ ok: false })
 
     await expect(getToolOutput('tu_1')).rejects.toThrow('Failed to fetch tool output')
+  })
+
+  it('addresses a named session when one is given', async () => {
+    containerFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) })
+
+    await getToolOutput('tu_1', 'side-1')
+
+    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/side-1/tool-output/tu_1')
   })
 })
 
@@ -308,11 +363,14 @@ describe('updateSessionPrompt', () => {
 
     await updateSessionPrompt('Be concise')
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/sessions/current/prompt', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_prompt: 'Be concise' }),
-    })
+    expect(containerFetch).toHaveBeenCalledWith(
+      '/api/sessions/current/prompt?session_id=addressed-1',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_prompt: 'Be concise' }),
+      },
+    )
   })
 
   it('sends null to clear prompt', async () => {
@@ -334,6 +392,67 @@ describe('updateSessionPrompt', () => {
 
 describe('getToolOutputDownloadUrl', () => {
   it('builds download URL for current session tool output', () => {
-    expect(getToolOutputDownloadUrl('tu_1')).toBe('/api/sessions/current/tool-output/tu_1/download')
+    expect(getToolOutputDownloadUrl('tu_1')).toBe(
+      '/api/sessions/addressed-1/tool-output/tu_1/download',
+    )
+  })
+
+  it('builds download URL for a named session tool output', () => {
+    expect(getToolOutputDownloadUrl('tu_1', 'side-1')).toBe(
+      '/api/sessions/side-1/tool-output/tu_1/download',
+    )
+  })
+})
+
+describe('newSession refusals', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('names the paths and the setting when /tmp would be deleted', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () =>
+        Promise.resolve({ error: 'container_tmp_mount_conflict', paths: '/tmp/ssh-agent' }),
+    })
+
+    const error = await newSession().catch(err => err)
+
+    expect(error.userFacing).toBe(true)
+    expect(error.message).toContain('/tmp/ssh-agent')
+    expect(error.message).toContain('CLAUDEBOX_NO_TMP_REMAP = "1"')
+    expect(workspaceFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [{ source: 'workspace' }, ['the workspace settings', '"host"', 'claudebox run']],
+    [{ source: 'bundle', bundle: 'web' }, ['bundle web', '"host"']],
+  ])('words a network mode refused from %o', async (where, parts) => {
+    workspaceFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ error: 'network_mode_unsupported', mode: 'host', ...where }),
+    })
+
+    const error = await newSession().catch(err => err)
+
+    expect(error.userFacing).toBe(true)
+    for (const part of parts) {
+      expect(error.message).toContain(part)
+    }
+  })
+
+  it('keeps the generic message for any other refusal', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ error: 'bundle_not_declared', bundle: 'x' }),
+    })
+
+    const error = await newSession().catch(err => err)
+
+    expect(error.userFacing).toBeUndefined()
+    expect(error.message).toBe('Failed to start new session')
   })
 })

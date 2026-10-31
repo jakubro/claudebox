@@ -9,6 +9,7 @@ vi.mock('../../../context/SessionsContext', () => ({
   useSessionsList: () => ({ workspaceColor: mockWorkspaceColor }),
 }))
 
+import { WAITING_ARC_ALPHA } from '../utils/favicon'
 import useFavicon from './useFavicon'
 
 describe('useFavicon', () => {
@@ -131,57 +132,30 @@ describe('useFavicon', () => {
     expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsAfterNotification)
   })
 
-  it('clears animation interval on unmount', () => {
+  it.each([
+    ['responding', { isResponding: true }],
+    ['waiting on background work', { isResponding: false, isWaiting: true }],
+  ])('sets the icon once while %s and never again as time passes', (_label, props) => {
     vi.useFakeTimers()
+    const { rerender } = renderHook(p => useFavicon(p), { initialProps: { isResponding: false } })
+    const before = mockCanvas.toDataURL.mock.calls.length
 
-    const { unmount } = renderHook(() => useFavicon({ isResponding: true }))
+    rerender(props)
+    vi.advanceTimersByTime(5000)
 
-    // Animation should be running (setInterval active)
-    const callsBefore = mockCanvas.toDataURL.mock.calls.length
-
-    unmount()
-
-    // Advance timers after unmount - no more draws should happen
-    vi.advanceTimersByTime(500)
-    expect(mockCanvas.toDataURL.mock.calls.length).toBe(callsBefore)
-
+    expect(mockCanvas.toDataURL.mock.calls.length).toBe(before + 1)
     vi.useRealTimers()
   })
 
-  it('clears previous animation interval when transitioning from responding to not responding', () => {
-    vi.useFakeTimers()
+  it('redraws once on each state change', () => {
+    const { rerender } = renderHook(p => useFavicon(p), { initialProps: { isResponding: false } })
+    const before = mockCanvas.toDataURL.mock.calls.length
 
-    const { rerender } = renderHook(({ isResponding }) => useFavicon({ isResponding }), {
-      initialProps: { isResponding: true },
-    })
+    rerender({ isResponding: true })
+    rerender({ isResponding: false, isWaiting: true })
+    rerender({ isResponding: false, isWaiting: false })
 
-    // Advance a bit to accumulate some animation frames
-    vi.advanceTimersByTime(200)
-    const callsWhileAnimating = mockCanvas.toDataURL.mock.calls.length
-    expect(callsWhileAnimating).toBeGreaterThan(0)
-
-    rerender({ isResponding: false })
-    const callsAfterStop = mockCanvas.toDataURL.mock.calls.length
-
-    // Advance more - animation should not produce new frames
-    vi.advanceTimersByTime(500)
-    expect(mockCanvas.toDataURL.mock.calls.length).toBe(callsAfterStop)
-
-    vi.useRealTimers()
-  })
-
-  it('animation generates multiple favicon frames over time', () => {
-    vi.useFakeTimers()
-
-    renderHook(() => useFavicon({ isResponding: true }))
-
-    const callsAtStart = mockCanvas.toDataURL.mock.calls.length
-
-    vi.advanceTimersByTime(200)
-
-    expect(mockCanvas.toDataURL.mock.calls.length).toBeGreaterThan(callsAtStart + 1)
-
-    vi.useRealTimers()
+    expect(mockCanvas.toDataURL.mock.calls.length).toBe(before + 3)
   })
 
   it('draws dev badge on normal favicon in dev mode', () => {
@@ -219,10 +193,8 @@ describe('useFavicon', () => {
     expect(fillStyles).not.toContain('#2a4a2a')
   })
 
-  it('pulses workspace bg alpha in sync with the breath cycle during processing', () => {
-    vi.useFakeTimers()
+  it('dims the workspace disc to half under the working arc', () => {
     mockWorkspaceColor = '#1e3a5f'
-    // Capture every globalAlpha assignment to inspect the per-frame value.
     const alphaValues = []
     Object.defineProperty(mockCtx, 'globalAlpha', {
       get: () => alphaValues.at(-1) ?? 1,
@@ -231,30 +203,193 @@ describe('useFavicon', () => {
 
     renderHook(() => useFavicon({ isResponding: true }))
 
-    // Advance through multiple breath frames so the sine sweeps a range.
-    vi.advanceTimersByTime(2000)
-
-    // BREATHING_BG_PEAK_ALPHA = 0.5, breath intensity in [0.5, 1.0] -> alpha in [0.25, 0.5].
-    const observed = alphaValues.filter(v => v < 1)
-    expect(observed.length).toBeGreaterThan(0)
-    expect(Math.min(...observed)).toBeGreaterThanOrEqual(0.24)
-    expect(Math.max(...observed)).toBeLessThanOrEqual(0.51)
-
-    vi.useRealTimers()
+    expect(alphaValues.filter(v => v < 1)).toEqual([0.5])
   })
 
-  it('clears interval on unmount even when canvas context is unavailable', () => {
-    vi.useFakeTimers()
+  describe('needs-you state', () => {
+    // Hex strokes the C-arc was painted with since the last reset, classified by hue.
+    let strokes
+    const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+    const isRed = hex => {
+      const [r, g, b] = rgb(hex)
+      return r - g > 60 && Math.abs(g - b) < 20
+    }
+    const isOrange = hex => {
+      const [r, g, b] = rgb(hex)
+      return r - b > 100 && g - b > 50
+    }
 
-    // Start with responding to create the interval
-    const { unmount } = renderHook(({ isResponding }) => useFavicon({ isResponding }), {
-      initialProps: { isResponding: true },
+    beforeEach(() => {
+      strokes = []
+      Object.defineProperty(mockCtx, 'strokeStyle', {
+        get: () => strokes.at(-1) ?? '',
+        set: v => strokes.push(v),
+      })
     })
 
-    vi.advanceTimersByTime(100)
+    it.each([
+      ['visible', false],
+      ['hidden', true],
+    ])('paints a red arc while %s and not responding', (_label, hidden) => {
+      Object.defineProperty(document, 'hidden', { value: hidden, writable: true })
 
-    expect(() => unmount()).not.toThrow()
+      renderHook(() => useFavicon({ isResponding: false, needsUser: true }))
 
-    vi.useRealTimers()
+      expect(strokes.length).toBeGreaterThan(0)
+      expect(strokes.every(isRed)).toBe(true)
+    })
+
+    it('wins over orange when a turn ends while hidden', () => {
+      Object.defineProperty(document, 'hidden', { value: true, writable: true })
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: true, needsUser: true },
+      })
+      strokes = []
+
+      rerender({ isResponding: false, needsUser: true })
+
+      expect(strokes.every(isRed)).toBe(true)
+      expect(strokes.some(isOrange)).toBe(false)
+    })
+
+    it('shows the working arc while responding, then turns red when the turn ends', () => {
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: true, needsUser: true },
+      })
+
+      expect(strokes.length).toBeGreaterThan(0)
+      expect(strokes.some(isRed)).toBe(false)
+
+      strokes = []
+      rerender({ isResponding: false, needsUser: true })
+
+      expect(strokes.every(isRed)).toBe(true)
+    })
+
+    it('turns red when needsUser arrives after the turn already ended', () => {
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: false, needsUser: false },
+      })
+      strokes = []
+
+      rerender({ isResponding: false, needsUser: true })
+
+      expect(strokes.length).toBeGreaterThan(0)
+      expect(strokes.every(isRed)).toBe(true)
+    })
+
+    it('stays red when the tab is focused', () => {
+      Object.defineProperty(document, 'hidden', { value: true, writable: true })
+      renderHook(() => useFavicon({ isResponding: false, needsUser: true }))
+      const draws = mockCanvas.toDataURL.mock.calls.length
+
+      Object.defineProperty(document, 'hidden', { value: false })
+      document.dispatchEvent(new Event('visibilitychange'))
+
+      expect(mockCanvas.toDataURL.mock.calls.length).toBe(draws)
+    })
+
+    it('leaves red once the session stops needing the user', () => {
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: false, needsUser: true },
+      })
+      strokes = []
+
+      rerender({ isResponding: false, needsUser: false })
+
+      expect(strokes.length).toBeGreaterThan(0)
+      expect(strokes.some(isRed)).toBe(false)
+    })
+
+    it('dims the workspace disc under the red arc', () => {
+      mockWorkspaceColor = '#1e3a5f'
+      const alphas = []
+      Object.defineProperty(mockCtx, 'globalAlpha', {
+        get: () => alphas.at(-1) ?? 1,
+        set: v => alphas.push(v),
+      })
+
+      renderHook(() => useFavicon({ isResponding: false, needsUser: true }))
+
+      expect(alphas).toContain(0.5)
+    })
+  })
+
+  describe('waiting on background work', () => {
+    let strokes
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      strokes = []
+      mockCtx.stroke = vi.fn(() => {
+        strokes.push({
+          color: String(mockCtx.strokeStyle).toLowerCase(),
+          alpha: mockCtx.globalAlpha,
+        })
+      })
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const lastFrame = () => strokes.slice(-30).map(x => x.color)
+    const channels = hex => [1, 3, 5].map(i => Number.parseInt(hex.slice(i, i + 2), 16))
+    const isOrange = hex => {
+      const [r, g, b] = channels(hex)
+      return r > 200 && g - b > 40
+    }
+    const isRed = hex => {
+      const [r, g, b] = channels(hex)
+      return r - g > 60 && Math.abs(g - b) < 10
+    }
+    const paintedOrange = () => strokes.some(x => isOrange(x.color))
+
+    it('shows the arc dimmed, not orange, when a turn ends hidden with work still running', () => {
+      document.hidden = true
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: true, isWaiting: false },
+      })
+      const working = lastFrame()
+      strokes = []
+
+      rerender({ isResponding: false, isWaiting: true })
+
+      expect(paintedOrange()).toBe(false)
+      expect(strokes.map(x => x.color)).toEqual(working)
+      expect(strokes.every(x => x.alpha > 0 && x.alpha < 1)).toBe(true)
+    })
+
+    it('shows red rather than waiting while the session needs the user', () => {
+      renderHook(() => useFavicon({ isResponding: false, isWaiting: true, needsUser: true }))
+
+      expect(strokes.some(x => isRed(x.color))).toBe(true)
+      expect(strokes.some(x => x.alpha === WAITING_ARC_ALPHA)).toBe(false)
+    })
+
+    it('settles to normal, not orange, when the work ends without a turn', () => {
+      document.hidden = true
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: false, isWaiting: true },
+      })
+      strokes = []
+
+      rerender({ isResponding: false, isWaiting: false })
+
+      expect(paintedOrange()).toBe(false)
+    })
+
+    it('turns orange when the follow-up turn ends hidden with nothing left running', () => {
+      document.hidden = true
+      const { rerender } = renderHook(props => useFavicon(props), {
+        initialProps: { isResponding: false, isWaiting: true },
+      })
+      rerender({ isResponding: true, isWaiting: false })
+      strokes = []
+
+      rerender({ isResponding: false, isWaiting: false })
+
+      expect(paintedOrange()).toBe(true)
+    })
   })
 })

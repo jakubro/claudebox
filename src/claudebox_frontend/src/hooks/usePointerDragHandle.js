@@ -7,9 +7,9 @@ import { isPrimaryPointer } from '../utils/pointer'
  * Tracks a drag through the Pointer Capture API: the element that got pointerdown keeps
  * receiving move/up after the pointer leaves it, so no document listener is needed.
  * Axis-agnostic - the caller supplies the start context and consumes the accumulated delta.
- * A `null` from `onDragStart` aborts the drag before pointer capture is taken.
+ * A `null` from `onDragStart` aborts before capture; `onDragEnd` gets the context on release.
  */
-export function usePointerDragHandle({ axis, onDragStart, onDragMove }) {
+export function usePointerDragHandle({ axis, onDragStart, onDragMove, onDragEnd }) {
   const dragRef = useRef(null)
   const clientPos = useCallback(e => (axis === 'x' ? e.clientX : e.clientY), [axis])
 
@@ -40,15 +40,20 @@ export function usePointerDragHandle({ axis, onDragStart, onDragMove }) {
     [onDragMove, clientPos],
   )
 
-  const handlePointerUp = useCallback(e => {
-    if (!dragRef.current) {
-      return
-    }
-    dragRef.current = null
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    }
-  }, [])
+  const handlePointerUp = useCallback(
+    e => {
+      const drag = dragRef.current
+      if (!drag) {
+        return
+      }
+      dragRef.current = null
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }
+      onDragEnd?.(drag.context)
+    },
+    [onDragEnd],
+  )
 
   return { handlePointerDown, handlePointerMove, handlePointerUp }
 }

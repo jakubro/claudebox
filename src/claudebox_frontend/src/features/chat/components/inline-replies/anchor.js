@@ -2,12 +2,19 @@
 
 // Quotable text: assistant/user prose/code, tool output (`.tool-details`), and expanded thinking
 // (`.thinking-content-inline`). Excluded: code-block gutters (`user-select: none`, matching
-// `range.toString()`), SVG/image media, copy buttons, system-reminder chrome, any button.
+// `range.toString()`), media, buttons, and chrome around the text that is not the text itself.
 // Shared with useSelectionQuote so the selection gate and anchor coordinate space stay in lockstep.
 export const INCLUDE_SELECTOR =
   '.turn-text, .message-content, .tool-details, .thinking-content-inline'
-export const EXCLUDE_SELECTOR =
-  '.code-block-gutter, .turn-text-copy-btn, .message-copy-btn, .system-reminders, svg, img, button'
+export const EXCLUDE_SELECTOR = [
+  '.code-block-gutter',
+  '.block-strip',
+  '.message-copy-btn',
+  '.injected-context-box',
+  'svg',
+  'img',
+  'button',
+].join(', ')
 
 // Context window captured on each side of the quote to disambiguate repeats.
 const CONTEXT_CHARS = 32

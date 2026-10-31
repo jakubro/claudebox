@@ -1,5 +1,7 @@
 """Tests for ClaudeRuntime catalog accessors + Skill parser."""
 
+from __future__ import annotations
+
 import textwrap
 
 from claudebox.agent_session.catalogs import EffortLevel, Model, PermissionMode, Skill
@@ -20,7 +22,7 @@ class TestModels:
         assert ClaudeRuntime.get_default_model() in ids
 
     def test_get_model_context_window_known(self):
-        assert ClaudeRuntime.get_model_context_window("claude-opus-5") == 1_000_000
+        assert ClaudeRuntime.get_model_context_window("claude-haiku-5-5") == 1_000_000
 
     def test_get_model_context_window_unknown_falls_back_to_default(self):
         assert ClaudeRuntime.get_model_context_window("nonexistent-model-xyz") == (
@@ -31,17 +33,15 @@ class TestModels:
         ids = [m.id for m in ClaudeRuntime.get_models()]
         assert len(ids) == len(set(ids))
 
-    def test_opus_4_8_present_and_default(self):
+    def test_catalog_is_one_model_per_tier_in_display_order(self):
         ids = [m.id for m in ClaudeRuntime.get_models()]
-        assert "claude-opus-5" in ids
-        assert ClaudeRuntime.get_default_model() == "claude-opus-5"
-
-    def test_both_fable_ids_present_newest_first(self):
-        ids = [m.id for m in ClaudeRuntime.get_models()]
-        assert {"claude-fable-5-1", "claude-fable-5"} <= set(ids)
-        assert ids.index("claude-fable-5-1") < ids.index("claude-fable-5")
-        assert ClaudeRuntime.get_model_context_window("claude-fable-5-1") == 1_000_000
-        assert ClaudeRuntime.get_model_context_window("claude-fable-5") == 1_000_000
+        assert ids == [
+            "claude-fable-5-1",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+        ]
+        assert ClaudeRuntime.get_default_model() == "claude-opus-5-5"
 
     def test_no_explicit_1m_variant_ids(self):
         ids = [m.id for m in ClaudeRuntime.get_models()]

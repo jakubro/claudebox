@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronUp,
+  Eye,
   GitFork,
   Loader2,
   Map as MapIcon,
@@ -324,11 +325,30 @@ export default function ChatControlBar({
               data-testid="right-slot-view-picker">
               <button
                 type="button"
+                className={`panel-control-btn${rightSlotView === RightSlotView.EVERYTHING ? ' pressed' : ''}`}
+                onClick={() =>
+                  onSelectRightSlotView(
+                    rightSlotView === RightSlotView.EVERYTHING
+                      ? RightSlotView.FOCUSED
+                      : RightSlotView.EVERYTHING,
+                  )
+                }
+                aria-pressed={rightSlotView === RightSlotView.EVERYTHING}
+                data-testid="right-slot-view-everything"
+                title={
+                  rightSlotView === RightSlotView.EVERYTHING
+                    ? 'Hide calls that only read'
+                    : 'Show everything'
+                }>
+                <Eye size={12} />
+              </button>
+              <button
+                type="button"
                 className={`panel-control-btn${rightSlotView === RightSlotView.TERMINAL ? ' pressed' : ''}`}
                 onClick={() =>
                   onSelectRightSlotView(
                     rightSlotView === RightSlotView.TERMINAL
-                      ? RightSlotView.OFF
+                      ? RightSlotView.FOCUSED
                       : RightSlotView.TERMINAL,
                   )
                 }
@@ -346,7 +366,9 @@ export default function ChatControlBar({
                 className={`panel-control-btn${rightSlotView === RightSlotView.WORK ? ' pressed' : ''}`}
                 onClick={() =>
                   onSelectRightSlotView(
-                    rightSlotView === RightSlotView.WORK ? RightSlotView.OFF : RightSlotView.WORK,
+                    rightSlotView === RightSlotView.WORK
+                      ? RightSlotView.FOCUSED
+                      : RightSlotView.WORK,
                   )
                 }
                 aria-pressed={rightSlotView === RightSlotView.WORK}

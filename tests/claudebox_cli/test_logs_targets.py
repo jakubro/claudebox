@@ -1,5 +1,7 @@
 """Parser-level tests for ``claudebox logs`` target + flag parsing."""
 
+from __future__ import annotations
+
 import pytest
 
 from host_cli import app

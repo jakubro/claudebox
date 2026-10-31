@@ -1,5 +1,7 @@
 """Handler for the ``logs`` verb - tail daemon log (default) or multiplex daemon + containers (``all``)."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import functools
@@ -183,7 +185,7 @@ def _print_tail(log_path: Path, n: int) -> None:
     if n <= 0:
         return
 
-    with log_path.open("r", errors="replace") as fp:
+    with log_path.open("r", encoding="utf-8", errors="replace") as fp:
         for line in deque(fp, maxlen=n):
             _print_log_line(_render_line(line))
 
@@ -192,7 +194,7 @@ def _follow(log_path: Path) -> int:
     """Tail-follow ``log_path``; exit cleanly on KeyboardInterrupt."""
 
     try:
-        with log_path.open("r", errors="replace") as fp:
+        with log_path.open("r", encoding="utf-8", errors="replace") as fp:
             fp.seek(0, 2)
 
             while True:
@@ -422,7 +424,7 @@ async def _watch_daemon_feed(client: httpx.AsyncClient, wake: asyncio.Event) -> 
         delay = min(delay * 2, _FEED_RETRY_MAX_SECONDS)
 
 
-async def _reconcile_loop(followers: "_ContainerFollowers", wake: asyncio.Event) -> None:
+async def _reconcile_loop(followers: _ContainerFollowers, wake: asyncio.Event) -> None:
     """Reconcile on every feed hint, and at least every ``_RECONCILE_SECONDS`` regardless."""
 
     while True:
@@ -528,7 +530,7 @@ def _print_tail_prefixed(log_path: Path, n: int, prefix: str) -> None:
     if n <= 0:
         return
 
-    with log_path.open("r", errors="replace") as fp:
+    with log_path.open("r", encoding="utf-8", errors="replace") as fp:
         for line in deque(fp, maxlen=n):
             _print_log_line(f"{prefix} {_render_line(line)}")
 
@@ -645,12 +647,12 @@ def _can_serve_logs(container: dict) -> bool:
 async def _follow_daemon_async(log_path: Path) -> None:
     """Async tail-follow of the daemon log file (no httpx involved)."""
 
-    if not log_path.exists():
-        return
-
     loop = asyncio.get_running_loop()
 
-    with log_path.open("r", errors="replace") as fp:
+    if not await loop.run_in_executor(None, log_path.exists):
+        return
+
+    with log_path.open("r", encoding="utf-8", errors="replace") as fp:
         fp.seek(0, 2)
 
         while True:

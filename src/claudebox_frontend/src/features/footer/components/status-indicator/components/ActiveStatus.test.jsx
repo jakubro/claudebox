@@ -112,7 +112,7 @@ describe('ActiveStatus', () => {
     expect(screen.getByText('(1d 6h)')).toBeInTheDocument()
   })
 
-  it('switches to Waiting label after silence threshold', () => {
+  it('keeps the Working label at full strength through silence', () => {
     const now = Date.now()
     render(
       <ActiveStatus
@@ -123,13 +123,11 @@ describe('ActiveStatus', () => {
       />,
     )
 
-    expect(screen.getByText('Working')).toBeInTheDocument()
-
     // Advance past silence threshold (5s)
     act(() => vi.advanceTimersByTime(6000))
 
-    expect(screen.getByText('Waiting')).toBeInTheDocument()
-    expect(screen.queryByText('Working')).not.toBeInTheDocument()
+    expect(screen.getByText('Working')).not.toHaveClass('status-silent')
+    expect(screen.queryByText('Waiting')).not.toBeInTheDocument()
   })
 
   it('applies status-silent class when silent', () => {
@@ -151,7 +149,7 @@ describe('ActiveStatus', () => {
     expect(dot).toHaveClass('status-silent')
   })
 
-  it('reverts to active state when new events arrive', () => {
+  it('reverts the dot to active when new events arrive', () => {
     const now = Date.now()
     const { rerender } = render(
       <ActiveStatus
@@ -162,11 +160,10 @@ describe('ActiveStatus', () => {
       />,
     )
 
-    // Go silent
+    const dot = screen.getByTestId('footer-status')
     act(() => vi.advanceTimersByTime(6000))
-    expect(screen.getByText('Waiting')).toBeInTheDocument()
+    expect(dot).toHaveClass('status-silent')
 
-    // New event arrives
     rerender(
       <ActiveStatus
         label="Working"
@@ -176,10 +173,8 @@ describe('ActiveStatus', () => {
       />,
     )
 
-    act(() => vi.advanceTimersByTime(1000))
-
+    expect(dot).not.toHaveClass('status-silent')
     expect(screen.getByText('Working')).toBeInTheDocument()
-    expect(screen.queryByText('Waiting')).not.toBeInTheDocument()
   })
 
   it('does not show silent state without lastEventTimestamp', () => {

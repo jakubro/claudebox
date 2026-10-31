@@ -7,19 +7,19 @@ import { buildTurnSegment } from '../context/utils/sessionRouting'
  * resolve to the same route without scripted navigation, so no browser treats it as a popup.
  * @param {string} workspaceId
  * @param {string} sessionId
- * @param {{ turnId?: string, messageType?: 'user' | 'assistant' }} [options] - Optional jump
- *   target appended as `/turns/<role>-<turnId>`.
+ * @param {{ turnId?: string, messageType?: 'user' | 'assistant', target?: string }} [options] -
+ *   Optional jump target appended as `/turns/<role>-<turnId>[/<part>]`.
  */
 export function buildSessionHref(workspaceId, sessionId, options) {
-  const turnSegment = buildTurnSegment(options?.turnId, options?.messageType)
+  const turnSegment = buildTurnSegment(options?.turnId, options?.messageType, options?.target)
   return `${location.pathname}${location.search}#/workspaces/${workspaceId}/sessions/${sessionId}${turnSegment}`
 }
 
 /**
  * @param {string} workspaceId
  * @param {string} sessionId
- * @param {{ turnId?: string, messageType?: 'user' | 'assistant' }} [options] - Optional jump
- *   target appended as `/turns/<role>-<turnId>`.
+ * @param {{ turnId?: string, messageType?: 'user' | 'assistant', target?: string }} [options] -
+ *   Optional jump target appended as `/turns/<role>-<turnId>[/<part>]`.
  * @returns {Window|null} The opened window, or null when the browser blocked the popup.
  */
 export function openSessionInNewTab(workspaceId, sessionId, options) {

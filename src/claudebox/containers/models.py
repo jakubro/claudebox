@@ -1,5 +1,7 @@
 """Container data models and enumerations."""
 
+from __future__ import annotations
+
 import enum
 
 

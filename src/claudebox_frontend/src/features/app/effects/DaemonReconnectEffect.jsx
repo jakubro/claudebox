@@ -20,14 +20,19 @@ export default function DaemonReconnectEffect() {
   const {
     reconnectSSE,
     startResume,
+    settleResumeRequest,
     clearResume,
-    notifyContainerChanged,
+    getPendingRequests,
+    notifyAddressChanged,
     containerId,
     isConnected,
   } = useEvents()
   const { setSessionContainer, stoppingSessions } = useContainerMap()
   const { clearSessionData } = useSessionActions()
   const { setError } = useInteraction()
+
+  const activeSessionIdRef = useRef(activeSessionId)
+  activeSessionIdRef.current = activeSessionId
 
   const prevReconnectedRef = useRef(daemonReconnected)
 
@@ -51,12 +56,19 @@ export default function DaemonReconnectEffect() {
       return
     }
 
-    clearResume()
+    // An open or create in flight attaches its own container; resuming here would overwrite it.
+    const pending = getPendingRequests()
+    if (pending.resume !== null || pending.create !== null) {
+      return
+    }
+
     resumeAndReconnect({
       activeSessionId,
+      isStillActive: () => activeSessionIdRef.current === activeSessionId,
       startResume,
+      settleResumeRequest,
       reconnectSSE,
-      notifyContainerChanged,
+      notifyAddressChanged,
       setSessionContainer,
       clearSessionData,
       onError: () => {
@@ -72,8 +84,10 @@ export default function DaemonReconnectEffect() {
     isConnected,
     clearResume,
     startResume,
+    settleResumeRequest,
+    getPendingRequests,
     reconnectSSE,
-    notifyContainerChanged,
+    notifyAddressChanged,
     setSessionContainer,
     clearSessionData,
     setError,

@@ -14,6 +14,8 @@ import { useSessionsList } from '../../../context/SessionsContext'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 import useCopyFlash from '../../../hooks/useCopyFlash'
 import { formatSessionDirTooltip } from '../../../utils/session'
+import { displayName, isAutoNamed } from '../../../utils/sessionName'
+import { DOT_TITLES, sessionDotState } from '../../../utils/sessionRow'
 import useSessionRail from '../../chat/hooks/useSessionRail'
 import BoardHeaderInfo from './BoardHeaderInfo'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
@@ -30,7 +32,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
  *   maximizeToggle on the panel's group. Read at call-time (`panelApi?.group?.api`) for drag/drop re-host.
  */
 export default function SessionHeaderStrip({ panelApi }) {
-  const { sessionName } = useSessionData()
+  const { sessionName, sessionNameIsAuto } = useSessionData()
   const sessionDir = useSessionDir()
   const { isResponding, isCreating, closeSSE, clearCreating } = useEvents()
   const { containerMap, addStoppingSession, deriveSessionStatus } = useContainerMap()
@@ -154,12 +156,14 @@ export default function SessionHeaderStrip({ panelApi }) {
               // container would take the whole shared group down, so it gets no Stop of its own.
               const entryCanStop = entryHasContainer && !entrySession?.is_side_thread
               const entryStatus = deriveSessionStatus(entrySessionId, sessions)
-              const entryIsStopping = entryStatus === 'stopping'
+              const entryDot = sessionDotState(entryStatus, entrySession)
               const entryIsFocused = entrySessionId === focusedSessionId
               // The focused entry prefers SessionDataContext's sessionName, fresher than the
               // sessions list right after a rename; an ancestor has only the list.
+              const focusedName = entryIsFocused ? sessionName : null
               const entryName =
-                (entryIsFocused && sessionName) || entrySession?.name || entrySessionId.slice(0, 8)
+                focusedName || displayName(entrySession) || entrySessionId.slice(0, 8)
+              const entryNameIsAuto = focusedName ? sessionNameIsAuto : isAutoNamed(entrySession)
 
               return (
                 <div
@@ -169,20 +173,14 @@ export default function SessionHeaderStrip({ panelApi }) {
                   data-session-id={entrySessionId}
                   data-focused={entryIsFocused}>
                   <span
-                    className={`container-status-dot container-status-${entryStatus}`}
-                    title={
-                      entryIsStopping
-                        ? 'Stopping container…'
-                        : entryHasContainer
-                          ? 'Container running'
-                          : 'No container'
-                    }
+                    className={`container-status-dot container-status-${entryDot}`}
+                    title={DOT_TITLES[entryDot]}
                     data-testid="session-header-status-dot"
-                    data-status={entryStatus}
+                    data-status={entryDot}
                   />
                   <button
                     type="button"
-                    className="session-header-strip-name"
+                    className={`session-header-strip-name${entryNameIsAuto ? ' auto-named' : ''}`}
                     onClick={() =>
                       entryIsFocused
                         ? handleNameClick()

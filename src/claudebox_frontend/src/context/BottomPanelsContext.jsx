@@ -1,4 +1,4 @@
-/** Bottom-panel slot state (open set + shared strip height), persisted per session. */
+/** Bottom-panel slot state (open set + shared strip height), restored and saved with the layout. */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { getUiState, patchSessionUiState } from '../api/uiState'
@@ -25,74 +25,89 @@ export function BottomPanelsProvider({ children }) {
   const [height, setHeightState] = useState(LOGS_STRIP_DEFAULT_HEIGHT)
   const [panelSideMap, setPanelSideMap] = useState(() => new Map())
 
-  const hydratedSessionRef = useRef(null)
-  const saveTimeoutRef = useRef(null)
-  // Distinguishes user changes (must persist) from hydration changes (must not echo back and
-  // race the dockview layout PATCH).
+  const saveRef = useRef(null)
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
+  // Set by the reader's own changes: they persist, and no later restore overrides them.
   const userInteractedRef = useRef(false)
+  const attachReadRef = useRef(false)
 
-  // Resets per session so only that session's own interactions trigger persistence, not
-  // hydration echoes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is the change trigger; body only writes a ref
-  useEffect(() => {
-    userInteractedRef.current = false
-  }, [sessionId])
-
-  // Hydrates once per sessionId; welcome state (sessionId === null) skips it, so the strip stays
-  // at defaults.
-  useEffect(() => {
-    if (!sessionId || hydratedSessionRef.current === sessionId) {
+  // Part of the layout, not of a session: restored from the latest session's record at mount and
+  // from the attached session's own on the tab's first attach, never again on a switch.
+  const restore = useCallback(stored => {
+    if (userInteractedRef.current || !stored || typeof stored !== 'object') {
       return
     }
-    hydratedSessionRef.current = sessionId
+    if (Array.isArray(stored.openSet)) {
+      setOpenSet(new Set(stored.openSet))
+    }
+    if (typeof stored.height === 'number' && stored.height > 0) {
+      setHeightState(clampHeight(stored.height))
+    }
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
-    getUiState(sessionId)
+    getUiState()
       .then(data => {
-        if (cancelled) {
-          return
-        }
-        const stored = data?.session?.bottomPanels
-        if (stored && typeof stored === 'object') {
-          if (Array.isArray(stored.openSet)) {
-            setOpenSet(new Set(stored.openSet))
-          }
-          if (typeof stored.height === 'number' && stored.height > 0) {
-            setHeightState(clampHeight(stored.height))
-          }
+        if (!(cancelled || attachReadRef.current)) {
+          restore(data?.session?.bottomPanels)
         }
       })
-      .catch(() => {
-        // Best-effort hydration; defaults are already in state.
-      })
+      .catch(() => {})
+
     return () => {
       cancelled = true
     }
-  }, [sessionId])
+  }, [restore])
 
-  // Debounced PATCH on user-initiated changes only.
   useEffect(() => {
-    if (!(sessionId && userInteractedRef.current)) {
+    if (!sessionId || attachReadRef.current) {
       return
     }
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
-    saveTimeoutRef.current = setTimeout(() => {
-      patchSessionUiState(sessionId, [
-        {
-          op: 'set',
-          path: 'bottomPanels',
-          value: { openSet: [...openSet], height },
-        },
-      ])
-    }, LAYOUT_SAVE_DEBOUNCE_MS)
+    attachReadRef.current = true
+    let cancelled = false
+    getUiState(sessionId)
+      .then(data => {
+        if (!cancelled) {
+          restore(data?.session?.bottomPanels)
+        }
+      })
+      .catch(() => {})
+
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current)
-        saveTimeoutRef.current = null
-      }
+      cancelled = true
     }
-  }, [sessionId, openSet, height])
+  }, [sessionId, restore])
+
+  // Debounced save of the reader's own changes, into the session they were made in.
+  useEffect(() => {
+    const target = sessionIdRef.current
+    if (!(target && userInteractedRef.current)) {
+      return
+    }
+    clearTimeout(saveRef.current?.timer)
+    const save = () => {
+      saveRef.current = null
+      patchSessionUiState(target, [
+        { op: 'set', path: 'bottomPanels', value: { openSet: [...openSet], height } },
+      ])
+    }
+    saveRef.current = { save, timer: setTimeout(save, LAYOUT_SAVE_DEBOUNCE_MS) }
+  }, [openSet, height])
+
+  // A change made just before a switch or unmount is saved now rather than dropped.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is the flush trigger
+  useEffect(
+    () => () => {
+      const pending = saveRef.current
+      if (pending) {
+        clearTimeout(pending.timer)
+        pending.save()
+      }
+    },
+    [sessionId],
+  )
 
   // Declarative on purpose: one call states everything a side owns, so a same-ids re-run
   // produces no state change. Per-id register/unregister can't guarantee that - a

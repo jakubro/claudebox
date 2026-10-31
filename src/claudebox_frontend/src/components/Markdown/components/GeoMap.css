@@ -1,0 +1,67 @@
+/* Map blocks - the diagram container's surface, Leaflet's light chrome turned to the dark palette */
+
+.drawn-block {
+  position: relative;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.drawn-block-toolbar {
+  z-index: 1000;
+}
+
+.drawn-block:hover .drawn-block-toolbar {
+  opacity: 1;
+}
+
+.drawn-block-loading {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.geo-map-canvas-wrapper {
+  position: relative;
+}
+
+.geo-map-canvas {
+  height: 300px;
+}
+
+/* Leaflet's stylesheet loads after this one, so rules here outrank its defaults rather than tie them */
+.geo-map .geo-map-canvas.leaflet-container {
+  background: var(--bg-secondary);
+}
+
+.geo-map-load-tiles {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1000;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geo-map .leaflet-bar a,
+.geo-map .leaflet-popup-content-wrapper,
+.geo-map .leaflet-popup-tip,
+.geo-map .leaflet-container .leaflet-control-attribution {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.geo-map .leaflet-bar a.leaflet-disabled {
+  color: var(--text-muted);
+}
+
+.geo-map .leaflet-control-attribution a {
+  color: var(--accent);
+}

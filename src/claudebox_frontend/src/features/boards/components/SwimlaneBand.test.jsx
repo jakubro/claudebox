@@ -27,6 +27,22 @@ const defaultProps = {
   allTickets: { backlog: [{ path: 'tickets/a.md', swimlane: 'lane-1' }] },
 }
 
+async function openLaneMenu() {
+  const user = userEvent.setup()
+  render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
+  await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+
+  return user
+}
+
+async function editLaneName() {
+  const user = userEvent.setup()
+  render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
+  await user.dblClick(screen.getByText('Sprint 1'))
+
+  return { user, input: screen.getByDisplayValue('Sprint 1') }
+}
+
 describe('SwimlaneBand', () => {
   beforeEach(() => {
     defaultProps.refresh.mockClear()
@@ -75,13 +91,7 @@ describe('SwimlaneBand', () => {
   })
 
   it('shows context menu on right-click', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: screen.getByText('Sprint 1'),
-    })
+    await openLaneMenu()
 
     expect(screen.getByText('Rename')).toBeInTheDocument()
     expect(screen.getByText('Delete')).toBeInTheDocument()
@@ -107,13 +117,7 @@ describe('SwimlaneBand', () => {
   })
 
   it('hides context menu when backdrop clicked', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: screen.getByText('Sprint 1'),
-    })
+    const user = await openLaneMenu()
     expect(screen.getByText('Rename')).toBeInTheDocument()
 
     const backdrop = document.querySelector('.swimlane-context-backdrop')
@@ -149,11 +153,7 @@ describe('SwimlaneBand', () => {
   })
 
   it('cancels editing on Escape without submitting', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.dblClick(screen.getByText('Sprint 1'))
-    const input = screen.getByDisplayValue('Sprint 1')
+    const { user, input } = await editLaneName()
     await user.type(input, 'X{Escape}')
 
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
@@ -161,11 +161,7 @@ describe('SwimlaneBand', () => {
   })
 
   it('submits a rename on Enter and refreshes', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.dblClick(screen.getByText('Sprint 1'))
-    const input = screen.getByDisplayValue('Sprint 1')
+    const { user, input } = await editLaneName()
     await user.clear(input)
     await user.type(input, 'Sprint 2{Enter}')
 
@@ -209,11 +205,7 @@ describe('SwimlaneBand', () => {
   it('logs when renaming fails', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     renameSwimlane.mockRejectedValueOnce(new Error('boom'))
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.dblClick(screen.getByText('Sprint 1'))
-    const input = screen.getByDisplayValue('Sprint 1')
+    const { user, input } = await editLaneName()
     await user.clear(input)
     await user.type(input, 'Renamed{Enter}')
 
@@ -221,20 +213,14 @@ describe('SwimlaneBand', () => {
   })
 
   it('opens the editor from the context menu Rename action', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     await user.click(screen.getByText('Rename'))
 
     expect(screen.getByDisplayValue('Sprint 1')).toBeInTheDocument()
   })
 
   it('deletes the swimlane and refreshes', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     await user.click(screen.getByText('Delete'))
 
     expect(deleteSwimlane).toHaveBeenCalledWith('board-1', 'lane-1')
@@ -244,20 +230,14 @@ describe('SwimlaneBand', () => {
   it('logs when deleting fails', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     deleteSwimlane.mockRejectedValueOnce(new Error('boom'))
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     await user.click(screen.getByText('Delete'))
 
     expect(consoleSpy).toHaveBeenCalledWith('Failed to delete swimlane:', expect.any(Error))
   })
 
   it('moves the swimlane down and refreshes', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     await user.click(screen.getByText('Move down'))
 
     expect(reorderSwimlanes).toHaveBeenCalledWith('board-1', ['lane-2', 'lane-1'])
@@ -265,10 +245,7 @@ describe('SwimlaneBand', () => {
   })
 
   it('is a no-op moving up past the first position', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     await user.click(screen.getByText('Move up'))
 
     expect(reorderSwimlanes).not.toHaveBeenCalled()
@@ -277,20 +254,14 @@ describe('SwimlaneBand', () => {
   it('logs when reordering fails', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     reorderSwimlanes.mockRejectedValueOnce(new Error('boom'))
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     await user.click(screen.getByText('Move down'))
 
     expect(consoleSpy).toHaveBeenCalledWith('Failed to reorder swimlanes:', expect.any(Error))
   })
 
   it('bulk-archives every ticket in the lane and refreshes', async () => {
-    const user = userEvent.setup()
-    render(<SwimlaneBand {...defaultProps}>cells</SwimlaneBand>)
-
-    await user.pointer({ keys: '[MouseRight]', target: screen.getByText('Sprint 1') })
+    const user = await openLaneMenu()
     expect(
       screen.getByText('Archive all tickets in Sprint 1 swimlane (1 tickets)'),
     ).toBeInTheDocument()

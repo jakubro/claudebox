@@ -3,6 +3,7 @@
 import { expect, test } from '@playwright/test'
 import {
   openLogsPanel,
+  openResumingSession,
   toggleLogsPanel,
   waitForAppReady,
   waitForShortcutsReady,
@@ -130,12 +131,7 @@ test.describe('Logs Panel', () => {
   test.describe('Connection States', () => {
     // SPEC: panel-log:connecting
     test('shows connecting state before logs arrive', async ({ page }) => {
-      await createLogsSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
-
-      await openLogsPanel(page)
+      await openLogsWithStream(page)
 
       const logsPanel = page.locator('[data-testid="panel-logs"]')
       await expect(logsPanel).toBeVisible()
@@ -153,14 +149,7 @@ test.describe('Logs Panel', () => {
   test.describe('Log Content', () => {
     // SPEC: panel-log:format
     test('log entries show timestamp, level, logger, message', async ({ page }) => {
-      const logsController = await createLogsSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-
-      // Footer indicates app ready without requiring chat input.
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
-
-      await openLogsPanel(page)
+      const logsController = await openLogsWithStream(page)
 
       await logsController.sendLog({
         timestamp: 1706123456,
@@ -177,14 +166,31 @@ test.describe('Logs Panel', () => {
       await expect(logLine.locator('.log-message')).toContainText('Server started on port 8080')
     })
 
+    // SPEC: panel-log:latest-thousand
+    test('a long history shows only its latest 1,000 entries, newest at the bottom', async ({
+      page,
+    }) => {
+      await openLogsWithStream(page)
+
+      await page.evaluate(() => {
+        const instance = window.__sseLogsInstance
+        const emit = frame => instance.onmessage({ data: JSON.stringify(frame) })
+        emit({ type: 'system', subtype: 'replay_started', count: 1200 })
+        for (let n = 0; n < 1200; n++) {
+          emit({ timestamp: 1706123456 + n, level: 'INFO', logger: 'test', message: `entry ${n}` })
+        }
+        emit({ type: 'system', subtype: 'replay_ended', count: 0 })
+      })
+
+      const lines = page.locator('.log-line .log-message')
+      await expect(lines).toHaveCount(1000)
+      await expect(lines.first()).toHaveText('entry 200')
+      await expect(lines.last()).toHaveText('entry 1199')
+    })
+
     // SPEC: panel-log:colors
     test('log levels have distinct colors via CSS classes', async ({ page }) => {
-      const logsController = await createLogsSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
-
-      await openLogsPanel(page)
+      const logsController = await openLogsWithStream(page)
 
       await logsController.sendLogs([
         { timestamp: 1706123456, level: 'DEBUG', logger: 'test', message: 'Debug message' },
@@ -209,12 +215,7 @@ test.describe('Logs Panel', () => {
 
     // SPEC: panel-log:colors
     test('critical log level has distinct color coding', async ({ page }) => {
-      const logsController = await createLogsSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
-
-      await openLogsPanel(page)
+      const logsController = await openLogsWithStream(page)
 
       await logsController.sendLog({
         timestamp: 1706123460,
@@ -228,12 +229,7 @@ test.describe('Logs Panel', () => {
 
     // SPEC: panel-log:autoscroll
     test('auto-scrolls to latest log entries', async ({ page }) => {
-      const logsController = await createLogsSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
-
-      await openLogsPanel(page)
+      const logsController = await openLogsWithStream(page)
 
       const logs = Array.from({ length: 50 }, (_, i) => ({
         timestamp: 1706123456 + i,
@@ -254,11 +250,7 @@ test.describe('Logs Panel', () => {
     test('shows "Resuming..." during session replay', async ({ page }) => {
       await mockAPI(page)
       // The resuming fixture triggers isReplaying state.
-      await mockSSE(page, 'events/resuming.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-
-      // Footer indicates app ready without depending on chat input.
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+      await openResumingSession(page)
 
       await page.locator('[data-testid="icon-logs"]').click()
 
@@ -286,3 +278,14 @@ test.describe('Logs Panel', () => {
     })
   })
 })
+
+async function openLogsWithStream(page) {
+  const logsController = await createLogsSSEController(page)
+  await mockAPI(page)
+  await page.goto(DEFAULT_SESSION_URL)
+  // Footer indicates app ready without requiring chat input.
+  await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+  await openLogsPanel(page)
+
+  return logsController
+}

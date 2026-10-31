@@ -36,11 +36,16 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+function setupPromoted() {
+  forkSession.mockResolvedValue({ session_id: 'promoted-1' })
+  openSessionInNewTab.mockReturnValue({})
+
+  return setup()
+}
+
 describe('executeFork - source id override', () => {
   it('forks the given sourceId instead of the current session', async () => {
-    forkSession.mockResolvedValue({ session_id: 'promoted-1' })
-    openSessionInNewTab.mockReturnValue({})
-    const { result } = setup()
+    const { result } = setupPromoted()
 
     await act(async () => {
       await result.current.executeFork(null, 'fork-browser-tab', { sourceId: 'side-1' })
@@ -50,9 +55,7 @@ describe('executeFork - source id override', () => {
   })
 
   it('defaults to the current session when no sourceId is given', async () => {
-    forkSession.mockResolvedValue({ session_id: 'fork-1' })
-    openSessionInNewTab.mockReturnValue({})
-    const { result } = setup()
+    const { result } = setupPromoted()
 
     await act(async () => {
       await result.current.executeFork(null, 'fork-browser-tab')
@@ -64,9 +67,7 @@ describe('executeFork - source id override', () => {
 
 describe('executeFork - parent override', () => {
   it('forwards parentSessionId to forkSession', async () => {
-    forkSession.mockResolvedValue({ session_id: 'promoted-1' })
-    openSessionInNewTab.mockReturnValue({})
-    const { result } = setup()
+    const { result } = setupPromoted()
 
     await act(async () => {
       await result.current.executeFork(null, 'fork-browser-tab', {
@@ -101,9 +102,7 @@ describe('executeFork - stopSourceFirst', () => {
   })
 
   it('never calls stopSession when stopSourceFirst is not set', async () => {
-    forkSession.mockResolvedValue({ session_id: 'fork-1' })
-    openSessionInNewTab.mockReturnValue({})
-    const { result } = setup()
+    const { result } = setupPromoted()
 
     await act(async () => {
       await result.current.executeFork(null, 'fork-browser-tab')
@@ -134,9 +133,7 @@ describe('executeFork - stopSourceFirst', () => {
 
 describe('executeFork - tabOpened', () => {
   it('reflects a successfully opened tab', async () => {
-    forkSession.mockResolvedValue({ session_id: 'promoted-1' })
-    openSessionInNewTab.mockReturnValue({})
-    const { result } = setup()
+    const { result } = setupPromoted()
 
     let outcome
     await act(async () => {
@@ -173,5 +170,36 @@ describe('executeFork - fork-here arm is unaffected by the new options', () => {
     expect(forkSession).toHaveBeenCalledWith('main-1', 'turn-1', { reuse_container: true })
     expect(navigateToSession).toHaveBeenCalledWith('ws-1', 'fork-1')
     expect(openSessionInNewTab).not.toHaveBeenCalled()
+  })
+})
+
+describe('the fork-here confirmation across a session switch', () => {
+  it('closes on a move to another session, and confirming it then forks nothing', async () => {
+    const props = {
+      sessionId: 'A',
+      routedSessionId: 'A',
+      workspaceId: 'ws-1',
+      isResponding: true,
+      navigateToSession: vi.fn(),
+      focusChatTab: vi.fn(),
+      seedSession: vi.fn(),
+      setError: vi.fn(),
+      startForking: vi.fn(),
+      clearForking: vi.fn(),
+    }
+    const { result, rerender } = renderHook(p => useChatRewindFork(p), { initialProps: props })
+    await act(async () => {
+      await result.current.handleForkRequest('fork-here')
+    })
+    expect(result.current.rewindTurnId).toBe('__all__')
+    const confirmOpenedInA = result.current.handleRewindConfirm
+
+    rerender({ ...props, sessionId: 'B', routedSessionId: 'B' })
+    await act(async () => {
+      await confirmOpenedInA()
+    })
+
+    expect(result.current.rewindTurnId).toBeNull()
+    expect(forkSession).not.toHaveBeenCalled()
   })
 })

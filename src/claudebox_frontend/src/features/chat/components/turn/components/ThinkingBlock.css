@@ -92,15 +92,28 @@
 .thinking-content-inline h1,
 .thinking-content-inline h2,
 .thinking-content-inline h3,
-.thinking-content-inline h4 {
+.thinking-content-inline h4,
+.thinking-content-inline h5,
+.thinking-content-inline h6 {
   margin: 1em 0 0.5em 0;
   font-weight: 600;
 }
 
 .thinking-content-inline h1:first-child,
 .thinking-content-inline h2:first-child,
-.thinking-content-inline h3:first-child {
+.thinking-content-inline h3:first-child,
+.thinking-content-inline h4:first-child,
+.thinking-content-inline h5:first-child,
+.thinking-content-inline h6:first-child {
   margin-top: 0;
+}
+
+.thinking-content-inline h5 {
+  font-size: 0.875em;
+}
+
+.thinking-content-inline h6 {
+  font-size: 0.85em;
 }
 
 .thinking-content-inline pre {

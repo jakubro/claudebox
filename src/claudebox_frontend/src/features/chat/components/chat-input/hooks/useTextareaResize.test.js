@@ -55,6 +55,14 @@ describe('useTextareaResize', () => {
     }
   }
 
+  function renderResize(...elements) {
+    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(...elements)
+
+    return renderHook(() =>
+      useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
+    )
+  }
+
   /** Trigger all ResizeObserver callbacks. */
   function triggerResize() {
     act(() => {
@@ -67,14 +75,7 @@ describe('useTextareaResize', () => {
   it('resizeTextarea() sets height to scrollHeight', () => {
     const textarea = createMockTextarea(80)
     const panel = createMockPanel(400)
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      panel,
-    )
-
-    const { result } = renderHook(() =>
-      useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
-    )
+    const { result } = renderResize(textarea, panel)
 
     act(() => {
       result.current.resizeTextarea()
@@ -86,12 +87,7 @@ describe('useTextareaResize', () => {
   it('caps height at 33% of panel height', () => {
     const textarea = createMockTextarea(500) // scrollHeight exceeds max
     const panel = createMockPanel(400) // max = 400 * 0.33 = 132
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      panel,
-    )
-
-    renderHook(() => useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef))
+    renderResize(textarea, panel)
 
     triggerResize()
 
@@ -101,12 +97,7 @@ describe('useTextareaResize', () => {
   it('sets overflowY to auto when at max height', () => {
     const textarea = createMockTextarea(500)
     const panel = createMockPanel(400) // max = 132
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      panel,
-    )
-
-    renderHook(() => useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef))
+    renderResize(textarea, panel)
 
     triggerResize()
 
@@ -116,12 +107,7 @@ describe('useTextareaResize', () => {
   it('sets overflowY to hidden when below max height', () => {
     const textarea = createMockTextarea(100)
     const panel = createMockPanel(400) // max = 132
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      panel,
-    )
-
-    renderHook(() => useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef))
+    renderResize(textarea, panel)
 
     triggerResize()
 
@@ -132,15 +118,11 @@ describe('useTextareaResize', () => {
     const textarea = createMockTextarea(50)
     const panel = createMockPanel(400)
     const messages = createMockMessages(100)
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
+    const { result } = renderResize(
       textarea,
       panel,
       messages,
       false, // User scrolled up
-    )
-
-    const { result } = renderHook(() =>
-      useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
     )
 
     triggerResize()
@@ -162,15 +144,11 @@ describe('useTextareaResize', () => {
     const panel = createMockPanel(400)
     const messages = createMockMessages(100)
     messages.scrollHeight = 1000
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
+    const { result } = renderResize(
       textarea,
       panel,
       messages,
       true, // Autoscroll engaged
-    )
-
-    const { result } = renderHook(() =>
-      useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
     )
 
     // First resize to establish prevHeight
@@ -190,12 +168,7 @@ describe('useTextareaResize', () => {
   it('updates max height when panel resizes', () => {
     const textarea = createMockTextarea(500)
     const panel = createMockPanel(400) // max = 132
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      panel,
-    )
-
-    renderHook(() => useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef))
+    renderResize(textarea, panel)
 
     triggerResize()
     expect(textarea.style.height).toBe('132px')
@@ -207,26 +180,14 @@ describe('useTextareaResize', () => {
 
   it('attaches input event listener to textarea', () => {
     const textarea = createMockTextarea()
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      createMockPanel(),
-    )
-
-    renderHook(() => useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef))
+    renderResize(textarea, createMockPanel())
 
     expect(textarea.addEventListener).toHaveBeenCalledWith('input', expect.any(Function))
   })
 
   it('removes event listener on unmount', () => {
     const textarea = createMockTextarea()
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      createMockPanel(),
-    )
-
-    const { unmount } = renderHook(() =>
-      useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
-    )
+    const { unmount } = renderResize(textarea, createMockPanel())
 
     unmount()
 
@@ -234,14 +195,7 @@ describe('useTextareaResize', () => {
   })
 
   it('handles null textarea gracefully', () => {
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      null,
-      createMockPanel(),
-    )
-
-    const { result } = renderHook(() =>
-      useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
-    )
+    const { result } = renderResize(null, createMockPanel())
 
     expect(() => {
       act(() => {
@@ -251,27 +205,15 @@ describe('useTextareaResize', () => {
   })
 
   it('handles null panel gracefully', () => {
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      createMockTextarea(),
-      null,
-    )
-
     expect(() => {
-      renderHook(() =>
-        useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef),
-      )
+      renderResize(createMockTextarea(), null)
     }).not.toThrow()
   })
 
   it('uses minimum max height of 120px', () => {
     const textarea = createMockTextarea(100)
     const panel = createMockPanel(100) // 100 * 0.33 = 33, but min is 120
-    const { textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef } = createRefs(
-      textarea,
-      panel,
-    )
-
-    renderHook(() => useTextareaResize(textareaRef, panelRef, messagesRef, isAutoScrollEnabledRef))
+    renderResize(textarea, panel)
 
     triggerResize()
 

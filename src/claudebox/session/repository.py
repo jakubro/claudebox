@@ -1,14 +1,21 @@
 """Shared session repository - disk I/O for session.json files."""
 
+from __future__ import annotations
+
 from datetime import datetime
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from .models import SessionMetadata, SessionNotFound
 from ..constants import SESSION_METADATA_FILE
+from ..core.file_cache import FileCache
 from ..core.io import read_json, write_json
+from ..core.logging import get_logger
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from ..workspace import Workspace
 
 
@@ -19,28 +26,36 @@ class SessionRepository:
     enrichment (container_id, projection) happens in the calling layer.
     """
 
-    def __init__(self, workspace: "Workspace") -> None:
+    def __init__(self, workspace: Workspace) -> None:
         self._workspace = workspace
+        self._logger = get_logger(__name__)
+        self._records: FileCache[SessionMetadata | None] = FileCache()
 
     def list_all(self) -> list[SessionMetadata]:
-        """List all sessions from workspace disk, sorted by updated_at descending."""
+        """List all sessions from workspace disk, sorted by updated_at descending.
+
+        A record is re-read only when its session.json changed, or was still settling, at the previous listing.
+        """
 
         sessions = []
+        paths = []
 
         for session in self._workspace.list_sessions():
             path = session.path / SESSION_METADATA_FILE
+            paths.append(path)
 
-            if not path.exists():
+            try:
+                metadata = self._records.get(path, partial(self._read_record, path, session.id))
+            except ValueError:
+                # Callers share one scan, so an unreadable record is skipped rather than failing all.
+                self._logger.warning("Unreadable session metadata", path=str(path))
+
                 continue
 
-            data = read_json(path, default=None)
+            if metadata is not None:
+                sessions.append(metadata)
 
-            if not data:
-                continue
-
-            data.setdefault("session_id", session.id)
-            data.setdefault("fork_point_cost_usd", 0.0)
-            sessions.append(SessionMetadata.fromdict(data))
+        self._records.retain(paths)
 
         # .replace(tzinfo=None) normalizes whichever operand wins to naive, so datetime.min (always
         # naive) sorts consistently against aware updated_at/started_at without a tz-mismatch error.
@@ -98,6 +113,18 @@ class SessionRepository:
         data = read_json(path, default={})
         data.update(fields)
         write_json(path, data)
+
+        data.setdefault("session_id", session_id)
+        data.setdefault("fork_point_cost_usd", 0.0)
+
+        return SessionMetadata.fromdict(data)
+
+    @staticmethod
+    def _read_record(path: Path, session_id: str) -> SessionMetadata | None:
+        data = read_json(path, default=None)
+
+        if not data:
+            return None
 
         data.setdefault("session_id", session_id)
         data.setdefault("fork_point_cost_usd", 0.0)

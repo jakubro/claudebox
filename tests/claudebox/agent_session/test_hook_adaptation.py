@@ -6,8 +6,10 @@ as a silent baseline and fires only on real changes; PostToolUse-based detection
 _fire_permission_mode_changed, sharing one filter with the setter path.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -118,7 +120,8 @@ class TestModelDeltaDetection:
 
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_model_changed=cb))
-        runtime.ready.set()  # bypass buffering for setter
+        runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
@@ -132,6 +135,7 @@ class TestModelDeltaDetection:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_model_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
@@ -148,6 +152,7 @@ class TestModelDeltaDetection:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_model_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
@@ -160,6 +165,7 @@ class TestModelDeltaDetection:
     async def test_no_callback_registered_still_tracks_baseline(self):
         runtime = _make_runtime(HookCallbacks(on_model_changed=None))
         runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_model", AsyncMock())
@@ -176,6 +182,7 @@ class TestPermissionModeDeltaDetection:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_permission_mode_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_permission_mode", AsyncMock())
@@ -189,6 +196,7 @@ class TestPermissionModeDeltaDetection:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_permission_mode_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_permission_mode", AsyncMock())
@@ -206,10 +214,10 @@ class TestEffortLevelDeltaDetection:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_effort_level_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
-        with pytest.MonkeyPatch().context() as mp:
-            mp.setattr(ClaudeRuntime, "_write_effort_to_settings", lambda cls, level: None)
-            await runtime.set_effort_level("xhigh")
+        runtime._sdk._query = MagicMock(_send_control_request=AsyncMock(return_value={}))
+        await runtime.set_effort_level("xhigh")
 
         cb.assert_not_awaited()
         assert runtime._last_known_effort_level == "xhigh"
@@ -219,11 +227,11 @@ class TestEffortLevelDeltaDetection:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_effort_level_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
-        with pytest.MonkeyPatch().context() as mp:
-            mp.setattr(ClaudeRuntime, "_write_effort_to_settings", lambda cls, level: None)
-            await runtime.set_effort_level("xhigh")
-            await runtime.set_effort_level("low")
+        runtime._sdk._query = MagicMock(_send_control_request=AsyncMock(return_value={}))
+        await runtime.set_effort_level("xhigh")
+        await runtime.set_effort_level("low")
 
         cb.assert_awaited_once_with("low")
 
@@ -253,6 +261,7 @@ class TestPostToolUseConvergence:
         cb = AsyncMock()
         runtime = _make_runtime(HookCallbacks(on_permission_mode_changed=cb))
         runtime.ready.set()
+        runtime._drained.set()
 
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr(runtime._sdk, "set_permission_mode", AsyncMock())

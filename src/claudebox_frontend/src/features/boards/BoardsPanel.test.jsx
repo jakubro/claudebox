@@ -50,6 +50,15 @@ vi.mock('./hooks/useBoardList', () => ({
   default: () => mockBoardList,
 }))
 
+async function startRename() {
+  const user = userEvent.setup()
+  mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
+  render(<BoardsPanel />)
+  await user.click(screen.getByTitle('Rename board'))
+
+  return user
+}
+
 describe('BoardsPanel', () => {
   beforeEach(() => {
     mockBoardList.boards = []
@@ -233,21 +242,13 @@ describe('BoardsPanel', () => {
 
   describe('inline rename', () => {
     it('enters edit mode pre-filled with the current name', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      await startRename()
 
       expect(screen.getByDisplayValue('Sprint Board')).toBeInTheDocument()
     })
 
     it('saves a rename via the check button and refreshes', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      const user = await startRename()
       const input = screen.getByDisplayValue('Sprint Board')
       await user.clear(input)
       await user.type(input, 'Renamed Board')
@@ -259,11 +260,7 @@ describe('BoardsPanel', () => {
     })
 
     it('saves a rename via the Enter key', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      const user = await startRename()
       const input = screen.getByDisplayValue('Sprint Board')
       await user.clear(input)
       await user.type(input, 'Renamed via Enter{Enter}')
@@ -272,11 +269,7 @@ describe('BoardsPanel', () => {
     })
 
     it('cancels via the X button without saving', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      const user = await startRename()
       const input = screen.getByDisplayValue('Sprint Board')
       await user.clear(input)
       await user.type(input, 'Discarded')
@@ -288,11 +281,7 @@ describe('BoardsPanel', () => {
     })
 
     it('cancels via the Escape key without saving', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      const user = await startRename()
       await user.type(screen.getByDisplayValue('Sprint Board'), '{Escape}')
 
       expect(renameBoard).not.toHaveBeenCalled()
@@ -300,11 +289,7 @@ describe('BoardsPanel', () => {
     })
 
     it('does not save an empty or whitespace-only name, but still exits edit mode', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      const user = await startRename()
       const input = screen.getByDisplayValue('Sprint Board')
       await user.clear(input)
       await user.type(input, '   ')
@@ -315,11 +300,7 @@ describe('BoardsPanel', () => {
     })
 
     it('clicking the edit input does not bubble into board navigation', async () => {
-      const user = userEvent.setup()
-      mockBoardList.boards = [{ id: 'b1', name: 'Sprint Board', path: 'sprint.yaml' }]
-      render(<BoardsPanel />)
-
-      await user.click(screen.getByTitle('Rename board'))
+      const user = await startRename()
       await user.click(screen.getByDisplayValue('Sprint Board'))
 
       expect(mockRouting.navigateToBoard).not.toHaveBeenCalled()

@@ -5,6 +5,25 @@ import { waitForAppReady, waitForStableScroll, waitForStableScrollHeight } from 
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
+async function openMessages(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  const messages = page.locator('[data-testid="chat-messages"]')
+  await expect(messages).toBeVisible()
+
+  return messages
+}
+
+async function openScrolledToBottom(page) {
+  const messages = await openMessages(page)
+  await messages.evaluate(el => {
+    el.scrollTop = el.scrollHeight
+  })
+  await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+
+  return messages
+}
+
 test.describe('Chat Navigation', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
@@ -14,17 +33,8 @@ test.describe('Chat Navigation', () => {
   test.describe('Alt+Up/Down jump between messages', () => {
     // SPEC: shortcut:alt-up
     test('Alt+Up lands on a HUMAN message that sits above the viewport', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
-
       // Scroll to bottom first so there are messages above
-      await messages.evaluate(el => {
-        el.scrollTop = el.scrollHeight
-      })
-      await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+      const messages = await openScrolledToBottom(page)
 
       const scrollBefore = await messages.evaluate(el => el.scrollTop)
 
@@ -62,11 +72,7 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: shortcut:alt-down
     test('Alt+Down lands on a HUMAN message that sat below the viewport', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
+      const messages = await openMessages(page)
       // Wait for streamed turns to finish rendering, so there is content below the top for
       // Alt+Down to jump to (under load, the shortcut can fire while scrollTop is still 0).
       await waitForStableScrollHeight(messages)
@@ -106,17 +112,8 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: shortcut:jump-boundary
     test('Alt+Down at last message scrolls to bottom', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
-
       // Scroll to bottom so all messages are above viewport
-      await messages.evaluate(el => {
-        el.scrollTop = el.scrollHeight
-      })
-      await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+      const messages = await openScrolledToBottom(page)
 
       await page.keyboard.press('Alt+ArrowDown')
 
@@ -132,11 +129,10 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: shortcut:jump-boundary
     test('Alt+Up at first message scrolls to top', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
+      const messages = await openMessages(page)
+      // Wait for streamed turns to finish rendering, so scrollTop=0 below isn't overwritten by
+      // the settle loop still snapping to bottom as later turns arrive (matches the Alt+Down test above).
+      await waitForStableScrollHeight(messages)
 
       // Disengage autoscroll before forcing scrollTop=0, or it may snap back to bottom
       // between the programmatic write and the Alt+Up press.
@@ -153,11 +149,7 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: shortcut:jump-viewport
     test('Alt+Up/Down targets are viewport-relative', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
+      const messages = await openMessages(page)
 
       // Wait for the long-conversation fixture to render, or scrollHeight may still be
       // <= clientHeight when seeking to the middle, leaving scrollTop at 0 and racing layout.
@@ -202,11 +194,7 @@ test.describe('Chat Navigation', () => {
   test.describe('Alt+Home/End', () => {
     // SPEC: shortcut:alt-home
     test('Alt+Home scrolls to top', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
+      const messages = await openMessages(page)
 
       // Wait for autoscroll to bottom
       await expect
@@ -222,11 +210,7 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: shortcut:alt-end
     test('Alt+End scrolls to bottom', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
+      const messages = await openMessages(page)
 
       // Wait for initial autoscroll to settle, then use Alt+Home to reach the top (avoids
       // fighting autoscroll by going through the tested shortcut path).
@@ -254,16 +238,7 @@ test.describe('Chat Navigation', () => {
   test.describe('Control bar buttons', () => {
     // SPEC: chat:control-prev
     test('clicking ↑ button navigates to previous message', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
-
-      await messages.evaluate(el => {
-        el.scrollTop = el.scrollHeight
-      })
-      await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+      const messages = await openScrolledToBottom(page)
 
       const scrollBefore = await messages.evaluate(el => el.scrollTop)
 
@@ -279,11 +254,7 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: chat:control-next
     test('clicking ↓ button navigates to next message', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
+      const messages = await openMessages(page)
 
       // Wheel-scroll up to disengage autoscroll first: a programmatic scrollTop=0 is not
       // user-scroll, so autoscroll would snap back to bottom on the next tick.
@@ -305,17 +276,8 @@ test.describe('Chat Navigation', () => {
   test.describe('Jump highlight', () => {
     // SPEC: shortcut:jump-highlight
     test('jumped-to message gets highlight class', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
-
       // Scroll to bottom so there are messages above
-      await messages.evaluate(el => {
-        el.scrollTop = el.scrollHeight
-      })
-      await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+      await openScrolledToBottom(page)
 
       await page.keyboard.press('Alt+ArrowUp')
 
@@ -330,17 +292,8 @@ test.describe('Chat Navigation', () => {
 
     // SPEC: shortcut:jump-highlight
     test('jumped-to message scrolls to top of viewport', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const messages = page.locator('[data-testid="chat-messages"]')
-      await expect(messages).toBeVisible()
-
       // Scroll to bottom so there are messages above
-      await messages.evaluate(el => {
-        el.scrollTop = el.scrollHeight
-      })
-      await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+      await openScrolledToBottom(page)
 
       await page.keyboard.press('Alt+ArrowUp')
 

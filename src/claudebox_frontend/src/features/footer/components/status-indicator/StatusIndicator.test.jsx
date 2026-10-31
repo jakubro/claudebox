@@ -89,6 +89,22 @@ describe('StatusIndicator', () => {
     expect(screen.getByText('Ready')).toBeInTheDocument()
   })
 
+  it('renders waiting, with no elapsed timer, while background work runs', () => {
+    render(<StatusIndicator {...defaultProps} isWaiting={true} />)
+
+    const dot = screen.getByTestId('footer-status')
+    expect(dot).toHaveAttribute('data-status', 'waiting')
+    expect(screen.getByText('Waiting')).toBeInTheDocument()
+    expect(document.querySelector('.footer-elapsed')).not.toBeInTheDocument()
+    expect(screen.queryByText('Ctrl+. to stop')).not.toBeInTheDocument()
+  })
+
+  it('prioritizes working over waiting', () => {
+    render(<StatusIndicator {...defaultProps} isResponding={true} isWaiting={true} />)
+
+    expect(screen.getByTestId('footer-status')).toHaveAttribute('data-status', 'working')
+  })
+
   it('renders reconnecting state with animated dots', () => {
     render(<StatusIndicator {...defaultProps} connectionStatus="reconnecting" />)
 
@@ -149,5 +165,18 @@ describe('StatusIndicator', () => {
 
     const dot = screen.getByTestId('footer-status')
     expect(dot).toHaveAttribute('data-status', 'creating')
+  })
+
+  it('shows a hint in the status slot over the loading state', () => {
+    render(
+      <StatusIndicator
+        {...defaultProps}
+        isReplaying={true}
+        hintMessage="Wait for the session to load"
+      />,
+    )
+
+    expect(screen.getByText('Wait for the session to load')).toBeInTheDocument()
+    expect(screen.getByTestId('footer-status')).toHaveAttribute('data-status', 'hint')
   })
 })

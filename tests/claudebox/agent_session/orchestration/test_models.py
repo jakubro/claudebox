@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.models - event and session data models."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -65,10 +67,9 @@ class TestSessionSummary:
         summary = SessionSummary(
             session_id="s1",
             fork_point_cost_usd=0.0,
-            session_dir="/fake/sessions/abc",  # ty: ignore[invalid-argument-type]
+            session_dir="/fake/sessions/abc",
             workspace="/fake/project",  # ty: ignore[invalid-argument-type]
         )
-        assert isinstance(summary.session_dir, Path)
         assert isinstance(summary.workspace, Path)
 
     def test_string_timestamp_coercion(self):

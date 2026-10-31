@@ -1,5 +1,7 @@
 """Handler for the ``workspaces`` noun-group - list / register / deregister."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 from pathlib import Path
@@ -140,7 +142,7 @@ async def _register(client: httpx.AsyncClient, args: argparse.Namespace) -> int:
     """Resolve target path, create .workspace marker, POST /api/workspaces."""
 
     raw_path = getattr(args, "path", None)
-    target = Path(raw_path).expanduser().resolve() if raw_path else Path.cwd()
+    target = await asyncio.to_thread(_resolved, raw_path) if raw_path else Path.cwd()
 
     # Marker creation is filesystem-side and happens unconditionally before the POST.
     marker = target / WORKSPACE_MARKER
@@ -227,10 +229,14 @@ async def _lookup_by_path(client: httpx.AsyncClient, target: Path) -> str | None
     for ws in response.json().get("workspaces", []):
         entry_path = ws.get("path")
 
-        if entry_path and str(Path(entry_path).resolve()) == resolved:
+        if entry_path and str(await asyncio.to_thread(Path(entry_path).resolve)) == resolved:
             return ws.get("id")
 
     return None
+
+
+def _resolved(path: str) -> Path:
+    return Path(path).expanduser().resolve()
 
 
 def _shorten_home(path: Path) -> str:

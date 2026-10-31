@@ -1,6 +1,6 @@
 /** Tests for SessionsPanel component. */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SessionsPanel from './SessionsPanel'
@@ -67,22 +67,50 @@ vi.mock('../../context/SessionRoutingContext', () => ({
   }),
 }))
 
-vi.mock('../../context/ContainerMapContext', () => ({
-  useContainerMap: () => ({
-    containerMap: {},
+// Like the real provider: a map change brings a new map and status function; the setters stay put.
+const mockContainerMapSetters = {
+  addStoppingSession: vi.fn(),
+  setSessionContainer: vi.fn(),
+  removeSessionContainer: vi.fn(),
+}
+let mockContainerMapCtx = null
+function setMockContainerMap(containerMap) {
+  mockContainerMapCtx = {
+    ...mockContainerMapSetters,
+    containerMap,
     stoppingSessions: new Set(),
-    addStoppingSession: vi.fn(),
-    setSessionContainer: vi.fn(),
-    removeSessionContainer: vi.fn(),
-    deriveSessionStatus: (_sessionId, _sessions, fallbackContainerId = null) =>
-      fallbackContainerId ? 'running' : 'none',
-  }),
+    deriveSessionStatus: (sessionId, _sessions, fallbackContainerId = null) =>
+      (containerMap[sessionId] ?? fallbackContainerId) ? 'running' : 'none',
+  }
+}
+setMockContainerMap({})
+
+vi.mock('../../context/ContainerMapContext', () => ({
+  useContainerMap: () => mockContainerMapCtx,
 }))
+
+// Counts real row renders: the row's own memo barrier, around the real row body.
+const sessionItemRenders = vi.fn()
+vi.mock('./components/session-tree/components/SessionItem', async () => {
+  const { memo } = await import('react')
+  const actual = await vi.importActual('./components/session-tree/components/SessionItem')
+  const RowBody = actual.default.type
+  return {
+    default: memo(props => {
+      sessionItemRenders(props.session.session_id)
+      return RowBody(props)
+    }),
+  }
+})
 
 vi.mock('../../context/DaemonStreamContext', () => ({
   useDaemonStreamContext: () => ({
     clearProgress: vi.fn(),
   }),
+}))
+
+vi.mock('../../hooks/useSessionDefaults', () => ({
+  default: () => null,
 }))
 
 vi.mock('../../context/WorkspaceContext', () => ({
@@ -99,6 +127,7 @@ const mockSessionsList = {
   panelFilter: 'conversations',
   panelFilterPick: 'conversations',
   refresh: vi.fn(),
+  revalidate: vi.fn(),
   togglePin: vi.fn(),
   setPanelFilter: vi.fn(),
   setFallbackToAll: vi.fn(),
@@ -113,15 +142,19 @@ const mockEventsCtx = {
   isResuming: false,
   isReplaying: false,
   isCreating: false,
-  notifyContainerChanged: vi.fn(),
+  notifyAddressChanged: vi.fn(),
   startCreating: vi.fn(),
   clearCreating: vi.fn(),
+  settleCreateRequest: vi.fn(),
+  failCreating: vi.fn(),
+  markJustCreatedSession: vi.fn(),
 }
 
+const mockShowStillRunningToast = vi.fn()
 vi.mock('../../context/StillRunningToastContext', () => ({
   useStillRunningToast: () => ({
     toast: null,
-    showStillRunningToast: vi.fn(),
+    showStillRunningToast: mockShowStillRunningToast,
     dismissStillRunningToast: vi.fn(),
   }),
 }))
@@ -164,7 +197,19 @@ const makeSession = (id, extra = {}) => ({
   ...extra,
 })
 
+function renderWithSessions(sessions) {
+  const user = userEvent.setup()
+  mockSessionsList.sessions = sessions
+  render(<SessionsPanel />)
+
+  return user
+}
+
 function resetMocks() {
+  setMockContainerMap({})
+  delete mockSessionDataCtx.sessionName
+  sessionItemRenders.mockClear()
+  mockShowStillRunningToast.mockReset()
   mockNewSession.mockReset()
   mockUpdateSession.mockReset()
   mockInterrupt.mockReset()
@@ -173,9 +218,12 @@ function resetMocks() {
   mockEventsCtx.isResuming = false
   mockEventsCtx.isReplaying = false
   mockEventsCtx.isCreating = false
-  mockEventsCtx.notifyContainerChanged.mockReset()
+  mockEventsCtx.notifyAddressChanged.mockReset()
   mockEventsCtx.startCreating.mockReset()
   mockEventsCtx.clearCreating.mockReset()
+  mockEventsCtx.settleCreateRequest.mockReset()
+  mockEventsCtx.failCreating.mockReset()
+  mockEventsCtx.markJustCreatedSession.mockReset()
   mockInteraction.setError.mockReset()
   mockAppActions.focusChatTab.mockReset()
   mockAppActions.addSessionTab.mockReset()
@@ -189,6 +237,7 @@ function resetMocks() {
   mockSessionsList.panelFilter = 'conversations'
   mockSessionsList.panelFilterPick = 'conversations'
   mockSessionsList.refresh.mockReset()
+  mockSessionsList.revalidate.mockReset()
   mockSessionsList.togglePin.mockReset()
   mockSessionsList.setPanelFilter.mockReset()
   mockSessionsList.setFallbackToAll.mockReset()
@@ -215,6 +264,39 @@ describe('SessionsPanel', () => {
     expect(screen.getAllByTestId('session-item')).toHaveLength(2)
   })
 
+  // jsdom lays nothing out, so the list's viewport height is stated; the virtualizer reads clientHeight.
+  it('mounts only a window of rows for a large workspace', () => {
+    vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(function height() {
+      return this.classList.contains('sessions-list') ? 600 : 0
+    })
+    mockSessionsList.sessions = Array.from({ length: 500 }, (_, i) =>
+      makeSession(`session-${i}`, {
+        updated_at: new Date(Date.now() - i * 60000).toISOString(),
+      }),
+    )
+
+    render(<SessionsPanel />)
+
+    const mounted = screen.getAllByTestId('session-item').length
+    expect(mounted).toBeGreaterThan(0)
+    expect(mounted).toBeLessThan(60)
+  })
+
+  it('keeps the same rows mounted while a session resumes and replays', () => {
+    mockSessionsList.sessions = [makeSession('session-1'), makeSession('session-2')]
+    const { rerender } = render(<SessionsPanel />)
+    const before = screen.getAllByTestId('session-item')
+
+    mockEventsCtx.isResuming = true
+    mockEventsCtx.isReplaying = true
+    rerender(<SessionsPanel />)
+
+    const after = screen.getAllByTestId('session-item')
+    expect(after).toHaveLength(2)
+    expect(after[0]).toBe(before[0])
+    expect(after[1]).toBe(before[1])
+  })
+
   it('shows error state with retry button', () => {
     mockSessionsList.error = 'Network error'
 
@@ -225,10 +307,7 @@ describe('SessionsPanel', () => {
   })
 
   it('calls handleResume when session resumed', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('session-to-resume')]
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('session-to-resume')])
 
     await user.click(
       screen.getByTitle('Resume session (Alt+Click or middle-click for new browser tab)'),
@@ -239,30 +318,25 @@ describe('SessionsPanel', () => {
   })
 
   it('calls handleNewSession when new button clicked', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('s1')]
     mockNewSession.mockResolvedValue({ session_id: 'new-1' })
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('s1')])
 
     await user.click(screen.getByTestId('session-new-session-btn'))
 
     expect(mockNewSession).toHaveBeenCalled()
   })
 
-  it('calls refresh on mount', () => {
+  it('revalidates on mount without forcing a refresh', () => {
     mockSessionsList.sessions = [makeSession('s1')]
 
     render(<SessionsPanel />)
 
-    expect(mockSessionsList.refresh).toHaveBeenCalled()
+    expect(mockSessionsList.revalidate).toHaveBeenCalled()
+    expect(mockSessionsList.refresh).not.toHaveBeenCalled()
   })
 
   it('refresh button calls context refresh', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('s1')]
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('s1')])
 
     mockSessionsList.refresh.mockClear()
     await user.click(screen.getByTitle('Refresh'))
@@ -287,10 +361,7 @@ describe('SessionsPanel', () => {
   })
 
   it('toggles pin state via context', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('session-1')]
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('session-1')])
 
     await user.click(screen.getByTestId('session-pin-btn'))
 
@@ -320,17 +391,87 @@ describe('SessionsPanel', () => {
   })
 })
 
+describe('SessionsPanel row redraws', () => {
+  beforeEach(() => {
+    resetMocks()
+    mockSessionsList.sessions = ['s1', 's2', 's3'].map(id => makeSession(id))
+  })
+
+  const redrawnAfter = (rerender, change) => {
+    sessionItemRenders.mockClear()
+    change()
+    rerender(<SessionsPanel />)
+    return sessionItemRenders.mock.calls.map(([id]) => id)
+  }
+
+  it("a container registering for one session redraws only that session's row", () => {
+    const { rerender } = render(<SessionsPanel />)
+
+    expect(redrawnAfter(rerender, () => setMockContainerMap({ s2: 'ctr-2' }))).toEqual(['s2'])
+  })
+
+  it('the open session starting or stopping to respond redraws no row', () => {
+    const { rerender } = render(<SessionsPanel />)
+
+    expect(redrawnAfter(rerender, () => (mockEventsCtx.isResponding = true))).toEqual([])
+  })
+
+  it('a list holding the same session objects redraws no row', () => {
+    const { rerender } = render(<SessionsPanel />)
+
+    const redrawn = redrawnAfter(rerender, () => {
+      mockSessionsList.sessions = [...mockSessionsList.sessions]
+    })
+
+    expect(redrawn).toEqual([])
+  })
+
+  it('a minute passing redraws only the rows whose time changed', () => {
+    vi.useFakeTimers()
+    try {
+      const now = Date.now()
+      const aged = (id, ms) =>
+        makeSession(id, {
+          started_at: new Date(now - ms).toISOString(),
+          updated_at: new Date(now - ms).toISOString(),
+        })
+      mockSessionsList.sessions = [
+        aged('fresh', 30_000),
+        aged('hours', 2 * 3600_000),
+        aged('days', 3 * 86400_000),
+      ]
+      render(<SessionsPanel />)
+      sessionItemRenders.mockClear()
+
+      act(() => vi.advanceTimersByTime(45_000))
+
+      expect(sessionItemRenders.mock.calls.map(([id]) => id)).toEqual(['fresh'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still offers a return to a responding session when another one is resumed', async () => {
+    mockSessionDataCtx.sessionName = 'Busy one'
+    mockEventsCtx.isResponding = true
+    const user = renderWithSessions([makeSession('current-session'), makeSession('other')])
+
+    await user.click(screen.getByTestId('session-resume-btn'))
+
+    expect(mockShowStillRunningToast).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionName: 'Busy one' }),
+    )
+  })
+})
+
 describe('SessionsPanel error paths', () => {
   beforeEach(() => {
     resetMocks()
   })
 
   it('calls setError when new session fails', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('s1')]
     mockNewSession.mockRejectedValue(new Error('new session error'))
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('s1')])
 
     await user.click(screen.getByTestId('session-new-session-btn'))
 
@@ -355,11 +496,8 @@ describe('SessionsPanel handleRename', () => {
   })
 
   it('calls renameSession API and refreshes list on success', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('rename-target')]
     mockUpdateSession.mockResolvedValue({})
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('rename-target')])
 
     // Real SessionItem: click pencil -> type name -> click save
     await user.click(screen.getByTitle('Rename session'))
@@ -372,13 +510,10 @@ describe('SessionsPanel handleRename', () => {
   })
 
   it('calls refreshSession when renaming the current session', async () => {
-    const user = userEvent.setup()
     mockSessionDataCtx.sessionId = 'current-session'
-    mockSessionsList.sessions = [makeSession('current-session')]
     mockUpdateSession.mockResolvedValue({})
     mockSessionActionsCtx.refreshSession.mockResolvedValue({})
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('current-session')])
 
     await user.click(screen.getByTitle('Rename session'))
     const input = screen.getByPlaceholderText('Session name...')
@@ -390,11 +525,8 @@ describe('SessionsPanel handleRename', () => {
   })
 
   it('calls setError when rename fails', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('rename-fail')]
     mockUpdateSession.mockRejectedValue(new Error('rename error'))
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('rename-fail')])
 
     await user.click(screen.getByTitle('Rename session'))
     const input = screen.getByPlaceholderText('Session name...')
@@ -570,10 +702,7 @@ describe('SessionsPanel actions while responding', () => {
   })
 
   it('resumes directly without confirmation modal', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('session-to-resume')]
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('session-to-resume')])
 
     await user.click(
       screen.getByTitle('Resume session (Alt+Click or middle-click for new browser tab)'),
@@ -584,11 +713,8 @@ describe('SessionsPanel actions while responding', () => {
   })
 
   it('creates new session directly without confirmation modal', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('s1')]
     mockNewSession.mockResolvedValue({ session_id: 'new-1' })
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('s1')])
 
     await user.click(screen.getByTestId('session-new-session-btn'))
 
@@ -653,10 +779,7 @@ describe('SessionsPanel filters', () => {
   })
 
   it('clicking a filter calls setPanelFilter with that filter id', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('a')]
-
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('a')])
     await user.click(screen.getByTestId('sessions-filter-pinned'))
 
     expect(mockSessionsList.setPanelFilter).toHaveBeenCalledWith('pinned')
@@ -733,9 +856,7 @@ describe('SessionsPanel search', () => {
   })
 
   it('opening search hides the filter icons and focuses the box; the toggle itself hides too', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('a')]
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('a')])
 
     await user.click(screen.getByTestId('sessions-search-toggle'))
 
@@ -745,14 +866,12 @@ describe('SessionsPanel search', () => {
   })
 
   it('matches a session by name, case-insensitively, across every session regardless of the active filter', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [
-      makeSession('a', { name: 'Parser Rewrite' }),
-      makeSession('b', { name: 'unrelated' }),
-    ]
     mockSessionsList.pinnedSessions = ['b']
     mockSessionsList.panelFilter = 'pinned'
-    render(<SessionsPanel />)
+    const user = renderWithSessions([
+      makeSession('a', { name: 'Parser Rewrite' }),
+      makeSession('b', { name: 'unrelated' }),
+    ])
 
     await user.click(screen.getByTestId('sessions-search-toggle'))
     await user.type(screen.getByTestId('sessions-search-input'), 'PARSER')
@@ -763,9 +882,7 @@ describe('SessionsPanel search', () => {
   })
 
   it('matches a session by a pasted full id, not only the eight characters the row shows', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('abcdef1234567890', { name: null })]
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('abcdef1234567890', { name: null })])
 
     await user.click(screen.getByTestId('sessions-search-toggle'))
     await user.type(screen.getByTestId('sessions-search-input'), 'abcdef1234567890')
@@ -774,9 +891,7 @@ describe('SessionsPanel search', () => {
   })
 
   it('shows a message, not a blank area, when nothing matches', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('a', { name: 'spike' })]
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('a', { name: 'spike' })])
 
     await user.click(screen.getByTestId('sessions-search-toggle'))
     await user.type(screen.getByTestId('sessions-search-input'), 'nothing matches this')
@@ -786,10 +901,8 @@ describe('SessionsPanel search', () => {
   })
 
   it('Escape closes the box and restores the filter icons without changing the chosen filter', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('a', { name: 'spike' })]
     mockSessionsList.panelFilter = 'named'
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('a', { name: 'spike' })])
 
     await user.click(screen.getByTestId('sessions-search-toggle'))
     await user.type(screen.getByTestId('sessions-search-input'), 'spike')
@@ -801,9 +914,7 @@ describe('SessionsPanel search', () => {
   })
 
   it('blurring an empty box closes it; blurring a non-empty one leaves it open', async () => {
-    const user = userEvent.setup()
-    mockSessionsList.sessions = [makeSession('a', { name: 'spike' })]
-    render(<SessionsPanel />)
+    const user = renderWithSessions([makeSession('a', { name: 'spike' })])
 
     await user.click(screen.getByTestId('sessions-search-toggle'))
     const input = screen.getByTestId('sessions-search-input')

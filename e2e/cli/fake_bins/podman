@@ -1,5 +1,6 @@
 #!/bin/bash
 # Fake podman for hermetic CLI e2e tests. Records args; returns canned output.
+# Per-test toggles via CLAUDEBOX_TEST_PODMAN_* env vars.
 
 set -euo pipefail
 
@@ -8,9 +9,32 @@ echo "$@" >> "${CLAUDEBOX_TEST_RECORD_DIR:?CLAUDEBOX_TEST_RECORD_DIR unset}/podm
 case "${1:-}" in
     --version) echo "podman version 4.9.0-fake"; exit 0 ;;
     info)      echo "graphDriverName: vfs"; exit 0 ;;
+    build)
+        if [[ "${CLAUDEBOX_TEST_PODMAN_ORPHAN_BUILD:-0}" == "1" ]]; then
+            kill -9 "$PPID"
+            sleep 0.5
+        fi
+        if [[ "${CLAUDEBOX_TEST_PODMAN_PROBE_BUILD_LOCK:-0}" == "1" ]]; then
+            mkdir -p "$HOME/.claudebox"
+            if flock --nonblock --exclusive "$HOME/.claudebox/build.lock" true; then
+                echo "build lock free" >> "$CLAUDEBOX_TEST_RECORD_DIR/podman.log"
+            else
+                echo "build lock held" >> "$CLAUDEBOX_TEST_RECORD_DIR/podman.log"
+            fi
+        fi
+        exit 0
+        ;;
     image)
         case "${2:-}" in
             prune) echo "Total reclaimed space: 0B"; exit 0 ;;
+            inspect)
+                for pair in ${CLAUDEBOX_TEST_PODMAN_IMAGE_APPS:-}; do
+                    if [[ "${pair%%=*}" == "${3:-}" ]]; then
+                        echo "${pair#*=}"; exit 0
+                    fi
+                done
+                echo "Error: ${3:-}: image not known" >&2; exit 125
+                ;;
         esac
         ;;
     container)
@@ -18,6 +42,19 @@ case "${1:-}" in
             prune) echo "Total reclaimed space: 0B"; exit 0 ;;
         esac
         ;;
-    ps) echo "[]"; exit 0 ;;
+    ps)
+        if [[ " $* " == *" --external "* ]]; then
+            echo "${CLAUDEBOX_TEST_PODMAN_EXTERNAL_PS:-[]}"; exit 0
+        fi
+        echo "${CLAUDEBOX_TEST_PODMAN_PS:-[]}"; exit 0
+        ;;
+    rm)
+        for id in ${CLAUDEBOX_TEST_PODMAN_RM_FAIL:-}; do
+            if [[ "${!#}" == "$id" ]]; then
+                echo "Error: $id: container is mounted by a running build" >&2; exit 125
+            fi
+        done
+        exit 0
+        ;;
     *) exit 0 ;;
 esac

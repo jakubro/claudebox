@@ -4,6 +4,8 @@ Real-binary surfaces: missing-file path, seeded-backfill rendering, FORCE_COLOR 
 ``logs all`` daemon-unreachable error, and container multiplexing over the daemon's proxy.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import signal
@@ -134,8 +136,12 @@ def _container_sse(*records: dict) -> str:
     frames.extend(records)
 
     body = [f"data: {json.dumps(frame)}" for frame in frames]
-    body.append(": ping - keep-alive")
-    body.append('data: {"type": "system", "subtype": "replay_ended", "count": 0}')
+    body.extend(
+        (
+            ": ping - keep-alive",
+            'data: {"type": "system", "subtype": "replay_ended", "count": 0}',
+        ),
+    )
 
     return "\n\n".join(body) + "\n\n"
 

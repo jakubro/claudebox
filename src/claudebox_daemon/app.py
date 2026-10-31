@@ -1,5 +1,7 @@
 """Host-side daemon: FastAPI app factory and uvicorn entry point."""
 
+from __future__ import annotations
+
 import contextlib
 import os
 from collections.abc import AsyncGenerator, Callable

@@ -1,5 +1,7 @@
 """Terminal output helpers shared across claudebox CLI verbs."""
 
+from __future__ import annotations
+
 from claudebox import console
 
 

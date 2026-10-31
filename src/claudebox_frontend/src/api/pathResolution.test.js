@@ -3,11 +3,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolvePaths } from './pathResolution'
 
-vi.mock('./apiClient', () => ({
+vi.mock('./apiClient', async importOriginal => ({
+  ...(await importOriginal()),
   containerFetch: vi.fn(),
 }))
 
-import { containerFetch } from './apiClient'
+import { containerFetch, setAddress } from './apiClient'
+
+beforeEach(() => {
+  setAddress('c-1', 'addressed-1')
+})
 
 describe('resolvePaths', () => {
   beforeEach(() => {
@@ -23,7 +28,7 @@ describe('resolvePaths', () => {
 
     const result = await resolvePaths(['src/app.js', 'missing.py'])
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/files/resolve-paths', {
+    expect(containerFetch).toHaveBeenCalledWith('/api/files/resolve-paths?session_id=addressed-1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ candidates: ['src/app.js', 'missing.py'] }),

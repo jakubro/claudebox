@@ -1,9 +1,21 @@
 /** E2E tests for mini-map navigation. */
 
 import { expect, test } from '@playwright/test'
-import { resolveOpsPayload, waitForAppReady } from '../helpers.js'
+import {
+  openSessionWithAPI,
+  resolveOpsPayload,
+  waitForAppReady,
+  waitForStableScrollHeight,
+} from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
+
+async function openMinimap(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+
+  return page.locator('.minimap-overlay')
+}
 
 test.describe('Mini-map', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,11 +25,8 @@ test.describe('Mini-map', () => {
 
   // SPEC: chat:minimap
   test('mini-map appears on scroll', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     // Mini-map should exist but may be hidden initially
-    const minimap = page.locator('.minimap-overlay')
+    const minimap = await openMinimap(page)
     await expect(minimap).toHaveCount(1)
 
     await scrollToShowMinimap(page)
@@ -94,20 +103,12 @@ test.describe('Mini-map', () => {
 
   // SPEC: chat:minimap-click
   test('mini-map responds to click events', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     // Minimap is pinned by default - stays visible throughout
-    const minimap = page.locator('.minimap-overlay')
+    const minimap = await openMinimap(page)
     await expect(minimap).toHaveClass(/visible/)
 
     const messages = page.locator('.chat-messages').first()
-
-    // Scroll chat to top first to leave room to scroll down
-    await messages.evaluate(el => {
-      el.scrollTop = 0
-    })
-    await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
+    await wheelToTop(page, messages)
 
     const box = await minimap.boundingBox()
     await minimap.click({ position: { x: box.width / 2, y: box.height - 10 } })
@@ -177,17 +178,6 @@ test.describe('Mini-map', () => {
   })
 
   test.describe('Sub-bar Sizing', () => {
-    // SPEC: chat:minimap-sub-bar-height
-    test('sub-bar height proportional to content (uses flex)', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const subBar = page.locator('[data-testid="minimap-subbar"]').first()
-      const flexGrow = await subBar.evaluate(el => parseFloat(el.style.flex))
-      // flexGrow should be a positive number (turn height)
-      expect(flexGrow).toBeGreaterThan(0)
-    })
-
     // SPEC: chat:minimap-sub-bar-width
     test('sub-bar width reflects duration (8-20px range)', async ({ page }) => {
       await page.goto(DEFAULT_SESSION_URL)
@@ -205,10 +195,7 @@ test.describe('Mini-map', () => {
     // The negative case (autoscroll doesn't show minimap) is hard to isolate with mocks: both
     // fire from the same SSE-triggered render.
     test('shows on manual scroll (not autoscroll)', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const minimap = page.locator('.minimap-overlay')
+      const minimap = await openMinimap(page)
 
       await scrollToShowMinimap(page)
       await expect(minimap).toHaveClass(/visible/)
@@ -234,10 +221,7 @@ test.describe('Mini-map', () => {
     // SPEC: chat:minimap-transparent
     // SPEC: chat:minimap-animation-delay
     test('minimap has 0.3s opacity transition', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const minimap = page.locator('.minimap-overlay')
+      const minimap = await openMinimap(page)
       const transition = await minimap.evaluate(el => {
         return getComputedStyle(el).transition
       })
@@ -247,10 +231,7 @@ test.describe('Mini-map', () => {
 
     // SPEC: chat:minimap-animation-curve
     test('opacity transition uses ease-in-out', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const minimap = page.locator('.minimap-overlay')
+      const minimap = await openMinimap(page)
       const transition = await minimap.evaluate(el => {
         return getComputedStyle(el).transition
       })
@@ -279,20 +260,13 @@ test.describe('Mini-map', () => {
   test.describe('Drag Navigation', () => {
     // SPEC: chat:minimap-drag
     test('dragging minimap scrolls chat', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // Minimap is pinned by default - stays visible throughout
-      const minimap = page.locator('.minimap-overlay')
+      const minimap = await openMinimap(page)
       await expect(minimap).toHaveClass(/visible/)
 
       const messages = page.locator('.chat-messages').first()
+      await wheelToTop(page, messages)
       const box = await minimap.boundingBox()
-
-      await messages.evaluate(el => {
-        el.scrollTop = 0
-      })
-      await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
 
       // Simulate a drag gesture from top to bottom of minimap
       const startX = box.x + box.width / 2
@@ -347,11 +321,8 @@ test.describe('Mini-map', () => {
 
     // SPEC: chat:minimap-toggle-persistent
     test('pinned minimap stays visible without auto-hide', async ({ page }) => {
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // Default is pinned - minimap should already be visible
-      const minimap = page.locator('.minimap-overlay')
+      const minimap = await openMinimap(page)
       await expect(minimap).toHaveClass(/visible/)
 
       // Poll checks visibility remains stable past the auto-hide delay.
@@ -382,9 +353,13 @@ test.describe('Mini-map', () => {
       await pinnedBtn.click()
 
       // Verify PATCH was sent with minimapPinned: false (poll - PATCH is async)
-      await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
-      const resolved = resolveOpsPayload(patchCalls[patchCalls.length - 1])
-      expect(resolved.session?.minimapPinned).toBe(false)
+      await expect
+        .poll(
+          () =>
+            patchCalls.map(resolveOpsPayload).find(p => p.session?.minimapPinned !== undefined)
+              ?.session.minimapPinned,
+        )
+        .toBe(false)
     })
 
     // SPEC: chat:minimap-toggle-transient
@@ -407,6 +382,17 @@ test.describe('Mini-map', () => {
   })
 })
 
+/** Wheel the transcript to its top: a script-set position leaves autoscroll on, so the app pins it back. */
+async function wheelToTop(page, messages) {
+  const box = await messages.boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  for (let i = 0; i < 10; i++) {
+    await page.mouse.wheel(0, -10000)
+  }
+  await expect(page.getByTestId('autoscroll-indicator')).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(() => messages.evaluate(el => el.scrollTop)).toBe(0)
+}
+
 /** Scrolls up twice: the first scroll updates useAutoScroll's ref, the second lets MiniMap's handler read it. */
 async function scrollToShowMinimap(page) {
   const chatPanel = page.locator('.chat-messages, .chat-panel, [data-testid="chat-panel"]').first()
@@ -421,3 +407,158 @@ async function scrollToShowMinimap(page) {
 
   return chatPanel
 }
+
+// A session long enough to window, mixing turns whose rendered height the content alone predicts
+// badly - newline lists, blank-line paragraphs, one-line Bash - with short replies between them.
+const SIZING_TS = '2026-05-17T12:00:00Z'
+const SIZING_TURNS = Array.from({ length: 20 }, (_, i) => {
+  const shapes = [
+    [{ subtype: 'text', content: 'Done.' }],
+    [
+      {
+        subtype: 'text',
+        content: Array.from({ length: 24 }, (_, n) => `${n + 1}. item`).join('\n'),
+      },
+    ],
+    [
+      {
+        subtype: 'text',
+        content: Array.from({ length: 4 }, () => 'Prose. '.repeat(30)).join('\n\n'),
+      },
+    ],
+    [
+      { subtype: 'text', content: 'Checking.' },
+      {
+        subtype: 'tool_use',
+        content: 'Bash',
+        tool_use_id: `b-${i}`,
+        tool_input: { command: 'ls' },
+      },
+      { subtype: 'tool_result', content: 'one-line output', tool_use_id: `b-${i}` },
+    ],
+  ]
+  return { turnId: `size-${i}`, events: shapes[i % shapes.length] }
+})
+const SIZING_EVENTS = SIZING_TURNS.flatMap(({ turnId, events }) => [
+  {
+    type: 'user',
+    subtype: 'text',
+    is_human: true,
+    primary: true,
+    content: `ask ${turnId}`,
+    turn_id: turnId,
+    ts: SIZING_TS,
+  },
+  ...events.map(e => ({
+    type: 'assistant',
+    is_human: false,
+    primary: false,
+    turn_id: turnId,
+    ts: SIZING_TS,
+    ...e,
+  })),
+  { type: 'result', subtype: 'success', turn_id: turnId, ts: SIZING_TS },
+])
+const LAST_SIZING_TURN = SIZING_TURNS[SIZING_TURNS.length - 1].turnId
+
+/** Each bar's share of the minimap against its turn's share of the transcript, swept in full. */
+async function measureShares(page) {
+  return page.evaluate(async () => {
+    const container = document.querySelector('.chat-messages')
+    const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+    // A collapse flip re-measures the mounted rows a frame or two later; wait for the extent to hold.
+    let nativeBefore = -1
+    for (let frame = 0; frame < 30 && nativeBefore !== container.scrollHeight; frame++) {
+      nativeBefore = container.scrollHeight
+      await settle()
+    }
+    const startTop = container.scrollTop
+    const bars = [...document.querySelectorAll('[data-testid="minimap-subbar"]')].map(
+      b => b.getBoundingClientRect().height,
+    )
+    const heights = new Map()
+    for (let top = 0; top <= container.scrollHeight; top += container.clientHeight / 2) {
+      container.scrollTop = top
+      await settle()
+      for (const el of document.querySelectorAll('.turn-container[data-turn-id]')) {
+        const row = el.closest('.historical-turn-row')
+        const height = row
+          ? row.getBoundingClientRect().height
+          : el.offsetHeight + parseFloat(getComputedStyle(el).marginBottom)
+        const index = row ? Number(row.dataset.index) : Number.MAX_SAFE_INTEGER
+        heights.set(el.dataset.turnId, { index, height })
+      }
+    }
+    container.scrollTop = startTop
+    await settle()
+    const real = [...heights.values()].sort((a, b) => a.index - b.index).map(h => h.height)
+    const barTotal = bars.reduce((sum, h) => sum + h, 0)
+    const realTotal = real.reduce((sum, h) => sum + h, 0)
+
+    return {
+      nativeBefore,
+      realTotal,
+      barShares: bars.map(h => h / barTotal),
+      realShares: real.map(h => h / realTotal),
+    }
+  })
+}
+
+function expectSharesMatch({ barShares, realShares }) {
+  expect(barShares).toHaveLength(realShares.length)
+  barShares.forEach((share, i) => {
+    expect(Math.abs(share - realShares[i])).toBeLessThanOrEqual(0.25 * realShares[i] + 0.01)
+  })
+}
+
+test.describe('Mini-map collapse-aware sizing', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await openSessionWithAPI(page, SIZING_EVENTS)
+    await page.locator(`.turn-container[data-turn-id="${LAST_SIZING_TURN}"]`).waitFor()
+    await waitForStableScrollHeight(page.getByTestId('chat-messages'))
+  })
+
+  // SPEC: chat:minimap-sub-bar-height
+  test('each sub-bar takes the share of the transcript its turn takes', async ({ page }) => {
+    expectSharesMatch(await measureShares(page))
+  })
+
+  // SPEC: chat:minimap-sub-bar-collapse
+  test('turning auto-collapse off from the top resizes turns that are not on screen', async ({
+    page,
+  }) => {
+    await page.locator('.chat-messages').evaluate(el => {
+      el.scrollTop = 0
+    })
+    await page.locator('[data-testid="autocollapse-toggle"]').click()
+    await expect(page.locator('[data-testid="autocollapse-toggle"]')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+
+    const shares = await measureShares(page)
+    expect(Math.abs(shares.nativeBefore - shares.realTotal) / shares.realTotal).toBeLessThan(0.05)
+    expectSharesMatch(shares)
+  })
+
+  // SPEC: chat:minimap-sub-bar-collapse
+  test('turning auto-collapse back on shrinks every turn it collapses, seen or not', async ({
+    page,
+  }) => {
+    const toggle = page.locator('[data-testid="autocollapse-toggle"]')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await measureShares(page)
+    await page.locator('.chat-messages').evaluate(el => {
+      el.scrollTop = 0
+    })
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+    const shares = await measureShares(page)
+    expect(Math.abs(shares.nativeBefore - shares.realTotal) / shares.realTotal).toBeLessThan(0.05)
+    expectSharesMatch(shares)
+  })
+})

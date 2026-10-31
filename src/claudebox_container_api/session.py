@@ -1,5 +1,7 @@
 """FastAPI lifespan glue for the container's session registry."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 from collections.abc import Callable
@@ -7,7 +9,9 @@ from pathlib import Path
 
 from claudebox import (
     SessionEntryNotFound,
+    SessionNotFound,
     SessionNotReady,
+    SessionRepository,
     SessionService,
     ValidationError,
     Workspace,
@@ -26,11 +30,12 @@ class SessionRegistry:
     def __init__(
         self,
         workspace: Path,
-        system_prompt: str | None,
+        system_prompt_file: Path | None,
         permission_mode: str | None,
     ) -> None:
         self.workspace = Workspace(workspace)
-        self._system_prompt = system_prompt
+        self._repo = SessionRepository(self.workspace)
+        self._system_prompt_file = system_prompt_file
         self._permission_mode = permission_mode
         self._entries: dict[str, SessionService] = {}
         self._primary_id: str | None = None
@@ -53,14 +58,14 @@ class SessionRegistry:
         return self._primary_id
 
     def live_ids(self) -> list[str]:
-        """Every session id currently registered."""
+        """Every registered session id whose runtime is not in a terminal connect-failed state."""
 
-        return list(self._entries)
+        return [sid for sid, svc in self._entries.items() if not svc.connect_failed]
 
     async def start(self, resume_session_id: str | None, *, primary: bool = True) -> str:
         """Start one entry, returning its session id.
 
-        `primary=True` replaces the current primary; `primary=False` joins as a member, one per id.
+        `primary=True` replaces the primary; a member joins once per id, auto-stops unless promoted.
         """
 
         async with self._lock:
@@ -78,12 +83,13 @@ class SessionRegistry:
             if primary and self._primary_id is not None:
                 await self._stop_entry(self._primary_id)
 
+            stops_after_answer = not (primary or self._is_promoted(resume_session_id))
             svc = SessionService(
                 workspace=self.workspace.path,
-                system_prompt=self._system_prompt,
+                system_prompt_file=self._system_prompt_file,
                 permission_mode=self._permission_mode,
                 remaps_tmp=primary,
-                on_turn_complete=None if primary else self._on_member_turn_complete,
+                on_turn_complete=self._on_member_turn_complete if stops_after_answer else None,
             )
             session_id = await svc.start(resume_session_id)
             self._entries[session_id] = svc
@@ -94,15 +100,18 @@ class SessionRegistry:
             return session_id
 
     def promote_session(self, session_id: str) -> None:
-        """Cancel a member's turn-complete auto-stop - it runs until stopped like any other entry.
+        """Record a session as promoted and cancel a running member's turn-complete auto-stop.
 
-        Promoting the primary is a harmless no-op: it never has that disposition to cancel.
+        Needs the session's record, not a running entry: a stopped member rejoins without auto-stop.
         """
 
-        if session_id not in self._entries:
-            raise SessionEntryNotFound(session_id=session_id)
+        try:
+            self._repo.update(session_id, is_promoted=True)
+        except SessionNotFound as exc:
+            raise SessionEntryNotFound(session_id=session_id) from exc
 
-        self._entries[session_id].cancel_turn_complete()
+        if (entry := self._entries.get(session_id)) is not None:
+            entry.cancel_turn_complete()
 
     async def stop_session(self, session_id: str) -> None:
         """Stop and remove one non-primary entry.
@@ -140,6 +149,15 @@ class SessionRegistry:
         except SessionEntryNotFound:
             pass
 
+    def _is_promoted(self, session_id: str | None) -> bool:
+        if session_id is None:
+            return False
+
+        try:
+            return self._repo.get(session_id).is_promoted
+        except SessionNotFound:
+            return False
+
     async def _stop_entry(self, session_id: str) -> None:
         svc = self._entries.pop(session_id, None)
 
@@ -176,7 +194,7 @@ def get_registry() -> SessionRegistry:
 
 def managed(
     workspace: str,
-    system_prompt: str | None = None,
+    system_prompt_file: str | None = None,
     permission_mode: str | None = None,
     **_server_args,
 ) -> Callable:
@@ -194,7 +212,7 @@ def managed(
 
         registry = SessionRegistry(
             workspace=workspace_path,
-            system_prompt=system_prompt,
+            system_prompt_file=Path(system_prompt_file) if system_prompt_file else None,
             permission_mode=permission_mode,
         )
 

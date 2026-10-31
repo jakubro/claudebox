@@ -2,6 +2,7 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createDeferred } from '../utils/deferred'
 import { SessionDataProvider, useSessionActions, useSessionData } from './SessionDataContext'
 
 const mockGetSession = vi.fn()
@@ -11,14 +12,16 @@ const mockPatchSessionUiState = vi.fn()
 const mockSetModel = vi.fn()
 const mockSetPermissionMode = vi.fn()
 const mockSetEffortLevel = vi.fn()
-const mockSetContainerId = vi.fn()
+const mockSetAddress = vi.fn()
 // Defaults to a present container so picker setters take the API-direct path; welcome-screen
 // buffer tests override with `.mockReturnValue(null)`.
 const mockGetContainerId = vi.fn(() => 'test-container')
+const mockGetAddressedSessionId = vi.fn(() => 'test-session')
 
 vi.mock('../api/apiClient', () => ({
-  setContainerId: (...args) => mockSetContainerId(...args),
+  setAddress: (...args) => mockSetAddress(...args),
   getContainerId: (...args) => mockGetContainerId(...args),
+  getAddressedSessionId: (...args) => mockGetAddressedSessionId(...args),
 }))
 
 vi.mock('../api/sessions', () => ({
@@ -57,18 +60,37 @@ vi.mock('./DaemonStreamContext', () => ({
 }))
 
 const mockReconnectSSE = vi.fn()
-const mockNotifyContainerChanged = vi.fn()
+const mockNotifyAddressChanged = vi.fn()
 const makeEventsData = (overrides = {}) => ({
   isConnected: false,
   isResponding: false,
   reconnectSSE: mockReconnectSSE,
-  notifyContainerChanged: mockNotifyContainerChanged,
+  notifyAddressChanged: mockNotifyAddressChanged,
+  creations: { current: 0, bySeq: {} },
+  getCreation: () => mockEventsData.creations,
+  isResumeRequestPending: false,
+  isCreateRequestPending: false,
   ...overrides,
 })
 let mockEventsData = makeEventsData()
 vi.mock('./EventsContext', () => ({
   useEvents: () => mockEventsData,
 }))
+
+let mockRoutedSessionId = null
+vi.mock('./SessionRoutingContext', () => ({
+  useSessionRouting: () => ({ activeSessionId: mockRoutedSessionId }),
+}))
+
+beforeEach(() => {
+  mockRoutedSessionId = null
+})
+
+// The welcome screen's first creation, created as sess-1 and not yet reached by the route.
+const FIRST_CREATION_DONE = {
+  current: 1,
+  bySeq: { 1: { status: 'created', sessionId: 'sess-1', fromRoute: null } },
+}
 
 const SESSION_DATA = {
   session_id: 'sess-1',
@@ -84,12 +106,75 @@ const SESSION_DATA = {
   commands: ['/help'],
 }
 
+function resetSessionMocks() {
+  vi.clearAllMocks()
+  mockGetSession.mockResolvedValue(SESSION_DATA)
+  mockGetUiState.mockResolvedValue({ session: { notificationsEnabled: false } })
+}
+
+function renderSessionHooks(wrapper) {
+  return renderHook(() => ({ data: useSessionData(), actions: useSessionActions() }), { wrapper })
+}
+
+function mockAttached({ creations, session = SESSION_DATA } = {}) {
+  mockEventsData = makeEventsData({ isConnected: true, ...(creations && { creations }) })
+  mockGetContainerId.mockReturnValue('test-container')
+  mockGetSession.mockResolvedValue(session)
+}
+
+function renderWelcome(wrapper, session = { workspace: '/path' }) {
+  mockGetContainerId.mockReturnValue(null)
+  mockGetSession.mockResolvedValue(session)
+
+  return renderSessionHooks(wrapper)
+}
+
+async function renderLoadedSession(wrapper) {
+  const hook = renderSessionHooks(wrapper)
+  await waitFor(() => {
+    expect(hook.result.current.data.sessionId).toBe('sess-1')
+  })
+
+  return hook
+}
+
+async function renderAndFlush(wrapper) {
+  const hook = renderHook(() => useSessionData(), { wrapper })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  return hook
+}
+
+function renderWithWelcomePick(wrapper) {
+  mockGetContainerId.mockReturnValue(null)
+  const hook = renderHook(() => ({ actions: useSessionActions(), data: useSessionData() }), {
+    wrapper,
+  })
+  act(() => {
+    hook.result.current.actions.setModel('claude-sonnet-5')
+  })
+
+  return hook
+}
+
+function deferGetSession() {
+  const settlers = []
+  mockGetSession.mockImplementation(
+    () =>
+      new Promise((resolve, reject) => {
+        settlers.push({ resolve, reject })
+      }),
+  )
+
+  return settlers
+}
+
 describe('useSessionData', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    resetSessionMocks()
     mockEventsData = makeEventsData()
-    mockGetSession.mockResolvedValue(SESSION_DATA)
-    mockGetUiState.mockResolvedValue({ session: { notificationsEnabled: false } })
     mockGetSessionDefaults.mockResolvedValue({
       workspace: '/path',
       model: 'claude-3',
@@ -100,6 +185,7 @@ describe('useSessionData', () => {
       available_effort_levels: [{ id: 'medium', name: 'Medium' }],
     })
     mockGetContainerId.mockReturnValue('test-container')
+    mockGetAddressedSessionId.mockReturnValue('test-session')
   })
 
   const wrapper = ({ children }) => <SessionDataProvider>{children}</SessionDataProvider>
@@ -266,14 +352,7 @@ describe('useSessionData', () => {
   it('clearSessionData resets sessionData to null', async () => {
     mockEventsData = makeEventsData({ isConnected: true })
 
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
-
-    await waitFor(() => {
-      expect(result.current.data.sessionId).toBe('sess-1')
-    })
+    const { result } = await renderLoadedSession(wrapper)
 
     act(() => {
       result.current.actions.clearSessionData()
@@ -283,30 +362,25 @@ describe('useSessionData', () => {
     expect(result.current.data.sessionId).toBeNull()
   })
 
-  it('reloadSession calls resumeSession, setContainerId, notifyContainerChanged, and reconnects', async () => {
+  it('reloadSession calls resumeSession, setAddress, notifyAddressChanged, and reconnects', async () => {
+    mockRoutedSessionId = 'sess-1'
     mockResumeSession.mockResolvedValue({ container_id: 'c2' })
     mockEventsData = makeEventsData({ isConnected: true })
 
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
-
-    await waitFor(() => {
-      expect(result.current.data.sessionId).toBe('sess-1')
-    })
+    const { result } = await renderLoadedSession(wrapper)
 
     await act(async () => {
       await result.current.actions.reloadSession()
     })
 
     expect(mockResumeSession).toHaveBeenCalledWith('sess-1')
-    expect(mockSetContainerId).toHaveBeenCalledWith('c2')
-    expect(mockNotifyContainerChanged).toHaveBeenCalled()
+    expect(mockSetAddress).toHaveBeenCalledWith('c2', 'sess-1')
+    expect(mockNotifyAddressChanged).toHaveBeenCalled()
     expect(mockReconnectSSE).toHaveBeenCalled()
   })
 
   it('reloadSession calls onError when resume fails', async () => {
+    mockRoutedSessionId = 'sess-1'
     mockResumeSession.mockRejectedValue(new Error('fail'))
     const onError = vi.fn()
     mockEventsData = makeEventsData({ isConnected: true })
@@ -315,10 +389,7 @@ describe('useSessionData', () => {
       <SessionDataProvider onError={onError}>{children}</SessionDataProvider>
     )
 
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper: errorWrapper },
-    )
+    const { result } = renderSessionHooks(errorWrapper)
 
     await waitFor(() => {
       expect(result.current.data.sessionId).toBe('sess-1')
@@ -331,17 +402,73 @@ describe('useSessionData', () => {
     expect(onError).toHaveBeenCalledWith('Reload failed')
   })
 
+  async function attachedOnSess1(onError) {
+    mockRoutedSessionId = 'sess-1'
+    mockEventsData = makeEventsData({ isConnected: true })
+    const hook = renderSessionHooks(({ children }) => (
+      <SessionDataProvider onError={onError}>{children}</SessionDataProvider>
+    ))
+    await waitFor(() => expect(hook.result.current.data.sessionId).toBe('sess-1'))
+    return hook
+  }
+
+  it('a reload settling after a move leaves the tab where it is', async () => {
+    let release
+    mockResumeSession.mockReturnValue(new Promise(resolve => (release = resolve)))
+    const { result, rerender } = await attachedOnSess1()
+
+    let reload
+    act(() => {
+      reload = result.current.actions.reloadSession()
+    })
+    mockRoutedSessionId = 'sess-2'
+    rerender()
+    await act(async () => {
+      release({ container_id: 'c2' })
+      await reload
+    })
+
+    expect(mockSetAddress).not.toHaveBeenCalledWith('c2', 'sess-1')
+    expect(mockReconnectSSE).not.toHaveBeenCalled()
+  })
+
+  it('a reload callback captured before a move does nothing', async () => {
+    const { result, rerender } = await attachedOnSess1()
+    const reload = result.current.actions.reloadSession
+
+    mockRoutedSessionId = 'sess-2'
+    rerender()
+    await act(async () => {
+      await reload()
+    })
+
+    expect(mockResumeSession).not.toHaveBeenCalled()
+  })
+
+  it('a reload failing after a move shows nothing', async () => {
+    let fail
+    mockResumeSession.mockReturnValue(new Promise((_, reject) => (fail = reject)))
+    const onError = vi.fn()
+    const { result, rerender } = await attachedOnSess1(onError)
+
+    let reload
+    act(() => {
+      reload = result.current.actions.reloadSession()
+    })
+    mockRoutedSessionId = 'sess-2'
+    rerender()
+    await act(async () => {
+      fail(new Error('gone'))
+      await reload
+    })
+
+    expect(onError).not.toHaveBeenCalled()
+  })
+
   it('setNotificationsEnabled persists via patchSessionUiState', async () => {
     mockEventsData = makeEventsData({ isConnected: true })
 
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
-
-    await waitFor(() => {
-      expect(result.current.data.sessionId).toBe('sess-1')
-    })
+    const { result } = await renderLoadedSession(wrapper)
 
     act(() => {
       result.current.actions.setNotificationsEnabled(true)
@@ -382,10 +509,9 @@ describe('useSessionData', () => {
 
 describe('useSessionData polling', () => {
   beforeEach(() => {
+    mockGetAddressedSessionId.mockReturnValue('test-session')
     vi.useFakeTimers()
-    vi.clearAllMocks()
-    mockGetSession.mockResolvedValue(SESSION_DATA)
-    mockGetUiState.mockResolvedValue({ session: { notificationsEnabled: false } })
+    resetSessionMocks()
   })
 
   afterEach(() => {
@@ -397,11 +523,7 @@ describe('useSessionData polling', () => {
   it('polls while isResponding is true', async () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
 
-    renderHook(() => useSessionData(), { wrapper })
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
+    await renderAndFlush(wrapper)
 
     expect(mockGetSession).toHaveBeenCalledTimes(1)
 
@@ -422,11 +544,7 @@ describe('useSessionData polling', () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
     mockGetSession.mockReturnValue(new Promise(() => {}))
 
-    renderHook(() => useSessionData(), { wrapper })
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
+    await renderAndFlush(wrapper)
 
     expect(mockGetSession).toHaveBeenCalledTimes(1)
 
@@ -441,11 +559,7 @@ describe('useSessionData polling', () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
     mockGetSession.mockReturnValue(new Promise(() => {}))
 
-    renderHook(() => useSessionData(), { wrapper })
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
+    await renderAndFlush(wrapper)
 
     expect(mockGetSession).toHaveBeenCalledTimes(1)
 
@@ -458,14 +572,48 @@ describe('useSessionData polling', () => {
     expect(mockGetSession).toHaveBeenCalledTimes(2)
   })
 
-  it('fetches once more when responding stops', async () => {
+  it('does not join an in-flight request addressed to another session in the same container', async () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
+    mockGetSession.mockReturnValue(new Promise(() => {}))
 
-    const { rerender } = renderHook(() => useSessionData(), { wrapper })
+    await renderAndFlush(wrapper)
+
+    expect(mockGetSession).toHaveBeenCalledTimes(1)
+
+    mockGetAddressedSessionId.mockReturnValue('thread-session')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    expect(mockGetSession).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops a reply for the session left when the container stays the same', async () => {
+    const left = createDeferred()
+    mockEventsData = makeEventsData({ isConnected: true })
+    mockGetSession.mockReturnValueOnce(left.promise)
+
+    const { result } = renderHook(() => useSessionData(), { wrapper })
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
+
+    mockGetAddressedSessionId.mockReturnValue('thread-session')
+
+    await act(async () => {
+      left.resolve({ ...SESSION_DATA, session_id: 'test-session' })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(result.current.sessionId).toBeNull()
+  })
+
+  it('fetches once more when responding stops', async () => {
+    mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
+
+    const { rerender } = await renderAndFlush(wrapper)
 
     mockGetSession.mockClear()
 
@@ -482,11 +630,7 @@ describe('useSessionData polling', () => {
   it('does not poll when not responding', async () => {
     mockEventsData = makeEventsData({ isConnected: true })
 
-    renderHook(() => useSessionData(), { wrapper })
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
+    await renderAndFlush(wrapper)
 
     expect(mockGetSession).toHaveBeenCalledTimes(1)
 
@@ -500,11 +644,7 @@ describe('useSessionData polling', () => {
   it('polls at consistent intervals during sustained response', async () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
 
-    renderHook(() => useSessionData(), { wrapper })
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
+    await renderAndFlush(wrapper)
 
     expect(mockGetSession).toHaveBeenCalledTimes(1)
 
@@ -542,14 +682,7 @@ describe('useSessionData defensive merge', () => {
       })
     mockEventsData = makeEventsData({ isConnected: true })
 
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
-
-    await waitFor(() => {
-      expect(result.current.data.sessionId).toBe('sess-1')
-    })
+    const { result } = await renderLoadedSession(wrapper)
     expect(result.current.data.workspace).toBe('/w/proj')
     expect(result.current.data.model).toBe('opus')
     expect(result.current.data.sessionName).toBe('Hello')
@@ -562,14 +695,59 @@ describe('useSessionData defensive merge', () => {
     expect(result.current.data.model).toBe('opus')
     expect(result.current.data.sessionName).toBe('Hello')
   })
+
+  it('lets a refresh clear needs_user while other null fields keep their values', async () => {
+    mockGetSession
+      .mockResolvedValueOnce({
+        session_id: 'sess-1',
+        model: 'opus',
+        needs_user: 'Decide: where retry state lives',
+      })
+      .mockResolvedValueOnce({ session_id: 'sess-1', model: null, needs_user: null })
+    mockEventsData = makeEventsData({ isConnected: true })
+
+    const { result } = renderSessionHooks(wrapper)
+
+    await waitFor(() => {
+      expect(result.current.data.sessionData?.needs_user).toBe('Decide: where retry state lives')
+    })
+
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    expect(result.current.data.sessionData.needs_user).toBeNull()
+    expect(result.current.data.model).toBe('opus')
+  })
+
+  it('lets a refresh clear needs_user_replies', async () => {
+    mockGetSession
+      .mockResolvedValueOnce({
+        session_id: 'sess-1',
+        needs_user: 'Approve: file it',
+        needs_user_replies: ['Go', 'Hold'],
+      })
+      .mockResolvedValueOnce({ session_id: 'sess-1', needs_user: null, needs_user_replies: null })
+    mockEventsData = makeEventsData({ isConnected: true })
+
+    const { result } = renderSessionHooks(wrapper)
+
+    await waitFor(() => {
+      expect(result.current.data.sessionData?.needs_user_replies).toEqual(['Go', 'Hold'])
+    })
+
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    expect(result.current.data.sessionData.needs_user_replies).toBeNull()
+  })
 })
 
 describe('useSessionData polling extra', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.clearAllMocks()
-    mockGetSession.mockResolvedValue(SESSION_DATA)
-    mockGetUiState.mockResolvedValue({ session: { notificationsEnabled: false } })
+    resetSessionMocks()
   })
 
   afterEach(() => {
@@ -581,11 +759,7 @@ describe('useSessionData polling extra', () => {
   it('stops polling interval when responding stops', async () => {
     mockEventsData = makeEventsData({ isConnected: true, isResponding: true })
 
-    const { rerender } = renderHook(() => useSessionData(), { wrapper })
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
+    const { rerender } = await renderAndFlush(wrapper)
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000)
@@ -612,10 +786,8 @@ describe('useSessionData polling extra', () => {
 
 describe('useSessionActions', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    resetSessionMocks()
     mockEventsData = makeEventsData({ isConnected: true })
-    mockGetSession.mockResolvedValue(SESSION_DATA)
-    mockGetUiState.mockResolvedValue({ session: { notificationsEnabled: false } })
   })
 
   const wrapper = ({ children }) => <SessionDataProvider>{children}</SessionDataProvider>
@@ -659,16 +831,13 @@ describe('useSessionActions', () => {
   it('setModel calls API then refreshes session', async () => {
     mockSetModel.mockResolvedValue({})
 
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetSession).toHaveBeenCalled()
-    })
+    mockRoutedSessionId = 'sess-1'
+    const { result } = await renderLoadedSession(wrapper)
 
     mockGetSession.mockClear()
 
     act(() => {
-      result.current.setModel('claude-4')
+      result.current.actions.setModel('claude-4')
     })
 
     expect(mockSetModel).toHaveBeenCalledWith('claude-4')
@@ -681,16 +850,13 @@ describe('useSessionActions', () => {
   it('setPermissionMode calls API then refreshes session', async () => {
     mockSetPermissionMode.mockResolvedValue({})
 
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetSession).toHaveBeenCalled()
-    })
+    mockRoutedSessionId = 'sess-1'
+    const { result } = await renderLoadedSession(wrapper)
 
     mockGetSession.mockClear()
 
     act(() => {
-      result.current.setPermissionMode('plan')
+      result.current.actions.setPermissionMode('plan')
     })
 
     expect(mockSetPermissionMode).toHaveBeenCalledWith('plan')
@@ -700,14 +866,41 @@ describe('useSessionActions', () => {
     })
   })
 
-  it('setModel buffers when no container is active (welcome screen)', async () => {
-    mockGetContainerId.mockReturnValue(null)
-    mockGetSession.mockResolvedValue({ workspace: '/path' })
+  it('a refused permission mode is reported and settles after the confirming refresh', async () => {
+    mockSetPermissionMode.mockRejectedValue(new Error('Failed to apply permission mode'))
+    const onError = vi.fn()
+    mockRoutedSessionId = 'sess-1'
+    const { result } = renderHook(
+      () => ({ actions: useSessionActions(), data: useSessionData() }),
+      {
+        wrapper: ({ children }) => (
+          <SessionDataProvider onError={onError}>{children}</SessionDataProvider>
+        ),
+      },
+    )
+    await waitFor(() => {
+      expect(result.current.data.sessionId).toBe('sess-1')
+    })
+    let refreshed = false
+    mockGetSession.mockClear()
+    mockGetSession.mockImplementation(async () => {
+      refreshed = true
+      return SESSION_DATA
+    })
 
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
+    await act(async () => {
+      await result.current.actions.setPermissionMode('bypassPermissions')
+      expect(refreshed).toBe(true)
+    })
+
+    expect(onError).toHaveBeenCalledWith('Failed to apply permission mode')
+  })
+
+  it('setModel buffers when no container is active (welcome screen)', async () => {
+    const { result } = renderWelcome(wrapper)
 
     act(() => {
-      result.current.setModel('claude-4')
+      result.current.actions.setModel('claude-4')
     })
 
     // Buffered - the effort/model API was NOT called yet.
@@ -715,45 +908,37 @@ describe('useSessionActions', () => {
   })
 
   it('setEffortLevel buffers when no container is active (welcome screen)', async () => {
-    mockGetContainerId.mockReturnValue(null)
-    mockGetSession.mockResolvedValue({ workspace: '/path' })
-
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
+    const { result } = renderWelcome(wrapper)
 
     act(() => {
-      result.current.setEffortLevel('max')
+      result.current.actions.setEffortLevel('max')
     })
 
     expect(mockSetEffortLevel).not.toHaveBeenCalled()
   })
 
   it('latest-wins: repeated buffered setModel calls only the latest value drains', async () => {
-    mockGetContainerId.mockReturnValue(null)
-
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
+    const { result } = renderWelcome(wrapper, SESSION_DATA)
 
     act(() => {
-      result.current.setModel('claude-3')
-      result.current.setModel('claude-haiku')
-      result.current.setModel('claude-opus')
+      result.current.actions.setModel('claude-3')
+      result.current.actions.setModel('claude-haiku')
+      result.current.actions.setModel('claude-opus')
     })
 
     // While buffered, no API calls happen.
     expect(mockSetModel).not.toHaveBeenCalled()
 
-    // Session attach: getContainerId returns a real id; the drain effect flushes only the
-    // latest buffered value.
-    mockGetContainerId.mockReturnValue('test-container')
     mockSetModel.mockResolvedValue({})
-    mockGetSession.mockResolvedValue(SESSION_DATA)
+    mockAttached({ creations: FIRST_CREATION_DONE })
     await act(async () => {
-      await result.current.refreshSession()
+      await result.current.actions.refreshSession()
     })
 
     await waitFor(() => {
       expect(mockSetModel).toHaveBeenCalledTimes(1)
     })
-    expect(mockSetModel).toHaveBeenCalledWith('claude-opus')
+    expect(mockSetModel).toHaveBeenCalledWith('claude-opus', expect.anything())
   })
 
   it('drains buffered config in strict order on session attach: model -> permission -> effort', async () => {
@@ -768,13 +953,7 @@ describe('useSessionActions', () => {
       callOrder.push(['effort', value])
     })
 
-    mockGetContainerId.mockReturnValue(null)
-    mockGetSession.mockResolvedValue({ workspace: '/path' })
-
-    const { result } = renderHook(
-      () => ({ actions: useSessionActions(), data: useSessionData() }),
-      { wrapper },
-    )
+    const { result } = renderWelcome(wrapper)
 
     act(() => {
       result.current.actions.setEffortLevel('max')
@@ -782,9 +961,7 @@ describe('useSessionActions', () => {
       result.current.actions.setModel('claude-haiku')
     })
 
-    // Session attach: getSession now returns a session_id; the drain effect keys on the null -> set transition.
-    mockGetContainerId.mockReturnValue('test-container')
-    mockGetSession.mockResolvedValue(SESSION_DATA)
+    mockAttached({ creations: FIRST_CREATION_DONE })
     await act(async () => {
       await result.current.actions.refreshSession()
     })
@@ -800,15 +977,180 @@ describe('useSessionActions', () => {
     ])
   })
 
-  it('refreshSession fetches session data and updates data context', async () => {
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
+  it('buffers a pick made while the routed session opens from another, then applies it there', async () => {
+    mockRoutedSessionId = 'sess-1'
+    mockSetModel.mockResolvedValue({})
+    const { result, rerender } = await renderLoadedSession(wrapper)
+
+    // Session B is routed and opening; the tab still addresses sess-1's container.
+    mockRoutedSessionId = 'sess-b'
+    mockEventsData = makeEventsData({ isConnected: true, isResumeRequestPending: true })
+    rerender()
+    act(() => {
+      result.current.actions.setModel('claude-sonnet-5')
+    })
+    expect(mockSetModel).not.toHaveBeenCalled()
+
+    // The open settles: data clears, B's own data arrives.
+    mockEventsData = makeEventsData({ isConnected: true })
+    act(() => {
+      result.current.actions.clearSessionData()
+    })
+    mockGetSession.mockResolvedValue({ ...SESSION_DATA, session_id: 'sess-b' })
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
 
     await waitFor(() => {
-      expect(result.current.data.sessionId).toBe('sess-1')
+      expect(mockSetModel).toHaveBeenCalledWith('claude-sonnet-5', expect.anything())
     })
+    expect(result.current.data.sessionId).toBe('sess-b')
+  })
+
+  it('buffers a pick made during a create from another session for the new session', async () => {
+    mockRoutedSessionId = 'sess-1'
+    mockSetEffortLevel.mockResolvedValue({})
+    const { result, rerender } = await renderLoadedSession(wrapper)
+
+    act(() => {
+      result.current.actions.clearSessionData()
+    })
+    mockEventsData = makeEventsData({
+      isConnected: true,
+      isCreateRequestPending: true,
+      creations: {
+        current: 1,
+        bySeq: { 1: { status: 'pending', sessionId: null, fromRoute: 'sess-1' } },
+      },
+    })
+    rerender()
+    act(() => {
+      result.current.actions.setEffortLevel('max')
+    })
+    expect(mockSetEffortLevel).not.toHaveBeenCalled()
+
+    mockEventsData = makeEventsData({
+      isConnected: true,
+      creations: {
+        current: 1,
+        bySeq: { 1: { status: 'created', sessionId: 'sess-new', fromRoute: 'sess-1' } },
+      },
+    })
+    act(() => {
+      result.current.actions.seedSessionData({ ...SESSION_DATA, session_id: 'sess-new' })
+    })
+
+    await waitFor(() => {
+      expect(mockSetEffortLevel).toHaveBeenCalledWith('max', expect.anything())
+    })
+  })
+
+  it('drops a welcome pick when an existing session is opened instead', async () => {
+    const { result, rerender } = renderWithWelcomePick(wrapper)
+    expect(result.current.data.pendingModel).toBe('claude-sonnet-5')
+
+    mockRoutedSessionId = 'sess-9'
+    mockAttached({ session: { ...SESSION_DATA, session_id: 'sess-9' } })
+    rerender()
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    await waitFor(() => {
+      expect(result.current.data.pendingModel).toBeNull()
+    })
+    expect(mockSetModel).not.toHaveBeenCalled()
+  })
+
+  it('does not hand a pick for the next creation to an earlier one the tab opens', async () => {
+    const routedFirst = {
+      current: 1,
+      bySeq: { 1: { status: 'routed', sessionId: 'sess-1', fromRoute: null } },
+    }
+    mockEventsData = makeEventsData({ creations: routedFirst })
+    const { result, rerender } = renderWithWelcomePick(wrapper)
+
+    mockRoutedSessionId = 'sess-1'
+    mockAttached({ creations: routedFirst })
+    rerender()
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    await waitFor(() => {
+      expect(result.current.data.pendingModel).toBeNull()
+    })
+    expect(mockSetModel).not.toHaveBeenCalled()
+  })
+
+  it('keeps welcome picks through a failed creation for the next one', async () => {
+    mockSetModel.mockResolvedValue({})
+    const { result, rerender } = renderWithWelcomePick(wrapper)
+
+    mockEventsData = makeEventsData({
+      creations: {
+        current: 1,
+        bySeq: { 1: { status: 'failed', sessionId: null, fromRoute: null } },
+      },
+    })
+    rerender()
+    expect(result.current.data.pendingModel).toBe('claude-sonnet-5')
+
+    mockAttached({
+      creations: {
+        current: 2,
+        bySeq: {
+          1: { status: 'failed', sessionId: null, fromRoute: null },
+          2: { status: 'created', sessionId: 'sess-1', fromRoute: null },
+        },
+      },
+    })
+    rerender()
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    await waitFor(() => {
+      expect(mockSetModel).toHaveBeenCalledWith('claude-sonnet-5', expect.anything())
+    })
+  })
+
+  it('shows a welcome pick until the session it was applied to confirms it', async () => {
+    let confirmModel
+    mockSetModel.mockReturnValue(
+      new Promise(resolve => {
+        confirmModel = resolve
+      }),
+    )
+    const { result, rerender } = renderWithWelcomePick(wrapper)
+
+    mockAttached({ creations: FIRST_CREATION_DONE })
+    rerender()
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    await waitFor(() => {
+      expect(mockSetModel).toHaveBeenCalledWith('claude-sonnet-5', expect.anything())
+    })
+    expect(result.current.data.model).toBe('claude-3')
+    expect(result.current.data.pendingModel).toBe('claude-sonnet-5')
+    expect(result.current.data.isApplyingPendingConfig).toBe(true)
+
+    mockGetSession.mockResolvedValue({ ...SESSION_DATA, model: 'claude-sonnet-5' })
+    await act(async () => {
+      confirmModel({})
+    })
+
+    await waitFor(() => {
+      expect(result.current.data.isApplyingPendingConfig).toBe(false)
+    })
+    expect(result.current.data.pendingModel).toBeNull()
+    expect(result.current.data.model).toBe('claude-sonnet-5')
+  })
+
+  it('refreshSession fetches session data and updates data context', async () => {
+    const { result } = await renderLoadedSession(wrapper)
 
     mockGetSession.mockResolvedValue({ ...SESSION_DATA, name: 'Updated' })
 
@@ -832,34 +1174,28 @@ describe('refreshSession joiner promise contract', () => {
 
   const wrapper = ({ children }) => <SessionDataProvider>{children}</SessionDataProvider>
 
-  it('does not resolve a joiner until the re-armed refetch settles, then reads its state', async () => {
-    const resolvers = []
-    mockGetSession.mockImplementation(
-      () =>
-        new Promise(resolve => {
-          resolvers.push(resolve)
-        }),
-    )
-
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
+  async function startFirstRefresh() {
+    const settlers = deferGetSession()
+    const { result } = renderSessionHooks(wrapper)
     const { refreshSession } = result.current.actions
-
-    let joinerSettled = false
     const first = refreshSession()
-
     await waitFor(() => {
       expect(mockGetSession).toHaveBeenCalledTimes(1)
     })
+
+    return { settlers, result, refreshSession, first }
+  }
+
+  it('does not resolve a joiner until the re-armed refetch settles, then reads its state', async () => {
+    const { settlers, result, refreshSession, first } = await startFirstRefresh()
+    let joinerSettled = false
 
     const joiner = refreshSession().then(() => {
       joinerSettled = true
     })
 
     await act(async () => {
-      resolvers[0](SESSION_DATA)
+      settlers[0].resolve(SESSION_DATA)
       await first
     })
 
@@ -872,7 +1208,7 @@ describe('refreshSession joiner promise contract', () => {
     expect(joinerSettled).toBe(false)
 
     await act(async () => {
-      resolvers[1]({ ...SESSION_DATA, name: 'Updated' })
+      settlers[1].resolve({ ...SESSION_DATA, name: 'Updated' })
       await joiner
     })
 
@@ -894,22 +1230,7 @@ describe('refreshSession joiner promise contract', () => {
   })
 
   it('waits for the re-armed refetch even when it errors, rather than settling on the joined one', async () => {
-    const settlers = []
-    mockGetSession.mockImplementation(
-      () =>
-        new Promise((resolve, reject) => {
-          settlers.push({ resolve, reject })
-        }),
-    )
-
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
-    const { refreshSession } = result.current
-
-    const first = refreshSession()
-
-    await waitFor(() => {
-      expect(mockGetSession).toHaveBeenCalledTimes(1)
-    })
+    const { settlers, refreshSession, first } = await startFirstRefresh()
 
     let joinerSettled = false
     const joiner = refreshSession().finally(() => {
@@ -942,22 +1263,7 @@ describe('refreshSession joiner promise contract', () => {
   })
 
   it('settles an orphaned joiner when its container is switched away, without a spurious extra fetch', async () => {
-    const resolvers = []
-    mockGetSession.mockImplementation(
-      () =>
-        new Promise(resolve => {
-          resolvers.push(resolve)
-        }),
-    )
-
-    const { result } = renderHook(() => useSessionActions(), { wrapper })
-    const { refreshSession } = result.current
-
-    const first = refreshSession()
-
-    await waitFor(() => {
-      expect(mockGetSession).toHaveBeenCalledTimes(1)
-    })
+    const { settlers, refreshSession, first } = await startFirstRefresh()
 
     let joinerSettled = false
     act(() => {
@@ -982,7 +1288,7 @@ describe('refreshSession joiner promise contract', () => {
 
     // Call #1 settling late, with ownership already lost, must not add a third, unsolicited call.
     await act(async () => {
-      resolvers[0](SESSION_DATA)
+      settlers[0].resolve(SESSION_DATA)
       await first
     })
 
@@ -990,26 +1296,42 @@ describe('refreshSession joiner promise contract', () => {
     expect(mockGetSession).toHaveBeenCalledTimes(2)
   })
 
-  it('does not apply a stale container response to sessionData when the container is switched mid-flight', async () => {
-    const resolvers = []
+  it('drops a read that lands after the session it addressed was released', async () => {
+    let resolveRead
     mockGetSession.mockImplementation(
       () =>
         new Promise(resolve => {
-          resolvers.push(resolve)
+          resolveRead = resolve
         }),
     )
-
-    const { result } = renderHook(
-      () => ({ data: useSessionData(), actions: useSessionActions() }),
-      { wrapper },
-    )
-    const { refreshSession } = result.current.actions
-
-    const first = refreshSession()
-
+    const { result } = renderSessionHooks(wrapper)
+    const read = result.current.actions.refreshSession()
     await waitFor(() => {
       expect(mockGetSession).toHaveBeenCalledTimes(1)
     })
+
+    mockGetContainerId.mockReturnValue(null)
+    await act(async () => {
+      resolveRead(SESSION_DATA)
+      await read
+    })
+
+    expect(result.current.data.sessionData).toBeNull()
+  })
+
+  it('applies a read whose container is still the current one - a guard', async () => {
+    mockGetSession.mockResolvedValue(SESSION_DATA)
+    const { result } = renderSessionHooks(wrapper)
+
+    await act(async () => {
+      await result.current.actions.refreshSession()
+    })
+
+    expect(result.current.data.sessionId).toBe('sess-1')
+  })
+
+  it('does not apply a stale container response to sessionData when the container is switched mid-flight', async () => {
+    const { settlers, result, refreshSession, first } = await startFirstRefresh()
 
     // Container switch before call #1 settles - its response must not paint sessionData for the
     // container reading it now.
@@ -1024,7 +1346,7 @@ describe('refreshSession joiner promise contract', () => {
     })
 
     await act(async () => {
-      resolvers[0]({ ...SESSION_DATA, name: 'stale-container-1-session' })
+      settlers[0].resolve({ ...SESSION_DATA, name: 'stale-container-1-session' })
       await first
     })
 
@@ -1032,7 +1354,7 @@ describe('refreshSession joiner promise contract', () => {
     expect(result.current.data.sessionData).toBeNull()
 
     await act(async () => {
-      resolvers[1]({ ...SESSION_DATA, name: 'other-container-session' })
+      settlers[1].resolve({ ...SESSION_DATA, name: 'other-container-session' })
     })
 
     await waitFor(() => {
@@ -1050,13 +1372,7 @@ describe('refreshSession joiner promise contract', () => {
         <SessionDataProvider onError={onError}>{children}</SessionDataProvider>
       )
 
-      const settlers = []
-      mockGetSession.mockImplementation(
-        () =>
-          new Promise((resolve, reject) => {
-            settlers.push({ resolve, reject })
-          }),
-      )
+      const settlers = deferGetSession()
 
       const { result } = renderHook(() => useSessionActions(), { wrapper: errorWrapper })
       const { refreshSession } = result.current
@@ -1093,5 +1409,64 @@ describe('refreshSession joiner promise contract', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('notifications preference across a session switch', () => {
+  const wrapper = ({ children }) => <SessionDataProvider>{children}</SessionDataProvider>
+  let reads
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockEventsData = makeEventsData()
+    mockGetContainerId.mockReturnValue(null)
+    reads = { A: createDeferred(), B: createDeferred() }
+    mockGetUiState.mockImplementation(id => reads[id].promise)
+  })
+
+  function attachedTo(sessionId) {
+    const hook = renderSessionHooks(wrapper)
+    act(() => {
+      hook.result.current.actions.seedSessionData({ ...SESSION_DATA, session_id: sessionId })
+    })
+
+    return hook
+  }
+
+  function switchTo(result, sessionId) {
+    act(() => {
+      result.current.actions.clearSessionData()
+    })
+    act(() => {
+      result.current.actions.seedSessionData({ ...SESSION_DATA, session_id: sessionId })
+    })
+  }
+
+  it('drops a late reply for the session left, and shows off while the next one loads', async () => {
+    const { result } = attachedTo('A')
+    switchTo(result, 'B')
+    expect(result.current.data.notificationsEnabled).toBe(false)
+
+    await act(async () => {
+      reads.B.resolve({ session: { notificationsEnabled: false } })
+    })
+    await act(async () => {
+      reads.A.resolve({ session: { notificationsEnabled: true } })
+    })
+
+    expect(result.current.data.notificationsEnabled).toBe(false)
+  })
+
+  it('keeps a toggle made while the session reads its own value', async () => {
+    const { result } = attachedTo('B')
+    act(() => {
+      result.current.actions.setNotificationsEnabled(true)
+    })
+
+    await act(async () => {
+      reads.B.resolve({ session: { notificationsEnabled: false } })
+    })
+
+    expect(result.current.data.notificationsEnabled).toBe(true)
   })
 })

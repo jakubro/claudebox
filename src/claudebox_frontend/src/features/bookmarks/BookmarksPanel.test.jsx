@@ -1,6 +1,6 @@
 /** Tests for BookmarksPanel component. */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 let mockSessionId = 'test-session'
@@ -113,6 +113,24 @@ describe('BookmarksPanel', () => {
     expect(screen.queryByText('user')).not.toBeInTheDocument()
   })
 
+  it("keeps a bookmark's relative time up while the panel stays open", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.parse('2026-01-01T00:00:00Z'))
+    try {
+      mockAllBookmarks = { 'test-session': ['turn-a:user'] }
+      mockBookmarkMeta = {
+        'test-session/turn-a:user': { preview: 'Hello world', ts: '2026-01-01T00:00:00Z' },
+      }
+      render(<BookmarksPanel />)
+
+      act(() => vi.advanceTimersByTime(45 * 60_000))
+
+      expect(document.querySelector('.bookmark-time')).toHaveTextContent('45m ago')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders assistant bookmark without type label', () => {
     mockAllBookmarks = { 'test-session': ['turn-a:assistant'] }
     mockBookmarkMeta = {
@@ -178,6 +196,32 @@ describe('BookmarksPanel', () => {
     expect(screen.getByText('Session Two')).toBeInTheDocument()
     expect(screen.getByText('First')).toBeInTheDocument()
     expect(screen.getByText('Second')).toBeInTheDocument()
+  })
+
+  it("colours each dot by its session's state, in both tabs", () => {
+    mockAllBookmarks = {
+      'test-session': ['turn-a:user'],
+      'session-2': ['turn-b:assistant'],
+    }
+    mockBookmarkMeta = {
+      'test-session/turn-a:user': { preview: 'Mine', ts: '2026-01-01T00:01:00Z' },
+      'session-2/turn-b:assistant': { preview: 'Theirs', ts: '2026-01-01T00:00:00Z' },
+    }
+    mockSessions = [
+      { session_id: 'test-session', container_id: 'c-1', activity: 'working' },
+      { session_id: 'session-2', container_id: 'c-2', needs_user: 'Decide: which' },
+    ]
+    const dotOf = text =>
+      screen.getByText(text).closest('.bookmark-row').querySelector('.container-status-dot')
+
+    render(<BookmarksPanel />)
+
+    expect(dotOf('Mine')).toHaveClass('container-status-working')
+
+    fireEvent.click(screen.getByText('All sessions'))
+
+    expect(dotOf('Mine')).toHaveClass('container-status-working')
+    expect(dotOf('Theirs')).toHaveClass('container-status-needs-you')
   })
 
   it('shows tab counts', () => {

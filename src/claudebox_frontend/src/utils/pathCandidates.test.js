@@ -121,7 +121,7 @@ describe('extractPathCandidates', () => {
   })
 
   it('rejects XML/HTML tags containing slashes', () => {
-    const results = extractPathCandidates('<command-message>scope</command-message>')
+    const results = extractPathCandidates('<command-message>changelog</command-message>')
     expect(results).toEqual([])
   })
 

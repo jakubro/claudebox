@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { getSessionEvents } from '../../../../api/sessions'
-import { buildThreadHistory } from './hooks/useInlineThreadSessions'
+import ThreadExchanges from './ThreadExchanges'
+import { openingExchange } from './threadEvents'
 
 /**
  * Fetched once per mount: the session rendering this card has no live subscription to the
@@ -13,21 +14,21 @@ import { buildThreadHistory } from './hooks/useInlineThreadSessions'
  * @param {function} props.onFocus - (threadSessionId) => void, the card's own control.
  */
 export default function PromotedThreadCard({ quote, threadSessionId, onFocus }) {
-  const [history, setHistory] = useState(null)
+  const [events, setEvents] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    setHistory(null)
+    setEvents(null)
 
     getSessionEvents(threadSessionId)
-      .then(({ events }) => {
+      .then(({ events: fetched }) => {
         if (!cancelled) {
-          setHistory(buildThreadHistory(events))
+          setEvents(openingExchange(fetched))
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setHistory([])
+          setEvents([])
         }
       })
 
@@ -36,18 +37,22 @@ export default function PromotedThreadCard({ quote, threadSessionId, onFocus }) 
     }
   }, [threadSessionId])
 
-  const opening = history?.[0]
-
   return (
     <div className="inline-thread promoted-thread-card" data-testid="promoted-thread-card">
       <div className="inline-thread-quote">
         <span className="inline-thread-quote-text">{quote}</span>
       </div>
       <div className="inline-thread-history">
-        <div className="inline-thread-turn">
-          <div className="inline-thread-question">{opening ? opening.question : '...'}</div>
-          <div className="inline-thread-answer">{opening?.answer}</div>
-        </div>
+        {events?.length ? (
+          <ThreadExchanges
+            events={events}
+            running={false}
+            sessionId={threadSessionId}
+            quote={quote}
+          />
+        ) : (
+          <div className="inline-thread-turn">...</div>
+        )}
       </div>
       <button
         type="button"

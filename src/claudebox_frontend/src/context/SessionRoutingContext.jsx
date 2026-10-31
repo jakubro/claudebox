@@ -25,7 +25,7 @@ export function SessionRoutingProvider({ children }) {
   }, [])
 
   const navigateToSession = useCallback((workspaceId, sessionId, options) => {
-    const turnSegment = buildTurnSegment(options?.turnId, options?.messageType)
+    const turnSegment = buildTurnSegment(options?.turnId, options?.messageType, options?.target)
     window.location.hash = `#/workspaces/${workspaceId}/sessions/${sessionId}${turnSegment}`
     // hashchange event fires automatically, updating state
   }, [])
@@ -125,6 +125,7 @@ export function SessionRoutingProvider({ children }) {
       activeBoardId: routeState?.boardId ?? null,
       activeTurnId: routeState?.turnId ?? null,
       activeMessageType: routeState?.messageType ?? null,
+      activeTarget: routeState?.target ?? null,
       density: routeState?.density ?? 'comfortable',
       sendMessages: routeState?.sendMessages ?? [],
       navigateToSession,

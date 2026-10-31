@@ -3,6 +3,8 @@
 Thin `@tool` bindings over `SiblingSessionClient`, which `runtime_claude.py` also wraps.
 """
 
+from __future__ import annotations
+
 from langchain_core.tools import BaseTool, ToolException, tool
 
 from ._context import ToolContext

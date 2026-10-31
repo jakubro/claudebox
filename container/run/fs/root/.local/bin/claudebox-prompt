@@ -91,11 +91,18 @@ fn_path() {
 fn_tree() {
   local path=${1:-}
 
+  local res
+  res=$(claudebox-prompt-tree || true)
+
+  if [[ -n "$res" ]]; then
+    echo "$res"
+    return
+  fi
+
   # Find all files of interest
 
   local patterns=(
     "^AGENTS(\.local)?\.md$"
-    "^MEMORY$"
     "^\.ignore$"
     "^\.workspace$"
     "^\.module$"
@@ -109,6 +116,9 @@ fn_tree() {
     --case-sensitive
     --exclude ".git/*"
     --exclude ".claudebox"
+    --exclude ".claude"
+    --exclude "node_modules"
+    --exclude ".venv"
     --color never
     "$(join_str "|" "${patterns[@]}")"
   )
@@ -117,8 +127,11 @@ fn_tree() {
     fd_args+=("$path")
   fi
 
+  local fd
+  fd=$(command -v fd || command -v fdfind)
+
   local paths
-  paths=$(fdfind "${fd_args[@]}")
+  paths=$("$fd" "${fd_args[@]}")
 
   # Visualize paths as a tree
 

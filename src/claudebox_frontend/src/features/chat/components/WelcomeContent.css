@@ -30,6 +30,22 @@
   margin: 0.25rem 0 0;
 }
 
+.welcome-login-notice {
+  max-width: 420px;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  text-align: center;
+  user-select: text;
+}
+
+.welcome-login-notice code {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
 /* Keyboard shortcuts card */
 .welcome-shortcuts {
   border: 1px solid var(--border);

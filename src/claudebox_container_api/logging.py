@@ -1,4 +1,6 @@
-"""Container API logging - SSE broadcasting and per-session file logs."""
+"""Container API logging - SSE broadcasting and the workspace's shared file log."""
+
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -12,9 +14,10 @@ from claudebox import (
     EventSubtype,
     EventType,
     parse_timestamp,
-    read_jsonl,
+    read_jsonl_tail,
     use_log_file,
 )
+from .constants import CONTAINER_API_LOG_REPLAY_LIMIT
 
 
 class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
@@ -63,14 +66,14 @@ class LogBroadcaster(Broadcaster[logging.LogRecord, dict]):
         super().unsubscribe(subscriber_id)
 
     def _load(self) -> Iterable[dict]:
-        """Yield SSE-format dicts from the log file (empty when the file does not exist)."""
+        """Yield SSE-format dicts for the log file's latest records (none when it does not exist)."""
 
         if not self._log_file_path.exists():
             return
 
         base_date = parse_timestamp(self._log_file_path.stat().st_mtime, posix=True).date()
 
-        for record in read_jsonl(self._log_file_path):
+        for record in read_jsonl_tail(self._log_file_path, CONTAINER_API_LOG_REPLAY_LIMIT):
             try:
                 raw_ts = record["timestamp"]
 
@@ -164,7 +167,7 @@ _log_handler: BroadcastLogHandler | None = None
 
 
 def start_logging(log_file_path: str | Path) -> None:
-    """Attach the per-session log file and install the SSE broadcaster handler on the root logger."""
+    """Attach the workspace log file and install the SSE broadcaster handler on the root logger."""
 
     global log_broadcaster, _log_handler
 

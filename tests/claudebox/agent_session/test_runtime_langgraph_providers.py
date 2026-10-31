@@ -5,11 +5,14 @@ Covers `_build_chat_model` dispatch via `init_chat_model`, provider probe/catalo
 and a Tier 1 Anthropic integration test that stubs the chat model so no live API key is needed.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from langchain_core.messages import AIMessage, SystemMessage
 
 from claudebox.agent_session.config import LangGraphAgentSessionConfig
 from claudebox.agent_session.errors import (
@@ -536,14 +539,14 @@ class TestCostAccumulation:
     """`_accumulate_usage` routes through `lookup_price` for curated / overridden / None semantics."""
 
     def test_uses_curated_table_for_known_model(self, tmp_path):
-        """Anthropic Sonnet 1M input + 0.5M output -> 1.0 * 3.0 + 0.5 * 15.0 = 10.50 USD."""
+        """Anthropic Sonnet 1M input + 0.5M output -> 1.0 * 2.0 + 0.5 * 10.0 = 7.00 USD."""
 
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5-5"))
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
 
-        assert cost == pytest.approx(10.50)
-        assert runtime._total_cost_usd == pytest.approx(10.50)
+        assert cost == pytest.approx(7.00)
+        assert runtime._total_cost_usd == pytest.approx(7.00)
 
     def test_unknown_model_returns_none(self, tmp_path):
         """Custom unknown model -> None cost; _total_cost_usd unchanged; tokens still counted."""
@@ -553,7 +556,7 @@ class TestCostAccumulation:
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
 
         assert cost is None
-        assert runtime._total_cost_usd == 0.0
+        assert runtime._total_cost_usd == pytest.approx(0.0)
 
     def test_override_wins_over_curated_table(self, tmp_path):
         """Workspace `cost_overrides` take precedence over PRICE_PER_MTOK rates."""
@@ -584,7 +587,7 @@ class TestCostAccumulation:
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=500_000)
 
-        assert cost == 0.0
+        assert cost == pytest.approx(0.0)
         assert cost is not None
 
     def test_override_works_for_unknown_model(self, tmp_path):
@@ -612,8 +615,8 @@ class TestCostAccumulation:
 
         # A sub-agent's prompt occupies its own window, never the parent session's.
         assert runtime._context_tokens == 0
-        assert runtime._total_cost_usd == 0.0
-        assert runtime._subagent_cost_this_turn == 0.0
+        assert runtime._total_cost_usd == pytest.approx(0.0)
+        assert runtime._subagent_cost_this_turn == pytest.approx(0.0)
 
 
 class TestModelContextWindow:
@@ -621,7 +624,7 @@ class TestModelContextWindow:
 
     @pytest.mark.anyio
     async def test_resolves_for_anthropic_sonnet(self, tmp_path):
-        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5"))
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5-5"))
 
         usage = await runtime.get_context_usage()
 
@@ -650,6 +653,23 @@ class TestModelContextWindow:
 
 
 # Tool-binding graceful degradation via _build_graph
+
+
+class TestGenerateTitle:
+    """A title comes from the session's own chat model, framed as material to title."""
+
+    @pytest.mark.anyio
+    async def test_returns_the_cleaned_reply_from_the_session_model(self, tmp_path):
+        runtime = LangGraphRuntime(_config(tmp_path, model="anthropic:claude-sonnet-5-5"))
+        reply = AIMessage(content=[{"type": "text", "text": "'Fixing the CSV parser.'"}])
+        runtime._chat_model = MagicMock(ainvoke=AsyncMock(return_value=reply))
+
+        title = await runtime.generate_title(["fix my parser", "still failing", "thanks"])
+
+        assert title == "Fixing the CSV parser"
+        system, human = runtime._chat_model.ainvoke.await_args.args[0]
+        assert isinstance(system, SystemMessage)
+        assert "<message>\nstill failing\n</message>" in human.content
 
 
 class TestToolBindingDegradation:

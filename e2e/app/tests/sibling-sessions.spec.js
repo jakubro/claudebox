@@ -1,19 +1,14 @@
 /** E2E test for the sibling-session tool family (session_spawn/session_ask/session_read). */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSessionWithAPI } from '../helpers.js'
 
 test.describe('Sibling sessions', () => {
   // SPEC: runtime:sibling-sessions
   test('renders a tool block for a session_spawn call naming the child session', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/sibling-session-spawn.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/sibling-session-spawn.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()

@@ -10,7 +10,8 @@
   overflow-y: auto;
 }
 
-.tool-json [data-testid] {
+/* The tree's root carries an inline `monospace` from its theme - pin its descendants instead. */
+.tool-json * {
   font-family: var(--font-mono);
 }
 

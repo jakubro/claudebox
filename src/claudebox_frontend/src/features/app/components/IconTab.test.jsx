@@ -2,11 +2,13 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import IconTab from './IconTab'
 
 vi.mock('lucide-react', () => ({
   Archive: () => <span data-testid="icon-stash">📦</span>,
+  Box: () => <span data-testid="icon-containers">📦</span>,
+  CalendarClock: () => <span data-testid="icon-crons">📅</span>,
   Command: () => <span data-testid="icon-commands">⌘</span>,
   HelpCircle: () => <span data-testid="icon-help">❓</span>,
   History: () => <span data-testid="icon-sessions">⏰</span>,
@@ -16,6 +18,7 @@ vi.mock('lucide-react', () => ({
   Plug: () => <span data-testid="icon-mcp">🔌</span>,
   SquareKanban: () => <span data-testid="icon-tasks">📊</span>,
   Bookmark: () => <span data-testid="icon-bookmarks">🔖</span>,
+  Terminal: () => <span data-testid="icon-logs">⌨</span>,
   TrendingUp: () => <span data-testid="icon-usage">📈</span>,
   X: () => <span data-testid="icon-close">✕</span>,
 }))
@@ -51,6 +54,11 @@ describe('IconTab', () => {
   it('renders SquareKanban icon for tasks panel', () => {
     render(<IconTab api={createApi('tasks', 'Tasks')} />)
     expect(screen.getByTestId('icon-tasks')).toBeInTheDocument()
+  })
+
+  it('renders CalendarClock icon for crons panel', () => {
+    render(<IconTab api={createApi('crons', 'Crons')} />)
+    expect(screen.getByTestId('icon-crons')).toBeInTheDocument()
   })
 
   it('renders Command icon for commands panel', () => {

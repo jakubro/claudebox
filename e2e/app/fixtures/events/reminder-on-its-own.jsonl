@@ -1,0 +1,6 @@
+{"type":"user","subtype":"text","is_human":true,"content":"List the files","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Bash","ts":"2025-01-18T12:00:01Z","tool_use_id":"tool_001","tool_name":"Bash","tool_input":{"command":"ls","description":"List files"},"id":"evt_002","primary":false,"is_human":false}
+{"type":"user","subtype":"tool_result","content":"main.py\nREADME.md","ts":"2025-01-18T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":false,"content":"<system-reminder>\nKeep each change small and commit it on its own.\n</system-reminder>","ts":"2025-01-18T12:00:02Z","id":"evt_004","primary":true}
+{"type":"assistant","subtype":"text","content":"Two files: main.py and README.md.","ts":"2025-01-18T12:00:03Z","id":"evt_005","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04Z","id":"evt_006","primary":false,"is_human":false}

@@ -14,6 +14,7 @@ vi.mock('../../../api/chat', async importOriginal => {
 })
 
 import { ContainerGoneError } from '../../../api/chat'
+import { clearPreservedInput, readPreservedInput } from '../utils/preservedInput'
 import useSendMessage from './useSendMessage'
 
 describe('useSendMessage', () => {
@@ -29,16 +30,26 @@ describe('useSendMessage', () => {
       submitSucceeded: vi.fn(),
       submitFailed: vi.fn(),
       setError: vi.fn(),
+      ownerNow: () => ({ sessionId: 'sess-a' }),
     }
   })
+
+  function renderFailingSend(error) {
+    mockSendMessage.mockRejectedValue(error)
+    deps.onContainerGone = vi.fn()
+
+    return renderHook(() => useSendMessage(deps)).result
+  }
 
   it('calls state transitions in order on success', async () => {
     const { result } = renderHook(() => useSendMessage(deps))
 
+    let outcome
     await act(async () => {
-      await result.current('hello')
+      outcome = await result.current('hello')
     })
 
+    expect(outcome).toBe(true)
     expect(deps.addPendingMessage).toHaveBeenCalledWith('hello', null, null, null)
     expect(deps.startSubmitting).toHaveBeenCalledOnce()
     expect(mockSendMessage).toHaveBeenCalledWith('hello', {
@@ -70,10 +81,12 @@ describe('useSendMessage', () => {
     mockSendMessage.mockRejectedValue(new Error('Network'))
     const { result } = renderHook(() => useSendMessage(deps))
 
+    let outcome
     await act(async () => {
-      await result.current('fail')
+      outcome = await result.current('fail')
     })
 
+    expect(outcome).toBe(false)
     expect(deps.removePendingMessage).toHaveBeenCalledWith('msg-1')
     expect(deps.submitFailed).toHaveBeenCalledOnce()
     expect(deps.setError).toHaveBeenCalledWith('Send failed')
@@ -94,30 +107,79 @@ describe('useSendMessage', () => {
   })
 
   it('calls onContainerGone on ContainerGoneError', async () => {
-    mockSendMessage.mockRejectedValue(new ContainerGoneError())
-    deps.onContainerGone = vi.fn()
-    const { result } = renderHook(() => useSendMessage(deps))
+    const result = renderFailingSend(new ContainerGoneError())
 
+    let outcome
     await act(async () => {
-      await result.current('hello')
+      outcome = await result.current('hello')
     })
 
+    expect(outcome).toBe(false)
     expect(deps.onContainerGone).toHaveBeenCalledOnce()
     expect(deps.setError).toHaveBeenCalledWith(
       'Connection lost - retrying. Your message is preserved.',
     )
     expect(deps.submitFailed).toHaveBeenCalledOnce()
+    expect(JSON.parse(sessionStorage.getItem('_cb_preserved_input'))).toEqual({
+      owner: { sessionId: 'sess-a' },
+      content: 'hello',
+    })
+  })
+
+  it('keeps the text typed beside a reply, not the reply itself, when the container is gone', async () => {
+    mockSendMessage.mockRejectedValue(new ContainerGoneError())
+    const { result } = renderHook(() => useSendMessage(deps))
+
+    await act(async () => {
+      await result.current('Go', { note: 'but skip the docs' })
+    })
+
+    expect(JSON.parse(sessionStorage.getItem('_cb_preserved_input'))).toEqual({
+      owner: { sessionId: 'sess-a' },
+      content: 'but skip the docs',
+    })
+  })
+
+  it('text from a send that fails after a move is kept for the session it was typed in', async () => {
+    clearPreservedInput()
+    const owners = [{ sessionId: 'S1' }, { sessionId: 'S2' }]
+    deps.ownerNow = () => owners[0]
+    mockSendMessage.mockImplementation(async () => {
+      owners.shift()
+      throw new ContainerGoneError()
+    })
+    const { result } = renderHook(() => useSendMessage(deps))
+
+    await act(async () => {
+      await result.current('typed in S1')
+    })
+
+    expect(readPreservedInput().owner).toEqual({ sessionId: 'S1' })
+    expect(deps.setError).not.toHaveBeenCalled()
   })
 
   it('shows generic error for non-container errors', async () => {
-    mockSendMessage.mockRejectedValue(new Error('Network'))
-    deps.onContainerGone = vi.fn()
-    const { result } = renderHook(() => useSendMessage(deps))
+    const result = renderFailingSend(new Error('Network'))
 
     await act(async () => {
       await result.current('hello')
     })
 
+    expect(deps.onContainerGone).not.toHaveBeenCalled()
+    expect(deps.setError).toHaveBeenCalledWith('Send failed')
+  })
+
+  it('resolves false, not container-gone, on a request timeout', async () => {
+    const timeoutError = new Error('The operation timed out')
+    timeoutError.name = 'TimeoutError'
+    const result = renderFailingSend(timeoutError)
+
+    let outcome
+    await act(async () => {
+      outcome = await result.current('hello')
+    })
+
+    expect(outcome).toBe(false)
     expect(deps.onContainerGone).not.toHaveBeenCalled()
     expect(deps.setError).toHaveBeenCalledWith('Send failed')
   })

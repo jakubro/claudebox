@@ -10,21 +10,25 @@ import { useWorkspace } from '../../../context/WorkspaceContext'
 /** Placed inside all providers so it can access every workspace-scoped context. */
 export default function WorkspaceResetEffect() {
   const { workspaceId } = useWorkspace()
-  const { reconnectSSE } = useEvents()
+  const { closeSSE } = useEvents()
   const { clearSessionData } = useSessionActions()
   const { clearStash } = useStash()
-  const { navigateToWorkspace } = useSessionRouting()
+  const { navigateToWorkspace, activeWorkspaceId } = useSessionRouting()
   const prevRef = useRef(workspaceId)
 
   useEffect(() => {
     if (prevRef.current && prevRef.current !== workspaceId && workspaceId) {
-      navigateToWorkspace(workspaceId)
+      // A switch made by following a link already addresses the new workspace; keep what it names.
+      if (activeWorkspaceId !== workspaceId) {
+        navigateToWorkspace(workspaceId)
+      }
       clearSessionData()
       clearStash()
-      reconnectSSE()
+      // A switch always leaves the session; a cross-workspace open resumes and reconnects itself.
+      closeSSE()
     }
     prevRef.current = workspaceId
-  }, [workspaceId, navigateToWorkspace, clearSessionData, clearStash, reconnectSSE])
+  }, [workspaceId, activeWorkspaceId, navigateToWorkspace, clearSessionData, clearStash, closeSSE])
 
   return null
 }

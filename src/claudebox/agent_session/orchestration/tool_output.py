@@ -1,5 +1,7 @@
 """Tool output - file retrieval from SDK storage."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,11 +33,7 @@ class ToolOutput:
     ) -> ToolOutputContent:
         """Read persisted tool output file; raises `ToolOutputNotFound` if it does not exist."""
 
-        path = self._resolve_path(session_id, tool_use_id)
-
-        if not path.exists():
-            raise ToolOutputNotFound(session_id=session_id, tool_use_id=tool_use_id)
-
+        path = self.get_path(session_id, tool_use_id)
         size = path.stat().st_size
 
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -50,16 +48,10 @@ class ToolOutput:
     def get_path(self, session_id: str, tool_use_id: str) -> Path:
         """Get path to persisted tool output file; raises `ToolOutputNotFound` if it does not exist."""
 
-        path = self._resolve_path(session_id, tool_use_id)
+        session_dir = self._workspace.ensure_session(session_id).sdk_session_dir
+        path = session_dir / "tool-results" / f"{tool_use_id}.txt" if session_dir else None
 
-        if not path.exists():
+        if path is None or not path.exists():
             raise ToolOutputNotFound(session_id=session_id, tool_use_id=tool_use_id)
 
         return path
-
-    def _resolve_path(self, session_id: str, tool_use_id: str) -> Path:
-        """Resolve path to tool output file without checking existence."""
-
-        session = self._workspace.ensure_session(session_id)
-
-        return session.sdk_tool_output_path(tool_use_id)

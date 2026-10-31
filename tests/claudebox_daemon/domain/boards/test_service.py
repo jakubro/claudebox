@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.boards.service.BoardService."""
 
+from __future__ import annotations
+
 import asyncio
 import threading
 import time
@@ -137,7 +139,7 @@ class TestListAll:
         assert event == "board_listing_completed"
         assert kw["board_count"] == 2
         assert kw["response_bytes"] == 256
-        assert kw["total_seconds"] == 0.5
+        assert kw["total_seconds"] == pytest.approx(0.5)
         assert kw["workspace"]["id"] == "test-ws"
 
 
@@ -151,13 +153,14 @@ class TestSendPromptSequence:
         svc, containers = _make_service(tmp_path)
         result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
 
-        await svc._send_prompt_sequence(
+        failed = await svc._send_prompt_sequence(
             result,
             ["review the board", "start on {ticket}"],
             ["tickets/active/foo.md"],
         )
 
         assert containers.send.await_count == 2
+        assert failed == []
 
         first_payload = containers.send.await_args_list[0].kwargs["payload"]
         second_payload = containers.send.await_args_list[1].kwargs["payload"]
@@ -181,7 +184,7 @@ class TestSendPromptSequence:
 
     @pytest.mark.anyio
     async def test_substitutes_multi_ticket_placeholder_as_newline_list(self, tmp_path):
-        """Multiple tickets render as ``\\n<p1>\\n<p2>`` - first path on its own line."""
+        r"""Multiple tickets render as ``\n<p1>\n<p2>`` - first path on its own line."""
 
         svc, containers = _make_service(tmp_path)
         result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
@@ -198,16 +201,223 @@ class TestSendPromptSequence:
         }
 
     @pytest.mark.anyio
-    async def test_swallows_send_failures(self, tmp_path):
-        """Failures in send must not abort the sequence (logged warning only)."""
+    async def test_swallows_send_failures_and_reports_which_messages_failed(self, tmp_path):
+        """A send failure must not abort the sequence (logged warning only), and must name
+        which rendered message did not arrive."""
 
         svc, containers = _make_service(tmp_path)
         containers.send = AsyncMock(side_effect=[RuntimeError("boom"), {}])
         result = SessionInfo(session_id="sess-1", fork_point_cost_usd=0.0, container_id="ctr-1")
 
-        await svc._send_prompt_sequence(result, ["a", "b"], ["t.md"])
+        failed = await svc._send_prompt_sequence(result, ["a", "b"], ["t.md"])
 
         assert containers.send.await_count == 2
+        assert failed == ["a"]
+
+
+class TestAssign:
+    """Test assign()'s per-ticket delivery-outcome reporting."""
+
+    @staticmethod
+    def _setup_board(
+        tmp_path: Path,
+        *,
+        tickets: list[str],
+    ) -> tuple[BoardService, str, MagicMock]:
+        """Create a workspace with one board.yaml carrying a prompt sequence and given tickets."""
+
+        svc, containers = _make_service(tmp_path)
+        board_dir = tmp_path / "docs"
+        board_dir.mkdir()
+        backlog = "\n".join(f"  - path: {t}" for t in tickets)
+        (board_dir / "board.yaml").write_text(
+            "states:\n"
+            "  - id: backlog\n"
+            "    label: Backlog\n"
+            "    folder: backlog/\n"
+            "  - id: in-progress\n"
+            "    label: In Progress\n"
+            "    folder: in-progress/\n"
+            "    active: true\n"
+            "prompt:\n"
+            "  sequence:\n"
+            '    - "start on {ticket}"\n'
+            "backlog:\n" + backlog + "\n"
+            "in-progress: []\n",
+        )
+        svc._discover()
+
+        return svc, "docs", containers
+
+    @pytest.mark.anyio
+    async def test_delivery_succeeds_unchanged(self, tmp_path):
+        svc, board_id, containers = self._setup_board(tmp_path, tickets=["tickets/t1.md"])
+        svc._sessions.create = AsyncMock(
+            return_value=SessionInfo(
+                session_id="sess-1",
+                fork_point_cost_usd=0.0,
+                container_id="ctr-1",
+            ),
+        )
+
+        results = await svc.assign(board_id, ["tickets/t1.md"])
+
+        assert results == [
+            {
+                "ticket_path": "tickets/t1.md",
+                "session_id": "sess-1",
+                "failed_prompts": [],
+                "move_refused": None,
+            },
+        ]
+        containers.send.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_delivery_failure_reported_without_failing_the_assignment(self, tmp_path):
+        """The session still exists and the ticket is still assigned to it - only the outcome
+        field shows the prompt never arrived."""
+
+        svc, board_id, containers = self._setup_board(tmp_path, tickets=["tickets/t1.md"])
+        svc._sessions.create = AsyncMock(
+            return_value=SessionInfo(
+                session_id="sess-1",
+                fork_point_cost_usd=0.0,
+                container_id="ctr-1",
+            ),
+        )
+        containers.send = AsyncMock(side_effect=RuntimeError("refused"))
+
+        results = await svc.assign(board_id, ["tickets/t1.md"])
+
+        assert results == [
+            {
+                "ticket_path": "tickets/t1.md",
+                "session_id": "sess-1",
+                "failed_prompts": ["start on tickets/t1.md"],
+                "move_refused": None,
+            },
+        ]
+
+    @pytest.mark.anyio
+    async def test_shared_session_failure_applies_to_every_ticket_in_the_batch(self, tmp_path):
+        """parallel=False delivers one prompt sequence to one shared session - a failure there
+        is not any single ticket's fault, so every ticket's own result reflects it."""
+
+        svc, board_id, containers = self._setup_board(
+            tmp_path,
+            tickets=["tickets/t1.md", "tickets/t2.md"],
+        )
+        svc._sessions.create = AsyncMock(
+            return_value=SessionInfo(
+                session_id="sess-1",
+                fork_point_cost_usd=0.0,
+                container_id="ctr-1",
+            ),
+        )
+        containers.send = AsyncMock(side_effect=RuntimeError("refused"))
+
+        results = await svc.assign(
+            board_id,
+            ["tickets/t1.md", "tickets/t2.md"],
+            parallel=False,
+        )
+
+        assert len(results) == 2
+        assert all(r["session_id"] == "sess-1" for r in results)
+        assert all(r["failed_prompts"] for r in results)
+
+
+class TestAssignReopenedTicket:
+    """A ticket reopened from a closed column is assigned under the path its move gives it."""
+
+    @staticmethod
+    def _setup_board(tmp_path: Path) -> tuple[BoardService, MagicMock, AsyncMock]:
+        svc, containers = _make_service(tmp_path)
+        board_dir = tmp_path / "docs"
+        (board_dir / "completed").mkdir(parents=True)
+        (board_dir / "completed" / "y-1.md").write_text("# Reopened\n")
+        (board_dir / "completed" / "y-2.md").write_text("# Also reopened\n")
+        (board_dir / "board.yaml").write_text(
+            "states:\n"
+            "  - id: in-progress\n"
+            "    label: In Progress\n"
+            "    folder: active/\n"
+            "    active: true\n"
+            "  - id: done\n"
+            "    label: Done\n"
+            "    folder: completed/\n"
+            "    terminal: true\n"
+            "prompt:\n"
+            "  sequence:\n"
+            '    - "start on {ticket}"\n'
+            "in-progress: []\n"
+            "done:\n"
+            "  - path: completed/y-1.md\n"
+            "  - path: completed/y-2.md\n",
+        )
+        svc._discover()
+        create = AsyncMock(
+            return_value=SessionInfo(
+                session_id="sess-1",
+                fork_point_cost_usd=0.0,
+                container_id="ctr-1",
+            ),
+        )
+        svc._sessions.create = create
+
+        return svc, containers, create
+
+    @pytest.mark.anyio
+    async def test_the_opening_message_names_the_path_the_move_produced(self, tmp_path):
+        svc, containers, _ = self._setup_board(tmp_path)
+
+        await svc.assign("docs", ["completed/y-1.md"])
+
+        assert (tmp_path / "docs" / "active" / "y-1.md").exists()
+        assert containers.send.await_args.kwargs["payload"] == {"prompt": "start on active/y-1.md"}
+
+    @pytest.mark.anyio
+    async def test_a_shared_sessions_opening_message_names_every_moved_path(self, tmp_path):
+        svc, containers, _ = self._setup_board(tmp_path)
+
+        await svc.assign("docs", ["completed/y-1.md", "completed/y-2.md"], parallel=False)
+
+        assert containers.send.await_args.kwargs["payload"] == {
+            "prompt": "start on\nactive/y-1.md\nactive/y-2.md",
+        }
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("parallel", [True, False], ids=["one-session-each", "shared-session"])
+    async def test_a_ticket_named_twice_is_assigned_once(self, tmp_path, parallel):
+        svc, containers, create = self._setup_board(tmp_path)
+
+        results = await svc.assign(
+            "docs",
+            ["completed/y-1.md", "completed/y-1.md"],
+            parallel=parallel,
+        )
+
+        create.assert_awaited_once()
+        assert [r["ticket_path"] for r in results] == ["completed/y-1.md"]
+        assert containers.send.await_args.kwargs["payload"] == {"prompt": "start on active/y-1.md"}
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("parallel", [True, False], ids=["one-session-each", "shared-session"])
+    async def test_a_ticket_the_board_no_longer_holds_is_refused_before_any_session(
+        self,
+        tmp_path,
+        parallel,
+    ):
+        svc, containers, create = self._setup_board(tmp_path)
+        board_before = (tmp_path / "docs" / "board.yaml").read_text()
+
+        with pytest.raises(TicketNotFound) as excinfo:
+            await svc.assign("docs", ["completed/y-1.md", "active/y-2.md"], parallel=parallel)
+
+        assert excinfo.value.context["ticket_path"] == "active/y-2.md"
+        create.assert_not_awaited()
+        containers.send.assert_not_awaited()
+        assert (tmp_path / "docs" / "board.yaml").read_text() == board_before
 
 
 class TestReadTicketContent:
@@ -266,3 +476,98 @@ class TestReadTicketContent:
             "board_id": board_id,
             "ticket_path": "tickets/missing.md",
         }
+
+
+class TestAssignMoveRefusal:
+    """An assignment whose file move is refused keeps the assignment and says why."""
+
+    @pytest.mark.anyio
+    async def test_a_refused_move_keeps_the_assignment_and_reports_it(self, tmp_path):
+        svc, board_id, _containers = TestAssign._setup_board(tmp_path, tickets=["backlog/t1.md"])
+        (tmp_path / "docs" / "backlog").mkdir()
+        (tmp_path / "docs" / "backlog" / "t1.md").write_text("mine")
+        (tmp_path / "docs" / "in-progress").mkdir()
+        (tmp_path / "docs" / "in-progress" / "t1.md").write_text("someone else's")
+        svc._sessions.create = AsyncMock(
+            return_value=SessionInfo(
+                session_id="sess-1",
+                fork_point_cost_usd=0.0,
+                container_id="ctr-1",
+            ),
+        )
+        svc._send_prompt_sequence = AsyncMock(return_value=[])
+
+        results = await svc.assign(board_id, ["backlog/t1.md"])
+
+        assert results[0]["session_id"] == "sess-1"
+        assert results[0]["move_refused"] == "destination_exists"
+        assert (tmp_path / "docs" / "backlog" / "t1.md").read_text() == "mine"
+        assert (tmp_path / "docs" / "in-progress" / "t1.md").read_text() == "someone else's"
+        board = (tmp_path / "docs" / "board.yaml").read_text()
+        assert "session: sess-1" in board
+        assert board.index("backlog/t1.md") < board.index("in-progress:")
+
+
+class TestWatchedFiles:
+    """The watcher is handed every board.yaml and the ticket files of each board served."""
+
+    @staticmethod
+    def _board(tmp_path: Path, name: str, tickets: list[str]) -> Path:
+        board_dir = tmp_path / name
+        board_dir.mkdir()
+
+        for ticket in tickets:
+            (board_dir / ticket).write_text(f"# {ticket}\n")
+
+        entries = "".join(f"  - path: {ticket}\n" for ticket in tickets)
+        (board_dir / "board.yaml").write_text(
+            f"name: {name}\nstates:\n  - id: backlog\n    label: Backlog\n    folder: .\nbacklog:\n{entries}",
+        )
+
+        return board_dir
+
+    @staticmethod
+    def _owners(svc, root: Path) -> dict:
+        owners = svc._watcher.sync.call_args.args[0]
+
+        return {str(Path(path).relative_to(root)): bid for path, bid in owners.items()}
+
+    @pytest.mark.anyio
+    async def test_discover_maps_every_board_yaml_to_its_id(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        self._board(tmp_path, "alpha", [])
+        self._board(tmp_path, "beta", [])
+
+        await svc.list_all()
+
+        assert self._owners(svc, tmp_path) == {
+            "alpha/board.yaml": "alpha",
+            "beta/board.yaml": "beta",
+        }
+
+    @pytest.mark.anyio
+    async def test_get_hands_the_boards_ticket_files_to_the_watcher(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        self._board(tmp_path, "alpha", ["t1.md", "t2.md"])
+        await svc.list_all()
+
+        svc.get("alpha")
+
+        assert self._owners(svc, tmp_path) == {
+            "alpha/board.yaml": "alpha",
+            "alpha/t1.md": "alpha",
+            "alpha/t2.md": "alpha",
+        }
+
+    @pytest.mark.anyio
+    async def test_a_board_removed_from_disk_loses_its_ticket_files(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        board_dir = self._board(tmp_path, "alpha", ["t1.md"])
+        self._board(tmp_path, "beta", [])
+        await svc.list_all()
+        svc.get("alpha")
+
+        (board_dir / "board.yaml").unlink()
+        await svc.list_all()
+
+        assert self._owners(svc, tmp_path) == {"beta/board.yaml": "beta"}

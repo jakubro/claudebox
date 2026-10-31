@@ -1,6 +1,18 @@
 /** Shared E2E test helpers. */
 
 import { expect } from '@playwright/test'
+import { PINS_CHANGE_SIGNAL_KEY } from '../../src/claudebox_frontend/src/config/storage.js'
+import { SCROLL_SETTLE_STILL_FRAMES } from '../../src/claudebox_frontend/src/config/timing.js'
+import {
+  DEFAULT_CONTAINER_ID,
+  DEFAULT_SESSION_URL,
+  DEFAULT_WORKSPACE_ID,
+  loadFixture,
+  mockAPI,
+} from './mocks/api.js'
+import { createSSEController, mockSSE, mockSSEDynamic } from './mocks/sse.js'
+
+const READY_TIMEOUT_MS = 15000
 
 /**
  * Wait for app to be ready and return the input locator.
@@ -10,8 +22,10 @@ import { expect } from '@playwright/test'
  */
 export async function waitForAppReady(page) {
   await page.waitForLoadState('domcontentloaded')
-  await expect(page.locator('[data-testid="footer"]')).toBeVisible({ timeout: 15000 })
-  await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
+  await expect(page.locator('[data-testid="footer"]')).toBeVisible({ timeout: READY_TIMEOUT_MS })
+  await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project', {
+    timeout: READY_TIMEOUT_MS,
+  })
   await waitForShortcutsReady(page)
 
   const input = page.locator('[data-testid="chat-input"]')
@@ -20,6 +34,164 @@ export async function waitForAppReady(page) {
   await page.evaluate(() => document.fonts.ready)
 
   return input
+}
+
+export async function openSession(page, events) {
+  if (Array.isArray(events)) {
+    await mockSSEDynamic(page, () => events)
+  } else {
+    await mockSSE(page, events)
+  }
+  await page.goto(DEFAULT_SESSION_URL)
+
+  return waitForAppReady(page)
+}
+
+export async function openWithDraft(page, text) {
+  const input = await openSession(page)
+  await input.fill(text)
+
+  return input
+}
+
+export async function captureSends(page) {
+  const sends = []
+  await page.route('**/api/send*', async route => {
+    sends.push(await route.request().postDataJSON())
+    await route.fulfill({ status: 200, json: { success: true } })
+  })
+
+  return sends
+}
+
+export async function captureLastSend(page) {
+  const sent = { payload: null }
+  await page.route('**/api/send*', async route => {
+    sent.payload = await route.request().postDataJSON()
+    await route.fulfill({ status: 200, json: { success: true } })
+  })
+
+  return sent
+}
+
+export async function acceptSends(page) {
+  await page.route('**/api/send*', async route => {
+    await route.fulfill({ status: 200, json: { success: true } })
+  })
+}
+
+export function sessionsHandler(sessions) {
+  return async route => {
+    await route.fulfill({ json: { sessions } })
+  }
+}
+
+export async function serveSessionList(page, sessionsFrom, workspaceId = DEFAULT_WORKSPACE_ID) {
+  await page.route(`**/api/workspaces/${workspaceId}/sessions`, async route => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    const base = loadFixture('sessions/default.json').sessions[0]
+    await route.fulfill({ json: { sessions: sessionsFrom(base) } })
+  })
+}
+
+export async function resumeNamedSession(route) {
+  const [, sessionId] = route
+    .request()
+    .url()
+    .match(/\/sessions\/([^/]+)\/resume/)
+  await route.fulfill({ json: { session_id: sessionId, container_id: DEFAULT_CONTAINER_ID } })
+}
+
+export async function openLiveSessionWithAPI(page, apiOptions) {
+  // Controller must be created BEFORE mockAPI so addInitScript runs first
+  const controller = await createSSEController(page)
+  await mockAPI(page, apiOptions)
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+
+  return controller
+}
+
+export async function openSessionWithAPI(page, events, apiOptions) {
+  await mockAPI(page, apiOptions)
+
+  return openSession(page, events)
+}
+
+export async function openWithNoSession(page, events) {
+  await mockAPI(page, {
+    handlers: {
+      getSessionStatus: async route => {
+        await route.fulfill({ json: { session_id: null, workspace: '/home/user/project' } })
+      },
+    },
+  })
+
+  return openSession(page, events)
+}
+
+export async function openResumingSession(page) {
+  await mockSSE(page, 'events/resuming.jsonl')
+  await page.goto(DEFAULT_SESSION_URL)
+  // Footer indicates app ready without depending on chat input.
+  await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+}
+
+export async function openLiveSession(page) {
+  const controller = await createSSEController(page)
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+
+  return controller
+}
+
+export async function sendFinishedTurn(controller, reply) {
+  await controller.sendEvents([
+    {
+      type: 'user',
+      subtype: 'text',
+      content: 'Hello',
+      is_human: true,
+      timestamp: Date.now(),
+      turn_id: 'turn_001',
+    },
+    { type: 'assistant', subtype: 'text', content: reply, timestamp: Date.now() + 100 },
+    { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: Date.now() + 200 },
+  ])
+}
+
+export async function openRunningTask(page, taskId) {
+  const controller = await openLiveSession(page)
+  await controller.sendEvents([
+    {
+      type: 'user',
+      subtype: 'text',
+      is_human: true,
+      content: 'Investigate the flaky test',
+      timestamp: Date.now(),
+      ts: new Date().toISOString(),
+      turn_id: 'turn_001',
+    },
+    {
+      type: 'assistant',
+      subtype: 'tool_use',
+      content: 'Task',
+      timestamp: Date.now(),
+      ts: new Date().toISOString(),
+      tool_use_id: taskId,
+      tool_name: 'Task',
+      tool_input: {
+        description: 'Investigate',
+        prompt: 'Find the flaky test.',
+        subagent_type: 'Explore',
+      },
+    },
+  ])
+
+  return controller
 }
 
 /**
@@ -31,7 +203,7 @@ export async function waitForAppReady(page) {
  * Call this before any `page.keyboard.press` of a global shortcut.
  */
 export async function waitForShortcutsReady(page) {
-  await page.waitForSelector('body[data-shortcuts-ready="true"]', { timeout: 15000 })
+  await page.waitForSelector('body[data-shortcuts-ready="true"]', { timeout: READY_TIMEOUT_MS })
 }
 
 /**
@@ -66,6 +238,7 @@ const PANELS = {
   todos: { button: 'button[title="Todos (Alt+2)"]', content: '.todos-panel' },
   stash: { button: 'button[title="Stash (Alt+3)"]', content: '.stash-panel' },
   tasks: { button: 'button[title="Tasks (Alt+4)"]', content: '.tasks-panel' },
+  crons: { button: 'button[title="Crons"]', content: '.crons-panel' },
   bookmarks: { button: 'button[title="Bookmarks (Alt+5)"]', content: '.bookmarks-panel' },
   boards: { button: 'button[title="Boards (Alt+6)"]', content: '.boards-panel' },
   usage: { button: 'button[title="Usage (Alt+7)"]', content: '.usage-panel' },
@@ -235,19 +408,88 @@ export async function waitForStableScroll(locator, { interval = 80, attempts = 2
   return prev
 }
 
+/** Hold each ui-state save from `page` for `ms` before the mocked API applies it. */
+export async function delayUiStateSaves(page, ms) {
+  await page.route(/\/ui-state/, async route => {
+    if (route.request().method() === 'PATCH') {
+      await new Promise(resolve => setTimeout(resolve, ms))
+    }
+    await route.fallback()
+  })
+}
+
+/**
+ * Start a sessions-list refresh answering `listing` and `uiState` as it stood on arrival, `ms` late.
+ * Resolves once the read is out, to a function waiting until the page has received the answer.
+ */
+export async function startHeldRefresh(page, uiState, ms, listing) {
+  const uiStatePattern = /\/ui-state/
+  let markOut
+  const out = new Promise(resolve => {
+    markOut = resolve
+  })
+  const isWorkspaceRead = request =>
+    request.method() === 'GET' && !new URL(request.url()).searchParams.has('session_id')
+  const hold = async route => {
+    if (!isWorkspaceRead(route.request())) {
+      await route.fallback()
+      return
+    }
+    const answer = { global: structuredClone(uiState.global), session: {} }
+    markOut()
+    await new Promise(resolve => setTimeout(resolve, ms))
+    await route.fulfill({ json: answer })
+  }
+  const relist = route =>
+    route.request().method() === 'GET' ? route.fulfill({ json: listing }) : route.fallback()
+  await page.route(uiStatePattern, hold)
+  await page.route('**/sessions', relist)
+  const delivered = page.waitForResponse(response => isWorkspaceRead(response.request()))
+  await page.evaluate(
+    key => window.dispatchEvent(new StorageEvent('storage', { key })),
+    PINS_CHANGE_SIGNAL_KEY,
+  )
+  await out
+
+  return async () => {
+    await delivered
+    await page.unroute(uiStatePattern, hold)
+    await page.unroute('**/sessions', relist)
+  }
+}
+
 /**
  * Wait until a scroll container's scrollHeight stops growing (the streamed conversation has
- * finished rendering), then return that value.
+ * finished rendering and the chat's load-time settle has stopped), then return that value.
  *
  * Use before manipulating scroll on a freshly-loaded transcript: a scrollTop write issued
  * while turns still stream in lands inside autoscroll's near-bottom re-engage threshold,
  * which snaps back to the bottom and drifts the position.
  */
 export async function waitForStableScrollHeight(locator, { interval = 100, attempts = 30 } = {}) {
+  // Each sample spans the settle's still frames plus the frame its last deferred scroll lands in.
+  const frames = SCROLL_SETTLE_STILL_FRAMES + 2
+  const sample = () =>
+    locator.evaluate(
+      (el, { interval, frames }) =>
+        new Promise(resolve => {
+          const start = performance.now()
+          let seen = 0
+          const tick = () => {
+            seen += 1
+            if (seen >= frames && performance.now() - start >= interval) {
+              resolve(el.scrollHeight)
+            } else {
+              requestAnimationFrame(tick)
+            }
+          }
+          requestAnimationFrame(tick)
+        }),
+      { interval, frames },
+    )
   let prev = await locator.evaluate(el => el.scrollHeight)
   for (let i = 0; i < attempts; i++) {
-    await new Promise(resolve => setTimeout(resolve, interval))
-    const curr = await locator.evaluate(el => el.scrollHeight)
+    const curr = await sample()
     if (curr === prev && curr > 0) {
       return curr
     }
@@ -256,23 +498,22 @@ export async function waitForStableScrollHeight(locator, { interval = 100, attem
   return prev
 }
 
-const UNSAFE_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
-
 /** Set a value at a dot-separated path in an object; throws on a prototype-polluting segment. */
 function setPath(obj, path, value) {
   const parts = path.split('.')
-  for (const part of parts) {
-    if (UNSAFE_PATH_SEGMENTS.has(part)) {
-      throw new Error(`setPath: unsafe path segment "${part}" in "${path}"`)
-    }
-  }
-
   let current = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!(parts[i] in current)) {
-      current[parts[i]] = {}
+  for (let i = 0; i < parts.length; i++) {
+    const key = parts[i]
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      throw new Error(`setPath: unsafe path segment "${key}" in "${path}"`)
     }
-    current = current[parts[i]]
+    if (i < parts.length - 1) {
+      if (!(key in current)) {
+        current[key] = {}
+      }
+      current = current[key]
+    } else {
+      current[key] = value
+    }
   }
-  current[parts[parts.length - 1]] = value
 }

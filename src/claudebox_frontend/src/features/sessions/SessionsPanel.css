@@ -136,3 +136,17 @@
   background: var(--text-muted, #6b7280);
   opacity: 0.3;
 }
+
+/* Needs you: kept clearly darker than the pin's orange and the amber stopping dot. */
+.container-status-needs-you {
+  background: #c2410c;
+}
+
+.container-status-working {
+  background: #a855f7;
+}
+
+.container-status-waiting {
+  background: #a855f7;
+  opacity: 0.5;
+}

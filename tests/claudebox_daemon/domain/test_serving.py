@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.serving - health must track serving capacity, not just lag."""
 
+from __future__ import annotations
+
 import asyncio
 import threading
 from datetime import timedelta
@@ -37,7 +39,7 @@ class TestServingProbe:
 
     @pytest.mark.anyio
     async def test_a_saturated_serving_pool_reads_unhealthy(self, monkeypatch):
-        """The reported incident: the loop scheduled normally while nothing could run."""
+        """A loop that schedules normally while no work can run reads unhealthy."""
 
         monkeypatch.setattr(serving_module, "SERVING_PROBE_TIMEOUT", timedelta(seconds=0.2))
         pools = DaemonExecutors.create()

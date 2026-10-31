@@ -1,5 +1,7 @@
 """filesystem.py @tool tests - read_file, write_file, edit_file."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox.agent_session.langgraph_tools.filesystem import make_filesystem_tools

@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  appendBackgroundLaunches,
   appendSubagentLabels,
   appendTaskNotifications,
   appendTodoDiffs,
@@ -10,20 +11,33 @@ import {
   blockRoutesToRightSlot,
   computeDuplicateAskUserIds,
   computeTimingOffsets,
+  extractCrons,
   extractTasks,
   extractThinkingFromText,
   getAskUserFingerprint,
+  hasUnclaimedCompletion,
   hasVisibleBlock,
   INITIAL_TURN_GROUPING_STATE,
   indexEvents,
+  injectedByToolUse,
+  isHiddenInFocused,
   isHiddenToolSearch,
   isInterruptAck,
+  isToolBlockHidden,
+  isToolBlockVisible,
   isTopLevelBashCall,
   isVisibleEvent,
   processEvents,
   processNestedEvents,
+  selectRunningBackgroundWork,
   TurnRoutingMode,
 } from './eventProcessing'
+
+function helloTurn() {
+  return appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+    { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
+  ])
+}
 
 describe('computeTimingOffsets', () => {
   const base = new Date('2026-01-01T00:00:00Z').getTime()
@@ -202,28 +216,39 @@ describe('indexEvents', () => {
   })
 
   describe('skillContent indexing', () => {
-    it('associates user text after Skill tool_use', () => {
-      const events = [
-        {
-          subtype: 'tool_use',
-          content: 'Skill',
-          tool_use_id: 'skill_1',
-        },
-        { type: 'user', subtype: 'text', is_human: false, content: '# Skill markdown' },
-      ]
+    const skillCall = id => ({
+      type: 'assistant',
+      subtype: 'tool_use',
+      content: 'Skill',
+      tool_use_id: id,
+    })
+    const result = (id, extra = {}) => ({
+      type: 'user',
+      subtype: 'tool_result',
+      tool_use_id: id,
+      content: 'Launching skill: notes',
+      ...extra,
+    })
+    const userText = content => ({ type: 'user', subtype: 'text', is_human: false, content })
+    const NOTE =
+      '(Re-invocation of /notes \u2014 the skill instructions were previously loaded; the arguments or dynamic output below are new.)'
 
-      const { skillContent } = indexEvents(events)
+    it('associates the user text after the Skill call result', () => {
+      const body = userText('# Skill markdown')
+      const { skillContent, skillTexts } = indexEvents([
+        skillCall('skill_1'),
+        result('skill_1'),
+        body,
+      ])
 
       expect(skillContent.get('skill_1')).toBe('# Skill markdown')
+      expect([...skillTexts]).toEqual([body])
     })
 
     it('ignores user text from human', () => {
       const events = [
-        {
-          subtype: 'tool_use',
-          content: 'Skill',
-          tool_use_id: 'skill_1',
-        },
+        skillCall('skill_1'),
+        result('skill_1'),
         { type: 'user', subtype: 'text', is_human: true, content: 'Human input' },
       ]
 
@@ -232,20 +257,81 @@ describe('indexEvents', () => {
       expect(skillContent.has('skill_1')).toBe(false)
     })
 
-    it('clears tracking after non-tool_result event', () => {
+    it('takes no text once an assistant event follows the result', () => {
       const events = [
-        {
-          subtype: 'tool_use',
-          content: 'Skill',
-          tool_use_id: 'skill_1',
-        },
-        { subtype: 'text', content: 'Some text' }, // clears tracking
-        { type: 'user', subtype: 'text', is_human: false, content: 'Should not attach' },
+        skillCall('skill_1'),
+        result('skill_1'),
+        { type: 'assistant', subtype: 'text', content: 'Some text' },
+        userText('Should not attach'),
+      ]
+
+      const { skillContent, skillTexts } = indexEvents(events)
+
+      expect(skillContent.has('skill_1')).toBe(false)
+      expect(skillTexts.size).toBe(0)
+    })
+
+    it('passes over the re-invocation note and takes the text after it', () => {
+      const note = userText(NOTE)
+      const second = userText('# Notes\nARGUMENTS: second')
+      const events = [
+        skillCall('skill_1'),
+        result('skill_1'),
+        userText('# Notes\nARGUMENTS: first'),
+        skillCall('skill_2'),
+        result('skill_2'),
+        note,
+        second,
+      ]
+
+      const { skillContent, skillTexts } = indexEvents(events)
+
+      expect(skillContent.get('skill_1')).toBe('# Notes\nARGUMENTS: first')
+      expect(skillContent.get('skill_2')).toBe('# Notes\nARGUMENTS: second')
+      expect(skillTexts.has(note)).toBe(true)
+      expect(skillTexts.has(second)).toBe(true)
+    })
+
+    it('keeps the pairing across a rate-limit event and another call between call and result', () => {
+      const events = [
+        skillCall('skill_1'),
+        { type: 'assistant', subtype: 'tool_use', content: 'Read', tool_use_id: 'read_1' },
+        { type: 'system', subtype: 'rate_limit' },
+        { type: 'user', subtype: 'tool_result', tool_use_id: 'read_1', content: 'file text' },
+        result('skill_1'),
+        userText('# Skill body'),
       ]
 
       const { skillContent } = indexEvents(events)
 
-      expect(skillContent.has('skill_1')).toBe(false)
+      expect(skillContent.get('skill_1')).toBe('# Skill body')
+    })
+
+    it('a reload with no new arguments takes the already-loaded line', () => {
+      const line = 'Skill /notes is already loaded above; instructions unchanged.'
+      const events = [skillCall('skill_1'), result('skill_1'), userText(line)]
+
+      expect(indexEvents(events).skillContent.get('skill_1')).toBe(line)
+    })
+
+    it('a failed Skill call takes no text', () => {
+      const events = [
+        skillCall('skill_1'),
+        result('skill_1', { is_error: true }),
+        userText('Stop hook feedback: keep going'),
+      ]
+
+      expect(indexEvents(events).skillTexts.size).toBe(0)
+    })
+
+    it("leaves LangGraph's skill tool, whose result is the text, out of the pairing", () => {
+      const events = [
+        { type: 'assistant', subtype: 'tool_use', content: 'skill', tool_use_id: 'lg_1' },
+        result('lg_1'),
+        userText('unrelated'),
+      ]
+
+      expect(indexEvents(events).skillTexts.size).toBe(0)
     })
   })
 
@@ -289,6 +375,7 @@ describe('indexEvents', () => {
           content: 'Skill',
           tool_use_id: 'skill_1',
         },
+        { type: 'user', subtype: 'tool_result', tool_use_id: 'skill_1', content: 'Launching' },
         { type: 'user', subtype: 'text', is_human: false, content: 'Skill content' },
       ]
 
@@ -345,13 +432,13 @@ describe('indexEvents', () => {
 
 describe('processEvents', () => {
   it('returns empty array for empty input', () => {
-    expect(processEvents([])).toEqual([])
+    expect(processEvents([]).blocks).toEqual([])
   })
 
   it('creates text block for text event', () => {
     const events = [{ subtype: 'text', content: 'Hello world' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -361,7 +448,7 @@ describe('processEvents', () => {
   it('creates thinking block for thinking event', () => {
     const events = [{ subtype: 'thinking', content: 'Let me think...' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('thinking')
@@ -370,7 +457,7 @@ describe('processEvents', () => {
   it('skips thinking event with empty content', () => {
     const events = [{ subtype: 'thinking', content: '' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -378,7 +465,7 @@ describe('processEvents', () => {
   it('skips thinking event with whitespace-only content', () => {
     const events = [{ subtype: 'thinking', content: '   \n  ' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -393,7 +480,7 @@ describe('processEvents', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('tool')
@@ -404,7 +491,7 @@ describe('processEvents', () => {
   it('creates tool block with undefined result when result missing', () => {
     const events = [{ subtype: 'tool_use', content: 'Bash', tool_use_id: 'tu_1' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].toolResult).toBeUndefined()
@@ -420,7 +507,7 @@ describe('processEvents', () => {
       { subtype: 'tool_use', content: 'Bash', parent_tool_use_id: 'task_1' },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].nestedEvents).toHaveLength(1)
@@ -434,10 +521,11 @@ describe('processEvents', () => {
         content: 'Skill',
         tool_use_id: 'skill_1',
       },
+      { type: 'user', subtype: 'tool_result', tool_use_id: 'skill_1', content: 'Launching' },
       { type: 'user', subtype: 'text', is_human: false, content: '# Skill instructions' },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].skillContent).toBe('# Skill instructions')
@@ -452,13 +540,13 @@ describe('processEvents', () => {
         type: 'user',
         subtype: 'tool_result',
         tool_use_id: 'skill_1',
-        content: 'Launching skill: multi-agent',
+        content: 'Launching skill: changelog',
         is_human: false,
       },
       { type: 'user', subtype: 'text', is_human: false, content: '# Skill markdown body' },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     // Only the Skill tool block - the user/text body folds into skillContent, not a separate text block.
     expect(blocks).toHaveLength(1)
@@ -472,16 +560,16 @@ describe('processEvents', () => {
     // skill tracker but the following tool_use sets it again; the intervening user/tool_result
     // must not reset it. If any invariant breaks, the user/text body leaks as a standalone bubble.
     const skillBody =
-      'Base directory for this skill: /root/.claude/skills/multi-agent\n\n<interpretation>...</interpretation>'
+      'Base directory for this skill: /root/.claude/skills/changelog\n\n# Changelog\n\n...'
     const events = [
-      { type: 'assistant', subtype: 'text', is_human: false, content: 'Invoke /multi-agent…' },
+      { type: 'assistant', subtype: 'text', is_human: false, content: 'Invoke /changelog...' },
       { type: 'assistant', subtype: 'tool_use', content: 'Skill', tool_use_id: 'skill_live' },
       {
         type: 'user',
         subtype: 'tool_result',
         is_human: false,
         tool_use_id: 'skill_live',
-        content: 'Launching skill: multi-agent',
+        content: 'Launching skill: changelog',
       },
       { type: 'user', subtype: 'text', is_human: false, content: skillBody },
       {
@@ -492,12 +580,12 @@ describe('processEvents', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     // Three blocks: leading assistant text, Skill tool block (body folded inside), trailing assistant text.
     expect(blocks).toHaveLength(3)
     expect(blocks[0].type).toBe('text')
-    expect(blocks[0].event.content).toBe('Invoke /multi-agent…')
+    expect(blocks[0].event.content).toBe('Invoke /changelog...')
     expect(blocks[1].type).toBe('tool')
     expect(blocks[1].toolUse.content).toBe('Skill')
     expect(blocks[1].skillContent).toBe(skillBody)
@@ -506,6 +594,41 @@ describe('processEvents', () => {
     // Defensive: there must NOT be a text block whose content is the skill body.
     const leakedTextBlocks = blocks.filter(b => b.type === 'text' && b.event.content === skillBody)
     expect(leakedTextBlocks).toHaveLength(0)
+  })
+
+  it('a skill loaded again folds its own text and hides the re-invocation note', () => {
+    const body = args =>
+      `Base directory for this skill: /skills/notes\n\n# Notes\n\nARGUMENTS: ${args}`
+    const note =
+      '(Re-invocation of /notes \u2014 the skill instructions were previously loaded; the arguments or dynamic output below are new.)'
+    const events = [
+      { type: 'assistant', subtype: 'tool_use', content: 'Skill', tool_use_id: 'skill_1' },
+      { type: 'system', subtype: 'rate_limit' },
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: 'skill_1',
+        content: 'Launching skill: notes',
+      },
+      { type: 'user', subtype: 'text', is_human: false, content: body('first') },
+      { type: 'assistant', subtype: 'tool_use', content: 'Skill', tool_use_id: 'skill_2' },
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: 'skill_2',
+        content: 'Launching skill: notes',
+      },
+      { type: 'user', subtype: 'text', is_human: false, content: note },
+      { type: 'user', subtype: 'text', is_human: false, content: body('second') },
+      { type: 'assistant', subtype: 'text', content: 'OK' },
+    ]
+
+    const blocks = processEvents(events).blocks
+
+    expect(blocks.map(b => b.type)).toEqual(['tool', 'tool', 'text'])
+    expect(blocks[0].skillContent).toBe(body('first'))
+    expect(blocks[1].skillContent).toBe(body('second'))
+    expect(blocks[2].event.content).toBe('OK')
   })
 
   it('skips nested events from top-level blocks', () => {
@@ -522,7 +645,7 @@ describe('processEvents', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     // Only Task block, nested text is inside nestedEvents, not a separate block
     expect(blocks).toHaveLength(1)
@@ -532,7 +655,7 @@ describe('processEvents', () => {
   it('creates compaction block for compact_start when no boundary', () => {
     const events = [{ subtype: 'compact_start' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('compaction')
@@ -545,7 +668,7 @@ describe('processEvents', () => {
       { type: 'user', subtype: 'text', is_human: false, content: 'Summary of compacted content' },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('compaction')
@@ -556,7 +679,7 @@ describe('processEvents', () => {
   it('hides compact_start when compact_boundary exists', () => {
     const events = [{ subtype: 'compact_start' }, { subtype: 'compact_boundary' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     // Only boundary block, start is hidden
     expect(blocks).toHaveLength(1)
@@ -580,7 +703,7 @@ describe('processEvents', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     // Exactly one block: the completed compaction block; the compact_start spinner is suppressed.
     expect(blocks).toHaveLength(1)
@@ -596,7 +719,7 @@ describe('processEvents', () => {
   it('skips empty text events', () => {
     const events = [{ subtype: 'text', content: '   ' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -604,7 +727,7 @@ describe('processEvents', () => {
   it('filters "(No content)" placeholder from assistant text', () => {
     const events = [{ type: 'assistant', subtype: 'text', content: '(No content)' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -612,7 +735,7 @@ describe('processEvents', () => {
   it('filters "(no content)" case-insensitively', () => {
     const events = [{ type: 'assistant', subtype: 'text', content: '  (NO CONTENT)  ' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -620,7 +743,7 @@ describe('processEvents', () => {
   it('does not filter "(No content)" from user text', () => {
     const events = [{ type: 'user', subtype: 'text', content: '(No content)', is_human: true }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -631,7 +754,7 @@ describe('processEvents', () => {
       { type: 'assistant', subtype: 'text', content: 'The response was (No content) initially' },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -640,7 +763,7 @@ describe('processEvents', () => {
   it('does not create blocks for model_changed events (handled via turn.settingChanges)', () => {
     const events = [{ type: 'system', subtype: 'model_changed', model: 'claude-opus-5' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -648,7 +771,7 @@ describe('processEvents', () => {
   it('does not create blocks for permission_mode_changed events (handled via turn.settingChanges)', () => {
     const events = [{ type: 'system', subtype: 'permission_mode_changed', permission_mode: 'plan' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -656,10 +779,151 @@ describe('processEvents', () => {
   it('does not suppress non-human user text', () => {
     const events = [{ type: 'user', subtype: 'text', is_human: false, content: 'some user text' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
+  })
+
+  it('renders a reported failure as a text block, reusing the existing error styling', () => {
+    const events = [{ type: 'system', subtype: 'error', content: 'runtime crashed' }]
+
+    const blocks = processEvents(events).blocks
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].type).toBe('text')
+    expect(blocks[0].event.content).toBe('runtime crashed')
+  })
+
+  it('drops a reported failure with no content', () => {
+    const events = [{ type: 'system', subtype: 'error', content: '' }]
+
+    const blocks = processEvents(events).blocks
+
+    expect(blocks).toHaveLength(0)
+  })
+})
+
+describe('processEvents - text no one wrote', () => {
+  const NOTE =
+    '[Your previous response had no visible output. Please continue and produce a user-visible response.]'
+  const say = content => ({ type: 'assistant', subtype: 'text', content })
+  const added = content => ({ type: 'user', subtype: 'text', is_human: false, content })
+  const call = (id, name = 'mcp__claudebox__needs_user') => ({
+    type: 'assistant',
+    subtype: 'tool_use',
+    content: name,
+    tool_use_id: id,
+  })
+  const result = id => ({ type: 'user', subtype: 'tool_result', content: 'ok', tool_use_id: id })
+  const feedback = 'Stop hook feedback:\nMARKER. Reply with DONE.'
+
+  it('hangs a Stop hook reason on the text before it, minus its first line', () => {
+    const { blocks, injected } = processEvents([say('PING'), added(feedback), say('DONE')])
+
+    expect(blocks.map(b => b.event.content)).toEqual(['PING', 'DONE'])
+    expect(blocks[0].injected).toEqual([{ source: 'stop-hook', text: 'MARKER. Reply with DONE.' }])
+    expect(blocks[1].injected).toBeUndefined()
+    expect(injected).toEqual([])
+  })
+
+  it("hangs Claude Code's no-visible-output note on the tool row before it", () => {
+    const { blocks } = processEvents([call('t1'), result('t1'), added(NOTE), say('DONE')])
+
+    expect(blocks[0].type).toBe('tool')
+    expect(blocks[0].injected).toEqual([{ source: 'claude-code', text: NOTE }])
+    expect(blocks).toHaveLength(2)
+  })
+
+  it('keeps two pieces after one block on that block, in arrival order', () => {
+    const { blocks } = processEvents([say('PING'), added(feedback), added(NOTE)])
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].injected.map(e => e.source)).toEqual(['stop-hook', 'claude-code'])
+  })
+
+  it("returns text arriving before any block as the turn's own", () => {
+    const { blocks, injected } = processEvents([added(feedback), say('DONE')])
+
+    expect(injected).toEqual([{ source: 'stop-hook', text: 'MARKER. Reply with DONE.' }])
+    expect(blocks[0].injected).toBeUndefined()
+  })
+
+  it('passes over a hidden tool-schema search to the block before it', () => {
+    const { blocks } = processEvents([
+      say('PING'),
+      call('ts1', 'ToolSearch'),
+      result('ts1'),
+      added(NOTE),
+    ])
+
+    expect(blocks[0].injected).toEqual([{ source: 'claude-code', text: NOTE }])
+    expect(blocks[1].injected).toBeUndefined()
+  })
+
+  it('hangs a message holding only system reminders on the block before it, one entry each', () => {
+    const reminders = added(
+      '<system-reminder>\nCommit each change.\n</system-reminder>\n<system-reminder>Keep it small.</system-reminder>',
+    )
+    const { blocks } = processEvents([call('t1'), result('t1'), reminders, say('DONE')])
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0].injected).toEqual([
+      { source: 'system-reminder', text: 'Commit each change.' },
+      { source: 'system-reminder', text: 'Keep it small.' },
+    ])
+  })
+
+  it('draws a message mixing reminders with other text as text', () => {
+    const mixed = added('Note this.<system-reminder>a reminder</system-reminder>')
+    const { blocks } = processEvents([say('PING'), mixed])
+
+    expect(blocks.map(b => b.type)).toEqual(['text', 'text'])
+    expect(blocks[0].injected).toBeUndefined()
+  })
+
+  it('leaves other text from the agent CLI drawn as text', () => {
+    const { blocks } = processEvents([say('PING'), added('Stop hook feedback is mentioned here')])
+
+    expect(blocks.map(b => b.event.content)).toEqual([
+      'PING',
+      'Stop hook feedback is mentioned here',
+    ])
+  })
+})
+
+describe('injectedByToolUse', () => {
+  const human = content => ({ type: 'user', subtype: 'text', is_human: true, content })
+  const bash = id => ({
+    type: 'assistant',
+    subtype: 'tool_use',
+    content: 'Bash',
+    tool_use_id: id,
+    tool_input: { command: 'ls' },
+  })
+  const note = {
+    type: 'user',
+    subtype: 'text',
+    is_human: false,
+    content:
+      '[Your previous response had no visible output. Please continue and produce a user-visible response.]',
+  }
+
+  it('keys added text by the call it hangs on, turn by turn', () => {
+    const byToolUse = injectedByToolUse([
+      human('first'),
+      bash('b1'),
+      human('second'),
+      bash('b2'),
+      note,
+    ])
+
+    expect([...byToolUse.keys()]).toEqual(['b2'])
+    expect(byToolUse.get('b2')[0].source).toBe('claude-code')
+  })
+
+  it('never carries text past the message that opens the next turn', () => {
+    expect(injectedByToolUse([human('first'), bash('b1'), human('second'), note]).size).toBe(0)
   })
 })
 
@@ -733,7 +997,7 @@ describe('processEvents - embedded thinking extraction', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(2)
     expect(blocks[0].type).toBe('thinking')
@@ -754,7 +1018,7 @@ describe('processEvents - embedded thinking extraction', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(4)
     expect(blocks[0]).toMatchObject({ type: 'thinking' })
@@ -776,7 +1040,7 @@ describe('processEvents - embedded thinking extraction', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('thinking')
@@ -793,7 +1057,7 @@ describe('processEvents - embedded thinking extraction', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -810,7 +1074,7 @@ describe('processEvents - embedded thinking extraction', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -819,7 +1083,7 @@ describe('processEvents - embedded thinking extraction', () => {
   it('passes through assistant text without <thinking> unchanged', () => {
     const events = [{ type: 'assistant', subtype: 'text', content: 'Normal response text' }]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -987,6 +1251,181 @@ describe('processNestedEvents', () => {
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].kind).toBe('tool')
+  })
+})
+
+describe('isHiddenInFocused', () => {
+  const call = (content, extra = {}) => ({ content, tool_use_id: 'tu_1', ...extra })
+  const ok = { content: 'fine' }
+
+  it.each([
+    'Read',
+    'Grep',
+    'Glob',
+    'WebSearch',
+    'WebFetch',
+    'TaskList',
+    'TaskGet',
+    'TaskOutput',
+    'MCPSearch',
+    'Skill',
+    'mcp__claudebox__needs_user',
+    'mcp__claudebox__session_read',
+    'ListMcpResourcesTool',
+    'ReadMcpResourceTool',
+    'ReadMcpResourceDirTool',
+  ])('hides a %s call, pending or done', name => {
+    expect(isHiddenInFocused(call(name), null)).toBe(true)
+    expect(isHiddenInFocused(call(name), ok)).toBe(true)
+  })
+
+  it.each([
+    'read_file',
+    'skill',
+    'needs_user',
+    'session_read',
+    'list_mcp_resources',
+    'read_mcp_resource',
+  ])("hides LangGraph's %s by its alias", name => {
+    expect(isHiddenInFocused(call(name), ok)).toBe(true)
+  })
+
+  it.each([
+    'Write',
+    'Edit',
+    'Task',
+    'AskUserQuestion',
+    'ExitPlanMode',
+    'TaskCreate',
+    'TaskUpdate',
+    'mcp__claudebox__session_spawn',
+    'mcp__notes__search',
+  ])('shows a %s call', name => {
+    expect(isHiddenInFocused(call(name), ok)).toBe(false)
+  })
+
+  it('hides a Bash call only when its command is marked as changing nothing', () => {
+    expect(isHiddenInFocused(call('Bash', { command_read_only: true }), ok)).toBe(true)
+    expect(isHiddenInFocused(call('bash', { command_read_only: true }), ok)).toBe(true)
+    expect(isHiddenInFocused(call('Bash'), ok)).toBe(false)
+  })
+
+  it('hides a Bash call measured as changing nothing, whatever its command was read as', () => {
+    const marked = call('Bash', { command_read_only: true })
+    expect(isHiddenInFocused(call('Bash'), { ...ok, command_changed: false })).toBe(true)
+    expect(isHiddenInFocused(marked, { ...ok, command_changed: true })).toBe(false)
+    expect(isHiddenInFocused(marked, { ...ok, command_changed: null })).toBe(true)
+  })
+
+  it('shows a Bash call measured as changing nothing that failed or is bookmarked', () => {
+    const measured = { ...ok, command_changed: false }
+    expect(isHiddenInFocused(call('Bash'), { ...measured, is_error: true })).toBe(false)
+    expect(isHiddenInFocused(call('Bash'), measured, new Set(['tool-tu_1']))).toBe(false)
+  })
+
+  it('hides an MCP call only when its server declares it read-only', () => {
+    expect(isHiddenInFocused(call('mcp__notes__read', { mcp_read_only: true }), ok)).toBe(true)
+    expect(isHiddenInFocused(call('mcp__notes__read'), ok)).toBe(false)
+  })
+
+  it('shows a hidden kind that failed', () => {
+    expect(isHiddenInFocused(call('Read'), { is_error: true })).toBe(false)
+  })
+
+  it('shows a bookmarked call of a hidden kind', () => {
+    expect(isHiddenInFocused(call('Read'), ok, new Set(['tool-tu_1']))).toBe(false)
+    expect(isHiddenInFocused(call('Read'), ok, new Set(['tool-tu_2']))).toBe(true)
+  })
+
+  it('hides a call whose tool is marked by hand, unless it failed or is bookmarked', () => {
+    const isMarked = name => name === 'mcp__jina__read_url'
+    expect(isHiddenInFocused(call('mcp__jina__read_url'), ok, null, isMarked)).toBe(true)
+    expect(isHiddenInFocused(call('mcp__jina__search_web'), ok, null, isMarked)).toBe(false)
+    expect(isHiddenInFocused(call('mcp__jina__read_url'), { is_error: true }, null, isMarked)).toBe(
+      false,
+    )
+    expect(
+      isHiddenInFocused(call('mcp__jina__read_url'), ok, new Set(['tool-tu_1']), isMarked),
+    ).toBe(false)
+  })
+})
+
+describe('isToolBlockHidden and isToolBlockVisible under each mode', () => {
+  const read = { content: 'Read', tool_use_id: 'r1' }
+  const toolSearch = { content: 'ToolSearch', tool_use_id: 's1' }
+
+  it('hides a Read only under FOCUSED', () => {
+    expect(isToolBlockHidden(TurnRoutingMode.FOCUSED, read, null)).toBe(true)
+    for (const mode of [
+      TurnRoutingMode.OFF,
+      TurnRoutingMode.BASH_ONLY,
+      TurnRoutingMode.ALL_TOOLS,
+    ]) {
+      expect(isToolBlockHidden(mode, read, null)).toBe(false)
+    }
+  })
+
+  it('hides a tool-schema search in every mode', () => {
+    for (const mode of Object.values(TurnRoutingMode)) {
+      expect(isToolBlockHidden(mode, toolSearch, null)).toBe(true)
+    }
+  })
+
+  it('keeps FOCUSED out of the right slot: a top-level Bash stays inline', () => {
+    const bash = { content: 'Bash', tool_use_id: 'b1' }
+    expect(blockRoutesToRightSlot(TurnRoutingMode.FOCUSED, bash)).toBe(false)
+    expect(isToolBlockVisible(TurnRoutingMode.FOCUSED, bash, null)).toBe(true)
+  })
+
+  it('makes a bookmarked Read visible under FOCUSED', () => {
+    expect(isToolBlockVisible(TurnRoutingMode.FOCUSED, read, null, new Set(['tool-r1']))).toBe(true)
+  })
+})
+
+describe('processNestedEvents under FOCUSED', () => {
+  const events = [
+    {
+      type: 'assistant',
+      subtype: 'tool_use',
+      content: 'Read',
+      tool_use_id: 'n1',
+      parent_tool_use_id: 't',
+    },
+    {
+      type: 'user',
+      subtype: 'tool_result',
+      tool_use_id: 'n1',
+      parent_tool_use_id: 't',
+      content: 'x',
+    },
+    { type: 'assistant', subtype: 'text', content: 'Looking at it.', parent_tool_use_id: 't' },
+    {
+      type: 'assistant',
+      subtype: 'tool_use',
+      content: 'Edit',
+      tool_use_id: 'n2',
+      parent_tool_use_id: 't',
+    },
+  ]
+
+  it("leaves a subagent's call of a marked tool out", () => {
+    const marked = [{ ...events[3], content: 'mcp__jina__read_url', tool_use_id: 'n3' }, events[3]]
+    const ids = processNestedEvents(marked, TurnRoutingMode.FOCUSED, name =>
+      name.endsWith('read_url'),
+    ).map(b => b.toolUse.tool_use_id)
+    expect(ids).toEqual(['n2'])
+  })
+
+  it("leaves the subagent's reads out and keeps its edit and text", () => {
+    const blocks = processNestedEvents(events, TurnRoutingMode.FOCUSED)
+    expect(blocks.map(b => (b.kind === 'tool' ? b.toolUse.content : b.kind))).toEqual([
+      'text',
+      'Edit',
+    ])
+  })
+
+  it('lists every call with no mode', () => {
+    expect(processNestedEvents(events)).toHaveLength(3)
   })
 })
 
@@ -1476,6 +1915,321 @@ describe('extractTasks', () => {
   })
 })
 
+describe('extractTasks - background commands', () => {
+  const at = ms => new Date(Date.UTC(2026, 9, 13, 10, 0, 0) + ms).toISOString()
+
+  function rows(events) {
+    const notifications = appendTaskNotifications(new Map(), events)
+    const { launches } = appendBackgroundLaunches(new Map(), new Map(), events)
+    return extractTasks(events, notifications, launches)
+  }
+
+  it('lists a running background command named by its description', () => {
+    const tasks = rows([
+      { type: 'user', subtype: 'text', is_human: true, content: 'go', turn_id: 't1' },
+      bashUse('tu1', { command: 'sleep 60', description: 'Wait a minute' }, { ts: at(0) }),
+      bashLaunchResult('tu1', 'b1'),
+    ])
+
+    expect(tasks).toEqual([
+      {
+        id: 'tu1',
+        kind: 'command',
+        turnId: 't1',
+        asyncTaskId: 'b1',
+        description: 'Wait a minute',
+        prompt: undefined,
+        status: 'running',
+        startTime: Date.UTC(2026, 9, 13, 10, 0, 0),
+        endTime: null,
+        lastEventTime: null,
+        isAsync: true,
+      },
+    ])
+  })
+
+  it('names a command row by the command when the description is missing or empty', () => {
+    const tasks = rows([
+      bashUse('tu1', { command: 'npm run dev' }),
+      bashLaunchResult('tu1', 'b1'),
+      bashUse('tu2', { command: 'make watch', description: '' }),
+      bashLaunchResult('tu2', 'b2'),
+    ])
+
+    expect(tasks.map(t => t.description)).toEqual(['npm run dev', 'make watch'])
+  })
+
+  it.each([
+    ['completed', 'completed'],
+    ['failed', 'failed'],
+    ['killed', 'failed'],
+  ])('maps a %s notice to %s and ends the row at the notice', (notified, status) => {
+    const tasks = rows([
+      bashUse('tu1', { command: 'false' }, { ts: at(0) }),
+      bashLaunchResult('tu1', 'b1'),
+      { ...notice('b1', notified), ts: at(90_000) },
+    ])
+
+    expect(tasks[0].status).toBe(status)
+    expect(tasks[0].endTime - tasks[0].startTime).toBe(90_000)
+  })
+
+  it('lists a command moved to the background at its time limit', () => {
+    const tasks = rows([
+      bashUse('tu1', { command: 'just check', description: 'Run the full gate' }),
+      bashLaunchResult('tu1', 'b7', {
+        tool_use_result: { backgroundTaskId: 'b7', timedOutAfterMs: 600000 },
+      }),
+    ])
+
+    expect(tasks.map(t => [t.kind, t.description])).toEqual([['command', 'Run the full gate']])
+  })
+
+  it('lists no foreground command, no launch without a task id, and no notice on its own', () => {
+    const tasks = rows([
+      bashUse('tu1', { command: 'ls' }),
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: 'tu1',
+        tool_use_result: { stdout: 'a' },
+      },
+      notice('fg-only'),
+    ])
+
+    expect(tasks).toEqual([])
+  })
+
+  it('lists no command launched inside a subagent', () => {
+    const tasks = rows([
+      bashUse('tu2', { command: 'sleep 9' }, { parent_tool_use_id: 'task1' }),
+      bashLaunchResult('tu2', 'b2', { parent_tool_use_id: 'task1' }),
+    ])
+
+    expect(tasks).toEqual([])
+  })
+
+  it('keeps subagent and command rows in launch order, marking each kind', () => {
+    const tasks = rows([
+      bashUse('tu1', { command: 'sleep 60', description: 'First' }),
+      bashLaunchResult('tu1', 'b1'),
+      {
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Task',
+        tool_use_id: 'tu2',
+        tool_input: { description: 'Second' },
+      },
+      agentLaunchResult('tu2', 'a2', 'Second'),
+      bashUse('tu3', { command: 'sleep 60', description: 'Third' }),
+      bashLaunchResult('tu3', 'b3'),
+    ])
+
+    expect(tasks.map(t => [t.kind, t.description])).toEqual([
+      ['command', 'First'],
+      ['subagent', 'Second'],
+      ['command', 'Third'],
+    ])
+  })
+
+  it('reads a command and a subagent launched before the last restart as failed', () => {
+    const tasks = rows([
+      bashUse('tu1', { command: 'sleep 900' }),
+      bashLaunchResult('tu1', 'b1'),
+      {
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Task',
+        tool_use_id: 'tu2',
+        tool_input: {},
+      },
+      agentLaunchResult('tu2', 'a2', 'Review'),
+      { type: 'system', subtype: 'container_restarted' },
+      bashUse('tu3', { command: 'sleep 900' }),
+      bashLaunchResult('tu3', 'b3'),
+    ])
+
+    expect(tasks.map(t => t.status)).toEqual(['failed', 'failed', 'running'])
+  })
+
+  it('ends a background subagent row at its completion notice, not at its launch', () => {
+    const tasks = rows([
+      {
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Task',
+        tool_use_id: 'tu1',
+        tool_input: { description: 'Review' },
+        ts: at(0),
+      },
+      { ...agentLaunchResult('tu1', 'a1', 'Review'), ts: at(1_000) },
+      { ...notice('a1'), ts: at(180_000) },
+    ])
+
+    expect(tasks[0]).toMatchObject({ kind: 'subagent', status: 'completed' })
+    expect(tasks[0].endTime - tasks[0].startTime).toBe(180_000)
+  })
+})
+
+describe('extractCrons', () => {
+  const T0 = Date.UTC(2026, 9, 12, 12, 0, 0)
+  const iso = ms => new Date(ms).toISOString()
+
+  function create(toolUseId, id, input, { at = T0, recurring, durable = false, extra = {} } = {}) {
+    return [
+      {
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'CronCreate',
+        tool_use_id: toolUseId,
+        tool_input: input,
+        ts: iso(at),
+        ...extra,
+      },
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: toolUseId,
+        tool_use_result: {
+          id,
+          humanSchedule: input.cron,
+          recurring: recurring ?? input.recurring !== false,
+          durable,
+        },
+        ts: iso(at + 10),
+        ...extra,
+      },
+    ]
+  }
+  function remove(toolUseId, id) {
+    return {
+      type: 'assistant',
+      subtype: 'tool_use',
+      content: 'CronDelete',
+      tool_use_id: toolUseId,
+      tool_input: { id },
+    }
+  }
+
+  const oneTime = create('c1', '00000001', {
+    cron: '20 12 12 10 *',
+    prompt: 'Start the batch\nwith care',
+    recurring: false,
+  })
+  const repeating = create('c2', '00000002', { cron: '*/10 * * * *', prompt: 'Check the deploy' })
+
+  it('lists active schedules soonest first with their prompt, kind and creation', () => {
+    const crons = extractCrons(
+      [
+        { type: 'user', subtype: 'text', is_human: true, content: 'go', turn_id: 't1' },
+        ...oneTime,
+        ...repeating,
+      ],
+      T0 + 60_000,
+    )
+
+    expect(crons.map(c => [c.id, c.recurring, c.turnId, c.toolUseId])).toEqual([
+      ['00000002', true, 't1', 'c2'],
+      ['00000001', false, 't1', 'c1'],
+    ])
+    expect(crons[1]).toMatchObject({
+      prompt: 'Start the batch\nwith care',
+      createdAt: T0 + 10,
+      expiresAt: null,
+      nextFireAt: Date.UTC(2026, 9, 12, 12, 20),
+    })
+    expect(crons[0].expiresAt).toBe(T0 + 10 + 7 * 24 * 60 * 60 * 1000)
+  })
+
+  it('drops a deleted schedule', () => {
+    expect(
+      extractCrons([...oneTime, ...repeating, remove('d1', '00000002')], T0).map(c => c.id),
+    ).toEqual(['00000001'])
+  })
+
+  it('skips a create whose result is an error or carries no id', () => {
+    const errored = create('c3', 'x', { cron: '* * * * *', prompt: 'p' })
+    errored[1].is_error = true
+    const idless = create('c4', 'x', { cron: '* * * * *', prompt: 'p' })
+    idless[1].tool_use_result = { error: 'bad cron' }
+
+    expect(extractCrons([...errored, ...idless], T0)).toEqual([])
+  })
+
+  it('drops a one-time schedule once its time has passed', () => {
+    expect(extractCrons(oneTime, Date.UTC(2026, 9, 12, 12, 20, 1))).toEqual([])
+  })
+
+  it('keeps a one-time schedule that came due during a running turn, marked due', () => {
+    const crons = extractCrons(
+      oneTime,
+      Date.UTC(2026, 9, 12, 12, 21),
+      Date.UTC(2026, 9, 12, 12, 19),
+    )
+
+    expect(crons).toHaveLength(1)
+    expect(crons[0]).toMatchObject({ id: '00000001', due: true })
+  })
+
+  it('drops a one-time schedule that came due before the running turn began', () => {
+    expect(
+      extractCrons(oneTime, Date.UTC(2026, 9, 12, 12, 25), Date.UTC(2026, 9, 12, 12, 22)),
+    ).toEqual([])
+  })
+
+  it('holds a repeating fire that came due mid-turn instead of moving on to the next one', () => {
+    const turnStart = T0 + 15 * 60_000
+    const now = T0 + 25 * 60_000
+
+    const [held] = extractCrons(repeating, now, turnStart)
+    const [idle] = extractCrons(repeating, now)
+
+    expect(held.due).toBe(true)
+    expect(held.nextFireAt).toBeGreaterThanOrEqual(turnStart)
+    expect(held.nextFireAt).toBeLessThanOrEqual(now)
+    expect(idle.due).toBe(false)
+    expect(idle.nextFireAt).toBeGreaterThan(now)
+  })
+
+  it('drops a repeating schedule seven days after its creation', () => {
+    const week = 7 * 24 * 60 * 60 * 1000
+
+    expect(extractCrons(repeating, T0 + 10 + week - 1)).toHaveLength(1)
+    expect(extractCrons(repeating, T0 + 10 + week)).toEqual([])
+  })
+
+  it('ignores schedules created inside a subagent', () => {
+    const nested = create(
+      'c5',
+      '00000005',
+      { cron: '* * * * *', prompt: 'p' },
+      { extra: { parent_tool_use_id: 'task1' } },
+    )
+
+    expect(extractCrons(nested, T0)).toEqual([])
+  })
+
+  it('counts a five-minute schedule from the restart that re-registered it', () => {
+    const five = create('c6', '00000000', { cron: '*/5 * * * *', prompt: 'p' })
+    const restartAt = T0 + 60 * 60_000 + 7_000
+    const restart = { type: 'system', subtype: 'container_restarted', ts: iso(restartAt) }
+
+    const [cron] = extractCrons([...five, restart], restartAt + 60_000)
+
+    expect(cron.nextFireAt).toBe(restartAt + 285_000)
+  })
+
+  it('keeps counting a durable five-minute schedule from its creation across a restart', () => {
+    const five = create('c7', '00000000', { cron: '*/5 * * * *', prompt: 'p' }, { durable: true })
+    const restartAt = T0 + 60 * 60_000 + 7_000
+    const restart = { type: 'system', subtype: 'container_restarted', ts: iso(restartAt) }
+
+    const [cron] = extractCrons([...five, restart], restartAt + 60_000)
+
+    expect((cron.nextFireAt - (T0 + 10)) % 285_000).toBe(0)
+  })
+})
+
 describe('isInterruptAck', () => {
   it('returns true for SDK interrupt acknowledgment', () => {
     const event = {
@@ -1577,7 +2331,7 @@ describe('processEvents - interrupt blocks', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -1592,7 +2346,7 @@ describe('processEvents - interrupt blocks', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -1610,7 +2364,7 @@ describe('processEvents - model-set echo filtering', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(0)
   })
@@ -1625,7 +2379,7 @@ describe('processEvents - model-set echo filtering', () => {
       },
     ]
 
-    const blocks = processEvents(events)
+    const blocks = processEvents(events).blocks
 
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe('text')
@@ -1725,11 +2479,32 @@ describe('appendTurns', () => {
     expect(state.currentTurnIndex).toBe(0)
   })
 
+  it('keeps the send time of the human message that opens a turn', () => {
+    const { turns } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+      {
+        type: 'user',
+        is_human: true,
+        turn_id: 'turn-1',
+        content: 'Hello',
+        ts: '2025-01-18T12:00:00Z',
+      },
+      { type: 'assistant', subtype: 'text', turn_id: 'orphan', content: 'Hi' },
+    ])
+
+    expect(turns[0].userMessageTs).toBe('2025-01-18T12:00:00Z')
+  })
+
+  it('gives a turn with no human message no send time', () => {
+    const { turns } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+      { type: 'assistant', subtype: 'text', turn_id: 'orphan-1', content: 'Orphan response' },
+    ])
+
+    expect(turns[0].userMessageTs).toBeNull()
+  })
+
   it('appends assistant events to current turn', () => {
     // Batch 1: user message
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     // Batch 2: assistant response
     const { turns: t2 } = appendTurns(t1, s1, [
@@ -1784,6 +2559,56 @@ describe('appendTurns', () => {
     expect(t2).toHaveLength(1)
     expect(t2[0].interrupted).toBe(false)
   })
+
+  it.each([
+    ['a stop that reached a running follow-up marks the turn', true, 'success', true],
+    ['a stop that reached no running turn leaves it', false, 'success', false],
+    ['a stop that reached no running turn leaves a failed one too', false, 'error', false],
+    ['a stop that reached a running turn with no result yet marks it', true, undefined, true],
+  ])('%s', (_label, turnRunning, result, interrupted) => {
+    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+      { type: 'user', is_human: true, turn_id: 't1', content: 'Start the audit' },
+      { type: 'assistant', subtype: 'text', turn_id: 't1', content: 'Started.' },
+    ])
+
+    const { turns: t2 } = appendTurns(
+      t1,
+      s1,
+      [{ type: 'system', subtype: 'interrupt_sent', turn_id: 't1', turn_running: turnRunning }],
+      result ? { t1: result } : {},
+    )
+
+    expect(t2[0].interrupted).toBe(interrupted)
+  })
+
+  it.each([
+    ['with the text it got to', true, 1],
+    ['before any text', false, 0],
+  ])(
+    'a stopped turn replayed in one slice keeps its interrupt mark %s',
+    (_label, withText, blocks) => {
+      const slice = [
+        { type: 'user', subtype: 'message', is_human: true, turn_id: 't1', content: 'Look it up' },
+        { type: 'system', subtype: 'interrupt_sent', turn_id: 't1' },
+        ...(withText
+          ? [{ type: 'assistant', subtype: 'text', turn_id: 't1', content: 'Let me check.' }]
+          : []),
+        { type: 'result', subtype: 'error_during_execution', turn_id: 't1', content: '' },
+      ]
+      const turnResults = appendTurnResults({}, slice)
+
+      const { turns } = appendTurns(
+        [],
+        INITIAL_TURN_GROUPING_STATE,
+        slice.filter(isVisibleEvent),
+        turnResults,
+      )
+
+      expect(turns[0].interrupted).toBe(true)
+      expect(turnResults.t1).not.toBe('error')
+      expect(turns[0].events.filter(e => e.subtype === 'text')).toHaveLength(blocks)
+    },
+  )
 
   it('handles compaction pairing across batches', () => {
     // Batch 1: user message + assistant response + compact_start
@@ -1873,9 +2698,7 @@ describe('appendTurns', () => {
   })
 
   it('stores model_changed in settingChanges (not events)', () => {
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     const { turns: t2 } = appendTurns(t1, s1, [
       {
@@ -1893,9 +2716,7 @@ describe('appendTurns', () => {
   })
 
   it('stores permission_mode_changed in settingChanges (not events)', () => {
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     const { turns: t2 } = appendTurns(t1, s1, [
       {
@@ -1913,9 +2734,7 @@ describe('appendTurns', () => {
   })
 
   it('skips init permission_mode_changed without previous value', () => {
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     const { turns: t2 } = appendTurns(t1, s1, [
       { type: 'system', subtype: 'permission_mode_changed', permission_mode: 'bypassPermissions' },
@@ -1925,9 +2744,7 @@ describe('appendTurns', () => {
   })
 
   it('skips init model_changed without previous value', () => {
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     const { turns: t2 } = appendTurns(t1, s1, [
       { type: 'system', subtype: 'model_changed', model: 'claude-opus-5' },
@@ -1937,9 +2754,7 @@ describe('appendTurns', () => {
   })
 
   it('stores container_restarted in settingChanges (renders unconditionally)', () => {
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     const { turns: t2 } = appendTurns(t1, s1, [
       { type: 'system', subtype: 'container_restarted', message_data: null },
@@ -1950,9 +2765,7 @@ describe('appendTurns', () => {
   })
 
   it('stores container_restarted with fork payload in settingChanges', () => {
-    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
-      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
-    ])
+    const { turns: t1, state: s1 } = helloTurn()
 
     const { turns: t2 } = appendTurns(t1, s1, [
       {
@@ -2068,6 +2881,32 @@ describe('appendTurns', () => {
 
     expect(turns).toHaveLength(0)
   })
+
+  it('attaches a reported failure to the current turn, with no result event', () => {
+    const { turns: t1, state: s1 } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
+      { type: 'assistant', subtype: 'text', content: 'Working on it' },
+    ])
+
+    const { turns: t2 } = appendTurns(t1, s1, [
+      { type: 'system', subtype: 'error', turn_id: 'turn-1', content: 'runtime crashed' },
+    ])
+
+    expect(t2[0].events).toHaveLength(2)
+    expect(t2[0].events[1].subtype).toBe('error')
+    expect(t2[0].events[1].content).toBe('runtime crashed')
+  })
+
+  it('renders a reported failure through the orphan-turn fall-through when nothing is open', () => {
+    const { turns } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+      { type: 'system', subtype: 'error', content: 'runtime crashed before any turn' },
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0].userMessage).toBeNull()
+    expect(turns[0].events).toHaveLength(1)
+    expect(turns[0].events[0].subtype).toBe('error')
+  })
 })
 
 describe('appendTurnResults', () => {
@@ -2102,6 +2941,40 @@ describe('appendTurnResults', () => {
     const result = appendTurnResults(existing, events)
 
     expect(result).toBe(existing)
+  })
+
+  it('records a reported failure as an error result, same as a result-reported one', () => {
+    const existing = {}
+    const events = [{ type: 'system', subtype: 'error', turn_id: 'turn-1', content: 'boom' }]
+
+    const result = appendTurnResults(existing, events)
+
+    expect(result['turn-1']).toBe('error')
+  })
+
+  it('skips a reported failure without turn_id', () => {
+    const existing = {}
+    const events = [{ type: 'system', subtype: 'error', content: 'boom' }]
+
+    const result = appendTurnResults(existing, events)
+
+    expect(result).toBe(existing)
+  })
+
+  it('keeps a reported failure when a success result for the same turn follows in the batch', () => {
+    const events = [
+      { type: 'system', subtype: 'error', turn_id: 'turn-1', content: 'Not logged in.' },
+      { type: 'result', subtype: 'success', turn_id: 'turn-1' },
+    ]
+
+    expect(appendTurnResults({}, events)['turn-1']).toBe('error')
+  })
+
+  it('keeps a failure recorded by an earlier batch when its success result arrives later', () => {
+    const existing = { 'turn-1': 'error' }
+    const events = [{ type: 'result', subtype: 'success', turn_id: 'turn-1' }]
+
+    expect(appendTurnResults(existing, events)['turn-1']).toBe('error')
   })
 })
 
@@ -2138,6 +3011,7 @@ describe('appendTaskNotifications', () => {
       status: 'completed',
       summary: 'Full task output',
       content: 'Full task output\nwith multiple lines',
+      index: 0,
     })
   })
 
@@ -2157,6 +3031,7 @@ describe('appendTaskNotifications', () => {
       status: 'completed',
       summary: 'Task done',
       content: 'Task done',
+      index: 0,
     })
   })
 
@@ -2177,6 +3052,252 @@ describe('appendTaskNotifications', () => {
     expect(result.size).toBe(2)
     expect(result.get('task-old').summary).toBe('Old task')
     expect(result.get('task-new').summary).toBe('New task')
+  })
+  it('records the notice time and its position in the event log', () => {
+    const events = [
+      { type: 'assistant', subtype: 'text', content: 'x' },
+      {
+        type: 'system',
+        subtype: 'task_notification',
+        ts: '2026-10-13T10:50:12.000Z',
+        message_data: { task_id: 'b1', status: 'killed', summary: 'Wait' },
+      },
+    ]
+
+    const result = appendTaskNotifications(new Map(), events, 40)
+
+    expect(result.get('b1')).toMatchObject({
+      status: 'killed',
+      ts: Date.UTC(2026, 9, 13, 10, 50, 12),
+      index: 41,
+    })
+  })
+})
+
+function bashUse(id, input, extra = {}) {
+  return {
+    type: 'assistant',
+    subtype: 'tool_use',
+    content: 'Bash',
+    tool_use_id: id,
+    tool_input: input,
+    ...extra,
+  }
+}
+
+function bashLaunchResult(id, taskId, extra = {}) {
+  return {
+    type: 'user',
+    subtype: 'tool_result',
+    tool_use_id: id,
+    tool_input: null,
+    tool_use_result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: taskId },
+    ...extra,
+  }
+}
+
+function agentLaunchResult(id, agentId, description) {
+  return {
+    type: 'user',
+    subtype: 'tool_result',
+    tool_use_id: id,
+    tool_use_result: { isAsync: true, status: 'async_launched', agentId, description },
+  }
+}
+
+function notice(taskId, status = 'completed') {
+  return { type: 'system', subtype: 'task_notification', message_data: { task_id: taskId, status } }
+}
+
+function launchesOf(events) {
+  return appendBackgroundLaunches(new Map(), new Map(), events).launches
+}
+
+describe('appendBackgroundLaunches', () => {
+  it('names a background command by its description', () => {
+    const launches = launchesOf([
+      bashUse('tu1', {
+        command: 'sleep 120',
+        description: 'Wait two minutes',
+        run_in_background: true,
+      }),
+      bashLaunchResult('tu1', 'b1'),
+    ])
+
+    expect(launches.get('b1')).toEqual({
+      id: 'b1',
+      name: 'Wait two minutes',
+      toolUseId: 'tu1',
+      index: 1,
+    })
+  })
+
+  it('names a background command by the command when the description is missing or empty', () => {
+    const launches = launchesOf([
+      bashUse('tu1', { command: 'npm run dev', run_in_background: true }),
+      bashLaunchResult('tu1', 'b1'),
+      bashUse('tu2', { command: 'make watch', description: '', run_in_background: true }),
+      bashLaunchResult('tu2', 'b2'),
+    ])
+
+    expect(launches.get('b1').name).toBe('npm run dev')
+    expect(launches.get('b2').name).toBe('make watch')
+  })
+
+  it('names a background subagent from its launch result', () => {
+    const launches = launchesOf([agentLaunchResult('tu9', 'a1', 'Verify the release notes')])
+
+    expect(launches.get('a1')).toEqual({
+      id: 'a1',
+      name: 'Verify the release notes',
+      toolUseId: 'tu9',
+      index: 0,
+    })
+  })
+
+  it('counts a command moved to the background after its time limit', () => {
+    const launches = launchesOf([
+      bashUse('tu1', { command: 'just check', description: 'Run the full gate' }),
+      bashLaunchResult('tu1', 'b7', {
+        tool_use_result: { stdout: '', backgroundTaskId: 'b7', timedOutAfterMs: 600000 },
+      }),
+    ])
+
+    expect(launches.get('b7').name).toBe('Run the full gate')
+  })
+
+  it('ignores a foreground command and work launched inside a subagent', () => {
+    const launches = launchesOf([
+      bashUse('tu1', { command: 'ls' }),
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: 'tu1',
+        tool_use_result: { stdout: 'a' },
+      },
+      bashUse(
+        'tu2',
+        { command: 'sleep 9', run_in_background: true },
+        { parent_tool_use_id: 'task1' },
+      ),
+      bashLaunchResult('tu2', 'b2', { parent_tool_use_id: 'task1' }),
+    ])
+
+    expect(launches.size).toBe(0)
+  })
+
+  it('positions launches after the events already in the log', () => {
+    const { launches } = appendBackgroundLaunches(
+      new Map(),
+      new Map(),
+      [bashUse('tu1', { command: 'sleep 1' }), bashLaunchResult('tu1', 'b1')],
+      10,
+    )
+
+    expect(launches.get('b1').index).toBe(11)
+  })
+
+  it('pairs a result with the input remembered from an earlier batch', () => {
+    const first = appendBackgroundLaunches(new Map(), new Map(), [
+      bashUse('tu1', { command: 'sleep 5', description: 'Nap' }),
+    ])
+
+    const second = appendBackgroundLaunches(first.launches, first.bashInputs, [
+      bashLaunchResult('tu1', 'b1'),
+    ])
+
+    expect(second.launches.get('b1').name).toBe('Nap')
+    expect(second.bashInputs.size).toBe(0)
+  })
+
+  it('keeps both references when nothing new arrives', () => {
+    const launches = new Map()
+    const inputs = new Map()
+
+    const result = appendBackgroundLaunches(launches, inputs, [
+      { type: 'assistant', subtype: 'text', content: 'hi' },
+    ])
+
+    expect(result.launches).toBe(launches)
+    expect(result.bashInputs).toBe(inputs)
+  })
+})
+
+describe('selectRunningBackgroundWork', () => {
+  const launches = launchesOf([
+    bashUse('tu1', { command: 'sleep 1', description: 'One' }),
+    bashLaunchResult('tu1', 'b1'),
+    bashUse('tu2', { command: 'sleep 2', description: 'Two' }),
+    bashLaunchResult('tu2', 'b2'),
+    agentLaunchResult('tu3', 'a3', 'Three'),
+  ])
+
+  it('lists every launch without a completion notice, in launch order', () => {
+    const running = selectRunningBackgroundWork(launches, new Map(), -1)
+
+    expect(running.map(w => w.name)).toEqual(['One', 'Two', 'Three'])
+  })
+
+  it.each(['completed', 'failed', 'killed'])('drops a launch whose notice says %s', status => {
+    const notifications = appendTaskNotifications(new Map(), [notice('b2', status)])
+
+    const running = selectRunningBackgroundWork(launches, notifications, -1)
+
+    expect(running.map(w => w.id)).toEqual(['b1', 'a3'])
+  })
+
+  it('drops a launch whose notice arrived before its launch result', () => {
+    const events = [
+      bashUse('tu1', { command: 'true' }),
+      notice('b1'),
+      bashLaunchResult('tu1', 'b1'),
+    ]
+    const notifications = appendTaskNotifications(new Map(), events)
+
+    expect(selectRunningBackgroundWork(launchesOf(events), notifications, -1)).toEqual([])
+  })
+
+  it('drops launches made before the last container restart and keeps later ones', () => {
+    const events = [
+      bashUse('tu1', { command: 'sleep 99', description: 'Before' }),
+      bashLaunchResult('tu1', 'b1'),
+      { type: 'system', subtype: 'container_restarted' },
+      bashUse('tu2', { command: 'sleep 99', description: 'After' }),
+      bashLaunchResult('tu2', 'b2'),
+    ]
+
+    const running = selectRunningBackgroundWork(launchesOf(events), new Map(), 2)
+
+    expect(running.map(w => w.name)).toEqual(['After'])
+  })
+})
+
+describe('hasUnclaimedCompletion', () => {
+  const events = [
+    bashUse('tu1', { command: 'sleep 1' }),
+    bashLaunchResult('tu1', 'b1'),
+    { type: 'result', subtype: 'success' },
+    notice('b1'),
+  ]
+  const launches = launchesOf(events)
+  const notifications = appendTaskNotifications(new Map(), events)
+
+  it('is true for a tracked launch finishing after the last turn ended', () => {
+    expect(hasUnclaimedCompletion(launches, notifications, 2, -1)).toBe(true)
+  })
+
+  it('is false once a later result or message settles it', () => {
+    expect(hasUnclaimedCompletion(launches, notifications, 4, -1)).toBe(false)
+  })
+
+  it('ignores a kill notice for work launched before the last restart', () => {
+    expect(hasUnclaimedCompletion(launches, notifications, 2, 2)).toBe(false)
+  })
+
+  it('ignores a notice for a task no tracked launch started', () => {
+    const foreign = appendTaskNotifications(new Map(), [{ ...notice('fg1') }], 3)
+
+    expect(hasUnclaimedCompletion(launches, foreign, 2, -1)).toBe(false)
   })
 })
 

@@ -1,5 +1,8 @@
 """Tests for claudebox.containers.local - LocalRuntime subprocess spawn."""
 
+from __future__ import annotations
+
+import threading
 from unittest.mock import MagicMock, patch
 
 from claudebox.containers.local import LocalRuntime, _Process
@@ -65,3 +68,79 @@ class TestIdentifyContainerFromPid:
         runtime = LocalRuntime()
 
         assert runtime.identify_container_from_pid(9999, []) is None
+
+
+class _BlockingProcess:
+    """A process whose poll reports the listing started, then waits for another thread's change."""
+
+    def __init__(self, started: threading.Event, changed: threading.Event):
+        self._started = started
+        self._changed = changed
+        self.pid = 4242
+
+    def poll(self):
+        self._started.set()
+        self._changed.wait(timeout=5)
+
+
+class _ExitedProcess:
+    pid = 4343
+
+    def poll(self):
+        return 0
+
+
+def _tracked(process, name: str) -> _Process:
+    return _Process(process=process, port=0, name=name)
+
+
+class TestListingUnderConcurrentChanges:
+    """A listing on one pool thread survives a spawn or removal on another."""
+
+    @staticmethod
+    def _runtime_with(entries: dict) -> LocalRuntime:
+        runtime = LocalRuntime()
+        runtime._registry.update(entries)
+
+        return runtime
+
+    @patch("claudebox.containers.local.LocalRuntime._find_free_port", return_value=9000)
+    @patch("subprocess.Popen")
+    def test_a_spawn_during_a_listing(self, _mock_popen, _mock_port):
+        started, changed = threading.Event(), threading.Event()
+        runtime = self._runtime_with(
+            {"a": _tracked(_BlockingProcess(started, changed), "a")},
+        )
+
+        def spawn():
+            started.wait(timeout=5)
+            runtime.run_container(name="b", labels={}, env={}, detach=True)
+            changed.set()
+
+        thread = threading.Thread(target=spawn)
+        thread.start()
+        listed = runtime.list_containers()
+        thread.join()
+
+        assert [entry["Id"] for entry in listed] == ["a"]
+
+    def test_a_removal_during_a_listing(self):
+        started, changed = threading.Event(), threading.Event()
+        runtime = self._runtime_with(
+            {
+                "a": _tracked(_BlockingProcess(started, changed), "a"),
+                "b": _tracked(_ExitedProcess(), "b"),
+            },
+        )
+
+        def remove():
+            started.wait(timeout=5)
+            runtime.remove_container("b")
+            changed.set()
+
+        thread = threading.Thread(target=remove)
+        thread.start()
+        listed = runtime.list_containers()
+        thread.join()
+
+        assert [entry["Id"] for entry in listed] == ["a"]

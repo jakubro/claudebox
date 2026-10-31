@@ -1,5 +1,7 @@
 """Event persistence - JSONL append-only session log."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 
 import aiofiles
@@ -7,7 +9,7 @@ import aiofiles
 from .models import PublishedEvent
 from ...constants import SESSION_EVENTS_FILE
 from ...core import serialization
-from ...core.io import read_jsonl
+from ...core.io import read_jsonl, repair_jsonl_tail
 from ...workspace import Workspace
 
 
@@ -20,8 +22,9 @@ class EventLog:
         self._file = None
 
     async def open(self) -> None:
-        """Open the log file for async appending."""
+        """Open the log file for async appending, first repairing a tail a killed writer tore."""
 
+        repair_jsonl_tail(self._path)
         self._file = await aiofiles.open(self._path, "a")
 
     async def append(self, event: PublishedEvent) -> None:

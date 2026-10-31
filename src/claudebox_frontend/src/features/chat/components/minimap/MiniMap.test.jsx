@@ -7,6 +7,29 @@ import MiniMap from './MiniMap'
 // Stable reference to prevent infinite re-render from turnHeights={} default
 const EMPTY_HEIGHTS = {}
 
+function fakeMessages(listeners = {}) {
+  return {
+    current: {
+      scrollHeight: 2000,
+      clientHeight: 500,
+      scrollTop: 0,
+      addEventListener: vi.fn((event, handler) => {
+        listeners[event] = [...(listeners[event] ?? []), handler]
+      }),
+      removeEventListener: vi.fn(),
+      getBoundingClientRect: () => ({
+        top: 0,
+        right: 500,
+        bottom: 500,
+        left: 0,
+        height: 500,
+        width: 500,
+      }),
+      scrollTo: vi.fn(),
+    },
+  }
+}
+
 describe('MiniMap', () => {
   beforeEach(() => {
     // Stub ResizeObserver as a proper class (global mock is arrow fn, can't be used with `new`)
@@ -45,15 +68,25 @@ describe('MiniMap', () => {
     },
   })
 
-  it('renders nothing when no groups', () => {
+  const renderMiniMap = (groups, props = {}) =>
     render(
       <MiniMap
-        groups={[]}
+        groups={groups}
         turnResults={{}}
         messagesRef={createMockRef()}
         turnHeights={EMPTY_HEIGHTS}
+        {...props}
       />,
     )
+
+  const renderHelloMap = messagesRef => {
+    renderMiniMap([{ turn_id: '1', userMessage: 'Hello', events: [] }], { messagesRef })
+
+    return screen.getByTestId('minimap')
+  }
+
+  it('renders nothing when no groups', () => {
+    renderMiniMap([])
     expect(screen.queryByTestId('minimap')).not.toBeInTheDocument()
   })
 
@@ -63,14 +96,7 @@ describe('MiniMap', () => {
         { turn_id: '1', userMessage: 'Hello', events: [] },
         { turn_id: '2', userMessage: 'World', events: [{ type: 'assistant' }] },
       ]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       expect(screen.getAllByTestId('minimap-segment')).toHaveLength(1)
     })
@@ -80,29 +106,14 @@ describe('MiniMap', () => {
         { turn_id: '1', userMessage: 'Hello', events: [] },
         { turn_id: '2', userMessage: 'World', events: [{ type: 'assistant' }] },
       ]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       expect(screen.getAllByTestId('minimap-subbar')).toHaveLength(2)
     })
 
     it('renders pending sub-bars', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-          pendingCount={2}
-        />,
-      )
+      renderMiniMap(groups, { pendingCount: 2 })
 
       expect(screen.getAllByTestId('minimap-subbar-pending')).toHaveLength(2)
     })
@@ -113,56 +124,28 @@ describe('MiniMap', () => {
         { turn_id: '2', userMessage: 'After', events: [{ subtype: 'compact_boundary' }] },
         { turn_id: '3', userMessage: 'Later', events: [] },
       ]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       expect(screen.getAllByTestId('minimap-segment')).toHaveLength(2)
     })
 
     it('marks error turns with error class', () => {
       const groups = [{ turn_id: 'err-turn', userMessage: 'Fail', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{ 'err-turn': 'error' }}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups, { turnResults: { 'err-turn': 'error' } })
 
       expect(screen.getByTestId('minimap-subbar')).toHaveClass('error')
     })
 
     it('renders viewport thumb', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       expect(screen.getByTestId('minimap-viewport')).toBeInTheDocument()
     })
 
     it('starts hidden (not visible)', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       expect(screen.getByTestId('minimap')).not.toHaveClass('visible')
     })
@@ -173,14 +156,7 @@ describe('MiniMap', () => {
         { turn_id: '2', userMessage: null, events: [{ type: 'assistant' }] },
         { turn_id: '3', userMessage: 'World', events: [] },
       ]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       expect(screen.getAllByTestId('minimap-human-line')).toHaveLength(2)
     })
@@ -191,14 +167,7 @@ describe('MiniMap', () => {
         { turn_id: '2', userMessage: 'Tall', events: [] },
       ]
       const turnHeights = { 1: 100, 2: 300 }
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={turnHeights}
-        />,
-      )
+      renderMiniMap(groups, { turnHeights })
 
       const subbars = screen.getAllByTestId('minimap-subbar')
       expect(subbars[0]).toHaveStyle({ flex: '100' })
@@ -232,14 +201,7 @@ describe('MiniMap', () => {
 
     it('renders human-line without inline height when userMessageHeights not provided', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups)
 
       const humanLine = screen.getByTestId('minimap-human-line')
       // No inline height - CSS min-height handles it
@@ -250,15 +212,7 @@ describe('MiniMap', () => {
   describe('streaming mode', () => {
     it('becomes visible when isStreaming is true (even without persistent)', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-          isStreaming={true}
-        />,
-      )
+      renderMiniMap(groups, { isStreaming: true })
 
       expect(screen.getByTestId('minimap')).toHaveClass('visible')
     })
@@ -266,15 +220,7 @@ describe('MiniMap', () => {
     it('hides after streaming ends (when not persistent)', () => {
       vi.useFakeTimers()
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      const { rerender } = render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-          isStreaming={true}
-        />,
-      )
+      const { rerender } = renderMiniMap(groups, { isStreaming: true })
 
       expect(screen.getByTestId('minimap')).toHaveClass('visible')
 
@@ -307,14 +253,7 @@ describe('MiniMap', () => {
       const messagesRef = createMockRef()
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
 
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={messagesRef}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
+      renderMiniMap(groups, { messagesRef })
 
       expect(rAFSpy).toHaveBeenCalled()
 
@@ -324,37 +263,8 @@ describe('MiniMap', () => {
 
   describe('click-to-jump', () => {
     it('calls scrollTo on the messages container when minimap is clicked', () => {
-      const scrollTo = vi.fn()
-      const messagesRef = {
-        current: {
-          scrollHeight: 2000,
-          clientHeight: 500,
-          scrollTop: 0,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          getBoundingClientRect: () => ({
-            top: 0,
-            right: 500,
-            bottom: 500,
-            left: 0,
-            height: 500,
-            width: 500,
-          }),
-          scrollTo,
-        },
-      }
-      const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={messagesRef}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
-
-      const minimap = screen.getByTestId('minimap')
+      const messagesRef = fakeMessages()
+      const minimap = renderHelloMap(messagesRef)
       minimap.getBoundingClientRect = () => ({
         top: 0,
         height: 400,
@@ -366,42 +276,14 @@ describe('MiniMap', () => {
 
       minimap.click()
 
-      expect(scrollTo).toHaveBeenCalled()
+      expect(messagesRef.current.scrollTo).toHaveBeenCalled()
     })
   })
 
   describe('drag scrolling', () => {
     it('sets scrollTop on mousedown (drag start)', () => {
-      const messagesRef = {
-        current: {
-          scrollHeight: 2000,
-          clientHeight: 500,
-          scrollTop: 0,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          getBoundingClientRect: () => ({
-            top: 0,
-            right: 500,
-            bottom: 500,
-            left: 0,
-            height: 500,
-            width: 500,
-          }),
-          scrollTo: vi.fn(),
-        },
-      }
-      const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={messagesRef}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
-
-      const minimap = screen.getByTestId('minimap')
+      const messagesRef = fakeMessages()
+      const minimap = renderHelloMap(messagesRef)
       minimap.getBoundingClientRect = () => ({
         top: 0,
         height: 400,
@@ -421,41 +303,8 @@ describe('MiniMap', () => {
   describe('proximity show/hide', () => {
     it('becomes visible when mouse is near right edge of container', () => {
       const addEventListenerCalls = {}
-      const messagesRef = {
-        current: {
-          scrollHeight: 2000,
-          clientHeight: 500,
-          scrollTop: 0,
-          addEventListener: vi.fn((event, handler) => {
-            if (!addEventListenerCalls[event]) {
-              addEventListenerCalls[event] = []
-            }
-            addEventListenerCalls[event].push(handler)
-          }),
-          removeEventListener: vi.fn(),
-          getBoundingClientRect: () => ({
-            top: 0,
-            right: 500,
-            bottom: 500,
-            left: 0,
-            height: 500,
-            width: 500,
-          }),
-          scrollTo: vi.fn(),
-        },
-      }
-      const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={messagesRef}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
-
-      const minimap = screen.getByTestId('minimap')
+      const messagesRef = fakeMessages(addEventListenerCalls)
+      const minimap = renderHelloMap(messagesRef)
 
       expect(minimap).not.toHaveClass('visible')
 
@@ -473,41 +322,8 @@ describe('MiniMap', () => {
     it('hides after timeout', () => {
       vi.useFakeTimers()
       const addEventListenerCalls = {}
-      const messagesRef = {
-        current: {
-          scrollHeight: 2000,
-          clientHeight: 500,
-          scrollTop: 0,
-          addEventListener: vi.fn((event, handler) => {
-            if (!addEventListenerCalls[event]) {
-              addEventListenerCalls[event] = []
-            }
-            addEventListenerCalls[event].push(handler)
-          }),
-          removeEventListener: vi.fn(),
-          getBoundingClientRect: () => ({
-            top: 0,
-            right: 500,
-            bottom: 500,
-            left: 0,
-            height: 500,
-            width: 500,
-          }),
-          scrollTo: vi.fn(),
-        },
-      }
-      const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={messagesRef}
-          turnHeights={EMPTY_HEIGHTS}
-        />,
-      )
-
-      const minimap = screen.getByTestId('minimap')
+      const messagesRef = fakeMessages(addEventListenerCalls)
+      const minimap = renderHelloMap(messagesRef)
 
       const pointerMoveHandler = addEventListenerCalls.pointermove?.[0]
       act(() => {
@@ -528,15 +344,7 @@ describe('MiniMap', () => {
   describe('persistent mode', () => {
     it('is always visible when persistent is true', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-          persistent={true}
-        />,
-      )
+      renderMiniMap(groups, { persistent: true })
 
       expect(screen.getByTestId('minimap')).toHaveClass('visible')
     })
@@ -544,15 +352,7 @@ describe('MiniMap', () => {
     it('does not hide after timeout when persistent', () => {
       vi.useFakeTimers()
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-          persistent={true}
-        />,
-      )
+      renderMiniMap(groups, { persistent: true })
 
       const minimap = screen.getByTestId('minimap')
       expect(minimap).toHaveClass('visible')
@@ -569,15 +369,7 @@ describe('MiniMap', () => {
 
     it('hides when persistent changes from true to false', () => {
       const groups = [{ turn_id: '1', userMessage: 'Hello', events: [] }]
-      const { rerender } = render(
-        <MiniMap
-          groups={groups}
-          turnResults={{}}
-          messagesRef={createMockRef()}
-          turnHeights={EMPTY_HEIGHTS}
-          persistent={true}
-        />,
-      )
+      const { rerender } = renderMiniMap(groups, { persistent: true })
 
       expect(screen.getByTestId('minimap')).toHaveClass('visible')
 

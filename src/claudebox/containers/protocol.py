@@ -1,5 +1,7 @@
 """Container runtime protocol - interface for runtime implementations."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -16,7 +18,7 @@ class ContainerRuntimeProtocol(Protocol):
     Implemented by ContainerRuntime (podman/docker) and LocalRuntime (subprocess).
     """
 
-    def build(self, mode: "ImageBuildMode | None" = None) -> None:
+    def build(self, mode: ImageBuildMode | None = None) -> None:
         """Build the container image."""
 
         ...
@@ -38,7 +40,7 @@ class ContainerRuntimeProtocol(Protocol):
         run_args: Iterable = (),
         cmd_args: Iterable = (),
         detach: bool = False,
-        config: "Config | None" = None,
+        config: Config | None = None,
     ) -> str | None:
         """Spawn a container, returning backend ID if detached.
 

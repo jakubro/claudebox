@@ -38,6 +38,11 @@
   position: relative;
 }
 
+.session-header-strip-name.auto-named {
+  font-style: italic;
+  opacity: 0.7;
+}
+
 .session-header-strip-name-copied {
   position: absolute;
   left: 50%;

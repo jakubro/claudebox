@@ -10,7 +10,7 @@ Conventions here reflect patterns **actually in the codebase**. Focus on what ag
 
 **Bleeding-edge: defensive migrations are debt, not value.** The product is under heavy development; data shapes change faster than migration shims can earn their keep. When a change would orphan persisted state, accept the wipe and document it in the ticket. Don't add `if (typeof entry === 'string') return { name: entry }`-style fallbacks for "older" layouts.
 
-All development commands run from `lib/` via [justfile](../justfile). See §0 for the full reference; `just --list` for grouped view.
+All development commands run from the repository root via [justfile](../justfile). See §0 for the full reference; `just --list` for grouped view.
 
 ```bash
 just check       # full pre-commit (lint + test)
@@ -33,7 +33,7 @@ just fix             # auto-fix all (python + JS)
 just outdated        # report current-vs-latest per direct dependency; never fails, not part of check
 just test            # run all tests (python unit + frontend unit + frontend e2e + CLI e2e)
 just coverage        # all tests with coverage enforcement
-just build           # production build (frontend → dist/)
+just build           # production build (frontend -> dist/)
 just docs            # write docs/reference/{cli,shortcuts}.md from the CLI parser and the binding registry; golden-tested by check
 just site            # build the docs site (Astro/Starlight over docs/); its own job, not part of check
 just preview         # serve the docs site with live reload
@@ -43,7 +43,7 @@ just preview         # serve the docs site with live reload
 
 ```bash
 just install-py      # uv sync --extra dev (auto-routes to /tmp venv when CLAUDEBOX_AGENT is set)
-just test-py         # pytest tests/
+just test-py         # pytest tests/, one worker per core (-n 0 runs serially)
 just test-py-cov     # pytest tests/ with coverage
 ```
 
@@ -59,39 +59,32 @@ UV_PROJECT_ENVIRONMENT='<agent-venv>' VIRTUAL_ENV= uv pip install langchain-anth
 just install-shared-js  # npm ci at lib root (biome + jscpd + knip)
 ```
 
-Linting and auto-fix are whole-repo only: `just lint` runs ruff check + ruff format --check + ty +
-python-guidelines-audit + biome + frontend-guidelines-audit + spec-coverage + architecture-drift-check +
-knip + jscpd, and `just fix` runs ruff check --fix + ruff format + ty --fix + biome check --fix. There
-are no per-language `lint-*` / `fix-*` recipes - reach for a tool directly (`npx biome check <path>`)
-when iterating on one file.
+Linting and auto-fix are whole-repo only: `just lint` runs ruff check + ruff format --check + ty + deptry + lint-imports + python-guidelines-audit + biome + frontend-guidelines-audit + spec-coverage + architecture-drift-check + knip + jscpd, and `just fix` runs ruff check --fix + ruff format + ty --fix + biome check --fix. There are no per-language `lint-*` / `fix-*` recipes - reach for a tool directly (`npx biome check <path>`) when iterating on one file.
 
-`architecture-drift-check.js` checks ARCHITECTURE.md's fenced tree/module-map blocks and HTTP route
-tables against the filesystem and the registered routers, both directions - an entry naming a file
-that doesn't exist and a real file the doc omits are both failures. Its own fixture tests
-(`architecture-drift-check.test.js`, run via `node --test`) run ahead of it in `just lint`.
+jscpd scans Python and JS/CSS separately, test files included, both runs against the committed `.jscpd-baseline.json`. `just lint` fails on a clone the baseline does not list, naming both sides, and on an accepted clone with no reason in `.jscpd-reasons.json` or a reason with no clone. A new clone is removed, or accepted: `just dupes` refreshes the baseline, prints every clone and lists each accepted one still lacking a reason. The jscpd version is pinned exactly in `package.json`, because the baseline's fingerprints are that version's format.
 
-`tests/lint/test_image_layer_table_drift.py` checks README.md's and ARCHITECTURE.md's image-layer
-tables against the Containerfile's real install steps, and the README's rebuild-control prose
-against `cmd_build.py`'s `--layer` choices - a fifth install layer or a renamed flag value fails it.
+`architecture-drift-check.js` checks ARCHITECTURE.md's fenced tree/module-map blocks and HTTP route tables against the filesystem and the registered routers, both directions - an entry naming a file that doesn't exist and a real file the doc omits are both failures. Its own fixture tests (`architecture-drift-check.test.js`, run via `node --test`) run ahead of it in `just lint`.
+
+`tests/lint/test_image_layer_table_drift.py` checks ARCHITECTURE.md's image-layer table against the Containerfile's real install steps - a fifth install layer, or one the table omits, fails it.
 
 ### Frontend (vite + vitest)
 
 ```bash
 just install-fe         # npm ci in src/claudebox_frontend
-just build-fe           # vite build → src/claudebox_frontend/dist/
+just build-fe           # vite build -> src/claudebox_frontend/dist/
 just test-fe            # vitest run
 just test-fe-cov        # vitest run --coverage
 
 # Not in justfile (one-time setup / runtime):
-cd lib/src/claudebox_frontend && npm run dev   # dev server (proxies /api to container API)
+cd src/claudebox_frontend && npm run dev   # dev server (proxies /api to container API)
 ```
 
 ### E2E (playwright + pytest + spec-coverage)
 
 ```bash
 just install-e2e-app          # npm ci in e2e/app + Playwright browsers (chromium)
-just test-e2e-app             # Playwright at lib/e2e/app/
-just test-e2e-cli             # pytest at lib/e2e/cli/
+just test-e2e-app             # Playwright at e2e/app/
+just test-e2e-cli             # pytest at e2e/cli/, one worker per core
 just test-e2e-cov             # spec-coverage.js (// SPEC: + # SPEC: tracking)
 just update-e2e-app-snapshots # regenerate visual regression snapshots
 ```
@@ -121,17 +114,17 @@ just test-ui-run             # run arbitrary Playwright script against test UI
 
 External runtime SDK / library imports are restricted to their respective adapter files. Any other source file importing them fails `just check`:
 
-- `claude_agent_sdk` — only in `lib/src/claudebox/agent_session/runtime_claude.py`
-- `langchain*` / `langgraph*` (full prefix families) — only in `lib/src/claudebox/agent_session/runtime_langgraph.py` and `lib/src/claudebox/agent_session/langgraph_tools/`
+- `claude_agent_sdk` — only in `src/claudebox/agent_session/runtime_claude.py`
+- `langchain*` / `langgraph*` (full prefix families) — only in `src/claudebox/agent_session/runtime_langgraph.py` and `src/claudebox/agent_session/langgraph_tools/`
 
 The boundary is enforced two ways:
 
 1. **Structurally** — the `AgentSession` Protocol (ARCHITECTURE.md §1.4) is the only legitimate dependency target for any module needing a runtime. Consumers depend on the Protocol, not on the SDK directly.
-2. **Statically** — the `SdkContainmentAudit` class in `lib/scripts/python-guidelines-audit.py` (an AST import walk over `src/` and `tests/`) flags forbidden imports outside their adapter file. Each rule carries the package regex, an allowlist (the adapter file plus the test files that legitimately exercise the SDK→AgentEvent boundary with SDK-typed fixtures), and the containment message. The audit runs as `just lint`.
+2. **Statically** — the `SdkContainmentAudit` class in `scripts/python-guidelines-audit.py` (an AST import walk over `src/` and `tests/`) flags forbidden imports outside their adapter file. Each rule carries the package regex, an allowlist (the adapter file plus the test files that legitimately exercise the SDK→AgentEvent boundary with SDK-typed fixtures), and the containment message. The audit runs as `just lint`.
 
-Prefix-pattern enforcement matters because the LangChain ecosystem ships new provider packages monthly (e.g. `langchain_anthropic`, `langchain_groq`, `langchain_xyz_future_provider`). A regex-bounded match (`^(langchain|langgraph)($|_|\.)`) auto-bans every future package without per-package list maintenance — the previous ruff `banned-api` table required enumerating each one and would have decayed into a treadmill.
+Prefix-pattern enforcement matters because the LangChain ecosystem ships new provider packages monthly (e.g. `langchain_anthropic`, `langchain_groq`, `langchain_xyz_future_provider`). A regex-bounded match (`^(langchain|langgraph)($|_|\.)`) auto-bans every future package without per-package list maintenance — an enumerated ban list would need a new entry for every package.
 
-When adding a new runtime (`runtime_<name>.py`), add a `_ContainmentRule` to `SdkContainmentAudit.RULES` in `lib/scripts/python-guidelines-audit.py` with the package regex, allowlist, and containment message — same shape as existing rules. No other config changes needed.
+When adding a new runtime (`runtime_<name>.py`), add a `ContainmentRule` to `SdkContainmentAudit.RULES` in `scripts/python-guidelines-audit.py` with the package regex, allowlist, and containment message — same shape as existing rules. No other config changes needed.
 
 A tool family whose *behavior* (not its SDK-typed construction) is shared across runtimes never gets written twice to satisfy this rule: SDK-typed construction (`tool()`/`create_sdk_mcp_server()`, `@tool` decorators) stays inside its adapter file, but the logic it wraps lives in a plain-Python, runtime-neutral module each adapter imports and binds thinly — see `agent_session/_sibling_sessions.py` and its two bindings (`runtime_claude.py`, `langgraph_tools/sibling.py`) for the pattern.
 
@@ -155,7 +148,7 @@ Adding a new runtime means: (a) implement the adapter file per §SDK Containment
 
 ### Orchestration Boundary
 
-`claudebox_container_api/` is HTTP plumbing only — FastAPI handlers, the app wiring, the lifespan context manager (`session.py`), and the file service. All session orchestration (lifecycle, event pipeline, conversion, persistence, projection, broadcaster) lives in `claudebox/agent_session/orchestration/` and is part of core, not the container API. Handlers import from `claudebox.agent_session.orchestration`, never the inverse — orchestration code that needs container-API-layer behavior (e.g., the per-session log file attach/detach hooks) carries an explicit, sanctioned back-arrow import documented in the source.
+`claudebox_container_api/` is HTTP plumbing only — FastAPI handlers, the app wiring, the lifespan context manager (`session.py`), and the file service. All session orchestration (lifecycle, event pipeline, conversion, persistence, projection, broadcaster) lives in `claudebox/agent_session/orchestration/` and is part of core, not the container API. Handlers import from `claudebox.agent_session.orchestration`, never the inverse; an import-linter contract in `pyproject.toml` holds that boundary in `just lint`.
 
 ### Capability-Gated UI
 
@@ -189,7 +182,8 @@ await loop.run_in_executor(self._executor, self._resolver.resolve, candidates, t
 - ✅ **Always** use `claudebox.serialization` for JSON (re-exported from `claudebox/core/serialization.py`) — custom encoder handles datetime, Path, dataclass
 - ✅ **Always** use `pathlib.Path` — never raw string path manipulation
 - ✅ **Always** accept `str | Path` on public APIs, convert to `Path` internally
-- 🚫 **Never** import from `claudebox_cli` or `claudebox_container_api` — framework has zero reverse dependencies
+- 🚫 **Never** import from `claudebox_cli`, `claudebox_container_api` or `claudebox_daemon` — framework has zero reverse dependencies; an import-linter contract holds it in `just lint`
+- ✅ **Always** decide "file unchanged" with `claudebox.core.file_cache.file_stamp` (through `FileCache` or `MtimeWatcher`) — never by comparing mtime or size alone, which collide within one clock tick
 
 **Extending the hook system**: New hooks follow the `@hook` / `@statusline` decorator pattern. The decorator handles stdin/stdout JSON I/O. `@hook` functions receive `request` and `response` kwargs — mutate the response builder (`.add_to_context()`, `.show()`, `.stop()`). `@statusline` functions receive `request` and return a display string.
 
@@ -223,7 +217,7 @@ Notes:
 - ✅ **Always** use title-case, colon-terminated section headings and indent their content two spaces
 - ✅ **Always** put trailing prose under a heading (`Notes:` when nothing more specific fits) — never a bare paragraph
 - ✅ **Always** use single backticks for literal values and paths; double backticks render literally and read as noise
-- 🚫 **Never** state an option's default in the epilog — it belongs in that option's `help=`, which is the single source (the formatter no longer appends one)
+- 🚫 **Never** state an option's default in the epilog — it belongs in that option's `help=`, which is the single source (the formatter appends none)
 
 ### Cold path
 
@@ -235,7 +229,7 @@ Shell completion re-executes the program on every keypress, so import-time work 
 - ✅ **Always** keep the parser complete. Completion accuracy is non-negotiable: the win comes from making the full parser cheap to build, never from describing fewer verbs or flags
 - 🚫 **Never** re-export a name from `claudebox/__init__.py` that is also a submodule name — importing the submodule binds it on the package and shadows the export (see ARCHITECTURE.md §2, "CLI cold path")
 
-**Volume mounts**: New mounts go in `get_volumes()` generator in `claudebox.containers.run`. Each mount is a `(host_path, container_path)` tuple via `prepare_volume()` which resolves and ensures host path exists.
+**Volume mounts**: New mounts go in `get_volumes()` generator in `claudebox.containers.run`. Each mount is a `(host_path, container_path, read_only)` triple: `prepare_volume()` resolves the pair and ensures the host path exists, and the third element decides whether the argv carries `:ro`. Default to writable; the library and the runtime overlay are read-only because they are the code the host itself runs (ARCHITECTURE.md §2.4).
 
 ---
 
@@ -250,6 +244,8 @@ Three-layer DDD with strict import boundaries:
 | App | `app.py`, `serving.py` | FastAPI factory, server wiring, lifespan composition |
 | Handlers | `handlers/` | Thin HTTP adapters — delegate immediately to domain |
 | Domain | `domain/` | Business logic in aggregates (`boards/`, `containers/`, `sessions/`, `ui_state/`, `workspaces/`) |
+
+An import-linter layers contract holds the order `app` → `serving` → `handlers` → `domain` in `just lint`: no module imports one from a layer above it.
 
 - ✅ **Always** keep handlers thin — delegate via `**body.model_dump()`, zero business logic
 - ✅ **Always** import domain types through `domain/__init__.py` facade — never reach into sub-modules
@@ -359,6 +355,7 @@ claudebox -- <command>      # custom command (bypass agent)
 ### Conventions
 
 - ✅ **Always** use `set -euo pipefail` in scripts (after shebang, before logic)
+- ✅ **Always** wait on the condition itself - a process exiting, a port answering - in a bounded poll, never a fixed `sleep` before acting: a fixed sleep is paid in full even when the condition held at once (see `cleanup()` in `bin/claudebox_daemon.sh`)
 - ✅ **Always** use guard flags for one-time initialization (e.g., `__CLAUDEBOX_BASHENV_LOADED__`)
 - ✅ **Always** source container hooks (`container-start.sh`, `container-end.sh`) — they run in entrypoint's shell context
 - ✅ Agent hooks (`agent-start.sh`, `agent-stop.sh`) are executed as subprocesses, not sourced
@@ -419,7 +416,7 @@ CLAUDEBOX_DEV=1 container_api_launcher.sh
 - ✅ **Always** use the facade pattern — `session.py` is the only public interface to the session package
 - ✅ **Always** use callbacks for child→parent notification — components don't import their parents
 - ✅ **Always** use dependency injection — components receive dependencies via constructor
-- 🚫 **Never** import session internals (pipeline, broadcaster, persistence) from handlers — go through `session.get_session()` / `session.get_registry()`
+- 🚫 **Never** import session internals (pipeline, broadcaster, persistence) from handlers — go through `session.get_session()` / `session.get_registry()`; an import-linter contract forbids the direct import in `just lint`
 - 🚫 **Never** access `session.registry` from within the session package — handlers-only
 
 ### Event Architecture
@@ -451,33 +448,33 @@ Features are **modular, self-contained, and encapsulated** — everything a feat
 
 ```
 src/
-  main.jsx        — Entry point
-  main.css        — Cascade orchestrator (imports all feature index.css in order)
-  api/            — API client modules (one per endpoint group)
-  config/         — App configuration and constants (layout, panel, timing, dimensions, thresholds, urls, storage)
-  context/        — React contexts (app-wide state providers)
-  features/       — Feature modules (self-contained)
+  main.jsx        - Entry point
+  main.css        - Cascade orchestrator (imports all feature index.css in order)
+  api/            - API client modules (one per endpoint group)
+  config/         - App configuration and constants (layout, panel, timing, dimensions, thresholds, urls, storage)
+  context/        - React contexts (app-wide state providers)
+  features/       - Feature modules (self-contained)
     {feature}/
-      index.js            — Barrel re-export of root component
-      index.css           — Barrel import of feature styles (public entry point)
-      {Feature}.jsx       — Root component (Panel suffix for side panels)
-      {Feature}.css       — Styles for root component (same filename as .jsx)
-      components/         — Sub-components (fractal nesting)
-        {Leaf}.jsx        — Leaf component (no exclusive dependencies)
-        {Complex}/        — Component with exclusive children, hooks, or utils
+      index.js            - Barrel re-export of root component
+      index.css           - Barrel import of feature styles (public entry point)
+      {Feature}.jsx       - Root component (Panel suffix for side panels)
+      {Feature}.css       - Styles for root component (same filename as .jsx)
+      components/         - Sub-components (fractal nesting)
+        {Leaf}.jsx        - Leaf component (no exclusive dependencies)
+        {Complex}/        - Component with exclusive children, hooks, or utils
           {Complex}.jsx
-          {Complex}.css   — Styles for this component (same filename as .jsx)
-          components/     — Exclusive child components (pattern repeats)
-          hooks/          — Hooks exclusive to this component
-          utils/          — Utils exclusive to this component
-      hooks/              — Feature-scoped custom hooks
-      utils/              — Feature-scoped pure functions (extracted from hooks/components)
-      effects/            — Side-effect components: container lifecycle (recovery, status, stop), daemon reconnection, session routing, workspace accent/reset, plus session bridges (NewSessionBridge, SessionDataBridge). App feature only.
-  components/     — Cross-feature React components (CopyButton)
-    index.css           — Barrel import of cross-feature component styles
-  hooks/          — Cross-feature hooks (useLocalStorage)
-  utils/          — Cross-feature pure functions (formatters, parsers, eventProcessing)
-  managers/       — Coordination logic classes (SidePanelManager, SessionTabManager, BoardTabManager, PathResolutionManager, SSEConnectionManager)
+          {Complex}.css   - Styles for this component (same filename as .jsx)
+          components/     - Exclusive child components (pattern repeats)
+          hooks/          - Hooks exclusive to this component
+          utils/          - Utils exclusive to this component
+      hooks/              - Feature-scoped custom hooks
+      utils/              - Feature-scoped pure functions (extracted from hooks/components)
+      effects/            - Side-effect components: container lifecycle (recovery, status, stop), daemon reconnection, session routing, workspace accent/reset, plus session bridges (NewSessionBridge, SessionDataBridge). App feature only.
+  components/     - Cross-feature React components (CopyButton)
+    index.css           - Barrel import of cross-feature component styles
+  hooks/          - Cross-feature hooks (useLocalStorage)
+  utils/          - Cross-feature pure functions (formatters, parsers, eventProcessing)
+  managers/       - Coordination logic classes (SidePanelManager, PathResolutionManager, SSEConnectionManager)
 ```
 
 **Import rules** — enforced by convention, not tooling:
@@ -520,7 +517,7 @@ Split contexts exist to prevent unnecessary re-renders. This is the most common 
 ```javascript
 // Canonical component structure:
 // 1. File header comment
-// 2. Imports (Biome auto-organizes alphabetically — `just fix` to apply)
+// 2. Imports (Biome auto-organizes alphabetically - `just fix` to apply)
 // 3. function declaration (never arrow)
 // 4. hooks at top
 // 5. handlers
@@ -545,6 +542,9 @@ export default ComponentName
 - ✅ **Always** destructure props in the function signature
 - ✅ **Always** use `handle*` for internal handlers, `on*` for callback props
 - 🚫 **Never** build a component-override map inline in a render body when the subtree beneath it is expensive — it's used as the JSX element type per tag, so a new identity per render forces React to rebuild instead of reconcile. Hoist to module scope; route per-render values through context instead of a closure (see ARCHITECTURE.md §5.8)
+- ✅ **Always** pass `Markdown` the base its text's relative paths were written against (`baseDir` or `baseUrl`); it has no default, because a default chosen for the agent's text points every other origin's links into the workspace (see ARCHITECTURE.md §5.8)
+- 🚫 **Never** compute clock-relative text ("5m ago", a window edge) from `Date.now()` in a render body - memoised parents redraw on data change only, so it freezes. Read `useRelativeTime` / `RelativeTime`, or `useNow` for a ticking number (see ARCHITECTURE.md §5.5)
+- 🚫 **Never** trust the shape of a value arriving from a tool call — the container guarantees only that its input is an object, and every field inside it is whatever the model or tool server produced. Check shape once where the component reads its input, never at each use (see ARCHITECTURE.md §5.10)
 
 ### API Patterns
 
@@ -562,6 +562,10 @@ Three tiers for API calls:
 - User actions (send, interrupt): catch → `setError()` via InteractionContext
 - Best-effort ops (persistence, scroll): `.catch(() => {})` with comment
 - SSE errors: reconnect silently
+- Send is not fire-and-forget: it reports its outcome, and every caller holds what it was sending until that outcome says it arrived
+- State several senders read (the inline-reply buffer) is claimed for the length of one send and settled on its outcome; reading it and clearing it after the await lets a second send carry the same data
+- A reader that can refuse says why apart from "nothing there": a `null` that means empty, blocked and busy at once gets read as empty
+- `setError` is display only: behavior that must follow a failure is driven by that operation's outcome, never by watching `errorMessage`
 
 ### Styling
 
@@ -570,6 +574,7 @@ Three tiers for API calls:
 - State modifiers via chaining: `.turn-container.pending`
 - CSS variables for theme values (defined in `features/app/App.css`)
 - Font stacks are pinned, not generic: `--font-sans` / `--font-mono` (`features/app/App.css`) lead with a self-hosted webfont (`@fontsource/inter`, `@fontsource/jetbrains-mono`) so text renders identically everywhere. 🚫 **Never** write a bare `font-family: monospace` / `system-ui` directly in component CSS — use the variable, which still falls back to the OS stack if the webfont fails to load.
+- Every symbol the app draws as text - check marks, ellipses, arrows, circles, box drawing - must come from a pinned font or be an icon. Inter and JetBrains Mono ship only their Latin, Cyrillic, Greek and Vietnamese subsets, so each stack carries a pinned DejaVu face second (`@fontsource/dejavu-sans`, `@fontsource/dejavu-mono`) to draw what they lack; a symbol neither covers falls to the machine's own fonts and makes screenshots machine-dependent. The same holds for `pre`, `code`, `kbd` and `samp`, which the browser gives its generic `monospace` unless the app foundation reset re-points them, and for any library taking its own font setting (Mermaid's `fontFamily` is `var(--font-sans)`, and so is every per-diagram `*FontFamily` key - sequence, journey, timeline and C4 carry their own, which the global setting does not reach).
 - The pinned mono face ships contextual alternates that merge `--`, `->` and `!=` into one glyph, so `:root` carries `font-variant-ligatures: no-contextual` — the narrowest setting that disables them, since the face ships no `liga` table for `font-variant-ligatures: none` to act on beyond `calt` — and the `button, input, select, textarea` reset re-inherits it, since the UA font shorthand resets it on form controls.
 - Continuous **decorative** animations (shimmers, glows, spinners) must animate compositor-accelerated properties (`transform` / `opacity`) — never animate custom properties that feed `background`/`box-shadow`/gradient repaints, which run on the main thread and stutter under load (e.g. while streaming). Rotate a transform-driven layer and reveal it through a border/mask instead
 - `src/main.css` is the top-level cascade orchestrator — imports feature and cross-feature `index.css` files in deterministic order
@@ -633,12 +638,12 @@ Four layers within each feature, each with a clear responsibility:
 | Components | `features/{feature}/components/` | Render UI from props/hooks. ≤500 lines target. | `Turn`, `ChatInput`, `SessionItem` |
 | Hooks | `features/{feature}/hooks/` | Stateful behavior, subscriptions, side effects — React lifecycle only | `useFavicon`, `useNotifications`, `useBlockCollapse` |
 | Utils | `features/{feature}/utils/` | Pure functions — computation, parsing, data transforms, no React | `buildSessionTree()`, `categorizeCommands()`, `findAllBlocks()` |
-| Managers | `managers/` (root) or feature root | Coordination logic, layout math, multi-step workflows | `SidePanelManager`, `SessionTabManager`, `SSEConnectionManager`, `ChatController` |
+| Managers | `managers/` (root) or feature root | Coordination logic, layout math, multi-step workflows | `SidePanelManager`, `SSEConnectionManager`, `ChatController` |
 
 **Hook ↔ Utils split**: Hooks contain only React lifecycle (state, effects, callbacks, refs). Non-React logic is extracted to `utils/` and imported back. The hook becomes a thin orchestrator:
 
 ```javascript
-// ✅ Hook imports pure functions, owns only React lifecycle
+// Good: Hook imports pure functions, owns only React lifecycle
 import { buildNotificationTitle, playChime, getResponsePreview } from '../utils/notifications'
 
 export default function useNotifications({ isResponding, events, ... }) {
@@ -685,11 +690,10 @@ Each context should own **one concern**. Split when a context mixes unrelated re
 
 ### Context Write-Back Loops
 
-A context value that a component both **writes to** and **renders from** is a loop waiting to
-close. It closes when an effect writes on every run and the write always changes state identity:
+A context value that a component both **writes to** and **renders from** is a loop waiting to close. It closes when an effect writes on every run and the write always changes state identity:
 
 ```jsx
-// 🚫 the shape that loops
+// Bad: the shape that loops
 <IconStrip bottomPanels={['logs']} />        // new array identity every render
 useEffect(() => {
   register(id)                                // adds -> new Map -> new context value
@@ -697,54 +701,30 @@ useEffect(() => {
 }, [bottomPanels])                            // identity changed -> runs again -> forever
 ```
 
-The parent re-renders because the context value changed, rebuilds the literal, and the effect runs
-again. Early-return guards inside the setters do not save it: remove-then-add nets to unchanged
-content but two new identities. React aborts the tree with "maximum update depth exceeded" and the
-page goes blank — though it may only cross that threshold under load, spinning and burning CPU the
-rest of the time.
+The parent re-renders because the context value changed, rebuilds the literal, and the effect runs again. Early-return guards inside the setters do not save it: remove-then-add nets to unchanged content but two new identities. React aborts the tree with "maximum update depth exceeded" and the page goes blank — though it may only cross that threshold under load, spinning and burning CPU the rest of the time.
 
 - ✅ **Always** hoist array/object literals passed as props to module constants, or `useMemo` them
-- ✅ **Always** key an effect on a value's **content** (e.g. a joined id string) when the container
-  holding it is rebuilt each render
-- ✅ **Always** make context writers idempotent — return the previous state when the new state is
-  content-equal, so a repeated write costs nothing
-- ✅ **Always** state ownership declaratively (`setIds(side, ids)`) rather than as incremental
-  add/remove pairs, so there is no intermediate state to churn through
-- 🚫 **Never** release-and-reclaim on every dependency change when the intent is "release on
-  unmount" — that is the churn, not the cleanup
-- 🚫 **Never** mock a context's writers to `vi.fn()` in the only test that renders the component —
-  the real provider never runs, and this entire class of bug stays invisible
+- ✅ **Always** key an effect on a value's **content** (e.g. a joined id string) when the container holding it is rebuilt each render
+- ✅ **Always** make context writers idempotent — return the previous state when the new state is content-equal, so a repeated write costs nothing
+- ✅ **Always** state ownership declaratively (`setIds(side, ids)`) rather than as incremental add/remove pairs, so there is no intermediate state to churn through
+- 🚫 **Never** release-and-reclaim on every dependency change when the intent is "release on unmount" — that is the churn, not the cleanup
+- 🚫 **Never** mock a context's writers to `vi.fn()` in the only test that renders the component — the real provider never runs, and this entire class of bug stays invisible
 
-**The same loop closes without a context, from a single dep-less effect.** An identity-guarded
-`setState` inside a `useLayoutEffect` with no dependency array looks harmless - it runs every
-commit, but only dispatches when the value actually changed:
+**The same loop closes without a context, from a single dep-less effect.** An identity-guarded `setState` inside a `useLayoutEffect` with no dependency array looks harmless - it runs every commit, but only dispatches when the value actually changed:
 
 ```jsx
-// 🚫 the shape that loops - no context in sight, but the same mechanism
+// Bad: the shape that loops - no context in sight, but the same mechanism
 useLayoutEffect(() => {
   const value = ref.current
   setValue(prev => (prev === value ? prev : value))   // guarded... but the guard is not enough
 })
 ```
 
-The guard is checked inside the updater, but React only *consults* the updater's return value
-after deciding it cannot bail out eagerly - and the eager bail-out itself only applies while the
-fiber carries no other pending work. The instant anything else dispatches from the same commit
-(another effect, a child's `useReducer`, a measurement callback firing earlier in the same layout
-phase), the bail-out fails and this "guarded" call schedules a real update anyway, despite
-returning an unchanged value. Riding along with whatever legitimate churn is already happening,
-that redundant reschedule is what pushes a session past React's fifty-nested-update limit - see
-`useMirroredScrollElement`'s history in `useVirtualListGeometry.js` for the production instance,
-and its `useVirtualListGeometry.test.jsx` for a reproduction of the mechanism in isolation.
+The guard is checked inside the updater, but React only *consults* the updater's return value after deciding it cannot bail out eagerly - and the eager bail-out itself only applies while the fiber carries no other pending work. The instant anything else dispatches from the same commit (another effect, a child's `useReducer`, a measurement callback firing earlier in the same layout phase), the bail-out fails and this "guarded" call schedules a real update anyway, despite returning an unchanged value. Riding along with whatever legitimate churn is already happening, that redundant reschedule is what pushes a session past React's fifty-nested-update limit - see ARCHITECTURE.md §5.5 "Scroll-element attachment" for the production instance, and `useVirtualListGeometry.test.jsx` for a reproduction of the mechanism in isolation.
 
-- ✅ **Always** hold the last-seen value in a `ref` and gate the dispatch *before* calling the
-  setter, not inside the updater - `if (ref.current !== value) { ref.current = value; setValue(value) }`
-- ✅ **Always** prefer driving the write from attachment (a stable callback ref, fired by React
-  only on a real mount/unmount/node-swap) over mirroring a ref into state on every commit, when the
-  value in question is a DOM node or anything else React already has an attachment hook for
-- 🚫 **Never** trust an identity-guarded updater alone to make a dep-less effect free - it is only
-  free until something else on the same fiber has pending work, which is not an edge case in a
-  tree with virtualizers, ResizeObservers, or streaming updates nearby
+- ✅ **Always** hold the last-seen value in a `ref` and gate the dispatch *before* calling the setter, not inside the updater - `if (ref.current !== value) { ref.current = value; setValue(value) }`
+- ✅ **Always** prefer driving the write from attachment (a stable callback ref, fired by React only on a real mount/unmount/node-swap) over mirroring a ref into state on every commit, when the value in question is a DOM node or anything else React already has an attachment hook for
+- 🚫 **Never** trust an identity-guarded updater alone to make a dep-less effect free - it is only free until something else on the same fiber has pending work, which is not an edge case in a tree with virtualizers, ResizeObservers, or streaming updates nearby
 
 ### Hook Scope
 
@@ -766,7 +746,7 @@ Same single-responsibility rule applies to hooks:
 ### Interaction Patterns
 
 - ✅ **Always** use the Pointer Events API (`onPointerDown`/`onPointerMove`/`onPointerUp`, `addEventListener('pointer*')`) for drag, click-vs-drag, scroll-gating, and resize handlers. Filter `event.pointerType === 'touch'` when behavior should fire only on touch gestures.
-- ✅ **Always** import shared helpers from `utils/pointer.js` (`isPrimaryPointer` today; `getPointerDistance` and `DRAG_THRESHOLD_PX` land alongside their first click-vs-drag consumer).
+- ✅ **Always** import shared helpers from `utils/pointer.js` (`isPrimaryPointer`).
 - ✅ **Always** keep `mousedown` for outside-click detection (`useDropdown`, `useAttachments`) and prevent-blur handlers (`SessionItem`, `SessionNameEditor`, `CommandAutocomplete`) — those target click semantics, not drag.
 - ✅ **Always** keep `mouseenter`/`mouseleave` for pure hover affordances — pointer events fire alongside on desktop, no migration needed.
 - 🚫 **Never** pair `touchstart`+`mousedown` listeners on the same element — choose pointer events instead.
@@ -777,7 +757,7 @@ When the frontend communicates with the daemon (multi-workspace mode), these con
 
 **Workspace-scoped API calls**: All container endpoints are prefixed with `/api/workspaces/{workspace_id}/`. Use `workspaceFetch(path, options)` from `api/apiClient.js` — it auto-injects the workspace prefix. Container-scoped calls use `containerFetch(path, options, containerId?)`, which further adds the container ID prefix: the active session's by default, or an explicit `containerId` (resolved from `ContainerMapContext`'s session→container map) to address a session other than the active one. `containerUrl(path, containerId?)` takes the same optional third argument for SSE URL construction. For daemon-level endpoints (`/api/daemon/*`), use plain `fetch()`.
 
-**Daemon SSE stream**: The daemon broadcasts events via `GET /api/daemon/stream`. Current event types: `container_status` (container lifecycle changes), `session_progress` (progress during create/resume/fork), and `sessions_changed` (session list mutations). The frontend subscribes via `useDaemonStream()` hook (`hooks/useDaemonStream.js`), which wraps `useSSE`. New daemon-level push events should be added as dataclasses in the appropriate domain models module and broadcast via the shared `Broadcaster`.
+**Daemon SSE stream**: The daemon broadcasts events via `GET /api/daemon/stream`. Current event types: `container_status` (container lifecycle changes), `session_progress` (progress during create/resume/fork), `sessions_changed` (session list mutations), and `board_update` (a board's files changed). The frontend subscribes via `useDaemonStream()` hook (`hooks/useDaemonStream.js`), which wraps `useSSE`. New daemon-level push events should be added as dataclasses in the appropriate domain models module and broadcast via the shared `Broadcaster`. Every daemon event type needs a consumer in `useDaemonStream` or the CLI, and every type those branch on must be emitted; `tests/lint/test_daemon_event_consumers.py` enforces both directions.
 
 **Frontend failure reporting**: `api/errorReport.js`'s `reportError({ kind, message, stack })` best-effort-POSTs to `/api/daemon/report`, deduplicated client-side by `kind:message`, and logs to the daemon log via `DaemonService.report_frontend_error`. A `catch` that only degrades silently or `console.warn`s should call this instead — see `ErrorBoundary`'s `componentDidCatch` and `useLocalStorage`'s persist-failure catch. Never pass message text, draft content, or file contents — `message` identifies the failure, not the conversation.
 
@@ -785,13 +765,15 @@ When the frontend communicates with the daemon (multi-workspace mode), these con
 
 **Coalescing a signal-driven refetch**: when an external signal (SSE event, poll interval, cross-tab storage event) can trigger the same fetch faster than it resolves, coalesce onto one in-flight request rather than firing one per signal. Shape: an in-flight-promise ref, an identity ref recording what the request addressed (workspace, container, board id), a pending flag a joiner sets, and an ownership check in the settling `finally` (`if (inFlightRef.current === run)`) so a request superseded by a fresh one for a different identity neither clears the new one's bookkeeping nor applies its own stale response to state. A joiner awaits `createDeferred()` (`utils/deferred.js`), resolved once the re-armed refetch settles — never the in-flight promise it joined, which resolves on data older than the joiner's own request. See `context/SessionDataContext.jsx`, `features/boards/hooks/useBoardData.js`, and `context/SessionsContext.jsx`.
 
+**Hydrating per-session state**: an effect that fetches for a session id guards its reply with a `cancelled` flag set in its cleanup (`BottomPanelsContext`, `useTerminalSplit`), resets to defaults on change, and skips any key the reader has set since the request. A fetch in a callback rather than an effect uses a request-sequence ref that local writes bump.
+
 ---
 
 ## 7. Testing
 
 ### Commands
 
-All commands run from `lib/` via [just](https://github.com/casey/just) — `just --list` for the full list.
+All commands run from the repository root via [just](https://github.com/casey/just) — `just --list` for the full list.
 
 ```bash
 # All tests (python + frontend unit + e2e)
@@ -811,7 +793,7 @@ just test-py-cov
 just test-fe
 
 # Frontend unit tests (specific file)
-just test-fe src/features/chat/components/tools/utils/helpers.test.js
+just test-fe src/utils/formatters.test.js
 
 # E2E tests (playwright)
 just test-e2e-app
@@ -819,14 +801,9 @@ just test-e2e-app
 
 ### Visual Regression Snapshots
 
-`visual-regression.spec.js` renders identically in the container and on a
-local dev machine — the app pins its own webfonts (see Styling above), so
-either is a valid source of truth. A failure is a genuine visual difference
-(or occasionally a real bug); investigate it, never dismiss it as noise.
+`visual-regression.spec.js` renders identically in the container and on a local dev machine — the app pins its own webfonts (see Styling above), so either is a valid source of truth. A failure is a genuine visual difference (or occasionally a real bug); investigate it, never dismiss it as noise.
 
-Regenerate reference images only when a change is intended to alter the
-rendered output, via `just update-e2e-app-snapshots` (runs the suite with
-`--update-snapshots`).
+Regenerate reference images only when a change is intended to alter the rendered output, via `just update-e2e-app-snapshots` (runs the suite with `--update-snapshots`).
 
 ### Documentation Screenshots
 
@@ -837,21 +814,13 @@ just docs-captures         # check the committed captures against the app; fails
 just update-docs-captures  # re-record every one of them
 ```
 
-- Captures live beside the pages that embed them (`docs/features/images/`, `docs/guide/images/`), one
-  PNG per capture, named for what it shows. The file Playwright writes IS the committed artifact -
-  the `docs` project's `snapshotPathTemplate` points there, so nothing is copied by hand.
-- ✅ **Always** pass the snapshot name as an array (`['features', 'images', 'x.png']`). A
-  slash-bearing string is sanitised and the capture lands flat in `docs/`.
-- ✅ **Always** compare at the default zero tolerance. The visual suite's one-percent allowance is
-  for antialiasing; a docs capture that drifts is a stale picture, and widening the tolerance hides
-  exactly the staleness the gate exists to catch.
-- ✅ **Always** drive state from a fixture with fixed timestamps. Anything reading the wall clock -
-  a running turn's elapsed counter above all - moves between runs and cannot be captured.
-- 🚫 **Never** mask a region: a mask paints a solid box into a PNG that ships. Choose a state with
-  nothing live in frame instead.
+- Captures live beside the pages that embed them, in an `images/` directory next to the page (`docs/features/images/`, `docs/guide/images/`), one PNG per capture, named for what it shows. The file Playwright writes IS the committed artifact - the `docs` project's `snapshotPathTemplate` points there, so nothing is copied by hand.
+- ✅ **Always** pass the snapshot name as an array (`['features', 'images', 'x.png']`). A slash-bearing string is sanitised and the capture lands flat in `docs/`.
+- ✅ **Always** compare at the default zero tolerance. The visual suite's one-percent allowance is for antialiasing; a docs capture that drifts is a stale picture, and widening the tolerance hides exactly the staleness the gate exists to catch.
+- ✅ **Always** drive state from a fixture with fixed timestamps. Anything reading the wall clock - a running turn's elapsed counter above all - moves between runs and cannot be captured.
+- 🚫 **Never** mask a region: a mask paints a solid box into a PNG that ships. Choose a state with nothing live in frame instead.
 - 🚫 **Never** capture a panel in its empty or error state unless the empty state is the subject.
-- Three captures per page is the ceiling, not a quota, and content is invented - no real workspace,
-  employer or personal vocabulary, and no `foo`/`test123` placeholders either.
+- Four captures per page is the ceiling, not a quota, and content is invented - no real workspace, employer or personal vocabulary, and no `foo`/`test123` placeholders either.
 
 ### Principles
 
@@ -864,7 +833,7 @@ just update-docs-captures  # re-record every one of them
 - 🚫 Don't test language guarantees — enum names, dataclass defaults, `default_factory` execution, kwarg/keyword enforcement, class constant values, `isinstance` on typed constructs
 - 🚫 Don't re-implement production logic in tests — if suppression logic is `flag and isinstance(msg, X) and msg.field is None`, don't copy that condition into the test; call the actual code path
 
-**Anti-patterns** — if your test fits one of these shapes, delete it or rewrite it. Each of these has shipped here and been regretted.
+**Anti-patterns** — if your test fits one of these shapes, delete it or rewrite it. Each of these has been written here before.
 
 | Shape | Example | Why useless | Where it belongs |
 |-------|---------|-------------|------------------|
@@ -881,8 +850,8 @@ just update-docs-captures  # re-record every one of them
 
 **Python testing:**
 - Framework: pytest with `pytest-anyio` for async, `inline-snapshot` for complex assertions, `pytest-cov` for coverage
-- Test directory: unified `lib/tests/` at project root, mirroring source package layout (`tests/claudebox/`, `tests/claudebox_daemon/`, `tests/claudebox_container_api/`)
-- Test dependencies: `pip install -e ".[test]"` or managed automatically via `uv run pytest`. Inside container: `just test-py` (uses system Python directly).
+- Test directory: unified `tests/` at project root, mirroring source package layout (`tests/claudebox/`, `tests/claudebox_daemon/`, `tests/claudebox_container_api/`)
+- Test dependencies: the `dev` extra, installed by `just install-py`; inside a container the recipes route uv to a venv under `/tmp` (justfile `UV_ENV`).
 - Shared fixtures in `tests/conftest.py`: `anyio_backend` (pinned to asyncio), `tmp_workspace` (temp dir with `.workspace` marker)
 
 **Host safety:**
@@ -893,26 +862,26 @@ Tests run on the host machine inside a [bubblewrap](https://github.com/container
 
 The `e2e/cli/` suite runs the real `claudebox` binary via subprocess. Three layers prevent it from mutating real host state (daemon, `~/.claudebox/`, podman, systemctl):
 
-1. **Sandbox** — bwrap on host (`lib/tests/conftest.py:19-59`) / the container in-container. Same isolation contract either way: read-only root, `tmpfs /tmp` and `/run`, network namespace (loopback brought up automatically). Kernel-level guarantee against escape.
-2. **`lib/e2e/cli/claudebox-test` wrapper** — hard-fails if `CLAUDEBOX_TEST_HOME` or `CLAUDEBOX_TEST_PATH_PREFIX` are unset; sets `HOME`, `UV_OFFLINE=1`, and prepends `$PATH` with `lib/e2e/cli/fake_bins/`; execs `lib/bin/claudebox_cli.sh`. Test-author-error guard: impossible to invoke the wrapper unsafely even outside pytest.
-3. **Fakes + fake daemon** — `lib/e2e/cli/fake_bins/{podman,systemctl,git}` record invocations to `$CLAUDEBOX_TEST_RECORD_DIR` and return canned output; `pytest-httpserver` binds the fake daemon to `127.0.0.1:<random>` (CLI honors `CLAUDEBOX_DAEMON_URL`). Tests verify *what* the CLI did, not just *that* it didn't escape.
+1. **Sandbox** — bwrap on host (`tests/conftest.py:19-59`) / the container in-container. Same isolation contract either way: read-only root, `tmpfs /tmp` and `/run`, network namespace (loopback brought up automatically). Kernel-level guarantee against escape.
+2. **`e2e/cli/claudebox-test` wrapper** — hard-fails if `CLAUDEBOX_TEST_HOME` or `CLAUDEBOX_TEST_PATH_PREFIX` are unset; sets `HOME`, `UV_OFFLINE=1`, and prepends `$PATH` with `e2e/cli/fake_bins/`; execs `bin/claudebox_cli.sh`. Test-author-error guard: impossible to invoke the wrapper unsafely even outside pytest.
+3. **Fakes + fake daemon** — `e2e/cli/fake_bins/{podman,systemctl,git}` record invocations to `$CLAUDEBOX_TEST_RECORD_DIR` and return canned output; `pytest-httpserver` binds the fake daemon to `127.0.0.1:<random>` (CLI honors `CLAUDEBOX_DAEMON_URL`). Tests verify *what* the CLI did, not just *that* it didn't escape.
 
 Test modules using these fixtures must declare `pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])` at module level (the mark does not propagate from `conftest.py`).
 
 **Subject routing for CLI tests:**
 
-- **Parser-level tests** — dispatch, help snapshots, parser errors, unknown verbs — live in `lib/tests/claudebox_cli/`. Fast in-process unit tests via `host_cli.app.parser`. SPEC markers are forbidden here (see §8 — e2e-only).
-- **End-to-end binary-behavior tests** — real `subprocess.run` exec paths, raw `print()` output, Rich/structlog rendering, filesystem side-effects, `Traceback`-absence at the process boundary, `importlib.metadata` resolution from the installed binary — live in `lib/e2e/cli/`. SPEC markers go here.
+- **Parser-level tests** — dispatch, help snapshots, parser errors, unknown verbs — live in `tests/claudebox_cli/`. Fast in-process unit tests via `host_cli.app.parser`. SPEC markers are forbidden here (see §8 — e2e-only).
+- **End-to-end binary-behavior tests** — real `subprocess.run` exec paths, raw `print()` output, Rich/structlog rendering, filesystem side-effects, `Traceback`-absence at the process boundary, the version the installed binary reports — live in `e2e/cli/`. SPEC markers go here.
 
 - ✅ **Always** use `tmp_path` for any filesystem writes — it targets `/tmp` which is writable in the sandbox
-- ✅ **Always** mock `touch_file`/`touch_dir` when testing code paths that create host files (e.g., `get_container_args` → `map_volume`)
+- ✅ **Always** mock `touch_file`/`touch_dir` when testing code paths that create host files (e.g., `get_volumes` → `prepare_volume`)
 - ✅ **Always** mock subprocess/container-backend calls — the sandbox blocks the runtime socket but mocking prevents the call entirely
 - 🚫 **Never** write to paths outside `/tmp` — the sandbox will raise `OSError: Read-only file system`
 - 🚫 **Never** set `PYTEST_SANDBOXED=1` manually to bypass the sandbox — it exists to catch real side effects and protect the host
 
 **Contract testing for utils:**
 ```javascript
-// Utility functions are contracts — test input→output
+// Utility functions are contracts - test input->output
 describe('buildToolHeader', () => {
   it('Bash: shows command', () => {
     expect(buildToolHeader('Bash', { command: 'ls -la' })).toBe('Bash(ls -la)')
@@ -926,6 +895,8 @@ describe('buildToolHeader', () => {
 - Test files co-located: `Component.test.jsx` alongside `Component.jsx`
 
 **Wait for the capability, not for a proxy that paints earlier.** Before `page.keyboard.press` of a global shortcut, await `waitForShortcutsReady(page)` from `e2e/app/helpers.js` (already folded into `waitForAppReady`). The app shell attaches its keydown listener in an effect that runs after paint, so anything visible — the footer included — can be on screen while the listener is not yet attached; a press landing in that gap is dropped silently, nothing retries it, and the check fails on a wait for a panel that never opens. Raising the timeout hides the race instead of removing it and slows every run. The same shape applies to any capability wired up in an effect: wait on a signal the feature itself publishes.
+
+**Per-test budget.** A test has 15 s to finish and each assertion 5 s to hold (`e2e/app/playwright.config.js`): a stuck assertion still fails fast, while a whole test keeps headroom when a parallel run shares a busy machine. A test whose own work outlasts that budget under load - one that waits out an app timer such as the sessions list's 2 s refresh debounce, or replays a long conversation - declares a larger one with `test.setTimeout`, never one at or below the default. The readiness helpers (`waitForAppReady`, `waitForShortcutsReady`) give the footer, the footer's workspace name and the shortcuts-ready marker one shared 15 s budget, so a first response arriving late on a busy machine does not fail a test that is only still loading.
 
 ---
 
@@ -941,6 +912,7 @@ SPEC.md contains testable claims marked with `<!-- claim:[scope]:[name] -->`. Th
 
 - **scope**: UI area (kebab-case; singular by default — see Rules below for the feature-plural exception)
 - **name**: Specific behavior (kebab-case)
+- An id is two or more colon-separated segments: `[scope]:[name]`, or a narrower claim beneath it such as `cli:prune:partial-failure`. Each id is its own claim and needs its own test.
 
 ### Standard Scopes
 
@@ -953,7 +925,9 @@ SPEC.md contains testable claims marked with `<!-- claim:[scope]:[name] -->`. Th
 | `panel-todo` | Todos panel |
 | `panel-stash` | Stash panel |
 | `panel-usage` | Usage panel |
-| `panel-command` | Commands panel |
+| `panel-command` | Skills panel (panel id `commands`) |
+| `panel-cron` | Crons panel |
+| `panel-containers` | Containers panel |
 | `panel-help` | Help panel |
 | `panel-mcp` | MCP panel |
 | `panel-boards` | Boards panel (feature-name plural) |
@@ -971,6 +945,12 @@ SPEC.md contains testable claims marked with `<!-- claim:[scope]:[name] -->`. Th
 | `workspace` | Workspace discovery, switching |
 | `container` | Container lifecycle, overlays |
 | `mobile` | Mobile-specific layout and behavior |
+| `url` | Session URLs and links that carry messages |
+| `session-header` | Session header strip |
+| `bundle` | Session bundles |
+| `cli` | The `claudebox` command line |
+| `runtime`, `langgraph` | Runtime selection and the LangGraph runtime |
+| `<control>:capability-gated` | A control shown only when the runtime supports it |
 
 ### Rules
 
@@ -988,6 +968,7 @@ test('description matches claim', async ({ page }) => {
 ```
 
 - ✅ **Always** anchor SPEC claims from E2E Playwright tests under `e2e/app/tests/*.spec.js` (marker: `// SPEC: scope:name`) or pytest CLI tests under `e2e/cli/test_*.py` (marker: `# SPEC: scope:name`)
+- A marker covers exactly the id it names: `# SPEC: cli:prune:partial-failure` covers that claim and never `cli:prune`
 - 🚫 **Never** put SPEC markers in unit tests (`*.test.js`/`*.test.jsx`/`*_test.py`) — only E2E tests are valid coverage anchors. Unit tests verify implementation details; SPEC.md describes user-visible behavior. If a claim cannot be exercised through E2E, the claim itself is wrong — rewrite it as user-visible behavior or remove it from SPEC.md.
 - 🚫 **Never** use `skip:claim:` to dodge E2E coverage of a real user-facing claim — every legitimate claim must be E2E-anchored
 
@@ -1022,14 +1003,14 @@ These apply to all Python packages (`claudebox`, `claudebox_cli`, `claudebox_dae
 **Docstring sizing** — wrappers and obvious functions get single lines:
 
 ```python
-# ✅ Simple wrapper → single-line docstring
+# Good: Simple wrapper -> single-line docstring
 def dumps(obj: Any, **kwargs) -> str:
     """Serialize object to JSON string using extended encoder."""
 
     return json.dumps(obj, cls=JSONEncoder, **kwargs)
 
 
-# 🚫 Over-documented wrapper (Args/Returns just restate signature)
+# Bad: Over-documented wrapper (Args/Returns just restate signature)
 def dumps(obj: Any, **kwargs) -> str:
     """Serialize Python object to a JSON string.
 
@@ -1052,7 +1033,7 @@ def dumps(obj: Any, **kwargs) -> str:
 - **Obvious private methods**: `_log_context`, `_broadcast_status` — name is the documentation
 
 ```python
-# ✅ Trivial __init__ — class Attributes is sufficient, no __init__ docstring needed
+# Good: Trivial __init__ - class Attributes is sufficient, no __init__ docstring needed
 class ContainerBackend:
     """Container runtime abstraction for podman/docker commands.
 
@@ -1066,7 +1047,7 @@ class ContainerBackend:
         self.verbose = verbose
 
 
-# ✅ Non-trivial __init__ — docstring explains non-obvious behavior
+# Good: Non-trivial __init__ - docstring explains non-obvious behavior
 class Workspace:
     """Resolved workspace with session management."""
 
@@ -1088,18 +1069,18 @@ class Workspace:
 **Variable documentation**: Use comments before, not docstrings after:
 
 ```python
-# ✅ Correct: comment before variable
+# Correct: comment before variable
 # Global log broadcaster for SSE streaming.
 log_broadcaster = LogBroadcaster()
 
-# 🚫 Wrong: docstring after variable (not valid Python docstring semantics)
+# Wrong: docstring after variable (not valid Python docstring semantics)
 log_broadcaster = LogBroadcaster()
 """Global log broadcaster for SSE streaming."""
 ```
 
 ### Keyword-Argument Discipline
 
-- 🚫 **Never** put a `**kwargs` catch-all on a constructor/factory that also declares named callback parameters (`on_*`, `*_callback`, `*_cb`). A caller wiring a misnamed callback (`on_session_start` vs `on_start`) gets it silently swallowed instead of failing loud. Declare the callbacks explicitly and drop the catch-all so an unknown kwarg raises `TypeError`. Enforced by `CallbackCatchAllAudit` in `lib/scripts/python-guidelines-audit.py` (runs under `just lint`).
+- 🚫 **Never** put a `**kwargs` catch-all on a constructor/factory that also declares named callback parameters (`on_*`, `*_callback`, `*_cb`). A caller wiring a misnamed callback (`on_session_start` vs `on_start`) gets it silently swallowed instead of failing loud. Declare the callbacks explicitly and drop the catch-all so an unknown kwarg raises `TypeError`. Enforced by `CallbackCatchAllAudit` in `scripts/python-guidelines-audit.py` (runs under `just lint`).
 - ✅ Underscore-prefixed catch-alls (`**_server_args`) are intentional "ignore the rest" markers and exempt; genuine pass-through wrappers (forwarding to a framework constructor that validates its own kwargs) are fine.
 - 🚫 Methods that apply caller-supplied fields to a model (`update` / `patch` style) should reject unknown fields (`hasattr` guard + raise) rather than blindly `setattr` them, so a typo'd field name fails loud instead of creating a dead attribute.
 
@@ -1110,12 +1091,12 @@ log_broadcaster = LogBroadcaster()
 - ✅ **Always** parameterized generics: `list[str]`, `dict[str, Any]`, `Iterable[str]`
 - ✅ **Always** use `Protocol` with `__call__` for callback type hints — named parameters visible at the call site vs opaque positional types in `Callable[[X, Y], R]`
 - ✅ **Always** use `| None` only when `None` is a meaningful runtime value (optional config, legitimate return) — not for "not yet initialized" attributes
-- ✅ **Always** use `if TYPE_CHECKING:` for imports used only in annotations — string-quote the references (`"Type"`), no `from __future__ import annotations`
+- ✅ **Always** use `if TYPE_CHECKING:` for imports used only in annotations, except names read from annotations at runtime (FastAPI parameters, pydantic fields, `get_type_hints`), which stay real imports; every module with code opens with `from __future__ import annotations`, which ruff requires, so annotations stay unquoted
 
 ### Imports
 
 ```python
-# Order: stdlib → third-party → claudebox core → relative
+# Order: stdlib -> third-party -> claudebox core -> relative
 import asyncio
 import json
 from pathlib import Path
@@ -1141,7 +1122,7 @@ Separate logical phases with blank lines; keep cohesive runs tight. The acid tes
 - 🚫 **Never** hand-tune `def` / `class` blank-line spacing — `ruff format` owns it
 
 ```python
-# ✅ Phases separated; mutually-exclusive dispatch is if/elif/else
+# Good: Phases separated; mutually-exclusive dispatch is if/elif/else
 def serialize(obj: Any) -> Any:
     asdict = getattr(obj, "asdict", None)
 
@@ -1208,6 +1189,14 @@ logger.info("event_name", key="value")
 - ✅ **Always** use structlog's key-value style: `logger.info("event", key=value)`
 - 🚫 **Never** use `print()` for logging — only for protocol I/O (hooks) or user-facing CLI output
 
+### Signalling a Task's End
+
+- 🚫 **Never** tell a waiter that a task has finished from inside that task, `finally` included - a task cancelled before its first step never runs its body. Signal it from `add_done_callback`, or have the waiter await the task itself.
+
+### Copying Trees the Container Can Write
+
+- ✅ **Always** pass `symlinks=True` to `copytree` and `follow_symlinks=False` to `copy2` for a tree the container can write, and drop links resolving outside the tree - a followed link lets the agent pick a host file for the host to copy
+
 ---
 
 ## 10. JavaScript Conventions
@@ -1227,12 +1216,12 @@ These apply to all JS/JSX files in the frontend.
 **File-level comments**: Single line at top of file:
 
 ```javascript
-// ✅ Correct: single-line file comment with blank line before imports
+// Correct: single-line file comment with blank line before imports
 /** Markdown renderer with syntax highlighting for code blocks. */
 
 import ReactMarkdown from 'react-markdown'
 
-// 🚫 Wrong: multi-line file comment, no blank line
+// Wrong: multi-line file comment, no blank line
 /**
  * Markdown renderer component.
  * Uses react-markdown with rehype-highlight for syntax highlighting.
@@ -1243,7 +1232,7 @@ import ReactMarkdown from 'react-markdown'
 **Component JSDoc**: Include `@param` for props:
 
 ```javascript
-// ✅ Correct: JSDoc with @param for props
+// Correct: JSDoc with @param for props
 /**
  * Render a file tree with expandable folders and selectable files.
  * @param {object} props
@@ -1253,7 +1242,7 @@ import ReactMarkdown from 'react-markdown'
  */
 function FileTree({ tree, selectedId, onSelect }) {
 
-// 🚫 Wrong: no @param, or redundant descriptions
+// Wrong: no @param, or redundant descriptions
 /**
  * FileTree component that renders a tree of files.
  * This component displays files in a tree structure.
@@ -1264,13 +1253,13 @@ function FileTree({ tree, selectedId, onSelect }) {
 **Simple functions**: Single-line JSDoc is sufficient:
 
 ```javascript
-// ✅ Simple utility → single-line JSDoc
+// Good: Simple utility -> single-line JSDoc
 /** Format duration in seconds to "Xm Ys" string. */
 function formatDuration(seconds) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 }
 
-// 🚫 Over-documented simple function
+// Bad: Over-documented simple function
 /**
  * Format a duration value.
  * @param {number} seconds - The duration in seconds to format.
@@ -1282,7 +1271,7 @@ function formatDuration(seconds) {
 **Test files**: Only need file-level comment:
 
 ```javascript
-// ✅ Test file: single-line file comment with blank line
+// Good: Test file: single-line file comment with blank line
 /** Tests for FileTree component. */
 
 import { render } from '@testing-library/react'
@@ -1291,3 +1280,12 @@ describe('FileTree', () => {
   // test names are self-documenting
   it('renders folder icons for directories', () => {
 ```
+
+### Per-Session State
+
+- ✅ **Always** scope, don't detect: give per-session transient state an owner (`useSessionOwnership`) and filter by it; a guard on a change of the attached session's id misses A -> nothing -> B
+- ✅ **Always** name the target of a session-scoped call made after an await: fix `{ sessionId, containerId }` before the first await and pass it, since the module address may name another session by then; a write after an await that names "the current session" (the address, a preserved draft) re-checks the routed session first
+- ✅ **Always** end a loading flag with its request: raise it with the request, settle or abort it from the request's caller, arm safety timers only after settle
+- ✅ **Always** treat view state as per-session state: a fold, an open float, an open confirmation or a pin held in a component that outlives the session - the focused chat slot never remounts - is tagged with its owner and reset or restored when the owner changes; a remount is never the reset
+- The `session-transition-guard` audit rule enforces the first; an exception carries `// audit-ignore: session-transition-guard - <reason>`
+- Per-session hook tests drive the sequences in `test-utils/sessionSequences.js`

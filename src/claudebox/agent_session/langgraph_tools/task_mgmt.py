@@ -11,6 +11,8 @@ shape - the frontend's `_applyTaskCreate`/`_applyTaskUpdate`/`_applyTaskResult` 
 (TaskCreate vs task_create) needs normalisation, handled in `schema.js::TOOL_NAME_ALIASES`.
 """
 
+from __future__ import annotations
+
 from typing import Any, cast
 
 from langchain_core.tools import BaseTool, ToolException, tool

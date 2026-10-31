@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../context/SessionDataContext', () => ({
   useSessionData: () => ({
-    availableModels: [],
+    availableModels: [{ id: 'claude-sonnet-4-6', name: 'Sonnet 4.6' }],
     availablePermissionModes: [],
-    availableEffortLevels: [],
+    availableEffortLevels: [{ id: 'high', name: 'High' }],
   }),
 }))
 
@@ -15,50 +15,28 @@ vi.mock('../../../context/SessionsContext', () => ({
   useSessionsList: () => ({ sessions: [] }),
 }))
 
-vi.mock('../utils/settingLabels', async importOriginal => {
-  const actual = await importOriginal()
-  return {
-    ...actual,
-    getSettingChangeInfo: () => ({ label: 'Test Label', color: '#ff0000' }),
-  }
-})
-
 import SettingChangeDivider from './SettingChangeDivider'
 
+const restart = { subtype: 'container_restarted', message_data: null }
+const model = { subtype: 'model_changed', model: 'claude-sonnet-4-6', previous_model: 'x' }
+const effort = { subtype: 'effort_level_changed', content: 'high', previous_effort_level: 'x' }
+
 describe('SettingChangeDivider', () => {
-  it('renders label when not init event (model_changed with previous_model set)', () => {
-    render(
-      <SettingChangeDivider event={{ subtype: 'model_changed', previous_model: 'claude-3' }} />,
-    )
-    expect(screen.getByTestId('setting-change-divider')).toBeInTheDocument()
-    expect(screen.getByText('Test Label')).toBeInTheDocument()
+  it('draws a single change as one label in its own colour', () => {
+    render(<SettingChangeDivider events={[model]} />)
+
+    const divider = screen.getByTestId('setting-change-divider')
+    expect(divider).toHaveTextContent(/^Sonnet 4\.6$/)
+    expect(divider.style.color).toBe('rgb(136, 136, 187)')
   })
 
-  it('returns null for init event (model_changed with previous_model=null)', () => {
-    const { container } = render(
-      <SettingChangeDivider event={{ subtype: 'model_changed', previous_model: null }} />,
-    )
-    expect(container.innerHTML).toBe('')
-  })
+  it('draws a merged run as one line naming each change in its own colour', () => {
+    render(<SettingChangeDivider events={[restart, model, effort]} />)
 
-  it('returns null for init effort event (effort_level_changed with previous_effort_level=null)', () => {
-    const { container } = render(
-      <SettingChangeDivider
-        event={{ subtype: 'effort_level_changed', previous_effort_level: null }}
-      />,
-    )
-    expect(container.innerHTML).toBe('')
-  })
-
-  it('returns null for init permission event (permission_mode_changed with previous_permission_mode=null)', () => {
-    const { container } = render(
-      <SettingChangeDivider
-        event={{
-          subtype: 'permission_mode_changed',
-          previous_permission_mode: null,
-        }}
-      />,
-    )
-    expect(container.innerHTML).toBe('')
+    const divider = screen.getByTestId('setting-change-divider')
+    expect(divider).toHaveTextContent('Restarted · Sonnet 4.6 · Effort: High')
+    expect(screen.getByText('Restarted').style.color).toBe('rgb(200, 144, 96)')
+    expect(screen.getByText('Sonnet 4.6').style.color).toBe('rgb(136, 136, 187)')
+    expect(screen.getByText('Effort: High').style.color).toBe('rgb(154, 126, 200)')
   })
 })

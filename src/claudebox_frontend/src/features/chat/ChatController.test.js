@@ -3,10 +3,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatController from './ChatController'
 
+function fakeScroller(scrollTop) {
+  const listeners = {}
+  const realEl = {
+    scrollTop,
+    scrollHeight: 1000,
+    clientHeight: 500,
+    addEventListener: (type, fn) => {
+      listeners[type] = fn
+    },
+    removeEventListener: () => {},
+  }
+
+  return { realEl, listeners }
+}
+
 describe('ChatController', () => {
   let controller
   let mockMessagesEl
   let mockPanelEl
+
+  function attachController(scrollTop) {
+    const { realEl, listeners } = fakeScroller(scrollTop)
+    const onAutoScrollChange = vi.fn()
+    controller = new ChatController({ onAutoScrollChange })
+    controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+
+    return { realEl, listeners, onAutoScrollChange }
+  }
+
+  function initializeScrolled(autoScroll, scrollTop) {
+    controller.initialize({ messagesEl: mockMessagesEl, panelEl: mockPanelEl })
+    controller.isAutoScrollEnabled = autoScroll
+    mockMessagesEl.scrollTop = scrollTop
+  }
   let rafCallbacks
 
   beforeEach(() => {
@@ -186,19 +216,7 @@ describe('ChatController', () => {
     it('wheel listener: downward wheel at bottom does not latch intent', () => {
       // Within AUTOSCROLL_THRESHOLD (50px) of bottom + deltaY > 0: no-op gesture, not intent -
       // the listener must gate before reaching markUserIntent.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 460, // distFromBottom = 40, at-bottom
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
-      const onAutoScrollChange = vi.fn()
-      controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      const { realEl, listeners, onAutoScrollChange } = attachController(460) // distFromBottom = 40, at-bottom
       controller.attachInputListeners(realEl)
       controller.isAutoScrollEnabled = true
 
@@ -212,19 +230,7 @@ describe('ChatController', () => {
     it('wheel listener: upward wheel at bottom latches intent', () => {
       // Upward wheel (deltaY < 0) at-bottom is genuine intent (view will move away from bottom)
       // so the listener must NOT gate.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 460, // at-bottom
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
-      const onAutoScrollChange = vi.fn()
-      controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      const { realEl, listeners, onAutoScrollChange } = attachController(460) // at-bottom
       controller.attachInputListeners(realEl)
       controller.isAutoScrollEnabled = true
 
@@ -238,19 +244,7 @@ describe('ChatController', () => {
     it('wheel listener: downward wheel above threshold latches intent', () => {
       // Above AUTOSCROLL_THRESHOLD, any wheel direction counts as real intent under the
       // input-source disengage contract.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 200, // distFromBottom = 300, above threshold
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
-      const onAutoScrollChange = vi.fn()
-      controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      const { realEl, listeners, onAutoScrollChange } = attachController(200) // distFromBottom = 300, above threshold
       controller.attachInputListeners(realEl)
       controller.isAutoScrollEnabled = true
 
@@ -264,19 +258,7 @@ describe('ChatController', () => {
     it('keydown listener: scroll-down keys at bottom do not latch intent', () => {
       // PageDown / End / ArrowDown / unshifted Space at-bottom: view cannot move, no intent -
       // the listener must filter these.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 460, // at-bottom
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
-      const onAutoScrollChange = vi.fn()
-      controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      const { realEl, listeners, onAutoScrollChange } = attachController(460) // at-bottom
       controller.attachInputListeners(realEl)
       controller.isAutoScrollEnabled = true
 
@@ -292,19 +274,7 @@ describe('ChatController', () => {
     it('keydown listener: scroll-up keys at bottom latch intent', () => {
       // PageUp / Home / ArrowUp / Shift+Space at-bottom: view will move up, genuine intent -
       // the listener must pass these through.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 460, // at-bottom
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
-      const onAutoScrollChange = vi.fn()
-      controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      const { realEl, listeners, onAutoScrollChange } = attachController(460) // at-bottom
       controller.attachInputListeners(realEl)
       controller.isAutoScrollEnabled = true
 
@@ -318,19 +288,7 @@ describe('ChatController', () => {
     it('keydown listener: Alt plus a scroll-intent key never latches intent', () => {
       // Every Alt combination is an application binding, so reacting to one would disengage
       // autoscroll from a key belonging to another column entirely.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 460, // at-bottom, so a bare key of the same value would otherwise latch
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
-      const onAutoScrollChange = vi.fn()
-      controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({ messagesEl: realEl, panelEl: mockPanelEl })
+      const { realEl, listeners, onAutoScrollChange } = attachController(460) // at-bottom, so a bare key of the same value would otherwise latch
       controller.attachInputListeners(realEl)
       controller.isAutoScrollEnabled = true
 
@@ -346,16 +304,7 @@ describe('ChatController', () => {
     it('monotonically re-engages exactly once during scroll-to-bottom sweep with interleaved wheel events', () => {
       // Sweep: latched above threshold, scrolling back toward bottom. Contract: zero flicker
       // while re-engaging.
-      const listeners = {}
-      const realEl = {
-        scrollTop: 200,
-        scrollHeight: 1000,
-        clientHeight: 500,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-        removeEventListener: () => {},
-      }
+      const { realEl, listeners } = fakeScroller(200)
       const callbacks = []
       controller = new ChatController({
         onAutoScrollChange: value => callbacks.push({ at: realEl.scrollTop, value }),
@@ -525,13 +474,7 @@ describe('ChatController', () => {
     })
 
     it('ignores undefined values', () => {
-      controller.initialize({
-        messagesEl: mockMessagesEl,
-        panelEl: mockPanelEl,
-      })
-
-      controller.isAutoScrollEnabled = false
-      mockMessagesEl.scrollTop = 200
+      initializeScrolled(false, 200)
 
       controller.restoreState({})
 
@@ -748,13 +691,7 @@ describe('ChatController', () => {
     it('calls onAutoScrollChange(false) when user expresses scroll intent', () => {
       const onAutoScrollChange = vi.fn()
       controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({
-        messagesEl: mockMessagesEl,
-        panelEl: mockPanelEl,
-      })
-
-      controller.isAutoScrollEnabled = true
-      mockMessagesEl.scrollTop = 200
+      initializeScrolled(true, 200)
 
       controller.markUserIntent()
 
@@ -764,13 +701,7 @@ describe('ChatController', () => {
     it('calls onAutoScrollChange(true) when user scrolls back to bottom after intent', () => {
       const onAutoScrollChange = vi.fn()
       controller = new ChatController({ onAutoScrollChange })
-      controller.initialize({
-        messagesEl: mockMessagesEl,
-        panelEl: mockPanelEl,
-      })
-
-      controller.isAutoScrollEnabled = true
-      mockMessagesEl.scrollTop = 200
+      initializeScrolled(true, 200)
       controller.markUserIntent()
       onAutoScrollChange.mockClear()
 

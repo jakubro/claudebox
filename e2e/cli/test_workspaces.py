@@ -5,6 +5,8 @@ deregister, ``register`` creates the ``.workspace`` marker before the POST
 even when the daemon is unreachable, and ``run`` never auto-registers.
 """
 
+from __future__ import annotations
+
 import pytest
 from pytest_httpserver import HTTPServer
 

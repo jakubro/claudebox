@@ -26,12 +26,18 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: () => mockIsMobile,
 }))
 
+let mockSessionDefaults = null
+vi.mock('../../../hooks/useSessionDefaults', () => ({
+  default: () => mockSessionDefaults,
+}))
+
 describe('WelcomeContent', () => {
   beforeEach(() => {
     mockWorkspaceCtx.workspaceId = 'my-project'
     mockWorkspaceCtx.workspaces = [{ id: 'my-project', path: '/home/user/my-project' }]
     mockSessionsCtx.workspaceColor = null
     mockIsMobile = false
+    mockSessionDefaults = null
   })
 
   it('renders welcome content with workspace name and path', () => {
@@ -95,5 +101,38 @@ describe('WelcomeContent', () => {
     render(<WelcomeContent />)
 
     expect(screen.queryByTestId('welcome-shortcuts')).not.toBeInTheDocument()
+  })
+
+  it('says how to log in when the workspace has no login', () => {
+    mockSessionDefaults = { logged_in: false }
+
+    render(<WelcomeContent />)
+
+    const notice = screen.getByTestId('welcome-login-notice')
+    expect(notice).toHaveTextContent(
+      'Not logged in. Run claudebox run in a terminal in this workspace and finish the login it opens.',
+    )
+    expect(notice.querySelector('code')).toHaveTextContent('claudebox run')
+  })
+
+  it.each([
+    ['has a login', { logged_in: true }],
+    ['has no login state for its agent', { logged_in: null }],
+    ['is still loading', null],
+  ])('shows no login notice when the workspace %s', (_, defaults) => {
+    mockSessionDefaults = defaults
+
+    render(<WelcomeContent />)
+
+    expect(screen.queryByTestId('welcome-login-notice')).not.toBeInTheDocument()
+  })
+
+  it('shows the login notice on mobile too', () => {
+    mockIsMobile = true
+    mockSessionDefaults = { logged_in: false }
+
+    render(<WelcomeContent />)
+
+    expect(screen.getByTestId('welcome-login-notice')).toBeInTheDocument()
   })
 })

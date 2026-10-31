@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.sessions.links - link message allowlist matching."""
 
+from __future__ import annotations
+
 from claudebox_daemon.domain.sessions.links import resolve_link_messages
 
 
@@ -18,6 +20,20 @@ def test_full_match_anchoring_accepts_an_exact_match():
 
     assert delivered == ["/greet ada"]
     assert blocked == []
+
+
+def test_a_wildcard_spans_the_line_breaks_of_a_multi_line_message():
+    delivered, blocked = resolve_link_messages(["/greet ada\nsecond line"], [r"/greet .*"])
+
+    assert delivered == ["/greet ada\nsecond line"]
+    assert blocked == []
+
+
+def test_a_multi_line_message_still_fails_a_pattern_its_first_line_misses():
+    delivered, blocked = resolve_link_messages(["/danger\n/greet ada"], [r"/greet .*"])
+
+    assert delivered == []
+    assert blocked == ["/danger\n/greet ada"]
 
 
 def test_empty_allowlist_rejects_every_message():

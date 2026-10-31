@@ -1,11 +1,15 @@
 """Tests for async polling primitives - AsyncPoller and MtimeWatcher."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
+from time import time_ns
 from unittest.mock import patch
 
 import pytest
 
+from claudebox.core import file_cache
 from claudebox.core.polling import AsyncPoller, MtimeWatcher
 
 
@@ -143,11 +147,6 @@ class TestMtimeWatcher:
 
         assert f in watcher.changed
 
-    def test_get_mtime_nonexistent(self) -> None:
-        """Return 0 for nonexistent files."""
-
-        assert MtimeWatcher._get_mtime(Path("/nonexistent/file.txt")) == 0
-
     @pytest.mark.anyio
     async def test_debounce_delays_notification(self, tmp_path: Path) -> None:
         """Watcher with debounce waits before calling _on_changed."""
@@ -170,3 +169,39 @@ class TestMtimeWatcher:
         await watcher.stop()
 
         assert f in watcher.changed
+
+    @pytest.mark.anyio
+    async def test_a_sample_taken_while_unsettled_is_reported_once_it_settles(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        f = tmp_path / "fresh.txt"
+        f.write_text("v1")
+        watcher = _StubWatcher()
+        watcher.sync_watches([f])
+        await watcher._poll()
+        assert watcher.changed == []
+
+        monkeypatch.setattr(file_cache, "time_ns", lambda: time_ns() + 3600 * 10**9)
+        await watcher._poll()
+        await watcher._poll()
+
+        assert watcher.changed == [f]
+
+    @pytest.mark.anyio
+    async def test_a_settled_unchanged_file_is_not_reported(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        monkeypatch.setattr(file_cache, "time_ns", lambda: time_ns() + 3600 * 10**9)
+        f = tmp_path / "old.txt"
+        f.write_text("v1")
+        watcher = _StubWatcher()
+        watcher.sync_watches([f])
+
+        for _ in range(3):
+            await watcher._poll()
+
+        assert watcher.changed == []

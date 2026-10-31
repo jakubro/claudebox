@@ -2,9 +2,12 @@
 
 import { useCallback, useRef } from 'react'
 import { AUTOSCROLL_THRESHOLD, TERMINAL_OVERSCAN } from '../../../config/dimensions'
+import {
+  useVirtualizerGeometry,
+  useWindowedVirtualizer,
+} from '../../../hooks/useVirtualListGeometry'
 import { predictTerminalEntryHeight } from '../utils/predictTerminalEntryHeight'
 import { metricsForEntry } from '../utils/terminalEntryMetrics'
-import { useVirtualizerGeometry, useWindowedVirtualizer } from './useVirtualListGeometry'
 
 /**
  * Window the terminal column's entries against its own scroll container, following the same

@@ -23,6 +23,7 @@ root = true
 #8080 = 80
 
 ## Networking configuration
+## host, none, container: and ns: modes apply to claudebox run and shell; browser sessions refuse them.
 [network]
 #mode = "slirp4netns:allow_host_loopback=true"
 
@@ -40,8 +41,27 @@ root = true
 # url_template = "jetbrains://idea/navigate/reference?project=myProject&path={path}:{line}"
 
 ## Full-match patterns a link's carried message text must match to auto-submit. Omit to allow none.
+## `.` matches line breaks, so a pattern can cover multi-line text.
 [links]
 #allow = ["/greet \\S+"]
+
+## Days a session may go without activity or a resume before `claudebox prune` removes it, and
+## before it empties the session's /tmp. A pinned session or one whose container runs is kept whole.
+[prune]
+#session_days = 365
+#tmp_days = 14
+
+## Named session bundles: sets of overrides whose keys merge over the ones above, the bundle
+## winning per key. A bundle may carry env, mounts, ports, network.mode, model, effort_level,
+## permission_mode, session_prompt and messages.
+#[bundles.research]
+#model = "claude-opus-5-5"
+#effort_level = "max"
+#session_prompt = "Cite file:line for every claim."
+#messages = ["Summarise what changed since yesterday."]
+#
+#[bundles.research.env]
+#SEARCH_API_KEY = "..."
 
 ###############################################################################
 ## LangGraph runtime (alternative to the default Claude Agent SDK)            #
@@ -50,7 +70,7 @@ root = true
 
 [langgraph]
 ## Model in LangChain's "provider:model-id" form (init_chat_model convention)
-#model = "anthropic:claude-opus-5"
+#model = "anthropic:claude-opus-5-5"
 ## Pin the context window for models outside the curated table
 #max_tokens_override = 65536
 

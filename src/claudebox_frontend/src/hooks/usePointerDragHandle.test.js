@@ -98,6 +98,26 @@ describe('usePointerDragHandle', () => {
     expect(onDragMove).not.toHaveBeenCalled()
   })
 
+  it('hands the start context to onDragEnd on pointer up, once', () => {
+    const onDragEnd = vi.fn()
+    const { result } = renderHook(() =>
+      usePointerDragHandle({
+        axis: 'x',
+        onDragStart: () => ({ startWidth: 300 }),
+        onDragMove: vi.fn(),
+        onDragEnd,
+      }),
+    )
+    const target = fakeTarget()
+
+    result.current.handlePointerDown(pointerEvent(target, { clientX: 0 }))
+    result.current.handlePointerUp(pointerEvent(target))
+    result.current.handlePointerUp(pointerEvent(target))
+
+    expect(onDragEnd).toHaveBeenCalledOnce()
+    expect(onDragEnd).toHaveBeenCalledWith({ startWidth: 300 })
+  })
+
   it('does not release capture it never held', () => {
     const target = fakeTarget()
     const { result } = renderHook(() =>

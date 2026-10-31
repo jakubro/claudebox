@@ -3,11 +3,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reconnectMcpServer, toggleMcpServer } from './mcp'
 
-vi.mock('./apiClient', () => ({
+vi.mock('./apiClient', async importOriginal => ({
+  ...(await importOriginal()),
   containerFetch: vi.fn(),
 }))
 
-import { containerFetch } from './apiClient'
+import { containerFetch, setAddress } from './apiClient'
+
+beforeEach(() => {
+  setAddress('c-1', 'addressed-1')
+})
 
 describe('reconnectMcpServer', () => {
   beforeEach(() => {
@@ -20,7 +25,7 @@ describe('reconnectMcpServer', () => {
 
     const result = await reconnectMcpServer('jina')
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/mcp/reconnect', {
+    expect(containerFetch).toHaveBeenCalledWith('/api/mcp/reconnect?session_id=addressed-1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ server_name: 'jina' }),
@@ -46,7 +51,7 @@ describe('toggleMcpServer', () => {
 
     const result = await toggleMcpServer('jina', false)
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/mcp/toggle', {
+    expect(containerFetch).toHaveBeenCalledWith('/api/mcp/toggle?session_id=addressed-1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ server_name: 'jina', enabled: false }),

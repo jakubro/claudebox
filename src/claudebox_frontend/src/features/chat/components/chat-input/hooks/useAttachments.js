@@ -1,16 +1,34 @@
 /** Manage file attachments via paste, drag-drop, and programmatic addition. */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { readFileAsBase64, validateFile } from '../../../../../utils/attachmentHelpers'
+
+const EMPTY_ATTACHMENTS = [] // audit-ignore: misplaced-constant
 
 /**
  * @param {Object} params
  * @param {Function} params.setError - Error setter from InteractionContext
  * @param {Object} params.textareaRef - Ref to textarea element (for X11 paste guard)
+ * @param {string|null} params.ownerSessionId - Attachments belong to the session they were added in
+ *   and are kept, in memory, per session.
  * @returns {{ attachments, setAttachments, removeAttachment, handlePaste, handleDragOver, handleDragLeave, handleDrop }}
  */
-export default function useAttachments({ setError, textareaRef }) {
-  const [attachments, setAttachments] = useState([])
+export default function useAttachments({ setError, textareaRef, ownerSessionId }) {
+  const ownerKey = ownerSessionId ?? ''
+  const [byOwner, setByOwner] = useState({})
+  const attachments = useMemo(() => byOwner[ownerKey] ?? EMPTY_ATTACHMENTS, [byOwner, ownerKey])
+  const ownerKeyRef = useRef(ownerKey)
+  ownerKeyRef.current = ownerKey
+
+  // An updater applies to the session it was issued for, even once the reader has moved on.
+  const updateFor = useCallback((key, next) => {
+    setByOwner(prev => {
+      const current = prev[key] ?? EMPTY_ATTACHMENTS
+      return { ...prev, [key]: typeof next === 'function' ? next(current) : next }
+    })
+  }, [])
+
+  const setAttachments = useCallback(next => updateFor(ownerKeyRef.current, next), [updateFor])
   const [dragOver, setDragOver] = useState(false)
   const middleClickOutsideRef = useRef(false)
 
@@ -41,6 +59,7 @@ export default function useAttachments({ setError, textareaRef }) {
 
   const addFiles = useCallback(
     async files => {
+      const key = ownerKeyRef.current
       for (const file of files) {
         const error = validateFile(file)
         if (error) {
@@ -49,7 +68,7 @@ export default function useAttachments({ setError, textareaRef }) {
         }
         try {
           const data = await readFileAsBase64(file)
-          setAttachments(prev => [
+          updateFor(key, prev => [
             ...prev,
             {
               id: crypto.randomUUID(),
@@ -64,12 +83,15 @@ export default function useAttachments({ setError, textareaRef }) {
         }
       }
     },
-    [setError],
+    [setError, updateFor],
   )
 
-  const removeAttachment = useCallback(id => {
-    setAttachments(prev => prev.filter(a => a.id !== id))
-  }, [])
+  const removeAttachment = useCallback(
+    id => {
+      setAttachments(prev => prev.filter(a => a.id !== id))
+    },
+    [setAttachments],
+  )
 
   // Handle paste - block X11 middle-click paste, detect files/images
   const handlePaste = useCallback(

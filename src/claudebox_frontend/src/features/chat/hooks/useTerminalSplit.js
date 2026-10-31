@@ -8,16 +8,18 @@ import { RightSlotView, resolveStoredRightSlotView } from '../utils/rightSlotVie
 
 /**
  * `split` stays `null` until hydration, so first paint renders nothing split-dependent rather than
- * flashing the default. `split.view` is a `RightSlotView` value (or `OFF`), persisted as
- * `rightSlotView`; a stored `terminalSplitEnabled` boolean is read only as a fallback.
+ * flashing the default. `split.view` is a `RightSlotView` value, persisted as `rightSlotView`; a
+ * stored `terminalSplitEnabled` boolean is read only as a fallback.
  */
 export function useTerminalSplit(sessionId) {
-  const [split, setSplit] = useState(null)
+  const [hydrated, setHydrated] = useState({ sessionId: null, split: null })
+  const hydratedRef = useRef(hydrated)
+  hydratedRef.current = hydrated
   const saveRatioTimeoutRef = useRef(null)
+  const split = hydrated.sessionId === sessionId ? hydrated.split : null
 
   useEffect(() => {
-    setSplit(null)
-    if (!sessionId) {
+    if (!sessionId || hydratedRef.current.sessionId === sessionId) {
       return undefined
     }
     let cancelled = false
@@ -26,14 +28,20 @@ export function useTerminalSplit(sessionId) {
         if (cancelled) {
           return
         }
-        setSplit({
-          view: resolveStoredRightSlotView(data.session),
-          ratio: data.session?.terminalSplitRatio ?? CHAT_SPLIT_DEFAULT_RATIO,
+        setHydrated({
+          sessionId,
+          split: {
+            view: resolveStoredRightSlotView(data.session),
+            ratio: data.session?.terminalSplitRatio ?? CHAT_SPLIT_DEFAULT_RATIO,
+          },
         })
       })
       .catch(() => {
         if (!cancelled) {
-          setSplit({ view: RightSlotView.OFF, ratio: CHAT_SPLIT_DEFAULT_RATIO })
+          setHydrated({
+            sessionId,
+            split: { view: RightSlotView.FOCUSED, ratio: CHAT_SPLIT_DEFAULT_RATIO },
+          })
         }
       })
     return () => {
@@ -51,24 +59,19 @@ export function useTerminalSplit(sessionId) {
 
   /** Local state selects unconditionally; the persistence patch is fire-and-forget. */
   const setView = view => {
-    setSplit(prev => {
-      if (!prev) {
-        return prev
-      }
-      const next = { ...prev, view }
-      if (sessionId) {
-        patchSessionUiState(sessionId, [{ op: 'set', path: 'rightSlotView', value: next.view }])
-      }
-      return next
-    })
+    if (!split) {
+      return
+    }
+    setHydrated(prev => ({ sessionId, split: { ...prev.split, view } }))
+    patchSessionUiState(sessionId, [{ op: 'set', path: 'rightSlotView', value: view }])
   }
 
   /** Immediate locally for live drag visuals; persistence is debounced. */
   const setRatio = ratio => {
-    setSplit(prev => (prev ? { ...prev, ratio } : prev))
-    if (!sessionId) {
+    if (!split) {
       return
     }
+    setHydrated(prev => ({ sessionId, split: { ...prev.split, ratio } }))
     if (saveRatioTimeoutRef.current) {
       clearTimeout(saveRatioTimeoutRef.current)
     }

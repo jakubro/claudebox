@@ -1,5 +1,7 @@
 """Tests for container API logging - LogBroadcaster file-based replay."""
 
+from __future__ import annotations
+
 import json
 
 import pytest
@@ -118,6 +120,40 @@ class TestLogBroadcasterFileReplay:
         assert [item["message"] for item in items[1:-1]] == ["One"]
 
     @pytest.mark.anyio
+    async def test_a_long_log_replays_only_its_latest_thousand_records(self, tmp_path):
+        log_file = tmp_path / "container_api.log"
+        _write_log_lines(
+            log_file,
+            [
+                {"event": f"line {n}", "level": "info", "logger": "app", "timestamp": float(n)}
+                for n in range(5000)
+            ],
+        )
+
+        b = LogBroadcaster(log_file)
+        _, queue = await b.subscribe()
+
+        items = _drain_queue(queue)
+        assert items[0] == {"type": "system", "subtype": "replay_started", "count": 1000}
+        assert [item["message"] for item in items[1:-1]] == [f"line {n}" for n in range(4000, 5000)]
+
+    @pytest.mark.anyio
+    async def test_a_short_log_replays_whole(self, tmp_path):
+        log_file = tmp_path / "container_api.log"
+        _write_log_lines(
+            log_file,
+            [
+                {"event": f"line {n}", "level": "info", "logger": "app", "timestamp": float(n)}
+                for n in range(200)
+            ],
+        )
+
+        b = LogBroadcaster(log_file)
+        _, queue = await b.subscribe()
+
+        assert len(_drain_records(queue)) == 200
+
+    @pytest.mark.anyio
     async def test_extra_fields_collected(self, tmp_path):
         log_file = tmp_path / "container_api.log"
         _write_log_lines(
@@ -174,6 +210,20 @@ class TestLogBroadcasterFileReplay:
         assert items[0]["message"] == "Good"
 
     @pytest.mark.anyio
+    async def test_the_record_after_a_torn_one_is_shown(self, tmp_path):
+        log_file = tmp_path / "container_api.log"
+        log_file.write_text(
+            '{"event": "torn", "level": "info", "timestamp": "11:59:59", "blob": "ZZ'
+            '{"event": "First after restart", "level": "info", "logger": "app", '
+            '"timestamp": "12:00:00"}\n',
+        )
+
+        b = LogBroadcaster(log_file)
+        _, queue = await b.subscribe()
+
+        assert [item["message"] for item in _drain_records(queue)] == ["First after restart"]
+
+    @pytest.mark.anyio
     async def test_missing_timestamp_skips_line(self, tmp_path):
         log_file = tmp_path / "container_api.log"
         _write_log_lines(
@@ -217,7 +267,7 @@ class TestLogBroadcasterFileReplay:
         items = _drain_records(queue)
         assert len(items) == 1
         assert items[0]["message"] == "Float ts"
-        assert items[0]["timestamp"] == pytest.approx(1713264000.123)
+        assert items[0]["timestamp"] == pytest.approx(1713264000.123, abs=1e-6)
 
     @pytest.mark.anyio
     async def test_int_epoch_timestamp(self, tmp_path):
@@ -240,7 +290,7 @@ class TestLogBroadcasterFileReplay:
         items = _drain_records(queue)
         assert len(items) == 1
         assert items[0]["message"] == "Int ts"
-        assert items[0]["timestamp"] == 1713264000.0
+        assert items[0]["timestamp"] == pytest.approx(1713264000.0, abs=1e-6)
 
     @pytest.mark.anyio
     async def test_source_stream_promoted_from_file(self, tmp_path):
@@ -309,4 +359,4 @@ class TestLogBroadcasterFileReplay:
         assert len(items) == 2
         assert items[0]["message"] == "String ts"
         assert items[1]["message"] == "Float ts"
-        assert items[1]["timestamp"] == pytest.approx(1713264000.5)
+        assert items[1]["timestamp"] == pytest.approx(1713264000.5, abs=1e-6)

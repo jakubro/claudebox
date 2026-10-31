@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockCapabilities } from '../../../test-utils/mockCapabilities'
+import { createDeferred } from '../../../utils/deferred'
 import PermissionModePicker from './PermissionModePicker'
 
 const mockPermissionModes = [
@@ -41,6 +42,14 @@ beforeEach(() => {
   mockUseCapabilities = { capabilities: mockCapabilities(), runtimeName: 'Claude' }
 })
 
+async function openModePicker() {
+  const user = userEvent.setup()
+  render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
+  await user.click(screen.getByTestId('footer-permission-mode-picker'))
+
+  return user
+}
+
 describe('PermissionModePicker', () => {
   it('renders current permission mode name from prop', () => {
     render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
@@ -53,18 +62,12 @@ describe('PermissionModePicker', () => {
   })
 
   it('opens dropdown on click', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    await openModePicker()
     expect(screen.getByTestId('permission-mode-dropdown')).toBeInTheDocument()
   })
 
   it('lists all available permission modes', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    await openModePicker()
 
     expect(screen.getByText('Plan')).toBeInTheDocument()
     expect(screen.getByText('Default')).toBeInTheDocument()
@@ -92,10 +95,7 @@ describe('PermissionModePicker', () => {
   })
 
   it('highlights current permission mode with checkmark', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    await openModePicker()
 
     const dropdown = screen.getByTestId('permission-mode-dropdown')
     const checkmarks = within(dropdown).getAllByTestId('icon-check')
@@ -108,28 +108,19 @@ describe('PermissionModePicker', () => {
   })
 
   it('calls setPermissionMode on selection', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    const user = await openModePicker()
     await user.click(screen.getByText('Plan'))
     expect(mockSetPermissionMode).toHaveBeenCalledWith('plan')
   })
 
   it('closes dropdown on selection', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    const user = await openModePicker()
     await user.click(screen.getByText('Plan'))
     expect(screen.queryByTestId('permission-mode-dropdown')).not.toBeInTheDocument()
   })
 
   it('closes dropdown on Escape', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    const user = await openModePicker()
 
     await waitFor(() => {
       expect(screen.getByTestId('permission-mode-dropdown')).toBeInTheDocument()
@@ -167,10 +158,7 @@ describe('PermissionModePicker', () => {
   })
 
   it('does not call setPermissionMode when selecting current permission mode', async () => {
-    const user = userEvent.setup()
-    render(<PermissionModePicker currentPermissionMode="bypassPermissions" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    const user = await openModePicker()
 
     const dropdown = screen.getByTestId('permission-mode-dropdown')
     await user.click(within(dropdown).getByText('Bypass'))
@@ -201,5 +189,43 @@ describe('PermissionModePicker', () => {
       render(<PermissionModePicker currentPermissionMode="default" disabled={false} />)
       expect(screen.queryByTestId('footer-permission-mode-picker')).toBeNull()
     })
+  })
+})
+
+describe('PermissionModePicker settling', () => {
+  async function choose(user, name) {
+    await user.click(screen.getByTestId('footer-permission-mode-picker'))
+    await user.click(within(screen.getByTestId('permission-mode-dropdown')).getByText(name))
+  }
+
+  it('shows the session value again once a refused change settles', async () => {
+    const user = userEvent.setup()
+    const change = createDeferred()
+    mockSetPermissionMode.mockReturnValueOnce(change.promise)
+    render(<PermissionModePicker currentPermissionMode="default" disabled={false} />)
+
+    await choose(user, 'Bypass')
+    expect(screen.getByTestId('footer-permission-mode-picker')).toHaveTextContent('Bypass')
+    change.resolve()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('footer-permission-mode-picker')).toHaveTextContent('Default'),
+    )
+  })
+
+  it('keeps a newer pick when an older change settles', async () => {
+    const user = userEvent.setup()
+    const first = createDeferred()
+    mockSetPermissionMode
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(new Promise(() => {}))
+    render(<PermissionModePicker currentPermissionMode="default" disabled={false} />)
+
+    await choose(user, 'Bypass')
+    await choose(user, 'Plan')
+    first.resolve()
+    await first.promise
+
+    expect(screen.getByTestId('footer-permission-mode-picker')).toHaveTextContent('Plan')
   })
 })

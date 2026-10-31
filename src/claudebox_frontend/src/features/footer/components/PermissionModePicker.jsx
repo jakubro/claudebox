@@ -8,7 +8,7 @@ import useDropdown from '../../../hooks/useDropdown'
 
 /**
  * Permission mode dropdown, sourced from session data via context. Updates optimistically on
- * selection, confirmed by the next SSE event. `defaultValue` previews inheritance pre-session.
+ * selection until the change settles. `defaultValue` previews inheritance pre-session.
  *
  * @param {object} props
  * @param {string} props.currentPermissionMode - Active permission mode ID from session data.
@@ -36,7 +36,10 @@ export default function PermissionModePicker({ currentPermissionMode, defaultVal
       setIsOpen(false)
       if (modeId !== effectiveMode) {
         setOptimisticMode(modeId)
-        setPermissionMode(modeId)
+        // A refused change settles without the session reporting it; a newer pick keeps its own.
+        setPermissionMode(modeId)?.finally(() =>
+          setOptimisticMode(prev => (prev === modeId ? null : prev)),
+        )
       }
     },
     [effectiveMode, setPermissionMode, setIsOpen],

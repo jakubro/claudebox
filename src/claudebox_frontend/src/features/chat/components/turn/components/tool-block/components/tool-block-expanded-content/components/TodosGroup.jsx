@@ -41,8 +41,9 @@ const INERT_STATUS = {
  * Frozen-snapshot semantics: content does not update as the agent does later work outside the run.
  *
  * @param {Array<{toolUseId: string}>} props.taskBlocks - The run's task-list tool blocks, in order.
+ * @param {Array} [props.injected] - Text no one wrote that the agent received after the run's calls.
  */
-export default function TodosGroup({ taskBlocks }) {
+export default function TodosGroup({ taskBlocks, injected = null }) {
   const turn = useContext(TurnContext)
   const todoDiffs = turn?.todoDiffs
 
@@ -69,6 +70,7 @@ export default function TodosGroup({ taskBlocks }) {
         summary={summary}
         hasExpandable={true}
         onToggle={() => setExpanded(prev => !prev)}
+        injected={injected}
         toolStatus={INERT_STATUS}
       />
       {expanded && (

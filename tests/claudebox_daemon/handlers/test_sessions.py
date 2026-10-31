@@ -1,5 +1,8 @@
 """Tests for claudebox_daemon.handlers.sessions - HTTP adapter responses."""
 
+from __future__ import annotations
+
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,7 +10,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from claudebox_daemon.domain import get_workspace
-from claudebox_daemon.domain.sessions.models import SessionInfo
+from claudebox_daemon.domain.executors import ObservedPool
+from claudebox_daemon.domain.sessions.models import RenderedListing, SessionInfo
+from claudebox_daemon.domain.sessions.service import SessionService
+from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from claudebox_daemon.handlers.sessions import router
 
 
@@ -112,7 +118,7 @@ def test_new_session_delivers_messages_matching_the_allowlist():
         )
 
     assert resp.status_code == 200
-    session_service.create_with_prompts.assert_awaited_once_with(["/greet ada"])
+    session_service.create_with_prompts.assert_awaited_once_with(["/greet ada"], bundle=None)
     assert resp.json()["undelivered_messages"] == []
 
 
@@ -178,15 +184,152 @@ def test_list_sessions_logs_the_measured_response_size_and_duration():
     """The byte count only exists once the response is built - the handler is the only place to measure it."""
 
     session_service = MagicMock()
-    session_service.list_all = AsyncMock(return_value=[{"session_id": "s-1"}])
+    body = b'{"sessions": [{"session_id": "s-1"}]}'
+    session_service.list_all = AsyncMock(
+        return_value=RenderedListing(body=body, session_count=1),
+    )
 
     client = TestClient(_build_app(session_service))
     resp = client.get("/api/workspaces/myws/sessions")
 
     assert resp.status_code == 200
-    assert resp.json() == {"sessions": [{"session_id": "s-1"}]}
+    assert resp.content == body
+    assert resp.headers["content-type"] == "application/json"
     session_service.log_listing_completed.assert_called_once()
     kw = session_service.log_listing_completed.call_args.kwargs
     assert kw["session_count"] == 1
-    assert kw["response_bytes"] > 0
+    assert kw["response_bytes"] == len(body)
     assert kw["total_seconds"] >= 0
+
+
+def test_list_schedules_serves_the_rendered_body_as_json():
+    session_service = MagicMock()
+    body = b'{"sessions": [{"session_id": "s-1", "responding_since": null, "events": []}]}'
+    session_service.list_schedules = AsyncMock(
+        return_value=RenderedListing(body=body, session_count=1),
+    )
+
+    client = TestClient(_build_app(session_service))
+    resp = client.get("/api/workspaces/myws/sessions/schedules")
+
+    assert resp.status_code == 200
+    assert resp.content == body
+    assert resp.headers["content-type"] == "application/json"
+    assert session_service.log_listing_completed.call_args.kwargs["kind"] == "schedule"
+
+
+def test_list_sessions_serves_every_record_field_from_a_real_workspace(tmp_path):
+    """The wire shape the panel reads: every session field, timestamps as ISO strings."""
+
+    (tmp_path / ".workspace").touch()
+    record = tmp_path / ".claudebox" / "sessions" / "20260101-000000--s-1" / "session.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        json.dumps(
+            {
+                "session_id": "s-1",
+                "name": "named",
+                "started_at": "2026-01-01T00:00:00+00:00",
+                "num_turns": 3,
+                "first_message": "hello",
+                "commands": ["/review"],
+                "activity": "waiting",
+            },
+        ),
+    )
+    containers = MagicMock()
+    containers.list_all.return_value = []
+    service = SessionService(
+        RegisteredWorkspace(id="ws", path=tmp_path),
+        containers,
+        AsyncMock(),
+        agent="claude",
+        executor=ObservedPool(1, name="listing"),
+    )
+
+    resp = TestClient(_build_app(service, workspace_path=tmp_path)).get(
+        "/api/workspaces/ws/sessions",
+    )
+
+    assert resp.json() == {
+        "sessions": [
+            {
+                "session_id": "s-1",
+                "fork_point_cost_usd": 0.0,
+                "name": "named",
+                "auto_name": None,
+                "model": None,
+                "runtime": None,
+                "provider": None,
+                "started_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": None,
+                "num_turns": 3,
+                "total_cost_usd": None,
+                "first_message": "hello",
+                "last_message": None,
+                "parent_session_id": None,
+                "session_dir": None,
+                "is_side_thread": False,
+                "is_promoted": False,
+                "spawned_from_session_id": None,
+                "bundle": None,
+                "needs_user": None,
+                "needs_user_replies": None,
+                "activity": "waiting",
+                "container_id": None,
+                "workspace": None,
+                "permission_mode": None,
+                "effort_level": None,
+                "failed_prompts": None,
+                "failed_seeds": None,
+            },
+        ],
+    }
+
+
+def test_a_bundles_messages_skip_the_link_allowlist_and_follow_the_link(tmp_path):
+    (tmp_path / ".workspace").touch()
+    settings = tmp_path / ".claudebox" / "settings.toml"
+    settings.parent.mkdir()
+    settings.write_text(
+        'root = true\n[links]\nallow = ["/greet \\\\S+"]\n'
+        '[bundles.research]\nmessages = ["/danger opening", "second"]\n',
+    )
+    session_service = MagicMock()
+    session_service.create_with_prompts = AsyncMock(
+        return_value=SessionInfo(session_id="s-4", fork_point_cost_usd=0.0),
+    )
+
+    client = TestClient(_build_app(session_service, workspace_path=tmp_path))
+    resp = client.post(
+        "/api/workspaces/myws/sessions/new",
+        json={"messages": ["/greet ada"], "bundle": "research"},
+    )
+
+    assert resp.status_code == 200
+    session_service.create_with_prompts.assert_awaited_once_with(
+        ["/greet ada", "/danger opening", "second"],
+        bundle="research",
+    )
+
+
+def test_link_messages_are_still_filtered_beside_a_bundle(tmp_path):
+    (tmp_path / ".workspace").touch()
+    settings = tmp_path / ".claudebox" / "settings.toml"
+    settings.parent.mkdir()
+    settings.write_text(
+        'root = true\n[links]\nallow = ["/greet \\\\S+"]\n[bundles.research]\nmessages = ["hi"]\n',
+    )
+    session_service = MagicMock()
+    session_service.create_with_prompts = AsyncMock(
+        return_value=SessionInfo(session_id="s-5", fork_point_cost_usd=0.0),
+    )
+
+    client = TestClient(_build_app(session_service, workspace_path=tmp_path))
+    resp = client.post(
+        "/api/workspaces/myws/sessions/new",
+        json={"messages": ["/danger"], "bundle": "research"},
+    )
+
+    assert resp.json()["undelivered_messages"] == ["/danger"]
+    session_service.create_with_prompts.assert_awaited_once_with(["hi"], bundle="research")

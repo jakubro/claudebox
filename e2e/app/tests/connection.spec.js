@@ -1,18 +1,18 @@
 /** E2E tests for SSE connection behavior including initial connection, session data fetch, and reconnection. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import {
+  openLiveSessionWithAPI,
+  openResumingSession,
+  openSession,
+  openSessionWithAPI,
+} from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 test.describe('Connection', () => {
   test.describe('Initial Connection', () => {
     test('connects to SSE on page load', async ({ page }) => {
-      // Controller must be created BEFORE mockAPI so addInitScript runs first
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const connectionCount = await controller.getConnectionCount()
       expect(connectionCount).toBeGreaterThanOrEqual(1)
@@ -46,19 +46,14 @@ test.describe('Connection', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect.poll(() => sessionDataFetched).toBe(true)
     })
 
     // SPEC: footer:status-text
     test('shows Ready status when connected', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       await expect(page.locator('[data-testid="footer-status"][data-status="ready"]')).toBeVisible()
       await expect(page.getByText('Ready')).toBeVisible()
@@ -69,9 +64,7 @@ test.describe('Connection', () => {
     // SPEC: error:resuming-panels
     test('every SSE-dependent panel shows "Resuming..." during replay', async ({ page }) => {
       await mockAPI(page)
-      await mockSSE(page, 'events/resuming.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+      await openResumingSession(page)
 
       // Panels on the chat SSE stream show replay state; MCP/Usage use separate streams, out of scope here.
       await page.locator('[data-testid="icon-logs"]').click()
@@ -88,10 +81,7 @@ test.describe('Connection', () => {
   test.describe('Reconnection', () => {
     // SPEC: error:auto-reconnect
     test('automatically reconnects after SSE error without user interaction', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const initialCount = await controller.getConnectionCount()
       expect(initialCount).toBeGreaterThanOrEqual(1)
@@ -116,8 +106,7 @@ test.describe('Connection', () => {
     test('session resume calls API, reconnects SSE, and focuses chat', async ({ page }) => {
       let resumeSessionCalled = false
 
-      const controller = await createSSEController(page)
-      await mockAPI(page, {
+      const controller = await openLiveSessionWithAPI(page, {
         sessionsFixture: 'sessions/multiple.json',
         handlers: {
           resumeSession: async route => {
@@ -129,9 +118,6 @@ test.describe('Connection', () => {
           },
         },
       })
-
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
 
       const initialConnections = await controller.getConnectionCount()
 

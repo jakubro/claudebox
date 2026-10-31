@@ -3,6 +3,8 @@
 No claude_agent_sdk or langgraph import belongs here - see GUIDELINES "SDK Containment".
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
@@ -21,9 +23,9 @@ from ..paths import find_session_dir
 from ..workspace import Workspace
 
 
-# The in-process MCP server name under Claude, and this module's own identity for logging -
+# Claudebox's own in-process MCP server under Claude, carrying the sibling tools and needs_user -
 # the same string the runtime matches on to keep the server out of MCP status reporting.
-SIBLING_MCP_SERVER_NAME = "claudebox"
+CLAUDEBOX_MCP_SERVER_NAME = "claudebox"
 
 # Bounds the ask-and-wait round trip (connect, send, stream until settled) - a sibling stuck in
 # a long-running tool call must eventually report back rather than hang the parent's own turn.

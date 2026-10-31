@@ -3,6 +3,8 @@
 Bound in the workspace's sessions/ dir, mounted into every container - no network, no token.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -29,18 +31,20 @@ MAX_SPAWN_DEPTH = 3
 # silently ignored (see the wire-protocol note in ARCHITECTURE.md section 6.3).
 _REQUIRED_KEYS = frozenset({"verb", "caller_session_id", "prompt"})
 
+# Longest path a unix socket binds on Linux: sun_path holds 108 bytes, its terminator included.
+_SUN_PATH_MAX = 107
+
 
 class SpawnListener:
-    """One unix-socket listener per workspace; bound at start(), unbound at stop().
-
-    caller_session_id is recorded lineage, never identity - the caller comes from peer credentials.
+    """One unix-socket listener per workspace; bound at start()/stop(). Identity always comes from
+    peer credentials - caller_session_id is an unverified claim, logged only on a refusal.
     """
 
     def __init__(
         self,
-        workspace: "RegisteredWorkspace",
-        sessions: "SessionService",
-        containers: "ContainerService",
+        workspace: RegisteredWorkspace,
+        sessions: SessionService,
+        containers: ContainerService,
         socket_dir: Path,
     ) -> None:
         self._logger = get_logger(__name__)
@@ -67,10 +71,7 @@ class SpawnListener:
         if self._socket_path.exists():
             self._socket_path.unlink()
 
-        self._server = await asyncio.start_unix_server(
-            self._handle_connection,
-            path=str(self._socket_path),
-        )
+        self._server = await self._bind()
 
         # Every container runs as the same host user, so mode bits separate no container from
         # its siblings - what they buy is keeping the socket off-limits to other host users.
@@ -88,6 +89,25 @@ class SpawnListener:
 
         if self._socket_path.exists():
             self._socket_path.unlink()
+
+    async def _bind(self) -> asyncio.Server:
+        path = str(self._socket_path)
+
+        if len(os.fsencode(path)) <= _SUN_PATH_MAX:
+            return await asyncio.start_unix_server(self._handle_connection, path=path)
+
+        # A path through the directory's descriptor names the same file in fewer bytes. asyncio's
+        # own cleanup would unlink that path after the descriptor is closed; stop() unlinks instead.
+        dir_fd = os.open(self._socket_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+
+        try:
+            return await asyncio.start_unix_server(
+                self._handle_connection,
+                path=f"/proc/self/fd/{dir_fd}/{self._socket_path.name}",
+                cleanup_socket=False,
+            )
+        finally:
+            os.close(dir_fd)
 
     # Connection handling
     # ----------------------------------------------------------------------------------------------
@@ -160,6 +180,14 @@ class SpawnListener:
             return
 
         if depth + 1 > MAX_SPAWN_DEPTH:
+            self._logger.info(
+                "Spawn depth exceeded",
+                resolved_caller_session_id=caller_container.session_id,
+                claimed_caller_session_id=request["caller_session_id"],
+                depth=depth,
+                cap=MAX_SPAWN_DEPTH,
+                **self._log_context,
+            )
             await self._respond(
                 writer,
                 error="spawn_depth_exceeded",
@@ -169,12 +197,19 @@ class SpawnListener:
 
             return
 
+        caller = await self._sessions.get(caller_container.session_id)
         result = await self._sessions.create_with_prompt(
             request["prompt"],
-            spawned_from_session_id=request["caller_session_id"],
+            spawned_from_session_id=caller_container.session_id,
+            bundle=caller.bundle,
         )
 
-        await self._respond(writer, session_id=result.session_id, container_id=result.container_id)
+        await self._respond(
+            writer,
+            session_id=result.session_id,
+            container_id=result.container_id,
+            prompt_delivered=not result.failed_prompts,
+        )
 
     @staticmethod
     def _validate(request: object) -> str | None:

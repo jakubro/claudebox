@@ -1,13 +1,16 @@
 /** Pure badge-count aggregation with no React APIs, consumed by the useBadgeCounts hook. */
 
 import { TaskStatus, TodoStatus } from '../../../config/schema'
-import { extractTasks, getMcpServers } from '../../../utils/eventProcessing'
+import { extractCrons, extractTasks, getMcpServers } from '../../../utils/eventProcessing'
 
 /**
  * @param {{
  *   events: Array,
  *   todosBySubagent: Map,
  *   taskNotifications: object,
+ *   backgroundLaunches: Map,
+ *   now: number,
+ *   turnStartedAt: number|null,
  *   stash: Array,
  *   hasUnreadErrors: boolean,
  * }} params
@@ -15,6 +18,7 @@ import { extractTasks, getMcpServers } from '../../../utils/eventProcessing'
  *   todoCount: number,
  *   stashCount: number,
  *   taskCount: number,
+ *   cronCount: number,
  *   mcpFailedCount: number,
  *   logsHasErrors: boolean,
  * }}
@@ -23,6 +27,9 @@ export function computeBadgeCounts({
   events,
   todosBySubagent,
   taskNotifications,
+  backgroundLaunches,
+  now,
+  turnStartedAt,
   stash,
   hasUnreadErrors,
 }) {
@@ -31,8 +38,9 @@ export function computeBadgeCounts({
     todoCount += todos.filter(t => t.status !== TodoStatus.COMPLETED).length
   }
 
-  const tasks = extractTasks(events, taskNotifications)
+  const tasks = extractTasks(events, taskNotifications, backgroundLaunches)
   const taskCount = tasks.filter(t => t.status === TaskStatus.RUNNING).length
+  const cronCount = extractCrons(events, now, turnStartedAt).length
 
   const mcpServers = getMcpServers(events)
   const mcpFailedCount = mcpServers.filter(s => s.status === 'failed').length
@@ -41,6 +49,7 @@ export function computeBadgeCounts({
     todoCount,
     stashCount: stash.length,
     taskCount,
+    cronCount,
     mcpFailedCount,
     logsHasErrors: hasUnreadErrors,
   }

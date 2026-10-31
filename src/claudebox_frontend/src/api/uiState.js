@@ -16,9 +16,9 @@ export async function getUiState(sessionId = null) {
   return res.json()
 }
 
-/** Apply operations to global UI state. */
+/** Apply operations to global UI state; resolves once the write lands or fails. */
 export function patchGlobalUiState(operations) {
-  patchUiState(null, { global: operations })
+  return patchUiState(null, { global: operations })
 }
 
 /** Apply operations to session-scoped UI state. */
@@ -27,13 +27,13 @@ export function patchSessionUiState(sessionId, operations) {
 }
 
 /**
- * Apply operations to UI state (fire-and-forget).
+ * Apply operations to UI state (fire-and-forget); the returned promise never rejects.
  * @param {string|null} sessionId
  * @param {Object} data - Operations per scope ({ global, session }).
  */
 export function patchUiState(sessionId, data) {
   const url = getUrl(sessionId)
-  workspaceFetch(url, {
+  return workspaceFetch(url, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),

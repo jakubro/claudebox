@@ -27,7 +27,11 @@ vi.mock('dockview-react', () => ({
 
 vi.mock('../../context/DaemonStreamContext', () => ({
   DaemonStreamProvider: ({ children }) => <>{children}</>,
-  useDaemonStreamContext: () => ({ progressMessage: null, sessionsChanged: 0, containerStatus: 0 }),
+  useDaemonStreamContext: () => ({
+    progressMessage: null,
+    sessionsChanged: 0,
+    changesByWorkspace: {},
+  }),
 }))
 
 vi.mock('../../context/SessionsContext', () => ({

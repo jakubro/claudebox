@@ -8,17 +8,20 @@ import {
   PX_PER_ATTACHMENT_ROW,
   PX_PER_BASH_TOOL_BLOCK,
   PX_PER_INLINE_REPLIES_PLACEHOLDER,
+  PX_PER_TEXT_BLOCK_GAP,
   PX_PER_THINKING_BLOCK,
   PX_PER_TOOL_BLOCK,
   TURN_ASSISTANT_BUBBLE_HEIGHT_PX,
   TURN_MIN_PREDICTED_HEIGHT_PX,
+  TURN_ROW_MARGIN_PX,
   TURN_USER_MESSAGE_HEIGHT_PX,
 } from '../../../config/dimensions'
 import { isLookupsGroupingEnabled } from '../../../config/features'
-import { getToolConfig } from '../../../config/toolRegistry'
+import { isReadOnlyCall } from '../../../config/toolRegistry'
 import {
   isToolBlockVisible,
   isTopLevelBashCall,
+  NO_TOOL_MARKED,
   TurnRoutingMode,
 } from '../../../utils/eventProcessing'
 
@@ -29,12 +32,29 @@ const THINKING_TAG = /<thinking>/g
  * replaces it once the turn mounts. Seeds the virtualizer for windowed-out turns and the minimap.
  * `mode` prices a routed-away block at zero via `isToolBlockVisible`, the same predicate that gates
  * the assistant bubble. Coefficients live in config/dimensions.js; a calibration spec caps drift.
+ * Includes the turn's bottom margin, so it prices a whole windowed row.
  */
 export function predictTurnHeight(
   turn,
   effectiveWidth,
   isCollapsed = false,
   mode = TurnRoutingMode.OFF,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
+  return (
+    predictTurnContentHeight(turn, effectiveWidth, isCollapsed, mode, bookmarkedParts, isMarked) +
+    TURN_ROW_MARGIN_PX
+  )
+}
+
+function predictTurnContentHeight(
+  turn,
+  effectiveWidth,
+  isCollapsed,
+  mode,
+  bookmarkedParts,
+  isMarked,
 ) {
   if (!turn) {
     return TURN_MIN_PREDICTED_HEIGHT_PX
@@ -44,7 +64,7 @@ export function predictTurnHeight(
   const userLines = userMessageLines(turn, charsPerLine)
   const userHeight = TURN_USER_MESSAGE_HEIGHT_PX + userLines * LINE_HEIGHT_PX
 
-  const metrics = countVisibleContent(turn, mode)
+  const metrics = countVisibleContent(turn, mode, charsPerLine, bookmarkedParts, isMarked)
 
   // Nothing survived visibility, so the assistant bubble does not render. Attachments and inline
   // replies live in the user bubble and still price here.
@@ -61,7 +81,6 @@ export function predictTurnHeight(
     return userHeight + TURN_ASSISTANT_BUBBLE_HEIGHT_PX
   }
 
-  const textLines = Math.ceil(metrics.textChars / charsPerLine)
   const readOnlyBlocks = isLookupsGroupingEnabled()
     ? metrics.readOnlyToolBlocks < 2
       ? metrics.readOnlyToolBlocks
@@ -71,7 +90,8 @@ export function predictTurnHeight(
   const predicted =
     userHeight +
     TURN_ASSISTANT_BUBBLE_HEIGHT_PX +
-    textLines * LINE_HEIGHT_PX +
+    metrics.textLines * LINE_HEIGHT_PX +
+    metrics.textBlockGaps * PX_PER_TEXT_BLOCK_GAP +
     metrics.thinkingBlocks * PX_PER_THINKING_BLOCK +
     (metrics.toolBlocks + readOnlyBlocks) * PX_PER_TOOL_BLOCK +
     metrics.bashBlocks * PX_PER_BASH_TOOL_BLOCK +
@@ -112,8 +132,9 @@ export function predictUserMessageHeight(turn, effectiveWidth) {
  * One pass over `turn.events` pricing every block category and tracking whether ANY block survives
  * visibility: non-tool blocks always do, a tool block only through `isToolBlockVisible`.
  */
-function countVisibleContent(turn, mode) {
-  let textChars = 0
+function countVisibleContent(turn, mode, charsPerLine, bookmarkedParts, isMarked) {
+  let textLines = 0
+  let textBlockGaps = 0
   let thinkingBlocks = 0
   let toolBlocks = 0
   let readOnlyToolBlocks = 0
@@ -131,15 +152,14 @@ function countVisibleContent(turn, mode) {
   for (const event of turn.events || []) {
     if (event.subtype === 'tool_use') {
       const result = toolResultsByUseId.get(event.tool_use_id)
-      if (!isToolBlockVisible(mode, event, result)) {
+      if (!isToolBlockVisible(mode, event, result, bookmarkedParts, isMarked)) {
         continue
       }
       hasVisibleContent = true
-      if (getToolConfig(event.content).category === 'read-only') {
+      if (isReadOnlyCall(event, result)) {
         readOnlyToolBlocks += 1
       } else if (isTopLevelBashCall(event)) {
-        // Only reachable when this call was NOT routed away (else isToolBlockVisible dropped it
-        // above) - mode OFF, or a subagent's nested call, priced as an ordinary tool row.
+        // Reachable only when this call was not routed away: isToolBlockVisible dropped those above.
         bashBlocks += 1
       } else {
         toolBlocks += 1
@@ -151,7 +171,9 @@ function countVisibleContent(turn, mode) {
       }
     } else if (event.subtype === 'text' && event.type === 'assistant') {
       const content = event.content || ''
-      textChars += content.length
+      const text = countTextLines(content, charsPerLine)
+      textLines += text.lines
+      textBlockGaps += text.gaps
       if (content.trim()) {
         hasVisibleContent = true
       }
@@ -165,13 +187,37 @@ function countVisibleContent(turn, mode) {
   }
 
   return {
-    textChars,
+    textLines,
+    textBlockGaps,
     thinkingBlocks,
     toolBlocks,
     readOnlyToolBlocks,
     bashBlocks,
     hasVisibleContent,
   }
+}
+
+/**
+ * Wrapped lines of markdown text, each hard line wrapped on its own, plus the blank-line breaks
+ * between paragraphs and blocks - a list renders one row per item however short the items are.
+ */
+function countTextLines(content, charsPerLine) {
+  let lines = 0
+  let gaps = 0
+  let pendingGap = false
+  for (const line of content.split('\n')) {
+    if (!line.trim()) {
+      pendingGap = lines > 0
+      continue
+    }
+    if (pendingGap) {
+      gaps += 1
+      pendingGap = false
+    }
+    lines += Math.ceil(line.length / charsPerLine)
+  }
+
+  return { lines, gaps }
 }
 
 /** Characters that fit on one line of the chat column. */

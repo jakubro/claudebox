@@ -1,5 +1,7 @@
 """Construction + equality tests for typed init/usage shapes - no escape-hatch dicts."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox.agent_session.events import (

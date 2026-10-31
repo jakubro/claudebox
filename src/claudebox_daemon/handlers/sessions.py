@@ -1,10 +1,13 @@
 """Session CRUD - workspace-scoped HTTP adapters for session management."""
 
+from __future__ import annotations
+
 import time
 
 from fastapi import APIRouter
+from fastapi.responses import Response
 
-from claudebox import Config, JSONResponse, serialization
+from claudebox import Config, serialization
 from ._models import ForkSessionRequest, NewSessionRequest, UpdateSessionRequest
 from ._shared import WorkspaceDep
 from ..domain import resolve_link_messages
@@ -18,15 +21,30 @@ async def list_sessions(svc: WorkspaceDep):
     """List all sessions from workspace disk."""
 
     started_at = time.monotonic()
-    sessions = await svc.session_service.list_all()
-    response = JSONResponse(content={"sessions": sessions})
+    listing = await svc.session_service.list_all()
     svc.session_service.log_listing_completed(
-        session_count=len(sessions),
-        response_bytes=len(response.body),
+        session_count=listing.session_count,
+        response_bytes=len(listing.body),
         total_seconds=time.monotonic() - started_at,
     )
 
-    return response
+    return Response(content=listing.body, media_type="application/json")
+
+
+@router.get("/sessions/schedules")
+async def list_session_schedules(svc: WorkspaceDep) -> Response:
+    """List the schedule events of every running session that has scheduled a prompt."""
+
+    started_at = time.monotonic()
+    listing = await svc.session_service.list_schedules()
+    svc.session_service.log_listing_completed(
+        session_count=listing.session_count,
+        response_bytes=len(listing.body),
+        total_seconds=time.monotonic() - started_at,
+        kind="schedule",
+    )
+
+    return Response(content=listing.body, media_type="application/json")
 
 
 @router.post("/sessions/new")
@@ -39,10 +57,15 @@ async def new_session(svc: WorkspaceDep, body: NewSessionRequest | None = None):
         config.links_allow or [],
     )
 
+    bundle = body.bundle if body else None
+    # Host-authored, so never link-filtered; they follow any link messages so a link still leads.
+    bundle_messages = (config.bundles or {}).get(bundle, {}).get("messages", []) if bundle else []
+    delivered = [*delivered, *bundle_messages]
+
     if delivered:
-        result = await svc.session_service.create_with_prompts(delivered)
+        result = await svc.session_service.create_with_prompts(delivered, bundle=bundle)
     else:
-        result = await svc.session_service.create()
+        result = await svc.session_service.create(bundle=bundle)
 
     return {**serialization.serialize(result), "undelivered_messages": blocked}
 

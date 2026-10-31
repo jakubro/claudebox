@@ -1,11 +1,15 @@
 """Tests for claudebox_daemon.domain.workspaces.service - workspace management."""
 
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from claudebox.agent_session.rate_limits import RateLimitStore
+from claudebox.core.io import read_json, write_json
 from claudebox_daemon.domain.executors import DaemonExecutors
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from claudebox_daemon.domain.workspaces.service import WorkspaceService
@@ -32,7 +36,7 @@ def _make_service(
     executors = DaemonExecutors.create()
 
     with patch("claudebox_daemon.domain.workspaces.service.Config") as mock_config_cls:
-        mock_config_cls.load.return_value = MagicMock()
+        mock_config_cls.load.return_value = MagicMock(prune_session_days=365)
         proxy = MagicMock()
         svc = WorkspaceService(ws, events, proxy, executors)
 
@@ -89,6 +93,75 @@ class TestInit:
 
         with pytest.raises(RuntimeError, match="unavailable"):
             _ = svc.container_service
+
+    def test_available_is_frozen_even_after_the_directory_returns(self, tmp_path):
+        """`available` never disagrees with the sub-services built from it - unlike
+        `workspace.available`'s live disk check, it cannot flip out from under this instance."""
+
+        svc, _ = _make_service(tmp_path, available=False)
+        assert svc.available is False
+
+        svc.workspace.path.mkdir(parents=True)
+
+        assert svc.available is False
+        assert svc.workspace.available is True
+
+        with pytest.raises(RuntimeError, match="unavailable"):
+            _ = svc.container_service
+
+
+class TestUiStateFollowsTheSessionLifetime:
+    """The saved panel settings of a session live as long as the workspace's session lifetime says."""
+
+    @pytest.mark.anyio
+    async def test_a_workspace_session_lifetime_reaches_the_settings_sweep(self, tmp_workspace):
+        (tmp_workspace / ".claudebox" / "settings.toml").write_text("[prune]\nsession_days = 30\n")
+        idle = {days: (datetime.now(UTC) - timedelta(days=days)).isoformat() for days in (29, 31)}
+        write_json(
+            tmp_workspace / ".claudebox" / "ui-state.json",
+            {
+                "version": 3,
+                "global": {},
+                "sessions": {f"idle-{d}": {"updated_at": ts} for d, ts in idle.items()},
+            },
+        )
+        ws = RegisteredWorkspace(id="lifetime-ws", path=tmp_workspace)
+        svc = WorkspaceService(ws, AsyncMock(), MagicMock(), DaemonExecutors.create())
+
+        await svc.ui_state.patch(
+            None,
+            **{"global": [{"op": "set", "path": "theme", "value": "dark"}]},
+        )
+
+        stored = read_json(tmp_workspace / ".claudebox" / "ui-state.json")
+        assert list(stored["sessions"]) == ["idle-29"]
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("days", [800_000, 10**12])
+    async def test_a_lifetime_past_the_calendar_keeps_every_saved_session(
+        self,
+        tmp_workspace,
+        days,
+    ):
+        (tmp_workspace / ".claudebox" / "settings.toml").write_text(
+            f"[prune]\nsession_days = {days}\n",
+        )
+        old = (datetime.now(UTC) - timedelta(days=4000)).isoformat()
+        write_json(
+            tmp_workspace / ".claudebox" / "ui-state.json",
+            {"version": 3, "global": {}, "sessions": {"old": {"updated_at": old}}},
+        )
+        ws = RegisteredWorkspace(id="lifetime-ws", path=tmp_workspace)
+        svc = WorkspaceService(ws, AsyncMock(), MagicMock(), DaemonExecutors.create())
+
+        await svc.ui_state.patch(
+            None,
+            **{"global": [{"op": "set", "path": "theme", "value": "dark"}]},
+        )
+
+        assert list(read_json(tmp_workspace / ".claudebox" / "ui-state.json")["sessions"]) == [
+            "old",
+        ]
 
 
 # --- rate_limits ---

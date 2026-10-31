@@ -19,8 +19,8 @@ import { DRAG_THRESHOLD_PX } from '../../../../../utils/pointer'
  * @param {function} params.onHoverOpen - (id) => void, fired once the open-intent delay elapses.
  * @param {function} params.onHoverClose - () => void, fired once the close delay elapses.
  * @param {function} params.onHit - (id) => void, fired for a genuine (non-drag) click on a hit.
- * @returns {{clearOpenTimer: function, clearCloseTimer: function, startCloseTimer: function}}
- *   Exposed so a caller can drive the same close timer from a second surface.
+ * @returns {{clearOpenTimer, clearCloseTimer, startCloseTimer, hitUnderPointer}} The timers, for a
+ *   second surface to drive, and hitUnderPointer() - the hit at the last pointer position, resolved now.
  */
 export default function useHighlightPointerEvents({
   containerRef,
@@ -35,6 +35,7 @@ export default function useHighlightPointerEvents({
   const openTimerRef = useRef(null)
   const closeTimerRef = useRef(null)
   const pointerDownPosRef = useRef(null)
+  const lastPointRef = useRef(null)
 
   const clearOpenTimer = useCallback(() => {
     clearTimeout(openTimerRef.current)
@@ -64,6 +65,7 @@ export default function useHighlightPointerEvents({
 
     let raf = null
     const onMove = e => {
+      lastPointRef.current = { x: e.clientX, y: e.clientY }
       if (e.buttons !== 0 || raf != null) {
         return // a pressed button means a drag-selection is underway; don't pop hover floats
       }
@@ -119,6 +121,7 @@ export default function useHighlightPointerEvents({
     // Leaving the transcript fires no further mousemove, so dismiss the hover float here too; the
     // float's own mouseenter cancels this, preserving the span -> float bridge.
     const onLeave = () => {
+      lastPointRef.current = null
       clearOpenTimer()
       container.style.cursor = ''
       onHitChange?.(null)
@@ -165,5 +168,11 @@ export default function useHighlightPointerEvents({
     }
   }, [clearOpenTimer, clearCloseTimer])
 
-  return { clearOpenTimer, clearCloseTimer, startCloseTimer }
+  // Resolved now rather than cached from the last move: a scroll under a still pointer fires no move.
+  const hitUnderPointer = useCallback(() => {
+    const point = lastPointRef.current
+    return point ? hitTest(point.x, point.y) : null
+  }, [hitTest])
+
+  return { clearOpenTimer, clearCloseTimer, startCloseTimer, hitUnderPointer }
 }

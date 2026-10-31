@@ -1,5 +1,7 @@
 """Container lifecycle management: config, build, run, and backend abstraction."""
 
+from __future__ import annotations
+
 from .local import LocalRuntime
 from .runtime import ContainerRuntime
 from ..config import Config

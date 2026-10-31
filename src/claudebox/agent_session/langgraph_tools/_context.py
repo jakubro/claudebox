@@ -11,6 +11,8 @@ Subscope-owned fields (agent_registry, daemon_services, mcp_client, ...) land on
 extensions as later families ship, each with a safe default so no family needs to know about the others.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,6 +52,6 @@ class ToolContext:
     agent_registry: AgentRegistry | None = None
     chat_model_factory: Callable[[], BaseChatModel] | None = None
     daemon_services: DaemonServiceBundle | None = None
-    mcp_client: "MultiServerMCPClient | None" = None
+    mcp_client: MultiServerMCPClient | None = None
     record_subagent_usage: Callable[[int, int], None] | None = None
     subagent_depth: int = 0

@@ -1,5 +1,7 @@
 """mcp.py @tool tests - list_mcp_resources + read_mcp_resource defensive routing."""
 
+from __future__ import annotations
+
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock

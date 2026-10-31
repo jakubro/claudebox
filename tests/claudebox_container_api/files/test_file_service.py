@@ -1,5 +1,7 @@
 """Tests for claudebox_container_api.files.file_service - orchestrator facade."""
 
+from __future__ import annotations
+
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor

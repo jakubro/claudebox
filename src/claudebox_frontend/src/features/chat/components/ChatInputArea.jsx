@@ -42,12 +42,11 @@ export default function ChatInputArea({ isWelcome, state, actions, refs, queueEd
       <ChatInput
         isConnected={!isWelcome && isConnected}
         canInterrupt={!isWelcome && canInterrupt}
-        isResponding={!isWelcome && isResponding}
         overlayMode={isWelcome ? 'creating' : overlayMode}
         refs={refs}
         hasEvents={!isWelcome && state.hasEvents}
         send={isWelcome ? NOOP : actions.send}
-        enqueueMessage={isWelcome ? NOOP : actions.enqueueMessage}
+        enqueueMessage={isWelcome ? null : actions.enqueueMessage}
         deferSend={isWelcome ? actions.onWelcomeDeferSend : actions.deferSend}
         hasBufferedReplies={isWelcome ? undefined : actions.hasBufferedReplies}
         queueEdit={queueEdit}

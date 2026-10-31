@@ -17,3 +17,7 @@ export const STALENESS_FADE_RATE = 0.00002
 // Footer plan-limit item color ramp: amber at the warning start, red from here up, clamped beyond.
 export const RATE_LIMIT_WARNING_START_PCT = 75
 export const RATE_LIMIT_DANGER_PCT = 95
+
+// A model block's camera may close to just outside the model and back off to six fitted distances.
+export const STL_MIN_DISTANCE_FACTOR = 1.05
+export const STL_MAX_DISTANCE_FACTOR = 6

@@ -1,9 +1,9 @@
 /** E2E tests for compaction blocks including rendering, expand/collapse, and token count display. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { openLiveSessionWithAPI, openSession, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import { mockSSE } from '../mocks/sse.js'
 
 test.describe('Compaction Blocks', () => {
   test.beforeEach(async ({ page }) => {
@@ -106,9 +106,7 @@ test.describe('Compaction In Progress', () => {
   test('shows spinning bullet while compacting', async ({ page }) => {
     await mockAPI(page)
     // Fixture has compact_start with no paired boundary yet.
-    await mockSSE(page, 'events/compaction-in-progress.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/compaction-in-progress.jsonl')
 
     const compactionBlock = page.locator('.compaction-block').first()
     await expect(compactionBlock).toBeVisible()
@@ -124,10 +122,7 @@ test.describe('Compaction In Progress', () => {
   }) => {
     // Recovers from a stuck state: compact_start without a paired boundary (interrupt/error/SDK-skip)
     // must still clear isCompacting once the next human turn arrives.
-    await mockAPI(page)
-    const sse = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const sse = await openLiveSessionWithAPI(page)
 
     await sse.sendEvent({
       type: 'system',

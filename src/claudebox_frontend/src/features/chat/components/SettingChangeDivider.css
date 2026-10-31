@@ -18,3 +18,12 @@
   white-space: nowrap;
   opacity: 0.7;
 }
+
+.setting-change-divider-merged .setting-change-label {
+  white-space: normal;
+  text-align: center;
+}
+
+.setting-change-entry {
+  white-space: nowrap;
+}

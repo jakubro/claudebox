@@ -200,3 +200,38 @@ describe('TicketCard', () => {
     expect(container.querySelector('.ticket-card.drag-overlay')).toBeInTheDocument()
   })
 })
+
+describe('TicketCard session state', () => {
+  const ticket = { ...baseTicket, session: 'abcd1234efgh' }
+
+  it.each([
+    [{ activity: 'working' }, 'container-status-working', 'working (abcd..)'],
+    [{ activity: 'waiting' }, 'container-status-waiting', 'waiting (abcd..)'],
+    [{ needs_user: 'Decide: which' }, 'container-status-needs-you', 'needs you (abcd..)'],
+    [{}, 'running', 'running (abcd..)'],
+  ])('a running session with %o shows %s and reads %s', (fields, dotClass, label) => {
+    mockSessions = [{ ...runningSessions[0], ...fields }]
+
+    const { container } = render(<TicketCard ticket={ticket} />)
+
+    expect(container.querySelector('.ticket-status-dot')).toHaveClass(dotClass)
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+
+  it('reads stopping while stopping, and stopped without a container, whatever the agent did', () => {
+    mockSessions = [{ ...runningSessions[0], activity: 'working' }]
+    mockStopping = new Set(['abcd1234efgh'])
+
+    const { container, rerender } = render(<TicketCard ticket={ticket} />)
+
+    expect(container.querySelector('.ticket-status-dot')).toHaveClass('stopping')
+    expect(screen.getByText('stopping (abcd..)')).toBeInTheDocument()
+
+    mockSessions = [{ session_id: 'abcd1234efgh', needs_user: 'Decide: stale' }]
+    mockStopping = new Set()
+    rerender(<TicketCard ticket={ticket} />)
+
+    expect(container.querySelector('.ticket-status-dot')).toHaveClass('stopped')
+    expect(screen.getByText('stopped (abcd..)')).toBeInTheDocument()
+  })
+})

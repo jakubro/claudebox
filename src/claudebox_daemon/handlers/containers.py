@@ -1,5 +1,7 @@
 """Container signal/proxy routes (workspace-scoped only)."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Request
 
 from ._models import StopContainerRequest

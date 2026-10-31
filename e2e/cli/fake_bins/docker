@@ -1,0 +1,18 @@
+#!/bin/bash
+# Fake docker for hermetic CLI e2e tests. Records args; returns canned output in Docker's own shapes,
+# so CLAUDEBOX_TEST_DOCKER_PS holds one JSON object per line with labels as one key=value,... string.
+
+set -euo pipefail
+
+echo "$@" >> "${CLAUDEBOX_TEST_RECORD_DIR:?CLAUDEBOX_TEST_RECORD_DIR unset}/docker.log"
+
+case "${1:-}" in
+    --version) echo "Docker version 27.3.1-fake, build 0000000"; exit 0 ;;
+    image|container)
+        case "${2:-}" in
+            prune) echo "Total reclaimed space: 0B"; exit 0 ;;
+        esac
+        ;;
+    ps) printf '%s' "${CLAUDEBOX_TEST_DOCKER_PS:-}"; exit 0 ;;
+    *) exit 0 ;;
+esac

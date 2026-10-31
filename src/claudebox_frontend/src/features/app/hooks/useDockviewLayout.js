@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { patchSessionUiState } from '../../../api/uiState'
 import { SIDE_PANEL_CONFIG } from '../../../config/layout'
-import { LAYOUT_SAVE_DEBOUNCE_MS } from '../../../config/timing'
+import { LAYOUT_RESTORE_GRACE_MS, LAYOUT_SAVE_DEBOUNCE_MS } from '../../../config/timing'
+import { parseHash } from '../../../context/utils/sessionRouting'
 import SidePanelManager from '../../../managers/SidePanelManager'
 import { buildSaveOps } from '../../../utils/layoutPersistence'
 import { applyMainGroupMarker, buildDefaultLayout } from '../utils/default-layout'
@@ -16,9 +17,12 @@ export default function useDockviewLayout(focusedGroupRootRef) {
   const apiRef = useRef(null)
   const sidePanelRef = useRef(null)
   const saveTimeoutRef = useRef(null)
+  const savePendingRef = useRef(false)
+  const graceTimeoutRef = useRef(null)
   const sessionIdRef = useRef(null)
   const layoutRestoredRef = useRef(false)
   const initialRestoreRef = useRef(null)
+  const initialSessionIdRef = useRef(null)
   const [activePanels, setActivePanels] = useState([
     'sessions',
     'bookmarks',
@@ -26,6 +30,7 @@ export default function useDockviewLayout(focusedGroupRootRef) {
     'todos',
     'stash',
     'tasks',
+    'crons',
   ])
   const [isMaximized, setIsMaximized] = useState(false)
 
@@ -44,16 +49,22 @@ export default function useDockviewLayout(focusedGroupRootRef) {
       const sidePanel = new SidePanelManager(api, SIDE_PANEL_CONFIG)
       sidePanelRef.current = sidePanel
 
-      buildDefaultLayout(api, sidePanel)
-
-      initialRestoreRef.current = sidePanel.restoreFromServer(null).then(({ loaded }) => {
+      const sessionId = parseHash(window.location.hash)?.sessionId ?? null
+      initialSessionIdRef.current = sessionId
+      let builtDefault = false
+      graceTimeoutRef.current = setTimeout(() => {
+        builtDefault = true
+        buildDefaultLayout(api, sidePanel)
+      }, LAYOUT_RESTORE_GRACE_MS)
+      initialRestoreRef.current = restoreInitialLayout(sidePanel, sessionId).then(loaded => {
+        clearTimeout(graceTimeoutRef.current)
         if (loaded) {
           updateActivePanels()
           // fromJSON restore creates groups via its own lifecycle - re-apply the marker so
           // MainPanel.css hides the tab bar.
           applyMainGroupMarker(api)
-        } else {
-          // A failed fromJSON can leave panels behind; clear so the rebuild hits no stale id.
+        } else if (!(builtDefault && api.getPanel('main'))) {
+          // A failed fromJSON can leave panels behind; clear so the build hits no stale id.
           api.clear()
           buildDefaultLayout(api, sidePanel)
         }
@@ -82,6 +93,7 @@ export default function useDockviewLayout(focusedGroupRootRef) {
         saveTimeoutRef.current = setTimeout(() => {
           const sessionId = sessionIdRef.current
           if (!sessionId) {
+            savePendingRef.current = true
             return
           }
           patchSessionUiState(sessionId, buildSaveOps(api, sidePanel, sidePanel.preMaximizeLayout))
@@ -128,20 +140,17 @@ export default function useDockviewLayout(focusedGroupRootRef) {
   }, [focusedGroupRootRef])
 
   /**
-   * Bind sessionIdRef and run the one-shot per-tab layout restore on first session attach; the
-   * onDidLayoutChange save path reads sessionIdRef to know which session to PATCH.
-   *
-   * A missing per-session layout is not rebuilt here: onReady already applied the inherited one,
-   * and rebuilding would tear down the panel holding a just-created session's first message.
+   * Bind sessionIdRef (the layout save's target) and restore the session's own layout on first attach,
+   * unless onReady already resolved it; a missing one is never rebuilt - that would remount the chat.
+   * A layout change that settled before any session attached is saved here.
    */
   const onSessionAttach = useCallback(async sessionId => {
+    sessionIdRef.current = sessionId
     const api = apiRef.current
     const sidePanel = sidePanelRef.current
     if (!api) {
       return
     }
-
-    sessionIdRef.current = sessionId
 
     if (sessionId && !layoutRestoredRef.current && sidePanel) {
       layoutRestoredRef.current = true
@@ -149,7 +158,14 @@ export default function useDockviewLayout(focusedGroupRootRef) {
         await initialRestoreRef.current
         initialRestoreRef.current = null
       }
-      await sidePanel.restoreFromServer(sessionId)
+      if (sessionId !== initialSessionIdRef.current) {
+        await sidePanel.restoreFromServer(sessionId)
+      }
+    }
+
+    if (sessionId && savePendingRef.current) {
+      savePendingRef.current = false
+      patchSessionUiState(sessionId, buildSaveOps(api, sidePanel, sidePanel.preMaximizeLayout))
     }
   }, [])
 
@@ -166,6 +182,7 @@ export default function useDockviewLayout(focusedGroupRootRef) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
+      clearTimeout(graceTimeoutRef.current)
     }
   }, [])
 
@@ -181,4 +198,16 @@ export default function useDockviewLayout(focusedGroupRootRef) {
     handleMaximizeToggle,
     exitMaximize,
   }
+}
+
+/**
+ * Apply the URL session's saved layout, else the inherited one; false when neither applied. Each
+ * restore replaces every panel, so nothing is built before the one that applies is known.
+ */
+async function restoreInitialLayout(sidePanel, sessionId) {
+  if (sessionId && (await sidePanel.restoreFromServer(sessionId)).loaded) {
+    return true
+  }
+
+  return (await sidePanel.restoreFromServer(null)).loaded
 }

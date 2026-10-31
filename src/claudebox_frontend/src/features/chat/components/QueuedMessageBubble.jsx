@@ -6,7 +6,7 @@ import UserMessageContent from './turn/components/user-message-content'
 
 /**
  * @param {object} props
- * @param {object} props.item - Queue item { id, content, attachments, status }
+ * @param {object} props.item - Queue item { id, content, attachments, status, owner? }; owner: held for a creation.
  * @param {function} props.onEdit - Called with item id to edit.
  * @param {function} props.onCancel - Called with item id to cancel.
  * @param {function} props.onRequeue - Called with item id to re-queue (paused items only).
@@ -32,9 +32,11 @@ function QueuedMessageBubble({ item, onEdit, onCancel, onRequeue, onSendNow }) {
           </>
         ) : (
           <>
-            <button type="button" onClick={() => onSendNow(item.id)} title="Send now">
-              ⇒
-            </button>
+            {!item.owner && (
+              <button type="button" onClick={() => onSendNow(item.id)} title="Send now">
+                ⇒
+              </button>
+            )}
             <button type="button" onClick={() => onEdit(item.id)} title="Edit">
               ✎
             </button>

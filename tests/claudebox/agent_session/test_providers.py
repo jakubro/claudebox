@@ -1,5 +1,7 @@
 """ProviderSpec parsing + install_hint helper + strategy dispatch + lookup helpers - universal-provider plumbing tests."""
 
+from __future__ import annotations
+
 import dataclasses
 from unittest.mock import MagicMock, patch
 
@@ -229,7 +231,7 @@ class TestProbeOllama:
 
         with (
             patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
-            pytest.raises(OllamaModelNotPulled, match="llama3.2:3b"),
+            pytest.raises(OllamaModelNotPulled, match=r"llama3\.2:3b"),
         ):
             _probe_ollama(self._spec())
 
@@ -470,22 +472,29 @@ class TestLookupContextWindow:
     """`lookup_context_window(spec, override)` reads MODEL_CONTEXT_WINDOW with workspace override."""
 
     def test_table_hit_anthropic_sonnet(self):
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5-5", {})
 
         assert lookup_context_window(spec, None) == 1_000_000
+
+    def test_table_hit_anthropic_haiku(self):
+        spec = ProviderSpec.parse("anthropic:claude-haiku-5-5", {})
+
+        assert lookup_context_window(spec, None) == 1_000_000
+
+    def test_retired_anthropic_model_falls_back(self):
+        spec = ProviderSpec.parse("anthropic:claude-haiku-4-5", {})
+
+        assert lookup_context_window(spec, None) == 128_000
 
     def test_table_hit_anthropic_fable_5_1(self):
         spec = ProviderSpec.parse("anthropic:claude-fable-5-1", {})
 
         assert lookup_context_window(spec, None) == 1_000_000
 
-    def test_haiku_alias_matches_dated_id(self):
-        """The alias the Anthropic API accepts resolves to the same window as the dated id."""
+    def test_table_hit_anthropic_opus_5_5(self):
+        spec = ProviderSpec.parse("anthropic:claude-opus-5-5", {})
 
-        alias = ProviderSpec.parse("anthropic:claude-haiku-4-5", {})
-        dated = ProviderSpec.parse("anthropic:claude-haiku-4-5-20251001", {})
-
-        assert lookup_context_window(alias, None) == lookup_context_window(dated, None)
+        assert lookup_context_window(spec, None) == 1_000_000
 
     def test_table_hit_ollama_llama(self):
         spec = ProviderSpec.parse("ollama:llama3.2:3b", {})
@@ -518,22 +527,29 @@ class TestLookupPrice:
     """`lookup_price(spec, overrides)` reads PRICE_PER_MTOK with workspace overrides."""
 
     def test_table_hit_anthropic_sonnet(self):
-        spec = ProviderSpec.parse("anthropic:claude-sonnet-5", {})
+        spec = ProviderSpec.parse("anthropic:claude-sonnet-5-5", {})
 
-        assert lookup_price(spec, {}) == {"input": 3.0, "output": 15.0}
+        assert lookup_price(spec, {}) == {"input": 2.0, "output": 10.0}
+
+    def test_table_hit_anthropic_haiku(self):
+        spec = ProviderSpec.parse("anthropic:claude-haiku-5-5", {})
+
+        assert lookup_price(spec, {}) == {"input": 0.10, "output": 0.50}
+
+    def test_retired_anthropic_model_is_unpriced(self):
+        spec = ProviderSpec.parse("anthropic:claude-opus-5", {})
+
+        assert lookup_price(spec, {}) is None
 
     def test_table_hit_anthropic_fable_5_1(self):
         spec = ProviderSpec.parse("anthropic:claude-fable-5-1", {})
 
         assert lookup_price(spec, {}) == {"input": 10.0, "output": 50.0}
 
-    def test_haiku_alias_matches_dated_id(self):
-        """The alias the Anthropic API accepts prices the same as the dated catalog id."""
+    def test_table_hit_anthropic_opus_5_5(self):
+        spec = ProviderSpec.parse("anthropic:claude-opus-5-5", {})
 
-        alias = ProviderSpec.parse("anthropic:claude-haiku-4-5", {})
-        dated = ProviderSpec.parse("anthropic:claude-haiku-4-5-20251001", {})
-
-        assert lookup_price(alias, {}) == lookup_price(dated, {})
+        assert lookup_price(spec, {}) == {"input": 4.0, "output": 20.0}
 
     def test_table_hit_openai_gpt4o(self):
         spec = ProviderSpec.parse("openai:gpt-4o", {})

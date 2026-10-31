@@ -43,6 +43,7 @@ const mockSessionDir = { current: null }
 vi.mock('../../context/SessionDataContext', () => ({
   useSessionDir: () => mockSessionDir.current,
   useSessionId: () => 'test-session',
+  useSessionWorkspace: () => null,
 }))
 
 const mockResolvedPaths = { current: {} }
@@ -311,5 +312,59 @@ describe('Markdown', () => {
       expect(span).not.toBeNull()
       expect(span.style.color).toBe('red')
     })
+  })
+
+  describe('in-message targets', () => {
+    it('gives a heading a GitHub slug carrying one user-content- prefix', () => {
+      const { container } = render(<Markdown>{'## Step 2: Run it!'}</Markdown>)
+
+      expect(container.querySelector('h2').id).toBe('user-content-step-2-run-it')
+    })
+
+    it('numbers each top-level block', () => {
+      const { container } = render(<Markdown className="md">{'One\n\n## Two\n\nThree'}</Markdown>)
+
+      const blocks = [...container.querySelector('.md').children]
+      expect(blocks.map(b => b.dataset.mdBlock)).toEqual(['0', '1', '2'])
+    })
+
+    it('keeps a fragment link in this tab', () => {
+      render(<Markdown>{'[jump](#somewhere)'}</Markdown>)
+
+      const link = screen.getByRole('link', { name: 'jump' })
+      expect(link).not.toHaveAttribute('target')
+      expect(link).toHaveAttribute('href', '#somewhere')
+    })
+  })
+})
+
+describe('Markdown relative-link bases', () => {
+  it('a relative link with no base named is plain text', () => {
+    const { container } = render(<Markdown>{'[a](docs/a.md)'}</Markdown>)
+    expect(container.querySelector('a')).toBeNull()
+    expect(screen.getByText('a')).toBeInTheDocument()
+  })
+
+  it('a baseDir turns it into a path link', () => {
+    render(<Markdown baseDir="/ws">{'[a](docs/a.md)'}</Markdown>)
+    expect(screen.getByText('a').closest('a')).toHaveAttribute(
+      'title',
+      expect.stringContaining('/ws/docs/a.md'),
+    )
+  })
+
+  it('a baseUrl resolves links and images against the page', () => {
+    const { container } = render(
+      <Markdown baseUrl="https://e.com/p/README.md">{'[a](docs/a.md)\n\n![i](i.png)'}</Markdown>,
+    )
+    const a = screen.getByText('a').closest('a')
+    expect(a).toHaveAttribute('href', 'https://e.com/p/docs/a.md')
+    expect(a).toHaveAttribute('target', '_blank')
+    expect(container.querySelector('img').getAttribute('src')).toBe('https://e.com/p/i.png')
+  })
+
+  it('an unusable baseUrl counts as none', () => {
+    const { container } = render(<Markdown baseUrl="notaurl">{'[a](docs/a.md)'}</Markdown>)
+    expect(container.querySelector('a')).toBeNull()
   })
 })

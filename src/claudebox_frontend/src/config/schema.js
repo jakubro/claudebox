@@ -26,6 +26,7 @@ export const EventSubtype = Object.freeze({
   INIT: 'init',
   COMPACT_START: 'compact_start',
   COMPACT_BOUNDARY: 'compact_boundary',
+  ERROR: 'error',
 })
 
 // --- Tool names (event.content for tool_use events) ---
@@ -43,6 +44,8 @@ export const ToolName = Object.freeze({
   TODO_WRITE: 'TodoWrite',
   TASK_CREATE: 'TaskCreate',
   TASK_UPDATE: 'TaskUpdate',
+  CRON_CREATE: 'CronCreate',
+  CRON_DELETE: 'CronDelete',
   TASK_LIST: 'TaskList',
   TASK_GET: 'TaskGet',
   TASK_OUTPUT: 'TaskOutput',
@@ -55,6 +58,10 @@ export const ToolName = Object.freeze({
   SESSION_SPAWN: 'mcp__claudebox__session_spawn',
   SESSION_ASK: 'mcp__claudebox__session_ask',
   SESSION_READ: 'mcp__claudebox__session_read',
+  NEEDS_USER: 'mcp__claudebox__needs_user',
+  LIST_MCP_RESOURCES: 'ListMcpResourcesTool',
+  READ_MCP_RESOURCE: 'ReadMcpResourceTool',
+  READ_MCP_RESOURCE_DIR: 'ReadMcpResourceDirTool',
 })
 
 // --- LangGraph tool-name aliases ---
@@ -80,11 +87,64 @@ export const TOOL_NAME_ALIASES = Object.freeze({
   session_spawn: ToolName.SESSION_SPAWN,
   session_ask: ToolName.SESSION_ASK,
   session_read: ToolName.SESSION_READ,
+  needs_user: ToolName.NEEDS_USER,
+  list_mcp_resources: ToolName.LIST_MCP_RESOURCES,
+  read_mcp_resource: ToolName.READ_MCP_RESOURCE,
 })
 
 /** Falls back to the input unchanged when no alias applies. */
 export function normalizeToolName(name) {
   return TOOL_NAME_ALIASES[name] ?? name
+}
+
+export const LANGGRAPH_RUNTIME_NAME = 'LangGraph'
+
+// LangGraph names a connected server's tool by the tool's own name; these are the runtime's own.
+const LANGGRAPH_OWN_TOOLS = new Set([
+  ...Object.keys(TOOL_NAME_ALIASES),
+  'notebook_edit',
+  'task_stop',
+])
+
+/**
+ * The connected tool server's tool a call names, or null for an agent's own tool. A name without
+ * the `mcp__<server>__` form is a server's tool only in a LangGraph session, and names no server.
+ * @returns {{server: string|null, tool: string}|null}
+ */
+export function mcpToolOf(name, runtimeName = null) {
+  if (typeof name !== 'string' || !name) {
+    return null
+  }
+  const normalized = normalizeToolName(name)
+  if (normalized.startsWith(SdkProtocol.MCP_TOOL_PREFIX)) {
+    return splitMcpName(normalized)
+  }
+  return runtimeName === LANGGRAPH_RUNTIME_NAME && !LANGGRAPH_OWN_TOOLS.has(name)
+    ? { server: null, tool: name }
+    : null
+}
+
+/** Whether a call's tool is marked: same name, or same tool where either side names no server. */
+export function isHiddenTool(name, runtimeName, hiddenTools) {
+  if (!hiddenTools?.size) {
+    return false
+  }
+  const call = mcpToolOf(name, runtimeName)
+  if (!call) {
+    return false
+  }
+  if (hiddenTools.has(normalizeToolName(name))) {
+    return true
+  }
+  for (const mark of hiddenTools) {
+    const marked = mark.startsWith(SdkProtocol.MCP_TOOL_PREFIX)
+      ? splitMcpName(mark)
+      : { server: null, tool: mark }
+    if (marked?.tool === call.tool && (marked.server === null || call.server === null)) {
+      return true
+    }
+  }
+  return false
 }
 
 // --- Block types (produced by processEvents, consumed by TurnBlockList) ---
@@ -100,6 +160,12 @@ export const TaskStatus = Object.freeze({
   RUNNING: 'running',
   COMPLETED: 'completed',
   FAILED: 'failed',
+})
+
+// --- Task kind (Tasks panel row source) ---
+export const TaskKind = Object.freeze({
+  SUBAGENT: 'subagent',
+  COMMAND: 'command',
 })
 
 // --- Todo status ---
@@ -165,4 +231,14 @@ export const SdkProtocol = Object.freeze({
   AGENT_ID_PREFIX: 'agentId:',
   MODEL_SET_PATTERN: /^<local-command-stdout>Set model to .+<\/local-command-stdout>$/,
   EFFORT_SET_PATTERN: /^<local-command-stdout>Set effort to .+<\/local-command-stdout>$/,
+  STOP_HOOK_FEEDBACK_PATTERN: /^Stop hook feedback:\n?/,
+  NO_VISIBLE_OUTPUT_PATTERN: /^\[Your previous response had no visible output\.[^\]]*\]$/,
+  SKILL_REINVOCATION_PATTERN: /^\(Re-invocation of \/\S+[\s\S]*\)$/,
+  MCP_TOOL_PREFIX: 'mcp__',
 })
+
+function splitMcpName(name) {
+  const rest = name.slice(SdkProtocol.MCP_TOOL_PREFIX.length)
+  const cut = rest.indexOf('__')
+  return cut > 0 ? { server: rest.slice(0, cut), tool: rest.slice(cut + 2) } : null
+}

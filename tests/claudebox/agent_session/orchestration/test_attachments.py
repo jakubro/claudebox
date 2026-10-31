@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.attachments - path resolution and MIME inference."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox.agent_session.orchestration.attachments import AttachmentInfo, AttachmentService

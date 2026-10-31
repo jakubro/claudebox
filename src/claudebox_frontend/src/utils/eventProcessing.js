@@ -7,11 +7,17 @@ import {
   NotificationStatus,
   normalizeToolName,
   SdkProtocol,
+  TaskKind,
   TaskStatus,
   TodoStatus,
   ToolName,
 } from '../config/schema'
+import { CRON_MAX_AGE_MS } from '../config/timing'
+import { FOCUSED_HIDDEN_TOOLS, isReadOnlyCall } from '../config/toolRegistry'
+import { toolBookmarkKey } from './bookmarkIds'
+import { nextFireTime, nextRecurringFire } from './cron'
 import { isAsyncTask, isHumanEvent } from './eventPredicates'
+import { extractSystemReminders } from './parsers'
 
 /** Initial state for incremental turn grouping across batches. */
 export const INITIAL_TURN_GROUPING_STATE = {
@@ -59,16 +65,20 @@ function nestedDedupKey(event) {
   return JSON.stringify([event.parent_tool_use_id, event.subtype, identity])
 }
 
-/** Index events for fast lookup during block creation - first pass of event processing. */
+/**
+ * Index events for fast lookup during block creation - first pass of event processing.
+ * `skillTexts`: each Skill call's text (user text after its own result) and re-invocation notes.
+ */
 export function indexEvents(events) {
   const toolResults = new Map()
   const nestedEvents = new Map()
   const skillContent = new Map()
+  const skillTexts = new Set()
   const compactionSummary = new Map()
 
   const hasCompactBoundary = events.some(e => e.subtype === EventSubtype.COMPACT_BOUNDARY)
 
-  let lastSkillToolUseId = null
+  const skillPairing = { callIds: new Set(), awaiting: null, skillContent, skillTexts }
   let lastCompactEventId = null
 
   // A background Task's output can arrive twice, live and tailed - keyed per parent so only a
@@ -87,24 +97,18 @@ export function indexEvents(events) {
 
     if (event.subtype === EventSubtype.COMPACT_BOUNDARY) {
       lastCompactEventId = event.id
-      lastSkillToolUseId = null
     } else if (event.subtype === EventSubtype.TOOL_USE && event.content === ToolName.SKILL) {
-      lastSkillToolUseId = event.tool_use_id
       lastCompactEventId = null
     } else if (event.type === EventType.USER && !event.is_human) {
-      // Non-human user messages: compaction summary/output or skill content
+      // Non-human user messages: compaction summary/output
       if (lastCompactEventId) {
         if (!compactionSummary.has(lastCompactEventId)) {
           compactionSummary.set(lastCompactEventId, [])
         }
         compactionSummary.get(lastCompactEventId).push(event.content)
         // Don't clear lastCompactEventId - keep pairing subsequent messages
-      } else if (event.subtype === EventSubtype.TEXT && lastSkillToolUseId) {
-        skillContent.set(lastSkillToolUseId, event.content)
-        lastSkillToolUseId = null
       }
     } else if (event.subtype !== EventSubtype.TOOL_RESULT) {
-      lastSkillToolUseId = null
       lastCompactEventId = null
     }
 
@@ -126,10 +130,19 @@ export function indexEvents(events) {
         }
         nestedEvents.get(parentId).push(event)
       }
+    } else if (!lastCompactEventId) {
+      pairSkillText(skillPairing, event)
     }
   }
 
-  return { toolResults, nestedEvents, skillContent, compactionSummary, hasCompactBoundary }
+  return {
+    toolResults,
+    nestedEvents,
+    skillContent,
+    skillTexts,
+    compactionSummary,
+    hasCompactBoundary,
+  }
 }
 
 /** Extract `<thinking>` XML blocks from text into ordered {type, content} segments. */
@@ -161,11 +174,20 @@ export function extractThinkingFromText(content) {
 /**
  * Process events into renderable blocks: pairs tool_use/result, groups nested Task events,
  * skill markdown, and compaction start/boundary; extracts embedded thinking XML.
+ * Text no one wrote joins the `injected` list of the block before it, else the turn's own list.
+ * @returns {{ blocks: Array, injected: Array<{source: string, text: string}> }}
  */
 export function processEvents(events) {
   const blocks = []
-  const { toolResults, nestedEvents, skillContent, compactionSummary, hasCompactBoundary } =
-    indexEvents(events)
+  const injected = []
+  const {
+    toolResults,
+    nestedEvents,
+    skillContent,
+    skillTexts,
+    compactionSummary,
+    hasCompactBoundary,
+  } = indexEvents(events)
 
   // Second pass: create renderable blocks (skip nested events, skill markdown, and compaction summaries)
   for (const event of events) {
@@ -185,7 +207,7 @@ export function processEvents(events) {
       }
       // Skip user text that was attached to a Skill or compaction block
       if (event.type === EventType.USER && !event.is_human) {
-        const isSkillMarkdown = [...skillContent.values()].includes(event.content)
+        const isSkillMarkdown = skillTexts.has(event)
         const isCompactionContent = [...compactionSummary.values()].some(arr =>
           arr.includes(event.content),
         )
@@ -199,9 +221,15 @@ export function processEvents(events) {
         if (isInterruptAck(event)) {
           continue
         }
+        const added = addedTexts(event)
+        if (added) {
+          attachInjected(blocks, injected, added)
+          continue
+        }
       }
       // Extract embedded <thinking> XML from assistant text into separate blocks
       if (event.type === EventType.ASSISTANT && THINKING_XML_PATTERN.test(event.content)) {
+        let textSegment = 0
         for (const segment of extractThinkingFromText(event.content)) {
           if (segment.type === BlockType.THINKING) {
             blocks.push({
@@ -209,11 +237,15 @@ export function processEvents(events) {
               event: { ...event, content: segment.content, subtype: EventSubtype.THINKING },
             })
           } else {
-            blocks.push({ type: BlockType.TEXT, event: { ...event, content: segment.content } })
+            blocks.push({
+              type: BlockType.TEXT,
+              event: { ...event, content: segment.content },
+              segment: textSegment++,
+            })
           }
         }
       } else {
-        blocks.push({ type: BlockType.TEXT, event })
+        blocks.push({ type: BlockType.TEXT, event, segment: 0 })
       }
     } else if (event.subtype === EventSubtype.THINKING) {
       if (event.content?.trim()) {
@@ -239,17 +271,65 @@ export function processEvents(events) {
     } else if (event.subtype === EventSubtype.COMPACT_BOUNDARY) {
       const summary = compactionSummary.get(event.id)
       blocks.push({ type: BlockType.COMPACTION, event, summary, isCompacting: false })
+    } else if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR) {
+      if (event.content?.trim()) {
+        blocks.push({ type: BlockType.TEXT, event })
+      }
     }
     // tool_result is paired above; model_changed/permission_mode_changed render via
     // turn.settingChanges, not here.
   }
 
-  return blocks
+  return { blocks, injected }
+}
+
+export const InjectedSource = Object.freeze({
+  STOP_HOOK: 'stop-hook',
+  CLAUDE_CODE: 'claude-code',
+  SYSTEM_REMINDER: 'system-reminder',
+})
+
+/** Turn reminders cut from a block or a tool result into added-text entries, in order. */
+export function reminderEntries(reminders) {
+  return reminders.map(reminder => ({
+    source: InjectedSource.SYSTEM_REMINDER,
+    text: reminder.replace(/\\n/g, '\n').trim(),
+  }))
+}
+
+/** Added text keyed by the tool call it hangs on, across a session's turns; empty when none. */
+export function injectedByToolUse(events) {
+  const byToolUse = new Map()
+
+  if (!events.some(event => addedTexts(event))) {
+    return byToolUse
+  }
+
+  let turnEvents = []
+  const collect = () => {
+    for (const block of processEvents(turnEvents).blocks) {
+      if (block.type === BlockType.TOOL && block.injected) {
+        byToolUse.set(block.toolUse.tool_use_id, block.injected)
+      }
+    }
+  }
+
+  for (const event of events) {
+    if (isHumanEvent(event) && !event.parent_tool_use_id) {
+      collect()
+      turnEvents = []
+    } else {
+      turnEvents.push(event)
+    }
+  }
+  collect()
+
+  return byToolUse
 }
 
 /** Process nested (subagent Task) events into `kind`-tagged tool and text blocks, in event order;
- * skips Task prompts and the subagent's own role prompt. */
-export function processNestedEvents(events) {
+ * skips Task prompts, the subagent's own role prompt and the calls `mode` hides. */
+export function processNestedEvents(events, mode = TurnRoutingMode.OFF, isMarked = NO_TOOL_MARKED) {
   if (!events) {
     return []
   }
@@ -278,7 +358,7 @@ export function processNestedEvents(events) {
     if (event.subtype === EventSubtype.TOOL_USE) {
       const toolUseId = event.tool_use_id
       const result = toolUseId ? toolResults.get(toolUseId) : null
-      if (isHiddenToolSearch(event, result)) {
+      if (isToolBlockHidden(mode, event, result, null, isMarked)) {
         continue
       }
       blocks.push({ kind: 'tool', toolUse: event, toolResult: result })
@@ -377,13 +457,15 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
           event.attachments || null,
           event.inline_replies || null,
           event.note || null,
+          event.ts || null,
         ),
       )
       cloned.add(currentTurnIndex)
     } else if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.INTERRUPT_SENT) {
-      // Skip if the turn already completed - a late-arriving interrupt shouldn't mark it interrupted.
-      const alreadyCompleted = event.turn_id && turnResults[event.turn_id] === 'success'
-      if (!alreadyCompleted && currentTurnIndex != null) {
+      // An older session's stop has no turn_running: a turn that already succeeded stays unmarked.
+      const stopsTurn =
+        event.turn_running ?? !(event.turn_id && turnResults[event.turn_id] === 'success')
+      if (stopsTurn && currentTurnIndex != null) {
         cloneTurn(currentTurnIndex).interrupted = true
       }
     } else if (isSettingChangeOrRestart(event)) {
@@ -398,7 +480,8 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
       event.subtype === EventSubtype.TOOL_RESULT ||
       event.subtype === EventSubtype.COMPACT_START ||
       event.subtype === EventSubtype.COMPACT_BOUNDARY ||
-      (event.type === EventType.USER && !event.is_human)
+      (event.type === EventType.USER && !event.is_human) ||
+      (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR)
     ) {
       if (event.subtype === EventSubtype.COMPACT_START) {
         // Buffer compact_start - don't place yet, the new turn hasn't been created
@@ -447,25 +530,31 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
   }
 }
 
-/** Append result events from a batch to the turn results map; returns the original reference if none are new. */
+/** Append result and reported-failure events from a batch to the turn results map (original
+ * reference if none are new) - a failure is an 'error' result no later result downgrades. */
 export function appendTurnResults(existing, newEvents) {
   let updated = null
   for (const e of newEvents) {
-    if (e.type === EventType.RESULT && e.turn_id) {
+    const isFailure = e.type === EventType.SYSTEM && e.subtype === EventSubtype.ERROR
+    if ((e.type === EventType.RESULT || isFailure) && e.turn_id) {
+      const results = updated || existing
+      if (!isFailure && results[e.turn_id] === EventSubtype.ERROR) {
+        continue
+      }
       if (!updated) {
         updated = { ...existing }
       }
-      updated[e.turn_id] = e.subtype
+      updated[e.turn_id] = isFailure ? EventSubtype.ERROR : e.subtype
     }
   }
   return updated || existing
 }
 
-/** Append task notifications from new visible events; returns the original reference if none are new. */
-export function appendTaskNotifications(existing, newVisibleEvents) {
+/** Append task notifications with their ts and log index (baseIndex + batch position); same reference if none. */
+export function appendTaskNotifications(existing, newEvents, baseIndex = 0) {
   let notifications
 
-  for (const event of newVisibleEvents) {
+  newEvents.forEach((event, i) => {
     if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.TASK_NOTIFICATION) {
       const data = event.message_data
       if (data?.task_id) {
@@ -477,12 +566,92 @@ export function appendTaskNotifications(existing, newVisibleEvents) {
           status: data.status || NotificationStatus.COMPLETED,
           summary: content.split('\n')[0],
           content,
+          ts: eventTimeMs(event),
+          index: baseIndex + i,
         })
       }
     }
-  }
+  })
 
   return notifications || existing
+}
+
+/**
+ * Append top-level background launches keyed by task id - a Bash result carrying `backgroundTaskId`
+ * (a timed-out command has no input flag) or an async subagent result; same references if none.
+ */
+export function appendBackgroundLaunches(existing, bashInputs, newEvents, baseIndex = 0) {
+  let launches = existing
+  let inputs = bashInputs
+
+  newEvents.forEach((event, i) => {
+    if (event.parent_tool_use_id) {
+      return
+    }
+    if (
+      event.subtype === EventSubtype.TOOL_USE &&
+      normalizeToolName(event.content) === ToolName.BASH &&
+      event.tool_use_id
+    ) {
+      inputs = inputs === bashInputs ? new Map(bashInputs) : inputs
+      inputs.set(event.tool_use_id, event.tool_input ?? {})
+      return
+    }
+    if (event.subtype !== EventSubtype.TOOL_RESULT) {
+      return
+    }
+
+    const result = event.tool_use_result
+    const input = inputs.get(event.tool_use_id)
+    let launch = null
+    if (input && typeof result?.backgroundTaskId === 'string') {
+      // || not ??: an empty description falls back to the command.
+      const name = input.description || input.command || ''
+      launch = { id: result.backgroundTaskId, name: String(name) }
+    } else if (isAsyncTask(result) && typeof result.agentId === 'string') {
+      launch = { id: result.agentId, name: String(result.description || '') }
+    }
+    if (input) {
+      inputs = inputs === bashInputs ? new Map(bashInputs) : inputs
+      inputs.delete(event.tool_use_id)
+    }
+    if (launch) {
+      launches = launches === existing ? new Map(existing) : launches
+      launches.set(launch.id, { ...launch, toolUseId: event.tool_use_id, index: baseIndex + i })
+    }
+  })
+
+  return { launches, bashInputs: inputs }
+}
+
+/** Launches with no completion notice and launched after the last container restart, which kills them. */
+export function selectRunningBackgroundWork(launches, taskNotifications, lastRestartIndex) {
+  const running = []
+  for (const launch of launches.values()) {
+    if (!taskNotifications.has(launch.id) && launch.index > lastRestartIndex) {
+      running.push(launch)
+    }
+  }
+  return running
+}
+
+/**
+ * Whether work launched since the last restart finished after the last result or human message:
+ * the agent's own pick-up is pending (work a restart cut off is never picked up).
+ */
+export function hasUnclaimedCompletion(
+  launches,
+  taskNotifications,
+  lastSettledIndex,
+  lastRestartIndex,
+) {
+  for (const launch of launches.values()) {
+    const notification = taskNotifications.get(launch.id)
+    if (notification && notification.index > lastSettledIndex && launch.index > lastRestartIndex) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -736,22 +905,42 @@ export function appendSubagentLabels(existing, newEvents) {
   return labels || existing
 }
 
-/** Extract task info from events for Tasks panel display (id, description, status, timestamps). */
-export function extractTasks(events, taskNotifications) {
+/**
+ * Tasks panel rows in launch order: subagent calls plus top-level commands in `backgroundLaunches`.
+ * A background row ends at its completion notice; with none, a launch before the last restart died.
+ */
+export function extractTasks(events, taskNotifications, backgroundLaunches = new Map()) {
   const tasks = []
   const toolResults = new Map()
+  const launchesByToolUseId = new Map()
+  let lastRestartIndex = -1
 
-  // First pass: index tool_results
-  for (const event of events) {
+  events.forEach((event, i) => {
     if (event.subtype === EventSubtype.TOOL_RESULT) {
       const toolUseId = event.tool_use_id
       if (toolUseId) {
         toolResults.set(toolUseId, event)
       }
     }
+    if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.CONTAINER_RESTARTED) {
+      lastRestartIndex = i
+    }
+  })
+  for (const launch of backgroundLaunches.values()) {
+    launchesByToolUseId.set(launch.toolUseId, launch)
   }
 
   const lastEventByParent = buildLastEventTimeMap(events)
+  const backgroundStatus = (taskId, launchIndex) => {
+    const notification = taskNotifications?.get(taskId)
+    if (notification) {
+      return notification.status === NotificationStatus.FAILED ||
+        notification.status === NotificationStatus.KILLED
+        ? TaskStatus.FAILED
+        : TaskStatus.COMPLETED
+    }
+    return launchIndex < lastRestartIndex ? TaskStatus.FAILED : TaskStatus.RUNNING
+  }
 
   // Turn tracking mirrors appendTurns: a non-nested human event opens a turn; the rest join it.
   let currentTurnId = null
@@ -759,59 +948,167 @@ export function extractTasks(events, taskNotifications) {
     if (isHumanEvent(event) && !event.parent_tool_use_id) {
       currentTurnId = event.turn_id ?? null
     }
+    if (event.subtype !== EventSubtype.TOOL_USE) {
+      continue
+    }
 
-    if (event.subtype === EventSubtype.TOOL_USE && event.content === ToolName.TASK) {
-      const toolUseId = event.tool_use_id
-      const input = event.tool_input ?? {}
-      const result = toolUseId ? toolResults.get(toolUseId) : null
+    const toolUseId = event.tool_use_id
+    const startTime = eventTimeMs(event)
 
-      // Check for async task launch
-      const toolUseResult = result?.tool_use_result
-      const isAsync = isAsyncTask(toolUseResult)
-      const asyncTaskId = isAsync ? toolUseResult.agentId : null
-
-      // Look up notification for async tasks
-      const notification = asyncTaskId ? taskNotifications?.get(asyncTaskId) : null
-
-      // Derive status
-      let status = TaskStatus.RUNNING
-      if (isAsync) {
-        if (notification) {
-          status =
-            notification.status === NotificationStatus.FAILED ||
-            notification.status === NotificationStatus.KILLED
-              ? TaskStatus.FAILED
-              : TaskStatus.COMPLETED
-        }
-      } else if (result) {
-        // Check if result indicates error
-        const resultContent = result.content || ''
-        const isError =
-          result.is_error || resultContent.includes('Error:') || resultContent.includes('error:')
-        status = isError ? TaskStatus.FAILED : TaskStatus.COMPLETED
-      }
-
-      // Use event.ts (original timestamp) not event.timestamp (arrival time)
-      const startTime = event.ts ? new Date(event.ts).getTime() : event.timestamp
-      const endTime = result?.ts ? new Date(result.ts).getTime() : result?.timestamp || null
-      const lastEventTime = lastEventByParent.get(toolUseId) || startTime
-
+    const command = isTopLevelBashCall(event) ? launchesByToolUseId.get(toolUseId) : null
+    if (command) {
       tasks.push({
         id: toolUseId,
+        kind: TaskKind.COMMAND,
         turnId: currentTurnId,
-        asyncTaskId,
-        description: input.description || 'Task',
-        prompt: input.prompt,
-        status,
+        asyncTaskId: command.id,
+        description: command.name,
+        prompt: undefined,
+        status: backgroundStatus(command.id, command.index),
         startTime,
-        endTime,
-        lastEventTime,
-        isAsync,
+        endTime: taskNotifications?.get(command.id)?.ts ?? null,
+        lastEventTime: null,
+        isAsync: true,
       })
+      continue
     }
+    if (event.content !== ToolName.TASK) {
+      continue
+    }
+
+    const input = event.tool_input ?? {}
+    const result = toolUseId ? toolResults.get(toolUseId) : null
+    const toolUseResult = result?.tool_use_result
+    const isAsync = isAsyncTask(toolUseResult)
+    const asyncTaskId = isAsync ? toolUseResult.agentId : null
+
+    let status = TaskStatus.RUNNING
+    let endTime = null
+    if (isAsync) {
+      status = backgroundStatus(asyncTaskId, backgroundLaunches.get(asyncTaskId)?.index)
+      endTime = taskNotifications?.get(asyncTaskId)?.ts ?? null
+    } else if (result) {
+      const resultContent = result.content || ''
+      const isError =
+        result.is_error || resultContent.includes('Error:') || resultContent.includes('error:')
+      status = isError ? TaskStatus.FAILED : TaskStatus.COMPLETED
+      endTime = eventTimeMs(result) || null
+    }
+
+    tasks.push({
+      id: toolUseId,
+      kind: TaskKind.SUBAGENT,
+      turnId: currentTurnId,
+      asyncTaskId,
+      description: input.description || 'Task',
+      prompt: input.prompt,
+      status,
+      startTime,
+      endTime,
+      lastEventTime: lastEventByParent.get(toolUseId) || startTime,
+      isAsync,
+    })
   }
 
   return tasks
+}
+
+/**
+ * The session's active schedules from top-level CronCreate / CronDelete calls, soonest first. Fire
+ * times are predicted - no event marks a firing. A fire that comes due during the turn that started at
+ * `turnStartedAt` waits for it to end, so its row stays, marked `due`.
+ */
+export function extractCrons(events, now = Date.now(), turnStartedAt = null) {
+  const results = new Map()
+  const deleted = new Set()
+  const restarts = []
+  for (const event of events) {
+    if (event.parent_tool_use_id) {
+      continue
+    }
+    if (event.subtype === EventSubtype.TOOL_RESULT && event.tool_use_id) {
+      results.set(event.tool_use_id, event)
+    } else if (event.subtype === EventSubtype.TOOL_USE && event.content === ToolName.CRON_DELETE) {
+      deleted.add(event.tool_input?.id)
+    } else if (
+      event.type === EventType.SYSTEM &&
+      event.subtype === EventSubtype.CONTAINER_RESTARTED
+    ) {
+      restarts.push(eventTimeMs(event))
+    }
+  }
+
+  const crons = []
+  let currentTurnId = null
+  for (const event of events) {
+    if (isHumanEvent(event) && !event.parent_tool_use_id) {
+      currentTurnId = event.turn_id ?? null
+    }
+    if (
+      event.subtype !== EventSubtype.TOOL_USE ||
+      event.content !== ToolName.CRON_CREATE ||
+      event.parent_tool_use_id
+    ) {
+      continue
+    }
+    const result = results.get(event.tool_use_id)
+    const created = result?.tool_use_result
+    const { cron, prompt } = event.tool_input ?? {}
+    if (
+      !result ||
+      result.is_error ||
+      typeof created?.id !== 'string' ||
+      deleted.has(created.id) ||
+      typeof cron !== 'string' ||
+      typeof prompt !== 'string'
+    ) {
+      continue
+    }
+
+    const createdAt = eventTimeMs(result)
+    const recurring = created.recurring !== false
+    const expiresAt = recurring ? createdAt + CRON_MAX_AGE_MS : null
+    let nextFireAt
+    let due
+    if (recurring) {
+      // A resume re-registers a session-only schedule, restarting its count from the resume.
+      const resumes = created.durable === true ? [] : restarts.filter(ts => ts > createdAt)
+      const anchor = Math.max(createdAt, ...resumes)
+      const held =
+        turnStartedAt === null
+          ? null
+          : nextRecurringFire({ cron, id: created.id }, anchor, turnStartedAt)
+      due = held !== null && held <= now
+      nextFireAt = due ? held : nextRecurringFire({ cron, id: created.id }, anchor, now)
+    } else {
+      nextFireAt = nextFireTime({ cron, id: created.id, recurring: false }, createdAt)
+      due =
+        turnStartedAt !== null &&
+        nextFireAt !== null &&
+        nextFireAt >= turnStartedAt &&
+        nextFireAt <= now
+    }
+    const passed = recurring ? now >= expiresAt : nextFireAt !== null && nextFireAt <= now
+    if (nextFireAt === null || (passed && !due)) {
+      continue
+    }
+
+    crons.push({
+      id: created.id,
+      toolUseId: event.tool_use_id,
+      turnId: currentTurnId,
+      cron,
+      prompt,
+      recurring,
+      durable: created.durable === true,
+      createdAt,
+      expiresAt,
+      nextFireAt,
+      due,
+    })
+  }
+
+  return crons.sort((a, b) => a.nextFireAt - b.nextFireAt)
 }
 
 /**
@@ -900,9 +1197,48 @@ export function isHiddenToolSearch(toolUse, toolResult) {
  */
 export const TurnRoutingMode = Object.freeze({
   OFF: 'off',
+  FOCUSED: 'focused',
   BASH_ONLY: 'bash-only',
   ALL_TOOLS: 'all-tools',
 })
+
+export const NO_TOOL_MARKED = () => false
+
+/**
+ * True for a call Focused hides: a tool hidden by name, a no-change Bash command, a read-only MCP
+ * tool, or a tool `isMarked` names. A failed or bookmarked call always shows.
+ */
+export function isHiddenInFocused(
+  toolUse,
+  toolResult,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
+  if (toolResult?.is_error || bookmarkedParts?.has(toolBookmarkKey(toolUse?.tool_use_id))) {
+    return false
+  }
+  return (
+    FOCUSED_HIDDEN_TOOLS.has(normalizeToolName(toolUse?.content)) ||
+    isReadOnlyCall(toolUse, toolResult) ||
+    toolUse?.mcp_read_only === true ||
+    isMarked(toolUse?.content)
+  )
+}
+
+/** Whether a call is drawn nowhere under `mode`: a tool-schema search, or a call Focused hides. */
+export function isToolBlockHidden(
+  mode,
+  toolUse,
+  toolResult,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
+  return (
+    isHiddenToolSearch(toolUse, toolResult) ||
+    (mode === TurnRoutingMode.FOCUSED &&
+      isHiddenInFocused(toolUse, toolResult, bookmarkedParts, isMarked))
+  )
+}
 
 /** Terminal-column routing predicate; a subagent's nested Bash stays in its Task block. */
 export function isTopLevelBashCall(toolUse) {
@@ -930,23 +1266,34 @@ export function blockRoutesToRightSlot(mode, toolUse) {
 }
 
 /**
- * Whether one TOOL block survives both hiding rules - an unhidden ToolSearch call, not routed away
- * by `mode`. `hasVisibleBlock` and `predictTurnHeight` both apply it over their own shapes.
+ * Whether one TOOL block survives every hiding rule - not hidden by `isToolBlockHidden`, not routed
+ * away by `mode`. `hasVisibleBlock` and `predictTurnHeight` both apply it over their own shapes.
  */
-export function isToolBlockVisible(mode, toolUse, toolResult) {
-  if (isHiddenToolSearch(toolUse, toolResult)) {
+export function isToolBlockVisible(
+  mode,
+  toolUse,
+  toolResult,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
+  if (isToolBlockHidden(mode, toolUse, toolResult, bookmarkedParts, isMarked)) {
     return false
   }
   return !blockRoutesToRightSlot(mode, toolUse)
 }
 
-/** Any block left after hiding ToolSearch and whatever `mode` routes away; else no turn chrome. */
-export function hasVisibleBlock(blocks, mode = TurnRoutingMode.OFF) {
+/** Any block left after the hiding rules and whatever `mode` routes away; else no turn chrome. */
+export function hasVisibleBlock(
+  blocks,
+  mode = TurnRoutingMode.OFF,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
   return blocks.some(block => {
     if (block.type !== BlockType.TOOL) {
       return true
     }
-    return isToolBlockVisible(mode, block.toolUse, block.toolResult)
+    return isToolBlockVisible(mode, block.toolUse, block.toolResult, bookmarkedParts, isMarked)
   })
 }
 
@@ -963,6 +1310,65 @@ export function getMcpServers(events) {
 
 // Private helpers
 
+function pairSkillText(pairing, event) {
+  if (event.subtype === EventSubtype.TOOL_USE) {
+    pairing.awaiting = null
+    if (event.content === ToolName.SKILL) {
+      pairing.callIds.add(event.tool_use_id)
+    }
+  } else if (event.subtype === EventSubtype.TOOL_RESULT) {
+    if (pairing.callIds.has(event.tool_use_id) && !event.is_error) {
+      pairing.awaiting = event.tool_use_id
+    }
+  } else if (
+    event.type === EventType.USER &&
+    !event.is_human &&
+    event.subtype === EventSubtype.TEXT
+  ) {
+    if (pairing.awaiting) {
+      pairing.skillTexts.add(event)
+      if (!SdkProtocol.SKILL_REINVOCATION_PATTERN.test(event.content?.trim() ?? '')) {
+        pairing.skillContent.set(pairing.awaiting, event.content)
+        pairing.awaiting = null
+      }
+    }
+  } else if (event.type === EventType.ASSISTANT || event.type === EventType.RESULT) {
+    pairing.awaiting = null
+  }
+}
+
+function addedTexts(event) {
+  if (!(event.type === EventType.USER && !event.is_human && event.subtype === EventSubtype.TEXT)) {
+    return null
+  }
+  const content = event.content ?? ''
+  if (SdkProtocol.STOP_HOOK_FEEDBACK_PATTERN.test(content)) {
+    return [
+      {
+        source: InjectedSource.STOP_HOOK,
+        text: content.replace(SdkProtocol.STOP_HOOK_FEEDBACK_PATTERN, '').trim(),
+      },
+    ]
+  }
+  if (SdkProtocol.NO_VISIBLE_OUTPUT_PATTERN.test(content.trim())) {
+    return [{ source: InjectedSource.CLAUDE_CODE, text: content.trim() }]
+  }
+  const { content: rest, reminders } = extractSystemReminders(content)
+  return reminders.length > 0 && !rest.trim() ? reminderEntries(reminders) : null
+}
+
+function attachInjected(blocks, turnInjected, entries) {
+  const anchor = blocks.findLast(
+    block =>
+      !(block.type === BlockType.TOOL && isHiddenToolSearch(block.toolUse, block.toolResult)),
+  )
+  if (anchor) {
+    anchor.injected = [...(anchor.injected ?? []), ...entries]
+  } else {
+    turnInjected.push(...entries)
+  }
+}
+
 /** Create a turn object. */
 function createTurn(
   turn_id,
@@ -971,6 +1377,7 @@ function createTurn(
   attachments = null,
   inlineReplies = null,
   note = null,
+  userMessageTs = null,
 ) {
   return {
     turn_id,
@@ -981,6 +1388,7 @@ function createTurn(
     attachments,
     inlineReplies,
     note,
+    userMessageTs,
   }
 }
 
@@ -1052,6 +1460,11 @@ function buildLastEventTimeMap(events) {
     }
   }
   return map
+}
+
+/** The event's original time, falling back to its arrival time. */
+function eventTimeMs(event) {
+  return event.ts ? new Date(event.ts).getTime() : event.timestamp
 }
 
 /** True when the event is a setting-change divider or a container-restart divider. */

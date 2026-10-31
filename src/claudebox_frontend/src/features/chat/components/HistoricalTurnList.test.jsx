@@ -14,7 +14,7 @@ const turnRenderSpy = vi.fn()
 vi.mock('./turn', () => ({
   default: props => {
     turnRenderSpy(props.turnId)
-    return <div data-testid="turn" data-turn-id={props.turnId} />
+    return <div data-testid="turn" data-turn-id={props.turnId} data-session-id={props.sessionId} />
   },
 }))
 vi.mock('./SettingChangeDivider', () => ({
@@ -251,6 +251,20 @@ describe('HistoricalTurnList', () => {
       expect(turnRenderSpy).not.toHaveBeenCalledWith('t1')
       expect(turnRenderSpy).toHaveBeenCalledWith('t2')
       expect(turnRenderSpy).toHaveBeenCalledWith('t3')
+    })
+
+    it('reads inherited turns from the source and its own turns from the session given', () => {
+      const turns = [mkForkDividerTurn('t1', 'source-1'), mkTurn('t2')]
+
+      render(
+        <HistoricalTurnList turns={turns} isSideThread={true} sessionId="thread-1" {...STABLE} />,
+      )
+      fireEvent.click(screen.getByTestId('thread-fold-row'))
+
+      const sessionOf = id =>
+        screen.getAllByTestId('turn').find(el => el.dataset.turnId === id).dataset.sessionId
+      expect(sessionOf('t1')).toBe('source-1')
+      expect(sessionOf('t2')).toBe('thread-1')
     })
 
     it('folds nothing for an ordinary fork - no is_side_thread marker', () => {

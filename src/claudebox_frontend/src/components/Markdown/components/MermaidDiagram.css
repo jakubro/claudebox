@@ -25,6 +25,12 @@
   height: auto;
 }
 
+/* Mermaid pins the step numbers' font by attribute, out of reach of its own font settings */
+.mermaid-diagram svg [class~="sequenceNumber"],
+.mermaid-zoom-inner svg [class~="sequenceNumber"] {
+  font-family: var(--font-sans);
+}
+
 /* Loading state */
 .mermaid-loading {
   padding: 16px;
@@ -33,8 +39,9 @@
   font-size: 12px;
 }
 
-/* Failure notice - sits above the syntax-highlighted source fallback */
-.mermaid-failure-notice {
+/* Failure notice - sits above the syntax-highlighted source fallback; maps and models share it */
+.mermaid-failure-notice,
+.render-failure-notice {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -44,12 +51,14 @@
   font-size: 12px;
 }
 
-.mermaid-failure-icon {
+.mermaid-failure-icon,
+.render-failure-icon {
   color: var(--error);
   font-weight: 700;
 }
 
-.mermaid-failure-text {
+.mermaid-failure-text,
+.render-failure-text {
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }

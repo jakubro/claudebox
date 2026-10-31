@@ -6,6 +6,8 @@ shape and delegates to it, so both paths share one block-walk implementation and
 with the JSONL contract.
 """
 
+from __future__ import annotations
+
 import dataclasses
 from collections.abc import Iterator
 from datetime import datetime
@@ -29,6 +31,14 @@ from ..events import (
     UserMessagePayload,
 )
 from ...core import serialization
+
+
+_AGENT_ERROR_AUTHENTICATION_FAILED = "authentication_failed"
+
+_NOT_LOGGED_IN_MESSAGE = (
+    "Not logged in. Run `claudebox run` in a terminal in this workspace and finish the login it "
+    "opens, then send your message again."
+)
 
 
 _TYPED_KIND_TO_DICT_TYPE = {
@@ -86,31 +96,26 @@ def dict_message_to_events(data: dict) -> Iterator[Event]:
 
         return
 
+    if msg_type == EventType.ASSISTANT and data.get("error") and not _is_subagent_message(data):
+        yield _agent_failure_event(data["error"], message)
+
+        return
+
     content = message.get("content")
 
     if content is None:
         content = ""
 
     if isinstance(content, str):
-        if msg_type == EventType.USER and _is_synthetic_user_message(content):
-            yield Event(
-                type=msg_type,
-                subtype=EventSubtype.TEXT,
-                content=content,
-                primary=True,
-                is_human=False,
-                raw={"message": message},
-            )
-        else:
-            is_human = msg_type == EventType.USER
-            yield Event(
-                type=msg_type,
-                subtype=EventSubtype.MESSAGE if is_human else EventSubtype.TEXT,
-                content=content,
-                primary=True,
-                is_human=is_human,
-                raw={"message": message},
-            )
+        is_human = msg_type == EventType.USER and is_human_message(content)
+        yield Event(
+            type=msg_type,
+            subtype=EventSubtype.MESSAGE if is_human else EventSubtype.TEXT,
+            content=content,
+            primary=True,
+            is_human=is_human,
+            raw={"message": message},
+        )
 
         return
 
@@ -142,6 +147,12 @@ def agent_event_to_events(evt: AgentEvent) -> Iterator[Event]:
     dict shape `dict_message_to_events` consumes."""
 
     return dict_message_to_events(_typed_payload_to_dict_message(evt))
+
+
+def is_human_message(content: object) -> bool:
+    """Whether user-kind content is the person's own message, not a tool result or runtime text."""
+
+    return isinstance(content, str) and not _is_synthetic_user_message(content)
 
 
 def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
@@ -205,7 +216,7 @@ def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
         }
 
     if isinstance(payload, AssistantMessagePayload):
-        return {
+        assistant: dict = {
             "type": msg_type,
             "message": {
                 "uuid": payload.uuid,
@@ -214,6 +225,12 @@ def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
                 "parent_tool_use_id": payload.parent_tool_use_id,
             },
         }
+
+        # Beside `message`, as in the agent's transcript lines, so tailed lines share the check.
+        if payload.error is not None:
+            assistant["error"] = payload.error
+
+        return assistant
 
     if isinstance(payload, RateLimitPayload):
         return {
@@ -290,6 +307,33 @@ def _block_to_dict(block: ContentBlock) -> dict:
         return {"type": "unknown", "class_name": block.class_name, "data": dict(block.data)}
 
     raise TypeError(f"Unknown ContentBlock type: {type(block).__name__}")
+
+
+def _is_subagent_message(data: dict) -> bool:
+    return bool(data.get("message", {}).get("parent_tool_use_id") or data.get("isSidechain"))
+
+
+def _agent_failure_event(error: str, message: dict) -> Event:
+    """Replace the agent's login advice: it names its own `/login`, which the web UI cannot run."""
+
+    if error == _AGENT_ERROR_AUTHENTICATION_FAILED:
+        content = _NOT_LOGGED_IN_MESSAGE
+    else:
+        text = "\n\n".join(
+            str(block.get("text") or "")
+            for block in message.get("content") or []
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+        content = text if text.strip() else error
+
+    return Event(
+        type=EventType.SYSTEM,
+        subtype=EventSubtype.ERROR,
+        content=content,
+        primary=False,
+        is_human=False,
+        raw={"message": message},
+    )
 
 
 def _is_synthetic_user_message(content: str) -> bool:

@@ -1,5 +1,7 @@
 """LangGraphRuntime failure modes - Ollama unreachable, model not pulled, tool error, compaction."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -89,7 +91,7 @@ class TestModelNotPulled:
 
         with (
             patch("claudebox.agent_session._providers.httpx.Client", return_value=client_mock),
-            pytest.raises(OllamaModelNotPulled, match="llama3.2:3b"),
+            pytest.raises(OllamaModelNotPulled, match=r"llama3\.2:3b"),
         ):
             await runtime.connect()
 

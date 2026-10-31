@@ -3,7 +3,12 @@
 import { describe, expect, it } from 'vitest'
 import { BlockType } from '../../../../../config/schema'
 import { TurnRoutingMode } from '../../../../../utils/eventProcessing'
-import { getTurnPreview } from './turnContent'
+import {
+  getAnswerText,
+  getAssistantTextContent,
+  getProgressLabel,
+  getTurnPreview,
+} from './turnContent'
 
 /** Make a TEXT block. */
 function textBlock(content) {
@@ -158,5 +163,123 @@ describe('getTurnPreview - hideShellCalls (terminal column routing)', () => {
   it('counts a top-level Bash call when the mode is OFF', () => {
     const preview = getTurnPreview([toolBlock(), bashToolBlock()], null, TurnRoutingMode.OFF)
     expect(preview).toBe('2 tools used')
+  })
+})
+
+describe('getAnswerText', () => {
+  it('returns the last text block of a text, tool, text turn', () => {
+    const blocks = [
+      textBlock('Let me look.'),
+      toolBlock(),
+      textBlock('Final answer with **bold**.'),
+    ]
+
+    expect(getAnswerText(blocks)).toBe('Final answer with **bold**.')
+  })
+
+  it('strips system reminders from the answer', () => {
+    const blocks = [textBlock('The answer.\n<system-reminder>internal</system-reminder>')]
+
+    expect(getAnswerText(blocks)).toBe('The answer.')
+  })
+
+  it('skips a trailing block that held only a system reminder', () => {
+    const blocks = [
+      textBlock('The answer.'),
+      textBlock('<system-reminder>internal</system-reminder>'),
+    ]
+
+    expect(getAnswerText(blocks)).toBe('The answer.')
+  })
+
+  it('returns an empty string for a turn without text', () => {
+    expect(getAnswerText([toolBlock(), compactionBlock()])).toBe('')
+  })
+
+  it('equals the whole turn copy when the answer is the only text', () => {
+    const blocks = [toolBlock(), textBlock('Only this.')]
+
+    expect(getAnswerText(blocks)).toBe(getAssistantTextContent(blocks))
+  })
+
+  it('takes a runtime error shown as the last text', () => {
+    const error = {
+      type: BlockType.TEXT,
+      event: { type: 'system', subtype: 'error', content: 'Failed to process: timed out' },
+    }
+
+    expect(getAnswerText([textBlock('Working on it.'), toolBlock(), error])).toBe(
+      'Failed to process: timed out',
+    )
+  })
+})
+
+describe('getProgressLabel', () => {
+  const call = (content, input = {}, extra = {}) => ({
+    type: BlockType.TOOL,
+    toolUse: { content, tool_use_id: `${content}-1`, tool_input: input, ...extra.toolUse },
+    toolResult: extra.toolResult,
+  })
+  const read = call('Read', { file_path: '/work/notes.md' })
+  const focused = blocks => getProgressLabel(blocks, TurnRoutingMode.FOCUSED)
+
+  it('names the newest hidden call, finished or not', () => {
+    expect(focused([read])).toBe('Reading notes.md')
+    expect(focused([{ ...read, toolResult: { content: 'ok' } }])).toBe('Reading notes.md')
+  })
+
+  it('follows the newest of several hidden calls', () => {
+    expect(focused([read, call('Skill', { skill: 'changelog' })])).toBe('Loading changelog skill')
+  })
+
+  it.each([
+    ['text', textBlock('The notes repeat two sections.')],
+    ['thinking', { type: BlockType.THINKING, event: { content: 'hm' } }],
+    ['a call the view shows', call('Edit', { file_path: '/work/notes.md' })],
+    [
+      'a failed read',
+      call('Read', { file_path: '/work/a.md' }, { toolResult: { is_error: true } }),
+    ],
+    ['a Task', call('Task', { description: 'Fix it' })],
+    ['a hidden TaskList', call('TaskList')],
+    ['a hidden resource read', call('ReadMcpResourceTool', { server: 's', uri: 's://a' })],
+  ])('gives null when %s is newest', (_label, block) => {
+    expect(focused([read, block])).toBeNull()
+  })
+
+  it('keeps the read named past a hidden tool-schema search and a needs-you call', () => {
+    expect(focused([read, hiddenToolSearchBlock()])).toBe('Reading notes.md')
+    expect(focused([read, call('mcp__claudebox__needs_user', { reason: 'Approve' })])).toBe(
+      'Reading notes.md',
+    )
+  })
+
+  it('counts a needs-you call that failed', () => {
+    const failed = call('needs_user', {}, { toolResult: { is_error: true } })
+    expect(focused([read, failed])).toBeNull()
+  })
+
+  it('gives null for a bookmarked read, which the view shows', () => {
+    expect(getProgressLabel([read], TurnRoutingMode.FOCUSED, new Set(['tool-Read-1']))).toBeNull()
+  })
+
+  it.each([TurnRoutingMode.OFF, TurnRoutingMode.BASH_ONLY, TurnRoutingMode.ALL_TOOLS])(
+    'gives null outside Focused (%s)',
+    mode => {
+      expect(getProgressLabel([read], mode)).toBeNull()
+    },
+  )
+
+  it('gives null with no blocks', () => {
+    expect(focused([])).toBeNull()
+  })
+
+  it("names a tool marked hidden by hand by the tool's own name", () => {
+    const marked = call('mcp__jina__read_url', { url: 'https://example.com' })
+    const isMarked = name => name === 'mcp__jina__read_url'
+    expect(getProgressLabel([marked], TurnRoutingMode.FOCUSED, null, isMarked)).toBe(
+      'Running read_url',
+    )
+    expect(focused([marked])).toBeNull()
   })
 })

@@ -12,11 +12,19 @@ import Markdown from '../../../components/Markdown'
  * @param {Array} props.states - Board states with id/label for display lookup.
  * @param {Array} props.swimlanes - Board swimlanes with id/name for display lookup.
  * @param {Function} props.onClose - Close the overlay.
+ * @param {number} [props.version] - Changes when the ticket's files did; the content reloads on it.
  */
-export default function TicketDetail({ ticket, states = [], swimlanes = [], onClose }) {
+export default function TicketDetail({
+  ticket,
+  states = [],
+  swimlanes = [],
+  onClose,
+  version = 0,
+}) {
   const [content, setContent] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the reload trigger, unused in the body
   useEffect(() => {
     let cancelled = false
 
@@ -28,7 +36,8 @@ export default function TicketDetail({ ticket, states = [], swimlanes = [], onCl
         }
       } catch {
         if (!cancelled) {
-          setContent('Failed to load ticket content.')
+          // A failed reload keeps the text already shown.
+          setContent(prev => prev ?? 'Failed to load ticket content.')
         }
       } finally {
         if (!cancelled) {
@@ -41,7 +50,7 @@ export default function TicketDetail({ ticket, states = [], swimlanes = [], onCl
     return () => {
       cancelled = true
     }
-  }, [ticket.path, ticket.boardId])
+  }, [ticket.path, ticket.boardId, version])
 
   const handleKeyDown = useCallback(
     e => {
@@ -98,7 +107,9 @@ export default function TicketDetail({ ticket, states = [], swimlanes = [], onCl
           {loading ? (
             <div className="ticket-detail-loading">Loading...</div>
           ) : (
-            <Markdown className="turn-text">{content}</Markdown>
+            <Markdown className="turn-text" baseDir={null}>
+              {content}
+            </Markdown>
           )}
         </div>
       </div>

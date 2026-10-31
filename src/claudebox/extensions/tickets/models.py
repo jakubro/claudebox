@@ -1,5 +1,7 @@
 """Ticket domain data models - board, ticket, and swimlane representations."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 from ...core.structures import DataClass
@@ -9,8 +11,10 @@ from ...core.structures import DataClass
 class BoardState(DataClass):
     """Single column/state definition parsed from board.yaml.
 
-    `id` doubles as the YAML key and the API field. `terminal` makes the column collapsible with
-    an archive action; `active` auto-moves assigned tickets into this state. Both default false.
+    `id` doubles as the YAML key and the API field. `folder` is the directory the state keeps
+    tickets in, relative to the folder holding board.yaml. `terminal` makes the column
+    collapsible with an archive action; `active` auto-moves assigned tickets into this state.
+    Both default false.
     """
 
     id: str
@@ -32,8 +36,8 @@ class Swimlane(DataClass):
 class BoardTicket(DataClass):
     """Ticket entry within a board column.
 
-    `path` is relative to workspace root. `swimlane` is None when unsorted. `title` resolves from
-    a markdown heading, falling back to the filename.
+    `path` is relative to the folder holding its board.yaml. `swimlane` is None when unsorted.
+    `title` resolves from a markdown heading, falling back to the filename.
     """
 
     path: str

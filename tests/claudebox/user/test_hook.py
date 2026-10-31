@@ -1,5 +1,7 @@
 """Tests for claudebox.hook - hook decorator and request/response types."""
 
+from __future__ import annotations
+
 import json
 
 import pytest
@@ -235,3 +237,33 @@ class TestAddToEnvMissing:
 
         with pytest.raises(KeyError):
             HookResponse.add_to_env("VAR", "val")
+
+
+class TestRunIdRecorded:
+    """A hook inside a `claudebox run` container records that container's run id in the session."""
+
+    def test_the_run_id_lands_in_the_session_directory(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        monkeypatch.setenv("CLAUDEBOX_RUN_ID", "run-4f1d")
+
+        req = HookRequest(_make_hook_data(session_id="run-session"))
+
+        assert (req.session.path / "run-id").read_text() == "run-4f1d"
+
+    def test_a_later_run_replaces_the_id(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        monkeypatch.setenv("CLAUDEBOX_RUN_ID", "run-first")
+        HookRequest(_make_hook_data(session_id="resumed-session"))
+        monkeypatch.setenv("CLAUDEBOX_RUN_ID", "run-second")
+
+        req = HookRequest(_make_hook_data(session_id="resumed-session"))
+
+        assert (req.session.path / "run-id").read_text() == "run-second"
+
+    def test_a_session_outside_claudebox_run_records_none(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        monkeypatch.delenv("CLAUDEBOX_RUN_ID", raising=False)
+
+        req = HookRequest(_make_hook_data(session_id="daemon-session"))
+
+        assert not (req.session.path / "run-id").exists()

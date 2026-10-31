@@ -1,12 +1,13 @@
 /** Tests for ChatInput. */
 
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from './ChatInput'
 
+let mockIsMobile = false
 vi.mock('../../../../hooks/useIsMobile', () => ({
-  default: () => false,
+  default: () => mockIsMobile,
 }))
 
 let mockInteractionData = {}
@@ -27,6 +28,11 @@ vi.mock('../../../../context/StashContext', () => ({
   useStash: () => mockStashData,
 }))
 
+let mockOwnership = {}
+vi.mock('../../../../hooks/useSessionOwnership', () => ({
+  default: () => mockOwnership,
+}))
+
 vi.mock('./hooks/useAutocomplete', () => ({
   default: vi.fn(() => ({
     visible: false,
@@ -43,9 +49,11 @@ vi.mock('./hooks/useTextareaResize', () => ({
   default: () => ({ resizeTextarea: vi.fn() }),
 }))
 
-vi.mock('./hooks/useDrafts', () => ({
-  default: () => mockDraftsData,
-}))
+let useRealDrafts = false
+vi.mock('./hooks/useDrafts', async importOriginal => {
+  const actual = await importOriginal()
+  return { default: (...args) => (useRealDrafts ? actual.default(...args) : mockDraftsData) }
+})
 
 vi.mock('./hooks/useInputHistory', () => ({
   default: () => mockInputHistoryData,
@@ -74,14 +82,26 @@ vi.mock('../../../../api/chat', () => ({
 describe('ChatInput', () => {
   let defaultProps
 
+  async function focusChatInput(props = {}) {
+    const user = userEvent.setup()
+    render(<ChatInput {...defaultProps} {...props} />)
+    const textarea = screen.getByTestId('chat-input')
+    await user.click(textarea)
+
+    return { user, textarea }
+  }
+
   beforeEach(() => {
     mockInterrupt = vi.fn(() => Promise.resolve())
+    useRealDrafts = false
+    mockOwnership = ownershipOf('test-session')
 
     mockInteractionData = {
       interruptStatus: 'idle',
       startInterrupt: vi.fn(),
       completeInterrupt: vi.fn(),
       setError: vi.fn(),
+      showHint: vi.fn(),
     }
 
     mockSessionData = {
@@ -121,7 +141,7 @@ describe('ChatInput', () => {
         autoScrollEnabled: { current: true },
         events: { current: [] },
       },
-      send: vi.fn(() => Promise.resolve()),
+      send: vi.fn(() => Promise.resolve(true)),
       enqueueMessage: vi.fn(),
       deferSend: vi.fn(),
       queueEdit: { item: null, clear: vi.fn() },
@@ -132,12 +152,6 @@ describe('ChatInput', () => {
     render(<ChatInput {...defaultProps} />)
 
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
-  })
-
-  it('renders the decorative border overlay (compositor animation target)', () => {
-    const { container } = render(<ChatInput {...defaultProps} />)
-
-    expect(container.querySelector('.textarea-border-overlay')).toBeInTheDocument()
   })
 
   it('keeps textarea enabled when not connected (always-enabled invariant)', () => {
@@ -154,11 +168,7 @@ describe('ChatInput', () => {
 
   describe('keyboard shortcuts', () => {
     it('submits on Enter', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'hello')
       await user.keyboard('{Enter}')
 
@@ -166,11 +176,7 @@ describe('ChatInput', () => {
     })
 
     it('does not submit on Shift+Enter', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'hello')
       await user.keyboard('{Shift>}{Enter}{/Shift}')
 
@@ -178,22 +184,14 @@ describe('ChatInput', () => {
     })
 
     it('does not submit empty input', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user } = await focusChatInput()
       await user.keyboard('{Enter}')
 
       expect(defaultProps.send).not.toHaveBeenCalled()
     })
 
     it('calls interrupt on Ctrl+.', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} canInterrupt={true} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user } = await focusChatInput({ canInterrupt: true })
       await user.keyboard('{Control>}.{/Control}')
 
       expect(mockInterrupt).toHaveBeenCalled()
@@ -211,11 +209,7 @@ describe('ChatInput', () => {
     })
 
     it('stashes input on Ctrl+S', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'stash me')
       await user.keyboard('{Control>}s{/Control}')
 
@@ -223,11 +217,7 @@ describe('ChatInput', () => {
     })
 
     it('pops stash on Ctrl+Shift+S', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user } = await focusChatInput()
       await user.keyboard('{Control>}{Shift>}S{/Shift}{/Control}')
 
       expect(mockStashData.stashPop).toHaveBeenCalled()
@@ -236,11 +226,7 @@ describe('ChatInput', () => {
 
   describe('submit flow', () => {
     it('calls send and clears textarea on submit', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'test message')
       await user.keyboard('{Enter}')
 
@@ -249,11 +235,7 @@ describe('ChatInput', () => {
     })
 
     it('calls send with prompt and attachments', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'test message')
       await user.keyboard('{Enter}')
 
@@ -264,11 +246,7 @@ describe('ChatInput', () => {
     })
 
     it('resets sending state after send completes', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'first')
       await user.keyboard('{Enter}')
 
@@ -285,6 +263,84 @@ describe('ChatInput', () => {
         expect(defaultProps.send).toHaveBeenCalledTimes(2)
         expect(defaultProps.send).toHaveBeenLastCalledWith('second', { attachments: [] })
       })
+    })
+
+    it('Enter twice with only replies buffered sends once', async () => {
+      const user = userEvent.setup()
+      let release
+      defaultProps.send = vi.fn(() => new Promise(resolve => (release = resolve)))
+      render(<ChatInput {...defaultProps} hasBufferedReplies={() => true} />)
+
+      await user.click(screen.getByTestId('chat-input'))
+      await user.keyboard('{Enter}')
+      await user.keyboard('{Enter}')
+      release(true)
+
+      await vi.waitFor(() => expect(defaultProps.send).toHaveBeenCalledTimes(1))
+      expect(defaultProps.send).toHaveBeenCalledWith('', { attachments: [] })
+    })
+
+    it('Enter again while the message is on its way sends nothing', async () => {
+      const user = userEvent.setup()
+      let release
+      defaultProps.send = vi.fn(() => new Promise(resolve => (release = resolve)))
+      render(<ChatInput {...defaultProps} hasBufferedReplies={() => true} />)
+
+      const textarea = screen.getByTestId('chat-input')
+      await user.click(textarea)
+      await user.type(textarea, 'see below')
+      await user.keyboard('{Enter}')
+      await user.keyboard('{Enter}')
+      release(true)
+
+      await vi.waitFor(() => expect(textarea.value).toBe(''))
+      expect(defaultProps.send).toHaveBeenCalledTimes(1)
+      expect(defaultProps.send).toHaveBeenCalledWith('see below', { attachments: [] })
+    })
+
+    it('keeps text typed while the message was on its way', async () => {
+      let release
+      defaultProps.send = vi.fn(() => new Promise(resolve => (release = resolve)))
+      const { user, textarea } = await focusChatInput()
+      await user.type(textarea, 'first')
+      await user.keyboard('{Enter}')
+      await user.clear(textarea)
+      await user.type(textarea, 'notes')
+      await act(async () => release(true))
+
+      expect(textarea.value).toBe('notes')
+      expect(mockInputHistoryData.prepareSubmit).toHaveBeenCalledWith('first', 'notes')
+    })
+
+    it('sends text entered while the message was on its way right after it', async () => {
+      const releases = []
+      defaultProps.send = vi.fn(() => new Promise(resolve => releases.push(resolve)))
+      const { user, textarea } = await focusChatInput()
+      await user.type(textarea, 'first')
+      await user.keyboard('{Enter}')
+      await user.clear(textarea)
+      await user.type(textarea, 'second')
+      await user.keyboard('{Enter}')
+      expect(defaultProps.send).toHaveBeenCalledTimes(1)
+
+      await act(async () => releases[0](true))
+      await vi.waitFor(() => expect(defaultProps.send).toHaveBeenCalledTimes(2))
+      expect(defaultProps.send).toHaveBeenLastCalledWith('second', { attachments: [] })
+      await act(async () => releases[1](true))
+
+      expect(textarea.value).toBe('')
+    })
+
+    it('leaves the text in the box when send fails', async () => {
+      defaultProps.send = vi.fn(() => Promise.resolve(false))
+      const { user, textarea } = await focusChatInput()
+      await user.type(textarea, 'will not send')
+      await user.keyboard('{Enter}')
+
+      await vi.waitFor(() => {
+        expect(defaultProps.send).toHaveBeenCalledWith('will not send', { attachments: [] })
+      })
+      expect(textarea.value).toBe('will not send')
     })
   })
 
@@ -319,11 +375,7 @@ describe('ChatInput', () => {
   describe('interrupt edge cases', () => {
     it('does not interrupt when already stopping', async () => {
       mockInteractionData.interruptStatus = 'stopping'
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} canInterrupt={true} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user } = await focusChatInput({ canInterrupt: true })
       await user.keyboard('{Control>}.{/Control}')
 
       expect(mockInterrupt).not.toHaveBeenCalled()
@@ -331,11 +383,7 @@ describe('ChatInput', () => {
 
     it('reports error on interrupt failure', async () => {
       mockInterrupt = vi.fn(() => Promise.reject(new Error('interrupt failed')))
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} canInterrupt={true} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user } = await focusChatInput({ canInterrupt: true })
       await user.keyboard('{Control>}.{/Control}')
 
       await vi.waitFor(() => {
@@ -346,22 +394,14 @@ describe('ChatInput', () => {
 
   describe('stash edge cases', () => {
     it('does not stash empty input', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user } = await focusChatInput()
       await user.keyboard('{Control>}s{/Control}')
 
       expect(mockStashData.stashPush).not.toHaveBeenCalled()
     })
 
     it('does not stash whitespace-only input', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, '   ')
       await user.keyboard('{Control>}s{/Control}')
 
@@ -369,11 +409,7 @@ describe('ChatInput', () => {
     })
 
     it('clears textarea after stashing', async () => {
-      const user = userEvent.setup()
-      render(<ChatInput {...defaultProps} />)
-
-      const textarea = screen.getByTestId('chat-input')
-      await user.click(textarea)
+      const { user, textarea } = await focusChatInput()
       await user.type(textarea, 'stash me')
       await user.keyboard('{Control>}s{/Control}')
 
@@ -435,13 +471,17 @@ describe('ChatInput', () => {
     // Helper to create paste event (ClipboardEvent not available in jsdom)
     const createPasteEvent = () => new Event('paste', { bubbles: true, cancelable: true })
 
-    it('blocks paste when middle-click originates outside textarea', () => {
+    function renderAfterOutsideMiddleClick() {
       render(<ChatInput {...defaultProps} />)
-      const textarea = screen.getByTestId('chat-input')
-
       const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
       Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
       document.dispatchEvent(mouseDownEvent)
+
+      return screen.getByTestId('chat-input')
+    }
+
+    it('blocks paste when middle-click originates outside textarea', () => {
+      const textarea = renderAfterOutsideMiddleClick()
 
       const pasteEvent = createPasteEvent()
       const preventDefaultSpy = vi.spyOn(pasteEvent, 'preventDefault')
@@ -478,12 +518,7 @@ describe('ChatInput', () => {
 
     it('clears flag after mouseup and rAF', () => {
       const rAFSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => cb())
-      render(<ChatInput {...defaultProps} />)
-      const textarea = screen.getByTestId('chat-input')
-
-      const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
-      Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
-      document.dispatchEvent(mouseDownEvent)
+      const textarea = renderAfterOutsideMiddleClick()
 
       // rAF fires synchronously (mocked) and clears the flag
       const mouseUpEvent = new MouseEvent('mouseup', { button: 1, bubbles: true })
@@ -500,12 +535,7 @@ describe('ChatInput', () => {
 
     it('blocks paste on held middle-click (>100ms hold)', () => {
       vi.useFakeTimers()
-      render(<ChatInput {...defaultProps} />)
-      const textarea = screen.getByTestId('chat-input')
-
-      const mouseDownEvent = new MouseEvent('mousedown', { button: 1, bubbles: true })
-      Object.defineProperty(mouseDownEvent, 'target', { value: document.body })
-      document.dispatchEvent(mouseDownEvent)
+      const textarea = renderAfterOutsideMiddleClick()
 
       // Hold for 200ms - no mouseup yet, flag should persist
       vi.advanceTimersByTime(200)
@@ -519,4 +549,169 @@ describe('ChatInput', () => {
       vi.useRealTimers()
     })
   })
+
+  describe('what the box holds belongs to the session on screen', () => {
+    beforeEach(() => {
+      useRealDrafts = true
+      localStorage.clear()
+      sessionStorage.clear()
+    })
+
+    function renderFor({ attached, owner, pending = false }) {
+      mockSessionData = { ...mockSessionData, sessionId: attached }
+      mockOwnership = { ...ownershipOf(owner), isOwnerAttached: !pending && owner === attached }
+      // A fresh refs object re-renders the memoised composer, as a context change would in the app.
+      return (
+        <ChatInput
+          {...defaultProps}
+          refs={{ ...defaultProps.refs }}
+          overlayMode={pending ? 'resuming' : null}
+        />
+      )
+    }
+
+    it("keeps text typed while B opens as B's draft, leaving A's untouched", async () => {
+      localStorage.setItem('draft:A', JSON.stringify({ current: 'draft of A', stack: [] }))
+      const { rerender } = render(renderFor({ attached: 'A', owner: 'A' }))
+
+      rerender(renderFor({ attached: 'A', owner: 'B', pending: true }))
+      await userEvent.type(screen.getByRole('textbox'), 'typed while B opens')
+      rerender(renderFor({ attached: 'B', owner: 'B' }))
+
+      expect(screen.getByRole('textbox')).toHaveValue('typed while B opens')
+      expect(JSON.parse(localStorage.getItem('draft:B')).current).toBe('typed while B opens')
+      expect(JSON.parse(localStorage.getItem('draft:A')).current).toBe('draft of A')
+    })
+
+    it("shows A's own draft on returning to A", async () => {
+      localStorage.setItem('draft:A', JSON.stringify({ current: 'draft of A', stack: [] }))
+      const { rerender } = render(renderFor({ attached: 'B', owner: 'B' }))
+
+      rerender(renderFor({ attached: 'A', owner: 'A' }))
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole('textbox')).toHaveValue('draft of A')
+      })
+    })
+
+    it('restores preserved input only into the session it was typed in', () => {
+      sessionStorage.setItem(
+        '_cb_preserved_input',
+        JSON.stringify({ owner: { sessionId: 'A' }, content: 'message for A' }),
+      )
+      const { rerender } = render(renderFor({ attached: 'B', owner: 'B' }))
+      expect(screen.getByRole('textbox')).toHaveValue('')
+
+      rerender(renderFor({ attached: 'A', owner: 'A' }))
+      expect(screen.getByRole('textbox')).toHaveValue('message for A')
+    })
+
+    it.each([
+      ['Enter', '{Enter}'],
+      ['Alt+Enter', '{Alt>}{Enter}{/Alt}'],
+    ])('a blocked %s shows the loading hint and keeps the text', async (_name, keys) => {
+      render(
+        <ChatInput
+          {...renderFor({ attached: 'A', owner: 'B', pending: true }).props}
+          hasBufferedReplies={() => true}
+        />,
+      )
+      const box = screen.getByRole('textbox')
+      await userEvent.type(box, 'for B')
+
+      await userEvent.type(box, keys)
+
+      expect(mockInteractionData.showHint).toHaveBeenCalledWith('Wait for the session to load')
+      expect(defaultProps.send).not.toHaveBeenCalled()
+      expect(defaultProps.enqueueMessage).not.toHaveBeenCalled()
+      expect(box).toHaveValue('for B')
+    })
+  })
+  describe('input handed back by a failed creation', () => {
+    function renderWithHandle() {
+      const handle = { current: null }
+      render(
+        <ChatInput {...defaultProps} refs={{ ...defaultProps.refs, composerHandle: handle }} />,
+      )
+      return handle
+    }
+
+    it('follows the saved draft the empty box would restore', () => {
+      mockDraftsData.drafts = { current: 'draft A', stack: [] }
+      const handle = renderWithHandle()
+
+      act(() => {
+        handle.current.returnInput({ rawPrompt: 'first', currentAttachments: [] })
+      })
+
+      expect(screen.getByRole('textbox')).toHaveValue('draft A\n\nfirst')
+      expect(mockDraftsData.saveDrafts).toHaveBeenCalledWith({
+        current: 'draft A\n\nfirst',
+        stack: [],
+      })
+    })
+
+    it('comes before what was typed since', async () => {
+      // Typed while the creation owned the box, then the session left owns it again.
+      mockOwnership = { ...ownershipOf(null), ownerNow: () => ({ creation: 1 }) }
+      const handle = { current: null }
+      const refs = { ...defaultProps.refs, composerHandle: handle }
+      const { rerender } = render(<ChatInput {...defaultProps} refs={refs} />)
+      await userEvent.type(screen.getByRole('textbox'), 'typed since')
+      mockOwnership = ownershipOf('test-session')
+      mockDraftsData = { ...mockDraftsData, drafts: { current: '', stack: [] } }
+      rerender(<ChatInput {...defaultProps} refs={{ ...refs }} />)
+
+      act(() => {
+        handle.current.returnInput({ rawPrompt: 'first', currentAttachments: [] })
+      })
+
+      expect(screen.getByRole('textbox')).toHaveValue('first\n\ntyped since')
+    })
+  })
+
+  it('focus() on the handle leaves focus alone on mobile', () => {
+    mockIsMobile = true
+    const handle = { current: null }
+    render(<ChatInput {...defaultProps} refs={{ ...defaultProps.refs, composerHandle: handle }} />)
+
+    act(() => handle.current.focus())
+
+    expect(document.activeElement).not.toBe(screen.getByRole('textbox'))
+    mockIsMobile = false
+  })
+
+  it('focus() on the handle puts the cursor back where it was', async () => {
+    const handle = { current: null }
+    render(<ChatInput {...defaultProps} refs={{ ...defaultProps.refs, composerHandle: handle }} />)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'draft text')
+    box.setSelectionRange(5, 5)
+    box.blur()
+
+    act(() => handle.current.focus())
+
+    expect(document.activeElement).toBe(box)
+    expect([box.selectionStart, box.selectionEnd]).toEqual([5, 5])
+  })
+
+  it('keeps the text on Alt+Enter where nothing can be queued (the welcome screen)', async () => {
+    render(<ChatInput {...defaultProps} enqueueMessage={null} />)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'hello')
+
+    await userEvent.type(box, '{Alt>}{Enter}{/Alt}')
+
+    expect(box).toHaveValue('hello')
+  })
 })
+
+function ownershipOf(sessionId) {
+  return {
+    ownerSessionId: sessionId,
+    isOwnerAttached: true,
+    ownerNow: () => ({ sessionId }),
+    resolveOwner: tag => tag?.sessionId ?? null,
+    isRoutedOwner: () => true,
+  }
+}

@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  extractSystemReminders,
   parseGrepLine,
   parseLocalCommandOutput,
   parsePersistedOutput,
@@ -448,5 +449,37 @@ describe('parseStructuredQA with ExitPlanMode response', () => {
     expect(result).toEqual([
       { header: 'Plan', text: 'Review the plan above', answers: ['Approve'] },
     ])
+  })
+})
+
+describe('extractSystemReminders', () => {
+  it('strips edge newlines but preserves leading/trailing spaces after removing reminders', () => {
+    const content = '\n<system-reminder>reminder</system-reminder>\n  indented code  '
+    const result = extractSystemReminders(content)
+
+    expect(result.content).toBe('  indented code  ')
+    expect(result.content.startsWith('  ')).toBe(true)
+    expect(result.content.endsWith('  ')).toBe(true)
+  })
+
+  it('does not strip leading spaces from content when reminder is at end', () => {
+    const content = '  leading spaces<system-reminder>reminder</system-reminder>'
+    const result = extractSystemReminders(content)
+
+    expect(result.content).toBe('  leading spaces')
+  })
+
+  it('does not strip trailing spaces from content when reminder is at start', () => {
+    const content = '<system-reminder>reminder</system-reminder>trailing spaces  '
+    const result = extractSystemReminders(content)
+
+    expect(result.content).toBe('trailing spaces  ')
+  })
+
+  it('strips surrounding newlines but not spaces', () => {
+    const content = '\n\n<system-reminder>reminder</system-reminder>\n  spaced content  \n\n'
+    const result = extractSystemReminders(content)
+
+    expect(result.content).toBe('  spaced content  ')
   })
 })

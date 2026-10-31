@@ -1,5 +1,7 @@
 """Data structure utilities."""
 
+from __future__ import annotations
+
 import dataclasses
 from typing import Self
 

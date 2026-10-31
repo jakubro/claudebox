@@ -1,0 +1,17 @@
+/* Bundle pill and picker - the pill is not a .footer-item, whose overflow would clip the dot */
+
+.footer-bundle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.footer-bundle-drift {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}

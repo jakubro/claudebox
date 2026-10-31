@@ -3,12 +3,22 @@
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import Markdown from '../../../../../components/Markdown'
+import { useSessionWorkspace } from '../../../../../context/SessionDataContext'
 import { formatTokens } from '../../../../../utils/formatters'
 import { parseLocalCommandOutput } from '../../../../../utils/parsers'
+import InjectedContext from './InjectedContext'
 import LocalCommandBlock from './LocalCommandBlock'
 
-export default function CompactionBlock({ event, summary, isCompacting = false }) {
+/**
+ * @param {object} props
+ * @param {object} props.event - The compaction start or boundary event.
+ * @param {Array<string>} [props.summary] - The summary the compaction left, when finished.
+ * @param {boolean} [props.isCompacting] - Whether compaction is still running.
+ * @param {Array} [props.injected] - Text the agent received after this block that no one wrote.
+ */
+export default function CompactionBlock({ event, summary, isCompacting = false, injected = null }) {
   const [expanded, setExpanded] = useState(false)
+  const workspaceDir = useSessionWorkspace()
 
   const metadata = event.message_data?.compact_metadata || {}
   const trigger = metadata.trigger || 'unknown'
@@ -28,6 +38,7 @@ export default function CompactionBlock({ event, summary, isCompacting = false }
           <span className="compaction-pending">
             <Loader2 size={12} className="spinner" />
           </span>
+          <InjectedContext entries={injected} />
         </div>
       </div>
     )
@@ -49,6 +60,7 @@ export default function CompactionBlock({ event, summary, isCompacting = false }
           <span>
             {formatTokens(preTokens)} tokens, {trigger}
           </span>
+          <InjectedContext entries={injected} />
         </div>
       </div>
       {expanded && hasSummary && (
@@ -57,7 +69,9 @@ export default function CompactionBlock({ event, summary, isCompacting = false }
             const segments = parseLocalCommandOutput(content)
             return segments.map((seg, j) =>
               seg.type === 'text' ? (
-                <Markdown key={`${i}-${j}`}>{seg.content}</Markdown>
+                <Markdown key={`${i}-${j}`} baseDir={workspaceDir}>
+                  {seg.content}
+                </Markdown>
               ) : (
                 <LocalCommandBlock key={`${i}-${j}`} type={seg.type} content={seg.content} />
               ),

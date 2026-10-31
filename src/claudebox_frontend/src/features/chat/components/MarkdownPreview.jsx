@@ -4,6 +4,8 @@ import { Code } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import CopyButton from '../../../components/CopyButton.jsx'
 import Markdown from '../../../components/Markdown'
+import { useSessionWorkspace } from '../../../context/SessionDataContext'
+import { fileFolder } from '../../../utils/relativeUrl'
 import { SyntaxHighlightedCodeBlock } from './turn/components/tool-block/components/tool-block-expanded-content/components/tool-content-renderer/components/code-block'
 
 /**
@@ -11,9 +13,18 @@ import { SyntaxHighlightedCodeBlock } from './turn/components/tool-block/compone
  * @param {object} props
  * @param {string} props.content - Raw markdown text.
  * @param {number} [props.startingLineNumber=1] - First line number for source view gutter.
+ * @param {string} [props.filePath] - The previewed file; its folder is what relative links resolve in,
+ *   a relative path taken from the working directory.
+ * @param {string|null} [props.baseDir] - Base for content with no file behind it.
  */
-export default function MarkdownPreview({ content, startingLineNumber = 1 }) {
+export default function MarkdownPreview({
+  content,
+  startingLineNumber = 1,
+  filePath = null,
+  baseDir = null,
+}) {
   const [showSource, setShowSource] = useState(false)
+  const workspaceDir = useSessionWorkspace()
 
   const handleToggle = useCallback(() => setShowSource(s => !s), [])
 
@@ -39,7 +50,9 @@ export default function MarkdownPreview({ content, startingLineNumber = 1 }) {
         </div>
       ) : (
         <div className="markdown-preview-content turn-text">
-          <Markdown>{content}</Markdown>
+          <Markdown baseDir={filePath ? fileFolder(filePath, workspaceDir) : baseDir}>
+            {content}
+          </Markdown>
         </div>
       )}
     </div>

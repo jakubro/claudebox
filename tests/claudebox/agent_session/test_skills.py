@@ -1,5 +1,7 @@
 """Shared skill walker - walk_skills + parse helpers + body extraction + source lookup."""
 
+from __future__ import annotations
+
 import textwrap
 from pathlib import Path
 

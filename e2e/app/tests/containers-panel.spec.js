@@ -40,11 +40,47 @@ function mockWorkspaceContainers(page, containers = SAMPLE_CONTAINERS) {
   })
 }
 
+async function openContainersPanel(page) {
+  await mockWorkspaceContainers(page)
+  await showContainersPanel(page)
+}
+
+async function showContainersPanel(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  await page.locator('[data-testid="icon-containers"]').click()
+}
+
 test.describe('Containers Panel', () => {
   test.beforeEach(async ({ page }) => {
     // s-foo-1 / s-bar-1 need `session_dir` populated for the click-to-copy tests' tooltip/clipboard assertions.
     await mockAPI(page, { sessionsFixture: 'sessions/containers-test.json' })
     await mockSSE(page)
+  })
+
+  // SPEC: panel-containers:age-live
+  test("a container's age keeps up while the panel stays open", async ({ page }) => {
+    const installedAt = Date.parse('2026-03-01T12:00:00Z')
+    await page.clock.install({ time: installedAt })
+    await mockWorkspaceContainers(page, [
+      {
+        id: 'c-age-1111-aaaa',
+        backend_id: 'bkage1111-aa',
+        status: 'running',
+        port: 8100,
+        created_at: new Date(installedAt - 2 * 60_000).toISOString(),
+        failure_count: 0,
+        labels: { kind: 'session' },
+        session_id: 's-foo-1',
+      },
+    ])
+    await showContainersPanel(page)
+    const age = page.locator('[data-testid="panel-containers"] .containers-age')
+    await expect(age).toHaveText('2m ago')
+
+    await page.clock.fastForward('01:00:00')
+
+    await expect(age).toHaveText('1h ago')
   })
 
   // SPEC: panel-containers:list
@@ -54,11 +90,7 @@ test.describe('Containers Panel', () => {
   test('lists current-workspace containers with columns sorted by state group', async ({
     page,
   }) => {
-    await mockWorkspaceContainers(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="icon-containers"]').click()
+    await openContainersPanel(page)
 
     const panel = page.locator('[data-testid="panel-containers"]')
     await expect(panel).toBeVisible()
@@ -67,6 +99,15 @@ test.describe('Containers Panel', () => {
     await expect(rows).toHaveCount(2)
 
     await expect(panel.locator('.containers-status-dot')).toHaveCount(2)
+    const cells = await rows
+      .first()
+      .evaluate(row => [...row.children].slice(0, 4).map(cell => cell.className.split(' ')[0]))
+    expect(cells).toEqual([
+      'containers-status-dot',
+      'containers-session-id',
+      'containers-id',
+      'containers-session-name',
+    ])
     await expect(panel.locator('.containers-id')).toContainText(['bk111111', 'bk222222'])
     await expect(panel.locator('.containers-session-id')).toContainText(['s-foo-1', 's-bar-1'])
     await expect(panel.locator('.containers-state')).toContainText(['Running', 'Stopped'])
@@ -80,10 +121,7 @@ test.describe('Containers Panel', () => {
   // SPEC: panel-containers:empty
   test('shows "No containers" placeholder when the endpoint returns empty', async ({ page }) => {
     await mockWorkspaceContainers(page, [])
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="icon-containers"]').click()
+    await showContainersPanel(page)
 
     const panel = page.locator('[data-testid="panel-containers"]')
     await expect(panel).toBeVisible()
@@ -103,9 +141,7 @@ test.describe('Containers Panel', () => {
       await route.fallback()
     })
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await showContainersPanel(page)
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     await page.locator('[data-testid="container-stop-c11111111111-aaaa"]').click()
@@ -114,10 +150,7 @@ test.describe('Containers Panel', () => {
 
   // SPEC: panel-containers:open-session
   test("Resume button navigates to the container's session", async ({ page }) => {
-    await mockWorkspaceContainers(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await openContainersPanel(page)
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     const row = page.locator('[data-testid="container-row-c11111111111-aaaa"]')
@@ -129,10 +162,7 @@ test.describe('Containers Panel', () => {
   // SPEC: panel-containers:row-baseline
   // SPEC: panel-containers:id-typography
   test('row uses grid layout with baseline alignment + 11px monospace ids', async ({ page }) => {
-    await mockWorkspaceContainers(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await openContainersPanel(page)
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     const row = page.locator('.containers-row').first()
@@ -161,12 +191,106 @@ test.describe('Containers Panel', () => {
     }
   })
 
-  // SPEC: panel-containers:id-source
-  test('id column shows runtime backend_id, not the internal container.id', async ({ page }) => {
+  // SPEC: panel-containers:dot-gap
+  test("a row's dot sits clear of its session id, as far from it as the columns sit apart", async ({
+    page,
+  }) => {
     await mockWorkspaceContainers(page)
-    await page.goto(DEFAULT_SESSION_URL)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/s-foo-1`)
     await waitForAppReady(page)
     await page.locator('[data-testid="icon-containers"]').click()
+
+    const rows = page.locator('[data-testid="panel-containers"] .containers-row')
+    await expect(rows).toHaveCount(2)
+    await expect(page.locator('.containers-row-current')).toHaveCount(1)
+
+    for (const row of await rows.all()) {
+      const edges = selector =>
+        row.locator(selector).evaluate(el => {
+          const box = el.getBoundingClientRect()
+          return { left: box.left, right: box.right }
+        })
+      const dot = await edges('.containers-status-dot')
+      const sessionId = await edges('.containers-session-id')
+      const containerId = await edges('.containers-id')
+
+      const dotGap = sessionId.left - dot.right
+      const idGap = containerId.left - sessionId.right
+      expect(dotGap).toBeGreaterThan(0)
+      expect(Math.abs(dotGap - idGap)).toBeLessThanOrEqual(0.5)
+    }
+  })
+
+  // SPEC: panel-containers:session-state-dot
+  test("a running container's dot shows its own session's state; other states keep theirs", async ({
+    page,
+  }) => {
+    const sid = name => `${name}-0000-0000-0000-000000000000`
+    const container = (id, session, status) => ({
+      id,
+      backend_id: `bk-${id}`,
+      status,
+      port: 8000,
+      created_at: '2025-05-15T08:00:00Z',
+      failure_count: 0,
+      labels: { kind: 'session' },
+      session_id: session,
+    })
+    await mockAPI(page, { sessionsFixture: 'sessions/working.json' })
+    await mockWorkspaceContainers(page, [
+      container('c-working', sid('working1'), 'running'),
+      container('c-waiting', sid('waiting1'), 'running'),
+      container('c-asking', sid('askwait1'), 'running'),
+      container('c-crashed', sid('askwork1'), 'crashed'),
+    ])
+    await showContainersPanel(page)
+
+    const dotOf = id => page.locator(`[data-testid="container-row-${id}"] .containers-status-dot`)
+    await expect(dotOf('c-working')).toHaveClass(/container-status-working/)
+    await expect(dotOf('c-working')).toHaveAttribute('title', 'Working')
+    await expect(dotOf('c-waiting')).toHaveClass(/container-status-waiting/)
+    await expect(dotOf('c-waiting')).toHaveAttribute('title', 'Waiting on background work')
+    await expect(dotOf('c-asking')).toHaveClass(/container-status-needs-you/)
+    await expect(dotOf('c-asking')).toHaveAttribute('title', 'Needs you')
+    await expect(
+      page.locator('[data-testid="container-row-c-asking"] .containers-state'),
+    ).toHaveText('Running')
+    const working = await dotOf('c-working').evaluate(el => getComputedStyle(el).backgroundColor)
+    expect(working).toBe('rgb(168, 85, 247)')
+    expect(await dotOf('c-crashed').evaluate(el => getComputedStyle(el).backgroundColor)).toBe(
+      'rgb(239, 68, 68)',
+    )
+    await expect(dotOf('c-crashed')).toHaveAttribute('title', 'Status: crashed')
+  })
+
+  // SPEC: panel-containers:actions-level
+  test("a row's Play and chevron sit level with its Stop button and its text", async ({ page }) => {
+    await openContainersPanel(page)
+
+    const row = page.locator('[data-testid="container-row-c11111111111-aaaa"]')
+    await expect(row.locator('[data-testid="session-resume-btn"]')).toBeVisible()
+    const centres = await row.evaluate(el => {
+      const centre = node => {
+        const box = node.getBoundingClientRect()
+        return box.top + box.height / 2
+      }
+      const icon = selector => centre(el.querySelector(`${selector} svg`))
+      return {
+        stop: icon('.containers-action-btn'),
+        play: icon('.sessions-resume-btn'),
+        chevron: icon('.sessions-resume-chevron'),
+        text: centre(el.querySelector('.containers-state')),
+      }
+    })
+
+    expect(Math.abs(centres.play - centres.stop)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(centres.chevron - centres.stop)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(centres.stop - centres.text)).toBeLessThanOrEqual(1)
+  })
+
+  // SPEC: panel-containers:id-source
+  test('id column shows runtime backend_id, not the internal container.id', async ({ page }) => {
+    await openContainersPanel(page)
 
     const panel = page.locator('[data-testid="panel-containers"]')
     await expect(panel).toBeVisible()
@@ -179,10 +303,7 @@ test.describe('Containers Panel', () => {
   test('session name cell is empty when the attached session has no custom name', async ({
     page,
   }) => {
-    await mockWorkspaceContainers(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await openContainersPanel(page)
 
     await expect(page.locator('[data-testid="panel-containers"]')).not.toContainText('(unnamed)')
   })
@@ -214,9 +335,7 @@ test.describe('Containers Panel', () => {
   }) => {
     await mockWorkspaceContainers(page)
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await showContainersPanel(page)
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     const firstId = page.locator('[data-testid="panel-containers"] .containers-id').first()
@@ -238,9 +357,7 @@ test.describe('Containers Panel', () => {
   }) => {
     await mockWorkspaceContainers(page)
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await showContainersPanel(page)
     await expect(page.locator('[data-testid="panel-containers"]')).toBeVisible()
 
     const firstSessionId = page
@@ -268,9 +385,7 @@ test.describe('Containers Panel', () => {
       },
     ]
     await mockWorkspaceContainers(page, longContainers)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await showContainersPanel(page)
 
     const sessionIdText = await page
       .locator('[data-testid="panel-containers"] .containers-session-id')
@@ -429,9 +544,7 @@ test.describe('Containers Panel', () => {
   test('row updates in place when a container_status event arrives', async ({ page }) => {
     await mockWorkspaceContainers(page)
     const daemon = await createDaemonSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="icon-containers"]').click()
+    await showContainersPanel(page)
 
     const panel = page.locator('[data-testid="panel-containers"]')
     await expect(panel).toBeVisible()

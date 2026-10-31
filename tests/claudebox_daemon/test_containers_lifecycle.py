@@ -1,5 +1,7 @@
 """Tests for container lifecycle - service stop/kill/remove + DELETE composite + POST routes."""
 
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace

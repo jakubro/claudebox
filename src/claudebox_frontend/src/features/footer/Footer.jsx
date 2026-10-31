@@ -1,10 +1,13 @@
 /** Footer status bar showing session info. */
 
 import { Bell } from 'lucide-react'
+import { useContext } from 'react'
 import { STATUS_PAGE_URL } from '../../config/urls'
 import { useEvents } from '../../context/EventsContext'
 import { useInteraction } from '../../context/InteractionContext'
 import { useSessionActions, useSessionData } from '../../context/SessionDataContext'
+import { WorkspaceContext } from '../../context/WorkspaceContext'
+import useBackgroundWaiting from '../../hooks/useBackgroundWaiting'
 import useCapabilities from '../../hooks/useCapabilities'
 import useCopyFlash from '../../hooks/useCopyFlash'
 import useCurrentBackendId from '../../hooks/useCurrentBackendId'
@@ -13,6 +16,8 @@ import { getContextBarColor } from '../../utils/color'
 import { computeContextBar } from '../../utils/contextBar'
 import { formatDurationClock, getWorkspaceName } from '../../utils/formatters'
 import { formatSessionDirTooltip } from '../../utils/session'
+import BundlePicker from './components/BundlePicker'
+import BundlePill from './components/BundlePill'
 import EffortLevelPicker from './components/EffortLevelPicker'
 import ModelPicker from './components/ModelPicker'
 import PermissionModePicker from './components/PermissionModePicker'
@@ -39,6 +44,7 @@ export default function Footer() {
     isOpeningBoard,
     isOpeningWorkspace,
   } = useEvents()
+  const { isWaiting, awaitingPickup } = useBackgroundWaiting()
 
   const {
     model,
@@ -53,10 +59,18 @@ export default function Footer() {
     sessionId,
     sessionDir,
     notificationsEnabled,
+    pendingModel,
+    pendingPermissionMode,
+    pendingEffortLevel,
   } = useSessionData()
+  const workspaceId = useContext(WorkspaceContext)?.workspaceId ?? null
+  // Remounting per session drops a picker's optimistic value, which belongs to the session it was
+  // picked in.
+  const pickerKey = `${workspaceId}:${sessionId ?? ''}`
   const { setNotificationsEnabled } = useSessionActions()
 
-  const { isSubmitting, isAwaitingResponse, interruptStatus, errorMessage } = useInteraction()
+  const { isSubmitting, isAwaitingResponse, interruptStatus, errorMessage, hintMessage } =
+    useInteraction()
 
   const claudeStatus = useClaudeStatus()
   const rateLimits = useRateLimitStatus()
@@ -90,13 +104,15 @@ export default function Footer() {
       <StatusIndicator
         connectionStatus={connectionStatus}
         connectionError={connectionError}
-        isResponding={isResponding}
+        isResponding={isResponding || awaitingPickup}
         respondingSince={respondingSince}
         lastEventTimestamp={lastEventTimestamp}
         isSubmitting={isSubmitting}
         isAwaitingResponse={isAwaitingResponse}
+        isWaiting={isWaiting}
         interruptStatus={interruptStatus}
         errorMessage={errorMessage}
+        hintMessage={hintMessage}
         isReplaying={isResuming || isReplaying}
         isCreating={isCreating}
         isForking={isForking}
@@ -148,21 +164,25 @@ export default function Footer() {
         </>
       )}
       <RuntimeIdentityPill />
+      {sessionId ? <BundlePill /> : <BundlePicker />}
       <span className="footer-sep">|</span>
       <ModelPicker
-        currentModel={model}
+        key={`model:${pickerKey}`}
+        currentModel={pendingModel || model}
         defaultValue={sessionDefaults?.model}
         disabled={isResponding || isSubmitting || isAwaitingResponse}
       />
       <span className="footer-sep">|</span>
       <EffortLevelPicker
-        currentEffortLevel={effortLevel}
+        key={`effort:${pickerKey}`}
+        currentEffortLevel={pendingEffortLevel || effortLevel}
         defaultValue={sessionDefaults?.effort_level}
         disabled={isResponding || isSubmitting || isAwaitingResponse}
       />
       <span className="footer-sep">|</span>
       <PermissionModePicker
-        currentPermissionMode={permissionMode}
+        key={`permission:${pickerKey}`}
+        currentPermissionMode={pendingPermissionMode || permissionMode}
         defaultValue={sessionDefaults?.permission_mode}
         disabled={isResponding || isSubmitting || isAwaitingResponse}
       />

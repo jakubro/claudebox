@@ -1,9 +1,23 @@
 /** Tests for ToolContentRenderer component. */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { setWorkspaceId } from '../../../../../../../../../../api/apiClient'
+import { TurnProvider } from '../../../../../../TurnContext'
+import ToolBlock from '../../../../ToolBlock'
 import ToolContentRenderer from './ToolContentRenderer'
+
+function stubClipboard() {
+  const writeText = vi.fn()
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText },
+    writable: true,
+    configurable: true,
+  })
+
+  return writeText
+}
 
 describe('ToolContentRenderer', () => {
   describe('null handling', () => {
@@ -395,12 +409,7 @@ describe('ToolContentRenderer', () => {
 
     it('copies plain details text when clicked', async () => {
       const user = userEvent.setup()
-      const writeText = vi.fn()
-      Object.defineProperty(navigator, 'clipboard', {
-        value: { writeText },
-        writable: true,
-        configurable: true,
-      })
+      const writeText = stubClipboard()
       render(<ToolContentRenderer toolName="Bash" details="command output" />)
 
       await user.click(screen.getByTitle('Copy output'))
@@ -410,12 +419,7 @@ describe('ToolContentRenderer', () => {
 
     it('copies code without line numbers for Read tool', async () => {
       const user = userEvent.setup()
-      const writeText = vi.fn()
-      Object.defineProperty(navigator, 'clipboard', {
-        value: { writeText },
-        writable: true,
-        configurable: true,
-      })
+      const writeText = stubClipboard()
       const details = '   1\u2192const x = 1\n   2\u2192const y = 2'
       render(<ToolContentRenderer toolName="Read" details={details} />)
 
@@ -426,12 +430,7 @@ describe('ToolContentRenderer', () => {
 
     it('copies code for syntax-highlighted Read with known extension', async () => {
       const user = userEvent.setup()
-      const writeText = vi.fn()
-      Object.defineProperty(navigator, 'clipboard', {
-        value: { writeText },
-        writable: true,
-        configurable: true,
-      })
+      const writeText = stubClipboard()
       const details = '   1\u2192const x = 1'
       render(<ToolContentRenderer toolName="Read" details={details} filePath="/app/test.js" />)
 
@@ -442,12 +441,7 @@ describe('ToolContentRenderer', () => {
 
     it('strips diff prefixes for Edit tool copy', async () => {
       const user = userEvent.setup()
-      const writeText = vi.fn()
-      Object.defineProperty(navigator, 'clipboard', {
-        value: { writeText },
-        writable: true,
-        configurable: true,
-      })
+      const writeText = stubClipboard()
       const details = '- old line\n+ new line\n· separator\nplain'
       render(<ToolContentRenderer toolName="Edit" details={details} />)
 
@@ -456,5 +450,113 @@ describe('ToolContentRenderer', () => {
       // Strips prefixes, removes separator lines
       expect(writeText).toHaveBeenCalledWith('old line\nnew line\nplain')
     })
+  })
+})
+
+vi.mock('../../../../../../../../../../context/SessionDataContext', async importOriginal => ({
+  ...(await importOriginal()),
+  useSessionDir: () => '/ws/.claudebox/sessions/s1',
+  useSessionId: () => 's1',
+  useSessionWorkspace: () => '/ws',
+}))
+vi.mock('../../../../../../../../../../hooks/useCapabilities', () => ({
+  default: () => ({ capabilities: { supports_ask_user_question: true }, runtimeName: 'Claude' }),
+}))
+vi.mock('../../../../../../../../../../hooks/useEditorTemplate', () => ({ default: () => null }))
+
+setWorkspaceId('w1')
+
+const TURN = {
+  hasNextUserMessage: false,
+  hasPendingMessages: false,
+  todoDiffs: null,
+  taskNotifications: null,
+  turnStartTime: 0,
+  now: 0,
+  isActiveTurn: false,
+}
+
+function expand(toolUse, toolResult, skillContent) {
+  const { container } = render(
+    <TurnProvider {...TURN}>
+      <ToolBlock
+        toolUse={{ tool_use_id: 't1', ...toolUse }}
+        toolResult={{ subtype: 'tool_result', tool_use_id: 't1', ...toolResult }}
+        skillContent={skillContent}
+      />
+    </TurnProvider>,
+  )
+  if (!container.querySelector('.tool-expanded-content')) {
+    fireEvent.click(container.querySelector('.tool-header-area'))
+  }
+  return container
+}
+
+const link = (c, text) => [...c.querySelectorAll('a')].find(a => a.textContent === text)
+const fromWorkspace = img => (img.getAttribute('src') ?? '').includes('/files/image')
+
+describe('markdown base per origin', () => {
+  it('WebFetch: a relative link and image point next to the fetched page', () => {
+    const c = expand(
+      {
+        content: 'WebFetch',
+        tool_input: { url: 'https://example.com/project/README.md', prompt: 'p' },
+      },
+      {
+        content: '# Project\n\nSee [the agent guide](docs/AGENTS.md).\n\n![logo](assets/logo.png)',
+      },
+    )
+    const a = link(c, 'the agent guide')
+    expect(a.getAttribute('href')).toBe('https://example.com/project/docs/AGENTS.md')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(c.querySelector('img[alt="logo"]').getAttribute('src')).toBe(
+      'https://example.com/project/assets/logo.png',
+    )
+  })
+
+  it('WebSearch: a relative link and image never point into the workspace', () => {
+    const c = expand(
+      { content: 'WebSearch', tool_input: { query: 'q' } },
+      { content: '## Results\n\n- [notes](docs/notes.md)\n\n![chart](chart.png)' },
+    )
+    expect(link(c, 'notes')).toBeUndefined()
+    expect(fromWorkspace(c.querySelector('img[alt="chart"]'))).toBe(false)
+  })
+
+  it("Skill: a relative link resolves in the skill's base directory", () => {
+    const body =
+      'Base directory for this skill: /root/.claude/skills/demo\n\nFollow [the reference](reference.md).'
+    const c = expand(
+      { content: 'Skill', tool_input: { skill: 'demo' } },
+      { content: 'Launching skill: demo' },
+      body,
+    )
+    expect(link(c, 'the reference').getAttribute('title')).toBe(
+      '/root/.claude/skills/demo/reference.md',
+    )
+  })
+
+  it("Read of a bare file name: links resolve in that file's folder", () => {
+    const c = expand(
+      { content: 'Read', tool_input: { file_path: 'README.md' } },
+      { content: '     1\t# Readme\n     2\t\n     3\tSee [the guide](docs/guide.md).' },
+    )
+    expect(link(c, 'the guide').getAttribute('title')).toBe('/ws/docs/guide.md')
+  })
+
+  it('MCP tool output: a relative image is not loaded from the workspace', () => {
+    const c = expand(
+      { content: 'mcp__docs__read_page', tool_input: { url: 'https://example.com/a/' } },
+      { content: '# Page\n\nIntro with **bold** text.\n\n![diagram](img/d.png)' },
+    )
+    expect(fromWorkspace(c.querySelector('img[alt="diagram"]'))).toBe(false)
+  })
+
+  it('Bash output: a relative image loads from the working directory', () => {
+    const c = expand(
+      { content: 'Bash', tool_input: { command: 'cat report.md' } },
+      { content: '# Report\n\nSome **bold** text.\n\n![plot](out/plot.png)' },
+    )
+    expect(c.querySelector('img[alt="plot"]').getAttribute('src')).toContain('path=out%2Fplot.png')
   })
 })

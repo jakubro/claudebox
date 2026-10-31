@@ -2,6 +2,8 @@
 """Render `claudebox --help` (root and every verb) into docs/reference/cli.md via `just docs`.
 Deterministic - color off, width pinned, footer normalized - so the page tracks only the parser."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import re

@@ -2,7 +2,8 @@
 
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { appendBackgroundLaunches, appendTaskNotifications } from '../../utils/eventProcessing'
 import TasksPanel from './TasksPanel'
 
 const mockEvents = []
@@ -15,6 +16,8 @@ const mockJumpToTaskRef = { current: null }
 vi.mock('../../context/EventsContext', () => ({
   useEvents: () => ({
     events: mockEvents,
+    taskNotifications: appendTaskNotifications(new Map(), mockEvents),
+    backgroundLaunches: appendBackgroundLaunches(new Map(), new Map(), mockEvents).launches,
     ...mockEventsData,
   }),
 }))
@@ -25,6 +28,32 @@ vi.mock('../../context/AppActionsContext', () => ({
     jumpToTaskRef: mockJumpToTaskRef,
   }),
 }))
+
+async function renderAllTasks(user) {
+  render(<TasksPanel />)
+  await user.click(screen.getByRole('button', { name: /All/ }))
+}
+
+async function renderFinishedTask({ description, result = 'Done', ranForMs = 1000 }) {
+  const user = userEvent.setup()
+  const now = Date.now()
+  mockEvents.push(
+    {
+      subtype: 'tool_use',
+      content: 'Task',
+      timestamp: now - ranForMs,
+      tool_use_id: 'task_1',
+      tool_input: { description },
+    },
+    {
+      subtype: 'tool_result',
+      timestamp: now,
+      content: result,
+      tool_use_id: 'task_1',
+    },
+  )
+  await renderAllTasks(user)
+}
 
 describe('TasksPanel', () => {
   beforeEach(() => {
@@ -74,54 +103,14 @@ describe('TasksPanel', () => {
   })
 
   it('shows completed task with green border when filtered to All', async () => {
-    const user = userEvent.setup()
-    const now = Date.now()
-    mockEvents.push(
-      {
-        subtype: 'tool_use',
-        content: 'Task',
-        timestamp: now,
-        tool_use_id: 'task_1',
-        tool_input: { description: 'Done task' },
-      },
-      {
-        subtype: 'tool_result',
-        timestamp: now + 1000,
-        content: 'Success',
-        tool_use_id: 'task_1',
-      },
-    )
-
-    render(<TasksPanel />)
-
-    await user.click(screen.getByRole('button', { name: /All/ }))
+    await renderFinishedTask({ description: 'Done task', result: 'Success' })
 
     const entry = screen.getByTestId('task-entry')
     expect(entry).toHaveClass('task-completed')
   })
 
   it('shows failed task with red border in All filter', async () => {
-    const user = userEvent.setup()
-    const now = Date.now()
-    mockEvents.push(
-      {
-        subtype: 'tool_use',
-        content: 'Task',
-        timestamp: now,
-        tool_use_id: 'task_1',
-        tool_input: { description: 'Failed task' },
-      },
-      {
-        subtype: 'tool_result',
-        timestamp: now + 1000,
-        content: 'Error: something went wrong',
-        tool_use_id: 'task_1',
-      },
-    )
-
-    render(<TasksPanel />)
-
-    await user.click(screen.getByRole('button', { name: /All/ }))
+    await renderFinishedTask({ description: 'Failed task', result: 'Error: something went wrong' })
 
     const entry = screen.getByTestId('task-entry')
     expect(entry).toHaveClass('task-failed')
@@ -329,6 +318,102 @@ describe('TasksPanel', () => {
     })
   })
 
+  describe('background commands', () => {
+    function pushCommand(toolUseId, taskId, description, startedAt = Date.now()) {
+      mockEvents.push(
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          timestamp: startedAt,
+          tool_use_id: toolUseId,
+          tool_input: { command: 'sleep 60', description, run_in_background: true },
+        },
+        {
+          type: 'user',
+          subtype: 'tool_result',
+          timestamp: startedAt + 10,
+          tool_use_id: toolUseId,
+          tool_use_result: { backgroundTaskId: taskId },
+        },
+      )
+    }
+
+    function pushSubagent(toolUseId, description) {
+      mockEvents.push({
+        subtype: 'tool_use',
+        content: 'Task',
+        timestamp: Date.now(),
+        tool_use_id: toolUseId,
+        tool_input: { description },
+      })
+    }
+
+    it('marks command rows, and only command rows, with a terminal icon', () => {
+      pushSubagent('task_1', 'Review the diff')
+      pushCommand('tu1', 'b1', 'Wait a minute')
+
+      render(<TasksPanel />)
+
+      const entries = screen.getAllByTestId('task-entry')
+      expect(entries.map(e => e.textContent)).toEqual([
+        expect.stringContaining('Review the diff'),
+        expect.stringContaining('Wait a minute'),
+      ])
+      expect(entries[0].querySelector('[data-testid="task-kind-icon"]')).toBeNull()
+      expect(entries[1].querySelector('[data-testid="task-kind-icon"]')).not.toBeNull()
+    })
+
+    it('keeps a quiet running command in the plain running colour', () => {
+      pushCommand('tu1', 'b1', 'Wait', Date.now() - 180_000)
+
+      render(<TasksPanel />)
+
+      const entry = screen.getByTestId('task-entry')
+      expect(entry.style.borderLeftColor).toBe('')
+      expect(entry).toHaveClass('task-running')
+    })
+
+    it('counts command rows in the Active and All filters', () => {
+      pushSubagent('task_1', 'Review')
+      pushCommand('tu1', 'b1', 'One')
+      pushCommand('tu2', 'b2', 'Two')
+      mockEvents.push({
+        type: 'system',
+        subtype: 'task_notification',
+        message_data: { task_id: 'b2', status: 'completed' },
+      })
+
+      render(<TasksPanel />)
+
+      expect(screen.getByRole('button', { name: /Active/ })).toHaveTextContent('2')
+      expect(screen.getByRole('button', { name: /All/ })).toHaveTextContent('3')
+    })
+
+    it('hands a clicked command row to the jump handler with its id and turn', async () => {
+      const user = userEvent.setup()
+      const jump = vi.fn()
+      mockJumpToTaskRef.current = jump
+      mockEvents.push({
+        type: 'user',
+        subtype: 'text',
+        is_human: true,
+        content: 'go',
+        turn_id: 't1',
+      })
+      pushCommand('tu1', 'b1', 'Wait')
+
+      render(<TasksPanel />)
+      await user.click(screen.getByTestId('task-entry'))
+
+      await waitFor(() =>
+        expect(jump).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'tu1', turnId: 't1', kind: 'command' }),
+        ),
+      )
+    })
+  })
+
   describe('staleness coloring', () => {
     it('applies inline border color to running task', () => {
       mockEvents.push({
@@ -346,27 +431,7 @@ describe('TasksPanel', () => {
     })
 
     it('does not apply inline border color to completed task', async () => {
-      const user = userEvent.setup()
-      const now = Date.now()
-      mockEvents.push(
-        {
-          subtype: 'tool_use',
-          content: 'Task',
-          timestamp: now,
-          tool_use_id: 'task_1',
-          tool_input: { description: 'Done task' },
-        },
-        {
-          subtype: 'tool_result',
-          timestamp: now + 1000,
-          content: 'Done',
-          tool_use_id: 'task_1',
-        },
-      )
-
-      render(<TasksPanel />)
-
-      await user.click(screen.getByRole('button', { name: /All/ }))
+      await renderFinishedTask({ description: 'Done task' })
 
       const entry = screen.getByTestId('task-entry')
       expect(entry.style.borderLeftColor).toBeFalsy()
@@ -375,81 +440,21 @@ describe('TasksPanel', () => {
 
   describe('duration display', () => {
     it('shows formatted duration for a completed task', async () => {
-      const user = userEvent.setup()
-      const now = Date.now()
       // Task that ran for 65 seconds (1m 5s)
-      mockEvents.push(
-        {
-          subtype: 'tool_use',
-          content: 'Task',
-          timestamp: now - 65000,
-          tool_use_id: 'task_1',
-          tool_input: { description: 'Timed task' },
-        },
-        {
-          subtype: 'tool_result',
-          timestamp: now,
-          content: 'Done',
-          tool_use_id: 'task_1',
-        },
-      )
-
-      render(<TasksPanel />)
-
-      await user.click(screen.getByRole('button', { name: /All/ }))
+      await renderFinishedTask({ description: 'Timed task', ranForMs: 65000 })
 
       expect(screen.getByText('1m 5s')).toBeInTheDocument()
     })
 
     it('shows "0s" for a task with zero duration', async () => {
-      const user = userEvent.setup()
-      const now = Date.now()
-      mockEvents.push(
-        {
-          subtype: 'tool_use',
-          content: 'Task',
-          timestamp: now,
-          tool_use_id: 'task_1',
-          tool_input: { description: 'Instant task' },
-        },
-        {
-          subtype: 'tool_result',
-          timestamp: now,
-          content: 'Done',
-          tool_use_id: 'task_1',
-        },
-      )
-
-      render(<TasksPanel />)
-
-      await user.click(screen.getByRole('button', { name: /All/ }))
+      await renderFinishedTask({ description: 'Instant task', ranForMs: 0 })
 
       expect(screen.getByText('0s')).toBeInTheDocument()
     })
 
     it('shows hours for long-running tasks', async () => {
-      const user = userEvent.setup()
-      const now = Date.now()
       // Task that ran for 3661 seconds (1h 1m 1s)
-      mockEvents.push(
-        {
-          subtype: 'tool_use',
-          content: 'Task',
-          timestamp: now - 3661000,
-          tool_use_id: 'task_1',
-          tool_input: { description: 'Long task' },
-        },
-        {
-          subtype: 'tool_result',
-          timestamp: now,
-          content: 'Done',
-          tool_use_id: 'task_1',
-        },
-      )
-
-      render(<TasksPanel />)
-
-      await user.click(screen.getByRole('button', { name: /All/ }))
+      await renderFinishedTask({ description: 'Long task', ranForMs: 3661000 })
 
       expect(screen.getByText('1h 1m 1s')).toBeInTheDocument()
     })

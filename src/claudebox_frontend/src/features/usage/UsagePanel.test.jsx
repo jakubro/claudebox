@@ -1,6 +1,6 @@
 /** Tests for UsagePanel component. */
 
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 let mockSessions = []
@@ -27,6 +27,31 @@ describe('UsagePanel', () => {
     expect(screen.getByText('7 days')).toBeInTheDocument()
     expect(screen.getByText('30 days')).toBeInTheDocument()
     expect(screen.getByText('All time')).toBeInTheDocument()
+  })
+
+  it('drops a session from 24 hours once it ages past the edge, with no session change', () => {
+    vi.useFakeTimers()
+    const now = Date.parse('2026-03-01T12:00:00Z')
+    vi.setSystemTime(now)
+    try {
+      mockSessions = [
+        {
+          started_at: new Date(now - (23 * 60 + 59) * 60_000).toISOString(),
+          total_cost_usd: 5,
+          fork_point_cost_usd: 0,
+        },
+      ]
+      render(<UsagePanel />)
+      expect(screen.getAllByText('$5.00')).toHaveLength(4)
+
+      act(() => vi.advanceTimersByTime(5 * 60_000))
+
+      const row = label => screen.getByText(label).closest('tr')
+      expect(row('24 hours')).toHaveTextContent('$0.00')
+      expect(row('7 days')).toHaveTextContent('$5.00')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows $0.00 for all intervals when no sessions', () => {

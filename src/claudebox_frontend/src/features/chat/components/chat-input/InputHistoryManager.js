@@ -172,6 +172,16 @@ export default class InputHistoryManager {
   }
 
   /**
+   * Reset navigation for new text; return the text to push onto the draft stack, null when blank.
+   * While an item shows, that is the text typed before navigating - the item itself stays put.
+   */
+  setAside(currentValue) {
+    const aside = this._source === null ? currentValue : this._drafts.current || ''
+    this.resetNavigation()
+    return aside.trim() ? aside : null
+  }
+
+  /**
    * Determine which source/index to update when editing the current item in-place.
    * @param {string} _newValue - The new value (unused, kept for API clarity).
    * @returns {{ source: string, realIndex: number }|null}

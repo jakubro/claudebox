@@ -1,5 +1,7 @@
 """meta.py @tool tests - tool_search keyword discovery over ctx.tool_catalog."""
 
+from __future__ import annotations
+
 from dataclasses import replace
 
 from langchain_core.tools import BaseTool, tool

@@ -1,9 +1,8 @@
 /** E2E tests for block-level timing display. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import { openLiveSession, openSession } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 test.describe('Block Timings', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,9 +15,7 @@ test.describe('Block Timings', () => {
   test('completed tool blocks show relative offset from turn start', async ({ page }) => {
     // Read + Edit (not Read + Grep): two read-only calls would collapse into one Lookups panel -
     // see Lookups Details in tools-display.spec.js for that behavior.
-    await mockSSE(page, 'events/block-timings-standalone-tools.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/block-timings-standalone-tools.jsonl')
 
     const toolBlocks = page.locator('[data-testid="tool-block"]')
     await expect(toolBlocks.first()).toBeVisible()
@@ -36,9 +33,7 @@ test.describe('Block Timings', () => {
 
   // SPEC: tool:timing-thinking
   test('thinking blocks show relative offset', async ({ page }) => {
-    await mockSSE(page, 'events/block-timings.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/block-timings.jsonl')
 
     // Thinking at T+35s from turn start
     const thinkingTiming = page.locator('.thinking-block .block-timing')
@@ -48,9 +43,7 @@ test.describe('Block Timings', () => {
 
   // SPEC: tool:timing-style
   test('timing uses muted styling', async ({ page }) => {
-    await mockSSE(page, 'events/block-timings.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/block-timings.jsonl')
 
     const timing = page.locator('.block-timing').first()
     await expect(timing).toBeVisible()
@@ -67,9 +60,7 @@ test.describe('Block Timings', () => {
 
   // SPEC: tool:timing-async-skip
   test('async background tasks show no timing', async ({ page }) => {
-    await mockSSE(page, 'events/tool-task-background-async.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-task-background-async.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
@@ -79,9 +70,7 @@ test.describe('Block Timings', () => {
 
   // SPEC: tool:timing-live
   test('pending tool shows live-ticking duration', async ({ page }) => {
-    await mockSSE(page, 'events/tool-pending.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-pending.jsonl')
 
     // Pending tool with old timestamp - elapsed well above 30s threshold
     const timing = page.locator('.block-timing')
@@ -94,9 +83,7 @@ test.describe('Block Timings', () => {
 
   // SPEC: tool:timing-live
   test('pending tool shows no timing before 30s threshold', async ({ page }) => {
-    const controller = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const controller = await openLiveSession(page)
 
     // Send a pending tool with a very recent timestamp (within 30s)
     const now = new Date().toISOString()
@@ -134,9 +121,7 @@ test.describe('Block Timings', () => {
 
   // SPEC: tool:timing-nested
   test('nested blocks show timing relative to parent turn start', async ({ page }) => {
-    await mockSSE(page, 'events/block-timings-nested.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/block-timings-nested.jsonl')
 
     // Expand the Task block to see nested tools
     const taskBlock = page.locator('[data-testid="tool-block"]').first()
@@ -149,5 +134,63 @@ test.describe('Block Timings', () => {
     const nestedTiming = readBlock.locator('.block-timing')
     await expect(nestedTiming).toBeVisible()
     await expect(nestedTiming).toHaveText('@ +36s')
+  })
+
+  test.describe('Clock time on hover', () => {
+    /** The browser's own locale format of `iso`, as the app writes it. */
+    const localTime = (page, iso) => page.evaluate(t => new Date(t).toLocaleString(), iso)
+
+    // SPEC: tool:timing-hover
+    // SPEC: turn:progress-complete-hover
+    test('a tool offset and "worked for" show the moment they measure to', async ({ page }) => {
+      await openSession(page, 'events/block-timings-standalone-tools.jsonl')
+
+      const toolBlocks = page.locator('[data-testid="tool-block"]')
+      const read = toolBlocks.nth(0).locator('.block-timing')
+      await expect(read).toHaveText('@ +1m 8s')
+      await expect(read).toHaveAttribute('title', await localTime(page, '2025-01-18T12:01:09Z'))
+      await expect(toolBlocks.nth(1).locator('.block-timing')).toHaveAttribute(
+        'title',
+        await localTime(page, '2025-01-18T12:01:43Z'),
+      )
+
+      const workedFor = page.locator('.turn-progress-complete span', { hasText: 'worked for' })
+      await expect(workedFor).toHaveText('worked for 1m 44s')
+      await expect(workedFor).toHaveAttribute(
+        'title',
+        await localTime(page, '2025-01-18T12:01:45Z'),
+      )
+    })
+
+    // SPEC: tool:timing-hover
+    test('a thinking offset shows the time of that thinking', async ({ page }) => {
+      await openSession(page, 'events/block-timings.jsonl')
+
+      const timing = page.locator('.thinking-block .block-timing')
+      await expect(timing).toHaveText('@ +35s')
+      await expect(timing).toHaveAttribute('title', await localTime(page, '2025-01-18T12:00:36Z'))
+    })
+
+    // SPEC: tool:timing-hover
+    test("a nested tool's offset shows its own result time", async ({ page }) => {
+      await openSession(page, 'events/block-timings-nested.jsonl')
+
+      const taskBlock = page.locator('[data-testid="tool-block"]').first()
+      await taskBlock.locator('.tool-header-area').click()
+      const timing = taskBlock
+        .locator('[data-testid="tool-block"].nested')
+        .nth(1)
+        .locator('.block-timing')
+      await expect(timing).toHaveText('@ +36s')
+      await expect(timing).toHaveAttribute('title', await localTime(page, '2025-01-18T12:00:37Z'))
+    })
+
+    test("a running tool's live duration carries no tooltip", async ({ page }) => {
+      await openSession(page, 'events/tool-pending.jsonl')
+
+      const timing = page.locator('.block-timing')
+      await expect(timing).toBeVisible()
+      await expect(timing).not.toHaveAttribute('title')
+    })
   })
 })

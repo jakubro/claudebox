@@ -28,15 +28,26 @@ export function StashProvider({ children }) {
     }
   }, [])
 
+  // A reply applies only while its session is attached; items stashed before it arrived stay on
+  // top of the stored ones and are saved with them. A failed read leaves the stash as it is.
   useEffect(() => {
+    let cancelled = false
     setStash([]) // Clear immediately on session change (no persist)
     sessionIdRef.current = sessionId
     if (sessionId) {
       getUiState(sessionId)
-        .then(data => setStash(data.session?.stash || []))
-        .catch(() => setStash([]))
+        .then(data => {
+          if (!cancelled) {
+            setStash(current => mergeEarlyStash(current, data.session?.stash || [], persistStash))
+          }
+        })
+        .catch(() => {})
     }
-  }, [sessionId])
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, persistStash])
 
   // Local state only, no persist - called on reconnect
   const clearStash = useCallback(() => {
@@ -131,4 +142,14 @@ export function useStash() {
     throw new Error('useStash must be used within StashProvider')
   }
   return context
+}
+
+function mergeEarlyStash(current, stored, persist) {
+  if (current.length === 0) {
+    return stored
+  }
+  const isEarly = item => current.some(c => c.timestamp === item.timestamp && c.text === item.text)
+  const merged = [...current, ...stored.filter(item => !isEarly(item))]
+  persist(merged)
+  return merged
 }

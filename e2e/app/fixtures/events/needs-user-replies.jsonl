@@ -1,0 +1,6 @@
+{"type": "user", "subtype": "text", "is_human": true, "content": "File the ticket?", "ts": "2025-01-18T12:00:00Z", "turn_id": "turn_001", "id": "evt_001", "primary": true}
+{"type": "assistant", "subtype": "text", "content": "I can file it now.", "ts": "2025-01-18T12:00:01Z", "id": "evt_002", "primary": true, "is_human": false}
+{"type": "assistant", "subtype": "tool_use", "content": "mcp__claudebox__needs_user", "tool_use_id": "tu_needs_1", "tool_input": {"reason": "Approve: file the ticket", "replies": ["Go", "Hold"]}, "ts": "2025-01-18T12:00:02Z", "id": "evt_003", "primary": true, "is_human": false}
+{"type": "user", "subtype": "tool_result", "content": "The user has been told this session needs them.", "tool_use_id": "tu_needs_1", "ts": "2025-01-18T12:00:02Z", "id": "evt_004", "primary": true, "is_human": false}
+{"type": "assistant", "subtype": "text", "content": "> - **Approve**: file the ticket", "ts": "2025-01-18T12:00:03Z", "id": "evt_005", "primary": true, "is_human": false}
+{"type": "result", "subtype": "success", "turn_id": "turn_001", "ts": "2025-01-18T12:00:04Z", "id": "evt_006", "primary": false, "is_human": false}

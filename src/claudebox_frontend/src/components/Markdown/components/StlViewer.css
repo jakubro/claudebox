@@ -1,0 +1,35 @@
+/* Model blocks - a fixed-height canvas on the diagram surface, view controls bottom-left */
+
+.stl-canvas {
+  position: relative;
+  height: 300px;
+}
+
+.stl-canvas canvas {
+  display: block;
+}
+
+.stl-controls {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.stl-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.stl-controls button:hover {
+  color: var(--text-primary);
+}

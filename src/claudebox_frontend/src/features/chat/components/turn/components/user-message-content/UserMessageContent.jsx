@@ -5,7 +5,11 @@ import PathHighlighter from '../../../../../../components/PathHighlighter'
 import { useSessionDir } from '../../../../../../context/SessionDataContext'
 import useEditorTemplate from '../../../../../../hooks/useEditorTemplate'
 import usePathResolution from '../../../../../../hooks/usePathResolution'
-import { parseLocalCommandOutput, parseSlashCommand } from '../../../../../../utils/parsers'
+import {
+  isFormResponse,
+  parseLocalCommandOutput,
+  parseSlashCommand,
+} from '../../../../../../utils/parsers'
 import { extractPathCandidates, uniqueCandidates } from '../../../../../../utils/pathCandidates'
 import LocalCommandBlock from '../LocalCommandBlock'
 import AttachmentThumbnails from './components/AttachmentThumbnails'
@@ -15,14 +19,23 @@ import SlashCommandToken from './SlashCommandToken'
 
 /**
  * @param {Array} props.inlineReplies - Inline reply pairs (quote/from/response).
- * @param {string} [props.note] - Message typed alongside an AskUserQuestion/ExitPlanMode answer.
+ * @param {string} [props.note] - Message box text sent alongside a form answer or a one-click reply.
  */
 export default function UserMessageContent({ message, attachments, inlineReplies, note }) {
   const sessionDir = useSessionDir()
   const editorTemplate = useEditorTemplate()
   const candidates = useMemo(() => uniqueCandidates(extractPathCandidates(message)), [message])
   const resolvedPaths = usePathResolution(candidates)
-  const noteRow = note?.trim() ? <p className="message-note">{note}</p> : null
+  const hasNote = !!note?.trim()
+  // A note on anything but a form answer came with a one-click reply, typed after its choice.
+  const noteAfter = hasNote && !isFormResponse(message ?? '')
+  const noteRow = hasNote && !noteAfter ? <p className="message-note">{note}</p> : null
+  const trailingNoteRow = noteAfter ? (
+    <>
+      <hr className="message-note-rule" />
+      <p className="message-note">{note.trim()}</p>
+    </>
+  ) : null
   const attachmentRow =
     attachments?.length > 0 ? <AttachmentThumbnails attachments={attachments} /> : null
   const inlineRepliesRow =
@@ -50,6 +63,7 @@ export default function UserMessageContent({ message, attachments, inlineReplies
           <SlashCommandToken cmd={parsed.cmd} />
           {parsed.args && <> {parsed.args}</>}
         </span>
+        {trailingNoteRow}
         {attachmentRow}
         {inlineRepliesRow}
       </>
@@ -72,6 +86,7 @@ export default function UserMessageContent({ message, attachments, inlineReplies
             {segments[0].content}
           </PathHighlighter>
         </span>
+        {trailingNoteRow}
         {attachmentRow}
         {inlineRepliesRow}
       </>
@@ -102,6 +117,7 @@ export default function UserMessageContent({ message, attachments, inlineReplies
           return <LocalCommandBlock key={i} type={segment.type} content={segment.content} />
         })}
       </div>
+      {trailingNoteRow}
       {attachmentRow}
       {inlineRepliesRow}
     </>

@@ -1,54 +1,41 @@
 /** Dynamic favicon state management based on response status. */
 
 import { useEffect, useRef } from 'react'
-import { BREATH_CYCLE_MS, BREATH_INTERVAL } from '../../../config/timing'
 import { useSessionsList } from '../../../context/SessionsContext'
 import { deriveFaviconBgColor } from '../../../utils/color'
 import {
-  BREATHING_BG_PEAK_ALPHA,
-  computeBreathIntensity,
   createFaviconCanvas,
-  drawBreathingFavicon,
   drawDevBadge,
   drawGradientFavicon,
+  drawWorkingFavicon,
   drawWorkspaceBadge,
   FAVICON_SIZE,
+  NEEDS_YOU_COLORS,
   NORMAL_COLORS,
   NORMAL_OFFSET,
   NOTIFICATION_BG_ALPHA,
   NOTIFICATION_COLORS,
   NOTIFICATION_OFFSET,
   setFaviconFromCanvas,
+  WAITING_ARC_ALPHA,
   WHITE_GRADIENT,
+  WORKING_BG_ALPHA,
 } from '../utils/favicon'
 
-export default function useFavicon({ isResponding }) {
+export default function useFavicon({ isResponding, isWaiting = false, needsUser = false }) {
   const { workspaceColor } = useSessionsList()
   const wasRespondingRef = useRef(false)
-  const animationRef = useRef(null)
   const canvasRef = useRef(null)
   const stateRef = useRef('normal')
 
   useEffect(() => {
     canvasRef.current = createFaviconCanvas()
-
-    return () => {
-      if (animationRef.current) {
-        clearInterval(animationRef.current)
-      }
-    }
   }, [])
 
-  // Update favicon based on state (runs on mount and when isResponding changes)
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) {
       return
-    }
-
-    if (animationRef.current) {
-      clearInterval(animationRef.current)
-      animationRef.current = null
     }
 
     // Render order in every branch: bg (if set) -> arc -> dev dot; bg paints first so arc/dot compose on top.
@@ -58,28 +45,31 @@ export default function useFavicon({ isResponding }) {
       }
     }
 
-    if (isResponding) {
-      // CYCLE_COLORS drives the C-arc regardless of workspace color, keeping a consistent breath color.
-      // Workspace bg alpha pulses in sync with the arc's breath phase.
-      stateRef.current = 'processing'
-      const startTime = Date.now()
-      const animate = () => {
-        const elapsed = Date.now() - startTime
-        const breathPhase = (elapsed % BREATH_CYCLE_MS) / BREATH_CYCLE_MS
-        ctx.clearRect(0, 0, FAVICON_SIZE, FAVICON_SIZE)
-        renderWorkspaceBg({ alpha: computeBreathIntensity(breathPhase) * BREATHING_BG_PEAK_ALPHA })
-        drawBreathingFavicon(ctx, breathPhase)
-        drawDevBadge(ctx)
-        setFaviconFromCanvas(canvasRef.current)
-      }
-      animate()
-      animationRef.current = setInterval(animate, BREATH_INTERVAL)
-    } else {
-      // Not responding: notification if was responding while hidden, else normal.
-      const isNotification = wasRespondingRef.current && document.hidden
+    // The working arc keeps its gradient over a workspace bg, unlike the normal arc's white.
+    const drawWorking = arcAlpha => {
       ctx.clearRect(0, 0, FAVICON_SIZE, FAVICON_SIZE)
-      renderWorkspaceBg({ alpha: isNotification ? NOTIFICATION_BG_ALPHA : 1 })
-      if (isNotification) {
+      renderWorkspaceBg({ alpha: WORKING_BG_ALPHA })
+      drawWorkingFavicon(ctx, { alpha: arcAlpha })
+      drawDevBadge(ctx)
+      setFaviconFromCanvas(canvasRef.current)
+    }
+
+    if (isResponding) {
+      stateRef.current = 'processing'
+      drawWorking(1)
+    } else if (isWaiting && !needsUser) {
+      stateRef.current = 'waiting'
+      drawWorking(WAITING_ARC_ALPHA)
+    } else {
+      // Not responding: red while the session needs the user - never gated on a turn just ending, as
+      // needsUser may land a fetch later - else orange if a turn ended while hidden, else normal.
+      const isNotification = !needsUser && wasRespondingRef.current && document.hidden
+      ctx.clearRect(0, 0, FAVICON_SIZE, FAVICON_SIZE)
+      renderWorkspaceBg({ alpha: needsUser || isNotification ? NOTIFICATION_BG_ALPHA : 1 })
+      if (needsUser) {
+        stateRef.current = 'needs-you'
+        drawGradientFavicon(ctx, NEEDS_YOU_COLORS, NOTIFICATION_OFFSET)
+      } else if (isNotification) {
         // Keeps the arc orange on top of the dimmed workspace bg so the notification signal stays legible.
         stateRef.current = 'notification'
         drawGradientFavicon(ctx, NOTIFICATION_COLORS, NOTIFICATION_OFFSET)
@@ -93,7 +83,7 @@ export default function useFavicon({ isResponding }) {
     }
 
     wasRespondingRef.current = isResponding
-  }, [isResponding, workspaceColor])
+  }, [isResponding, isWaiting, needsUser, workspaceColor])
 
   // Restore favicon on tab focus
   useEffect(() => {

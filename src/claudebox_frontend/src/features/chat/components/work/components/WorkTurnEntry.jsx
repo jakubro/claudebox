@@ -18,7 +18,8 @@ import { mergeWorkSegments } from '../utils/mergeWorkSegments'
  * @param {object} props.nextMessageInfo - Per-entry {hasNextUserMessage,
  *   nextUserMessageIsFormResponse, nextUserMessage}, read off the neighbouring turn.
  * @param {object} props.sessionScope - {hasPendingMessages, todoDiffs, taskNotifications,
- *   onFormSubmit, registerPendingForm, duplicateAskUserIds}, identical across every entry.
+ *   onFormSubmit, registerPendingForm, duplicateAskUserIds, bookmarkedPartsOf, onToggleBookmark},
+ *   identical across every entry.
  * @param {number} props.now - Live-ticking clock for a pending async block's duration.
  * @param {boolean} props.isActiveTurn - Whether this is the session's currently-responding turn.
  * @param {Function} [props.onJump] - (turnId) => void - the separator's jump-to-transcript click.
@@ -32,7 +33,7 @@ function WorkTurnEntry({
   isActiveTurn,
   onJump,
 }) {
-  const blocks = useMemo(() => processEvents(turn.events), [turn.events])
+  const blocks = useMemo(() => processEvents(turn.events).blocks, [turn.events])
   const { panel } = useMemo(() => groupBlocks(blocks, mode), [blocks, mode])
   const segments = useMemo(() => mergeWorkSegments(blocks, panel), [blocks, panel])
   const { startTime } = useMemo(() => getTurnTimeRange(turn.events), [turn.events])
@@ -49,6 +50,15 @@ function WorkTurnEntry({
 
   if (segments.length === 0) {
     return null
+  }
+
+  const { bookmarkedPartsOf, onToggleBookmark, ...turnScope } = sessionScope
+  if (turn.turn_id && bookmarkedPartsOf && onToggleBookmark) {
+    Object.assign(turnScope, {
+      turnId: turn.turn_id,
+      bookmarkedParts: bookmarkedPartsOf(turn.turn_id),
+      onToggleBookmark,
+    })
   }
 
   // Marks only when the turn's trailing block is a TOOL block and is also this entry's last
@@ -80,7 +90,7 @@ function WorkTurnEntry({
       </button>
       <TurnProvider
         {...nextMessageInfo}
-        {...sessionScope}
+        {...turnScope}
         turnStartTime={startTime}
         now={now}
         isActiveTurn={isActiveTurn}>

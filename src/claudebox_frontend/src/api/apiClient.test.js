@@ -17,7 +17,8 @@ import {
   getContainerId,
   getWorkspaceId,
   retryFetch,
-  setContainerId,
+  sessionPath,
+  setAddress,
   setWorkspaceId,
   workspaceFetch,
 } from './apiClient'
@@ -211,11 +212,43 @@ describe('retryFetch', () => {
   })
 })
 
+describe('sessionPath', () => {
+  afterEach(() => {
+    setAddress(null, null)
+  })
+
+  it('names the addressed session on a path with no query', () => {
+    setAddress('c-1', 'thread-1')
+
+    expect(sessionPath('/api/sessions/current')).toBe('/api/sessions/current?session_id=thread-1')
+  })
+
+  it('joins an existing query rather than starting a second one', () => {
+    setAddress('c-1', 'thread-1')
+
+    expect(sessionPath('/api/stream?replay=false')).toBe(
+      '/api/stream?replay=false&session_id=thread-1',
+    )
+  })
+
+  it('names an explicit session over the addressed one, encoded', () => {
+    setAddress('c-1', 'thread-1')
+
+    expect(sessionPath('/api/send', 'side/1')).toBe('/api/send?session_id=side%2F1')
+  })
+
+  it('throws when no session is addressed', () => {
+    setAddress('c-1', null)
+
+    expect(() => sessionPath('/api/send')).toThrow('Session ID not set')
+  })
+})
+
 describe('workspaceFetch', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true })
     setWorkspaceId('ws-1')
-    setContainerId(null)
+    setAddress(null)
   })
 
   afterEach(() => {
@@ -240,13 +273,13 @@ describe('containerFetch', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true })
     setWorkspaceId('ws-1')
-    setContainerId('c-1')
+    setAddress('c-1')
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
     setWorkspaceId(null)
-    setContainerId(null)
+    setAddress(null)
   })
 
   it('prefixes path with workspace and container', async () => {
@@ -265,7 +298,7 @@ describe('containerFetch', () => {
   })
 
   it('throws when container ID not set', () => {
-    setContainerId(null)
+    setAddress(null)
 
     expect(() => containerFetch('/api/send')).toThrow('Container ID not set')
   })
@@ -289,12 +322,12 @@ describe('containerFetch', () => {
 describe('containerUrl', () => {
   beforeEach(() => {
     setWorkspaceId('ws-1')
-    setContainerId('c-1')
+    setAddress('c-1')
   })
 
   afterEach(() => {
     setWorkspaceId(null)
-    setContainerId(null)
+    setAddress(null)
   })
 
   it('builds proxied URL', () => {
@@ -311,7 +344,7 @@ describe('containerUrl', () => {
 describe('state accessors', () => {
   afterEach(() => {
     setWorkspaceId(null)
-    setContainerId(null)
+    setAddress(null)
   })
 
   it('get/set workspace ID', () => {
@@ -320,7 +353,7 @@ describe('state accessors', () => {
   })
 
   it('get/set container ID', () => {
-    setContainerId('c')
+    setAddress('c')
     expect(getContainerId()).toBe('c')
   })
 })
@@ -340,13 +373,13 @@ describe('bounds reaching fetch', () => {
   beforeEach(() => {
     globalThis.fetch = hangingFetch()
     setWorkspaceId('ws-1')
-    setContainerId('c-1')
+    setAddress('c-1')
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
     setWorkspaceId(null)
-    setContainerId(null)
+    setAddress(null)
   })
 
   it('rejects with a timeout once the bound expires, without retrying', async () => {

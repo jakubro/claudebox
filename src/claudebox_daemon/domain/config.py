@@ -1,5 +1,7 @@
 """Global daemon configuration - registered workspaces."""
 
+from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +32,13 @@ class DaemonConfig(DataClass):
                 return workspace
 
         raise WorkspaceNotRegistered(workspace_id=workspace_id)
+
+    def find_workspace(self, workspace_path: str | Path) -> RegisteredWorkspace | None:
+        """Return the workspace registered at `workspace_path`, however it is spelled, or None."""
+
+        workspace_path = Path(workspace_path).resolve()
+
+        return next((w for w in self.workspaces if w.path.resolve() == workspace_path), None)
 
     def register_workspace(self, workspace_path: str | Path) -> RegisteredWorkspace:
         """Register a workspace, returning existing entry if already registered."""

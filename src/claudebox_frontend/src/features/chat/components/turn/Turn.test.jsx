@@ -1,14 +1,16 @@
 /** Tests for Turn. */
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TurnRoutingMode } from '../../../../utils/eventProcessing'
 import Turn from './Turn'
 import { TurnCollapseProvider } from './TurnCollapseContext'
 import { TurnRoutingContext } from './TurnRoutingContext'
 
+let mockCapabilities = null
+
 vi.mock('../../../../hooks/useCapabilities', () => ({
-  default: () => ({ capabilities: null, runtimeName: null }),
+  default: () => ({ capabilities: mockCapabilities, runtimeName: null }),
 }))
 
 // Mock heavy external libraries only
@@ -46,6 +48,15 @@ describe('Turn', () => {
     content,
     ts: ts || new Date().toISOString(),
   })
+
+  const timedTextEvents = (spanMs = 5000) => {
+    const now = Date.now()
+    vi.setSystemTime(now)
+    return [
+      textEvent('Response text', new Date(now - spanMs).toISOString()),
+      textEvent('More text', new Date(now).toISOString()),
+    ]
+  }
 
   const thinkingEvent = (content, ts) => ({
     type: 'assistant',
@@ -134,6 +145,15 @@ describe('Turn', () => {
     expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
   })
 
+  it('frames the progress row of a live turn whose only call is an unanswered ToolSearch', () => {
+    const events = [toolUseEvent('ToolSearch', 'ts-1', { query: 'select:WebFetch' })]
+
+    render(<Turn userMessage="fetch it" events={events} isActive={true} showProgress={true} />)
+
+    expect(screen.getByTestId('turn-progress-pending')).toHaveTextContent('Working')
+    expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
+  })
+
   it('renders the assistant message wrapper when a visible block accompanies a hidden ToolSearch call', () => {
     const events = [
       toolUseEvent('ToolSearch', 'ts-1', { query: 'read' }),
@@ -161,7 +181,17 @@ describe('Turn', () => {
     render(<Turn events={[]} isActive={true} showProgress={true} />)
 
     expect(screen.getByText('Working')).toBeInTheDocument()
-    expect(screen.getByText('◐')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('turn-progress-working').querySelector('svg.progress-spinner'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the working ring beside "Compacting conversation" on a pending turn', () => {
+    render(<Turn events={[]} pending={true} isCompacting={true} showProgress={true} />)
+
+    const progress = screen.getByTestId('turn-progress-working')
+    expect(progress).toHaveTextContent('Compacting conversation')
+    expect(progress.querySelector('svg.progress-spinner')).toBeInTheDocument()
   })
 
   it('shows "Stopping..." when isStopping=true', () => {
@@ -171,16 +201,25 @@ describe('Turn', () => {
   })
 
   it('shows completed duration when turn ends', () => {
-    const now = Date.now()
-    vi.setSystemTime(now)
-    const events = [
-      textEvent('Response start', new Date(now - 5000).toISOString()),
-      textEvent('Response end', new Date(now).toISOString()),
-    ]
+    const events = timedTextEvents()
 
     render(<Turn events={events} isActive={false} />)
 
     expect(screen.getByText(/worked for/)).toBeInTheDocument()
+  })
+
+  it('shows when a finished turn ended on hovering "worked for"', () => {
+    const events = [
+      textEvent('Response start', '2025-01-18T12:00:01Z'),
+      textEvent('Response end', '2025-01-18T12:01:45Z'),
+    ]
+
+    render(<Turn events={events} isActive={false} />)
+
+    expect(screen.getByText(/worked for/)).toHaveAttribute(
+      'title',
+      new Date('2025-01-18T12:01:45Z').toLocaleString(),
+    )
   })
 
   it('applies error styling when resultStatus="error"', () => {
@@ -226,17 +265,8 @@ describe('Turn', () => {
   })
 
   describe('collapse/expand toggle', () => {
-    const makeCompletedTurnEvents = () => {
-      const now = Date.now()
-      vi.setSystemTime(now)
-      return [
-        textEvent('Response text', new Date(now - 5000).toISOString()),
-        textEvent('More text', new Date(now).toISOString()),
-      ]
-    }
-
     it('collapses turn content when meta header is clicked', () => {
-      const events = makeCompletedTurnEvents()
+      const events = timedTextEvents()
 
       render(<Turn events={events} isActive={false} />)
 
@@ -247,7 +277,7 @@ describe('Turn', () => {
     })
 
     it('expands turn content when collapsed meta is clicked again', () => {
-      const events = makeCompletedTurnEvents()
+      const events = timedTextEvents()
 
       render(<Turn events={events} isActive={false} />)
 
@@ -260,7 +290,7 @@ describe('Turn', () => {
     })
 
     it('starts collapsed when defaultCollapsed is true', () => {
-      const events = makeCompletedTurnEvents()
+      const events = timedTextEvents()
 
       render(<Turn events={events} isActive={false} defaultCollapsed={true} />)
 
@@ -268,12 +298,7 @@ describe('Turn', () => {
     })
 
     it('does not allow collapsing active turns', () => {
-      const now = Date.now()
-      vi.setSystemTime(now)
-      const events = [
-        textEvent('Active response', new Date(now - 5000).toISOString()),
-        textEvent('Still going', new Date(now).toISOString()),
-      ]
+      const events = timedTextEvents()
 
       render(<Turn events={events} isActive={true} showProgress={true} />)
 
@@ -283,17 +308,8 @@ describe('Turn', () => {
   })
 
   describe('central collapse via context', () => {
-    const makeCompletedTurnEvents = () => {
-      const now = Date.now()
-      vi.setSystemTime(now)
-      return [
-        textEvent('Response text', new Date(now - 5000).toISOString()),
-        textEvent('More text', new Date(now).toISOString()),
-      ]
-    }
-
     it('derives collapsed from the central set when a provider is present', () => {
-      const events = makeCompletedTurnEvents()
+      const events = timedTextEvents()
 
       render(
         <TurnCollapseProvider collapsedTurnIds={new Set(['t1'])} onToggleTurnCollapse={vi.fn()}>
@@ -305,7 +321,7 @@ describe('Turn', () => {
     })
 
     it('stays expanded when its turn id is not in the central set', () => {
-      const events = makeCompletedTurnEvents()
+      const events = timedTextEvents()
 
       render(
         <TurnCollapseProvider collapsedTurnIds={new Set(['other'])} onToggleTurnCollapse={vi.fn()}>
@@ -318,7 +334,7 @@ describe('Turn', () => {
 
     it('meta-row click calls the central per-turn toggle with its turn id', () => {
       const onToggleTurnCollapse = vi.fn()
-      const events = makeCompletedTurnEvents()
+      const events = timedTextEvents()
 
       render(
         <TurnCollapseProvider
@@ -380,8 +396,8 @@ describe('Turn', () => {
     })
   })
 
-  describe('bare progress row for an emptied turn (work view)', () => {
-    it('renders a bare progress row and no .turn bubble for a live tool-only turn', () => {
+  describe('framed progress row for an emptied turn (work view)', () => {
+    it('renders a framed progress row and no .turn bubble for a live tool-only turn', () => {
       const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
 
       render(
@@ -396,13 +412,12 @@ describe('Turn', () => {
         </TurnRoutingContext.Provider>,
       )
 
-      expect(screen.getByTestId('turn-progress-bare')).toBeInTheDocument()
-      expect(screen.getByText('Working')).toBeInTheDocument()
+      expect(screen.getByTestId('turn-progress-pending')).toHaveTextContent('Working')
       expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
       expect(document.querySelector('.turn')).not.toBeInTheDocument()
     })
 
-    it('removes the bare row on completion without touching the user message', () => {
+    it('removes the framed row on completion without touching the user message', () => {
       const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
 
       const { rerender } = render(
@@ -416,7 +431,7 @@ describe('Turn', () => {
           />
         </TurnRoutingContext.Provider>,
       )
-      expect(screen.getByTestId('turn-progress-bare')).toBeInTheDocument()
+      expect(screen.getByTestId('turn-progress-pending')).toBeInTheDocument()
 
       rerender(
         <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
@@ -430,13 +445,13 @@ describe('Turn', () => {
         </TurnRoutingContext.Provider>,
       )
 
-      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-pending')).not.toBeInTheDocument()
       expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
       expect(screen.getByTestId('message-user')).toBeInTheDocument()
       expect(screen.getByText('edit the file')).toBeInTheDocument()
     })
 
-    it('renders the full bubble, not the bare row, once a tool call keeps something visible', () => {
+    it('renders the full bubble, not the framed row, once a tool call keeps something visible', () => {
       const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' }), textEvent('done editing')]
 
       render(
@@ -446,20 +461,19 @@ describe('Turn', () => {
       )
 
       expect(screen.getByTestId('message-assistant')).toBeInTheDocument()
-      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-pending')).not.toBeInTheDocument()
     })
   })
 
-  describe('framed vs bare progress row: tracks content, not acknowledgement', () => {
-    it('renders a framed progress row, not the bare one, for a pending turn with no content yet', () => {
+  describe('framed progress row: tracks content, not acknowledgement', () => {
+    it('renders a framed progress row for a pending turn with no content yet', () => {
       render(<Turn userMessage="fix the bug" events={[]} pending={true} showProgress={true} />)
 
       expect(screen.getByTestId('turn-progress-pending')).toBeInTheDocument()
       expect(screen.getByText('Working')).toBeInTheDocument()
-      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
     })
 
-    it('keeps the bare row for a live tool-only turn that has already started (not pending)', () => {
+    it('keeps the frame for a live tool-only turn that has already started (not pending)', () => {
       const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
 
       render(
@@ -468,22 +482,20 @@ describe('Turn', () => {
         </TurnRoutingContext.Provider>,
       )
 
-      expect(screen.getByTestId('turn-progress-bare')).toBeInTheDocument()
-      expect(screen.queryByTestId('turn-progress-pending')).not.toBeInTheDocument()
+      expect(screen.getByTestId('turn-progress-pending')).toHaveTextContent('Working')
+      expect(screen.queryByTestId('message-assistant')).not.toBeInTheDocument()
     })
 
     it('shows no progress row for a pending turn once showProgress is false', () => {
       render(<Turn userMessage="fix the bug" events={[]} pending={true} showProgress={false} />)
 
       expect(screen.queryByTestId('turn-progress-pending')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
     })
 
     it('stays framed once acknowledged (not pending) but still has no content - the frame tracks content, not acknowledgement', () => {
       render(<Turn userMessage="fix the bug" events={[]} pending={false} showProgress={true} />)
 
       expect(screen.getByTestId('turn-progress-pending')).toBeInTheDocument()
-      expect(screen.queryByTestId('turn-progress-bare')).not.toBeInTheDocument()
     })
   })
 
@@ -523,12 +535,7 @@ describe('Turn', () => {
     })
 
     it('renders turn copy button when expanded and has text content', () => {
-      const now = Date.now()
-      vi.setSystemTime(now)
-      const events = [
-        textEvent('Response text', new Date(now - 5000).toISOString()),
-        textEvent('More text', new Date(now).toISOString()),
-      ]
+      const events = timedTextEvents()
 
       render(<Turn events={events} isActive={false} />)
 
@@ -538,12 +545,7 @@ describe('Turn', () => {
 
   describe('completion footer', () => {
     it('shows completion footer with duration when turn finishes', () => {
-      const now = Date.now()
-      vi.setSystemTime(now)
-      const events = [
-        textEvent('Done', new Date(now - 10000).toISOString()),
-        textEvent('Final', new Date(now).toISOString()),
-      ]
+      const events = timedTextEvents(10000)
 
       render(<Turn events={events} isActive={false} hasNextUserMessage={true} />)
 
@@ -552,18 +554,86 @@ describe('Turn', () => {
       expect(screen.getByText(/worked for/)).toBeInTheDocument()
     })
 
-    it('does not show completion footer when turn is active', () => {
+    it('marks a failed turn finished with a cross, not a check', () => {
       const now = Date.now()
       vi.setSystemTime(now)
-      const events = [
-        textEvent('Still going', new Date(now - 5000).toISOString()),
-        textEvent('More', new Date(now).toISOString()),
-      ]
+      const events = [textEvent('Not logged in.', new Date(now).toISOString())]
+
+      render(<Turn events={events} isActive={false} resultStatus="error" />)
+
+      const footer = document.querySelector('.turn-progress-complete')
+      expect(footer).toHaveTextContent('✗')
+      expect(footer).not.toHaveTextContent('✓')
+    })
+
+    it('does not show completion footer when turn is active', () => {
+      const events = timedTextEvents()
 
       render(<Turn events={events} isActive={true} showProgress={true} />)
 
       const footer = document.querySelector('.turn-progress-complete')
       expect(footer).not.toBeInTheDocument()
+    })
+  })
+
+  describe('waiting on background work', () => {
+    const waitingOn = [{ id: 'b1', name: 'Run the full gate' }]
+    const finished = () => [
+      textEvent('Final check running...', new Date(Date.now() - 5000).toISOString()),
+    ]
+
+    afterEach(() => {
+      mockCapabilities = null
+    })
+
+    it('says what the finished turn waits on instead of its duration', () => {
+      render(<Turn events={finished()} waitingOn={waitingOn} />)
+
+      expect(screen.getByTestId('turn-progress-waiting')).toHaveTextContent(
+        'Waiting on Run the full gate...',
+      )
+      expect(screen.queryByText(/worked for/)).not.toBeInTheDocument()
+    })
+
+    it('counts several tasks', () => {
+      render(<Turn events={finished()} waitingOn={[...waitingOn, { id: 'a2', name: 'Review' }]} />)
+
+      expect(screen.getByTestId('turn-progress-waiting')).toHaveTextContent(
+        'Waiting on 2 background tasks...',
+      )
+    })
+
+    it('shows Working rather than waiting while a turn runs', () => {
+      render(<Turn events={finished()} isActive={true} showProgress={true} waitingOn={waitingOn} />)
+
+      expect(screen.getByText('Working')).toBeInTheDocument()
+      expect(screen.queryByTestId('turn-progress-waiting')).not.toBeInTheDocument()
+    })
+
+    it('yields to a queued message that has not started its turn', () => {
+      render(<Turn events={finished()} hasPendingMessages={true} waitingOn={waitingOn} />)
+
+      expect(screen.queryByTestId('turn-progress-waiting')).not.toBeInTheDocument()
+    })
+
+    it('frames the line for a turn whose blocks all moved to the right slot', () => {
+      const events = [toolUseEvent('Edit', 'e1', { file_path: 'a.js' })]
+
+      render(
+        <TurnRoutingContext.Provider value={TurnRoutingMode.ALL_TOOLS}>
+          <Turn userMessage="go" events={events} turnId="t1" waitingOn={waitingOn} />
+        </TurnRoutingContext.Provider>,
+      )
+
+      expect(screen.getByTestId('turn-progress-pending')).toHaveTextContent('Waiting on')
+    })
+
+    it('shows for a runtime that reports no cost telemetry', () => {
+      mockCapabilities = { supports_cost_telemetry: false }
+
+      render(<Turn events={finished()} waitingOn={waitingOn} />)
+
+      expect(screen.getByTestId('turn-progress-waiting')).toBeInTheDocument()
     })
   })
 
@@ -611,12 +681,7 @@ describe('Turn', () => {
 
   describe('live ticking duration', () => {
     it('updates duration every second when active', () => {
-      const now = Date.now()
-      vi.setSystemTime(now)
-      const events = [
-        textEvent('Working', new Date(now - 3000).toISOString()),
-        textEvent('More', new Date(now).toISOString()),
-      ]
+      const events = timedTextEvents(3000)
 
       render(<Turn events={events} isActive={true} showProgress={true} />)
 
@@ -692,6 +757,160 @@ describe('Turn', () => {
 
       const toolBlocks = screen.getAllByTestId('tool-block')
       expect(toolBlocks).toHaveLength(2)
+    })
+  })
+
+  describe('answer copy button', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const answerButton = () =>
+      within(screen.getByTestId('message-assistant')).queryByTitle('Copy message')
+    const finished = () => [
+      textEvent('Let me check the parser first.', new Date(Date.now() - 180_000).toISOString()),
+      toolUseEvent('Read', 'r1', { file_path: 'parser.py' }),
+      toolResultEvent('r1', 'def parse(): ...'),
+      textEvent('Final answer with **bold**.'),
+    ]
+
+    beforeEach(() => {
+      writeText.mockClear()
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        writable: true,
+        configurable: true,
+      })
+    })
+
+    afterEach(() => {
+      mockCapabilities = null
+    })
+
+    it('copies only the last text block of a finished turn', async () => {
+      render(<Turn events={finished()} />)
+
+      await act(async () => fireEvent.click(answerButton()))
+
+      expect(writeText).toHaveBeenCalledWith('Final answer with **bold**.')
+      expect(answerButton().closest('.turn-progress-complete')).toHaveTextContent('worked for')
+    })
+
+    it('copies what Copy turn copies when the answer is the only text', async () => {
+      render(<Turn events={[textEvent('Only this.')]} />)
+
+      await act(async () => fireEvent.click(answerButton()))
+      await act(async () => fireEvent.click(screen.getByTitle('Copy turn')))
+
+      expect(writeText.mock.calls).toEqual([['Only this.'], ['Only this.']])
+    })
+
+    it('is absent while the turn works, when it holds no text, when collapsed or queued behind', () => {
+      const cases = [
+        { events: finished(), isActive: true, showProgress: true },
+        { events: [toolUseEvent('Read', 'r1', { file_path: 'a.py' })] },
+        { events: finished(), defaultCollapsed: true },
+        { events: finished(), hasPendingMessages: true },
+      ]
+
+      for (const props of cases) {
+        const { unmount } = render(<Turn {...props} />)
+        expect(document.querySelector('.turn-answer-copy-btn')).not.toBeInTheDocument()
+        unmount()
+      }
+    })
+
+    it('sits in the cross row of a failed turn', () => {
+      render(<Turn events={finished()} resultStatus="error" />)
+
+      expect(answerButton().closest('.turn-progress-complete')).toHaveTextContent('✗')
+    })
+
+    it('keeps a row of its own for a runtime that reports no cost telemetry', () => {
+      mockCapabilities = { supports_cost_telemetry: false }
+
+      render(<Turn events={finished()} />)
+
+      expect(answerButton().parentElement).toHaveClass('turn-progress')
+      expect(screen.queryByText(/worked for/)).not.toBeInTheDocument()
+    })
+
+    it('sits at the end of the waiting row', () => {
+      render(<Turn events={finished()} waitingOn={[{ id: 'b1', name: 'Run the gate' }]} />)
+
+      expect(screen.getByTestId('turn-progress-waiting').lastElementChild).toBe(answerButton())
+    })
+
+    it('leaves the one-click replies as the last row of the turn', () => {
+      render(<Turn events={finished()} replies={['Go', 'Hold']} onReply={vi.fn()} />)
+
+      const content = screen.getByTestId('message-assistant').querySelector('.turn-content')
+      expect(content.lastElementChild).toBe(screen.getByTestId('needs-user-replies'))
+      expect(answerButton()).toBeInTheDocument()
+    })
+  })
+
+  describe('needs-user replies', () => {
+    it('renders the replies as the last element of the assistant message, the first as primary', () => {
+      render(<Turn events={[textEvent('Approve?')]} replies={['Go', 'Hold']} onReply={vi.fn()} />)
+
+      const content = screen.getByTestId('message-assistant').querySelector('.turn-content')
+      const row = screen.getByTestId('needs-user-replies')
+      expect(content.lastElementChild).toBe(row)
+      const buttons = screen.getAllByRole('button', { name: /^(Go|Hold)$/ })
+      expect(buttons.map(b => b.textContent)).toEqual(['Go', 'Hold'])
+      expect(buttons[0]).toHaveClass('needs-user-reply-primary')
+      expect(buttons[1]).not.toHaveClass('needs-user-reply-primary')
+    })
+
+    it('sends the clicked label and disables the row while it sends', async () => {
+      let finish
+      const onReply = vi.fn(() => new Promise(resolve => (finish = resolve)))
+      render(<Turn events={[textEvent('Approve?')]} replies={['Go', 'Hold']} onReply={onReply} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Hold' }))
+
+      expect(onReply).toHaveBeenCalledWith('Hold')
+      expect(screen.getByRole('button', { name: 'Go' })).toBeDisabled()
+      await act(async () => finish())
+      expect(screen.getByRole('button', { name: 'Go' })).toBeEnabled()
+    })
+
+    it('renders no replies when none are offered', () => {
+      render(<Turn events={[textEvent('Approve?')]} replies={null} onReply={vi.fn()} />)
+
+      expect(screen.queryByTestId('needs-user-replies')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('user message timestamp', () => {
+    it('shows when the message was sent, with the full time on hover', () => {
+      vi.setSystemTime(new Date('2025-01-18T12:05:00Z'))
+      render(<Turn userMessage="Hello" userMessageTime="2025-01-18T12:00:00Z" events={[]} />)
+
+      const stamp = screen.getByTestId('message-user-timestamp')
+      expect(stamp).toHaveTextContent('5m ago')
+      expect(stamp).toHaveAttribute('title', new Date('2025-01-18T12:00:00Z').toLocaleString())
+    })
+
+    it('a finished turn keeps its timestamps up as time passes', () => {
+      vi.setSystemTime(new Date('2025-01-18T12:00:00Z'))
+      render(
+        <Turn
+          userMessage="Hello"
+          userMessageTime="2025-01-18T12:00:00Z"
+          events={[textEvent('Done', '2025-01-18T12:00:00Z')]}
+        />,
+      )
+
+      act(() => vi.advanceTimersByTime(10 * 60_000))
+
+      expect(screen.getByTestId('message-user-timestamp')).toHaveTextContent('10m ago')
+      expect(document.querySelector('.turn-timestamp')).toHaveTextContent('10m ago')
+    })
+
+    it('shows no timestamp for a message not yet confirmed', () => {
+      render(<Turn userMessage="Hello" events={[]} />)
+
+      expect(screen.queryByTestId('message-user-timestamp')).not.toBeInTheDocument()
+      expect(screen.getByTitle('Copy message')).toBeInTheDocument()
     })
   })
 })

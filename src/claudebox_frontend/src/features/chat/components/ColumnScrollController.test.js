@@ -15,6 +15,15 @@ function mockElement(overrides = {}) {
   }
 }
 
+function intentController() {
+  const onAutoScrollChange = vi.fn()
+  const controller = new ColumnScrollController({ onAutoScrollChange })
+  controller.initialize(mockElement())
+  controller.markUserIntent()
+
+  return { controller, onAutoScrollChange }
+}
+
 describe('ColumnScrollController', () => {
   it('initializes with autoscroll engaged', () => {
     const controller = new ColumnScrollController()
@@ -52,11 +61,7 @@ describe('ColumnScrollController', () => {
 
   describe('markUserIntent / markReturnedToBottom', () => {
     it('disengages autoscroll and latches intent', () => {
-      const onAutoScrollChange = vi.fn()
-      const controller = new ColumnScrollController({ onAutoScrollChange })
-      controller.initialize(mockElement())
-
-      controller.markUserIntent()
+      const { controller, onAutoScrollChange } = intentController()
 
       expect(controller.isAutoScrollEnabled).toBe(false)
       expect(controller.userIntentActive).toBe(true)
@@ -64,10 +69,7 @@ describe('ColumnScrollController', () => {
     })
 
     it('re-engages and clears the latch', () => {
-      const onAutoScrollChange = vi.fn()
-      const controller = new ColumnScrollController({ onAutoScrollChange })
-      controller.initialize(mockElement())
-      controller.markUserIntent()
+      const { controller, onAutoScrollChange } = intentController()
 
       controller.markReturnedToBottom()
 
@@ -141,10 +143,7 @@ describe('ColumnScrollController', () => {
 
   describe('reset', () => {
     it('re-engages and clears the latch regardless of prior state', () => {
-      const onAutoScrollChange = vi.fn()
-      const controller = new ColumnScrollController({ onAutoScrollChange })
-      controller.initialize(mockElement())
-      controller.markUserIntent()
+      const { controller, onAutoScrollChange } = intentController()
 
       controller.reset()
 
@@ -194,16 +193,7 @@ describe('ColumnScrollController', () => {
     })
 
     it('wheel listener: upward wheel at bottom latches intent', () => {
-      const listeners = {}
-      const el = mockElement({
-        scrollTop: 460,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-      })
-      const controller = new ColumnScrollController()
-      controller.initialize(el)
-      controller.attachInputListeners(el)
+      const { listeners, controller } = attachedController(460)
 
       listeners.wheel({ deltaY: -5, ctrlKey: false })
 
@@ -246,16 +236,7 @@ describe('ColumnScrollController', () => {
     })
 
     it('keydown listener: scroll-down keys at bottom do not latch intent', () => {
-      const listeners = {}
-      const el = mockElement({
-        scrollTop: 460,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-      })
-      const controller = new ColumnScrollController()
-      controller.initialize(el)
-      controller.attachInputListeners(el)
+      const { listeners, el, controller } = attachedController(460)
 
       for (const key of ['PageDown', 'End', 'ArrowDown', ' ']) {
         listeners.keydown({ key, shiftKey: false, target: el })
@@ -266,16 +247,7 @@ describe('ColumnScrollController', () => {
     })
 
     it('keydown listener: ignores keys typed into a text field', () => {
-      const listeners = {}
-      const el = mockElement({
-        scrollTop: 200,
-        addEventListener: (type, fn) => {
-          listeners[type] = fn
-        },
-      })
-      const controller = new ColumnScrollController()
-      controller.initialize(el)
-      controller.attachInputListeners(el)
+      const { listeners, controller } = attachedController(200)
 
       listeners.keydown({ key: 'ArrowUp', shiftKey: false, target: { matches: () => true } })
 
@@ -299,3 +271,18 @@ describe('ColumnScrollController', () => {
     })
   })
 })
+
+function attachedController(scrollTop) {
+  const listeners = {}
+  const el = mockElement({
+    scrollTop,
+    addEventListener: (type, fn) => {
+      listeners[type] = fn
+    },
+  })
+  const controller = new ColumnScrollController()
+  controller.initialize(el)
+  controller.attachInputListeners(el)
+
+  return { listeners, el, controller }
+}

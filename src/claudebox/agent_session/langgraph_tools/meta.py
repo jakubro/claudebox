@@ -8,6 +8,8 @@ The catalog populates after make_tools() returns, so the closure sees the full b
 including tool_search itself - letting the model rediscover it.
 """
 
+from __future__ import annotations
+
 from langchain_core.tools import BaseTool, tool
 
 from ._context import ToolContext

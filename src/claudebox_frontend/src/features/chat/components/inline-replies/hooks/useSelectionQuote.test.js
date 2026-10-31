@@ -38,6 +38,13 @@ function mockSelection({ text, node, collapsed = false, range = null }) {
   })
 }
 
+function renderSelecting(container, quote, { selector = '#target', enabled = true } = {}) {
+  const target = container.querySelector(selector).firstChild
+  mockSelection({ text: quote, node: target, range: rangeOver(target, quote) })
+
+  return renderHook(() => useSelectionQuote({ current: container }, enabled)).result
+}
+
 function fireSelectionChange() {
   act(() => {
     document.dispatchEvent(new Event('selectionchange'))
@@ -52,14 +59,7 @@ describe('useSelectionQuote', () => {
 
   it('maps a selection to text + turnId + from + a durable text-quote anchor', () => {
     const container = buildTranscript()
-    const target = container.querySelector('#target').firstChild
-    mockSelection({
-      text: 'context window',
-      node: target,
-      range: rangeOver(target, 'context window'),
-    })
-
-    const { result } = renderHook(() => useSelectionQuote({ current: container }, true))
+    const result = renderSelecting(container, 'context window')
     fireSelectionChange()
 
     expect(result.current.affordance).toMatchObject({
@@ -82,14 +82,7 @@ describe('useSelectionQuote', () => {
       '</div>' +
       '</div>'
     document.body.appendChild(container)
-    const target = container.querySelector('#tool').firstChild
-    mockSelection({
-      text: 'shell command',
-      node: target,
-      range: rangeOver(target, 'shell command'),
-    })
-
-    const { result } = renderHook(() => useSelectionQuote({ current: container }, true))
+    const result = renderSelecting(container, 'shell command', { selector: '#tool' })
     fireSelectionChange()
 
     expect(result.current.affordance).toMatchObject({
@@ -153,14 +146,7 @@ describe('useSelectionQuote', () => {
 
   it('does not track when disabled', () => {
     const container = buildTranscript()
-    const target = container.querySelector('#target').firstChild
-    mockSelection({
-      text: 'context window',
-      node: target,
-      range: rangeOver(target, 'context window'),
-    })
-
-    const { result } = renderHook(() => useSelectionQuote({ current: container }, false))
+    const result = renderSelecting(container, 'context window', { enabled: false })
     fireSelectionChange()
 
     expect(result.current.affordance).toBeNull()

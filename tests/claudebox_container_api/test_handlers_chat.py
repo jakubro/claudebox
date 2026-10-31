@@ -1,5 +1,7 @@
 """Tests for the container API chat handlers - stream readiness gating."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 import pytest

@@ -37,12 +37,7 @@ describe('PathHighlighter', () => {
 
     it('copies resolved host path on click', async () => {
       const user = userEvent.setup()
-      const mockWriteText = vi.fn().mockResolvedValue(undefined)
-      Object.defineProperty(navigator, 'clipboard', {
-        value: { writeText: mockWriteText },
-        writable: true,
-        configurable: true,
-      })
+      const mockWriteText = stubClipboard()
 
       render(<PathHighlighter sessionDir={SESSION_DIR}>File at /tmp/foo.log</PathHighlighter>)
 
@@ -127,12 +122,7 @@ describe('PathHighlighter', () => {
 
     it('copies resolved path on click', async () => {
       const user = userEvent.setup()
-      const mockWriteText = vi.fn().mockResolvedValue(undefined)
-      Object.defineProperty(navigator, 'clipboard', {
-        value: { writeText: mockWriteText },
-        writable: true,
-        configurable: true,
-      })
+      const mockWriteText = stubClipboard()
 
       render(<PathHighlighter resolvedPaths={resolved}>See docs/README.md</PathHighlighter>)
 

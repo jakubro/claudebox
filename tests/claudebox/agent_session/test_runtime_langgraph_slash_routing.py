@@ -1,5 +1,7 @@
 """Tests for `_resolve_slash_skill`/`_tag_slash_command`, LangGraph's answer to Claude's native slash handling."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock

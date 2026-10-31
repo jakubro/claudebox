@@ -1,5 +1,7 @@
 """LangGraphRuntime hook synthesis - on_session_start at connect, compaction start and boundary."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 

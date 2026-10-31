@@ -38,7 +38,8 @@
 }
 
 /* Highlight animation when scrolling to task */
-.tool-block.task-highlight {
+.tool-block.task-highlight,
+.terminal-entry.task-highlight {
   animation: task-highlight-pulse 1.5s ease-out;
 }
 

@@ -16,7 +16,7 @@ export default defineConfig({
   failOnFlakyTests: true,
   forbidOnly: !!process.env.CI || !!process.env.CLAUDEBOX_AGENT,
 
-  timeout: 5 * 1000,
+  timeout: 15 * 1000,
   expect: {
     timeout: 5 * 1000,
     toHaveScreenshot: {

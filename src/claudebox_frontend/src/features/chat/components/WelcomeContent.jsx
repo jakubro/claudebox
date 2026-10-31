@@ -3,6 +3,7 @@
 import { useSessionsList } from '../../../context/SessionsContext'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 import useIsMobile from '../../../hooks/useIsMobile'
+import useSessionDefaults from '../../../hooks/useSessionDefaults'
 
 /** Keyboard shortcut entries for the reference card. */
 const SHORTCUTS = [
@@ -29,6 +30,7 @@ export default function WelcomeContent() {
   const { workspaceId, workspaces } = useWorkspace()
   const { workspaceColor } = useSessionsList()
   const isMobile = useIsMobile()
+  const sessionDefaults = useSessionDefaults()
 
   const workspace = workspaces.find(w => w.id === workspaceId)
   const name = workspaceId || '-'
@@ -44,6 +46,13 @@ export default function WelcomeContent() {
         </h1>
         {path && <p className="welcome-path">{path}</p>}
       </div>
+
+      {sessionDefaults?.logged_in === false && (
+        <p className="welcome-login-notice" data-testid="welcome-login-notice">
+          Not logged in. Run <code>claudebox run</code> in a terminal in this workspace and finish
+          the login it opens.
+        </p>
+      )}
 
       {!isMobile && (
         <div className="welcome-shortcuts" data-testid="welcome-shortcuts">

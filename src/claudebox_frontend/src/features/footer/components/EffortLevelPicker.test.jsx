@@ -1,8 +1,10 @@
 /** Tests for EffortLevelPicker component. */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockCapabilities } from '../../../test-utils/mockCapabilities'
+import { createDeferred } from '../../../utils/deferred'
 import EffortLevelPicker from './EffortLevelPicker'
 
 const mockEffortLevels = [
@@ -65,5 +67,39 @@ describe('EffortLevelPicker', () => {
       render(<EffortLevelPicker currentEffortLevel="medium" disabled={false} />)
       expect(screen.queryByTestId('footer-effort')).toBeNull()
     })
+  })
+})
+
+describe('EffortLevelPicker settling', () => {
+  async function choose(user, name) {
+    await user.click(screen.getByTestId('footer-effort'))
+    await user.click(within(screen.getByTestId('effort-dropdown')).getByText(name))
+  }
+
+  it('shows the session value again once a refused change settles', async () => {
+    const user = userEvent.setup()
+    const change = createDeferred()
+    mockSetEffortLevel.mockReturnValueOnce(change.promise)
+    render(<EffortLevelPicker currentEffortLevel="xhigh" disabled={false} />)
+
+    await choose(user, 'Low')
+    expect(screen.getByTestId('footer-effort')).toHaveTextContent('Low')
+    change.resolve()
+
+    await waitFor(() => expect(screen.getByTestId('footer-effort')).toHaveTextContent('XHigh'))
+  })
+
+  it('keeps a newer pick when an older change settles', async () => {
+    const user = userEvent.setup()
+    const first = createDeferred()
+    mockSetEffortLevel.mockReturnValueOnce(first.promise).mockReturnValueOnce(new Promise(() => {}))
+    render(<EffortLevelPicker currentEffortLevel="xhigh" disabled={false} />)
+
+    await choose(user, 'Low')
+    await choose(user, 'Medium')
+    first.resolve()
+    await first.promise
+
+    expect(screen.getByTestId('footer-effort')).toHaveTextContent('Medium')
   })
 })

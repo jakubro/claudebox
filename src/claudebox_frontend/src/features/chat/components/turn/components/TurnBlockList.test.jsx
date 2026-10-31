@@ -20,6 +20,10 @@ vi.mock('../../../../../components/CopyButton.jsx', () => ({
   default: () => null,
 }))
 
+vi.mock('./TurnTextBlock', () => ({
+  default: ({ content }) => <div data-testid="markdown">{content}</div>,
+}))
+
 vi.mock('./ThinkingBlock', () => ({
   default: () => <div data-testid="thinking-block" />,
 }))

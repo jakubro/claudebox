@@ -1,6 +1,7 @@
 /** Display labels and colors for setting-change and container-restart dividers. */
 
 import { EventSubtype, PermissionMode } from '../../../config/schema'
+import { displayName } from '../../../utils/sessionName'
 
 // Unmuted versions of footer permission mode colors (#a08050, #7a9ea8, #6a9a6a, #80503e, #807a98)
 const MODE_COLORS = {
@@ -16,10 +17,11 @@ const MODEL_COLOR = '#8888bb'
 const EFFORT_COLOR = '#9a7ec8'
 const RESTART_COLOR = '#c89060'
 const MISMATCH_COLOR = '#e05c5c'
+export const MERGED_LINE_COLOR = '#999'
 
 /** A session's own name, or its id when unnamed or absent from the fetched list. */
 export function resolveSessionName(sessions, sessionId) {
-  return sessions.find(s => s.session_id === sessionId)?.name || sessionId
+  return displayName(sessions.find(s => s.session_id === sessionId)) || sessionId
 }
 
 /** Label + color for a setting-change / container-restart divider event. */
@@ -74,19 +76,27 @@ export function getSettingChangeInfo(
 }
 
 /**
- * True when a divider event is the session's initial value (set at bootstrap, not by the user):
- * setting-change events with no `previous_*` field are init. Lifecycle events like
- * container_restarted have no init concept and always render.
+ * Fold a turn's divider events into rows: a fork or runtime mismatch stands alone and splits the run;
+ * any other run keeps one event per kind, the last one, in the order each kind first occurs.
  */
-export function isSettingInitEvent(event) {
-  if (event.subtype === EventSubtype.MODEL_CHANGED) {
-    return event.previous_model == null
+export function dividerRows(events) {
+  const rows = []
+  let run = null
+  for (const event of events) {
+    if (standsAlone(event)) {
+      rows.push([event])
+      run = null
+      continue
+    }
+    if (!run) {
+      run = new Map()
+      rows.push(run)
+    }
+    run.set(event.subtype, event)
   }
-  if (event.subtype === EventSubtype.EFFORT_LEVEL_CHANGED) {
-    return event.previous_effort_level == null
-  }
-  if (event.subtype === EventSubtype.PERMISSION_MODE_CHANGED) {
-    return event.previous_permission_mode == null
-  }
-  return false
+  return rows.map(row => (row instanceof Map ? [...row.values()] : row))
+}
+
+function standsAlone(event) {
+  return Boolean(event.message_data?.runtime_mismatch || event.message_data?.fork_parent_session_id)
 }

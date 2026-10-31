@@ -170,6 +170,15 @@ describe('useSSE', () => {
   })
 
   describe('openKeyed/closeKeyed', () => {
+    const renderWithKeyed = ({ onMessage = vi.fn(), keyedUrl = 'http://b', keyedOpts } = {}) => {
+      const view = renderHook(() => useSSE({ onMessage, url: 'http://primary' }))
+      act(() => {
+        view.result.current.openKeyed('session-b', keyedUrl, keyedOpts)
+      })
+
+      return { ...view, primary: mockInstances[0], keyed: mockInstances[1] }
+    }
+
     it('opens a keyed manager independent of the primary one', () => {
       const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
       const primary = mockInstances[0]
@@ -187,15 +196,10 @@ describe('useSSE', () => {
     it("routes a keyed manager's messages only to its own onMessage, never the primary's", () => {
       const primaryHandler = vi.fn()
       const keyedHandler = vi.fn()
-      const { result } = renderHook(() =>
-        useSSE({ onMessage: primaryHandler, url: 'http://primary' }),
-      )
-      const primary = mockInstances[0]
-
-      act(() => {
-        result.current.openKeyed('session-b', 'http://b', { onMessage: keyedHandler })
+      const { primary, keyed } = renderWithKeyed({
+        onMessage: primaryHandler,
+        keyedOpts: { onMessage: keyedHandler },
       })
-      const keyed = mockInstances[1]
 
       const keyedEvent = { data: 'from-b' }
       keyed.opts.onMessage(keyedEvent)
@@ -212,12 +216,7 @@ describe('useSSE', () => {
 
     it('passes maxAttempts/onStatusChange through to the keyed manager', () => {
       const onStatusChange = vi.fn()
-      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
-
-      act(() => {
-        result.current.openKeyed('session-b', 'http://b', { maxAttempts: 3, onStatusChange })
-      })
-      const keyed = mockInstances[1]
+      const { keyed } = renderWithKeyed({ keyedOpts: { maxAttempts: 3, onStatusChange } })
 
       expect(keyed.opts.maxAttempts).toBe(3)
       keyed.opts.onStatusChange('error')
@@ -225,13 +224,7 @@ describe('useSSE', () => {
     })
 
     it("closeKeyed closes only that key's manager", () => {
-      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
-      const primary = mockInstances[0]
-
-      act(() => {
-        result.current.openKeyed('session-b', 'http://b')
-      })
-      const keyed = mockInstances[1]
+      const { result, primary, keyed } = renderWithKeyed()
 
       act(() => {
         result.current.closeKeyed('session-b')
@@ -242,12 +235,7 @@ describe('useSSE', () => {
     })
 
     it('re-opening the same key closes the prior manager under it', () => {
-      const { result } = renderHook(() => useSSE({ onMessage: vi.fn(), url: 'http://primary' }))
-
-      act(() => {
-        result.current.openKeyed('session-b', 'http://b-first')
-      })
-      const firstKeyed = mockInstances[1]
+      const { result, keyed: firstKeyed } = renderWithKeyed({ keyedUrl: 'http://b-first' })
 
       act(() => {
         result.current.openKeyed('session-b', 'http://b-second')

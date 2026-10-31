@@ -1,9 +1,15 @@
 /** E2E tests for Usage panel. */
 
 import { expect, test } from '@playwright/test'
-import { openUsagePanel, waitForAppReady } from '../helpers.js'
+import { openSession, openUsagePanel, sessionsHandler, waitForAppReady } from '../helpers.js'
 import { DEFAULT_CONTAINER_ID, DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { createDaemonSSEController, mockSSE } from '../mocks/sse.js'
+
+async function openUsage(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  await openUsagePanel(page)
+}
 
 test.describe('Usage Panel', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,10 +19,7 @@ test.describe('Usage Panel', () => {
   // SPEC: layout:panel-order-right
   test('opens via icon click', async ({ page }) => {
     await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
     const usagePanel = page.locator('[data-testid="panel-usage"]')
     await expect(usagePanel).toBeVisible()
 
@@ -45,10 +48,7 @@ test.describe('Usage Panel', () => {
   // SPEC: panel-usage:content
   test('shows 4 cost interval rows', async ({ page }) => {
     await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     await expect(page.getByText('24 hours')).toBeVisible()
     await expect(page.getByText('7 days')).toBeVisible()
@@ -59,10 +59,7 @@ test.describe('Usage Panel', () => {
   // SPEC: panel-usage:format
   test('costs formatted as $X.XX', async ({ page }) => {
     await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // All time should aggregate all sessions ($0 + $0.12 + $0.75 = $0.87)
     const allTimeCost = page.locator('.usage-cost').last()
@@ -73,31 +70,22 @@ test.describe('Usage Panel', () => {
   test('shows $0.00 when no sessions have cost', async ({ page }) => {
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'zero-cost-001',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 3,
-                  total_cost_usd: 0,
-                  fork_point_cost_usd: 0,
-                  started_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'zero-cost-001',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 3,
+            total_cost_usd: 0,
+            fork_point_cost_usd: 0,
+            started_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     const costs = page.locator('.usage-cost')
     const count = await costs.count()
@@ -110,30 +98,21 @@ test.describe('Usage Panel', () => {
   test('shows $0.00 when sessions list has no cost', async ({ page }) => {
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'placeholder',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  num_turns: 0,
-                  total_cost_usd: 0,
-                  fork_point_cost_usd: 0,
-                  started_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'placeholder',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            num_turns: 0,
+            total_cost_usd: 0,
+            fork_point_cost_usd: 0,
+            started_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     const costs = page.locator('.usage-cost')
     const count = await costs.count()
@@ -151,51 +130,42 @@ test.describe('Usage Panel', () => {
 
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'recent-001',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 1,
-                  total_cost_usd: 0.1,
-                  fork_point_cost_usd: 0,
-                  started_at: twoHoursAgo,
-                  updated_at: twoHoursAgo,
-                },
-                {
-                  session_id: 'week-001',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 2,
-                  total_cost_usd: 0.2,
-                  fork_point_cost_usd: 0,
-                  started_at: threeDaysAgo,
-                  updated_at: threeDaysAgo,
-                },
-                {
-                  session_id: 'month-001',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 3,
-                  total_cost_usd: 0.5,
-                  fork_point_cost_usd: 0,
-                  started_at: fifteenDaysAgo,
-                  updated_at: fifteenDaysAgo,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'recent-001',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 1,
+            total_cost_usd: 0.1,
+            fork_point_cost_usd: 0,
+            started_at: twoHoursAgo,
+            updated_at: twoHoursAgo,
+          },
+          {
+            session_id: 'week-001',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 2,
+            total_cost_usd: 0.2,
+            fork_point_cost_usd: 0,
+            started_at: threeDaysAgo,
+            updated_at: threeDaysAgo,
+          },
+          {
+            session_id: 'month-001',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 3,
+            total_cost_usd: 0.5,
+            fork_point_cost_usd: 0,
+            started_at: fifteenDaysAgo,
+            updated_at: fifteenDaysAgo,
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // 24h: $0.10, 7d: $0.30, 30d: $0.80, All time: $0.80
     const costs = page.locator('.usage-cost')
@@ -228,41 +198,32 @@ test.describe('Usage Panel', () => {
 
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'h24-001',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 1,
-                  total_cost_usd: 0.25,
-                  fork_point_cost_usd: 0,
-                  started_at: oneHourAgo,
-                  updated_at: oneHourAgo,
-                },
-                {
-                  session_id: 'old-001',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 5,
-                  total_cost_usd: 1.5,
-                  fork_point_cost_usd: 0,
-                  started_at: tenDaysAgo,
-                  updated_at: tenDaysAgo,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'h24-001',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 1,
+            total_cost_usd: 0.25,
+            fork_point_cost_usd: 0,
+            started_at: oneHourAgo,
+            updated_at: oneHourAgo,
+          },
+          {
+            session_id: 'old-001',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 5,
+            total_cost_usd: 1.5,
+            fork_point_cost_usd: 0,
+            started_at: tenDaysAgo,
+            updated_at: tenDaysAgo,
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // "Past 24 hours" row should only include the recent session ($0.25)
     const row24h = page.locator('tr').filter({ hasText: '24 hours' })
@@ -279,51 +240,42 @@ test.describe('Usage Panel', () => {
 
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'recent-7d',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 1,
-                  total_cost_usd: 0.1,
-                  fork_point_cost_usd: 0,
-                  started_at: oneHourAgo,
-                  updated_at: oneHourAgo,
-                },
-                {
-                  session_id: 'mid-7d',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 2,
-                  total_cost_usd: 0.3,
-                  fork_point_cost_usd: 0,
-                  started_at: fourDaysAgo,
-                  updated_at: fourDaysAgo,
-                },
-                {
-                  session_id: 'old-7d',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 3,
-                  total_cost_usd: 2.0,
-                  fork_point_cost_usd: 0,
-                  started_at: fiftyDaysAgo,
-                  updated_at: fiftyDaysAgo,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'recent-7d',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 1,
+            total_cost_usd: 0.1,
+            fork_point_cost_usd: 0,
+            started_at: oneHourAgo,
+            updated_at: oneHourAgo,
+          },
+          {
+            session_id: 'mid-7d',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 2,
+            total_cost_usd: 0.3,
+            fork_point_cost_usd: 0,
+            started_at: fourDaysAgo,
+            updated_at: fourDaysAgo,
+          },
+          {
+            session_id: 'old-7d',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 3,
+            total_cost_usd: 2.0,
+            fork_point_cost_usd: 0,
+            started_at: fiftyDaysAgo,
+            updated_at: fiftyDaysAgo,
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // "Past 7 days" row includes recent + mid sessions ($0.10 + $0.30 = $0.40)
     const row7d = page.locator('tr').filter({ hasText: '7 days' })
@@ -340,51 +292,42 @@ test.describe('Usage Panel', () => {
 
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'recent-30d',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 1,
-                  total_cost_usd: 0.15,
-                  fork_point_cost_usd: 0,
-                  started_at: twoDaysAgo,
-                  updated_at: twoDaysAgo,
-                },
-                {
-                  session_id: 'mid-30d',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 2,
-                  total_cost_usd: 0.45,
-                  fork_point_cost_usd: 0,
-                  started_at: twentyDaysAgo,
-                  updated_at: twentyDaysAgo,
-                },
-                {
-                  session_id: 'old-30d',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 4,
-                  total_cost_usd: 3.0,
-                  fork_point_cost_usd: 0,
-                  started_at: sixtyDaysAgo,
-                  updated_at: sixtyDaysAgo,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'recent-30d',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 1,
+            total_cost_usd: 0.15,
+            fork_point_cost_usd: 0,
+            started_at: twoDaysAgo,
+            updated_at: twoDaysAgo,
+          },
+          {
+            session_id: 'mid-30d',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 2,
+            total_cost_usd: 0.45,
+            fork_point_cost_usd: 0,
+            started_at: twentyDaysAgo,
+            updated_at: twentyDaysAgo,
+          },
+          {
+            session_id: 'old-30d',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 4,
+            total_cost_usd: 3.0,
+            fork_point_cost_usd: 0,
+            started_at: sixtyDaysAgo,
+            updated_at: sixtyDaysAgo,
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // "Past 30 days" row includes recent + mid sessions ($0.15 + $0.45 = $0.60)
     const row30d = page.locator('tr').filter({ hasText: '30 days' })
@@ -400,41 +343,32 @@ test.describe('Usage Panel', () => {
 
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'all-recent',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 1,
-                  total_cost_usd: 0.5,
-                  fork_point_cost_usd: 0,
-                  started_at: oneHourAgo,
-                  updated_at: oneHourAgo,
-                },
-                {
-                  session_id: 'all-old',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 10,
-                  total_cost_usd: 4.5,
-                  fork_point_cost_usd: 0,
-                  started_at: ninetyDaysAgo,
-                  updated_at: ninetyDaysAgo,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'all-recent',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 1,
+            total_cost_usd: 0.5,
+            fork_point_cost_usd: 0,
+            started_at: oneHourAgo,
+            updated_at: oneHourAgo,
+          },
+          {
+            session_id: 'all-old',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 10,
+            total_cost_usd: 4.5,
+            fork_point_cost_usd: 0,
+            started_at: ninetyDaysAgo,
+            updated_at: ninetyDaysAgo,
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // "All time" row includes every session regardless of age ($0.50 + $4.50 = $5.00)
     const rowAll = page.locator('tr').filter({ hasText: 'All time' })
@@ -443,9 +377,42 @@ test.describe('Usage Panel', () => {
   })
 
   // SPEC: panel-usage:update
+  test('a session ageing past 24 hours leaves that interval with no session change', async ({
+    page,
+  }) => {
+    const installedAt = Date.parse('2026-03-01T12:00:00Z')
+    const sessions = [
+      {
+        session_id: 'edge-001',
+        container_id: DEFAULT_CONTAINER_ID,
+        workspace: '/home/user/project',
+        model: 'claude-sonnet',
+        num_turns: 1,
+        total_cost_usd: 5,
+        fork_point_cost_usd: 0,
+        started_at: new Date(installedAt - (23 * 60 + 59) * 60_000).toISOString(),
+        updated_at: new Date(installedAt - (23 * 60 + 59) * 60_000).toISOString(),
+      },
+    ]
+    await page.clock.install({ time: installedAt })
+    await mockAPI(page, {
+      handlers: { getSessions: sessionsHandler(sessions) },
+    })
+    await openSession(page)
+    await openUsagePanel(page)
+    const cost = label => page.locator('tr').filter({ hasText: label }).locator('.usage-cost')
+    await expect(cost('24 hours')).toHaveText('$5.00')
+
+    await page.clock.fastForward('02:00')
+
+    await expect(cost('24 hours')).toHaveText('$0.00')
+    await expect(cost('7 days')).toHaveText('$5.00')
+  })
+
+  // SPEC: panel-usage:update
   test('usage values auto-update when session cost changes via SSE', async ({ page }) => {
-    // SSE refetch chain (send -> sessionsChanged -> debounce -> fetchSessions) can exceed the default 5s timeout.
-    test.setTimeout(15000)
+    // SSE refetch chain (send -> sessionsChanged -> debounce -> fetchSessions) can outlast the default budget.
+    test.setTimeout(30_000)
     const now = new Date()
     const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000).toISOString()
 
@@ -476,10 +443,7 @@ test.describe('Usage Panel', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     const rowAll = page.locator('tr').filter({ hasText: 'All time' })
     await expect(rowAll.locator('.usage-cost')).toContainText('$0.10')
@@ -495,7 +459,7 @@ test.describe('Usage Panel', () => {
   // SPEC: panel-usage:update
   test('usage panel refetches on SSE sessions_changed event', async ({ page }) => {
     // Same SSE -> debounce -> refetch chain as above; can exceed the default 5s expect window under load.
-    test.setTimeout(15000)
+    test.setTimeout(30_000)
     const now = new Date()
     const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000).toISOString()
 
@@ -525,10 +489,7 @@ test.describe('Usage Panel', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
     await expect(page.getByText('All time')).toBeVisible()
 
     const initialCount = fetchCount
@@ -544,47 +505,38 @@ test.describe('Usage Panel', () => {
     const recent = new Date(now - 60 * 1000).toISOString()
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                // Parent ran to $1.00 total; no inherited prefix.
-                {
-                  session_id: 'parent-001',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 10,
-                  total_cost_usd: 1.0,
-                  fork_point_cost_usd: 0,
-                  started_at: recent,
-                  updated_at: recent,
-                },
-                // Forked from parent at $0.30 boundary, adding $0.10 of own spend; total_cost_usd reflects
-                // everything visible in transcript ($0.40), so aggregation must subtract the fork_point
-                // snapshot to attribute only the post-fork $0.10 to this session.
-                {
-                  session_id: 'fork-001',
-                  container_id: DEFAULT_CONTAINER_ID,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet',
-                  num_turns: 4,
-                  total_cost_usd: 0.4,
-                  fork_point_cost_usd: 0.3,
-                  parent_session_id: 'parent-001',
-                  started_at: recent,
-                  updated_at: recent,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          // Parent ran to $1.00 total; no inherited prefix.
+          {
+            session_id: 'parent-001',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 10,
+            total_cost_usd: 1.0,
+            fork_point_cost_usd: 0,
+            started_at: recent,
+            updated_at: recent,
+          },
+          // Forked from parent at $0.30 boundary, adding $0.10 of own spend; total_cost_usd reflects
+          // everything visible in transcript ($0.40), so aggregation must subtract the fork_point
+          // snapshot to attribute only the post-fork $0.10 to this session.
+          {
+            session_id: 'fork-001',
+            container_id: DEFAULT_CONTAINER_ID,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet',
+            num_turns: 4,
+            total_cost_usd: 0.4,
+            fork_point_cost_usd: 0.3,
+            parent_session_id: 'parent-001',
+            started_at: recent,
+            updated_at: recent,
+          },
+        ]),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openUsagePanel(page)
+    await openUsage(page)
 
     // Naive sum would be $1.40 (double-counts the $0.30 prefix); with snapshot subtraction it is $1.10.
     const rowAll = page.locator('tr').filter({ hasText: 'All time' })

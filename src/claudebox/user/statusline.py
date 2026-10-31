@@ -1,5 +1,7 @@
 """Claude Code statusline decorator and request type."""
 
+from __future__ import annotations
+
 import functools
 import inspect
 import sys

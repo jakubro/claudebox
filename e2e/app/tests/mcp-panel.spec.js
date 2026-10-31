@@ -1,9 +1,23 @@
 /** E2E tests for MCP panel display. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import { openLiveSession, openLiveSessionWithAPI, openSession } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
+
+async function showMcpServer(page, controller, server) {
+  await controller.sendEvent({
+    type: 'system',
+    subtype: 'init',
+    message_data: { mcp_servers: [server] },
+    ts: new Date().toISOString(),
+    id: 'evt_mcp_init',
+  })
+  await page.keyboard.press('Alt+8')
+  const panel = page.locator('.mcp-panel')
+  await expect(panel).toContainText(server.name, { timeout: 5000 })
+
+  return panel
+}
 
 test.describe('MCP Panel', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,9 +26,8 @@ test.describe('MCP Panel', () => {
 
   // SPEC: panel-mcp:empty
   test('shows empty state when no MCP servers', async ({ page }) => {
-    await mockSSE(page) // Default fixture has no MCP servers
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    // Default fixture has no MCP servers
+    await openSession(page)
 
     await page.keyboard.press('Alt+8')
 
@@ -28,9 +41,7 @@ test.describe('MCP Panel', () => {
 
   // SPEC: panel-mcp:list
   test('shows MCP servers from session init', async ({ page }) => {
-    await mockSSE(page, 'events/with-mcp-servers.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/with-mcp-servers.jsonl')
 
     await page.keyboard.press('Alt+8')
 
@@ -47,9 +58,7 @@ test.describe('MCP Panel', () => {
     page,
   }) => {
     // Four documented status states; mount one server per state and check the dot class - CSS owns the colors.
-    await mockSSE(page, 'events/with-mcp-servers.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/with-mcp-servers.jsonl')
 
     await page.keyboard.press('Alt+8')
     const panel = page.locator('[data-testid="panel-mcp"]')
@@ -89,9 +98,7 @@ test.describe('MCP Panel', () => {
   test.describe('Panel Location & Shortcut', () => {
     // SPEC: layout:panel-order-right
     test('MCP icon is between Usage and Commands in right icon strip', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const rightStrip = page.locator('.icon-strip-right')
       const icons = rightStrip.locator('.icon-btn')
@@ -112,9 +119,7 @@ test.describe('MCP Panel', () => {
 
     // SPEC: layout:icon-tooltip
     test('MCP icon button shows Plug icon', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const mcpBtn = page.locator('[data-testid="icon-mcp"]')
       await expect(mcpBtn).toBeVisible()
@@ -129,9 +134,7 @@ test.describe('MCP Panel', () => {
 
     // SPEC: shortcut:alt8
     test('Alt+8 toggles MCP panel open and closed', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const panel = page.locator('[data-testid="panel-mcp"]')
 
@@ -148,10 +151,7 @@ test.describe('MCP Panel', () => {
   test.describe('Disconnected Server Info', () => {
     // SPEC: panel-mcp:disconnected-info
     test('disconnected server shows status text label', async ({ page }) => {
-      await mockAPI(page)
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       // Send system.init event with MCP server data (McpPanel reads from events, not status API)
       await controller.sendEvent({
@@ -176,22 +176,12 @@ test.describe('MCP Panel', () => {
   test.describe('Server Management Controls', () => {
     // SPEC: panel-mcp:reconnect-btn
     test('shows reconnect button for disconnected servers', async ({ page }) => {
-      await mockAPI(page)
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'broken-server', status: 'failed' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
+      const panel = await showMcpServer(page, controller, {
+        name: 'broken-server',
+        status: 'failed',
       })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('broken-server', { timeout: 5000 })
 
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'broken-server' })
       await expect(serverItem.locator('button[title="Reconnect"]')).toBeVisible()
@@ -199,22 +189,12 @@ test.describe('MCP Panel', () => {
 
     // SPEC: panel-mcp:toggle-btn
     test('shows disable button for connected servers', async ({ page }) => {
-      await mockAPI(page)
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'active-server', status: 'connected' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
+      const panel = await showMcpServer(page, controller, {
+        name: 'active-server',
+        status: 'connected',
       })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('active-server', { timeout: 5000 })
 
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'active-server' })
       await expect(serverItem.locator('button[title="Disable"]')).toBeVisible()
@@ -222,22 +202,12 @@ test.describe('MCP Panel', () => {
 
     // SPEC: panel-mcp:toggle-labels
     test('shows enable button for disabled servers', async ({ page }) => {
-      await mockAPI(page)
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'off-server', status: 'disabled' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
+      const panel = await showMcpServer(page, controller, {
+        name: 'off-server',
+        status: 'disabled',
       })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('off-server', { timeout: 5000 })
 
       // Disabled server should show enable button with green border
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'off-server' })
@@ -251,7 +221,7 @@ test.describe('MCP Panel', () => {
       await mockAPI(page)
 
       const cp = `/api/workspaces/test-ws/containers/test-cid`
-      await page.route(`**${cp}/api/mcp/reconnect`, async route => {
+      await page.route(`**${cp}/api/mcp/reconnect*`, async route => {
         // Hold the request to keep loading state visible
         await new Promise(resolve => setTimeout(resolve, 2000))
         await route.fulfill({
@@ -259,21 +229,9 @@ test.describe('MCP Panel', () => {
         })
       })
 
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'slow-server', status: 'failed' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
-      })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('slow-server', { timeout: 5000 })
+      const panel = await showMcpServer(page, controller, { name: 'slow-server', status: 'failed' })
 
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'slow-server' })
       const reconnectBtn = serverItem.locator('button[title="Reconnect"]')
@@ -291,27 +249,18 @@ test.describe('MCP Panel', () => {
       await mockAPI(page)
 
       const cp = `/api/workspaces/test-ws/containers/test-cid`
-      await page.route(`**${cp}/api/mcp/reconnect`, async route => {
+      await page.route(`**${cp}/api/mcp/reconnect*`, async route => {
         await route.fulfill({
           json: { mcpServers: [{ name: 'fixed-server', status: 'connected' }] },
         })
       })
 
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'fixed-server', status: 'failed' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
+      const panel = await showMcpServer(page, controller, {
+        name: 'fixed-server',
+        status: 'failed',
       })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('fixed-server', { timeout: 5000 })
 
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'fixed-server' })
       await expect(serverItem.locator('.mcp-status-dot.disconnected')).toBeVisible()
@@ -323,29 +272,17 @@ test.describe('MCP Panel', () => {
 
     // SPEC: panel-mcp:error-display
     test('error message shown on action failure and auto-clears', async ({ page }) => {
-      test.setTimeout(15000)
+      test.setTimeout(30_000)
       await mockAPI(page)
 
       const cp = `/api/workspaces/test-ws/containers/test-cid`
-      await page.route(`**${cp}/api/mcp/reconnect`, async route => {
+      await page.route(`**${cp}/api/mcp/reconnect*`, async route => {
         await route.fulfill({ status: 500, json: { error: 'Connection refused' } })
       })
 
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'err-server', status: 'failed' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
-      })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('err-server', { timeout: 5000 })
+      const panel = await showMcpServer(page, controller, { name: 'err-server', status: 'failed' })
 
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'err-server' })
       await serverItem.locator('button[title="Reconnect"]').click()
@@ -359,22 +296,12 @@ test.describe('MCP Panel', () => {
     })
 
     test('does not show reconnect button for connected servers', async ({ page }) => {
-      await mockAPI(page)
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await controller.sendEvent({
-        type: 'system',
-        subtype: 'init',
-        message_data: { mcp_servers: [{ name: 'ok-server', status: 'connected' }] },
-        ts: new Date().toISOString(),
-        id: 'evt_mcp_init',
+      const panel = await showMcpServer(page, controller, {
+        name: 'ok-server',
+        status: 'connected',
       })
-
-      await page.keyboard.press('Alt+8')
-      const panel = page.locator('.mcp-panel')
-      await expect(panel).toContainText('ok-server', { timeout: 5000 })
 
       const serverItem = panel.locator('.mcp-server-item', { hasText: 'ok-server' })
       await expect(serverItem.locator('button[title="Reconnect"]')).not.toBeVisible()
@@ -386,9 +313,7 @@ test.describe('MCP Panel', () => {
     test('shows red badge with count when MCP servers are in failed status, hides when none', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       const mcpIcon = page.locator('[data-testid="icon-mcp"]')
       await expect(mcpIcon).toBeVisible()

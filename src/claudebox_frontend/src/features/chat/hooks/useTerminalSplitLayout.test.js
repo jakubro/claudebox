@@ -14,6 +14,23 @@ vi.mock('../../../api/uiState', () => ({
 
 import { useTerminalSplitLayout } from './useTerminalSplitLayout'
 
+// createElement, not JSX - this file is .js.
+function Harness() {
+  const { contentAreaRef, activeView } = useTerminalSplitLayout('session-1', false)
+  return createElement('div', {
+    ref: contentAreaRef,
+    'data-testid': 'probe',
+    'data-show': !!activeView,
+  })
+}
+
+async function renderHydratedLayout() {
+  const hook = renderHook(() => useTerminalSplitLayout('session-1', false))
+  await vi.waitFor(() => expect(hook.result.current.terminalSplit).not.toBeNull())
+
+  return hook
+}
+
 describe('useTerminalSplitLayout', () => {
   beforeEach(() => {
     mockGetUiState = vi.fn().mockResolvedValue({ session: {} })
@@ -23,18 +40,14 @@ describe('useTerminalSplitLayout', () => {
     mockGetUiState = vi
       .fn()
       .mockResolvedValue({ session: { rightSlotView: RightSlotView.TERMINAL } })
-    const { result } = renderHook(() => useTerminalSplitLayout('session-1', false))
-
-    await vi.waitFor(() => expect(result.current.terminalSplit).not.toBeNull())
+    const { result } = await renderHydratedLayout()
 
     expect(result.current.activeView?.id).toBe(RightSlotView.TERMINAL)
   })
 
   it('shows the work view once hydrated with no measured width yet', async () => {
     mockGetUiState = vi.fn().mockResolvedValue({ session: { rightSlotView: RightSlotView.WORK } })
-    const { result } = renderHook(() => useTerminalSplitLayout('session-1', false))
-
-    await vi.waitFor(() => expect(result.current.terminalSplit).not.toBeNull())
+    const { result } = await renderHydratedLayout()
 
     expect(result.current.activeView?.id).toBe(RightSlotView.WORK)
   })
@@ -50,15 +63,15 @@ describe('useTerminalSplitLayout', () => {
     expect(result.current.activeView).toBeNull()
   })
 
-  it('hides the slot when the preference is off', async () => {
-    mockGetUiState = vi.fn().mockResolvedValue({ session: { rightSlotView: RightSlotView.OFF } })
-    const { result } = renderHook(() => useTerminalSplitLayout('session-1', false))
-
-    await vi.waitFor(() => expect(result.current.terminalSplit).not.toBeNull())
+  it('hides the slot when the view mounts no column', async () => {
+    mockGetUiState = vi
+      .fn()
+      .mockResolvedValue({ session: { rightSlotView: RightSlotView.FOCUSED } })
+    const { result } = await renderHydratedLayout()
 
     expect(result.current.activeView).toBeNull()
     // The raw preference stays visible for the control-bar picker's pressed state.
-    expect(result.current.terminalSplit.view).toBe(RightSlotView.OFF)
+    expect(result.current.terminalSplit.view).toBe(RightSlotView.FOCUSED)
   })
 
   it('hides the slot once a real (jsdom-zero-width) content area is measured', async () => {
@@ -67,16 +80,7 @@ describe('useTerminalSplitLayout', () => {
       .fn()
       .mockResolvedValue({ session: { rightSlotView: RightSlotView.TERMINAL } })
     // jsdom lays out nothing: clientWidth reads 0, always under the combined minimum, so a real
-    // element proves the width-collapse path fires. createElement, not JSX - this file is .js.
-    function Harness() {
-      const { contentAreaRef, activeView } = useTerminalSplitLayout('session-1', false)
-      return createElement('div', {
-        ref: contentAreaRef,
-        'data-testid': 'probe',
-        'data-show': !!activeView,
-      })
-    }
-
+    // element proves the width-collapse path fires.
     render(createElement(Harness))
 
     await vi.waitFor(() =>

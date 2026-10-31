@@ -1,7 +1,19 @@
 /** E2E tests for sessions panel and footer. */
 
 import { expect, test } from '@playwright/test'
-import { assertColor, openSessionsPanel, waitForAppReady } from '../helpers.js'
+import {
+  assertColor,
+  delayUiStateSaves,
+  openLiveSession,
+  openLiveSessionWithAPI,
+  openSession,
+  openSessionsPanel,
+  openSessionWithAPI,
+  resumeNamedSession,
+  sessionsHandler,
+  startHeldRefresh,
+  waitForAppReady,
+} from '../helpers.js'
 import {
   DEFAULT_BACKEND_ID,
   DEFAULT_CONTAINER_ID,
@@ -11,14 +23,40 @@ import {
   loadFixture,
   mockAPI,
 } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import { createDaemonSSEController, createSSEController, mockSSE } from '../mocks/sse.js'
+
+async function openWorkingTurn(page, prompt, reply) {
+  const controller = await openLiveSessionWithAPI(page)
+  await controller.sendEvents([
+    {
+      type: 'user',
+      subtype: 'text',
+      content: prompt,
+      is_human: true,
+      timestamp: Date.now(),
+      turn_id: 'turn_001',
+    },
+    { type: 'assistant', subtype: 'text', content: reply, timestamp: Date.now() + 100 },
+  ])
+}
+
+async function openFooterDropdown(page, trigger, dropdownTestId) {
+  await page.locator(`[data-testid="${trigger}"]`).click()
+  const dropdown = page.locator(`[data-testid="${dropdownTestId}"]`)
+  await expect(dropdown).toBeVisible()
+
+  return dropdown
+}
+
+async function openMultipleSessionsPanel(page) {
+  await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
+  await openSession(page)
+  await openSessionsPanel(page)
+}
 
 test.describe('Footer', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
   })
 
   test.describe('Status Display', () => {
@@ -119,9 +157,10 @@ test.describe('Footer', () => {
       const dropdown = page.locator('[data-testid="model-dropdown"]')
       await expect(dropdown).toBeVisible()
 
-      await expect(dropdown.getByText('Opus 5')).toBeVisible()
-      await expect(dropdown.getByText('Sonnet 5')).toBeVisible()
-      await expect(dropdown.getByText('Haiku 4.5')).toBeVisible()
+      await expect(dropdown.getByText('Fable 5.1', { exact: true })).toBeVisible()
+      await expect(dropdown.getByText('Opus 5.5', { exact: true })).toBeVisible()
+      await expect(dropdown.getByText('Sonnet 5.5', { exact: true })).toBeVisible()
+      await expect(dropdown.getByText('Haiku 5.5', { exact: true })).toBeVisible()
 
       // Dropdown opens upward: its bottom edge sits near the button's top edge.
       const btnBox = await modelBtn.boundingBox()
@@ -137,7 +176,7 @@ test.describe('Footer', () => {
       let setModelBody = null
 
       // Override session refresh to reflect selected model
-      await page.route('**/api/sessions/current', async route => {
+      await page.route('**/api/sessions/current*', async route => {
         const data = loadFixture('status/default.json')
         if (setModelBody?.model) {
           data.model = setModelBody.model
@@ -145,20 +184,18 @@ test.describe('Footer', () => {
         await route.fulfill({ json: data })
       })
 
-      await page.route('**/api/model', async route => {
+      await page.route('**/api/model*', async route => {
         setModelBody = await route.request().postDataJSON()
         await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
       })
 
-      await page.locator('[data-testid="footer-model"]').click()
-      const dropdown = page.locator('[data-testid="model-dropdown"]')
-      await expect(dropdown).toBeVisible()
+      const dropdown = await openFooterDropdown(page, 'footer-model', 'model-dropdown')
 
-      await dropdown.getByText('Opus 5').click()
+      await dropdown.getByText('Haiku 5.5', { exact: true }).click()
 
       await expect(dropdown).not.toBeVisible()
-      await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 5')
-      await expect.poll(() => setModelBody).toEqual({ model: 'claude-opus-5' })
+      await expect(page.locator('[data-testid="footer-model"]')).toContainText('Haiku 5.5')
+      await expect.poll(() => setModelBody).toEqual({ model: 'claude-haiku-5-5' })
     })
 
     // SPEC: footer:model-picker-close
@@ -180,27 +217,7 @@ test.describe('Footer', () => {
 
     // SPEC: footer:model-picker-disabled
     test('model picker disabled during response', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      await openWorkingTurn(page, 'Hello', 'Working...')
 
       const modelBtn = page.locator('[data-testid="footer-model"]')
       await expect(modelBtn).toBeDisabled()
@@ -243,7 +260,14 @@ test.describe('Footer', () => {
     // SPEC: footer:permission-mode-picker-select
     test('selecting a permission mode closes dropdown and updates footer', async ({ page }) => {
       let setModeBody = null
-      await page.route('**/api/permission-mode', async route => {
+      await page.route('**/api/sessions/current*', async route => {
+        const data = loadFixture('status/default.json')
+        if (setModeBody?.permission_mode) {
+          data.permission_mode = setModeBody.permission_mode
+        }
+        await route.fulfill({ json: data })
+      })
+      await page.route('**/api/permission-mode*', async route => {
         if (route.request().method() === 'POST') {
           setModeBody = await route.request().postDataJSON()
           await route.fulfill({
@@ -266,9 +290,11 @@ test.describe('Footer', () => {
         }
       })
 
-      await page.locator('[data-testid="footer-permission-mode-picker"]').click()
-      const dropdown = page.locator('[data-testid="permission-mode-dropdown"]')
-      await expect(dropdown).toBeVisible()
+      const dropdown = await openFooterDropdown(
+        page,
+        'footer-permission-mode-picker',
+        'permission-mode-dropdown',
+      )
 
       await dropdown
         .locator('.footer-permission-mode-option-name')
@@ -280,6 +306,30 @@ test.describe('Footer', () => {
         'Plan',
       )
       await expect.poll(() => setModeBody).toEqual({ permission_mode: 'plan' })
+    })
+
+    // SPEC: footer:refused-pick-reported
+    test('a refused permission mode is reported and the picker shows the mode the session runs at', async ({
+      page,
+    }) => {
+      await page.route('**/api/permission-mode*', route =>
+        route.fulfill({
+          status: 409,
+          json: { error: 'change_refused', setting: 'permission_mode' },
+        }),
+      )
+      const picker = page.locator('[data-testid="footer-permission-mode-picker"]')
+
+      await picker.click()
+      await page
+        .locator('[data-testid="permission-mode-dropdown"] .footer-permission-mode-option-name')
+        .filter({ hasText: 'Plan' })
+        .click()
+
+      await expect(page.locator('.footer-error-text')).toContainText(
+        'Failed to apply permission mode',
+      )
+      await expect(picker).toHaveAttribute('data-permission-mode', 'bypassPermissions')
     })
 
     // SPEC: footer:permission-mode-picker-close
@@ -301,27 +351,7 @@ test.describe('Footer', () => {
 
     // SPEC: footer:permission-mode-picker-disabled
     test('permission mode picker disabled during response', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      await openWorkingTurn(page, 'Hello', 'Working...')
 
       const modeBtn = page.locator('[data-testid="footer-permission-mode-picker"]')
       await expect(modeBtn).toBeDisabled()
@@ -374,14 +404,12 @@ test.describe('Footer', () => {
     test('selecting an effort level closes dropdown and updates footer', async ({ page }) => {
       let setEffortBody = null
 
-      await page.route('**/api/effort-level', async route => {
+      await page.route('**/api/effort-level*', async route => {
         setEffortBody = await route.request().postDataJSON()
         await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
       })
 
-      await page.locator('[data-testid="footer-effort"]').click()
-      const dropdown = page.locator('[data-testid="effort-dropdown"]')
-      await expect(dropdown).toBeVisible()
+      const dropdown = await openFooterDropdown(page, 'footer-effort', 'effort-dropdown')
 
       await dropdown.getByText('High', { exact: true }).click()
 
@@ -408,27 +436,7 @@ test.describe('Footer', () => {
 
     // SPEC: footer:effort-picker-disabled
     test('effort picker disabled during response', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      await openWorkingTurn(page, 'Hello', 'Working...')
 
       const effortBtn = page.locator('[data-testid="footer-effort"]')
       await expect(effortBtn).toBeDisabled()
@@ -446,12 +454,12 @@ test.describe('Footer', () => {
     // SPEC: footer:effort-picker-persist
     test('effort level restored from session data on load', async ({ page }) => {
       const effortLevel = 'high'
-      await page.route('**/api/sessions/current', async route => {
+      await page.route('**/api/sessions/current*', async route => {
         const data = loadFixture('status/default.json')
         data.effort_level = effortLevel
         await route.fulfill({ json: data })
       })
-      await page.route('**/api/effort-level', async route => {
+      await page.route('**/api/effort-level*', async route => {
         await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
       })
 
@@ -466,10 +474,8 @@ test.describe('Footer', () => {
 
     // SPEC: footer:effort-picker-all-models
     test('max option visible for all models', async ({ page }) => {
-      // Default fixture uses claude-sonnet-5 - Max should still be available.
-      await page.locator('[data-testid="footer-effort"]').click()
-      const dropdown = page.locator('[data-testid="effort-dropdown"]')
-      await expect(dropdown).toBeVisible()
+      // Default fixture uses claude-sonnet-5-5 - Max should still be available.
+      const dropdown = await openFooterDropdown(page, 'footer-effort', 'effort-dropdown')
 
       await expect(dropdown.getByText('Low', { exact: true })).toBeVisible()
       await expect(dropdown.getByText('Medium', { exact: true })).toBeVisible()
@@ -481,28 +487,8 @@ test.describe('Footer', () => {
   test.describe('Working State', () => {
     // SPEC: footer:interrupt-hint
     test('shows interrupt hint during response', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // Send a turn that's "working" (no result event yet)
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Do something',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working on it...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      await openWorkingTurn(page, 'Do something', 'Working on it...')
 
       await expect(
         page.locator('[data-testid="footer-status"][data-status="working"]'),
@@ -515,28 +501,8 @@ test.describe('Footer', () => {
 
     // SPEC: footer:elapsed-timer
     test('shows elapsed seconds in working status', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // Send a turn that's "working" (no result event yet)
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Do something',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working on it...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      await openWorkingTurn(page, 'Do something', 'Working on it...')
 
       await expect(
         page.locator('[data-testid="footer-status"][data-status="working"]'),
@@ -571,7 +537,7 @@ test.describe('Footer', () => {
     // SPEC: footer:silence-threshold
     // SPEC: footer:silence-dim
     // SPEC: footer:silence-recovery
-    test('transitions to Waiting status after silence threshold', async ({ page }) => {
+    test('keeps reading Working through silence while only the dot dims', async ({ page }) => {
       const controller = await createSSEController(page)
       await mockAPI(page)
       await page.clock.install()
@@ -604,20 +570,23 @@ test.describe('Footer', () => {
       // Past the 5-second silence threshold.
       await page.clock.fastForward(5500)
 
-      await expect(page.locator('.footer-status-text')).toContainText('Waiting')
-      await expect(page.locator('.footer-status-text.status-silent')).toBeVisible()
+      const dot = page.locator('[data-testid="footer-status"]')
+      const text = page.locator('.footer-status-text')
+      await expect(dot).toHaveClass(/status-silent/)
+      await expect(text).toContainText('Working')
+      await expect(text).not.toHaveClass(/status-silent/)
+      expect(await text.evaluate(el => getComputedStyle(el).opacity)).toBe('1')
 
-      // SPEC: footer:silence-dim - muted gray color
-      const silentText = page.locator('.footer-status-text.status-silent')
-      const color = await silentText.evaluate(el => getComputedStyle(el).color)
-      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-      expect(match).toBeTruthy()
-      const [, r, g, b] = match.map(Number)
-      // Muted gray: channels roughly equal, not bright white or fully saturated
+      // SPEC: footer:silence-dim - muted gray, still dot
+      const { background, animations } = await dot.evaluate(el => ({
+        background: getComputedStyle(el).backgroundColor,
+        animations: el.getAnimations().length,
+      }))
+      const [r, g, b] = background.match(/\d+/g).map(Number)
       expect(Math.abs(r - g)).toBeLessThan(40)
       expect(Math.abs(g - b)).toBeLessThan(40)
+      expect(animations).toBe(0)
 
-      // Activity should recover the status from Waiting back to Working.
       await controller.sendEvent({
         type: 'assistant',
         subtype: 'text',
@@ -625,8 +594,9 @@ test.describe('Footer', () => {
         timestamp: Date.now() + 6000,
       })
 
-      await expect(page.locator('.footer-status-text')).toContainText('Working')
-      await expect(page.locator('.footer-status-text.status-silent')).not.toBeVisible()
+      await expect(dot).not.toHaveClass(/status-silent/)
+      expect(await dot.evaluate(el => el.getAnimations().length)).toBeGreaterThan(0)
+      await expect(text).toContainText('Working')
     })
   })
 
@@ -939,9 +909,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -953,6 +921,74 @@ test.describe('Sessions Panel', () => {
 
       const panelText = await sessionsPanel.textContent()
       expect(panelText.length).toBeGreaterThan(0)
+    })
+  })
+
+  test.describe('Large Workspace', () => {
+    // SPEC: panel-session:scales
+    test('a list of hundreds of sessions mounts a window of rows and still reaches the oldest', async ({
+      page,
+    }) => {
+      const base = loadFixture('sessions/default.json').sessions[0]
+      const sessions = Array.from({ length: 400 }, (_, i) => ({
+        ...base,
+        session_id: `bulk${String(i).padStart(4, '0')}-0000-0000-0000-000000000000`,
+        name: `Bulk session ${i}`,
+        num_turns: 1,
+        container_id: null,
+        updated_at: new Date(Date.UTC(2026, 0, 1) - i * 60_000).toISOString(),
+        started_at: new Date(Date.UTC(2026, 0, 1) - i * 60_000).toISOString(),
+      }))
+      await mockAPI(page, {
+        handlers: {
+          getSessions: sessionsHandler(sessions),
+        },
+      })
+      await openSession(page)
+      await openSessionsPanel(page)
+
+      const panel = page.locator('[data-testid="panel-sessions"]')
+      await expect(panel.getByText('Bulk session 0', { exact: true })).toBeVisible()
+      expect(await panel.locator('[data-testid="session-item"]').count()).toBeLessThan(60)
+
+      await panel.locator('.sessions-list').evaluate(list => {
+        list.scrollTop = list.scrollHeight
+      })
+
+      await expect(panel.getByText('Bulk session 399', { exact: true })).toBeVisible()
+      expect(await panel.locator('[data-testid="session-item"]').count()).toBeLessThan(60)
+    })
+  })
+
+  test.describe('Workspace-Scoped Refresh', () => {
+    // SPEC: panel-session:auto-refresh-scoped
+    test("another workspace's session changes leave the list alone", async ({ page }) => {
+      test.setTimeout(30_000)
+      const daemon = await createDaemonSSEController(page)
+      let listings = 0
+      await mockAPI(page, {
+        handlers: {
+          getSessions: async route => {
+            listings++
+            await route.fulfill({ json: loadFixture('sessions/default.json') })
+          },
+        },
+      })
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await openSessionsPanel(page)
+      await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
+      // The list ignores a change signal arriving within 2 s of its last fetch.
+      await page.waitForTimeout(2500)
+      const settled = listings
+
+      await daemon.sendEvent({ type: 'sessions_changed', workspace_id: 'other-ws' })
+      await daemon.sendContainerStatus('other-container', 'running', 'other-ws')
+      await page.waitForTimeout(3000)
+      expect(listings).toBe(settled)
+
+      await daemon.sendEvent({ type: 'sessions_changed', workspace_id: DEFAULT_WORKSPACE_ID })
+      await expect.poll(() => listings, { timeout: 5000 }).toBeGreaterThan(settled)
     })
   })
 
@@ -1000,9 +1036,7 @@ test.describe('Sessions Panel', () => {
           await route.fallback()
         }
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
       const items = page.locator('[data-testid="session-item"]')
@@ -1016,12 +1050,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:row-content
     test('session item shows session ID', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
@@ -1031,24 +1060,14 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:row-content
     test('session item shows name if set', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       await expect(page.getByText('Feature Implementation')).toBeVisible()
     })
 
     // SPEC: panel-session:preview
     test('session item shows message preview', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       await expect(page.getByText(/Help me implement/)).toBeVisible()
     })
@@ -1056,9 +1075,7 @@ test.describe('Sessions Panel', () => {
     // SPEC: panel-session:message-truncate
     test('long messages are truncated with ellipsis', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/with-long-messages.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1076,12 +1093,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:current-highlight
     test('current session is highlighted', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       // test-session-001 is the current session in the fixture.
       const currentSession = page.locator('.sessions-item-current')
@@ -1092,12 +1104,7 @@ test.describe('Sessions Panel', () => {
   test.describe('Session Actions', () => {
     // SPEC: panel-session:resume
     test('resume button visible for non-current sessions', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       const resumeButtons = page.locator('[data-testid="session-resume-btn"]')
       await expect(resumeButtons).toHaveCount(2) // 2 non-current sessions
@@ -1105,12 +1112,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:resume-button
     test('resume button shows play icon in split-button', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       // lucide Play icon.
       const resumeBtn = page.locator('[data-testid="session-resume-btn"]').first()
@@ -1125,12 +1127,7 @@ test.describe('Sessions Panel', () => {
     // SPEC: panel-session:copy-id
     test('clicking session ID copies session path to clipboard', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
       const sessionId = page.locator('.sessions-id').first()
@@ -1144,12 +1141,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:edit-button
     test('edit button appears on session items', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
@@ -1161,12 +1153,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:resume-middle-click
     test('resume split-button has chevron with dropdown options', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
       await expect(page.locator('[data-testid="session-item"]').first()).toBeVisible()
 
       const chevron = page.locator('.sessions-resume-chevron').first()
@@ -1189,9 +1176,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1202,12 +1187,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:refresh-button
     test('refresh button is visible', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       await expect(page.locator('[data-testid="session-refresh-btn"]')).toBeVisible()
     })
@@ -1218,14 +1198,10 @@ test.describe('Sessions Panel', () => {
     test('shows empty message when no sessions', async ({ page }) => {
       await mockAPI(page, {
         handlers: {
-          getSessions: async route => {
-            await route.fulfill({ json: { sessions: [] } })
-          },
+          getSessions: sessionsHandler([]),
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1271,14 +1247,42 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
       await expect(page.getByText(/\d+m ago/).first()).toBeVisible()
       await expect(page.getByText(/\d+h ago/).first()).toBeVisible()
+    })
+
+    // SPEC: panel-session:time-live
+    test("an idle session's row time keeps up with no other activity", async ({ page }) => {
+      const installedAt = Date.parse('2026-03-01T12:00:00Z')
+      // Built once, so every fallback poll returns the same unchanged list.
+      const sessions = [
+        {
+          session_id: 'test-session-001',
+          container_id: DEFAULT_CONTAINER_ID,
+          workspace: '/home/user/project',
+          model: 'claude-sonnet',
+          num_turns: 1,
+          total_cost_usd: 0.01,
+          started_at: new Date(installedAt).toISOString(),
+          updated_at: new Date(installedAt).toISOString(),
+        },
+      ]
+      await page.clock.install({ time: installedAt })
+      await mockAPI(page, {
+        handlers: { getSessions: sessionsHandler(sessions) },
+      })
+      await openSession(page)
+      await openSessionsPanel(page)
+      const row = page.locator('.sessions-item-current .sessions-timestamp')
+      await expect(row).toHaveText('just now')
+
+      await page.clock.fastForward('03:00')
+
+      await expect(row).toHaveText('3m ago')
     })
 
     // SPEC: panel-session:time-range
@@ -1308,9 +1312,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1322,30 +1324,22 @@ test.describe('Sessions Panel', () => {
     test('session row shows its runtime when known', async ({ page }) => {
       await mockAPI(page, {
         handlers: {
-          getSessions: async route => {
-            await route.fulfill({
-              json: {
-                sessions: [
-                  {
-                    session_id: 'test-session-001',
-                    container_id: DEFAULT_CONTAINER_ID,
-                    workspace: '/home/user/project',
-                    model: 'ollama:llama3.2',
-                    runtime: 'LangGraph',
-                    num_turns: 1,
-                    total_cost_usd: 0,
-                    started_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                  },
-                ],
-              },
-            })
-          },
+          getSessions: sessionsHandler([
+            {
+              session_id: 'test-session-001',
+              container_id: DEFAULT_CONTAINER_ID,
+              workspace: '/home/user/project',
+              model: 'ollama:llama3.2',
+              runtime: 'LangGraph',
+              num_turns: 1,
+              total_cost_usd: 0,
+              started_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ]),
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1357,12 +1351,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:cost-format
     test('session shows cost in $X.XX format', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       // Close right panels to give sessions panel more width
       await page.keyboard.press('Alt+2') // Close Todos
@@ -1382,12 +1371,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:turns-format
     test('session shows turns count', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       // Close right panels to give sessions panel more width
       await page.keyboard.press('Alt+2') // Close Todos
@@ -1416,9 +1400,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1434,9 +1416,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
       await expect(page.getByText('Failed to load sessions')).toBeVisible()
@@ -1450,12 +1430,7 @@ test.describe('Sessions Panel', () => {
   test.describe('Pinned Sessions', () => {
     // SPEC: panel-session:pin-button
     test('pin button visible on session items', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       const pinButtons = page.locator('[data-testid="session-pin-btn"]')
       await expect(pinButtons.first()).toBeVisible()
@@ -1465,12 +1440,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:pin-color
     test('pin button toggles pinned class on click', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       const pinBtn = page.locator('[data-testid="session-pin-btn"]').first()
       await expect(pinBtn).toBeVisible()
@@ -1487,12 +1457,7 @@ test.describe('Sessions Panel', () => {
 
     // SPEC: panel-session:pin-order
     test('pinned sessions sort to top of list', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3)
 
       // Pin the last session (test-session-003)
@@ -1515,9 +1480,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1527,14 +1490,52 @@ test.describe('Sessions Panel', () => {
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
     })
 
+    // SPEC: panel-session:pin-cross-tab
+    test('a pin made or removed in one tab shows in another tab of the same browser', async ({
+      page,
+    }) => {
+      const uiState = { global: {}, sessions: {} }
+      await openPinTab(page, uiState)
+      await delayUiStateSaves(page, 500)
+      const other = await page.context().newPage()
+      await openPinTab(other, uiState)
+      const otherPinned = other.locator('[data-testid="session-pin-btn"].pinned')
+      await expect(otherPinned).toHaveCount(0)
+
+      await page.locator('[data-testid="session-pin-btn"]').first().click()
+      await expect(otherPinned).toHaveCount(1)
+
+      await page.locator('[data-testid="session-pin-btn"].pinned').click()
+      await expect(otherPinned).toHaveCount(0)
+    })
+
+    // SPEC: panel-session:pin-survives-refresh
+    test('a pin or an unpin made while the sessions list refreshes stays as clicked', async ({
+      page,
+    }) => {
+      const uiState = { global: {}, sessions: {} }
+      await openPinTab(page, uiState)
+      const pinned = page.locator('[data-testid="session-pin-btn"].pinned')
+
+      for (const [index, expected] of [
+        [0, 1],
+        [1, 0],
+      ]) {
+        const name = `Renamed by refresh ${index}`
+        const listing = loadFixture('sessions/multiple.json')
+        listing.sessions[1].name = name
+        const button = expected ? page.locator('[data-testid="session-pin-btn"]').first() : pinned
+        const landed = await startHeldRefresh(page, uiState, 1000, listing)
+        await button.click()
+        await landed()
+        await expect(page.getByText(name)).toBeVisible()
+        expect(await pinned.count()).toBe(expected)
+      }
+    })
+
     // SPEC: panel-session:pin-button
     test('pin button shows correct tooltip', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       const pinBtn = page.locator('[data-testid="session-pin-btn"]').first()
       await expect(pinBtn).toHaveAttribute('title', 'Pin session')
@@ -1545,44 +1546,105 @@ test.describe('Sessions Panel', () => {
     })
   })
 
+  test.describe('Needs You', () => {
+    const row = (page, shortId) =>
+      page.locator('[data-testid="session-item"]').filter({ hasText: shortId })
+
+    test.beforeEach(async ({ page }) => {
+      await mockAPI(page, { sessionsFixture: 'sessions/needs-you.json' })
+      await openSession(page)
+      await openSessionsPanel(page)
+    })
+
+    // SPEC: panel-session:needs-you
+    // SPEC: container:panel-dot
+    test("a running session that needs you shows a dark orange dot and the agent's reason", async ({
+      page,
+    }) => {
+      const asking = row(page, 'askrun01')
+      const dot = asking.locator('.container-status-dot')
+
+      await expect(dot).toHaveClass(/container-status-needs-you/)
+      await expect(dot).toHaveAttribute('title', 'Needs you')
+      await expect(asking.locator('.sessions-last')).toHaveText(
+        'Decide: which migration path to keep',
+      )
+      const [hue, value] = await dot.evaluate(el => {
+        const [r, g, b] = getComputedStyle(el).backgroundColor.match(/\d+/g).map(Number)
+        const max = Math.max(r, g, b)
+        const min = Math.min(r, g, b)
+        const h = max === r ? (60 * (g - b)) / (max - min) : max === g ? 120 : 240
+        return [h, max / 255]
+      })
+      expect(hue).toBeGreaterThan(10)
+      expect(hue).toBeLessThan(35)
+      expect(value).toBeLessThan(0.9)
+    })
+
+    // SPEC: panel-session:needs-you-running-only
+    test('a session that stopped while it needed you shows as stopped with its last message', async ({
+      page,
+    }) => {
+      const stopped = row(page, 'askstp01')
+
+      await expect(stopped.locator('.container-status-dot')).toHaveClass(/container-status-none/)
+      await expect(stopped.locator('.sessions-last')).toHaveText('"...the reply before it stopped"')
+    })
+
+    // SPEC: panel-session:needs-you-collapsed
+    test('a collapsed session takes the dot of a fork beneath it that needs you, not its reason', async ({
+      page,
+    }) => {
+      const parent = row(page, 'parent01')
+
+      await expect(parent.locator('.container-status-dot')).toHaveClass(
+        /container-status-needs-you/,
+      )
+      await expect(parent.locator('.sessions-last')).toHaveText('"...the parent\'s own reply"')
+
+      await page
+        .locator('.sessions-tree-node')
+        .filter({ hasText: 'parent01' })
+        .getByTitle('Expand')
+        .click()
+
+      const fork = row(page, 'forkask1')
+      await expect(fork.locator('.container-status-dot')).toHaveClass(/container-status-needs-you/)
+      await expect(fork.locator('.sessions-last')).toHaveText("Answer the fork's question")
+      await expect(parent.locator('.container-status-dot')).toHaveClass(/container-status-none/)
+    })
+  })
+
   test.describe('Hide Empty Sessions', () => {
     // SPEC: panel-session:hide-empty
     test('sessions with 0 turns are hidden from list', async ({ page }) => {
       await mockAPI(page, {
         handlers: {
-          getSessions: async route => {
-            await route.fulfill({
-              json: {
-                sessions: [
-                  {
-                    session_id: 'test-session-001',
-                    container_id: DEFAULT_CONTAINER_ID,
-                    workspace: '/home/user/project',
-                    model: 'claude-sonnet',
-                    num_turns: 0,
-                    total_cost_usd: 0,
-                    started_at: '2025-01-18T12:00:00Z',
-                    updated_at: '2025-01-18T12:00:00Z',
-                  },
-                  {
-                    session_id: 'visible-session',
-                    workspace: '/home/user/project',
-                    model: 'claude-sonnet',
-                    num_turns: 5,
-                    total_cost_usd: 0.1,
-                    started_at: '2025-01-17T10:00:00Z',
-                    updated_at: '2025-01-17T11:00:00Z',
-                    first_message: 'Hello',
-                  },
-                ],
-              },
-            })
-          },
+          getSessions: sessionsHandler([
+            {
+              session_id: 'test-session-001',
+              container_id: DEFAULT_CONTAINER_ID,
+              workspace: '/home/user/project',
+              model: 'claude-sonnet',
+              num_turns: 0,
+              total_cost_usd: 0,
+              started_at: '2025-01-18T12:00:00Z',
+              updated_at: '2025-01-18T12:00:00Z',
+            },
+            {
+              session_id: 'visible-session',
+              workspace: '/home/user/project',
+              model: 'claude-sonnet',
+              num_turns: 5,
+              total_cost_usd: 0.1,
+              started_at: '2025-01-17T10:00:00Z',
+              updated_at: '2025-01-17T11:00:00Z',
+              first_message: 'Hello',
+            },
+          ]),
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1596,9 +1658,7 @@ test.describe('Sessions Panel', () => {
     // SPEC: panel-session:fork-sort-key
     test('parent with recent fork sorts above independent session', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/with-fork-sorting.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1631,9 +1691,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1651,12 +1709,7 @@ test.describe('Sessions Panel', () => {
   test.describe('Session Tooltip', () => {
     // SPEC: panel-session:tooltip-truncated
     test('session name has title attribute for tooltip', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       const nameSpan = page.locator('.sessions-name').filter({ hasText: 'Feature Implementation' })
       await expect(nameSpan).toBeVisible()
@@ -1664,12 +1717,7 @@ test.describe('Sessions Panel', () => {
     })
 
     test('session ID has title attribute with full ID', async ({ page }) => {
-      await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
+      await openMultipleSessionsPanel(page)
 
       const idSpan = page.locator('.sessions-id').first()
       await expect(idSpan).toBeVisible()
@@ -1681,10 +1729,7 @@ test.describe('Sessions Panel', () => {
 
   test.describe('Footer Tooltips', () => {
     test.beforeEach(async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
     })
 
     // SPEC: footer:workspace
@@ -1739,9 +1784,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1757,29 +1800,21 @@ test.describe('Sessions Panel', () => {
     test('session with null cost shows em dash', async ({ page }) => {
       await mockAPI(page, {
         handlers: {
-          getSessions: async route => {
-            await route.fulfill({
-              json: {
-                sessions: [
-                  {
-                    session_id: 'null-cost-001',
-                    container_id: DEFAULT_CONTAINER_ID,
-                    workspace: '/home/user/project',
-                    model: 'claude-sonnet',
-                    num_turns: 5,
-                    total_cost_usd: null,
-                    started_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                  },
-                ],
-              },
-            })
-          },
+          getSessions: sessionsHandler([
+            {
+              session_id: 'null-cost-001',
+              container_id: DEFAULT_CONTAINER_ID,
+              workspace: '/home/user/project',
+              model: 'claude-sonnet',
+              num_turns: 5,
+              total_cost_usd: null,
+              started_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ]),
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -1801,9 +1836,7 @@ test.describe('Sessions Panel', () => {
           },
         },
       })
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openLiveSession(page)
 
       const input = page.locator('[data-testid="chat-input"]')
       await input.fill('Test message')
@@ -1864,18 +1897,23 @@ test.describe('Sessions Panel Filters', () => {
     ],
   }
 
+  async function openFiltersPanel(page) {
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => route.fulfill({ json: filtersFixture }),
+        resumeSession: resumeNamedSession,
+      },
+    })
+    await openSession(page)
+    await openSessionsPanel(page)
+  }
+
   // SPEC: panel-session:filters
   // SPEC: panel-session:filter-default
   test('renders all six filters as icons on the same row as the new-session/refresh buttons, Conversations active by default', async ({
     page,
   }) => {
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, filtersFixture)
 
     const tabs = page.locator('[data-testid="sessions-tabs"]')
     await expect(tabs).toBeVisible()
@@ -1911,12 +1949,61 @@ test.describe('Sessions Panel Filters', () => {
   // SPEC: panel-session:filter-named
   // SPEC: panel-session:filter-count
   test('named filter lists only the session given a name by hand', async ({ page }) => {
+    await openSessionsListing(page, filtersFixture)
+
+    await page.getByTestId('sessions-filter-named').click()
+
+    const items = page.locator('[data-testid="session-item"]')
+    await expect(items).toHaveCount(1)
+    await expect(items.first()).toContainText('Feature Implementation')
+  })
+
+  // SPEC: panel-session:auto-name
+  // SPEC: panel-session:auto-name-style
+  // SPEC: notify:title-format
+  test('a session titled automatically shows the title, styled apart, in the list, header and tab title', async ({
+    page,
+  }) => {
+    const sessions = filtersFixture.sessions.map(s =>
+      s.session_id === DEFAULT_SESSION_ID ? { ...s, auto_name: 'Fixing the login bug' } : s,
+    )
     await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
+      handlers: {
+        getSessions: sessionsHandler(sessions),
+        getSessionStatus: async route =>
+          route.fulfill({
+            json: { ...loadFixture('status/default.json'), auto_name: 'Fixing the login bug' },
+          }),
+      },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
+    await openSessionsPanel(page)
+
+    const row = page.locator('[data-testid="session-item"]', { hasText: 'Fixing the login bug' })
+    await expect(row.locator('.sessions-name')).toHaveClass(/auto-named/)
+    await expect(page.locator('[data-testid="session-header-session-name"]')).toHaveText(
+      'Fixing the login bug',
+    )
+    await expect(page.locator('[data-testid="session-header-session-name"]')).toHaveClass(
+      /auto-named/,
+    )
+    await expect(page).toHaveTitle(/^Fixing the login bug \| /)
+
+    const handNamed = page.locator('[data-testid="session-item"]', {
+      hasText: 'Feature Implementation',
+    })
+    await expect(handNamed.locator('.sessions-name')).not.toHaveClass(/auto-named/)
+  })
+
+  // SPEC: panel-session:filter-named
+  test('named filter leaves out a session that has only an automatic title', async ({ page }) => {
+    const sessions = filtersFixture.sessions.map(s =>
+      s.session_id === DEFAULT_SESSION_ID ? { ...s, auto_name: 'Fixing the login bug' } : s,
+    )
+    await mockAPI(page, {
+      handlers: { getSessions: sessionsHandler(sessions) },
+    })
+    await openSession(page)
     await openSessionsPanel(page)
 
     await page.getByTestId('sessions-filter-named').click()
@@ -1926,15 +2013,43 @@ test.describe('Sessions Panel Filters', () => {
     await expect(items.first()).toContainText('Feature Implementation')
   })
 
+  // SPEC: panel-session:auto-name-rename
+  test('renaming an automatically titled session by hand replaces the title', async ({ page }) => {
+    let handName = null
+    const sessions = () =>
+      filtersFixture.sessions.map(s =>
+        s.session_id === DEFAULT_SESSION_ID
+          ? { ...s, name: handName, auto_name: 'Fixing the login bug' }
+          : s,
+      )
+    await mockAPI(page, {
+      handlers: {
+        getSessions: async route => route.fulfill({ json: { sessions: sessions() } }),
+        updateSession: async route => {
+          handName = route.request().postDataJSON().name
+          await route.fulfill({ json: sessions()[0] })
+        },
+      },
+    })
+    await openSession(page)
+    await openSessionsPanel(page)
+
+    const row = page.locator('[data-testid="session-item"]', { hasText: 'Fixing the login bug' })
+    await row.hover()
+    await row.locator('.sessions-edit-btn').click()
+    await page.keyboard.type('Login fix')
+    await page.keyboard.press('Enter')
+
+    const renamed = page.locator('[data-testid="session-item"]', { hasText: 'Login fix' })
+    await expect(renamed.locator('.sessions-name')).toHaveText('Login fix')
+    await expect(renamed.locator('.sessions-name')).not.toHaveClass(/auto-named/)
+    await page.getByTestId('sessions-filter-named').click()
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(2)
+  })
+
   // SPEC: panel-session:filter-pinned
   test('pinned filter lists only the pinned session', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, filtersFixture)
 
     await page.locator('[data-testid="session-pin-btn"]').first().click()
     await page.getByTestId('sessions-filter-pinned').click()
@@ -1950,13 +2065,7 @@ test.describe('Sessions Panel Filters', () => {
   test('threads and subsessions are present, reachable, read 0, and show the empty-filter message', async ({
     page,
   }) => {
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, filtersFixture)
 
     await page.getByTestId('sessions-filter-threads').click()
     await expect(page.locator('[data-testid="panel-sessions"]')).toContainText(
@@ -2006,13 +2115,7 @@ test.describe('Sessions Panel Filters', () => {
       ],
     }
 
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: withThread }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, withThread)
 
     // Conversations (default) - the side thread is absent; the running session keeps its dot.
     const conversationItems = page.locator('[data-testid="session-item"]')
@@ -2065,13 +2168,7 @@ test.describe('Sessions Panel Filters', () => {
       ],
     }
 
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: withSubsession }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, withSubsession)
 
     await page.getByTestId('sessions-filter-subsessions').click()
     const items = page.locator('[data-testid="session-item"]')
@@ -2085,13 +2182,7 @@ test.describe('Sessions Panel Filters', () => {
 
   // SPEC: panel-session:filter-all
   test('all filter shows every session', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, filtersFixture)
 
     await page.getByTestId('sessions-filter-all').click()
 
@@ -2103,13 +2194,10 @@ test.describe('Sessions Panel Filters', () => {
   test('narrow enough that the filters do not fit: the strip scrolls, chevrons mark the overflow, no scrollbar', async ({
     page,
   }) => {
-    await mockAPI(page, {
+    await page.setViewportSize({ width: 900, height: 800 })
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
       handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
     })
-    await mockSSE(page)
-    await page.setViewportSize({ width: 900, height: 800 })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
     await openSessionsPanel(page)
 
     const strip = page.getByTestId('sessions-tabs')
@@ -2134,32 +2222,7 @@ test.describe('Sessions Panel Filters', () => {
   }) => {
     // A viewport narrow enough that All starts scrolled out of the strip. No click on All itself -
     // Playwright's pre-click auto-scroll would mask the component's own scroll-into-view effect.
-    let mockCurrentSessionId = DEFAULT_SESSION_ID
-    await mockAPI(page, {
-      handlers: {
-        getSessions: async route => route.fulfill({ json: filtersFixture }),
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
-          })
-        },
-        resumeSession: async route => {
-          const [, sid] = route
-            .request()
-            .url()
-            .match(/\/sessions\/([^/]+)\/resume/)
-          mockCurrentSessionId = sid
-          await route.fulfill({
-            status: 200,
-            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
-          })
-        },
-      },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openFiltersPanel(page)
 
     // Pin the current session, then choose Pinned - it is present, no switch yet. Done at the
     // default width so the setup clicks land on plain tabs, not ones a chevron overlay may cover.
@@ -2200,36 +2263,8 @@ test.describe('Sessions Panel Filters', () => {
   test('opening a session absent from the chosen filter shows All; opening one it lists returns to it', async ({
     page,
   }) => {
-    // The mocked container's /sessions/current is otherwise static - make it reflect whichever
-    // session the mock most recently resumed, so a resume changes useSessionData().sessionId.
-    let mockCurrentSessionId = DEFAULT_SESSION_ID
-    await mockAPI(page, {
-      handlers: {
-        getSessions: async route => route.fulfill({ json: filtersFixture }),
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
-          })
-        },
-        resumeSession: async route => {
-          // App startup resumes the URL's own session on mount too - key off the id the request
-          // actually names, or that mount-time call clobbers mockCurrentSessionId first.
-          const [, sid] = route
-            .request()
-            .url()
-            .match(/\/sessions\/([^/]+)\/resume/)
-          mockCurrentSessionId = sid
-          await route.fulfill({
-            status: 200,
-            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
-          })
-        },
-      },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    // Resume answers for the session it names, so the session data read next is that session's.
+    await openFiltersPanel(page)
 
     // Pin the current session, then choose Pinned - it is present, no switch yet.
     await page.locator('[data-testid="session-pin-btn"]').first().click()
@@ -2269,13 +2304,7 @@ test.describe('Sessions Panel Filters', () => {
   test('the chosen filter survives a reload; a switch the panel made for itself does not', async ({
     page,
   }) => {
-    await mockAPI(page, {
-      handlers: { getSessions: async route => route.fulfill({ json: filtersFixture }) },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openSessionsListing(page, filtersFixture)
 
     // The default mock's PATCH handler mutates its in-memory ui-state, which a later GET rehydrates
     // from - wait for that round trip to land, or the reload races the fire-and-forget write.
@@ -2297,32 +2326,7 @@ test.describe('Sessions Panel Filters', () => {
   test('reloading while the panel shows a self-made switch to All returns to the chosen filter, not All', async ({
     page,
   }) => {
-    let mockCurrentSessionId = DEFAULT_SESSION_ID
-    await mockAPI(page, {
-      handlers: {
-        getSessions: async route => route.fulfill({ json: filtersFixture }),
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
-          })
-        },
-        resumeSession: async route => {
-          const [, sid] = route
-            .request()
-            .url()
-            .match(/\/sessions\/([^/]+)\/resume/)
-          mockCurrentSessionId = sid
-          await route.fulfill({
-            status: 200,
-            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
-          })
-        },
-      },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openFiltersPanel(page)
 
     await page.locator('[data-testid="session-pin-btn"]').first().click()
     const patchResponse = page.waitForResponse(
@@ -2398,9 +2402,7 @@ test.describe('Sessions Panel Search', () => {
           route.fulfill({ json: { global: { pinnedSessions: [], ...uiState }, session: {} } }),
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
     await openSessionsPanel(page)
   }
 
@@ -2577,9 +2579,7 @@ test.describe('Sessions Panel Sort', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openSessionsPanel(page)
 
@@ -2596,11 +2596,7 @@ test.describe('Sessions Panel Sort', () => {
 
 test.describe('Sessions Panel Meta Tooltips', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openSessionsPanel(page)
+    await openMultipleSessionsPanel(page)
   })
 
   // SPEC: panel-session:meta-tooltips
@@ -2653,3 +2649,59 @@ test.describe('Sessions Panel Resume Spinner', () => {
     await expect(resumeBtn).toBeDisabled()
   })
 })
+
+test.describe('Footer on the welcome screen', () => {
+  // SPEC: footer:refused-pick-reported
+  test('a pick refused while a session opens from the welcome screen is reported and its first message sent', async ({
+    page,
+  }) => {
+    const controller = await createSSEController(page, { autoConnect: false })
+    const sends = []
+    await mockAPI(page, {
+      handlers: {
+        newSession: route =>
+          route.fulfill({
+            json: { session_id: 'created-c', container_id: DEFAULT_CONTAINER_ID, name: null },
+          }),
+        setPermissionMode: route =>
+          route.fulfill({ status: 409, json: { error: 'change_refused' } }),
+        send: async route => {
+          sends.push(route.request().postDataJSON().prompt)
+          await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+        },
+      },
+    })
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await expect(page.locator('[data-testid="welcome-page"]')).toBeVisible()
+
+    await page.locator('[data-testid="footer-permission-mode-picker"]').click()
+    await page
+      .locator('[data-testid="permission-mode-dropdown"] .footer-permission-mode-option-name')
+      .filter({ hasText: 'Plan' })
+      .click()
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('Reply with the single word: alpha')
+    await input.press('Enter')
+    await expect.poll(() => controller.hasChatStreamFor('created-c')).toBe(true)
+    await controller.connectSession('created-c')
+
+    await expect(page.locator('.footer-error-text')).toContainText(
+      'Failed to apply permission mode',
+    )
+    await expect.poll(() => sends).toEqual(['Reply with the single word: alpha'])
+  })
+})
+
+async function openSessionsListing(page, sessions) {
+  await mockAPI(page, {
+    handlers: { getSessions: async route => route.fulfill({ json: sessions }) },
+  })
+  await openSession(page)
+  await openSessionsPanel(page)
+}
+
+async function openPinTab(page, uiState) {
+  await mockAPI(page, { sessionsFixture: 'sessions/multiple.json', uiState })
+  await openSession(page)
+  await openSessionsPanel(page)
+}

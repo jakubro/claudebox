@@ -5,7 +5,14 @@ import {
   FETCH_TIMEOUT_LISTING_MS,
   FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
 } from '../config/timing'
-import { containerFetch, containerUrl, retryFetch, workspaceFetch } from './apiClient'
+import {
+  containerFetch,
+  containerUrl,
+  getAddressedSessionId,
+  retryFetch,
+  sessionPath,
+  workspaceFetch,
+} from './apiClient'
 
 // Workspace-scoped (daemon) endpoints
 
@@ -14,6 +21,15 @@ export async function listSessions() {
   const res = await workspaceFetch('/sessions')
   if (!res.ok) {
     throw new Error('Failed to fetch sessions')
+  }
+  return res.json()
+}
+
+/** Fetch the schedule events of every running session in the workspace. */
+export async function listSessionSchedules() {
+  const res = await workspaceFetch('/sessions/schedules')
+  if (!res.ok) {
+    throw new Error('Failed to fetch session schedules')
   }
   return res.json()
 }
@@ -36,21 +52,25 @@ export async function listSessionsForWorkspace(workspaceId) {
  * @param {object} [options]
  * @param {AbortSignal} [options.signal]
  * @param {string[]} [options.messages] - Messages to submit as the session's first turns.
+ * @param {string|null} [options.bundle] - Settings bundle the session is created under.
  * @returns {Promise<{session_id: string, container_id: string, undelivered_messages?: string[]}>}
  */
-export async function newSession({ signal, messages } = {}) {
-  const hasMessages = messages?.length > 0
+export async function newSession({ signal, messages, bundle } = {}) {
+  const body = {
+    ...(messages?.length > 0 && { messages }),
+    ...(bundle && { bundle }),
+  }
   const res = await workspaceFetch('/sessions/new', {
     method: 'POST',
     signal,
     timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
-    ...(hasMessages && {
+    ...(Object.keys(body).length > 0 && {
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(body),
     }),
   })
   if (!res.ok) {
-    throw new Error('Failed to start new session')
+    throw await _newSessionError(res)
   }
   return res.json()
 }
@@ -128,9 +148,9 @@ export async function forkSession(
 
 // Container-scoped (proxied) endpoints
 
-/** Fetch the current session state from the container. */
+/** Fetch the addressed session's state from its container. */
 export async function getSession() {
-  const res = await containerFetch('/api/sessions/current', {
+  const res = await containerFetch(sessionPath('/api/sessions/current'), {
     timeoutMs: FETCH_TIMEOUT_INTERACTIVE_MS,
   })
   if (!res.ok) {
@@ -167,8 +187,8 @@ export async function stopSession(sessionId) {
 }
 
 /**
- * Cancel a member session's turn-complete auto-stop - it runs until stopped like any other.
- * Touches only whether the session outlives its next answer, never its identity.
+ * Promote a member session - it outlives every answer, whether or not it is running now.
+ * Touches only whether the session outlives its answers, never its identity.
  * @param {string} sessionId
  */
 export async function promoteSession(sessionId) {
@@ -178,11 +198,14 @@ export async function promoteSession(sessionId) {
   }
 }
 
-/** Fetch full tool output for a tool use block. */
-export async function getToolOutput(toolUseId) {
+/**
+ * Fetch full tool output for a tool use block.
+ * @param {string|null} [sessionId] - A session other than the addressed one, running or not.
+ */
+export async function getToolOutput(toolUseId, sessionId = null) {
   // Action tier for the same reason as the event log: one-shot, and a shorter bound would fire
   // before the daemon's own proxy read could turn a slow container into a typed error.
-  const res = await containerFetch(`/api/sessions/current/tool-output/${toolUseId}`)
+  const res = await containerFetch(_toolOutputPath(toolUseId, sessionId))
   if (!res.ok) {
     throw new Error('Failed to fetch tool output')
   }
@@ -191,7 +214,7 @@ export async function getToolOutput(toolUseId) {
 
 /** @param {string|null} sessionPrompt - Prompt text, or null to clear. */
 export async function updateSessionPrompt(sessionPrompt) {
-  const res = await containerFetch('/api/sessions/current/prompt', {
+  const res = await containerFetch(sessionPath('/api/sessions/current/prompt'), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_prompt: sessionPrompt }),
@@ -201,7 +224,33 @@ export async function updateSessionPrompt(sessionPrompt) {
   }
 }
 
-/** Build download URL for tool output (container-proxied). */
-export function getToolOutputDownloadUrl(toolUseId) {
-  return containerUrl(`/api/sessions/current/tool-output/${toolUseId}/download`)
+/** Build download URL for tool output (container-proxied); `sessionId` as for `getToolOutput`. */
+export function getToolOutputDownloadUrl(toolUseId, sessionId = null) {
+  return containerUrl(`${_toolOutputPath(toolUseId, sessionId)}/download`)
+}
+
+/** A refusal the reader can act on keeps its own words; anything else is the generic failure. */
+// Start refusals the reader can act on, worded from the 409 body.
+const NEW_SESSION_REFUSALS = {
+  container_tmp_mount_conflict: body =>
+    `Cannot start a session: ${body.paths} is under /tmp. Move it, or set [env] CLAUDEBOX_NO_TMP_REMAP = "1" in the workspace settings.`,
+  network_mode_unsupported: body =>
+    body.source === 'bundle'
+      ? `Cannot start a session: bundle ${body.bundle} sets [network] mode = "${body.mode}", which a session in the browser cannot use. Remove it from the bundle.`
+      : `Cannot start a session: the workspace settings set [network] mode = "${body.mode}", which a session in the browser cannot use. Remove it, or start this workspace with claudebox run.`,
+}
+
+async function _newSessionError(res) {
+  const body = res.status === 409 ? await res.json().catch(() => null) : null
+  const refusal = NEW_SESSION_REFUSALS[body?.error]
+  if (!refusal) {
+    return new Error('Failed to start new session')
+  }
+  const error = new Error(refusal(body))
+  error.userFacing = true
+  return error
+}
+
+function _toolOutputPath(toolUseId, sessionId) {
+  return `/api/sessions/${sessionId ?? getAddressedSessionId()}/tool-output/${toolUseId}`
 }

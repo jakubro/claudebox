@@ -1,0 +1,8 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Reply with the single word PING and nothing else.","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"PING","ts":"2025-01-18T12:00:01Z","turn_id":"turn_001","id":"evt_002","primary":true,"is_human":false}
+{"type":"user","subtype":"text","is_human":false,"content":"Stop hook feedback:\nHOOK-MARKER. Ask before you stop.","ts":"2025-01-18T12:00:02Z","turn_id":"turn_001","id":"evt_003","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"mcp__claudebox__needs_user","tool_use_id":"tu_needs_1","tool_input":{"reason":"Answer: carry on?"},"ts":"2025-01-18T12:00:03Z","turn_id":"turn_001","id":"evt_004","primary":false,"is_human":false}
+{"type":"user","subtype":"tool_result","content":"The user has been told this session needs them.","tool_use_id":"tu_needs_1","ts":"2025-01-18T12:00:03Z","turn_id":"turn_001","id":"evt_005","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":false,"content":"[Your previous response had no visible output. Please continue and produce a user-visible response.]","ts":"2025-01-18T12:00:04Z","turn_id":"turn_001","id":"evt_006","primary":true}
+{"type":"assistant","subtype":"text","content":"DONE","ts":"2025-01-18T12:00:05Z","turn_id":"turn_001","id":"evt_007","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:06Z","id":"evt_008","primary":false,"is_human":false}

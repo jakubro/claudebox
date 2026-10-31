@@ -1,0 +1,3 @@
+{"type": "user", "subtype": "text", "is_human": true, "content": "Please look at every caller of the session store and tell me which ones still read the legacy field, then list them with the file and line where each read happens so I can review them.", "ts": "2025-01-18T12:00:00Z", "turn_id": "turn_001", "id": "evt_001", "primary": true}
+{"type": "assistant", "subtype": "text", "content": "Here they are.", "ts": "2025-01-18T12:00:01Z", "id": "evt_002", "primary": true, "is_human": false}
+{"type": "result", "subtype": "success", "turn_id": "turn_001", "ts": "2025-01-18T12:00:02Z", "id": "evt_003", "primary": false, "is_human": false}

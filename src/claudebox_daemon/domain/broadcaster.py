@@ -1,5 +1,7 @@
 """Daemon event broadcaster - serializes domain events for SSE subscribers."""
 
+from __future__ import annotations
+
 from claudebox import Broadcaster, DataClass
 
 

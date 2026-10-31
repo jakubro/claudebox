@@ -1,7 +1,7 @@
 /** Session data context - polled session metadata from API. */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { getContainerId, setContainerId } from '../api/apiClient'
+import { getAddressedSessionId, getContainerId, setAddress } from '../api/apiClient'
 import { setEffortLevel as apiSetEffortLevel } from '../api/effortLevels'
 import { setModel as apiSetModel } from '../api/models'
 import { setPermissionMode as apiSetPermissionMode } from '../api/permissionModes'
@@ -9,11 +9,17 @@ import { getSession, resumeSession } from '../api/sessions'
 import { getUiState, patchSessionUiState } from '../api/uiState'
 import { getSessionDefaults } from '../api/workspaces'
 import { SESSION_POLL_INTERVAL, SESSION_RETRY_DELAY_MS } from '../config/timing'
+import usePickBuffer from '../hooks/usePickBuffer'
 import useWorkspaceCommandCatalog from '../hooks/useWorkspaceCommandCatalog'
 import { createDeferred } from '../utils/deferred'
+import { displayName, isAutoNamed } from '../utils/sessionName'
+import { isOwnerAttachedFor } from '../utils/sessionOwnership'
 import { useDaemonStreamContext } from './DaemonStreamContext'
 import { useEvents } from './EventsContext'
+import { useSessionRouting } from './SessionRoutingContext'
 import { WorkspaceContext } from './WorkspaceContext'
+
+const NULLABLE_FIELDS = new Set(['needs_user', 'needs_user_replies'])
 
 const SessionDataContext = createContext(null)
 const SessionActionsContext = createContext(null)
@@ -31,18 +37,43 @@ const SessionActionsContext = createContext(null)
  * @param {Function} props.onError - Called with error message on fetch failure.
  */
 export function SessionDataProvider({ children, onSessionAttach, onError }) {
-  const { isConnected, isResponding, reconnectSSE, notifyContainerChanged } = useEvents()
+  const {
+    isConnected,
+    isResponding,
+    containerId,
+    reconnectSSE,
+    notifyAddressChanged,
+    creations,
+    getCreation,
+    isResumeRequestPending,
+    isCreateRequestPending,
+  } = useEvents()
+  const { activeSessionId } = useSessionRouting()
+  const routedSessionIdRef = useRef(activeSessionId)
+  routedSessionIdRef.current = activeSessionId
   const { sessionsChanged, lastSessionsChangedContainerId } = useDaemonStreamContext()
   const workspaceContext = useContext(WorkspaceContext)
   const workspaceId = workspaceContext?.workspaceId ?? null
 
   const [sessionData, setSessionData] = useState(null)
+  // Picker changes wait while the session on screen is not yet the one the tab addresses.
+  const isOwnerAttached = isOwnerAttachedFor({
+    routedSessionId: activeSessionId ?? null,
+    attachedSessionId: sessionData?.session_id ?? null,
+    creations,
+    isResumeRequestPending,
+    isCreateRequestPending,
+  })
+  const isOwnerAttachedRef = useRef(isOwnerAttached)
+  isOwnerAttachedRef.current = isOwnerAttached
   const [availableModels, setAvailableModels] = useState([])
   const [availablePermissionModes, setAvailablePermissionModes] = useState([])
   const [availableEffortLevels, setAvailableEffortLevels] = useState([])
   // Pre-session workspace from session-defaults; sole source for the tab title before getSession() resolves.
   const [defaultsWorkspace, setDefaultsWorkspace] = useState(null)
   const [notificationsEnabled, setNotificationsEnabledState] = useState(false)
+  // Set by a toggle, so the session's own read - issued before it - cannot revert it.
+  const notificationsSetRef = useRef(false)
   // Welcome-screen catalog: populated pre-session from the daemon endpoint so the picker isn't empty.
   // Falls through to `sessionData.commands` once a session is alive.
   const workspaceCommandCatalog = useWorkspaceCommandCatalog()
@@ -54,29 +85,22 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
   // A caller that joined an in-flight request re-fetches once on settle, so a picker confirmation
   // never reads state captured before its own mutation.
   const refreshPendingRef = useRef(false)
-  // The container the in-flight request was addressed to. A switch mid-flight must not apply the
-  // old container's session to the new one, so a mismatch issues its own request.
-  const refreshInFlightContainerRef = useRef(null)
+  // What the in-flight request addressed. A switch - even within one container - must not apply the
+  // old session's data to the new one, so a mismatch issues its own request.
+  const refreshInFlightAddressRef = useRef(null)
   // Set by the first joiner of an in-flight request; resolves once the re-armed refetch settles -
   // never the request being joined, which predates the joiner's own call.
   const nextSettleDeferredRef = useRef(null)
   const isConnectedRef = useRef(isConnected)
   isConnectedRef.current = isConnected
 
-  // Pre-session picker-change buffer; drained in strict order (model -> permission -> effort) once attached.
-  // Latest-wins: repeated picker changes overwrite the buffered value before drain.
-  const [deferredModel, setDeferredModel] = useState(null)
-  const [deferredPermissionMode, setDeferredPermissionMode] = useState(null)
-  const [deferredEffortLevel, setDeferredEffortLevel] = useState(null)
-  const lastSessionIdRef = useRef(null)
-
   // Retains seeded non-null fields when getSession() returns null for them, avoiding a footer regression to "-".
   // A joiner is handed a deferred for the NEXT settle, not the request it joined; the try/catch
   // below never re-throws, so it always resolves in practice.
   const refreshSession = useCallback(async () => {
-    const addressedContainer = getContainerId()
+    const addressed = addressKey()
 
-    if (refreshInFlightRef.current && refreshInFlightContainerRef.current === addressedContainer) {
+    if (refreshInFlightRef.current && refreshInFlightAddressRef.current === addressed) {
       refreshPendingRef.current = true
       if (!nextSettleDeferredRef.current) {
         nextSettleDeferredRef.current = createDeferred()
@@ -84,7 +108,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       return nextSettleDeferredRef.current.promise
     }
 
-    // A wave armed against a superseded container's request would never settle - the switch has
+    // A wave armed against a superseded address's request would never settle - the switch has
     // moved past it, so settle it here rather than let it attach to this unrelated request.
     if (refreshPendingRef.current) {
       refreshPendingRef.current = false
@@ -97,9 +121,9 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       try {
         const data = await getSession()
         fetchRetryCountRef.current = 0
-        // Only the run that still owns the slot may apply its response - a container switch can
-        // start a second run for a different container while this one is still in flight.
-        if (refreshInFlightRef.current === run) {
+        // Applied only by the run still owning the slot (a switch starts another) and only while its
+        // address is current - leaving a session releases the id.
+        if (refreshInFlightRef.current === run && addressKey() === addressed) {
           if (data?.session_id) {
             setSessionData(prev => {
               if (!prev || prev.session_id !== data.session_id) {
@@ -107,7 +131,8 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
               }
               const merged = { ...prev }
               for (const [k, v] of Object.entries(data)) {
-                if (v != null) {
+                // These are cleared by setting them to null, so a null must land like any value.
+                if (v != null || NULLABLE_FIELDS.has(k)) {
                   merged[k] = v
                 }
               }
@@ -122,9 +147,9 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
           setTimeout(refreshSession, SESSION_RETRY_DELAY_MS)
         }
       } catch (e) {
-        // Only the run that still owns the slot may act on its failure - a container switch can
-        // start a second run for a different container while this one is still in flight.
-        if (refreshInFlightRef.current !== run) {
+        // Only the run that still owns the slot may act on its failure - a switch can start a
+        // second run for a different session while this one is still in flight.
+        if (refreshInFlightRef.current !== run || addressKey() !== addressed) {
           return
         }
         // Don't retry when SSE is disconnected - container is gone
@@ -143,11 +168,11 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
           onError?.('Session load failed')
         }
       } finally {
-        // Only the run that still owns the slot may release it - a container switch can start a
+        // Only the run that still owns the slot may release it - a session switch can start a
         // second run alongside this one, and it must keep its own claim.
         if (refreshInFlightRef.current === run) {
           refreshInFlightRef.current = null
-          refreshInFlightContainerRef.current = null
+          refreshInFlightAddressRef.current = null
 
           if (refreshPendingRef.current) {
             refreshPendingRef.current = false
@@ -160,7 +185,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     })()
 
     refreshInFlightRef.current = run
-    refreshInFlightContainerRef.current = addressedContainer
+    refreshInFlightAddressRef.current = addressed
 
     return run
   }, [onError])
@@ -180,24 +205,33 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     setSessionData(prev => (prev ? { ...prev, ...patch } : patch))
   }, [])
 
+  // Re-checks the routed session at entry and after the resume: a reload of a session left alone
+  // never re-addresses the tab.
   const reloadSession = useCallback(async () => {
-    if (!sessionData?.session_id) {
+    const sessionId = sessionData?.session_id
+    if (!sessionId || routedSessionIdRef.current !== sessionId) {
       return
     }
     try {
-      const data = await resumeSession(sessionData.session_id)
-      setContainerId(data.container_id)
-      notifyContainerChanged()
+      const data = await resumeSession(sessionId)
+      if (routedSessionIdRef.current !== sessionId) {
+        return
+      }
+      setAddress(data.container_id, sessionId)
+      notifyAddressChanged()
       setSessionData(null)
       reconnectSSE()
     } catch (_err) {
-      onError?.('Reload failed')
+      if (routedSessionIdRef.current === sessionId) {
+        onError?.('Reload failed')
+      }
     }
-  }, [sessionData?.session_id, reconnectSSE, notifyContainerChanged, onError])
+  }, [sessionData?.session_id, reconnectSSE, notifyAddressChanged, onError])
 
   // Toggle notifications with persistence
   const setNotificationsEnabled = useCallback(
     enabled => {
+      notificationsSetRef.current = true
       setNotificationsEnabledState(enabled)
       if (sessionData?.session_id) {
         patchSessionUiState(sessionData.session_id, [
@@ -208,110 +242,90 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     [sessionData?.session_id],
   )
 
-  // Sets model via API then refreshes to confirm from projection; buffers pre-session (no container) until attach.
-  const setModel = useCallback(
-    newModel => {
-      if (!getContainerId()) {
-        setDeferredModel(newModel)
-        return
-      }
-      apiSetModel(newModel)
-        .then(refreshSession)
-        .catch(() => refreshSession())
-    },
-    [refreshSession],
-  )
-
-  // Sets permission mode via API then refreshes to confirm; buffers pre-session (no container) until attach.
-  const setPermissionMode = useCallback(
-    newPermissionMode => {
-      if (!getContainerId()) {
-        setDeferredPermissionMode(newPermissionMode)
-        return
-      }
-      apiSetPermissionMode(newPermissionMode)
-        .then(refreshSession)
-        .catch(() => refreshSession())
-    },
-    [refreshSession],
-  )
-
-  // Sets effort level via API then refreshes to confirm; buffers pre-session (no container) until attach.
-  const setEffortLevel = useCallback(
-    newLevel => {
-      if (!getContainerId()) {
-        setDeferredEffortLevel(newLevel)
-        return
-      }
-      apiSetEffortLevel(newLevel)
-        .then(refreshSession)
-        .catch(() => refreshSession())
-    },
-    [refreshSession],
-  )
-
-  // Load notifications preference when session ID becomes available
-  useEffect(() => {
-    if (sessionData?.session_id) {
-      getUiState(sessionData.session_id)
-        .then(data => setNotificationsEnabledState(data.session?.notificationsEnabled ?? false))
-        .catch(() => setNotificationsEnabledState(false))
-    }
-  }, [sessionData?.session_id])
-
-  // Drains the pre-session buffer on attach, in strict order: model -> permission -> effort.
-  // Each await confirms the SDK applied one change first; a failed call surfaces via onError, others still apply.
-  // useChatController's deferred message fires only once this drain completes (same session_id transition).
-  useEffect(() => {
-    const previousId = lastSessionIdRef.current
-    const sessionId = sessionData?.session_id
-    lastSessionIdRef.current = sessionId
-    if (!sessionId || previousId) {
-      return
-    }
-    if (!(deferredModel || deferredPermissionMode || deferredEffortLevel)) {
-      return
-    }
-
-    const drainModel = deferredModel
-    const drainPermissionMode = deferredPermissionMode
-    const drainEffortLevel = deferredEffortLevel
-    setDeferredModel(null)
-    setDeferredPermissionMode(null)
-    setDeferredEffortLevel(null)
-
-    ;(async () => {
-      try {
-        if (drainModel) {
-          await apiSetModel(drainModel)
-        }
-      } catch {
-        onError?.('Failed to apply buffered model')
-      }
-      try {
-        if (drainPermissionMode) {
-          await apiSetPermissionMode(drainPermissionMode)
-        }
-      } catch {
-        onError?.('Failed to apply buffered permission mode')
-      }
-      try {
-        if (drainEffortLevel) {
-          await apiSetEffortLevel(drainEffortLevel)
-        }
-      } catch {
-        onError?.('Failed to apply buffered effort level')
-      }
-      void refreshSession()
-    })()
-  }, [
-    sessionData?.session_id,
-    deferredModel,
-    deferredPermissionMode,
-    deferredEffortLevel,
+  const {
+    bufferPick,
+    pendingBundle,
+    pendingModel,
+    pendingPermissionMode,
+    pendingEffortLevel,
+    isApplyingPendingConfig,
+  } = usePickBuffer({
+    workspaceId,
+    routedSessionId: activeSessionId ?? null,
+    attachedSessionId: sessionData?.session_id ?? null,
+    containerId,
+    isOwnerAttached,
+    creations,
+    getCreation,
     refreshSession,
     onError,
-  ])
+  })
+  const setDeferredBundle = useCallback(name => bufferPick('bundle', name), [bufferPick])
+
+  // Sets model, reporting a refusal; settles after the confirming refresh. Buffered until attached.
+  const setModel = useCallback(
+    newModel => {
+      if (!isOwnerAttachedRef.current) {
+        bufferPick('model', newModel)
+        return
+      }
+      return apiSetModel(newModel).then(refreshSession, err => {
+        onError?.(err.message)
+        return refreshSession()
+      })
+    },
+    [refreshSession, bufferPick, onError],
+  )
+
+  // Sets permission mode, reporting a refusal; settles after the confirming refresh. Buffered until attached.
+  const setPermissionMode = useCallback(
+    newPermissionMode => {
+      if (!isOwnerAttachedRef.current) {
+        bufferPick('permissionMode', newPermissionMode)
+        return
+      }
+      return apiSetPermissionMode(newPermissionMode).then(refreshSession, err => {
+        onError?.(err.message)
+        return refreshSession()
+      })
+    },
+    [refreshSession, bufferPick, onError],
+  )
+
+  // Sets effort level, reporting a refusal; settles after the confirming refresh. Buffered until attached.
+  const setEffortLevel = useCallback(
+    newLevel => {
+      if (!isOwnerAttachedRef.current) {
+        bufferPick('effortLevel', newLevel)
+        return
+      }
+      return apiSetEffortLevel(newLevel).then(refreshSession, err => {
+        onError?.(err.message)
+        return refreshSession()
+      })
+    },
+    [refreshSession, bufferPick, onError],
+  )
+
+  // Off until the attached session's own value arrives; a reply for a session left is dropped.
+  useEffect(() => {
+    let cancelled = false
+    notificationsSetRef.current = false
+    setNotificationsEnabledState(false)
+    if (sessionData?.session_id) {
+      getUiState(sessionData.session_id)
+        .then(data => {
+          if (!(cancelled || notificationsSetRef.current)) {
+            setNotificationsEnabledState(data.session?.notificationsEnabled ?? false)
+          }
+        })
+        .catch(() => {})
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionData?.session_id])
 
   // Populates model/permission/effort picker options from the workspace-scoped session-defaults endpoint.
   // Single source of truth for picker dropdowns - the daemon serves the same constants the container would.
@@ -376,15 +390,16 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     }
   }, [isResponding, refreshSession])
 
+  const shownName = displayName(sessionData)
+
   // Tab title: [name] | [workspace] | Claudebox; falls back to the session-defaults workspace pre-connect.
   useEffect(() => {
-    const name = sessionData?.name
     const workspace = sessionData?.workspace || defaultsWorkspace
     const workspaceName = workspace ? workspace.split('/').pop() : null
 
     const parts = []
-    if (name) {
-      parts.push(name)
+    if (shownName) {
+      parts.push(shownName)
     }
     if (workspaceName) {
       parts.push(workspaceName)
@@ -392,7 +407,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     parts.push('Claudebox')
 
     document.title = parts.join(' | ')
-  }, [sessionData?.name, sessionData?.workspace, defaultsWorkspace])
+  }, [shownName, sessionData?.workspace, defaultsWorkspace])
 
   // Notifies the dockview hook of session attach/detach so it can bind sessionIdRef (layout-save path).
   // This also triggers the one-shot per-session layout restore on first attach.
@@ -405,7 +420,8 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
     () => ({
       sessionData,
       sessionId: sessionData?.session_id || null,
-      sessionName: sessionData?.name || null,
+      sessionName: displayName(sessionData),
+      sessionNameIsAuto: isAutoNamed(sessionData),
       sessionDir: sessionData?.session_dir || null,
       model: sessionData?.model || null,
       permissionMode: sessionData?.permission_mode || null,
@@ -419,6 +435,12 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       commands: sessionData?.commands || workspaceCommandCatalog || {},
       sessionPrompt: sessionData?.session_prompt || null,
       effortLevel: sessionData?.effort_level || null,
+      bundle: sessionData?.bundle || null,
+      deferredBundle: pendingBundle,
+      pendingModel,
+      pendingPermissionMode,
+      pendingEffortLevel,
+      isApplyingPendingConfig,
       capabilities: sessionData?.capabilities || null,
       runtimeName: sessionData?.runtime_name || null,
       rateLimits: sessionData?.rate_limits || null,
@@ -434,6 +456,11 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       availableEffortLevels,
       notificationsEnabled,
       workspaceCommandCatalog,
+      pendingBundle,
+      pendingModel,
+      pendingPermissionMode,
+      pendingEffortLevel,
+      isApplyingPendingConfig,
     ],
   )
 
@@ -443,6 +470,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       setModel,
       setPermissionMode,
       setEffortLevel,
+      setDeferredBundle,
       setNotificationsEnabled,
       refreshSession,
       reloadSession,
@@ -454,6 +482,7 @@ export function SessionDataProvider({ children, onSessionAttach, onError }) {
       setModel,
       setPermissionMode,
       setEffortLevel,
+      setDeferredBundle,
       setNotificationsEnabled,
       refreshSession,
       reloadSession,
@@ -486,6 +515,11 @@ export function useSessionDir() {
   return useContext(SessionDataContext)?.sessionDir || null
 }
 
+/** Access only the session's working directory. Safe outside provider (returns null). */
+export function useSessionWorkspace() {
+  return useContext(SessionDataContext)?.workspace || null
+}
+
 /** Access only session ID. Safe outside provider (returns null). */
 export function useSessionId() {
   return useContext(SessionDataContext)?.sessionId || null
@@ -498,4 +532,8 @@ export function useSessionActions() {
     throw new Error('useSessionActions must be used within SessionDataProvider')
   }
   return context
+}
+
+function addressKey() {
+  return `${getContainerId()}:${getAddressedSessionId()}`
 }

@@ -9,6 +9,7 @@ import {
   WORK_ENTRY_SEPARATOR_HEIGHT_PX,
 } from '../../../config/dimensions'
 import { normalizeToolName } from '../../../config/schema'
+import { isReadOnlyCall } from '../../../config/toolRegistry'
 import {
   blockRoutesToRightSlot,
   isHiddenToolSearch,
@@ -62,7 +63,10 @@ export function predictWorkEntryHeight(
       hasContent = true
       const header = buildToolHeader(normalizeToolName(event.content), event.tool_input ?? {}) || ''
       const headerLines = Math.max(1, Math.ceil(header.length / charsPerLine))
-      const base = isTopLevelBashCall(event) ? PX_PER_BASH_TOOL_BLOCK : PX_PER_TOOL_BLOCK
+      const base =
+        isTopLevelBashCall(event) && !isReadOnlyCall(event, result)
+          ? PX_PER_BASH_TOOL_BLOCK
+          : PX_PER_TOOL_BLOCK
       blocksHeight += base + (headerLines - 1) * LINE_HEIGHT_PX
     } else if (event.subtype === 'compact_start' || event.subtype === 'compact_boundary') {
       hasContent = true

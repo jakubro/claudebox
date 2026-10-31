@@ -5,6 +5,8 @@ hosts, see `_guard_url`. `web_search` dispatches by `ctx.config.web_search_provi
 duckduckgo; tavily/brave opt-in via the `web-search-tavily` extra) - network reach is in the README.
 """
 
+from __future__ import annotations
+
 import ipaddress
 import os
 import socket

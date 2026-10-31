@@ -26,14 +26,18 @@ const DEFAULTS_B = {
   effort_level: 'low',
 }
 
-/** Wrap the hook in a WorkspaceContext provider fixed to the given workspace id. */
-const workspaceWrapper = workspaceId =>
-  function Wrapper({ children }) {
-    return createElement(WorkspaceContext.Provider, { value: { workspaceId } }, children)
-  }
+function WorkspaceAWrapper({ children }) {
+  return createElement(WorkspaceContext.Provider, { value: { workspaceId: 'ws-a' } }, children)
+}
+
+function WorkspaceBWrapper({ children }) {
+  return createElement(WorkspaceContext.Provider, { value: { workspaceId: 'ws-b' } }, children)
+}
+
+const WORKSPACE_WRAPPERS = { 'ws-a': WorkspaceAWrapper, 'ws-b': WorkspaceBWrapper }
 
 const renderWithWorkspace = workspaceId =>
-  renderHook(() => useSessionDefaults(), { wrapper: workspaceWrapper(workspaceId) })
+  renderHook(() => useSessionDefaults(), { wrapper: WORKSPACE_WRAPPERS[workspaceId] })
 
 // renderHook wrappers get no rerender props - mutate this var and call rerender() to change it.
 let _reactiveWorkspaceId = null

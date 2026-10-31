@@ -4,6 +4,8 @@ Re-exports resolve lazily (PEP 562): eager ones pulled the agent SDK, the web-se
 and the container runtime into every CLI invocation. See ARCHITECTURE.md, "CLI cold path".
 """
 
+from __future__ import annotations
+
 from importlib import import_module
 from typing import TYPE_CHECKING
 
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from .agent_session.events import AgentEvent
     from .agent_session.hooks import HookCallbacks
     from .agent_session.orchestration.conversion import serialize_event
+    from .agent_session.orchestration.cost import cost_added
     from .agent_session.orchestration.errors import (
         SessionEntryNotFound,
         SessionNotReady,
@@ -37,6 +40,7 @@ if TYPE_CHECKING:
     from .agent_session.orchestration.models import EventSubtype, EventType
     from .agent_session.orchestration.persistence import EventLog
     from .agent_session.orchestration.session import SessionService
+    from .agent_session.orchestration.tool_output import ToolOutput
     from .agent_session.protocol import AgentSession
     from .agent_session.rate_limits import RateLimitStore
     from .agent_session.runtime_claude import ClaudeRuntime
@@ -44,7 +48,9 @@ if TYPE_CHECKING:
     from .cleanup import cleanup_stale_dirs
     from .config import Config
     from .containers import create_runtime
+    from .containers.build import no_build_running
     from .containers.models import ImageBuildMode
+    from .containers.run import agent_logged_in, network_mode_publishes, tmp_mount_conflicts
     from .containers.runtime import ContainerRuntime
     from .core import serialization
     from .core.broadcaster import Broadcaster
@@ -56,8 +62,8 @@ if TYPE_CHECKING:
         print_command,
         print_error,
     )
-    from .core.concurrency import SingleFlight, maybe_awaitable
-    from .core.file_cache import FileCache
+    from .core.concurrency import KeyedSingleFlight, SingleFlight, maybe_awaitable
+    from .core.file_cache import FileCache, FileStamp, file_stamp
     from .core.fs import (
         find_files,
         make_temp_dir,
@@ -85,6 +91,8 @@ if TYPE_CHECKING:
         count_lines,
         read_json,
         read_jsonl,
+        read_jsonl_from,
+        read_jsonl_tail,
         read_toml,
         write_json,
         write_text,
@@ -99,19 +107,24 @@ if TYPE_CHECKING:
     from .core.polling import AsyncPoller, MtimeWatcher
     from .core.string import wrap_box
     from .core.structures import DataClass, invert, merge
-    from .core.time import TIMESTAMP_FORMAT, get_timestamp, parse_timestamp
+    from .core.time import TIMESTAMP_FORMAT, days_before, get_timestamp, parse_timestamp
     from .env import is_dev_mode, set_dev_mode
     from .errors import ApiError
-    from .install import epilog, format_install_info, get_install_info
-    from .paths import make_timestamped_dir_prefix
+    from .install import epilog, format_install_info, get_install_info, library_commit
+    from .paths import (
+        InvalidSessionId,
+        find_session_dir,
+        make_timestamped_dir_prefix,
+        validate_session_id,
+    )
     from .session.models import SessionMetadata, SessionNotFound
     from .session.repository import SessionRepository
     from .session.session import Session
-    from .temp import ensure_tmp
+    from .temp import TmpRemapBlocked, ensure_tmp
     from .user.hook import HookRequest, HookResponse, hook
     from .user.request import Request
     from .user.statusline import StatuslineRequest, statusline
-    from .workspace import Workspace
+    from .workspace import Workspace, claude_projects_root, find_sdk_transcript
 
 
 # Submodules re-exported under a shorter name.
@@ -141,6 +154,7 @@ _EXPORTS_BY_MODULE = {
     "agent_session.events": ("AgentEvent",),
     "agent_session.hooks": ("HookCallbacks",),
     "agent_session.orchestration.conversion": ("serialize_event",),
+    "agent_session.orchestration.cost": ("cost_added",),
     "agent_session.orchestration.errors": (
         "SessionEntryNotFound",
         "SessionNotReady",
@@ -149,15 +163,18 @@ _EXPORTS_BY_MODULE = {
     "agent_session.orchestration.models": ("EventSubtype", "EventType"),
     "agent_session.orchestration.persistence": ("EventLog",),
     "agent_session.orchestration.session": ("SessionService",),
+    "agent_session.orchestration.tool_output": ("ToolOutput",),
     "agent_session.protocol": ("AgentSession",),
     "agent_session.rate_limits": ("RateLimitStore",),
     "agent_session.runtime_claude": ("ClaudeRuntime",),
     "agent_session.session": ("make_agent_session",),
     "cleanup": ("cleanup_stale_dirs",),
-    "install": ("epilog", "format_install_info", "get_install_info"),
+    "install": ("epilog", "format_install_info", "get_install_info", "library_commit"),
     "config": ("Config",),
     "containers": ("create_runtime",),
+    "containers.build": ("no_build_running",),
     "containers.models": ("ImageBuildMode",),
+    "containers.run": ("agent_logged_in", "network_mode_publishes", "tmp_mount_conflicts"),
     "containers.runtime": ("ContainerRuntime",),
     "core.broadcaster": ("Broadcaster",),
     "core.cli": (
@@ -168,8 +185,8 @@ _EXPORTS_BY_MODULE = {
         "print_command",
         "print_error",
     ),
-    "core.concurrency": ("SingleFlight", "maybe_awaitable"),
-    "core.file_cache": ("FileCache",),
+    "core.concurrency": ("KeyedSingleFlight", "SingleFlight", "maybe_awaitable"),
+    "core.file_cache": ("FileCache", "FileStamp", "file_stamp"),
     "core.fs": (
         "find_files",
         "make_temp_dir",
@@ -197,6 +214,8 @@ _EXPORTS_BY_MODULE = {
         "count_lines",
         "read_json",
         "read_jsonl",
+        "read_jsonl_from",
+        "read_jsonl_tail",
         "read_toml",
         "write_json",
         "write_text",
@@ -211,18 +230,23 @@ _EXPORTS_BY_MODULE = {
     "core.polling": ("AsyncPoller", "MtimeWatcher"),
     "core.string": ("wrap_box",),
     "core.structures": ("DataClass", "invert", "merge"),
-    "core.time": ("TIMESTAMP_FORMAT", "get_timestamp", "parse_timestamp"),
+    "core.time": ("TIMESTAMP_FORMAT", "days_before", "get_timestamp", "parse_timestamp"),
     "env": ("is_dev_mode", "set_dev_mode"),
     "errors": ("ApiError",),
-    "paths": ("make_timestamped_dir_prefix",),
+    "paths": (
+        "InvalidSessionId",
+        "find_session_dir",
+        "make_timestamped_dir_prefix",
+        "validate_session_id",
+    ),
     "session.models": ("SessionMetadata", "SessionNotFound"),
     "session.repository": ("SessionRepository",),
     "session.session": ("Session",),
-    "temp": ("ensure_tmp",),
+    "temp": ("TmpRemapBlocked", "ensure_tmp"),
     "user.hook": ("HookRequest", "HookResponse", "hook"),
     "user.request": ("Request",),
     "user.statusline": ("StatuslineRequest", "statusline"),
-    "workspace": ("Workspace",),
+    "workspace": ("Workspace", "claude_projects_root", "find_sdk_transcript"),
 }
 
 _EXPORTS = {name: module for module, names in _EXPORTS_BY_MODULE.items() for name in names}

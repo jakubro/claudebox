@@ -1,6 +1,8 @@
 """Tests for etc/profile.sample/ - the shipped profile must load through the same walker every
 profile does, or a broken sample ships silently (nothing else exercises this tree)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from claudebox.agent_session._skills import walk_skills

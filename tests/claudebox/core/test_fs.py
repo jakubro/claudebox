@@ -1,6 +1,11 @@
 """Tests for claudebox.fs - filesystem utilities."""
 
+from __future__ import annotations
+
+import os
 from pathlib import Path
+
+import pytest
 
 from claudebox.core.fs import (
     find_files,
@@ -62,6 +67,41 @@ class TestTouchFile:
         touch_file(target)
         touch_file(target)
         assert target.is_file()
+
+    def test_leaves_existing_file_untouched(self, tmp_path):
+        target = tmp_path / "file.txt"
+        target.write_text("content")
+        os.utime(target, (1_000_000_000, 1_000_000_000))
+
+        touch_file(target)
+
+        assert target.stat().st_mtime == 1_000_000_000
+        assert target.read_text() == "content"
+
+    @pytest.mark.parametrize(
+        ("existing", "content", "expected"),
+        [
+            (None, "{}", "{}"),
+            ("", "{}", "{}"),
+            ('{"theme": "dark"}', "{}", '{"theme": "dark"}'),
+            ("", "", ""),
+        ],
+    )
+    def test_seeds_content_into_a_missing_or_empty_file(
+        self,
+        tmp_path,
+        existing,
+        content,
+        expected,
+    ):
+        target = tmp_path / "file.json"
+
+        if existing is not None:
+            target.write_text(existing)
+
+        touch_file(target, content=content)
+
+        assert target.read_text() == expected
 
 
 class TestResolvePath:

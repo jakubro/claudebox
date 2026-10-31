@@ -62,12 +62,8 @@ describe('useFloatingPanel', () => {
   })
 
   it('fires preview after hover-intent delay when not maximized AND panel is closed', () => {
-    const { result } = renderHook(() => useFloatingPanel(false, ACTIVE))
-
-    act(() => {
-      // 'bookmarks' is NOT in ACTIVE - closed panel; preview fires after the hover-intent delay (350 ms).
-      result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
-    })
+    // 'bookmarks' is NOT in ACTIVE - closed panel; preview fires after the hover-intent delay (350 ms).
+    const { result } = renderHoveringClosedPanel()
 
     // Before the delay elapses - no preview yet.
     act(() => {
@@ -83,11 +79,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('cancels the pending hover-intent if cursor leaves before delay elapses', () => {
-    const { result } = renderHook(() => useFloatingPanel(false, ACTIVE))
-
-    act(() => {
-      result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
-    })
+    const { result } = renderHoveringClosedPanel()
 
     act(() => {
       vi.advanceTimersByTime(100)
@@ -102,15 +94,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('dismisses after leave timer expires (maximized branch)', () => {
-    const { result } = renderHook(() => useFloatingPanel(true, ACTIVE))
-
-    act(() => {
-      result.current.handleIconEnter('todos', mockEl(0), 'right')
-    })
-    // Maximized waits the hover-intent delay before showing.
-    act(() => {
-      vi.advanceTimersByTime(350)
-    })
+    const { result } = renderShownPanel('todos', 'right')
     expect(result.current.hoveredPanelId).toBe('todos')
 
     act(() => {
@@ -126,14 +110,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('cancels the dismiss timer when cursor enters the floating panel', () => {
-    const { result } = renderHook(() => useFloatingPanel(true, ACTIVE))
-
-    act(() => {
-      result.current.handleIconEnter('todos', mockEl(0), 'right')
-    })
-    act(() => {
-      vi.advanceTimersByTime(350)
-    })
+    const { result } = renderShownPanel('todos', 'right')
 
     act(() => {
       result.current.handleIconLeave()
@@ -154,14 +131,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('dismisses immediately on dismiss()', () => {
-    const { result } = renderHook(() => useFloatingPanel(true, ACTIVE))
-
-    act(() => {
-      result.current.handleIconEnter('sessions', mockEl(0), 'left')
-    })
-    act(() => {
-      vi.advanceTimersByTime(350)
-    })
+    const { result } = renderShownPanel('sessions', 'left')
     expect(result.current.hoveredPanelId).toBe('sessions')
 
     act(() => {
@@ -190,13 +160,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('skips the intent-timer fire if the panel turned active during the 350 ms window', () => {
-    const { result, rerender } = renderHook(({ active }) => useFloatingPanel(false, active), {
-      initialProps: { active: ACTIVE },
-    })
-
-    act(() => {
-      result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
-    })
+    const { result, rerender } = renderHoveringClosedPanel()
 
     // Panel becomes active before the intent timer fires (e.g. a click both opens it and starts the hover).
     rerender({ active: [...ACTIVE, 'bookmarks'] })
@@ -209,13 +173,10 @@ describe('useFloatingPanel', () => {
   })
 
   it('dismisses an active preview when its panel becomes active (not-maximized)', () => {
-    const { result, rerender } = renderHook(({ active }) => useFloatingPanel(false, active), {
-      initialProps: { active: ACTIVE },
-    })
+    const { result, rerender } = renderHoveringClosedPanel()
 
     // Intent timer elapses -> preview visible.
     act(() => {
-      result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
       vi.advanceTimersByTime(350)
     })
     expect(result.current.hoveredPanelId).toBe('bookmarks')
@@ -227,13 +188,7 @@ describe('useFloatingPanel', () => {
 
   it('keeps the preview when a panel becomes active under the maximized branch', () => {
     // Maximized previews every icon, even visible ones - the not-maximized dismiss-on-active rule must not fire.
-    const { result, rerender } = renderHook(({ active }) => useFloatingPanel(true, active), {
-      initialProps: { active: ACTIVE },
-    })
-
-    act(() => {
-      result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
-    })
+    const { result, rerender } = renderHoveringClosedPanel(true)
     act(() => {
       vi.advanceTimersByTime(350)
     })
@@ -244,11 +199,7 @@ describe('useFloatingPanel', () => {
   })
 
   it('switches panel and starts a fresh intent timer when hovering a different closed icon', () => {
-    const { result } = renderHook(() => useFloatingPanel(false, ACTIVE))
-
-    act(() => {
-      result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
-    })
+    const { result } = renderHoveringClosedPanel()
 
     // Switch to a different closed-panel icon before the first intent fires.
     act(() => {
@@ -269,3 +220,27 @@ describe('useFloatingPanel', () => {
     expect(result.current.hoveredPanelId).toBe('boards')
   })
 })
+
+function renderHoveringClosedPanel(isMaximized = false) {
+  const hook = renderHook(({ active }) => useFloatingPanel(isMaximized, active), {
+    initialProps: { active: ACTIVE },
+  })
+  act(() => {
+    hook.result.current.handleIconEnter('bookmarks', mockEl(50), 'right')
+  })
+
+  return hook
+}
+
+function renderShownPanel(panelId, side) {
+  const hook = renderHook(() => useFloatingPanel(true, ACTIVE))
+  act(() => {
+    hook.result.current.handleIconEnter(panelId, mockEl(0), side)
+  })
+  // Maximized waits the hover-intent delay before showing.
+  act(() => {
+    vi.advanceTimersByTime(350)
+  })
+
+  return hook
+}

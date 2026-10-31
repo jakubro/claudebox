@@ -4,29 +4,39 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEvents } from '../../../context/EventsContext'
 import { useInteraction } from '../../../context/InteractionContext'
 import { useSessionActions, useSessionData } from '../../../context/SessionDataContext'
+import { useStreamingStatus } from '../../../context/StreamingStatusContext'
+import useSessionOwnership from '../../../hooks/useSessionOwnership'
+import { isOrphanedTag, resolveOwnerTag } from '../../../utils/sessionOwnership'
 import ChatController from '../ChatController'
+import { heldCreations, joinReturned } from '../utils/creationInput'
+import { readPreservedInput } from '../utils/preservedInput'
 import useMessageQueue from './useMessageQueue'
 import usePendingMessages from './usePendingMessages'
 import useSendMessage from './useSendMessage'
 
 /** Coordinate chat panel hooks with ChatController for scroll, pending, queue, and send. */
-export default function useChatController({ events, contextRefs }) {
+export default function useChatController({ events, contextRefs, activeTurnId = null }) {
   // DOM refs - owned by this hook
   const messagesRef = useRef(null)
   const panelRef = useRef(null)
+  const activeTurnIdRef = useRef(activeTurnId)
+  activeTurnIdRef.current = activeTurnId
 
-  const { sessionId } = useSessionData()
+  const { sessionId, isApplyingPendingConfig } = useSessionData()
   const { reloadSession } = useSessionActions()
-  const { resultCount, compactionCount, isCreating, isConnected, isReplaying, isResuming } =
-    useEvents()
+  const { ownerSessionId, isOwnerAttached, ownerNow, resolveOwner } = useSessionOwnership()
   const {
-    interruptStatus,
-    startSubmitting,
-    submitSucceeded,
-    submitFailed,
-    setError,
-    errorMessage,
-  } = useInteraction()
+    resultCount,
+    compactionCount,
+    isCreating,
+    isConnected,
+    isReplaying,
+    isResuming,
+    containerId,
+  } = useEvents()
+  const { creations } = useStreamingStatus()
+  const { interruptStatus, startSubmitting, submitSucceeded, submitFailed, setError } =
+    useInteraction()
 
   // Drives aria-pressed bindings in ChatControlBar; synced from controller via onAutoScrollChange.
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true)
@@ -87,14 +97,19 @@ export default function useChatController({ events, contextRefs }) {
     return () => controller.dispose()
   }, [controller, contextRefs, sessionId, isCreating])
 
-  // Pending messages with SSE reconciliation
+  // Spans the resume click through the last replayed turn materializing; isCreating is excluded
+  // since a fresh session also replays empty boundaries, which would race the deferred first message.
+  const isLoadingSession = isResuming || isReplaying
+
+  // Pending messages with SSE reconciliation, against the owner's own events only
   const { showPendingMessages, addPendingMessage, removePendingMessage } = usePendingMessages(
     events,
-    sessionId,
+    ownerSessionId,
+    isOwnerAttached && !isLoadingSession,
   )
 
-  // Shared send callback (used by queue drain, ChatInput submit, ChatPanel form submit)
-  const send = useSendMessage({
+  // The raw send; the queue wraps it so a failed send pauses its own session's queue.
+  const sendMessage = useSendMessage({
     addPendingMessage,
     removePendingMessage,
     startSubmitting,
@@ -102,73 +117,150 @@ export default function useChatController({ events, contextRefs }) {
     submitFailed,
     setError,
     onContainerGone: reloadSession,
+    ownerNow,
   })
 
-  // Spans the resume click through the last replayed turn materializing; isCreating is excluded
-  // since a fresh session also replays empty boundaries, which would race the deferred first message.
-  const isLoadingSession = isResuming || isReplaying
-
   // Message queue (drain, pause, lifecycle)
-  const { queueItems, enqueueMessage, editQueuedItem, cancelQueuedItem, requeueItem, sendNowItem } =
-    useMessageQueue({
-      resultCount,
-      compactionCount,
-      isLoading: isLoadingSession,
-      interruptStatus,
-      errorMessage,
-      sessionId,
-      sendFn: send,
-    })
+  const {
+    queueItems,
+    send,
+    enqueueMessage,
+    returnFailedMessage,
+    editQueuedItem,
+    cancelQueuedItem,
+    requeueItem,
+    sendNowItem,
+    takeCreation,
+    adoptCreation,
+  } = useMessageQueue({
+    resultCount,
+    compactionCount,
+    isLoading: isLoadingSession,
+    interruptStatus,
+    sessionId,
+    containerId,
+    sendFn: sendMessage,
+  })
 
-  // Holds the first message submitted during session creation; auto-fires send() once connected.
-  const [deferredSend, setDeferredSend] = useState(null)
+  // A message queued while a session is created is held for that creation.
+  const enqueueOwned = useCallback(
+    (content, attachments) => enqueueMessage(content, attachments, ownerNow()),
+    [enqueueMessage, ownerNow],
+  )
+
+  // Holds the first message submitted during session creation, owned by that creation; it is sent
+  // only into the session the creation produces, once that session is attached and connected.
+  const [heldFirstMessage, setHeldFirstMessage] = useState(null)
 
   // Use ref to check current deferred state without stale closures
   const deferredSendRef = useRef(null)
+  // The held message stays on screen until its send settles, so the effect must not send it twice.
+  const heldInFlightRef = useRef(false)
 
   const deferSend = useCallback(
     (content, attachments) => {
       if (deferredSendRef.current) {
         // Already have a deferred message - route subsequent to queue
-        enqueueMessage(content, attachments)
+        enqueueOwned(content, attachments)
       } else {
-        const msg = { content, attachments }
+        const msg = { content, attachments, owner: ownerNow() }
         deferredSendRef.current = msg
-        setDeferredSend(msg)
+        setHeldFirstMessage(msg)
       }
     },
-    [enqueueMessage],
+    [enqueueOwned, ownerNow],
   )
 
-  // Fires once sessionId and the container connection are both available; preserves deferredSend
-  // through the null->realId sessionId transition. isCreating cannot gate it - it clears only once
-  // the deferred message is already visible, a cycle only the send itself can break.
+  // Shown while its creation is still unbound, or on its own session once bound.
+  const heldFor = heldFirstMessage ? resolveOwner(heldFirstMessage.owner) : null
+  const deferredSend =
+    heldFirstMessage && (heldFor === null || heldFor === ownerSessionId) ? heldFirstMessage : null
+
+  // isCreating cannot gate it - it clears only once the deferred message is already visible, a
+  // cycle only the send itself can break. Targeted: opening another session moves the address first.
   useEffect(() => {
-    if (!deferredSend) {
+    if (!heldFirstMessage) {
       return
     }
-    if (sessionId && isConnected) {
-      send(deferredSend.content, { attachments: deferredSend.attachments })
-      setDeferredSend(null)
-      deferredSendRef.current = null
+    if (
+      heldFor &&
+      heldFor === sessionId &&
+      isConnected &&
+      !isApplyingPendingConfig &&
+      !heldInFlightRef.current
+    ) {
+      const { content, attachments } = heldFirstMessage
+      heldInFlightRef.current = true
+      send(content, { attachments, target: { sessionId: heldFor, containerId } }).then(sent => {
+        heldInFlightRef.current = false
+        setHeldFirstMessage(null)
+        deferredSendRef.current = null
+        if (sent) {
+          return
+        }
+        // A container-gone failure already has its own recovery path (composer restore once
+        // reconnected) - queueing it too would risk sending the same message twice.
+        if (readPreservedInput()?.content === content) {
+          return
+        }
+        returnFailedMessage(heldFor, content, attachments)
+      })
     }
-  }, [isConnected, deferredSend, sessionId, send])
+  }, [
+    isConnected,
+    heldFirstMessage,
+    heldFor,
+    sessionId,
+    containerId,
+    isApplyingPendingConfig,
+    send,
+    returnFailedMessage,
+  ])
 
-  // Clears deferred send on an actual session switch (old and new both non-null), but not during
-  // creation - the provisional->real ID transition must preserve it for auto-fire.
-  const prevSessionIdForClearRef = useRef(sessionId)
+  // Items held for a creation join the queue once the session it produced is attached.
   useEffect(() => {
-    const prev = prevSessionIdForClearRef.current
-    prevSessionIdForClearRef.current = sessionId
-    if (prev && sessionId && prev !== sessionId) {
-      setDeferredSend(null)
+    if (!sessionId) {
+      return
+    }
+    for (const seq of heldCreations(queueItems)) {
+      if (resolveOwnerTag({ creation: seq }, creations) === sessionId) {
+        adoptCreation(seq)
+      }
+    }
+  }, [sessionId, queueItems, creations, adoptCreation])
+
+  // A failed creation hands back everything typed for it, in the order typed, for the composer.
+  const [returnedInput, setReturnedInput] = useState(null)
+  useEffect(() => {
+    const failed = new Set(
+      [heldFirstMessage?.owner, ...queueItems.map(i => i.owner)]
+        .filter(tag => isOrphanedTag(tag, creations))
+        .map(tag => tag.creation),
+    )
+    if (failed.size === 0) {
+      return
+    }
+
+    const returned = []
+    if (failed.has(heldFirstMessage?.owner?.creation)) {
+      returned.push(heldFirstMessage)
+      setHeldFirstMessage(null)
       deferredSendRef.current = null
     }
-  }, [sessionId])
+    for (const seq of failed) {
+      returned.push(...takeCreation(seq))
+    }
+    setReturnedInput(prev => joinReturned(prev, returned))
+  }, [heldFirstMessage, queueItems, creations, takeCreation])
+  const clearReturnedInput = useCallback(() => setReturnedInput(null), [])
 
-  // Reset autoscroll on session change - new session always starts at bottom
+  // Reset autoscroll on session change - new session always starts at bottom, unless the URL names a
+  // turn: that jump owns the position, and a session id settling after it would pull the view away.
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is needed
   useEffect(() => {
+    if (activeTurnIdRef.current) {
+      return
+    }
     controller.isAutoScrollEnabled = true
     if (contextRefs.chatAutoScrollEnabledRef) {
       contextRefs.chatAutoScrollEnabledRef.current = true
@@ -245,7 +337,7 @@ export default function useChatController({ events, contextRefs }) {
     // Message queue
     queue: {
       queueItems,
-      enqueueMessage,
+      enqueueMessage: enqueueOwned,
       editQueuedItem,
       cancelQueuedItem,
       requeueItem,
@@ -256,6 +348,8 @@ export default function useChatController({ events, contextRefs }) {
     deferred: {
       deferredSend,
       deferSend,
+      returnedInput,
+      clearReturnedInput,
     },
 
     // Shared send callback

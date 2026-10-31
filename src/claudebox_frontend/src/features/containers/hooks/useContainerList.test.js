@@ -20,6 +20,15 @@ vi.mock('../../../context/WorkspaceContext', () => ({
   useWorkspace: () => mockWorkspace,
 }))
 
+async function renderLoaded() {
+  const hook = renderHook(() => useContainerList())
+  await waitFor(() => {
+    expect(hook.result.current.loading).toBe(false)
+  })
+
+  return hook
+}
+
 describe('useContainerList', () => {
   beforeEach(() => {
     listContainers.mockReset()
@@ -44,22 +53,14 @@ describe('useContainerList', () => {
   it('defaults to an empty list when the response has no containers field', async () => {
     listContainers.mockResolvedValue({})
 
-    const { result } = renderHook(() => useContainerList())
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded()
     expect(result.current.containers).toEqual([])
   })
 
   it('does not fetch and clears containers without an active workspace', async () => {
     mockWorkspace.workspaceId = null
 
-    const { result } = renderHook(() => useContainerList())
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded()
     expect(result.current.containers).toEqual([])
     expect(listContainers).not.toHaveBeenCalled()
   })
@@ -68,11 +69,7 @@ describe('useContainerList', () => {
     const error = new Error('Failed to list containers: 500')
     listContainers.mockRejectedValue(error)
 
-    const { result } = renderHook(() => useContainerList())
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded()
     expect(result.current.error).toBe(error)
     expect(result.current.containers).toEqual([])
   })
@@ -85,10 +82,7 @@ describe('useContainerList', () => {
       ],
     })
 
-    const { result, rerender } = renderHook(() => useContainerList())
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result, rerender } = await renderLoaded()
 
     mockStream.lastContainerEvent = { containerId: 'c1', status: 'running' }
     rerender()
@@ -102,10 +96,7 @@ describe('useContainerList', () => {
   it('ignores a repeated identical container event', async () => {
     listContainers.mockResolvedValue({ containers: [{ id: 'c1', status: 'starting' }] })
 
-    const { result, rerender } = renderHook(() => useContainerList())
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result, rerender } = await renderLoaded()
 
     const event = { containerId: 'c1', status: 'running' }
     mockStream.lastContainerEvent = event
@@ -122,10 +113,7 @@ describe('useContainerList', () => {
 
   it('exposes a manual refresh action', async () => {
     listContainers.mockResolvedValue({ containers: [] })
-    const { result } = renderHook(() => useContainerList())
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded()
 
     listContainers.mockResolvedValue({ containers: [{ id: 'c9', status: 'running' }] })
     await act(async () => {

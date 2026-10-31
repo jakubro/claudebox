@@ -1,41 +1,15 @@
 /** E2E tests for SSE (Server-Sent Events) functionality. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController } from '../mocks/sse.js'
+import { openLiveSessionWithAPI, sendFinishedTurn } from '../helpers.js'
 
 test.describe('SSE', () => {
   test.describe('Manual Reconnect', () => {
     // SPEC: error:manual-reconnect
     test('reload button clears events and reconnects', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Hi there',
-          timestamp: Date.now() + 100,
-        },
-        {
-          type: 'result',
-          subtype: 'success',
-          turn_id: 'turn_001',
-          timestamp: Date.now() + 200,
-        },
-      ])
+      await sendFinishedTurn(controller, 'Hi there')
 
       await expect(page.getByText('Hello')).toBeVisible()
       await expect(page.getByText('Hi there')).toBeVisible()
@@ -58,13 +32,60 @@ test.describe('SSE', () => {
     })
   })
 
+  test.describe('Automatic Reconnect', () => {
+    // SPEC: error:reconnect-no-repeat
+    test('an automatic reconnect (no reload click) does not duplicate the transcript', async ({
+      page,
+    }) => {
+      const controller = await openLiveSessionWithAPI(page)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          content: 'Before the drop',
+          is_human: true,
+          timestamp: Date.now(),
+          turn_id: 'turn_001',
+        },
+        { type: 'assistant', subtype: 'text', content: 'Reply', timestamp: Date.now() + 100 },
+        { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: Date.now() + 200 },
+      ])
+      await expect(page.getByText('Before the drop')).toBeVisible()
+
+      const beforeDrop = await controller.getConnectionCount()
+      // Unlike the reload-button test above, nothing here calls reconnectSSE() - the manager
+      // reopens on its own.
+      await controller.triggerError()
+      await expect.poll(() => controller.getConnectionCount()).toBeGreaterThan(beforeDrop)
+
+      // The new connection's own (empty) replay boundary is what clears the pre-drop turn.
+      await expect.poll(() => page.locator('.turn-container').count()).toBe(0)
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          content: 'After the drop',
+          is_human: true,
+          timestamp: Date.now(),
+          turn_id: 'turn_002',
+        },
+        { type: 'assistant', subtype: 'text', content: 'Reply', timestamp: Date.now() + 100 },
+        { type: 'result', subtype: 'success', turn_id: 'turn_002', timestamp: Date.now() + 200 },
+      ])
+
+      await expect(page.getByText('After the drop')).toBeVisible()
+      await expect(page.locator('.turn-container')).toHaveCount(1)
+      await expect(page.getByText('Before the drop')).toHaveCount(0)
+    })
+  })
+
   test.describe('Session Polling', () => {
     test('polls current session when turn completes', async ({ page }) => {
       let sessionStatusFetchCount = 0
 
-      const controller = await createSSEController(page)
-
-      await mockAPI(page, {
+      const controller = await openLiveSessionWithAPI(page, {
         handlers: {
           getSessionStatus: async route => {
             sessionStatusFetchCount++
@@ -89,8 +110,6 @@ test.describe('SSE', () => {
           },
         },
       })
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
 
       await expect.poll(() => sessionStatusFetchCount).toBeGreaterThanOrEqual(1)
 

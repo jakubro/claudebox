@@ -60,7 +60,7 @@ export async function moveTicket(boardId, ticketPath, { column, swimlane, index 
     },
   )
   if (!res.ok) {
-    throw new Error('Failed to move ticket')
+    throw await _moveError(res, ticketPath)
   }
   return res.json()
 }
@@ -163,4 +163,22 @@ export async function reorderSwimlanes(boardId, ids) {
     throw new Error('Failed to reorder swimlanes')
   }
   return res.json()
+}
+
+const _MOVE_REFUSALS = {
+  destination_exists: name => `The target column already holds a ticket named ${name}`,
+  outside_workspace: () => 'That move would take the ticket file outside the workspace',
+  not_in_column_folder: name => `${name} is not in the folder its column keeps tickets in`,
+}
+
+/** A refused move names why; anything else is the generic failure. */
+async function _moveError(res, ticketPath) {
+  const body = res.status === 409 ? await res.json().catch(() => null) : null
+  const describe = _MOVE_REFUSALS[body?.reason]
+  if (body?.error !== 'ticket_move_refused' || !describe) {
+    return new Error('Failed to move ticket')
+  }
+  const error = new Error(describe(ticketPath.split('/').pop()))
+  error.userFacing = true
+  return error
 }

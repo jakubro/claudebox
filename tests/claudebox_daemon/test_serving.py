@@ -1,12 +1,18 @@
 """Tests for claudebox_daemon.serving - port calculation, host binding, subprocess lifecycle."""
 
+from __future__ import annotations
+
+import contextlib
 import os
+import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from unittest.mock import patch
 
 from claudebox.constants import DAEMON_DEV_PORT, DAEMON_PORT
+from claudebox_daemon import serving
 from claudebox_daemon.serving import (
     _backend_port,
     _frontend_port,
@@ -185,6 +191,7 @@ class TestBackendServerHostBinding:
             patch("claudebox_daemon.serving.https_proxy"),
             patch("claudebox_daemon.serving.get_install_info", return_value=info),
             patch("claudebox_daemon.serving.http_serve") as mock_http_serve,
+            patch("claudebox_daemon.serving.signal.signal"),
         ):
             backend_server(lambda: None, port=DAEMON_PORT)
 
@@ -215,6 +222,89 @@ class TestStopSubprocessProcessGroup:
         _stop_subprocess(proc)
 
         assert _pid_gone(grandchild_pid)
+
+
+class TestSigtermStopsLaunchedServers:
+    """A daemon stopped by SIGTERM takes the server it launched in its own session with it."""
+
+    def test_sigterm_to_a_serving_daemon_stops_its_frontend_server(self, tmp_path):
+        script = tmp_path / "daemon.py"
+        script.write_text(_DAEMON_SCRIPT)
+        child_pid_file = tmp_path / "child.pid"
+        ready_file = tmp_path / "ready"
+
+        daemon = subprocess.Popen(
+            [sys.executable, script, child_pid_file, ready_file],
+            env={
+                **os.environ,
+                "PYTHONPATH": str(Path(serving.__file__).parents[1]),
+                "CLAUDEBOX_NO_RELOAD": "1",
+            },
+        )
+
+        try:
+            assert _wait_for(ready_file.exists), "daemon never finished starting"
+            child_pid = int(child_pid_file.read_text())
+
+            daemon.send_signal(signal.SIGTERM)
+            daemon.wait(timeout=10)
+
+            assert _pid_gone(child_pid)
+        finally:
+            daemon.kill()
+
+            if child_pid_file.exists():
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(int(child_pid_file.read_text()), signal.SIGKILL)
+
+
+_DAEMON_SCRIPT = """\
+import subprocess
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+
+from claudebox_daemon import serving
+
+child_pid_file, ready_file = Path(sys.argv[1]), Path(sys.argv[2])
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    ready_file.touch()
+    yield
+
+
+def app():
+    return FastAPI(lifespan=lifespan)
+
+
+def launch_child(_port):
+    proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    child_pid_file.write_text(str(proc.pid))
+    return proc
+
+
+serving.is_dev_mode = lambda: True
+serving._start_frontend_dev_server = launch_child
+serving._backend_port = lambda _port: 0
+serving._startup_banner = lambda _port: ""
+serving.backend_server(app, port=0)
+"""
+
+
+def _wait_for(predicate, timeout: float = 20.0) -> bool:
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+
+        time.sleep(0.05)
+
+    return False
 
 
 def _pid_gone(pid: int, timeout: float = 3.0) -> bool:

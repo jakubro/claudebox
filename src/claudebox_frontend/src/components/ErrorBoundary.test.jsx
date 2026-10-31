@@ -11,6 +11,14 @@ function Bomb() {
   throw new Error('boom')
 }
 
+function Flaky({ gate }) {
+  if (gate.shouldThrow) {
+    throw new Error('boom')
+  }
+
+  return <p>recovered</p>
+}
+
 describe('ErrorBoundary', () => {
   beforeEach(() => {
     reportRenderError.mockClear()
@@ -57,25 +65,17 @@ describe('ErrorBoundary', () => {
   })
 
   it('retry clears the caught error and re-renders the same children', () => {
-    let shouldThrow = true
-
-    function Flaky() {
-      if (shouldThrow) {
-        throw new Error('boom')
-      }
-
-      return <p>recovered</p>
-    }
+    const gate = { shouldThrow: true }
 
     render(
       <ErrorBoundary label="test">
-        <Flaky />
+        <Flaky gate={gate} />
       </ErrorBoundary>,
     )
 
     expect(screen.getByText('This panel stopped responding.')).toBeInTheDocument()
 
-    shouldThrow = false
+    gate.shouldThrow = false
     fireEvent.click(screen.getByText('Retry'))
 
     expect(screen.getByText('recovered')).toBeInTheDocument()

@@ -5,6 +5,8 @@ fields its consumers read. Block-level kinds (text/thinking/tool_use/tool_result
 `content_blocks` lists on user/assistant payloads, keeping wire-shape continuity with JSONL replay.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -149,12 +151,13 @@ class UserMessagePayload:
 
 @dataclass(frozen=True)
 class AssistantMessagePayload:
-    """Assistant message: list of content blocks (text, thinking, tool_use)."""
+    """Assistant message: content blocks (text, thinking, tool_use) and its failure label."""
 
     uuid: str | None
     content: list[ContentBlock]
     model: str | None = None
     parent_tool_use_id: str | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,8 @@
 """Timestamp generation and parsing."""
 
-from datetime import UTC, datetime
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
 
 
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
@@ -13,6 +15,15 @@ def get_timestamp(posix: bool = False) -> str | int:
         return int(datetime.now(UTC).timestamp())
     else:
         return datetime.now(UTC).replace(tzinfo=None).strftime(TIMESTAMP_FORMAT)
+
+
+def days_before(moment: datetime, days: int) -> datetime:
+    """Return `moment` minus `days` days, or the calendar's first moment when that falls before it."""
+
+    try:
+        return moment - timedelta(days=days)
+    except OverflowError:
+        return datetime.min.replace(tzinfo=moment.tzinfo)
 
 
 def parse_timestamp(value: str | float, posix: bool = False) -> datetime:

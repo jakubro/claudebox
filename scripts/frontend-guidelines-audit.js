@@ -127,7 +127,8 @@ function extractIgnores(lines) {
       continue
     }
 
-    const rules = new Set(match[1].split(',').map(r => r.trim()))
+    // A rule name may be followed by its reason: `// audit-ignore: rule - why`.
+    const rules = new Set(match[1].split(',').map(r => r.trim().split(/\s/)[0]))
     // Apply to this line and the next (covers both same-line and above-line usage)
     ignores.set(i + 1, rules)
     ignores.set(i + 2, rules)
@@ -639,6 +640,37 @@ function checkCSSImportInComponent(filePath, lines, _type) {
       message: `direct CSS import \`${importPath}\` - use cascade orchestrator`,
       line: i + 1,
     })
+  }
+
+  return violations
+}
+
+// Per-session state inferred from a change of the attached session's id
+const SESSION_TRANSITION_GUARD_RES = [
+  /\bconst\s+((?:prev|last|previous)\w*(?:Session|Container)\w*Ref)\s*=\s*useRef\(/,
+  /\b(\w+)\s*&&\s*(\w+)\s*&&\s*\1\s*!==\s*\2\b/,
+  /\bwasNull\b/,
+]
+
+/**
+ * Flag per-session state that infers a session change from id transitions - the attached id passes
+ * through empty on every switch, so A -> nothing -> B slips past such a guard.
+ */
+function checkSessionTransitionGuard(filePath, lines, _type) {
+  const violations = []
+  if (filePath.endsWith('.css')) {
+    return violations
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (SESSION_TRANSITION_GUARD_RES.some(re => re.test(lines[i]))) {
+      violations.push({
+        rule: 'session-transition-guard',
+        message:
+          'per-session state detected by id transition; scope it by owner (useSessionOwnership)',
+        line: i + 1,
+      })
+    }
   }
 
   return violations
@@ -1332,6 +1364,7 @@ function auditFile(filePath, content) {
     ...checkCSSImportInComponent(filePath, lines, type),
     ...checkPanelStateClassTriplet(filePath, content, type),
     ...checkTemporalReferences(filePath, lines, type),
+    ...checkSessionTransitionGuard(filePath, lines, type),
     ...checkCssInJsImport(filePath, lines, type),
     ...checkNoTailwind(filePath, content, type),
     ...checkLoadingCopy(filePath, lines, type),
@@ -1431,6 +1464,7 @@ const ruleLabels = {
   'import-source-violation': 'Import Source Violations',
   'panel-state-class-triplet': 'Panel State Class Triplet',
   'temporal-reference-in-comment': 'Temporal References In Comments',
+  'session-transition-guard': 'Session Transition Guard',
   'no-css-modules': 'CSS Modules (banned)',
   'no-css-in-js': 'CSS-in-JS (banned)',
   'no-tailwind': 'Tailwind (banned)',
@@ -1461,6 +1495,7 @@ const ruleOrder = [
   'css-import-in-component',
   'panel-state-class-triplet',
   'temporal-reference-in-comment',
+  'session-transition-guard',
   'no-css-modules',
   'no-css-in-js',
   'no-tailwind',

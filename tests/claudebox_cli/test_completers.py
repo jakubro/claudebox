@@ -1,5 +1,7 @@
 """Tests for argcomplete completers - must never raise out of the completion subprocess."""
 
+from __future__ import annotations
+
 from unittest.mock import patch
 
 from claudebox_cli._completers import complete_container_target

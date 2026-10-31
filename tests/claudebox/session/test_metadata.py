@@ -1,5 +1,7 @@
 """Tests for claudebox.session.models - shared session metadata model."""
 
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +30,28 @@ class TestSessionMetadata:
         assert restored.name == "test"
         assert restored.num_turns == 3
         assert restored.started_at == datetime.fromisoformat("2026-01-15T10:30:00")
+
+    def test_needs_user_roundtrips_and_defaults_to_none_for_older_files(self):
+        meta = SessionMetadata(session_id="sid", fork_point_cost_usd=0.0, needs_user="Decide: A")
+
+        restored = SessionMetadata.fromdict(json.loads(serialization.dumps(meta.asdict())))
+        older = SessionMetadata.fromdict({"session_id": "sid", "fork_point_cost_usd": 0.0})
+
+        assert restored.needs_user == "Decide: A"
+        assert older.needs_user is None
+
+    def test_needs_user_replies_roundtrip_and_default_to_none_for_older_files(self):
+        meta = SessionMetadata(
+            session_id="sid",
+            fork_point_cost_usd=0.0,
+            needs_user_replies=["Go", "Hold"],
+        )
+
+        restored = SessionMetadata.fromdict(json.loads(serialization.dumps(meta.asdict())))
+        older = SessionMetadata.fromdict({"session_id": "sid", "fork_point_cost_usd": 0.0})
+
+        assert restored.needs_user_replies == ["Go", "Hold"]
+        assert older.needs_user_replies is None
 
     def test_fromdict_ignores_unknown_fields(self):
         data = {

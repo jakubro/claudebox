@@ -1,7 +1,7 @@
 /** E2E tests for boards panel and board tab. */
 
 import { expect, test } from '@playwright/test'
-import { openBoardsPanel, waitForAppReady } from '../helpers.js'
+import { openBoardsPanel, openSession, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
 import { createDaemonSSEController, mockSSE } from '../mocks/sse.js'
 
@@ -56,6 +56,117 @@ const MOCK_BOARD_DETAIL = {
   },
 }
 
+// Answers a move with the ticket's own path, as a move between columns sharing a folder does.
+function movedEntry(route) {
+  const [, ticketPath] = route
+    .request()
+    .url()
+    .match(/tickets\/(.+)\/move/)
+  return { path: decodeURIComponent(ticketPath) }
+}
+
+async function openFirstBoard(page) {
+  await openBoardsPanel(page)
+  await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+
+  return page.locator('.board-board')
+}
+
+async function openBoard(page) {
+  await openSession(page)
+  const board = await openFirstBoard(page)
+  await expect(board).toBeVisible()
+
+  return board
+}
+
+function frontendInProgressDrag(page, ticket) {
+  const dragCard = page.locator('.ticket-card', { hasText: ticket })
+  const inProgressCell = page.locator('.swimlane-band').first().locator('.board-cell').nth(1)
+
+  return { dragCard, inProgressCell }
+}
+
+async function ctrlClickT1toT3(board) {
+  for (const name of ['T1', 'T2', 'T3']) {
+    await board.getByText(name).click({ modifiers: ['Control'] })
+  }
+}
+
+async function openFrontendLaneMenu(page) {
+  await openSession(page)
+  await openFirstBoard(page)
+  await page.locator('.swimlane-header').filter({ hasText: 'Frontend' }).click({ button: 'right' })
+}
+
+async function openTicketWithBody(page, body) {
+  await mockSSE(page)
+  await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
+    await route.fulfill({ body })
+  })
+  await openSetupInfraTicket(page)
+}
+
+async function openSetupInfraTicket(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  await openFirstBoard(page)
+  await page.getByText('Setup infra').click()
+}
+
+async function mockBoardList(page) {
+  await page.route(`**${WS_PREFIX}/boards`, async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: MOCK_BOARDS })
+    }
+  })
+}
+
+async function captureMove(page) {
+  const moved = { payload: null }
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+    moved.payload = JSON.parse(route.request().postData())
+    await route.fulfill({ json: movedEntry(route) })
+  })
+
+  return moved
+}
+
+async function mockBoardDetail(page, detail = MOCK_BOARD_DETAIL) {
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: detail })
+    } else {
+      await route.continue()
+    }
+  })
+}
+
+async function stubMoves(page) {
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+    await route.fulfill({ json: movedEntry(route) })
+  })
+}
+
+async function captureMoves(page) {
+  const moves = []
+  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+    const url = route.request().url()
+    const match = url.match(/tickets\/(.+)\/move/)
+    const ticketPath = match ? decodeURIComponent(match[1]) : null
+    moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
+    await route.fulfill({ json: movedEntry(route) })
+  })
+
+  return moves
+}
+
+async function openBoardWithAPI(page) {
+  await mockAPI(page)
+  await mockBoardsAPI(page)
+  await openBoard(page)
+}
+
 // Mocks the board list/detail/move/delete/swimlane API endpoints on the page.
 async function mockBoardsAPI(page) {
   // GET /api/workspaces/{ws}/boards
@@ -68,18 +179,10 @@ async function mockBoardsAPI(page) {
   })
 
   // GET /api/workspaces/{ws}/boards/:id
-  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({ json: MOCK_BOARD_DETAIL })
-    } else {
-      await route.continue()
-    }
-  })
+  await mockBoardDetail(page)
 
   // PATCH /api/workspaces/{ws}/boards/:id/tickets/:path/move
-  await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-    await route.fulfill({ json: { path: 'moved' } })
-  })
+  await stubMoves(page)
 
   // DELETE /api/workspaces/{ws}/boards/:id/tickets/:path
   await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+$`), async route => {
@@ -104,9 +207,7 @@ test.describe('Boards Panel', () => {
 
   test('Alt+6 toggles boards panel', async ({ page }) => {
     // SPEC: panel-boards:panel
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // Boards panel is open by default.
     const panel = page.locator('[data-testid="panel-boards"]')
@@ -121,9 +222,7 @@ test.describe('Boards Panel', () => {
 
   test('shows discovered boards list', async ({ page }) => {
     // SPEC: panel-boards:discovery
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -139,9 +238,7 @@ test.describe('Boards Panel', () => {
 
   test('shows board path alongside name', async ({ page }) => {
     // SPEC: panel-boards:item-display
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -155,9 +252,7 @@ test.describe('Boards Panel', () => {
     await page.route(`**${WS_PREFIX}/boards`, async route => {
       await route.fulfill({ json: { boards: [] } })
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -190,9 +285,7 @@ test.describe('Boards Panel', () => {
 
   test('boards icon sits below the bookmarks icon in the right strip', async ({ page }) => {
     // SPEC: panel-boards:icon-position
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const boardsIcon = page.locator('[data-testid="icon-boards"]')
     const bookmarksIcon = page.locator('[data-testid="icon-bookmarks"]')
@@ -217,9 +310,7 @@ test.describe('Boards Panel', () => {
         await route.fulfill({ json: MOCK_BOARDS })
       }
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -248,9 +339,7 @@ test.describe('Board Tab', () => {
     // SPEC: panel-boards:open-tab
     // SPEC: layout:main-panel-board-url
     // SPEC: layout:header-board-view
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -276,15 +365,7 @@ test.describe('Board Tab', () => {
     // SPEC: board:col-done
     // SPEC: board:col-rejected
     // SPEC: board:col-def-rejected
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     // Terminal columns (Done, Rejected, Def. Rejected) collapse by default to their label's first grapheme.
     const headers = board.locator('.board-col-header')
@@ -301,15 +382,7 @@ test.describe('Board Tab', () => {
     // SPEC: board:swimlanes
     // SPEC: board:swimlane-order
     // SPEC: board:swimlane-unsorted
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     // Named swimlanes + unsorted lane
     const swimlaneHeaders = board.locator('.swimlane-name')
@@ -322,15 +395,7 @@ test.describe('Board Tab', () => {
   test('board renders ticket cards', async ({ page }) => {
     // SPEC: board:card
     // SPEC: board:card-title
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     const tickets = board.locator('.ticket-card')
     await expect(tickets.first()).toBeVisible()
@@ -347,12 +412,9 @@ test.describe('Board Tab', () => {
     // SPEC: board:non-terminal-expanded
     // SPEC: board:collapsed-header-grapheme
     // SPEC: board:collapsed-cell-count-only
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     const headers = page.locator('.board-col-header')
 
@@ -372,12 +434,9 @@ test.describe('Board Tab', () => {
   test('clicking terminal column header toggles collapsed state', async ({ page }) => {
     // SPEC: board:terminal-toggle
     // SPEC: board:swimlane-collapse
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     const doneHeader = page.locator('.board-col-header').nth(3)
     await expect(doneHeader).toHaveClass(/collapsed/)
@@ -391,12 +450,9 @@ test.describe('Board Tab', () => {
 
   test('unsorted swimlane catches tickets without swimlane assignment', async ({ page }) => {
     // SPEC: board:swimlane-unsorted
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     // The "Init project" ticket has no swimlane, should be in Unsorted
     const unsortedBand = page.locator('.swimlane-header.unsorted').locator('..')
@@ -405,12 +461,9 @@ test.describe('Board Tab', () => {
 
   test('add swimlane row is visible at the bottom', async ({ page }) => {
     // SPEC: board:swimlane-create
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     const addBtn = page.locator('.swimlane-add-btn')
     await expect(addBtn).toBeVisible()
@@ -419,12 +472,9 @@ test.describe('Board Tab', () => {
 
   test('clicking add swimlane shows input field', async ({ page }) => {
     // SPEC: board:swimlane-create
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     await page.locator('.swimlane-add-btn').click()
 
@@ -436,12 +486,9 @@ test.describe('Board Tab', () => {
   test('ticket session-status dot uses the documented running/stopped class', async ({ page }) => {
     // SPEC: board:card-session
     // SPEC: board:card-session-dot
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     const polishCard = page.locator('.ticket-card', { hasText: 'Polish UI' })
     await expect(polishCard).toBeVisible()
@@ -455,25 +502,44 @@ test.describe('Board Tab', () => {
     expect(cls).toMatch(/\b(running|stopped|stopping|no-container)\b/)
   })
 
+  test("a card's dot and label show its session's state", async ({ page }) => {
+    // SPEC: board:card-session-dot
+    // SPEC: board:card-session-label
+    let sessionFields = { activity: 'working' }
+    await page.route(`**${WS_PREFIX}/sessions`, async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback()
+        return
+      }
+      await route.fulfill({
+        json: {
+          sessions: [
+            { session_id: 'session-001', container_id: 'ctr-card', num_turns: 1, ...sessionFields },
+          ],
+        },
+      })
+    })
+    await openSession(page)
+
+    await openFirstBoard(page)
+
+    const card = page.locator('.ticket-card', { hasText: 'Polish UI' })
+    await expect(card.locator('.ticket-status-dot')).toHaveClass(/container-status-working/)
+    await expect(card.locator('.ticket-session-id')).toHaveText('working (sess..)')
+
+    sessionFields = { needs_user: 'Decide: which' }
+    await page.reload()
+
+    await expect(card.locator('.ticket-status-dot')).toHaveClass(/container-status-needs-you/)
+    await expect(card.locator('.ticket-session-id')).toHaveText('needs you (sess..)')
+  })
+
   test('clicking a ticket opens detail overlay', async ({ page }) => {
     // SPEC: board:card-click-detail
     // SPEC: board:detail
     // SPEC: board:detail-title
     // SPEC: board:detail-meta
-    await mockSSE(page)
-
-    // Mock ticket content endpoint
-    await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
-      await route.fulfill({ body: '# Setup infra\n\nTicket body content.' })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    await page.getByText('Setup infra').click()
+    await openTicketWithBody(page, '# Setup infra\n\nTicket body content.')
 
     const overlay = page.locator('.ticket-detail-panel')
     await expect(overlay).toBeVisible()
@@ -501,12 +567,7 @@ test.describe('Board Tab', () => {
       await route.fulfill({ body: '# Setup infra\n\nDelayed body.' })
     })
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await page.getByText('Setup infra').click()
+    await openSetupInfraTicket(page)
 
     const overlay = page.locator('.ticket-detail-panel')
     await expect(overlay).toBeVisible()
@@ -518,19 +579,7 @@ test.describe('Board Tab', () => {
 
   test('detail overlay shows file content', async ({ page }) => {
     // SPEC: board:detail-content
-    await mockSSE(page)
-
-    await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
-      await route.fulfill({ body: '# Setup infra\n\nDetailed description here.' })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    await page.getByText('Setup infra').click()
+    await openTicketWithBody(page, '# Setup infra\n\nDetailed description here.')
 
     // The markdown wrapper uses the canonical .turn-text class
     const content = page.locator('.ticket-detail-content .turn-text')
@@ -539,19 +588,7 @@ test.describe('Board Tab', () => {
 
   test('detail overlay closes with X button', async ({ page }) => {
     // SPEC: board:detail-close
-    await mockSSE(page)
-
-    await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
-      await route.fulfill({ body: '# Content' })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    await page.getByText('Setup infra').click()
+    await openTicketWithBody(page, '# Content')
     await expect(page.locator('.ticket-detail-panel')).toBeVisible()
 
     await page.locator('.ticket-detail-close').click()
@@ -560,19 +597,7 @@ test.describe('Board Tab', () => {
 
   test('detail overlay closes on backdrop click', async ({ page }) => {
     // SPEC: board:detail-backdrop
-    await mockSSE(page)
-
-    await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
-      await route.fulfill({ body: '# Content' })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    await page.getByText('Setup infra').click()
+    await openTicketWithBody(page, '# Content')
     await expect(page.locator('.ticket-detail-panel')).toBeVisible()
 
     await page.locator('.ticket-detail-backdrop').click({ position: { x: 5, y: 5 } })
@@ -583,14 +608,9 @@ test.describe('Board Tab', () => {
     // SPEC: board:card-multi-select
     // SPEC: board:multi-select
     // SPEC: board:checkbox-select
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
+    const board = await openFirstBoard(page)
 
     await board.getByText('Setup infra').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(1)
@@ -616,12 +636,9 @@ test.describe('Board Tab', () => {
       }
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     await page.getByText('Setup infra').click({ button: 'right' })
 
@@ -636,15 +653,7 @@ test.describe('Board Tab', () => {
   test('swimlane context menu with rename, delete, move', async ({ page }) => {
     // SPEC: board:swimlane-context-menu
     // SPEC: board:archive-bulk-swimlane
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
-    await frontendHeader.click({ button: 'right' })
+    await openFrontendLaneMenu(page)
 
     const menu = page.locator('.swimlane-context-menu')
     await expect(menu).toBeVisible()
@@ -658,12 +667,9 @@ test.describe('Board Tab', () => {
 
   test('double-click swimlane header enables inline rename', async ({ page }) => {
     // SPEC: board:swimlane-rename
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     // Double-click on "Frontend" swimlane header (first non-unsorted header)
     const frontendHeader = page.locator('.swimlane-header').first()
@@ -686,15 +692,7 @@ test.describe('Board Tab', () => {
       await route.fulfill({ json: {} })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
-    await frontendHeader.click({ button: 'right' })
+    await openFrontendLaneMenu(page)
     await page.locator('.swimlane-context-menu').getByText('Delete').click()
 
     await expect.poll(() => deleteRequested, { timeout: 3000 }).toBe(true)
@@ -712,15 +710,7 @@ test.describe('Board Tab', () => {
       await route.fulfill({ json: [] })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const frontendHeader = page.locator('.swimlane-header').filter({ hasText: 'Frontend' })
-    await frontendHeader.click({ button: 'right' })
+    await openFrontendLaneMenu(page)
     await page.locator('.swimlane-context-menu').getByText('Move down').click()
 
     await expect.poll(() => reorderPayload, { timeout: 3000 }).toBeTruthy()
@@ -728,12 +718,9 @@ test.describe('Board Tab', () => {
 
   test('unsorted swimlane does not support context menu', async ({ page }) => {
     // SPEC: board:swimlane-unsorted-readonly
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     const unsortedHeader = page.locator('.swimlane-header.unsorted')
     await unsortedHeader.click({ button: 'right' })
@@ -749,23 +736,16 @@ test.describe('Board States', () => {
 
   test('shows loading state while board loads', async ({ page }) => {
     // SPEC: board:loading
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
+    await mockBoardList(page)
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
       // Delay response so loading state is visible
       await new Promise(r => setTimeout(r, 2000))
       await route.fulfill({ json: MOCK_BOARD_DETAIL })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     await expect(page.locator('.board-loading')).toBeVisible()
     await expect(page.locator('.board-loading')).toContainText('Loading board')
@@ -773,21 +753,14 @@ test.describe('Board States', () => {
 
   test('shows error state on parse failure', async ({ page }) => {
     // SPEC: board:error
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
+    await mockBoardList(page)
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
       await route.fulfill({ status: 500, body: 'parse error in board.yaml' })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     await expect(page.locator('.board-error')).toBeVisible()
     await expect(page.locator('.board-error')).toContainText('Failed to parse board.yaml')
@@ -795,21 +768,14 @@ test.describe('Board States', () => {
 
   test('returns null when no board data', async ({ page }) => {
     // SPEC: board:no-data
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
+    await mockBoardList(page)
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
       await route.fulfill({ json: null })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
+    await openFirstBoard(page)
 
     // No board, no error, no loading - should render nothing
     await expect(page.locator('.board-board')).not.toBeVisible()
@@ -825,9 +791,7 @@ test.describe('Board States', () => {
       }
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -846,9 +810,7 @@ test.describe('Board States', () => {
       }
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openBoardsPanel(page)
 
@@ -857,90 +819,118 @@ test.describe('Board States', () => {
 })
 
 test.describe('Board SSE Updates', () => {
-  test('board refreshes on SSE sessions_changed event', async ({ page }) => {
-    // SPEC: board:sse-session
+  async function openBoardWithFetchCount(page) {
     await mockAPI(page)
-
-    let boardFetchCount = 0
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
+    const counts = { board: 0 }
+    await mockBoardList(page)
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
       if (route.request().method() === 'GET') {
-        boardFetchCount++
+        counts.board++
         await route.fulfill({ json: MOCK_BOARD_DETAIL })
       }
     })
-
     const daemonSSE = await createDaemonSSEController(page)
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
+    await openFirstBoard(page)
     await expect(page.locator('.board-board')).toBeVisible()
-    const initialCount = boardFetchCount
+
+    return { counts, daemonSSE }
+  }
+
+  test('board refreshes on SSE sessions_changed event', async ({ page }) => {
+    // SPEC: board:sse-session
+    const { counts, daemonSSE } = await openBoardWithFetchCount(page)
+    const initialCount = counts.board
 
     await daemonSSE.sendEvent({ type: 'sessions_changed', workspace_id: DEFAULT_WORKSPACE_ID })
 
-    await expect.poll(() => boardFetchCount, { timeout: 5000 }).toBeGreaterThan(initialCount)
+    await expect.poll(() => counts.board, { timeout: 5000 }).toBeGreaterThan(initialCount)
   })
 
   test('board refreshes on SSE container_status event', async ({ page }) => {
-    // SPEC: board:sse-update
-    await mockAPI(page)
-
-    let boardFetchCount = 0
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-      if (route.request().method() === 'GET') {
-        boardFetchCount++
-        await route.fulfill({ json: MOCK_BOARD_DETAIL })
-      }
-    })
-
-    const daemonSSE = await createDaemonSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    await expect(page.locator('.board-board')).toBeVisible()
-    const initialCount = boardFetchCount
+    // SPEC: board:sse-session
+    const { counts, daemonSSE } = await openBoardWithFetchCount(page)
+    const initialCount = counts.board
 
     await daemonSSE.sendContainerStatus('container-123', 'running')
 
-    await expect.poll(() => boardFetchCount, { timeout: 5000 }).toBeGreaterThan(initialCount)
+    await expect.poll(() => counts.board, { timeout: 5000 }).toBeGreaterThan(initialCount)
+  })
+
+  test('board refreshes on its own board_update and not on another board', async ({ page }) => {
+    // SPEC: board:sse-update
+    const { counts, daemonSSE } = await openBoardWithFetchCount(page)
+    const update = board_id => ({
+      type: 'board_update',
+      workspace_id: DEFAULT_WORKSPACE_ID,
+      board_id,
+    })
+    const settled = async () => {
+      let last = -1
+      await expect
+        .poll(
+          () => {
+            const unchanged = counts.board === last
+            last = counts.board
+            return unchanged
+          },
+          { intervals: [300] },
+        )
+        .toBe(true)
+      return counts.board
+    }
+
+    const before = await settled()
+    await daemonSSE.sendEvent(update('sprint-1'))
+    await expect.poll(() => counts.board, { timeout: 5000 }).toBeGreaterThan(before)
+
+    const afterOwn = await settled()
+    await daemonSSE.sendEvent(update('backlog'))
+    await page.waitForTimeout(1000)
+    expect(counts.board).toBe(afterOwn)
+  })
+
+  test('an open ticket detail reloads on board_update without showing Loading', async ({
+    page,
+  }) => {
+    // SPEC: board:ticket-file-update
+    const bodies = ['# First\n\nfirst body', '# Second\n\nsecond body']
+    await page.route(new RegExp(`${WS_PREFIX}/boards/.+/tickets/.+/content`), async route => {
+      await route.fulfill({ body: bodies.length > 1 ? bodies.shift() : bodies[0] })
+    })
+    const { daemonSSE } = await openBoardWithFetchCount(page)
+    await page.getByText('Setup infra').click()
+    const content = page.locator('.ticket-detail-content')
+    await expect(content).toContainText('first body')
+    let sawLoading = false
+    await page.exposeFunction('__sawLoading', () => {
+      sawLoading = true
+    })
+    await page.evaluate(() => {
+      new MutationObserver(() => {
+        if (document.querySelector('.ticket-detail-loading')) {
+          window.__sawLoading()
+        }
+      }).observe(document.body, { childList: true, subtree: true })
+    })
+
+    await daemonSSE.sendEvent({
+      type: 'board_update',
+      workspace_id: DEFAULT_WORKSPACE_ID,
+      board_id: 'sprint-1',
+    })
+
+    await expect(content).toContainText('second body')
+    expect(sawLoading).toBe(false)
   })
 
   test('drag card between columns calls move API with new column', async ({ page }) => {
     // SPEC: board:drag-column
     // SPEC: board:drag-collapsed
     // SPEC: board:auto-assign
-    await mockAPI(page)
-    await mockBoardsAPI(page)
-
-    let movePayload = null
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      movePayload = JSON.parse(route.request().postData())
-      await route.fulfill({ json: { path: 'moved' } })
-    })
-
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoardWithAPI(page)
+    const moved = await captureMove(page)
 
     // Locate the "Setup infra" ticket card (in backlog / frontend swimlane)
     const card = page.locator('.ticket-card', { hasText: 'Setup infra' })
@@ -966,28 +956,90 @@ test.describe('Board SSE Updates', () => {
     })
     await page.mouse.up()
 
-    await expect.poll(() => movePayload, { timeout: 5000 }).toBeTruthy()
-    expect(movePayload.column).toBe('in-progress')
+    await expect.poll(() => moved.payload, { timeout: 5000 }).toBeTruthy()
+    expect(moved.payload.column).toBe('in-progress')
+  })
+
+  test('a refused move leaves the card in its column and shows why', async ({ page }) => {
+    // SPEC: board:move-collision-refused
+    await mockAPI(page)
+    await mockBoardsAPI(page)
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), route =>
+      route.fulfill({
+        status: 409,
+        json: { error: 'ticket_move_refused', reason: 'destination_exists' },
+      }),
+    )
+    await openBoard(page)
+
+    const frontendBand = page.locator('.swimlane-band').first()
+    const backlogCell = frontendBand.locator('.board-cell').nth(0)
+    const inProgressCell = frontendBand.locator('.board-cell').nth(1)
+    const card = backlogCell.locator('.ticket-card', { hasText: 'Setup infra' })
+    await expect(card).toBeVisible()
+
+    const cardBox = await card.boundingBox()
+    const cellBox = await inProgressCell.boundingBox()
+    await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(cardBox.x + cardBox.width / 2 + 10, cardBox.y + cardBox.height / 2, {
+      steps: 3,
+    })
+    await page.mouse.move(cellBox.x + cellBox.width / 2, cellBox.y + cellBox.height / 2, {
+      steps: 5,
+    })
+    await page.mouse.up()
+
+    await expect(page.locator('[data-testid="footer"]')).toContainText(
+      'The target column already holds a ticket named setup.md',
+    )
+    await expect(backlogCell.locator('.ticket-card', { hasText: 'Setup infra' })).toBeVisible()
+    await expect(inProgressCell.locator('.ticket-card', { hasText: 'Setup infra' })).toHaveCount(0)
+  })
+
+  test('a card whose file is outside its column folder stays put and says why', async ({
+    page,
+  }) => {
+    // SPEC: board:move-outside-folder-refused
+    await mockAPI(page)
+    await mockBoardsAPI(page)
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), route =>
+      route.fulfill({
+        status: 409,
+        json: { error: 'ticket_move_refused', reason: 'not_in_column_folder' },
+      }),
+    )
+    await openBoard(page)
+
+    const frontendBand = page.locator('.swimlane-band').first()
+    const backlogCell = frontendBand.locator('.board-cell').nth(0)
+    const inProgressCell = frontendBand.locator('.board-cell').nth(1)
+    const card = backlogCell.locator('.ticket-card', { hasText: 'Setup infra' })
+    await expect(card).toBeVisible()
+
+    const cardBox = await card.boundingBox()
+    const cellBox = await inProgressCell.boundingBox()
+    await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(cardBox.x + cardBox.width / 2 + 10, cardBox.y + cardBox.height / 2, {
+      steps: 3,
+    })
+    await page.mouse.move(cellBox.x + cellBox.width / 2, cellBox.y + cellBox.height / 2, {
+      steps: 5,
+    })
+    await page.mouse.up()
+
+    await expect(page.locator('[data-testid="footer"]')).toContainText(
+      'setup.md is not in the folder its column keeps tickets in',
+    )
+    await expect(backlogCell.locator('.ticket-card', { hasText: 'Setup infra' })).toBeVisible()
+    await expect(inProgressCell.locator('.ticket-card', { hasText: 'Setup infra' })).toHaveCount(0)
   })
 
   test('drag card between swimlanes calls move API with new swimlane', async ({ page }) => {
     // SPEC: board:drag-swimlane
-    await mockAPI(page)
-    await mockBoardsAPI(page)
-
-    let movePayload = null
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      movePayload = JSON.parse(route.request().postData())
-      await route.fulfill({ json: { path: 'moved' } })
-    })
-
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoardWithAPI(page)
+    const moved = await captureMove(page)
 
     // Locate the "Setup infra" ticket card (in backlog / frontend swimlane)
     const card = page.locator('.ticket-card', { hasText: 'Setup infra' })
@@ -1010,29 +1062,15 @@ test.describe('Board SSE Updates', () => {
     })
     await page.mouse.up()
 
-    await expect.poll(() => movePayload, { timeout: 5000 }).toBeTruthy()
-    expect(movePayload.swimlane).toBe('backend')
+    await expect.poll(() => moved.payload, { timeout: 5000 }).toBeTruthy()
+    expect(moved.payload.swimlane).toBe('backend')
   })
 
   test('dragging a ticket onto another ticket forwards index to move API', async ({ page }) => {
     // SPEC: board:intra-cell-reorder
     // SPEC: board:drop-index-insertion
-    await mockAPI(page)
-    await mockBoardsAPI(page)
-
-    let movePayload = null
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      movePayload = JSON.parse(route.request().postData())
-      await route.fulfill({ json: { path: 'moved' } })
-    })
-
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoardWithAPI(page)
+    const moved = await captureMove(page)
 
     // Drops "Setup infra" onto a same-cell ticket to exercise reorder; move must carry an explicit index.
     const sourceCard = page.locator('.ticket-card', { hasText: 'Setup infra' })
@@ -1066,22 +1104,14 @@ test.describe('Board SSE Updates', () => {
     await page.mouse.up()
 
     // Either path yields a move call with an explicit numeric index, proving drop-on-ticket forwards a position.
-    await expect.poll(() => movePayload, { timeout: 5000 }).toBeTruthy()
-    expect(typeof movePayload.index).toBe('number')
+    await expect.poll(() => moved.payload, { timeout: 5000 }).toBeTruthy()
+    expect(typeof moved.payload.index).toBe('number')
   })
 
   test('density toggle switches the board layout and reflects choice in URL', async ({ page }) => {
     // SPEC: board:density-toggle
     // SPEC: board:terse-layout
-    await mockAPI(page)
-    await mockBoardsAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoardWithAPI(page)
 
     // Initial density: comfortable (cards rendered).
     await expect(page.locator('.ticket-card').first()).toBeVisible()
@@ -1102,15 +1132,7 @@ test.describe('Board SSE Updates', () => {
 
   test('drag overlay ghost follows cursor during drag', async ({ page }) => {
     // SPEC: board:drag-overlay
-    await mockAPI(page)
-    await mockBoardsAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoardWithAPI(page)
 
     const card = page.locator('.ticket-card', { hasText: 'Setup infra' })
     await expect(card).toBeVisible()
@@ -1204,9 +1226,7 @@ test.describe('Boards Panel - board item interactions', () => {
 
   // SPEC: panel-boards:open-new-browser-tab
   test('Alt+click on a board item opens it in a new browser tab', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
     await openBoardsPanel(page)
 
     await page.evaluate(() => {
@@ -1227,9 +1247,7 @@ test.describe('Boards Panel - board item interactions', () => {
 
   // SPEC: panel-boards:open-new-browser-tab
   test('middle-click on a board item opens it in a new browser tab', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
     await openBoardsPanel(page)
 
     await page.evaluate(() => {
@@ -1281,13 +1299,7 @@ test.describe('Board cell context menu', () => {
   test('right-click on a non-empty cell shows archive label with state, swimlane, and count', async ({
     page,
   }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoard(page)
 
     // Frontend swimlane (band 0), backlog column (cell 0) - has 'Setup infra'.
     await rightClickCell(page, 0, 0)
@@ -1303,13 +1315,7 @@ test.describe('Board cell context menu', () => {
   test('right-click on an empty cell shows a disabled archive button (0 tickets)', async ({
     page,
   }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoard(page)
 
     // Frontend swimlane x Review column (index 2) - empty in the fixture.
     await rightClickCell(page, 0, 2)
@@ -1322,13 +1328,7 @@ test.describe('Board cell context menu', () => {
 
   // SPEC: board:cell-context-menu
   test('clicking the backdrop dismisses the cell context menu', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoard(page)
 
     await rightClickCell(page, 0, 0)
     await expect(page.locator('.swimlane-context-menu')).toBeVisible()
@@ -1362,57 +1362,30 @@ test.describe('Board bulk-aware drag', () => {
         'definitely-rejected': [],
       },
     }
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: BULK_BOARD })
-      } else {
-        await route.continue()
-      }
-    })
+    await mockBoardList(page)
+    await mockBoardDetail(page, BULK_BOARD)
   })
 
   // SPEC: board:drag-bulk-selected
   test('dragging a selected ticket carries every selected ticket; dragging unselected moves only that one', async ({
     page,
   }) => {
-    // Two-phase drag-and-drop; default 5s timeout is too tight since assign() serializes ahead of each move.
+    // Two-phase drag-and-drop: assign() serializes before each move, outrunning the default test budget.
     test.setTimeout(30000)
-    const moves = []
     // Register first so it wins over any earlier registration.
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      const url = route.request().url()
-      const match = url.match(/tickets\/(.+)\/move/)
-      const ticketPath = match ? decodeURIComponent(match[1]) : null
-      moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
-      await route.fulfill({ json: { path: 'moved' } })
-    })
+    const moves = await captureMoves(page)
     // Stub assignTickets so auto-assign doesn't error noisily.
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
       await route.fulfill({ json: { sessions: [{ session_id: 'shared-001' }] } })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
-    await board.getByText('T1').click({ modifiers: ['Control'] })
-    await board.getByText('T2').click({ modifiers: ['Control'] })
-    await board.getByText('T3').click({ modifiers: ['Control'] })
+    await ctrlClickT1toT3(board)
     await expect(board.locator('.ticket-card.selected')).toHaveCount(3)
 
     // Drag T2 (one of the selected) to in-progress column in frontend swimlane.
-    const dragCard = page.locator('.ticket-card', { hasText: 'T2' })
-    const frontendBand = page.locator('.swimlane-band').first()
-    const inProgressCell = frontendBand.locator('.board-cell').nth(1)
+    const { dragCard, inProgressCell } = frontendInProgressDrag(page, 'T2')
 
     let cardBox = await dragCard.boundingBox()
     let cellBox = await inProgressCell.boundingBox()
@@ -1438,15 +1411,11 @@ test.describe('Board bulk-aware drag', () => {
 
     // Phase 2 drags unselected T4; state resets in place since a reload would break the mocked SSE wiring.
     moves.length = 0
-    await board.getByText('T1').click({ modifiers: ['Control'] })
-    await board.getByText('T2').click({ modifiers: ['Control'] })
-    await board.getByText('T3').click({ modifiers: ['Control'] })
+    await ctrlClickT1toT3(board)
     await expect(board.locator('.ticket-card.selected')).toHaveCount(0)
 
     // Re-selects T1-T3 in their post-drag positions; selection is tracked by path, so column doesn't matter.
-    await board.getByText('T1').click({ modifiers: ['Control'] })
-    await board.getByText('T2').click({ modifiers: ['Control'] })
-    await board.getByText('T3').click({ modifiers: ['Control'] })
+    await ctrlClickT1toT3(board)
     await expect(board.locator('.ticket-card.selected')).toHaveCount(3)
 
     // Drag T4 - NOT in selection - should move only T4.
@@ -1490,38 +1459,15 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
         'definitely-rejected': [],
       },
     }
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: CROSS_LANE_BOARD })
-      } else {
-        await route.continue()
-      }
-    })
+    await mockBoardList(page)
+    await mockBoardDetail(page, CROSS_LANE_BOARD)
   })
 
   // SPEC: board:cross-lane-bulk-preserve
   test('cross-lane bulk move preserves each ticket origin swimlane', async ({ page }) => {
-    const moves = []
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      const url = route.request().url()
-      const match = url.match(/tickets\/(.+)\/move/)
-      const ticketPath = match ? decodeURIComponent(match[1]) : null
-      moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
-      await route.fulfill({ json: { path: 'moved' } })
-    })
+    const moves = await captureMoves(page)
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     // Multi-select tickets across two swimlanes (T1 frontend, T3 backend).
     await board.getByText('T1').click({ modifiers: ['Control'] })
@@ -1557,22 +1503,9 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
   test('dropping ticket on column header moves column without changing swimlane', async ({
     page,
   }) => {
-    const moves = []
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      const url = route.request().url()
-      const match = url.match(/tickets\/(.+)\/move/)
-      const ticketPath = match ? decodeURIComponent(match[1]) : null
-      moves.push({ ticketPath, body: JSON.parse(route.request().postData()) })
-      await route.fulfill({ json: { path: 'moved' } })
-    })
+    const moves = await captureMoves(page)
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    await openBoard(page)
 
     // Drag T1 (frontend swimlane) onto the Review column header.
     const dragCard = page.locator('.ticket-card', { hasText: 'T1' })
@@ -1602,18 +1535,8 @@ test.describe('Board cross-lane bulk + column-header drop', () => {
 test.describe('Board column rename', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARD_DETAIL })
-      } else {
-        await route.continue()
-      }
-    })
+    await mockBoardList(page)
+    await mockBoardDetail(page)
   })
 
   // SPEC: board:column-rename
@@ -1635,12 +1558,7 @@ test.describe('Board column rename', () => {
       })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    await expect(page.locator('.board-board')).toBeVisible()
+    await openBoard(page)
 
     const backlogHeader = page.locator('.board-col-header').first()
     await backlogHeader.dblclick()
@@ -1682,9 +1600,7 @@ test.describe('Board bulk shared session', () => {
       }
     })
     // Re-registered so it wins over the beforeEach handler; ordering matters with encoded slashes in the URL.
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      await route.fulfill({ json: { path: 'moved' } })
-    })
+    await stubMoves(page)
     let assignBody = null
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
       const post = route.request().postData()
@@ -1695,13 +1611,7 @@ test.describe('Board bulk shared session', () => {
       }
       await route.fulfill({ json: { sessions: [{ session_id: 'shared-session-001' }] } })
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
     await expect(board.getByText('Setup infra')).toBeVisible()
     await expect(board.getByText('Boards')).toBeVisible()
 
@@ -1710,9 +1620,7 @@ test.describe('Board bulk shared session', () => {
     await board.getByText('Boards').click({ modifiers: ['Control'] })
     await expect(board.locator('.ticket-card.selected')).toHaveCount(2)
 
-    const dragCard = page.locator('.ticket-card', { hasText: 'Setup infra' })
-    const frontendBand = page.locator('.swimlane-band').first()
-    const inProgressCell = frontendBand.locator('.board-cell').nth(1)
+    const { dragCard, inProgressCell } = frontendInProgressDrag(page, 'Setup infra')
 
     const cardBox = await dragCard.boundingBox()
     const cellBox = await inProgressCell.boundingBox()
@@ -1736,6 +1644,62 @@ test.describe('Board bulk shared session', () => {
   })
 })
 
+test.describe('Board reopen', () => {
+  // SPEC: board:reopen-assign
+  test('a card dragged from Done into an active column is assigned under its new path', async ({
+    page,
+  }) => {
+    await mockAPI(page)
+    await mockBoardsAPI(page)
+    const REOPEN_BOARD = {
+      ...MOCK_BOARD_DETAIL,
+      states: MOCK_BOARD_DETAIL.states.map(s =>
+        s.id === 'in-progress' ? { ...s, active: true } : s,
+      ),
+      columns: {
+        ...MOCK_BOARD_DETAIL.columns,
+        'in-progress': [],
+        done: [{ path: 'docs/tickets/completed/init.md', title: 'Init project' }],
+      },
+    }
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
+      await route.fulfill({ json: REOPEN_BOARD })
+    })
+    let moved = null
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
+      moved = movedEntry(route).path
+      await route.fulfill({ json: { path: 'docs/tickets/active/init.md' } })
+    })
+    let assignBody = null
+    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
+      assignBody = JSON.parse(route.request().postData())
+      await route.fulfill({ json: { sessions: [{ session_id: 'reopened-001' }] } })
+    })
+
+    await openBoard(page)
+
+    await page.locator('.board-col-header').nth(3).locator('.board-col-toggle').click()
+    const card = page.locator('.ticket-card', { hasText: 'Init project' })
+    await expect(card).toBeVisible()
+
+    const cardBox = await card.boundingBox()
+    const headerBox = await page.locator('.board-col-header').nth(1).boundingBox()
+    await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(cardBox.x + cardBox.width / 2 + 10, cardBox.y + cardBox.height / 2, {
+      steps: 3,
+    })
+    await page.mouse.move(headerBox.x + headerBox.width / 2, headerBox.y + headerBox.height / 2, {
+      steps: 5,
+    })
+    await page.mouse.up()
+
+    await expect.poll(() => assignBody, { timeout: 5000 }).toBeTruthy()
+    expect(moved).toBe('docs/tickets/completed/init.md')
+    expect(assignBody.tickets).toEqual(['docs/tickets/active/init.md'])
+  })
+})
+
 test.describe('Board prompt sequence', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
@@ -1754,21 +1718,9 @@ test.describe('Board prompt sequence', () => {
       ),
       prompt: { sequence: ['review the board', 'start on {ticket}'] },
     }
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: PROMPT_BOARD })
-      } else {
-        await route.continue()
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/tickets/.+/move`), async route => {
-      await route.fulfill({ json: { path: 'moved' } })
-    })
+    await mockBoardList(page)
+    await mockBoardDetail(page, PROMPT_BOARD)
+    await stubMoves(page)
 
     let assignBody = null
     await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+/assign`), async route => {
@@ -1776,18 +1728,10 @@ test.describe('Board prompt sequence', () => {
       await route.fulfill({ json: { sessions: [{ session_id: 'sess-from-seq' }] } })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    await openBoard(page)
 
     // Drag a backlog ticket to In Progress (active column).
-    const dragCard = page.locator('.ticket-card', { hasText: 'Setup infra' })
-    const frontendBand = page.locator('.swimlane-band').first()
-    const inProgressCell = frontendBand.locator('.board-cell').nth(1)
+    const { dragCard, inProgressCell } = frontendInProgressDrag(page, 'Setup infra')
 
     const cardBox = await dragCard.boundingBox()
     const cellBox = await inProgressCell.boundingBox()
@@ -1844,30 +1788,13 @@ test.describe('Boards Deep Link', () => {
 test.describe('Board column reorder + context menu', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
-    await page.route(`**${WS_PREFIX}/boards`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARDS })
-      }
-    })
-    await page.route(new RegExp(`${WS_PREFIX}/boards/[^/]+$`), async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: MOCK_BOARD_DETAIL })
-      } else {
-        await route.continue()
-      }
-    })
+    await mockBoardList(page)
+    await mockBoardDetail(page)
   })
 
   // SPEC: board:col-dnd-reorder
   test('non-collapsed column headers expose a drag handle', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     // Every non-collapsed header renders a grip-handle span; poll since terminal columns collapse async.
     const handles = board.locator('.board-col-header:not(.collapsed) .board-drag-handle')
@@ -1883,14 +1810,7 @@ test.describe('Board column reorder + context menu', () => {
 
   // SPEC: board:col-context-menu
   test('right-click on column header surfaces Move + archive items', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     // Right-click the In Progress column header (middle-ish, so Move left/right both enabled).
     const inProgressHeader = board.locator('.board-col-header').filter({ hasText: 'In Progress' })
@@ -1919,14 +1839,7 @@ test.describe('Board column reorder + context menu', () => {
       }
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     const inProgressHeader = board.locator('.board-col-header').filter({ hasText: 'In Progress' })
     await inProgressHeader.click({ button: 'right' })
@@ -1955,14 +1868,7 @@ test.describe('Board column reorder + context menu', () => {
       await route.fulfill({ json: {} })
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await openBoardsPanel(page)
-    await page.locator('[data-testid="panel-boards"] .boards-item').first().click()
-
-    const board = page.locator('.board-board')
-    await expect(board).toBeVisible()
+    const board = await openBoard(page)
 
     // Right-click the Backlog header (the fixture seeds tickets there).
     const backlogHeader = board.locator('.board-col-header').filter({ hasText: 'Backlog' })

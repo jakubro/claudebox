@@ -1,5 +1,7 @@
 """TOML parsing for `[langgraph.mcp.<name>]` blocks into Config.langgraph_mcp_servers."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from claudebox.config import Config

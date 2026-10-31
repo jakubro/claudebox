@@ -18,7 +18,8 @@ export function DaemonStreamProvider({ children }) {
     clearProgress,
     sessionsChanged,
     lastSessionsChangedContainerId,
-    containerStatus,
+    changesByWorkspace,
+    boardChanges,
     lastContainerEvent,
     daemonConnected,
     daemonReconnected,
@@ -30,7 +31,8 @@ export function DaemonStreamProvider({ children }) {
       clearProgress,
       sessionsChanged,
       lastSessionsChangedContainerId,
-      containerStatus,
+      changesByWorkspace,
+      boardChanges,
       lastContainerEvent,
       daemonConnected,
       daemonReconnected,
@@ -40,7 +42,8 @@ export function DaemonStreamProvider({ children }) {
       clearProgress,
       sessionsChanged,
       lastSessionsChangedContainerId,
-      containerStatus,
+      changesByWorkspace,
+      boardChanges,
       lastContainerEvent,
       daemonConnected,
       daemonReconnected,
@@ -52,7 +55,7 @@ export function DaemonStreamProvider({ children }) {
 
 /**
  * Access daemon SSE stream signals.
- * @returns {{ progressMessage: string|null, sessionsChanged: number, lastSessionsChangedContainerId: string|null, containerStatus: number, lastContainerEvent: {containerId: string, status: string}|null, daemonConnected: boolean, daemonReconnected: number }}
+ * @returns {{ progressMessage: string|null, sessionsChanged: number, lastSessionsChangedContainerId: string|null, changesByWorkspace: Record<string, number>, boardChanges: Record<string, number>, lastContainerEvent: {containerId: string, status: string}|null, daemonConnected: boolean, daemonReconnected: number }}
  */
 export function useDaemonStreamContext() {
   const context = useContext(DaemonStreamContext)

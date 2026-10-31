@@ -1,7 +1,7 @@
 /** E2E tests for single-session mode: header strip, URL hash schema, replace-while-responding. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { sessionsHandler, waitForAppReady } from '../helpers.js'
 import {
   DEFAULT_CONTAINER_ID,
   DEFAULT_SESSION_ID,
@@ -147,40 +147,35 @@ test.describe('Single-Session Mode', () => {
             status: 200,
             json: { session_id: sideThreadId, container_id: DEFAULT_CONTAINER_ID },
           }),
-        getSessions: async route =>
-          route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: null,
-                  parent_session_id: null,
-                  container_id: DEFAULT_CONTAINER_ID,
-                },
-                {
-                  session_id: sideThreadId,
-                  name: null,
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet-5',
-                  num_turns: 1,
-                  total_cost_usd: 0.01,
-                  fork_point_cost_usd: 0.1,
-                  total_duration_ms: 500,
-                  last_context_tokens: 50,
-                  started_at: '2025-01-18T12:05:00Z',
-                  updated_at: '2025-01-18T12:05:00Z',
-                  first_message: 'why this branch?',
-                  last_message: null,
-                  session_dir: '/tmp/sessions/side-thread-001',
-                  todos: [],
-                  commands: [],
-                  parent_session_id: DEFAULT_SESSION_ID,
-                  is_side_thread: true,
-                  container_id: DEFAULT_CONTAINER_ID,
-                },
-              ],
-            },
-          }),
+        getSessions: sessionsHandler([
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: null,
+            parent_session_id: null,
+            container_id: DEFAULT_CONTAINER_ID,
+          },
+          {
+            session_id: sideThreadId,
+            name: null,
+            workspace: '/home/user/project',
+            model: 'claude-sonnet-5',
+            num_turns: 1,
+            total_cost_usd: 0.01,
+            fork_point_cost_usd: 0.1,
+            total_duration_ms: 500,
+            last_context_tokens: 50,
+            started_at: '2025-01-18T12:05:00Z',
+            updated_at: '2025-01-18T12:05:00Z',
+            first_message: 'why this branch?',
+            last_message: null,
+            session_dir: '/tmp/sessions/side-thread-001',
+            todos: [],
+            commands: [],
+            parent_session_id: DEFAULT_SESSION_ID,
+            is_side_thread: true,
+            container_id: DEFAULT_CONTAINER_ID,
+          },
+        ]),
       },
     })
     await mockSSE(page)

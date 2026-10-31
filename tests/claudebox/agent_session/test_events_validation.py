@@ -1,5 +1,7 @@
 """Validation rules on typed AgentEvent payloads - fail-loud on contract violations."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox.agent_session.events import SystemInitData, SystemInitPayload

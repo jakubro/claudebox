@@ -2,6 +2,8 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SWITCH } from '../test-utils/sessionSequences'
+import { createDeferred } from '../utils/deferred'
 import { StashProvider, useStash } from './StashContext'
 
 const mockGetUiState = vi.fn()
@@ -12,17 +14,28 @@ vi.mock('../api/uiState', () => ({
   patchSessionUiState: (...args) => mockPatchSessionUiState(...args),
 }))
 
+let mockSessionId = 'test-session-123'
 vi.mock('./SessionDataContext', () => ({
-  useSessionData: () => ({ sessionId: 'test-session-123' }),
+  useSessionData: () => ({ sessionId: mockSessionId }),
 }))
 
 describe('useStash', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSessionId = 'test-session-123'
     mockGetUiState.mockResolvedValue({ session: { stash: [] } })
   })
 
   const wrapper = ({ children }) => <StashProvider>{children}</StashProvider>
+
+  async function renderLoadedStash() {
+    const hook = renderHook(() => useStash(), { wrapper })
+    await waitFor(() => {
+      expect(mockGetUiState).toHaveBeenCalled()
+    })
+
+    return hook
+  }
 
   it('loads stash from server on mount', async () => {
     mockGetUiState.mockResolvedValue({
@@ -39,11 +52,7 @@ describe('useStash', () => {
   })
 
   it('stashPush() adds item to front of stash and persists', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     act(() => {
       result.current.stashPush('first item')
@@ -69,11 +78,7 @@ describe('useStash', () => {
   })
 
   it('stashPop() removes first item and sets pendingInsert', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     act(() => {
       result.current.stashPush('item to pop')
@@ -95,11 +100,7 @@ describe('useStash', () => {
   })
 
   it('stashCopy() sets pendingInsert without removing', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     act(() => {
       result.current.stashPush('first')
@@ -121,11 +122,7 @@ describe('useStash', () => {
   })
 
   it('stashRemove() removes item by index and persists', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     act(() => {
       result.current.stashPush('first')
@@ -150,11 +147,7 @@ describe('useStash', () => {
   })
 
   it('clearPendingInsert() clears pendingInsert', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     act(() => {
       result.current.stashPush('item')
@@ -173,11 +166,7 @@ describe('useStash', () => {
   })
 
   it('rejects empty/whitespace text', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     mockPatchSessionUiState.mockClear()
 
@@ -192,11 +181,7 @@ describe('useStash', () => {
   })
 
   it('clearStash() empties local stash without persisting (used for session switch)', async () => {
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     act(() => {
       result.current.stashPush('item')
@@ -216,13 +201,87 @@ describe('useStash', () => {
   it('handles server error gracefully', async () => {
     mockGetUiState.mockRejectedValue(new Error('Network error'))
 
-    const { result } = renderHook(() => useStash(), { wrapper })
-
-    await waitFor(() => {
-      expect(mockGetUiState).toHaveBeenCalled()
-    })
+    const { result } = await renderLoadedStash()
 
     // Should default to empty stash on error
     expect(result.current.stash).toEqual([])
   })
+})
+
+describe('useStash across a session switch', () => {
+  const wrapper = ({ children }) => <StashProvider>{children}</StashProvider>
+  let reads
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    reads = { A: createDeferred(), B: createDeferred() }
+    mockGetUiState.mockImplementation(id => reads[id].promise)
+  })
+
+  function switchToB() {
+    const hook = renderHook(() => useStash(), { wrapper })
+    for (const id of SWITCH.slice(1)) {
+      mockSessionId = id
+      hook.rerender()
+    }
+
+    return hook
+  }
+
+  const lastSave = () => mockPatchSessionUiState.mock.calls.at(-1)
+
+  it('ignores a late reply for the session left', async () => {
+    mockSessionId = 'A'
+    const { result } = switchToB()
+
+    await act(async () => {
+      reads.B.resolve({ session: { stash: [{ text: 'b-item', timestamp: 2 }] } })
+    })
+    await act(async () => {
+      reads.A.resolve({ session: { stash: [{ text: 'a-secret', timestamp: 1 }] } })
+    })
+
+    expect(result.current.stash.map(i => i.text)).toEqual(['b-item'])
+    act(() => {
+      result.current.stashPush('new in B')
+    })
+    expect(lastSave()[0]).toBe('B')
+    expect(lastSave()[1][0].value.map(i => i.text)).toEqual(['new in B', 'b-item'])
+  })
+
+  it('keeps the stash when a late read for the session left fails', async () => {
+    mockSessionId = 'A'
+    const { result } = switchToB()
+    await act(async () => {
+      reads.B.resolve({ session: { stash: [{ text: 'b-item', timestamp: 2 }] } })
+    })
+
+    await act(async () => {
+      reads.A.reject(new Error('timeout'))
+    })
+
+    expect(result.current.stash.map(i => i.text)).toEqual(['b-item'])
+  })
+
+  it.each([
+    ['before the save', [{ text: 'b-item', timestamp: 2 }]],
+    ['after the save', null],
+  ])(
+    'keeps an item stashed before the load above the stored ones (read served %s)',
+    async (_label, stored) => {
+      mockSessionId = 'B'
+      const { result } = renderHook(() => useStash(), { wrapper })
+      act(() => {
+        result.current.stashPush('early')
+      })
+      const early = result.current.stash[0]
+
+      await act(async () => {
+        reads.B.resolve({ session: { stash: stored ?? [early, { text: 'b-item', timestamp: 2 }] } })
+      })
+
+      expect(result.current.stash.map(i => i.text)).toEqual(['early', 'b-item'])
+      expect(lastSave()[1][0].value.map(i => i.text)).toEqual(['early', 'b-item'])
+    },
+  )
 })

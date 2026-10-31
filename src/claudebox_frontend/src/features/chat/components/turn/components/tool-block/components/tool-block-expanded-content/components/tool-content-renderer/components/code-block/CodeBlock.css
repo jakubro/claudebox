@@ -77,6 +77,21 @@
   padding-left: 8px;
 }
 
+/* --- Row type: separator (grep -- divider) --- */
+.code-block-separator .code-block-cell {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.code-block-separator .code-block-gutter {
+  background: #1e1e1e; /* Opaque dark - must be solid for sticky to cover content */
+}
+
+.code-block-separator .code-block-linenum {
+  color: var(--text-muted);
+}
+
 /* First/last row — compensate for negative container margin */
 .code-block-row:first-child .code-block-cell {
   padding-top: 8px;
@@ -99,21 +114,6 @@
 /* --- Row type: context (grep context line, dimmed) --- */
 .code-block-type-context {
   opacity: 0.6;
-}
-
-/* --- Row type: separator (grep -- divider) --- */
-.code-block-separator .code-block-cell {
-  padding-top: 4px;
-  padding-bottom: 4px;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.code-block-separator .code-block-gutter {
-  background: #1e1e1e; /* Opaque dark — must be solid for sticky to cover content */
-}
-
-.code-block-separator .code-block-linenum {
-  color: var(--text-muted);
 }
 
 /* --- Row type: diff-add --- */

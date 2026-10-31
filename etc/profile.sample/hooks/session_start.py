@@ -1,6 +1,8 @@
 #!/opt/claudebox/claudebox/.venv/bin/python
 """Session start hook - injects session context."""
 
+from __future__ import annotations
+
 from claudebox import HookRequest, HookResponse, hook
 
 

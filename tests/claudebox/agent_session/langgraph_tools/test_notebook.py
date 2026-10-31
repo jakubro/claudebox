@@ -1,5 +1,7 @@
 """notebook.py @tool tests - notebook_edit."""
 
+from __future__ import annotations
+
 import nbformat
 import pytest
 

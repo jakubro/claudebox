@@ -5,17 +5,31 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { playChime, requestNotificationPermission } from '../utils/notifications'
 import useNotifications from './useNotifications'
 
+function renderResponding(options = {}) {
+  return renderHook(
+    ({ isResponding }) => useNotifications({ isResponding, events: [], ...options }),
+    {
+      initialProps: { isResponding: true },
+    },
+  )
+}
+
+function installGrantedNotification() {
+  const notification = vi.fn()
+  notification.prototype.close = vi.fn()
+  global.Notification = notification
+  global.Notification.permission = 'granted'
+  global.Notification.requestPermission = vi.fn().mockResolvedValue('granted')
+
+  return notification
+}
+
 describe('useNotifications', () => {
   let mockNotification
 
   beforeEach(() => {
     vi.useFakeTimers()
-    mockNotification = vi.fn()
-    mockNotification.prototype.close = vi.fn()
-
-    global.Notification = mockNotification
-    global.Notification.permission = 'granted'
-    global.Notification.requestPermission = vi.fn().mockResolvedValue('granted')
+    mockNotification = installGrantedNotification()
 
     Object.defineProperty(document, 'hidden', { value: true, writable: true })
     document.title = 'Test | Claudebox'
@@ -39,17 +53,11 @@ describe('useNotifications', () => {
   })
 
   it('sends notification when response completes, tab is hidden, and notifications enabled', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) =>
-        useNotifications({
-          isResponding,
-          events: [],
-          sessionName: 'Test',
-          workspace: '/home/user/project',
-          notificationsEnabled: true,
-        }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding({
+      sessionName: 'Test',
+      workspace: '/home/user/project',
+      notificationsEnabled: true,
+    })
 
     rerender({ isResponding: false })
     vi.advanceTimersByTime(60)
@@ -66,10 +74,7 @@ describe('useNotifications', () => {
   it('does not notify when tab is visible', () => {
     Object.defineProperty(document, 'hidden', { value: false })
 
-    const { rerender } = renderHook(
-      ({ isResponding }) => useNotifications({ isResponding, events: [] }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding()
 
     rerender({ isResponding: false })
 
@@ -79,11 +84,7 @@ describe('useNotifications', () => {
   it('does not notify when permission is not granted', () => {
     global.Notification.permission = 'denied'
 
-    const { rerender } = renderHook(
-      ({ isResponding }) =>
-        useNotifications({ isResponding, events: [], notificationsEnabled: true }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding({ notificationsEnabled: true })
 
     rerender({ isResponding: false })
 
@@ -91,11 +92,7 @@ describe('useNotifications', () => {
   })
 
   it('does not notify when notificationsEnabled is false', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) =>
-        useNotifications({ isResponding, events: [], notificationsEnabled: false }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding({ notificationsEnabled: false })
 
     rerender({ isResponding: false })
 
@@ -159,10 +156,7 @@ describe('useNotifications', () => {
   })
 
   it('adds tab title indicator when response completes', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) => useNotifications({ isResponding, events: [] }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding()
 
     rerender({ isResponding: false })
 
@@ -174,6 +168,53 @@ describe('useNotifications', () => {
     renderHook(() => useNotifications({ isResponding: false, events: [] }))
 
     expect(mockNotification).not.toHaveBeenCalled()
+  })
+  describe('background work', () => {
+    const renderSession = initialProps =>
+      renderHook(
+        props =>
+          useNotifications({
+            ...props,
+            events: [],
+            sessionName: 'Test',
+            workspace: '/home/user/project',
+            notificationsEnabled: true,
+          }),
+        { initialProps },
+      )
+
+    it('stays silent when a turn ends with background work still running', () => {
+      const { rerender } = renderSession({ isResponding: true, isWaiting: false })
+
+      rerender({ isResponding: false, isWaiting: true })
+      vi.advanceTimersByTime(60)
+
+      expect(mockNotification).not.toHaveBeenCalled()
+      expect(document.title).toBe('Test | Claudebox')
+    })
+
+    it('stays silent when the background work ends on its own', () => {
+      const { rerender } = renderSession({ isResponding: true, isWaiting: false })
+      rerender({ isResponding: false, isWaiting: true })
+
+      rerender({ isResponding: false, isWaiting: false })
+      vi.advanceTimersByTime(60)
+
+      expect(mockNotification).not.toHaveBeenCalled()
+      expect(document.title).toBe('Test | Claudebox')
+    })
+
+    it('notifies once when the follow-up turn ends with nothing left running', () => {
+      const { rerender } = renderSession({ isResponding: true, isWaiting: false })
+      rerender({ isResponding: false, isWaiting: true })
+      rerender({ isResponding: true, isWaiting: false })
+
+      rerender({ isResponding: false, isWaiting: false })
+      vi.advanceTimersByTime(60)
+
+      expect(mockNotification).toHaveBeenCalledTimes(1)
+      expect(document.title).toBe('* Test | Claudebox')
+    })
   })
 })
 
@@ -263,15 +304,8 @@ describe('playChime', () => {
 })
 
 describe('useNotifications user interaction listeners', () => {
-  let mockNotification
-
   beforeEach(() => {
-    mockNotification = vi.fn()
-    mockNotification.prototype.close = vi.fn()
-
-    global.Notification = mockNotification
-    global.Notification.permission = 'granted'
-    global.Notification.requestPermission = vi.fn().mockResolvedValue('granted')
+    installGrantedNotification()
 
     Object.defineProperty(document, 'hidden', { value: false, writable: true })
     document.title = 'Test | Claudebox'
@@ -282,10 +316,7 @@ describe('useNotifications user interaction listeners', () => {
   })
 
   it('clears title indicator on focus event', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) => useNotifications({ isResponding, events: [] }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding()
 
     // Complete response to add indicator
     rerender({ isResponding: false })
@@ -297,10 +328,7 @@ describe('useNotifications user interaction listeners', () => {
   })
 
   it('clears title indicator on click event', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) => useNotifications({ isResponding, events: [] }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding()
 
     rerender({ isResponding: false })
     expect(document.title).toBe('* Test | Claudebox')
@@ -311,10 +339,7 @@ describe('useNotifications user interaction listeners', () => {
   })
 
   it('clears title indicator on keydown event', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) => useNotifications({ isResponding, events: [] }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding()
 
     rerender({ isResponding: false })
     expect(document.title).toBe('* Test | Claudebox')
@@ -397,16 +422,10 @@ describe('useNotifications requestPermission callback', () => {
 })
 
 describe('useNotifications with notificationsEnabled', () => {
-  let mockNotification
   let mockAudioContext
 
   beforeEach(() => {
-    mockNotification = vi.fn()
-    mockNotification.prototype.close = vi.fn()
-
-    global.Notification = mockNotification
-    global.Notification.permission = 'granted'
-    global.Notification.requestPermission = vi.fn().mockResolvedValue('granted')
+    installGrantedNotification()
 
     mockAudioContext = {
       createOscillator: vi.fn().mockReturnValue({
@@ -434,11 +453,7 @@ describe('useNotifications with notificationsEnabled', () => {
   })
 
   it('plays sound when notificationsEnabled and tab is hidden', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) =>
-        useNotifications({ isResponding, events: [], notificationsEnabled: true }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding({ notificationsEnabled: true })
 
     rerender({ isResponding: false })
 
@@ -446,11 +461,7 @@ describe('useNotifications with notificationsEnabled', () => {
   })
 
   it('does not play sound when notificationsEnabled is false', () => {
-    const { rerender } = renderHook(
-      ({ isResponding }) =>
-        useNotifications({ isResponding, events: [], notificationsEnabled: false }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding({ notificationsEnabled: false })
 
     rerender({ isResponding: false })
 
@@ -460,11 +471,7 @@ describe('useNotifications with notificationsEnabled', () => {
   it('does not play sound when tab is visible', () => {
     Object.defineProperty(document, 'hidden', { value: false })
 
-    const { rerender } = renderHook(
-      ({ isResponding }) =>
-        useNotifications({ isResponding, events: [], notificationsEnabled: true }),
-      { initialProps: { isResponding: true } },
-    )
+    const { rerender } = renderResponding({ notificationsEnabled: true })
 
     rerender({ isResponding: false })
 

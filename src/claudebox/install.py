@@ -3,12 +3,14 @@
 Must not be named ``cli``: that would shadow the ``cli`` runner the package root re-exports from ``core.cli``.
 """
 
+from __future__ import annotations
+
 import subprocess
 import sys
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from .constants import GIT_SUBPROCESS_TIMEOUT, LIB_ROOT, REPOSITORY_URL
+from .core.io import read_toml
 
 
 def epilog() -> str:
@@ -29,7 +31,7 @@ def get_install_info() -> dict[str, str | Path]:
     return {
         "version": _package_version(),
         "branch": _branch(),
-        "commit": _commit(),
+        "commit": library_commit() or "(unknown)",
         "path": LIB_ROOT,
         "python": _python_version(),
     }
@@ -45,12 +47,9 @@ def format_install_info(info: dict[str, str | Path]) -> str:
 
 
 def _package_version() -> str:
-    """Return the installed package version, or ``(unknown)`` if missing."""
+    pyproject = read_toml(LIB_ROOT / "pyproject.toml", default=None)
 
-    try:
-        return version("claudebox")
-    except PackageNotFoundError:
-        return "(unknown)"
+    return pyproject["project"]["version"] if pyproject else "(unknown)"
 
 
 def _branch() -> str:
@@ -70,8 +69,8 @@ def _branch() -> str:
     return result.stdout.strip() or "(unknown)"
 
 
-def _commit() -> str:
-    """Return the current short commit hash, gracefully degrading on git failure."""
+def library_commit() -> str | None:
+    """Return the library's short commit hash, or None when git cannot say."""
 
     try:
         result = subprocess.run(
@@ -82,9 +81,9 @@ def _commit() -> str:
             check=False,
         )
     except (subprocess.SubprocessError, OSError):
-        return "(unknown)"
+        return None
 
-    return result.stdout.strip() or "(unknown)"
+    return result.stdout.strip() or None
 
 
 def _python_version() -> str:

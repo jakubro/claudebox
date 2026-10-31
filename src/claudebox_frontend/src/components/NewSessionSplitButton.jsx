@@ -6,9 +6,11 @@ import { createPortal } from 'react-dom'
 import useDropdown from '../hooks/useDropdown'
 import useDropdownPosition from '../hooks/useDropdownPosition'
 import useNewSession from '../hooks/useNewSession'
+import useSessionDefaults from '../hooks/useSessionDefaults'
 
 /**
- * Click -> current tab; Alt/middle-click on main button -> new tab; chevron -> dropdown with both options.
+ * Click -> current tab; Alt/middle-click on main button -> new tab; chevron -> dropdown with both
+ * options, then one row per bundle the workspace declares.
  *
  * @param {Object} props
  * @param {'inline'|'portal'} [props.dropdownPlacement='inline'] - `inline` renders inside the wrapper span (session header strip); `portal` renders to document.body via useDropdownPosition (tight containers like SessionsPanel).
@@ -25,6 +27,7 @@ export default function NewSessionSplitButton({
   const { executeNewSession, executeNewSessionInNewTab, isCreating, isCreatingInNewTab } =
     useNewSession()
   const busy = isCreating || isCreatingInNewTab
+  const bundleNames = useSessionDefaults()?.bundle_names ?? []
   const isPortal = dropdownPlacement === 'portal'
 
   const chevronRef = useRef(null)
@@ -69,6 +72,14 @@ export default function NewSessionSplitButton({
     void executeNewSessionInNewTab()
   }, [executeNewSessionInNewTab, setIsOpen])
 
+  const handlePickBundle = useCallback(
+    bundle => {
+      setIsOpen(false)
+      executeNewSession(bundle)
+    },
+    [executeNewSession, setIsOpen],
+  )
+
   const dropdownContent = isOpen ? (
     <div
       ref={isPortal ? containerRef : undefined}
@@ -80,6 +91,17 @@ export default function NewSessionSplitButton({
       <button type="button" className="dropdown-option" onClick={handlePickNewBrowserTab}>
         New session in new browser tab
       </button>
+      {bundleNames.length > 0 && <div className="new-session-dropdown-divider" />}
+      {bundleNames.map(name => (
+        <button
+          key={name}
+          type="button"
+          className="dropdown-option"
+          data-testid={`${dataTestIdPrefix}-new-session-bundle-${name}`}
+          onClick={() => handlePickBundle(name)}>
+          New session - {name}
+        </button>
+      ))}
     </div>
   ) : null
 

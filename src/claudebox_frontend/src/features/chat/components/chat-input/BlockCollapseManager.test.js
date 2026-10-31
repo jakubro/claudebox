@@ -18,7 +18,6 @@ describe('BlockCollapseManager', () => {
       expect(result.value).toContain('<foo...1>')
       expect(result.value).toContain('before')
       expect(result.value).toContain('after')
-      expect(m.hasCollapsed).toBe(true)
     })
 
     it('returns null when cursor not in a block', () => {
@@ -35,7 +34,6 @@ describe('BlockCollapseManager', () => {
       expect(result.value).not.toContain('</foo>')
       expect(result.value).not.toContain('</bar>')
       expect(result.value).toContain('text')
-      expect(m.hasCollapsed).toBe(true)
     })
   })
 
@@ -46,7 +44,14 @@ describe('BlockCollapseManager', () => {
       const result = m.expandLocal(collapsed.value, 3)
       expect(result).not.toBeNull()
       expect(result.value).toBe('<foo>content</foo>')
-      expect(m.hasCollapsed).toBe(false)
+    })
+
+    it('expands a placeholder an undo brought back after it was expanded', () => {
+      const m = new BlockCollapseManager()
+      const collapsed = m.collapseLocal('<foo>content</foo>', 5)
+      m.expandLocal(collapsed.value, 3)
+
+      expect(m.expandLocal(collapsed.value, 3).value).toBe('<foo>content</foo>')
     })
 
     it('returns null when cursor not on a placeholder', () => {
@@ -63,7 +68,15 @@ describe('BlockCollapseManager', () => {
       const collapsed = m.collapseAll(value)
       const result = m.expandAll(collapsed.value)
       expect(result.value).toBe(value)
-      expect(m.hasCollapsed).toBe(false)
+    })
+
+    it('expands placeholders an undo brought back after expanding all', () => {
+      const m = new BlockCollapseManager()
+      const value = '<foo>a</foo> <bar>b</bar>'
+      const collapsed = m.collapseAll(value)
+      m.expandAll(collapsed.value)
+
+      expect(m.expandAll(collapsed.value).value).toBe(value)
     })
   })
 
@@ -85,10 +98,9 @@ describe('BlockCollapseManager', () => {
   describe('reset', () => {
     it('clears all state', () => {
       const m = new BlockCollapseManager()
-      m.collapseLocal('<foo>x</foo>', 5)
-      expect(m.hasCollapsed).toBe(true)
+      const collapsed = m.collapseLocal('<foo>x</foo>', 5)
       m.reset()
-      expect(m.hasCollapsed).toBe(false)
+      expect(m.expandAll(collapsed.value).value).toBe(collapsed.value)
     })
   })
 })

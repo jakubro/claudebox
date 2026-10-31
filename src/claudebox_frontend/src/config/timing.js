@@ -1,6 +1,8 @@
 /** Timing constants - intervals, delays, debounce values, thresholds in milliseconds. */
 
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500
+// A saved layout slower than this gets the default built meanwhile, restored over once it arrives.
+export const LAYOUT_RESTORE_GRACE_MS = 3000
 export const SILENCE_THRESHOLD = 5000
 export const RECONNECT_BASE_DELAY = 1000
 export const RECONNECT_MAX_DELAY = 10000
@@ -14,14 +16,16 @@ export const PATH_RESOLVE_BATCH_MS = 10
 export const ERROR_AUTO_CLEAR_MS = 4000
 export const INTERRUPT_STOPPED_CLEAR_MS = 500
 export const COPY_FEEDBACK_MS = 1000
+export const NEW_TAB_FLASH_MS = 400
 export const COPY_BUTTON_FEEDBACK_MS = 2000
 export const TASK_HIGHLIGHT_MS = 1500
 export const LIVE_TICK_INTERVAL_MS = 1000
+export const CRON_BADGE_REFRESH_MS = 30_000
+// Relative times show whole minutes at best; a quarter of that is lag nobody reads.
+export const RELATIVE_TIME_TICK_MS = 15_000
 export const PATH_COPIED_FEEDBACK_MS = 600
 export const NOTIFICATION_BATCH_DELAY_MS = 60
 export const SESSION_RETRY_DELAY_MS = 1000
-export const BREATH_INTERVAL = 40
-export const BREATH_CYCLE_MS = 2000
 export const PROGRAMMATIC_SCROLL_HOLD_MS = 250
 export const MESSAGE_JUMP_HIGHLIGHT_MS = 1500
 export const STALENESS_FRESH_PEAK_MS = 15_000
@@ -48,6 +52,13 @@ export const FETCH_TIMEOUT_SESSION_LIFECYCLE_MS = 240_000
 export const CREATING_OVERLAY_TIMEOUT_MS = 30_000
 export const SESSION_DEFAULTS_CACHE_TTL_MS = 60_000
 export const ERROR_REPORT_DEDUP_WINDOW_MS = 60_000
-export const MERMAID_FAILURE_NOTICE_DELAY_MS = 750
+export const RENDER_FAILURE_NOTICE_DELAY_MS = 750
 export const SCROLL_SETTLE_MAX_FRAMES = 30
+export const SCROLL_SETTLE_STILL_FRAMES = 3
 export const RATE_LIMIT_SWEEP_INTERVAL_MS = 30_000
+// The agent CLI's scheduler defaults, which it may retune remotely - cron predictions are best-effort.
+export const CRON_MAX_AGE_MS = 7 * 24 * 60 * 60_000
+export const CRON_ONE_SHOT_MAX_JITTER_MS = 90_000
+export const CRON_RECURRING_JITTER_CAP_MS = 30 * 60_000
+export const CRON_CACHE_LEAD_MS = 15_000
+export const CRON_CACHE_WINDOW_MS = 5 * 60_000

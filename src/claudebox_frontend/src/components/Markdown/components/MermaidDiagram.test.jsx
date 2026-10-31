@@ -39,6 +39,31 @@ vi.mock('../../../utils/mermaidLoader', () => ({
 const VALID_CHART = 'graph TD\n    A --> B'
 const RENDERED_SVG = '<svg><text>mock diagram</text></svg>'
 
+async function renderFallback(chart, error) {
+  mockRenderMermaidChart.mockRejectedValue(error)
+  const view = render(<MermaidDiagram chart={chart} />)
+  await waitFor(() => {
+    expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
+  })
+
+  return view
+}
+
+async function renderDiagram() {
+  const view = render(<MermaidDiagram chart={VALID_CHART} />)
+  await waitFor(() => {
+    expect(view.container.querySelector('.mermaid-diagram')).toBeInTheDocument()
+  })
+
+  return view
+}
+
+async function openZoom() {
+  const { container } = await renderDiagram()
+  fireEvent.click(container.querySelector('.mermaid-diagram'))
+  expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
+}
+
 describe('MermaidDiagram', () => {
   beforeEach(() => {
     mockRenderMermaidChart.mockReset()
@@ -58,21 +83,13 @@ describe('MermaidDiagram', () => {
     })
 
     it('renders SVG diagram from valid mermaid source', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      const { container } = await renderDiagram()
 
       expect(container.querySelector('.mermaid-diagram').innerHTML).toBe(RENDERED_SVG)
     })
 
     it('calls renderMermaidChart with unique ID and chart source', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      await renderDiagram()
 
       expect(mockRenderMermaidChart).toHaveBeenCalledWith(
         expect.stringContaining('mermaid-'),
@@ -83,13 +100,7 @@ describe('MermaidDiagram', () => {
 
   describe('error fallback', () => {
     it('falls back to syntax highlighter on invalid mermaid', async () => {
-      mockRenderMermaidChart.mockRejectedValue(new Error('Parse error'))
-
-      render(<MermaidDiagram chart="invalid{{{" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
-      })
+      await renderFallback('invalid{{{', new Error('Parse error'))
 
       expect(screen.getByTestId('syntax-highlighter')).toHaveAttribute('data-language', 'mermaid')
       expect(screen.getByTestId('syntax-highlighter')).toHaveTextContent('invalid{{{')
@@ -116,13 +127,7 @@ describe('MermaidDiagram', () => {
     })
 
     it('shows the thrown message once the source has settled', async () => {
-      mockRenderMermaidChart.mockRejectedValue(new Error('Parse error on line 3: bad token'))
-
-      render(<MermaidDiagram chart="invalid{{{" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
-      })
+      await renderFallback('invalid{{{', new Error('Parse error on line 3: bad token'))
       expect(document.querySelector('.mermaid-failure-notice')).not.toBeInTheDocument()
 
       await act(async () => {
@@ -136,13 +141,7 @@ describe('MermaidDiagram', () => {
     })
 
     it('falls back to a generic line when the thrown error carries no message', async () => {
-      mockRenderMermaidChart.mockRejectedValue(new Error())
-
-      render(<MermaidDiagram chart="invalid{{{" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
-      })
+      await renderFallback('invalid{{{', new Error())
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(750)
@@ -154,15 +153,10 @@ describe('MermaidDiagram', () => {
     })
 
     it('distinguishes an unsupported diagram type from a syntax error', async () => {
-      mockRenderMermaidChart.mockRejectedValue(
+      await renderFallback(
+        'wardley-beta\\ntitle x',
         new Error('No diagram type detected matching given configuration'),
       )
-
-      render(<MermaidDiagram chart="wardley-beta\ntitle x" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
-      })
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(750)
@@ -177,13 +171,7 @@ describe('MermaidDiagram', () => {
     })
 
     it('never shows the notice while the source keeps changing', async () => {
-      mockRenderMermaidChart.mockRejectedValue(new Error('Parse error'))
-
-      const { rerender } = render(<MermaidDiagram chart="invalid{{{1" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
-      })
+      const { rerender } = await renderFallback('invalid{{{1', new Error('Parse error'))
 
       // A streaming flush arrives before the settle window elapses - cancels the pending reveal.
       await act(async () => {
@@ -204,11 +192,7 @@ describe('MermaidDiagram', () => {
     })
 
     it('shows no notice for a diagram that draws successfully', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      await renderDiagram()
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(750)
@@ -220,11 +204,7 @@ describe('MermaidDiagram', () => {
 
   describe('toggle', () => {
     it('shows source view when toggle clicked', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      const { container } = await renderDiagram()
 
       const toggleBtn = container.querySelector('.mermaid-toolbar-btn')
       fireEvent.click(toggleBtn)
@@ -234,11 +214,7 @@ describe('MermaidDiagram', () => {
     })
 
     it('switches back to diagram when toggled again', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      const { container } = await renderDiagram()
 
       const toggleBtn = container.querySelector('.mermaid-toolbar-btn')
       fireEvent.click(toggleBtn)
@@ -253,11 +229,7 @@ describe('MermaidDiagram', () => {
     })
 
     it('shows copy button in source view', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      const { container } = await renderDiagram()
 
       const toggleBtn = container.querySelector('.mermaid-toolbar-btn')
       fireEvent.click(toggleBtn)
@@ -268,11 +240,7 @@ describe('MermaidDiagram', () => {
 
   describe('zoom', () => {
     it('opens zoom overlay when diagram clicked', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      const { container } = await renderDiagram()
 
       fireEvent.click(container.querySelector('.mermaid-diagram'))
 
@@ -281,53 +249,28 @@ describe('MermaidDiagram', () => {
     })
 
     it('closes zoom overlay on close button click', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
-
-      fireEvent.click(container.querySelector('.mermaid-diagram'))
-      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
+      await openZoom()
 
       fireEvent.click(document.body.querySelector('.zoom-overlay-close'))
       expect(document.body.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('closes zoom overlay on Escape key', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
-
-      fireEvent.click(container.querySelector('.mermaid-diagram'))
-      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
+      await openZoom()
 
       fireEvent.keyDown(document.body.querySelector('.zoom-overlay'), { key: 'Escape' })
       expect(document.body.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('closes zoom overlay on backdrop click', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
-
-      fireEvent.click(container.querySelector('.mermaid-diagram'))
-      expect(document.body.querySelector('.zoom-overlay')).toBeInTheDocument()
+      await openZoom()
 
       fireEvent.click(document.body.querySelector('.zoom-overlay'))
       expect(document.body.querySelector('.zoom-overlay')).not.toBeInTheDocument()
     })
 
     it('does not close zoom when clicking zoom content', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      const { container } = await renderDiagram()
 
       fireEvent.click(container.querySelector('.mermaid-diagram'))
       fireEvent.click(document.body.querySelector('.mermaid-zoom-content'))
@@ -338,11 +281,7 @@ describe('MermaidDiagram', () => {
 
   describe('toolbar', () => {
     it('shows copy button in diagram view', async () => {
-      const { container } = render(<MermaidDiagram chart={VALID_CHART} />)
-
-      await waitFor(() => {
-        expect(container.querySelector('.mermaid-diagram')).toBeInTheDocument()
-      })
+      await renderDiagram()
 
       expect(screen.getByTestId('copy-button')).toBeInTheDocument()
     })
@@ -376,13 +315,7 @@ describe('MermaidDiagram', () => {
 
   describe('failure cleanup', () => {
     it('sweeps render artifacts via the loader on a failed draw', async () => {
-      mockRenderMermaidChart.mockRejectedValue(new Error('Parse error'))
-
-      render(<MermaidDiagram chart="invalid{{{" />)
-
-      await waitFor(() => {
-        expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument()
-      })
+      await renderFallback('invalid{{{', new Error('Parse error'))
 
       expect(mockRemoveMermaidRenderArtifacts).toHaveBeenCalledTimes(1)
       expect(mockRemoveMermaidRenderArtifacts).toHaveBeenCalledWith(

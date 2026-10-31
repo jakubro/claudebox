@@ -13,6 +13,8 @@ Three-layer isolation:
 and ``CLAUDEBOX_DAEMON_URL`` pointing at the in-process fake daemon.
 """
 
+from __future__ import annotations
+
 import os
 import subprocess
 from collections.abc import Callable
@@ -30,6 +32,16 @@ ARGCOMPLETE_IFS = "\x0b"
 # Each test module needs its own ``pytest.mark.allow_hosts(["127.0.0.1", "::1"])`` since the
 # mark here does not propagate; both IPv4 and IPv6 are listed since localhost may resolve to
 # either, depending on /etc/hosts ordering.
+
+
+@pytest.fixture(autouse=True)
+def isolate_trace_socket(tmp_path, monkeypatch):
+    """Point Bash call measurement at a dead socket - in a session container a real one answers."""
+
+    monkeypatch.setattr(
+        "claudebox.agent_session.orchestration.trace.CONTAINER_TRACE_SOCKET",
+        tmp_path / "trace.sock",
+    )
 
 
 @pytest.fixture

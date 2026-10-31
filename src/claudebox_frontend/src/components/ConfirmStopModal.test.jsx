@@ -44,10 +44,7 @@ describe('ConfirmStopModal', () => {
   })
 
   it('calls onCancel when Cancel is clicked', async () => {
-    const user = userEvent.setup()
-    const onCancel = vi.fn()
-
-    render(<ConfirmStopModal onConfirm={vi.fn()} onCancel={onCancel} />)
+    const { user, onCancel } = renderCancellable()
 
     await user.click(screen.getByTestId('confirm-stop-modal-cancel'))
 
@@ -55,10 +52,7 @@ describe('ConfirmStopModal', () => {
   })
 
   it('calls onCancel when overlay is clicked', async () => {
-    const user = userEvent.setup()
-    const onCancel = vi.fn()
-
-    const { container } = render(<ConfirmStopModal onConfirm={vi.fn()} onCancel={onCancel} />)
+    const { user, onCancel, container } = renderCancellable()
 
     await user.click(container.querySelector('.confirm-stop-overlay'))
 
@@ -66,13 +60,18 @@ describe('ConfirmStopModal', () => {
   })
 
   it('does not call onCancel when modal body is clicked', async () => {
-    const user = userEvent.setup()
-    const onCancel = vi.fn()
-
-    render(<ConfirmStopModal onConfirm={vi.fn()} onCancel={onCancel} />)
+    const { user, onCancel } = renderCancellable()
 
     await user.click(screen.getByTestId('confirm-stop-modal'))
 
     expect(onCancel).not.toHaveBeenCalled()
   })
 })
+
+function renderCancellable() {
+  const user = userEvent.setup()
+  const onCancel = vi.fn()
+  const { container } = render(<ConfirmStopModal onConfirm={vi.fn()} onCancel={onCancel} />)
+
+  return { user, onCancel, container }
+}

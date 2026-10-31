@@ -11,6 +11,8 @@ See ARCHITECTURE.md section 1.4 for the runtime adapter contract and
 universal-provider design.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import importlib
@@ -18,6 +20,8 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -44,6 +48,7 @@ from ._providers import (
 from ._sibling_sessions import SiblingSessionClient
 from ._skills import extract_body, find_skill_source, parse_frontmatter, walk_skills
 from ._tasks import TaskService
+from ._titles import TITLE_SYSTEM_PROMPT, clean_title, title_prompt
 from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
 from .config import LangGraphAgentSessionConfig, RuntimeCapabilities
 from .errors import ProviderPackageMissing
@@ -142,7 +147,7 @@ def _compose_turn_cost(parent_cost: float | None, subagent_cost: float) -> float
     `total_cost_usd is None`, so `0.0` for an Ollama turn keeps it visible while `None` hides it.
     """
 
-    if parent_cost is None and subagent_cost == 0.0:
+    if parent_cost is None and not subagent_cost:
         return None
 
     return (parent_cost or 0.0) + subagent_cost
@@ -151,8 +156,8 @@ def _compose_turn_cost(parent_cost: float | None, subagent_cost: float) -> float
 class LangGraphRuntime:
     """AgentSession adapter backed by a LangGraph compiled graph.
 
-    Composes (does not subclass) the graph as `self._graph` and a LangChain BaseChatModel as
-    `self._chat_model`, plus a checkpointer; owns the prompt-staging queue, astream cancellation, and usage accumulation.
+    Composes the graph, a LangChain chat model and a checkpointer; owns prompt staging, usage
+    accumulation, and the per-turn graph task Stop cancels.
     """
 
     runtime_name: str = "LangGraph"
@@ -188,6 +193,9 @@ class LangGraphRuntime:
         self._config = config
         self._logger = get_logger(__name__)
         self.ready = asyncio.Event()
+        # Set instead of `ready` when connect() raises - readiness alone can't tell "not yet" from
+        # "never will"; query(), receive_events() and EventPipeline._run() all check this first.
+        self.connect_error: str | None = None
 
         # Pinned to session_id so cross-restart resume keys off the same persisted thread.
         self._thread_id: str = config.session_id or str(uuid.uuid4())
@@ -205,9 +213,12 @@ class LangGraphRuntime:
         self._checkpoint_turns_path = config.session_dir / SESSION_CHECKPOINT_TURNS_FILE
         self._checkpointer: Any | None = None
         # Entered in connect, exited in disconnect.
-        self._checkpointer_cm: Any | None = None
-        self._prompt_queue: asyncio.Queue[str | list[dict]] = asyncio.Queue()
-        self._astream_task: asyncio.Task | None = None
+        self._checkpointer_stack: AsyncExitStack | None = None
+        self._prompt_queue: asyncio.Queue[tuple[str | list[dict], str | None]] = asyncio.Queue()
+        # The running turn's graph, in a task of its own so Stop ends the turn, not the reader.
+        self._graph_task: asyncio.Task | None = None
+        self._turn_active = False
+        self._interrupt_requested = False
 
         # A level, not a total: falls when compaction shrinks history (matches the UI usage bar);
         # cost is a running sum.
@@ -264,67 +275,74 @@ class LangGraphRuntime:
         exceptions the handler layer maps to HTTP responses (503 / 422) before the graph is built.
         """
 
-        if self._spec is None:
-            raise RuntimeError(
-                f'LangGraph workspace requires [langgraph] model = "provider:model" in '
-                f".claudebox/settings.toml - model not configured for session "
-                f"{self._config.session_id!r}.",
+        try:
+            if self._spec is None:
+                raise RuntimeError(
+                    f'LangGraph workspace requires [langgraph] model = "provider:model" in '
+                    f".claudebox/settings.toml - model not configured for session "
+                    f"{self._config.session_id!r}.",
+                )
+
+            # Cloud providers fall through to DEFAULT_STRATEGY (no probe; auth/network errors
+            # surface at first query()).
+            strategy = PROVIDER_STRATEGIES.get(self._spec.provider, DEFAULT_STRATEGY)
+
+            if strategy.probe is not None:
+                strategy.probe(self._spec)
+
+            self._chat_model = self._build_chat_model()
+
+            # Resume after a container restart sees the task list intact; a missing log is a no-op (fresh session).
+            self._tasks.rebuild_from_events(self._config.session_dir / "events.jsonl")
+
+            # Cross-container-restart resume works because session_dir is bind-mounted from the
+            # host per claudebox conventions.
+            checkpoint_path = self._config.session_dir / "checkpoints.sqlite"
+            self._checkpointer_stack = AsyncExitStack()
+            self._checkpointer = await self._checkpointer_stack.enter_async_context(
+                AsyncSqliteSaver.from_conn_string(str(checkpoint_path)),
             )
 
-        # Cloud providers fall through to DEFAULT_STRATEGY (no probe; auth/network errors
-        # surface at first query()).
-        strategy = PROVIDER_STRATEGIES.get(self._spec.provider, DEFAULT_STRATEGY)
+            # Built before the DI bundle so the tool context carries the client to the list/read
+            # resource tools. Per-server get_tools() failures must not poison the others (upstream issue #492).
+            self._mcp_client = self._build_mcp_client()
+            mcp_server_tools = await self._load_mcp_server_tools(self._mcp_client)
 
-        if strategy.probe is not None:
-            strategy.probe(self._spec)
+            # Catalog is populated AFTER aggregation so the self-discovery meta-tool reads the full bound set lazily.
+            tool_ctx = self._build_tool_context(mcp_client=self._mcp_client)
+            tools = [*make_tools(tool_ctx), *mcp_server_tools]
+            tool_ctx.tool_catalog.tools.extend(tools)
 
-        self._chat_model = self._build_chat_model()
+            # ClaudeboxToolHookMiddleware sits outermost so PreToolUse/PostToolUse wraps any later
+            # inner-middleware retry logic.
+            max_tokens = self._model_context_window()
+            self._summarization = ClaudeboxSummarizationMiddleware(
+                model=self._chat_model,
+                trigger=("tokens", int(max_tokens * self.COMPACT_THRESHOLD)),
+                on_started=self._compaction_started,
+                on_finished=self._compaction_finished,
+            )
 
-        # Resume after a container restart sees the task list intact; a missing log is a no-op (fresh session).
-        self._tasks.rebuild_from_events(self._config.session_dir / "events.jsonl")
+            middleware = [
+                ClaudeboxToolHookMiddleware(tool_ctx),
+                self._summarization,
+            ]
 
-        # Cross-container-restart resume works because session_dir is bind-mounted from the
-        # host per claudebox conventions.
-        checkpoint_path = self._config.session_dir / "checkpoints.sqlite"
-        self._checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
-        self._checkpointer = await self._checkpointer_cm.__aenter__()
+            caching = self._prompt_caching_middleware()
 
-        # Built before the DI bundle so the tool context carries the client to the list/read
-        # resource tools. Per-server get_tools() failures must not poison the others (upstream issue #492).
-        self._mcp_client = self._build_mcp_client()
-        mcp_server_tools = await self._load_mcp_server_tools(self._mcp_client)
+            if caching is not None:
+                middleware.append(caching)
 
-        # Catalog is populated AFTER aggregation so the self-discovery meta-tool reads the full bound set lazily.
-        tool_ctx = self._build_tool_context(mcp_client=self._mcp_client)
-        tools = [*make_tools(tool_ctx), *mcp_server_tools]
-        tool_ctx.tool_catalog.tools.extend(tools)
+            self._graph = self._build_graph(tools, middleware)
 
-        # ClaudeboxToolHookMiddleware sits outermost so PreToolUse/PostToolUse wraps any later
-        # inner-middleware retry logic.
-        max_tokens = self._model_context_window()
-        self._summarization = ClaudeboxSummarizationMiddleware(
-            model=self._chat_model,
-            trigger=("tokens", int(max_tokens * self.COMPACT_THRESHOLD)),
-            on_started=self._compaction_started,
-            on_finished=self._compaction_finished,
-        )
+            await self._load_session_start_context()
+            await self._seed_context_from_checkpoint()
+        except Exception as exc:
+            self.connect_error = str(exc)
 
-        middleware = [
-            ClaudeboxToolHookMiddleware(tool_ctx),
-            self._summarization,
-        ]
-
-        caching = self._prompt_caching_middleware()
-
-        if caching is not None:
-            middleware.append(caching)
-
-        self._graph = self._build_graph(tools, middleware)
-
-        await self._load_session_start_context()
-        await self._seed_context_from_checkpoint()
-
-        self.ready.set()
+            raise
+        finally:
+            self.ready.set()
 
         if self._config.hooks.on_session_start is not None:
             await self._config.hooks.on_session_start()
@@ -333,19 +351,20 @@ class LangGraphRuntime:
         """Cancel any in-flight astream task; clear ready; drop staged prompts; close HTTP client."""
 
         self.ready.clear()
+        self.connect_error = None
 
-        if self._astream_task is not None and not self._astream_task.done():
-            self._astream_task.cancel()
+        if self._graph_task is not None and not self._graph_task.done():
+            self._graph_task.cancel()
 
             try:
-                await self._astream_task
+                await self._graph_task
             except asyncio.CancelledError:
                 pass
             except Exception as exc:  # noqa: BLE001
                 # A non-CancelledError escape is a real fault, not part of cancellation.
-                self._logger.warning("astream_task_cancel_error", error=str(exc))
+                self._logger.warning("graph_task_cancel_error", error=str(exc))
 
-        self._astream_task = None
+        self._graph_task = None
 
         while not self._prompt_queue.empty():
             try:
@@ -353,13 +372,13 @@ class LangGraphRuntime:
             except asyncio.QueueEmpty:
                 break
 
-        if self._checkpointer_cm is not None:
+        if self._checkpointer_stack is not None:
             try:
-                await self._checkpointer_cm.__aexit__(None, None, None)
+                await self._checkpointer_stack.aclose()
             except Exception as exc:  # noqa: BLE001 - disconnect must always complete
                 self._logger.warning("checkpointer_close_failed", error=str(exc))
 
-            self._checkpointer_cm = None
+            self._checkpointer_stack = None
             self._checkpointer = None
 
         # langchain-ollama exposes no public close; the httpx.Client lives on `_client`, so a
@@ -380,19 +399,27 @@ class LangGraphRuntime:
         self._graph = None
         self._summarization = None
 
-    async def query(self, prompt: str | list[dict]) -> None:
-        """Stage prompt for the next receive_events drain.
+    async def query(self, prompt: str | list[dict], *, message_uuid: str | None = None) -> None:
+        """Stage prompt for the next receive_events drain, or refuse if connect failed.
 
         Buffers if connect() hasn't completed - the prompt sits queued until receive_events drives the graph.
         """
 
-        await self._prompt_queue.put(prompt)
+        if self.connect_error is not None:
+            raise RuntimeError(self.connect_error)
+
+        await self._prompt_queue.put((prompt, message_uuid))
 
     async def interrupt(self) -> None:
-        """Cancel the in-flight astream iteration."""
+        """End the in-flight turn, which still closes with one result; the reader keeps running."""
 
-        if self._astream_task is not None and not self._astream_task.done():
-            self._astream_task.cancel()
+        if not self._turn_active:
+            return
+
+        self._interrupt_requested = True
+
+        if self._graph_task is not None and not self._graph_task.done():
+            self._graph_task.cancel()
 
     def stream_health(self) -> StreamHealth | None:
         """No transport to inspect - events are produced in-process, not read off a pipe."""
@@ -411,23 +438,40 @@ class LangGraphRuntime:
             max_tokens=self._model_context_window(),
         )
 
-    async def set_model(self, model: str | None = None) -> None:
+    async def set_model(self, model: str | None = None, *, wait: bool = True) -> None:
         raise CapabilityNotSupported("LangGraphRuntime does not support set_model")
 
-    async def set_permission_mode(self, mode: str) -> None:
+    async def set_permission_mode(self, mode: str, *, wait: bool = True) -> None:
         raise CapabilityNotSupported("LangGraphRuntime does not support set_permission_mode")
 
-    async def set_effort_level(self, level: str) -> None:
+    async def set_effort_level(self, level: str, *, wait: bool = True) -> None:
         raise CapabilityNotSupported("LangGraphRuntime does not support set_effort_level")
 
-    async def reconnect_mcp_server(self, server_name: str) -> None:
+    async def reconnect_mcp_server(self, server_name: str, *, wait: bool = True) -> None:
         raise CapabilityNotSupported("LangGraphRuntime does not support MCP delegation")
 
-    async def toggle_mcp_server(self, server_name: str, enabled: bool) -> None:
+    async def toggle_mcp_server(
+        self,
+        server_name: str,
+        enabled: bool,
+        *,
+        wait: bool = True,
+    ) -> None:
         raise CapabilityNotSupported("LangGraphRuntime does not support MCP delegation")
 
     async def get_mcp_status(self) -> dict:
         raise CapabilityNotSupported("LangGraphRuntime does not support MCP delegation")
+
+    async def generate_title(self, messages: list[str]) -> str | None:
+        """Title the conversation from its opening user messages with this session's own model."""
+
+        assert self._chat_model is not None, "a titled user message means connect() built the model"
+
+        reply = await self._chat_model.ainvoke(
+            [SystemMessage(TITLE_SYSTEM_PROMPT), HumanMessage(title_prompt(messages))],
+        )
+
+        return clean_title(self._text_of(reply))
 
     # Catalogs
     # ------------------------------------------------------------------
@@ -512,43 +556,119 @@ class LangGraphRuntime:
 
         await self.ready.wait()
 
-        while True:
-            prompt = await self._prompt_queue.get()
+        if self.connect_error is not None:
+            while not self._prompt_queue.empty():
+                self._prompt_queue.get_nowait()
 
-            async for event in self._drive_turn(prompt):
+            return
+
+        while True:
+            prompt, message_uuid = await self._prompt_queue.get()
+
+            async for event in self._drive_turn(prompt, message_uuid):
                 yield event
 
-    async def _drive_turn(self, prompt: str | list[dict]) -> AsyncIterator[AgentEvent]:
-        """Drive one user->assistant turn through the graph."""
+    async def _drive_turn(
+        self,
+        prompt: str | list[dict],
+        message_uuid: str | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        """Drive one user->assistant turn through the graph, closing it with exactly one result.
+
+        The graph runs in its own task and hands events over in lock-step, advancing only once the
+        reader has taken the last one.
+        """
 
         assert self._graph is not None, "_drive_turn requires connect() to have completed"
 
-        # Set before the astream call so a racing interrupt() always has a valid task to cancel.
-        self._astream_task = asyncio.current_task()
-
-        turn_started_at = time.monotonic()
-        turn_input_tokens = 0
-        turn_output_tokens = 0
-        final_text = ""
+        self._turn_active = True
+        self._interrupt_requested = False
+        turn = _TurnProgress(started_at=time.monotonic())
 
         # Any `task` invocation during this turn folds its USD into the closing _result_event below.
         self._subagent_cost_this_turn = 0.0
 
         config = {"configurable": {"thread_id": self._thread_id}}
 
-        # Minted here, not inside _human_message_event, so the same id keys both the turn-tracker
-        # boundary (via the yielded event's uuid) and the fork-truncation journal below.
-        turn_uuid = str(uuid.uuid4())
-        await self._record_turn_boundary(turn_uuid, config)
+        # One id keys the turn-tracker boundary (the yielded event's uuid) and the fork journal below.
+        turn_uuid = message_uuid or str(uuid.uuid4())
 
-        # Must go first: the turn tracker keys a turn on this event's uuid, and the attachment path's
-        # one-shot echo suppression matches a no-tool-result user message - going first claims
-        # this one, not a later match.
-        yield self._human_message_event(prompt, uuid_=turn_uuid)
+        try:
+            await self._record_turn_boundary(turn_uuid, config)
 
-        # If the prior turn ended on an `ask_user_question` interrupt, route this prompt as
-        # Command(resume=) so the tool's interrupt() returns it and the graph resumes;
-        # otherwise start a fresh HumanMessage turn.
+            # Must go first: the turn tracker keys a turn on this uuid, and a send made under a
+            # message uuid drops this event as its echo by that same uuid.
+            yield self._human_message_event(prompt, uuid_=turn_uuid)
+
+            stopped = self._interrupt_requested
+
+            if not stopped:
+                handoff: asyncio.Queue[Any] = asyncio.Queue()
+                graph_task = asyncio.create_task(self._run_graph(prompt, config, turn, handoff))
+                self._graph_task = graph_task
+                # A task cancelled before its first step never runs its body: signal its end from outside.
+                graph_task.add_done_callback(lambda _: handoff.put_nowait(_GRAPH_DONE))
+
+                while (item := await handoff.get()) is not _GRAPH_DONE:
+                    event, taken = item
+                    yield event
+                    taken.set()
+
+                if graph_task.cancelled():
+                    stopped = True
+                elif (error := graph_task.exception()) is not None:
+                    raise error
+        finally:
+            if self._graph_task is not None and not self._graph_task.done():
+                self._graph_task.cancel()
+                await asyncio.wait({self._graph_task})
+
+            self._graph_task = None
+            self._turn_active = False
+
+        if stopped:
+            # Whatever a middleware queued dies with the turn rather than surfacing in the next one.
+            self._take_pending_events()
+
+            if turn.routed:
+                self._awaiting_resume = await self._has_pending_interrupt(config)
+
+            yield self._stopped_result(turn)
+
+            return
+
+        # If the model called an interrupt-using tool, the graph is now paused; the next user
+        # message becomes the resume value via the routing in _run_graph.
+        self._awaiting_resume = await self._has_pending_interrupt(config)
+
+        # A compaction on the turn's last model call has no further astream event to ride out on.
+        for pending in self._take_pending_events():
+            yield pending
+
+        yield self._closing_result(turn, turn.final_text)
+
+    async def _run_graph(
+        self,
+        prompt: str | list[dict],
+        config: dict,
+        turn: _TurnProgress,
+        handoff: asyncio.Queue,
+    ) -> None:
+        """Run the turn's graph, handing each projected event to `_drive_turn` and waiting for it
+        to be taken."""
+
+        graph = self._graph
+        assert graph is not None, "_run_graph requires connect() to have completed"
+
+        async def hand_off(event: AgentEvent) -> None:
+            taken = asyncio.Event()
+            handoff.put_nowait((event, taken))
+            await taken.wait()
+
+        turn.routed = True
+
+        # After an `ask_user_question` interrupt the prompt is the answer: Command(resume=)
+        # makes the tool's interrupt() return it.
         if self._awaiting_resume:
             self._awaiting_resume = False
             resume_value = prompt if isinstance(prompt, str) else str(prompt)
@@ -558,9 +678,8 @@ class LangGraphRuntime:
             content: Any = skill_body if skill_body is not None else prompt
             messages: list[Any] = [HumanMessage(content=content)]
 
-            # Session-start context leads the first turn so the model reads the profile's bootstrap
-            # before the request it shapes; carried as a system message, not a user one, so it
-            # never renders as user-typed.
+            # Session-start context leads the first turn so the model reads it before the
+            # request; a system message, so it never renders as user-typed.
             bootstrap = await self._take_session_start_context(config)
 
             if bootstrap:
@@ -568,97 +687,71 @@ class LangGraphRuntime:
 
             graph_input = {"messages": messages}
 
-        try:
-            astream = self._graph.astream_events(graph_input, config=config, version="v2")
+        astream = graph.astream_events(graph_input, config=config, version="v2")
 
-            async for event in astream:
-                kind = event.get("event")
-                data = event.get("data") or {}
+        async for event in astream:
+            kind = event.get("event")
+            data = event.get("data") or {}
 
-                # Compaction runs between model calls, so its boundary is queued rather than streamed;
-                # drain before handling this event so it lands ahead of the reply the compacted
-                # conversation produced.
-                for pending in self._take_pending_events():
-                    yield pending
+            # Compaction runs between model calls, so its boundary is queued, not streamed;
+            # drained first so it lands ahead of the reply the compacted conversation produced.
+            for pending in self._take_pending_events():
+                await hand_off(pending)
 
-                # LangChain propagates this turn's callbacks into a sub-agent's graph, so its calls
-                # and results arrive here too, but they belong to the sub-agent's own conversation:
-                # counting them double-bills the turn, and emitting them would leak the sub-agent's
-                # reply into this transcript.
-                if SUBAGENT_RUN_TAG in (event.get("tags") or []):
+            # LangChain hands this turn's callbacks to a sub-agent's graph too; its events belong to
+            # its own conversation, and counting or emitting them double-bills and leaks its reply.
+            if SUBAGENT_RUN_TAG in (event.get("tags") or []):
+                continue
+
+            if kind == "on_chat_model_end":
+                ai = self._as_ai_message(data.get("output"))
+
+                if ai is None:
                     continue
 
-                if kind == "on_chat_model_end":
-                    ai = self._as_ai_message(data.get("output"))
+                input_tokens, output_tokens = self._extract_usage(ai)
+                turn.input_tokens += input_tokens
+                turn.output_tokens += output_tokens
 
-                    if ai is None:
-                        continue
+                # Every call re-sends the whole conversation, so the latest call's own total is
+                # the occupancy; a call reporting no usage leaves the previous level standing.
+                if input_tokens or output_tokens:
+                    self._context_tokens = input_tokens + output_tokens
 
-                    input_tokens, output_tokens = self._extract_usage(ai)
-                    turn_input_tokens += input_tokens
-                    turn_output_tokens += output_tokens
+                text = self._text_of(ai)
 
-                    # Every call re-sends the whole conversation, so the latest call's own total is the
-                    # occupancy - summing would double-count history; a call reporting no usage
-                    # leaves the previous level standing.
-                    if input_tokens or output_tokens:
-                        self._context_tokens = input_tokens + output_tokens
+                if text:
+                    turn.final_text = text
 
-                    assistant_evt = self._assistant_event(ai)
+                assistant_evt = self._assistant_event(ai)
 
-                    if assistant_evt is not None:
-                        yield assistant_evt
+                if assistant_evt is not None:
+                    await hand_off(assistant_evt)
+            elif kind == "on_tool_end":
+                tool_evt = self._tool_result_event(data.get("output"))
 
-                    text = self._text_of(ai)
+                if tool_evt is not None:
+                    await hand_off(tool_evt)
+            elif kind == "on_tool_error":
+                tool_evt = self._tool_error_event(data)
 
-                    if text:
-                        final_text = text
-                elif kind == "on_tool_end":
-                    tool_evt = self._tool_result_event(data.get("output"))
+                if tool_evt is not None:
+                    await hand_off(tool_evt)
 
-                    if tool_evt is not None:
-                        yield tool_evt
-                elif kind == "on_tool_error":
-                    tool_evt = self._tool_error_event(data)
+    def _closing_result(self, turn: _TurnProgress, text: str) -> AgentEvent:
+        return self._result_event(text, **self._closing_measures(turn))
 
-                    if tool_evt is not None:
-                        yield tool_evt
-        except asyncio.CancelledError:
-            # interrupt(): emit a synthetic result so the stream closes cleanly - whatever a
-            # middleware queued dies with the turn rather than surfacing in the next one.
-            self._take_pending_events()
+    def _stopped_result(self, turn: _TurnProgress) -> AgentEvent:
+        return self._stopped_result_event(**self._closing_measures(turn))
 
-            duration_ms = int((time.monotonic() - turn_started_at) * 1000)
-            parent_cost = self._accumulate_usage(turn_input_tokens, turn_output_tokens)
-            cost = _compose_turn_cost(parent_cost, self._subagent_cost_this_turn)
-            yield self._result_event(
-                final_text or "[interrupted]",
-                cost_usd=cost,
-                duration_ms=duration_ms,
-                used_tokens=self._context_tokens,
-            )
+    def _closing_measures(self, turn: _TurnProgress) -> dict:
+        parent_cost = self._accumulate_usage(turn.input_tokens, turn.output_tokens)
 
-            raise
-        finally:
-            self._astream_task = None
-
-        # If the model called an interrupt-using tool, the graph is now paused; the next user
-        # message becomes the resume value via the routing at the top of _drive_turn.
-        self._awaiting_resume = await self._has_pending_interrupt(config)
-
-        # A compaction on the turn's last model call has no further astream event to ride out on.
-        for pending in self._take_pending_events():
-            yield pending
-
-        duration_ms = int((time.monotonic() - turn_started_at) * 1000)
-        parent_cost = self._accumulate_usage(turn_input_tokens, turn_output_tokens)
-        cost = _compose_turn_cost(parent_cost, self._subagent_cost_this_turn)
-        yield self._result_event(
-            final_text,
-            cost_usd=cost,
-            duration_ms=duration_ms,
-            used_tokens=self._context_tokens,
-        )
+        return {
+            "cost_usd": _compose_turn_cost(parent_cost, self._subagent_cost_this_turn),
+            "duration_ms": int((time.monotonic() - turn.started_at) * 1000),
+            "used_tokens": self._context_tokens,
+        }
 
     # Event assembly helpers - emit Claude-stream-json shapes
     # ------------------------------------------------------------------
@@ -676,7 +769,7 @@ class LangGraphRuntime:
 
     def _human_message_event(self, prompt: str | list[dict], *, uuid_: str) -> AgentEvent:
         """Turn-opening user message; only a uuid-carrying user message claims a turn.
-        Tool-result messages carry none; `_drive_turn` mints it to key the fork-truncation journal.
+        Tool-result messages carry none; `uuid_` also keys the fork-truncation journal.
         """
 
         return AgentEvent(
@@ -803,6 +896,28 @@ class LangGraphRuntime:
             payload=ResultPayload(
                 subtype="success",
                 result=final_text,
+                total_cost_usd=cost_usd,
+                duration_ms=duration_ms,
+                session_id=self._config.session_id or None,
+                usage=ResultUsage(used_tokens=used_tokens, max_tokens=self._model_context_window()),
+            ),
+        )
+
+    def _stopped_result_event(
+        self,
+        *,
+        cost_usd: float | None,
+        duration_ms: int,
+        used_tokens: int,
+    ) -> AgentEvent:
+        """Build the result the Claude CLI gives an interrupted turn: no text, never `success`."""
+
+        return AgentEvent(
+            kind="result",
+            payload=ResultPayload(
+                subtype="error_during_execution",
+                result=None,
+                is_error=True,
                 total_cost_usd=cost_usd,
                 duration_ms=duration_ms,
                 session_id=self._config.session_id or None,
@@ -1583,3 +1698,18 @@ def events_to_messages(
         messages = messages[: min(pending_mapped.values())]
 
     return messages
+
+
+# Handed over by a turn's graph task when it ends, however it ended.
+_GRAPH_DONE = object()
+
+
+@dataclass
+class _TurnProgress:
+    """What one turn's graph has produced so far, read by the result that closes the turn."""
+
+    started_at: float
+    input_tokens: int = 0
+    output_tokens: int = 0
+    final_text: str = ""
+    routed: bool = False

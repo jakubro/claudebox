@@ -2,10 +2,17 @@
 
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BOUNCE, SWITCH } from '../../../test-utils/sessionSequences'
 import usePendingMessages from './usePendingMessages'
 
 // Stable empty array for default events
 const EMPTY_EVENTS = []
+
+function renderPending() {
+  return renderHook(({ events }) => usePendingMessages(events, 'A', true), {
+    initialProps: { events: EMPTY_EVENTS },
+  })
+}
 
 describe('usePendingMessages', () => {
   beforeEach(() => {
@@ -21,7 +28,7 @@ describe('usePendingMessages', () => {
   })
 
   it('addPendingMessage() adds to pending list with ID', () => {
-    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS))
+    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS, 'A', true))
 
     let id
     act(() => {
@@ -34,9 +41,7 @@ describe('usePendingMessages', () => {
   })
 
   it('showPendingMessages filters delivered messages', () => {
-    const { result, rerender } = renderHook(({ events }) => usePendingMessages(events), {
-      initialProps: { events: EMPTY_EVENTS },
-    })
+    const { result, rerender } = renderPending()
 
     act(() => {
       vi.setSystemTime(1000)
@@ -58,9 +63,7 @@ describe('usePendingMessages', () => {
   })
 
   it('removes pending when matching SSE event arrives', () => {
-    const { result, rerender } = renderHook(({ events }) => usePendingMessages(events), {
-      initialProps: { events: EMPTY_EVENTS },
-    })
+    const { result, rerender } = renderPending()
 
     act(() => {
       vi.setSystemTime(1000)
@@ -80,9 +83,7 @@ describe('usePendingMessages', () => {
   })
 
   it('handles slash command normalization for matching', () => {
-    const { result, rerender } = renderHook(({ events }) => usePendingMessages(events), {
-      initialProps: { events: EMPTY_EVENTS },
-    })
+    const { result, rerender } = renderPending()
 
     act(() => {
       vi.setSystemTime(1000)
@@ -101,7 +102,7 @@ describe('usePendingMessages', () => {
   })
 
   it('removePendingMessage() removes specific message by ID', () => {
-    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS))
+    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS, 'A', true))
 
     let id1
     act(() => {
@@ -123,15 +124,13 @@ describe('usePendingMessages', () => {
   // removes messages immediately on SSE delivery regardless of display time.
 
   it('returns empty array when no pending messages', () => {
-    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS))
+    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS, 'A', true))
 
     expect(result.current.showPendingMessages).toEqual([])
   })
 
   it('ignores non-human user events', () => {
-    const { result, rerender } = renderHook(({ events }) => usePendingMessages(events), {
-      initialProps: { events: EMPTY_EVENTS },
-    })
+    const { result, rerender } = renderPending()
 
     act(() => {
       vi.setSystemTime(1000)
@@ -151,9 +150,7 @@ describe('usePendingMessages', () => {
   })
 
   it('ignores events before addedAt timestamp', () => {
-    const { result, rerender } = renderHook(({ events }) => usePendingMessages(events), {
-      initialProps: { events: EMPTY_EVENTS },
-    })
+    const { result, rerender } = renderPending()
 
     // Pre-existing event
     const oldEvents = [{ type: 'user', is_human: true, content: 'test', timestamp: 500 }]
@@ -174,7 +171,7 @@ describe('usePendingMessages', () => {
   })
 
   it('addPendingMessage carries attachments metadata', () => {
-    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS))
+    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS, 'A', true))
 
     const attachments = [{ id: 'a1', name: 'photo.png', type: 'image/png', data: 'abc', size: 100 }]
     act(() => {
@@ -186,9 +183,7 @@ describe('usePendingMessages', () => {
   })
 
   it('clears pending slash command with multi-line args', () => {
-    const { result, rerender } = renderHook(({ events }) => usePendingMessages(events), {
-      initialProps: { events: EMPTY_EVENTS },
-    })
+    const { result, rerender } = renderPending()
 
     act(() => {
       vi.setSystemTime(1000)
@@ -215,7 +210,7 @@ describe('usePendingMessages', () => {
   })
 
   it('addPendingMessage sets attachments to null for empty array', () => {
-    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS))
+    const { result } = renderHook(() => usePendingMessages(EMPTY_EVENTS, 'A', true))
 
     act(() => {
       result.current.addPendingMessage('no files', [])
@@ -224,46 +219,61 @@ describe('usePendingMessages', () => {
     expect(result.current.showPendingMessages[0].attachments).toBeNull()
   })
 
-  it('clears pending messages on session change', () => {
-    const { result, rerender } = renderHook(
-      ({ events, sessionId }) => usePendingMessages(events, sessionId),
-      { initialProps: { events: EMPTY_EVENTS, sessionId: 'session-1' } },
+  function renderOwned(initial) {
+    return renderHook(
+      ({ events, owner, canReconcile }) => usePendingMessages(events, owner, canReconcile),
+      { initialProps: initial },
     )
+  }
 
+  it('hides a message sent from A once B is routed, and shows it again back in A', () => {
+    const [a, , b] = SWITCH
+    const { result, rerender } = renderOwned({ events: EMPTY_EVENTS, owner: a, canReconcile: true })
     act(() => {
-      result.current.addPendingMessage('pending in session 1')
+      result.current.addPendingMessage('typed in A')
     })
 
-    expect(result.current.showPendingMessages).toHaveLength(1)
+    rerender({ events: EMPTY_EVENTS, owner: b, canReconcile: false })
+    expect(result.current.showPendingMessages).toEqual([])
+    rerender({ events: EMPTY_EVENTS, owner: b, canReconcile: true })
+    expect(result.current.showPendingMessages).toEqual([])
 
-    rerender({ events: EMPTY_EVENTS, sessionId: 'session-2' })
-
-    expect(result.current.showPendingMessages).toHaveLength(0)
+    rerender({ events: EMPTY_EVENTS, owner: a, canReconcile: true })
+    expect(result.current.showPendingMessages.map(pm => pm.content)).toEqual(['typed in A'])
   })
 
-  it('preserves pending messages during resume null transition', () => {
-    const { result, rerender } = renderHook(
-      ({ events, sessionId }) => usePendingMessages(events, sessionId),
-      { initialProps: { events: EMPTY_EVENTS, sessionId: 'session-1' } },
-    )
+  it("keeps A's message when B's history holds the same text", () => {
+    const [a, , b] = SWITCH
+    const { result, rerender } = renderOwned({ events: EMPTY_EVENTS, owner: a, canReconcile: true })
+    act(() => {
+      vi.setSystemTime(1000)
+      result.current.addPendingMessage('yes')
+    })
+    act(() => {
+      vi.setSystemTime(5000)
+    })
 
+    const bHistory = [{ type: 'user', is_human: true, content: 'yes', timestamp: 4000 }]
+    rerender({ events: bHistory, owner: b, canReconcile: true })
+    rerender({ events: EMPTY_EVENTS, owner: a, canReconcile: true })
+
+    expect(result.current.showPendingMessages.map(pm => pm.content)).toEqual(['yes'])
+  })
+
+  it('keeps a message through the resume bounce of its own session', () => {
+    const [a] = BOUNCE
+    const { result, rerender } = renderOwned({ events: EMPTY_EVENTS, owner: a, canReconcile: true })
     act(() => {
       result.current.addPendingMessage('message before resume')
     })
 
+    // The route stays on A while the attached session empties and returns.
+    rerender({ events: EMPTY_EVENTS, owner: a, canReconcile: false })
     expect(result.current.showPendingMessages).toHaveLength(1)
+    rerender({ events: EMPTY_EVENTS, owner: a, canReconcile: true })
 
-    // Resume flow: sessionId goes null temporarily (clearSessionData)
-    rerender({ events: EMPTY_EVENTS, sessionId: null })
-
-    // Pending messages survive the null transition
-    expect(result.current.showPendingMessages).toHaveLength(1)
-
-    // Resume completes: sessionId restored to same value
-    rerender({ events: EMPTY_EVENTS, sessionId: 'session-1' })
-
-    // Pending messages still present
-    expect(result.current.showPendingMessages).toHaveLength(1)
-    expect(result.current.showPendingMessages[0].content).toBe('message before resume')
+    expect(result.current.showPendingMessages.map(pm => pm.content)).toEqual([
+      'message before resume',
+    ])
   })
 })

@@ -4,6 +4,8 @@ Shell completion re-executes the whole program on every keypress, so anything do
 time is paid per keystroke; these assert structural invariants, not flaky wall-clock thresholds.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest

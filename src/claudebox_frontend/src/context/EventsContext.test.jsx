@@ -3,7 +3,9 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../api/apiClient', () => ({
+vi.mock('../api/apiClient', async importOriginal => ({
+  ...(await importOriginal()),
+  getAddressedSessionId: () => 'test-session',
   getContainerId: () => 'test-container',
   getWorkspaceId: () => 'test-workspace',
 }))
@@ -60,6 +62,21 @@ describe('EventsContext', () => {
 
   const wrapper = ({ children }) => <EventsProvider>{children}</EventsProvider>
   const getLatestEventSource = () => MockEventSource.instances[MockEventSource.instances.length - 1]
+  const renderEvents = () => {
+    const { result } = renderHook(() => useEvents(), { wrapper })
+
+    return { result, es: getLatestEventSource() }
+  }
+
+  const renderReplaying = count => {
+    const view = renderEvents()
+    act(() => {
+      view.es.simulateOpen()
+      view.es.simulateMessage({ type: 'system', subtype: 'replay_started', count })
+    })
+
+    return view
+  }
 
   // The drain yields through a MessagePort no timer mock advances - post a message and wait for
   // it back. Node runs the whole queue in one turn, so the e2e suite asserts slice pacing.
@@ -87,14 +104,21 @@ describe('EventsContext', () => {
   }
 
   describe('connection status', () => {
+    it('opens the stream of the addressed session, not the container default', () => {
+      renderHook(() => useEvents(), { wrapper })
+
+      expect(getLatestEventSource().url).toBe(
+        '/api/workspaces/test-workspace/containers/test-container/api/stream?session_id=test-session',
+      )
+    })
+
     it('transitions to connecting on mount', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       expect(result.current.connectionStatus).toBe('connecting')
     })
 
     it('transitions to connected on open', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -105,8 +129,7 @@ describe('EventsContext', () => {
     })
 
     it('transitions to reconnecting on SSE error', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -141,8 +164,7 @@ describe('EventsContext', () => {
     })
 
     it('clears error on successful reconnect', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -167,8 +189,7 @@ describe('EventsContext', () => {
 
   describe('event batching', () => {
     it('batches events for 50ms before state update', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -191,8 +212,7 @@ describe('EventsContext', () => {
 
     it('timestamps events on arrival', () => {
       vi.setSystemTime(new Date(1000))
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -207,8 +227,7 @@ describe('EventsContext', () => {
     })
 
     it('flushes partial batch at interval', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -225,8 +244,7 @@ describe('EventsContext', () => {
     })
 
     it('handles multiple batch intervals', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -251,16 +269,107 @@ describe('EventsContext', () => {
     })
   })
 
+  describe('turn end', () => {
+    const launchThenEnd = [
+      { type: 'user', subtype: 'text', is_human: true, content: 'go', turn_id: 't1' },
+      {
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        tool_use_id: 'tu1',
+        tool_input: { command: 'sleep 90', description: 'Wait' },
+      },
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: 'tu1',
+        tool_use_result: { backgroundTaskId: 'b1' },
+      },
+      { type: 'result', subtype: 'success', turn_id: 't1' },
+    ]
+
+    it('lands the turn and its background work together, without waiting for the batch timer', () => {
+      const { result, es } = renderEvents()
+
+      act(() => {
+        es.simulateOpen()
+        for (const event of launchThenEnd) {
+          es.simulateMessage(event)
+        }
+      })
+
+      expect(result.current.isResponding).toBe(false)
+      expect(result.current.events).toHaveLength(4)
+      expect(result.current.runningBackgroundWork.map(w => w.name)).toEqual(['Wait'])
+    })
+
+    it('reports a pick-up as pending once a tracked task finishes after the turn ended', () => {
+      const { result, es } = renderEvents()
+
+      sendAndFlush(es, ...launchThenEnd, {
+        type: 'system',
+        subtype: 'task_notification',
+        message_data: { task_id: 'b1', status: 'completed' },
+      })
+
+      expect(result.current.runningBackgroundWork).toEqual([])
+      expect(result.current.awaitingPickup).toBe(true)
+    })
+
+    it('clears the pending pick-up once the agent responds', () => {
+      const { result, es } = renderEvents()
+
+      sendAndFlush(
+        es,
+        ...launchThenEnd,
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          message_data: { task_id: 'b1', status: 'completed' },
+        },
+        { type: 'assistant', subtype: 'text', content: 'It finished.' },
+      )
+
+      expect(result.current.awaitingPickup).toBe(false)
+    })
+
+    it('clears the pending pick-up on a result with no reply, as after a stop and resume', () => {
+      const { result, es } = renderEvents()
+
+      sendAndFlush(
+        es,
+        ...launchThenEnd,
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          message_data: { task_id: 'b1', status: 'killed' },
+        },
+        { type: 'result', subtype: 'success', turn_id: 't1' },
+      )
+
+      expect(result.current.awaitingPickup).toBe(false)
+    })
+
+    it('keeps the empty running list one identity across flushes', () => {
+      const { result, es } = renderEvents()
+      sendAndFlush(es, { type: 'assistant', subtype: 'text', content: 'a' })
+      const first = result.current.runningBackgroundWork
+
+      sendAndFlush(es, { type: 'assistant', subtype: 'text', content: 'b' })
+
+      expect(result.current.runningBackgroundWork).toBe(first)
+    })
+  })
+
   describe('isResponding', () => {
     it('false when no events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       expect(result.current.isResponding).toBe(false)
     })
 
     it('false with only user events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'user', content: 'hello' })
 
@@ -268,8 +377,7 @@ describe('EventsContext', () => {
     })
 
     it('true when assistant without result', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'assistant', content: 'thinking' })
 
@@ -277,8 +385,7 @@ describe('EventsContext', () => {
     })
 
     it('false when assistant followed by result', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'assistant', content: 'done' }, { type: 'result', success: true })
 
@@ -286,8 +393,7 @@ describe('EventsContext', () => {
     })
 
     it('true when new assistant after result', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -301,8 +407,7 @@ describe('EventsContext', () => {
     })
 
     it('false when multiple results after last assistant', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -313,12 +418,36 @@ describe('EventsContext', () => {
 
       expect(result.current.isResponding).toBe(false)
     })
+
+    it('false when a reported runtime failure arrives instead of a result', () => {
+      const { result, es } = renderEvents()
+
+      sendAndFlush(
+        es,
+        { type: 'assistant', content: 'thinking' },
+        { type: 'system', subtype: 'error', content: 'runtime crashed' },
+      )
+
+      expect(result.current.isResponding).toBe(false)
+    })
+
+    it('stays false while a background subagent works after the turn ended', () => {
+      const { result, es } = renderEvents()
+
+      sendAndFlush(
+        es,
+        { type: 'assistant', content: 'Launched.' },
+        { type: 'result', subtype: 'success' },
+        { type: 'assistant', subtype: 'tool_use', content: 'Bash', parent_tool_use_id: 'task1' },
+      )
+
+      expect(result.current.isResponding).toBe(false)
+    })
   })
 
   describe('reconnectSSE', () => {
-    it('clears events array', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+    it('leaves events on screen until the new connection replays', () => {
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'user', content: 'hello' })
 
@@ -328,11 +457,11 @@ describe('EventsContext', () => {
         result.current.reconnectSSE()
       })
 
-      expect(result.current.events).toHaveLength(0)
+      expect(result.current.events).toHaveLength(1)
     })
 
     it('creates new EventSource', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       const initialEs = getLatestEventSource()
 
       act(() => {
@@ -349,8 +478,7 @@ describe('EventsContext', () => {
     })
 
     it('closes previous EventSource', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -366,8 +494,7 @@ describe('EventsContext', () => {
     })
 
     it('cancels pending reconnect timeout', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -391,8 +518,7 @@ describe('EventsContext', () => {
     })
 
     it('clears pending batch', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -416,8 +542,7 @@ describe('EventsContext', () => {
 
   describe('disconnectSSE', () => {
     it('clears events array', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'user', content: 'hello' })
 
@@ -431,8 +556,7 @@ describe('EventsContext', () => {
     })
 
     it('closes EventSource without creating new one', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -449,8 +573,7 @@ describe('EventsContext', () => {
     })
 
     it('transitions to disconnected status', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -467,8 +590,7 @@ describe('EventsContext', () => {
     })
 
     it('does not auto-reconnect after disconnect', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -526,9 +648,16 @@ describe('EventsContext', () => {
   })
 
   describe('isCompacting', () => {
+    const renderCompacting = () => {
+      const view = renderEvents()
+      sendAndFlush(view.es, { type: 'system', subtype: 'compact_start' })
+      expect(view.result.current.isCompacting).toBe(true)
+
+      return view
+    }
+
     it('flips true on compact_start, false on compact_boundary', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'system', subtype: 'compact_start' })
       expect(result.current.isCompacting).toBe(true)
@@ -538,11 +667,7 @@ describe('EventsContext', () => {
     })
 
     it('cleared by a human user message (boundary lost recovery)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      sendAndFlush(es, { type: 'system', subtype: 'compact_start' })
-      expect(result.current.isCompacting).toBe(true)
+      const { result, es } = renderCompacting()
 
       // Boundary never arrives - user sends new message; isCompacting must reset
       sendAndFlush(es, { type: 'user', is_human: true, content: 'next prompt' })
@@ -550,11 +675,7 @@ describe('EventsContext', () => {
     })
 
     it('NOT cleared by non-human user events (form responses, tool results)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      sendAndFlush(es, { type: 'system', subtype: 'compact_start' })
-      expect(result.current.isCompacting).toBe(true)
+      const { result, es } = renderCompacting()
 
       // Form-response user events (is_human=false) are not new turn boundaries
       sendAndFlush(es, { type: 'user', is_human: false, content: '<response:Form>' })
@@ -562,8 +683,7 @@ describe('EventsContext', () => {
     })
 
     it('cleared on REPLAY_ENDED (orphan compact_start in persisted log)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -576,11 +696,7 @@ describe('EventsContext', () => {
     })
 
     it('cleared by CLEAR_EVENTS (session switch / reconnect)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      sendAndFlush(es, { type: 'system', subtype: 'compact_start' })
-      expect(result.current.isCompacting).toBe(true)
+      const { result } = renderCompacting()
 
       act(() => {
         result.current.reconnectSSE()
@@ -592,12 +708,12 @@ describe('EventsContext', () => {
 
   describe('isResuming', () => {
     it('false initially', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       expect(result.current.isResuming).toBe(false)
     })
 
     it('true after startResume()', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.startResume()
@@ -607,7 +723,7 @@ describe('EventsContext', () => {
     })
 
     it('false after clearResume()', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.startResume()
@@ -623,7 +739,7 @@ describe('EventsContext', () => {
     })
 
     it('preserved across CLEAR_EVENTS (reconnectSSE)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.startResume()
@@ -638,12 +754,30 @@ describe('EventsContext', () => {
       expect(result.current.isResuming).toBe(true)
     })
 
-    it('cleared on REPLAY_ENDED', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+    it('kept through a REPLAY_ENDED while the open request is pending', async () => {
+      const { result, es } = renderEvents()
 
       act(() => {
         result.current.startResume()
+      })
+
+      act(() => {
+        es.simulateOpen()
+        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 0 })
+        es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
+      })
+      await flushReplayDrain()
+
+      expect(result.current.isResuming).toBe(true)
+      expect(result.current.isResumeRequestPending).toBe(true)
+    })
+
+    it('cleared on REPLAY_ENDED once the open request has settled', async () => {
+      const { result, es } = renderEvents()
+
+      act(() => {
+        const token = result.current.startResume()
+        result.current.settleResumeRequest(token)
       })
 
       act(() => {
@@ -664,7 +798,7 @@ describe('EventsContext', () => {
 
   describe('isCreating', () => {
     it('preserved across CLEAR_EVENTS (reconnectSSE)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.startCreating()
@@ -680,14 +814,28 @@ describe('EventsContext', () => {
       expect(result.current.isCreating).toBe(true)
     })
 
-    it('cleared by clearCreating', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+    it('ignores clearCreating while the create request is pending', () => {
+      const { result } = renderEvents()
 
       act(() => {
         result.current.startCreating()
       })
+      act(() => {
+        result.current.clearCreating()
+      })
 
       expect(result.current.isCreating).toBe(true)
+      expect(result.current.isCreateRequestPending).toBe(true)
+    })
+
+    it('cleared by clearCreating once the create request has settled', () => {
+      const { result } = renderEvents()
+
+      act(() => {
+        const seq = result.current.startCreating()
+        result.current.settleCreateRequest(seq, 'sess-c')
+      })
+      expect(result.current.createdSessionId).toBe('sess-c')
 
       act(() => {
         result.current.clearCreating()
@@ -695,11 +843,60 @@ describe('EventsContext', () => {
 
       expect(result.current.isCreating).toBe(false)
     })
+
+    it('cleared by failCreating, recording the failure', () => {
+      const { result } = renderEvents()
+      let seq
+
+      act(() => {
+        seq = result.current.startCreating('A')
+      })
+      act(() => {
+        result.current.failCreating(seq)
+      })
+
+      expect(result.current.isCreating).toBe(false)
+      expect(result.current.getCreation().bySeq[seq]).toEqual({
+        status: 'failed',
+        sessionId: null,
+        fromRoute: 'A',
+      })
+    })
+
+    it('reads the creation record synchronously, before the next render', () => {
+      const { result } = renderEvents()
+
+      act(() => {
+        const seq = result.current.startCreating()
+        expect(result.current.getCreation().bySeq[seq].status).toBe('pending')
+        expect(result.current.getPendingRequests().create).toBe(seq)
+        result.current.settleCreateRequest(seq, 'sess-c')
+        expect(result.current.getCreation().bySeq[seq].sessionId).toBe('sess-c')
+        expect(result.current.getPendingRequests().create).toBe(null)
+      })
+    })
+
+    it('marks the creation routed when its just-created session is consumed', () => {
+      const { result } = renderEvents()
+      let seq
+
+      act(() => {
+        seq = result.current.startCreating()
+        result.current.settleCreateRequest(seq, 'sess-c')
+        result.current.markJustCreatedSession('sess-c')
+      })
+      act(() => {
+        expect(result.current.consumeJustCreatedSession('sess-c')).toBe(true)
+      })
+
+      expect(result.current.getCreation().bySeq[seq].status).toBe('routed')
+      expect(result.current.createdSessionId).toBe('sess-c')
+    })
   })
 
   describe('markJustCreatedSession / consumeJustCreatedSession', () => {
     it('consuming a matching id returns true and clears the marker', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.markJustCreatedSession('s1')
@@ -720,7 +917,7 @@ describe('EventsContext', () => {
     })
 
     it('consuming a non-matching id returns false and leaves the marker in place', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.markJustCreatedSession('s1')
@@ -741,7 +938,7 @@ describe('EventsContext', () => {
     })
 
     it('consuming with nothing marked returns false', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       let consumed
       act(() => {
@@ -753,8 +950,7 @@ describe('EventsContext', () => {
 
   describe('replay boundary events', () => {
     it('sets isReplaying true on replay_started', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -765,8 +961,7 @@ describe('EventsContext', () => {
     })
 
     it('sets replayTotal from replay_started count', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -777,8 +972,7 @@ describe('EventsContext', () => {
     })
 
     it('defaults replayTotal to 0 when count missing', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -789,13 +983,7 @@ describe('EventsContext', () => {
     })
 
     it('advances replayProgress as slices drain, not as events arrive', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      act(() => {
-        es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 5 })
-      })
+      const { result, es } = renderReplaying(5)
 
       act(() => {
         es.simulateMessage({ type: 'user', content: 'msg1' })
@@ -811,13 +999,7 @@ describe('EventsContext', () => {
     })
 
     it('sets isReplaying false on replay_ended', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      act(() => {
-        es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 3 })
-      })
+      const { result, es } = renderReplaying(3)
 
       act(() => {
         es.simulateMessage({ type: 'user', content: 'msg1' })
@@ -834,13 +1016,7 @@ describe('EventsContext', () => {
     })
 
     it('materializes replayed events progressively, before replay_ended arrives', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      act(() => {
-        es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 3 })
-      })
+      const { result, es } = renderReplaying(3)
 
       act(() => {
         es.simulateMessage({ type: 'user', is_human: true, content: 'msg1' })
@@ -865,14 +1041,8 @@ describe('EventsContext', () => {
     })
 
     it('keeps isReplaying true until the buffer finishes draining', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
       const total = REPLAY_DRAIN_SLICE_SIZE + 10
-
-      act(() => {
-        es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: total })
-      })
+      const { result, es } = renderReplaying(total)
 
       act(() => {
         for (let i = 0; i < total; i++) {
@@ -892,14 +1062,8 @@ describe('EventsContext', () => {
     })
 
     it('keeps a live event arriving mid-drain behind the replayed history', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
       const total = REPLAY_DRAIN_SLICE_SIZE + 10
-
-      act(() => {
-        es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: total })
-      })
+      const { result, es } = renderReplaying(total)
 
       act(() => {
         for (let i = 0; i < total; i++) {
@@ -923,8 +1087,7 @@ describe('EventsContext', () => {
     })
 
     it('cancels an in-flight drain when the stream reconnects', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -947,8 +1110,7 @@ describe('EventsContext', () => {
 
     // TaskCreate/TaskUpdate populates the same todosBySubagent store as TodoWrite via appendTaskDiffs.
     it('TaskCreate populates todosBySubagent', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -988,8 +1150,7 @@ describe('EventsContext', () => {
     // event, so events commit only when the batch timer flushes. Smooth-during-response is
     // covered by an E2E test; this unit test only proves the batching mechanism.
     it('streaming events buffer outside reducer state between flushes', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -1011,13 +1172,7 @@ describe('EventsContext', () => {
     })
 
     it('replay_started event itself is not added to events array', async () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
-
-      act(() => {
-        es.simulateOpen()
-        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 1 })
-      })
+      const { result, es } = renderReplaying(1)
 
       act(() => {
         es.simulateMessage({ type: 'user', content: 'msg1' })
@@ -1031,10 +1186,115 @@ describe('EventsContext', () => {
     })
   })
 
+  describe('a restored connection replays without repeating', () => {
+    const replayTurn = async es => {
+      act(() => {
+        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 2 })
+        es.simulateMessage({ type: 'user', is_human: true, content: 'Question', turn_id: 't1' })
+        es.simulateMessage({ type: 'assistant', subtype: 'text', content: 'Answer', turn_id: 't1' })
+      })
+      await flushReplayDrain()
+      act(() => {
+        es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
+      })
+      await flushReplayDrain()
+    }
+
+    // The manager reopens on its own after a drop - no reconnectSSE() call, no dispatch of any
+    // kind reaches the context.
+    const dropAndReopen = es => {
+      act(() => {
+        es.simulateError()
+        vi.advanceTimersByTime(1000) // RECONNECT_BASE_DELAY
+      })
+      return getLatestEventSource()
+    }
+
+    it('a drop and restore reads the conversation once, not twice', async () => {
+      const { result } = renderEvents()
+      let es = getLatestEventSource()
+      act(() => es.simulateOpen())
+      await replayTurn(es)
+
+      expect(result.current.events).toHaveLength(2)
+      expect(result.current.turns).toHaveLength(1)
+
+      es = dropAndReopen(es)
+      act(() => es.simulateOpen())
+      await replayTurn(es)
+
+      expect(result.current.events).toHaveLength(2)
+      expect(result.current.turns).toHaveLength(1)
+    })
+
+    it('a second drop does not add a third copy', async () => {
+      const { result } = renderEvents()
+      let es = getLatestEventSource()
+      act(() => es.simulateOpen())
+      await replayTurn(es)
+
+      for (let i = 0; i < 2; i++) {
+        es = dropAndReopen(es)
+        act(() => es.simulateOpen())
+        await replayTurn(es)
+      }
+
+      expect(result.current.events).toHaveLength(2)
+      expect(result.current.turns).toHaveLength(1)
+    })
+
+    it('a replay carrying no events still empties a transcript that held some', async () => {
+      const { result } = renderEvents()
+      let es = getLatestEventSource()
+      act(() => es.simulateOpen())
+      await replayTurn(es)
+      expect(result.current.events).toHaveLength(2)
+
+      es = dropAndReopen(es)
+      act(() => {
+        es.simulateOpen()
+        es.simulateMessage({ type: 'system', subtype: 'replay_started', count: 0 })
+        es.simulateMessage({ type: 'system', subtype: 'replay_ended' })
+      })
+      await flushReplayDrain()
+
+      expect(result.current.events).toHaveLength(0)
+      expect(result.current.turns).toHaveLength(0)
+    })
+
+    it('a session switch never shows an empty transcript between the two conversations', async () => {
+      const { result, es } = renderEvents()
+      act(() => es.simulateOpen())
+      await replayTurn(es)
+      expect(result.current.events).toHaveLength(2)
+
+      // Mirrors SessionRoutingEffect's resume: reconnectSSE(), then the new session's own replay.
+      act(() => result.current.reconnectSSE())
+      expect(result.current.events).toHaveLength(2)
+
+      const nextEs = getLatestEventSource()
+      act(() => nextEs.simulateOpen())
+      act(() => {
+        nextEs.simulateMessage({ type: 'system', subtype: 'replay_started', count: 1 })
+        nextEs.simulateMessage({
+          type: 'user',
+          is_human: true,
+          content: 'Other session',
+          turn_id: 't2',
+        })
+      })
+      await flushReplayDrain()
+      act(() => nextEs.simulateMessage({ type: 'system', subtype: 'replay_ended' }))
+      await flushReplayDrain()
+
+      expect(result.current.events).toHaveLength(1)
+      expect(result.current.events[0].content).toBe('Other session')
+    })
+  })
+
   describe('todoDiffs derived value', () => {
     it('returns empty map when no TodoWrite events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'user', content: 'hello' })
 
@@ -1043,8 +1303,7 @@ describe('EventsContext', () => {
     })
 
     it('computes diffs for TodoWrite tool_use events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, {
         type: 'assistant',
@@ -1061,8 +1320,7 @@ describe('EventsContext', () => {
     })
 
     it('updates diffs when new events arrive', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, {
         type: 'assistant',
@@ -1102,8 +1360,7 @@ describe('EventsContext', () => {
 
   describe('error handling', () => {
     it('ignores invalid JSON messages', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -1121,8 +1378,7 @@ describe('EventsContext', () => {
 
   describe('isResponding with pending events', () => {
     it('isResponding true when assistant in pending batch (before flush)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -1134,8 +1390,7 @@ describe('EventsContext', () => {
     })
 
     it('isResponding false when result in pending batch (before flush)', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       act(() => {
         es.simulateOpen()
@@ -1148,8 +1403,7 @@ describe('EventsContext', () => {
     })
 
     it('isResponding updates immediately on new assistant event', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, { type: 'assistant', content: 'first' }, { type: 'result', success: true })
 
@@ -1168,8 +1422,7 @@ describe('EventsContext', () => {
 
   describe('derived state', () => {
     it('visibleEvents filters out system init, hook_response, and result events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -1187,8 +1440,7 @@ describe('EventsContext', () => {
     })
 
     it('turns are correctly grouped from visible events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -1203,8 +1455,7 @@ describe('EventsContext', () => {
     })
 
     it('turnResults maps result events to turn_ids', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -1217,8 +1468,7 @@ describe('EventsContext', () => {
     })
 
     it('taskNotifications indexes notification events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(es, {
         type: 'system',
@@ -1231,8 +1481,7 @@ describe('EventsContext', () => {
     })
 
     it('todoDiffs computes diffs for TodoWrite events', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -1263,9 +1512,8 @@ describe('EventsContext', () => {
       expect(diff2.added[0].content).toBe('Task B')
     })
 
-    it('CLEAR_EVENTS resets all derived state', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+    it('disconnectSSE resets all derived state', () => {
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -1277,9 +1525,8 @@ describe('EventsContext', () => {
       expect(result.current.turns).toHaveLength(1)
       expect(result.current.events).toHaveLength(3)
 
-      // reconnectSSE dispatches CLEAR_EVENTS
       act(() => {
-        result.current.reconnectSSE()
+        result.current.disconnectSSE()
       })
 
       expect(result.current.events).toHaveLength(0)
@@ -1291,8 +1538,7 @@ describe('EventsContext', () => {
     })
 
     it('second FLUSH_BATCH preserves first batch and appends incrementally', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
-      const es = getLatestEventSource()
+      const { result, es } = renderEvents()
 
       sendAndFlush(
         es,
@@ -1355,7 +1601,7 @@ describe('EventsContext', () => {
     })
 
     it('resets error state on successful reconnect after multiple errors', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       const es1 = getLatestEventSource()
 
       act(() => {
@@ -1381,7 +1627,7 @@ describe('EventsContext', () => {
 
   describe('subscribeSession', () => {
     it('opens a second stream that never reaches the primary reducer', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       const primary = getLatestEventSource()
       act(() => {
         primary.simulateOpen()
@@ -1409,7 +1655,7 @@ describe('EventsContext', () => {
     })
 
     it('the active session keeps streaming while a second one is open', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       const primary = getLatestEventSource()
 
       act(() => {
@@ -1437,7 +1683,7 @@ describe('EventsContext', () => {
     })
 
     it("unsubscribeSession closes only that session's stream", () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       act(() => {
         result.current.subscribeSession('session-b', 'container-b', vi.fn())
       })
@@ -1451,7 +1697,7 @@ describe('EventsContext', () => {
     })
 
     it('does nothing when no container id is given for the session', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
       const before = MockEventSource.instances.length
 
       act(() => {
@@ -1462,7 +1708,7 @@ describe('EventsContext', () => {
     })
 
     it('composes session_id and replay=false on the same query string', () => {
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.subscribeSession('session-b', 'container-b', vi.fn(), { replay: false })
@@ -1475,7 +1721,7 @@ describe('EventsContext', () => {
 
     it('surfaces onError once the keyed stream exhausts its reconnect attempts, and only once', () => {
       const onError = vi.fn()
-      const { result } = renderHook(() => useEvents(), { wrapper })
+      const { result } = renderEvents()
 
       act(() => {
         result.current.subscribeSession('session-b', 'container-b', vi.fn(), { onError })

@@ -1,5 +1,7 @@
 """Daemon status: health check, SSE event stream, and frontend error reports."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from claudebox import BroadcastEventSourceResponse

@@ -72,6 +72,10 @@ let mockEventsData, mockSessionDataCtx, mockInteractionData
 vi.mock('../../context/EventsContext', () => ({
   useEvents: () => mockEventsData,
 }))
+let mockWaiting = { isWaiting: false, awaitingPickup: false }
+vi.mock('../../hooks/useBackgroundWaiting', () => ({
+  default: () => mockWaiting,
+}))
 vi.mock('../../context/SessionDataContext', () => ({
   useSessionData: () => mockSessionDataCtx,
   useSessionActions: () => ({ setNotificationsEnabled: mockSetNotificationsEnabled }),
@@ -130,6 +134,7 @@ beforeEach(() => {
   mockEventsData = defaultEventsData()
   mockSessionDataCtx = defaultSessionDataCtx()
   mockInteractionData = defaultInteractionData()
+  mockWaiting = { isWaiting: false, awaitingPickup: false }
   mockSetNotificationsEnabled.mockReset()
   localStorage.clear()
 })
@@ -142,6 +147,18 @@ describe('StatusIndicator', () => {
 
   it('shows Working... when responding', () => {
     mockEventsData = defaultEventsData({ isResponding: true })
+    render(<Footer />)
+    expect(screen.getByText('Working')).toBeInTheDocument()
+  })
+
+  it('shows Waiting while the session waits on background work', () => {
+    mockWaiting = { isWaiting: true, awaitingPickup: false }
+    render(<Footer />)
+    expect(screen.getByTestId('footer-status')).toHaveAttribute('data-status', 'waiting')
+  })
+
+  it('shows Working between a task finishing and the agent picking up', () => {
+    mockWaiting = { isWaiting: false, awaitingPickup: true }
     render(<Footer />)
     expect(screen.getByText('Working')).toBeInTheDocument()
   })
@@ -206,6 +223,13 @@ describe('Footer', () => {
     render(<Footer />)
     expect(screen.getByText('claude-3-opus')).toBeInTheDocument()
     expect(screen.getByText('abc123')).toBeInTheDocument()
+  })
+
+  it('shows the model picked for the session over the one it still reports', () => {
+    mockSessionDataCtx = defaultSessionDataCtx({ pendingModel: 'claude-sonnet-5' })
+    render(<Footer />)
+    expect(screen.getByText('claude-sonnet-5')).toBeInTheDocument()
+    expect(screen.queryByText('claude-3-opus')).not.toBeInTheDocument()
   })
 
   it('copies session path on session click', async () => {

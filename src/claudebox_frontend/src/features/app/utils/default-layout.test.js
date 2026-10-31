@@ -57,7 +57,7 @@ describe('buildDefaultLayout', () => {
     ).toBeUndefined()
   })
 
-  it('adds 5 right panels (todos first with direction:right, rest stacked below in canonical order)', () => {
+  it('adds 6 right panels (todos first with direction:right, rest stacked below in canonical order)', () => {
     buildDefaultLayout(api, manager)
     const todosCall = api.addPanel.mock.calls.find(c => c[0].id === 'todos')
     expect(todosCall[0].position).toMatchObject({
@@ -65,8 +65,8 @@ describe('buildDefaultLayout', () => {
       referencePanel: 'main',
     })
 
-    const belowPanels = ['stash', 'tasks', 'bookmarks', 'boards']
-    const rightPanels = ['todos', 'stash', 'tasks', 'bookmarks', 'boards']
+    const belowPanels = ['stash', 'tasks', 'crons', 'bookmarks', 'boards']
+    const rightPanels = ['todos', 'stash', 'tasks', 'crons', 'bookmarks', 'boards']
     belowPanels.forEach((id, i) => {
       const call = api.addPanel.mock.calls.find(c => c[0].id === id)
       expect(call[0].position).toMatchObject({
@@ -86,7 +86,14 @@ describe('buildDefaultLayout', () => {
   it('pushes panel ids into manager state arrays', () => {
     buildDefaultLayout(api, manager)
     expect(manager.state.left.order).toEqual(['sessions'])
-    expect(manager.state.right.order).toEqual(['todos', 'stash', 'tasks', 'bookmarks', 'boards'])
+    expect(manager.state.right.order).toEqual([
+      'todos',
+      'stash',
+      'tasks',
+      'crons',
+      'bookmarks',
+      'boards',
+    ])
   })
 
   it('marks the main panel group with data-main-group="true" synchronously', () => {

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isLookupsGroupingEnabled } from '../../../../../config/features'
 import { BlockType, ToolName } from '../../../../../config/schema'
 import { TurnRoutingMode } from '../../../../../utils/eventProcessing'
-import { groupBlocks } from './groupBlocks'
+import { groupBlocks, moveHiddenInjected } from './groupBlocks'
 
 vi.mock('../../../../../config/features', () => ({
   isLookupsGroupingEnabled: vi.fn(),
@@ -224,6 +224,31 @@ describe('groupBlocks - lookups gather pass', () => {
     expect(segments[1].entries).toHaveLength(2)
   })
 
+  it('gathers a Bash call marked as changing nothing with the reads, and leaves an unmarked one', () => {
+    const marked = toolBlock(ToolName.BASH, 'b-1')
+    marked.toolUse.command_read_only = true
+    const { transcript: segments } = groupBlocks([
+      toolBlock(ToolName.READ, 'r-1'),
+      marked,
+      toolBlock(ToolName.BASH, 'b-2'),
+    ])
+    expect(segments.map(s => s.kind)).toEqual(['single', 'lookups-group'])
+    expect(segments[0].block.toolUse.tool_use_id).toBe('b-2')
+    expect(segments[1].entries.map(e => e.block.toolUse.tool_use_id)).toEqual(['r-1', 'b-1'])
+  })
+
+  it('gathers a Bash call measured as changing nothing, and leaves one measured as changing something', () => {
+    const reader = toolBlock(ToolName.BASH, 'b-1')
+    reader.toolResult = { command_changed: false }
+    const writer = toolBlock(ToolName.BASH, 'b-2')
+    writer.toolUse.command_read_only = true
+    writer.toolResult = { command_changed: true }
+    const { transcript: segments } = groupBlocks([toolBlock(ToolName.READ, 'r-1'), reader, writer])
+    expect(segments.map(s => s.kind)).toEqual(['single', 'lookups-group'])
+    expect(segments[0].block.toolUse.tool_use_id).toBe('b-2')
+    expect(segments[1].entries.map(e => e.block.toolUse.tool_use_id)).toEqual(['r-1', 'b-1'])
+  })
+
   it('gathers an orphaned TaskList alongside another read-only block', () => {
     const { transcript: segments } = groupBlocks([
       toolBlock(ToolName.TASK_LIST, 'tl-1'),
@@ -232,6 +257,81 @@ describe('groupBlocks - lookups gather pass', () => {
     expect(segments).toHaveLength(1)
     expect(segments[0].kind).toBe('lookups-group')
     expect(segments[0].entries.map(e => e.block.toolUse.tool_use_id)).toEqual(['tl-1', 'r-1'])
+  })
+})
+
+describe('groupBlocks - Focused', () => {
+  it('leaves out a Read and keeps a Todos run across a hidden TaskList', () => {
+    const { transcript: segments } = groupBlocks(
+      [
+        toolBlock(ToolName.TASK_CREATE, 'tc-1'),
+        toolBlock(ToolName.TASK_LIST, 'tl-1'),
+        toolBlock(ToolName.TASK_UPDATE, 'tu-1'),
+        toolBlock(ToolName.READ, 'r-1'),
+        toolBlock(ToolName.EDIT, 'e-1'),
+      ],
+      TurnRoutingMode.FOCUSED,
+    )
+    expect(segments.map(s => s.kind)).toEqual(['todos-group', 'single'])
+    expect(segments[0].blocks.map(b => b.toolUse.tool_use_id)).toEqual(['tc-1', 'tu-1'])
+    expect(segments[1].block.toolUse.tool_use_id).toBe('e-1')
+  })
+
+  it('keeps a bookmarked Read', () => {
+    const { transcript: segments } = groupBlocks(
+      [toolBlock(ToolName.READ, 'r-1'), toolBlock(ToolName.READ, 'r-2')],
+      TurnRoutingMode.FOCUSED,
+      new Set(['tool-r-2']),
+    )
+    expect(segments.map(s => s.block.toolUse.tool_use_id)).toEqual(['r-2'])
+  })
+
+  it('gathers only failed lookups into the Lookups panel', () => {
+    const failed = id => ({ ...toolBlock(ToolName.READ, id), toolResult: { is_error: true } })
+    const { transcript: segments } = groupBlocks(
+      [
+        failed('r-1'),
+        toolBlock(ToolName.GREP, 'g-1'),
+        failed('r-2'),
+        toolBlock(ToolName.EDIT, 'e-1'),
+      ],
+      TurnRoutingMode.FOCUSED,
+    )
+    expect(segments.map(s => s.kind)).toEqual(['single', 'lookups-group'])
+    expect(segments[1].entries.map(e => e.block.toolUse.tool_use_id)).toEqual(['r-1', 'r-2'])
+  })
+})
+
+describe('moveHiddenInjected', () => {
+  const withAdded = (block, text) => ({ ...block, injected: [{ source: 'stop-hook', text }] })
+
+  it("moves a hidden Read's added text onto the nearest earlier block that shows", () => {
+    const edit = toolBlock(ToolName.EDIT, 'e-1')
+    const { blocks, injected } = moveHiddenInjected(
+      [edit, withAdded(toolBlock(ToolName.READ, 'r-1'), 'held')],
+      [],
+      TurnRoutingMode.FOCUSED,
+    )
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].injected.map(e => e.text)).toEqual(['held'])
+    expect(edit.injected).toBeUndefined()
+    expect(injected).toEqual([])
+  })
+
+  it("hands it to the turn's own entries when no earlier block shows", () => {
+    const { blocks, injected } = moveHiddenInjected(
+      [withAdded(toolBlock(ToolName.READ, 'r-1'), 'held'), toolBlock(ToolName.EDIT, 'e-1')],
+      [{ source: 'stop-hook', text: 'first' }],
+      TurnRoutingMode.FOCUSED,
+    )
+    expect(blocks.map(b => b.toolUse.tool_use_id)).toEqual(['e-1'])
+    expect(injected.map(e => e.text)).toEqual(['first', 'held'])
+  })
+
+  it('moves nothing outside Focused', () => {
+    const read = withAdded(toolBlock(ToolName.READ, 'r-1'), 'held')
+    const { blocks } = moveHiddenInjected([read], [], TurnRoutingMode.OFF)
+    expect(blocks).toEqual([read])
   })
 })
 

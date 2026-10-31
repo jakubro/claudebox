@@ -1,21 +1,15 @@
 /** E2E tests for thinking blocks display. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSessionWithAPI } from '../helpers.js'
 
 test.describe('Thinking Blocks', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/thinking.jsonl')
+    await openSessionWithAPI(page, 'events/thinking.jsonl')
   })
 
   // SPEC: tool:thinking-preview
   test('thinking block renders with header', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     // Thinking block should be visible (use first() for strict mode)
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
@@ -30,9 +24,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-bullet
   test('uses hollow circle bullet', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const bullet = page.locator('.thinking-bullet').first()
     await expect(bullet).toBeVisible()
     await expect(bullet).toHaveText('○')
@@ -40,9 +31,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-preview
   test('preview shows first line, truncated with ellipsis, no quotes', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const preview = page.locator('.thinking-summary').first()
     await expect(preview).toBeVisible()
 
@@ -68,9 +56,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-expand
   test('click expands full content rendered as formatted Markdown', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
 
@@ -99,9 +84,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-expand-inline
   test('expanded content replaces preview in place within the same block', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
 
@@ -123,9 +105,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-expand
   test('click again collapses content', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const thinkingBlock = page.locator('.thinking-block').first()
     await expect(thinkingBlock).toBeVisible()
 
@@ -138,9 +117,6 @@ test.describe('Thinking Blocks', () => {
   })
 
   test('corner bracket shows in preview', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const corner = page.locator('.thinking-corner').first()
     await expect(corner).toBeVisible()
     await expect(corner).toHaveText('└')
@@ -148,9 +124,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-preview
   test('preview shows plain text without quotes', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const preview = page.locator('.thinking-summary').first()
     await expect(preview).toBeVisible()
 
@@ -163,9 +136,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-preview
   test('preview uses CSS text-overflow ellipsis', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const summary = page.locator('.thinking-summary').first()
     await expect(summary).toBeVisible()
 
@@ -183,9 +153,6 @@ test.describe('Thinking Blocks', () => {
 
   // SPEC: tool:thinking-expand
   test('expanded content is rendered as formatted Markdown', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const thinkingBlock = page.locator('.thinking-block').first()
     await thinkingBlock.locator('.thinking-header-area').click()
 

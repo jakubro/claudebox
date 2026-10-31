@@ -1,5 +1,7 @@
 """File endpoints - path resolution."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from ._models import ResolvePathsRequest

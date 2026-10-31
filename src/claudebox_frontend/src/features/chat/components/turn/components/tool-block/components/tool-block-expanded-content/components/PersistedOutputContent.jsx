@@ -1,11 +1,12 @@
 /** Persisted output display with expandable full content. */
 
 import { Download, Loader2, Maximize2, Minimize2 } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useContext, useState } from 'react'
 import { getToolOutput, getToolOutputDownloadUrl } from '../../../../../../../../../api/sessions'
 import CopyButton from '../../../../../../../../../components/CopyButton.jsx'
 import { useSessionData } from '../../../../../../../../../context/SessionDataContext'
 import { formatFileSize } from '../../../../../../../../../utils/formatters'
+import { TurnContext } from '../../../../../TurnContext'
 
 /**
  * @param {string} [props.fileSize] - Human-readable total file size.
@@ -13,6 +14,8 @@ import { formatFileSize } from '../../../../../../../../../utils/formatters'
  */
 export default function PersistedOutputContent({ preview, toolUseId, fileSize, previewSize }) {
   const { sessionId } = useSessionData()
+  // The terminal column renders this outside any turn; its output is always the conversation's own.
+  const turnSessionId = useContext(TurnContext)?.sessionId ?? null
   const [showFull, setShowFull] = useState(false)
   const [fullContent, setFullContent] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -30,7 +33,7 @@ export default function PersistedOutputContent({ preview, toolUseId, fileSize, p
       setLoading(true)
       setError(null)
       try {
-        const result = await getToolOutput(toolUseId)
+        const result = await getToolOutput(toolUseId, turnSessionId)
         setFullContent(result)
       } catch (err) {
         setError(err.message || 'Failed to load')
@@ -39,7 +42,7 @@ export default function PersistedOutputContent({ preview, toolUseId, fileSize, p
       }
     }
     setShowFull(true)
-  }, [showFull, fullContent, loading, toolUseId])
+  }, [showFull, fullContent, loading, toolUseId, turnSessionId])
 
   const displayContent = showFull && fullContent ? fullContent.content : preview
 
@@ -65,7 +68,7 @@ export default function PersistedOutputContent({ preview, toolUseId, fileSize, p
                 )}
               </button>
               <a
-                href={getToolOutputDownloadUrl(toolUseId)}
+                href={getToolOutputDownloadUrl(toolUseId, turnSessionId)}
                 download
                 className="copy-btn tool-download-btn"
                 title="Download full output">

@@ -1,5 +1,7 @@
 """Session facade - SDK client, pipeline, persistence coordination."""
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import contextlib
@@ -8,6 +10,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
@@ -20,7 +23,6 @@ from .errors import AttachmentInvalid, SessionNotReady
 from .models import EventSubtype, EventType, PublishedEvent, SessionSummary
 from .pipeline import EventPipeline
 from .projection import Projection
-from .tool_output import ToolOutput, ToolOutputContent
 from ..config import (
     AgentSessionConfig,
     ClaudeAgentSessionConfig,
@@ -40,6 +42,7 @@ from ...constants import (
     SESSION_METADATA_FILE,
     SESSION_STALL_CHECK_INTERVAL,
     SESSION_STALL_TIMEOUT,
+    SESSION_TITLE_AFTER_MESSAGES,
 )
 from ...core.file_cache import FileCache
 from ...core.logging import get_logger
@@ -60,7 +63,7 @@ class SessionService:
     def __init__(
         self,
         workspace: Path,
-        system_prompt: str | None = None,
+        system_prompt_file: Path | None = None,
         permission_mode: str | None = None,
         on_start: Callable[[BaseSession], None] | None = None,
         on_stop: Callable[[], None] | None = None,
@@ -83,7 +86,7 @@ class SessionService:
         self._rate_limit_store = RateLimitStore(self._workspace.path)
         # Windows announced at the last session start, not yet re-announced or ruled normal here.
         self._rate_limit_pending_reconcile: set[str] = set()
-        self._system_prompt = system_prompt
+        self._system_prompt_file = system_prompt_file
         self._permission_mode = permission_mode
         self._on_start = on_start
         self._on_stop = on_stop
@@ -99,6 +102,8 @@ class SessionService:
         self._session_provider: str | None = None
 
         self._base_session: BaseSession | None = None
+        # The id start() chose, known before the agent announces the session.
+        self._session_id: str | None = None
         self._repo = SessionRepository(self._workspace)
 
         # Cast to non-Optional; start() populates them.
@@ -106,7 +111,6 @@ class SessionService:
         self._sdk_client: AgentSession = cast(AgentSession, None)
         self._event_pipeline: EventPipeline = cast(EventPipeline, None)
         self._broadcaster: Broadcaster = cast(Broadcaster, None)
-        self._tool_output: ToolOutput = cast(ToolOutput, None)
         self._attachment_service: AttachmentService = cast(AttachmentService, None)
         self._summary_cache: FileCache = cast(FileCache, None)
         self._projection: Projection = cast(Projection, None)
@@ -114,6 +118,9 @@ class SessionService:
         self._client_task: asyncio.Task | None = None
         self._pipeline_task: asyncio.Task | None = None
         self._stall_watchdog_task: asyncio.Task | None = None
+        self._title_task: asyncio.Task | None = None
+        self._opening_messages: list[str] = []
+        self._user_message_count = 0
         self._context_refresh_timer: asyncio.TimerHandle | None = None
         self._pipeline_repair_lock = asyncio.Lock()
         self._suppress_restart_divider = False
@@ -127,6 +134,10 @@ class SessionService:
 
         # One stall report per turn - the watchdog samples continuously, the fault is one event.
         self._stall_reported = False
+
+        # Set when connect() raised - the runtime will never signal readiness, so sends are
+        # refused and the session drops out of the live listing rather than accepting and losing.
+        self._runtime_connect_failed = False
 
     @property
     def base_session(self) -> BaseSession | None:
@@ -145,6 +156,12 @@ class SessionService:
         """The currently active session ID, if any."""
 
         return self._projection.session_id if self._projection else None
+
+    @property
+    def connect_failed(self) -> bool:
+        """True once the runtime has signalled it will never connect for this session."""
+
+        return self._runtime_connect_failed
 
     def get_capabilities(self) -> RuntimeCapabilities:
         """Return the runtime's capability matrix."""
@@ -175,10 +192,16 @@ class SessionService:
     # Session API
     # ----------------------------------------------------------------------------------------------
 
-    async def start(self, resume_session_id: str | None = None) -> str:
+    async def start(
+        self,
+        resume_session_id: str | None = None,
+        *,
+        session_id: str | None = None,
+    ) -> str:
         """Start session components. Optionally resume an existing session.
 
-        Returns the session ID (pre-generated for new sessions, or the resume ID).
+        Returns the session ID (pre-generated for new sessions, or the resume ID); `session_id`
+        starts a new session under a given id (a restart before the agent announced it).
         """
 
         self._logger.info("Starting session...", resume_id=resume_session_id, **self._log_context)
@@ -187,7 +210,8 @@ class SessionService:
         self._last_known_permission_mode = None
         self._last_known_effort_level = None
 
-        session_id = resume_session_id or str(uuid.uuid4())
+        session_id = resume_session_id or session_id or str(uuid.uuid4())
+        self._session_id = session_id
         session = BaseSession(session_id=session_id, workspace=self._workspace)
 
         if self._on_start is not None:
@@ -226,11 +250,12 @@ class SessionService:
                     on_model_changed=self._on_model_changed,
                     on_effort_level_changed=self._on_effort_level_changed,
                 ),
-                system_prompt=self._system_prompt,
+                system_prompt_file=self._system_prompt_file,
                 setting_sources=["user", "project"],
                 sdk_passthrough={},
                 max_buffer_size=SDK_PROCESS_BUFFER_SIZE,
                 debug_mode=is_dev_mode(),
+                is_primary=self._remaps_tmp,
             )
         elif workspace_config.agent == "langgraph":
             # set_model/set_permission_mode/set_effort_level are unsupported under LangGraph
@@ -261,7 +286,9 @@ class SessionService:
                 provider_kwargs=provider_kwargs,
                 cost_overrides=workspace_config.langgraph_cost_overrides,
                 profile_hooks=workspace_config.langgraph_hooks,
-                system_prompt=self._system_prompt,
+                system_prompt=(
+                    self._system_prompt_file.read_text() if self._system_prompt_file else None
+                ),
             )
         else:
             raise UnknownRuntime(workspace_config.agent)
@@ -274,10 +301,10 @@ class SessionService:
             on_init=self._handle_init,
             on_event=self._handle_event,
             resume_session_id=resume_session_id,
+            on_stream_lost=self._schedule_turn_complete,
         )
 
         self._broadcaster = Broadcaster()
-        self._tool_output = ToolOutput(self._workspace)
         self._attachment_service = AttachmentService(self._workspace)
         self._summary_cache = FileCache()
 
@@ -286,8 +313,8 @@ class SessionService:
         self._stall_watchdog_task = asyncio.create_task(self._watch_for_stalls())
 
         self._client_task.add_done_callback(partial(self._log_task_exit, "client"))
+        self._client_task.add_done_callback(partial(self._on_connect_done, session_id))
         self._pipeline_task.add_done_callback(partial(self._log_task_exit, "pipeline"))
-        self._pipeline_task.add_done_callback(self._on_pipeline_task_done)
         self._stall_watchdog_task.add_done_callback(partial(self._log_task_exit, "stall watchdog"))
 
         self._logger.info("Session started", session_id=session_id, **self._log_context)
@@ -300,6 +327,7 @@ class SessionService:
         self._logger.info("Stopping session...", **self._log_context)
 
         await self._dispose("_stall_watchdog_task", "cancel")
+        await self._dispose("_title_task", "cancel")
         await self._dispose("_pipeline_task", "cancel")
         await self._dispose("_client_task", "cancel")
         await self._dispose("_event_pipeline", "stop")
@@ -319,7 +347,6 @@ class SessionService:
 
         self._projection = cast(Projection, None)
         self._summary_cache = cast(FileCache, None)
-        self._tool_output = cast(ToolOutput, None)
         self._attachment_service = cast(AttachmentService, None)
         self._broadcaster = cast(Broadcaster, None)
 
@@ -327,17 +354,24 @@ class SessionService:
         self._last_known_effort_level = None
         self._last_known_model = None
         self._pending_session_prompt = None
+        self._session_id = None
         self._pending_compact_trigger = None
 
         # Disarms the watchdog across a restart: nothing is owed until the next send,
         # so a reconnect that didn't help can't loop.
         self._turn_dispatched_at = None
         self._tools_outstanding = 0
+        self._runtime_connect_failed = False
 
         if self._on_stop is not None:
             self._on_stop()
 
         self._logger.info("Session stopped", **self._log_context)
+
+    async def ensure_storage(self) -> None:
+        """Create this session's storage now if the agent has not announced the session yet."""
+
+        await self._event_pipeline.ensure_initialized(self._session_id)  # ty: ignore[invalid-argument-type]
 
     async def restart(self, resume_session_id: str | None = None) -> str:
         """Stop current session and start new one resuming given session.
@@ -402,17 +436,34 @@ class SessionService:
                 **self._log_context,
             )
 
-    def _on_pipeline_task_done(self, task: asyncio.Task) -> None:
-        """Turn-complete trigger #3: the consumer loop exiting on stream loss.
-
-        Stream loss emits no event, so this is its only signal; a cancelled task is a stop.
+    def _on_connect_done(self, session_id: str, task: asyncio.Task) -> None:
+        """Turn a failed runtime connect into the session's own terminal state - the
+        reader-visible half of what `_log_task_exit` above already logs.
         """
 
-        if task.cancelled():
+        if task.cancelled() or task.exception() is None:
             return
 
-        if self._event_pipeline is not None and self._event_pipeline.stream_lost:
-            self._schedule_turn_complete()
+        self._runtime_connect_failed = True
+        asyncio.create_task(self._report_connect_failure(session_id, str(task.exception())))
+
+    async def _report_connect_failure(self, session_id: str, reason: str) -> None:
+        """Persist and broadcast a failed connect the same way a mid-turn pipeline failure is
+        reported, so a reload still shows it even though no real turn ever started.
+        """
+
+        if self._event_pipeline is None:
+            return
+
+        try:
+            await self._event_pipeline.ensure_initialized(session_id)
+            await self._event_pipeline.inject_event(
+                event_type=EventType.SYSTEM,
+                subtype=EventSubtype.ERROR,
+                content=f"Failed to start: {reason}",
+            )
+        except Exception:
+            self._logger.exception("Failed to report connect failure", **self._log_context)
 
     def _schedule_turn_complete(self) -> None:
         """Schedule `on_turn_complete` off the loop; a no-op for a primary or a repeat.
@@ -431,6 +482,45 @@ class SessionService:
 
         self._turn_complete_task = asyncio.create_task(self._on_turn_complete(session_id))
         self._turn_complete_task.add_done_callback(partial(self._log_task_exit, "turn complete"))
+
+    @staticmethod
+    def _is_user_message(event: PublishedEvent) -> bool:
+        """A message the user sent; a subagent's prompt also arrives as human, nested under its tool."""
+
+        return event.is_human and event.parent_tool_use_id is None
+
+    def _schedule_title(self, count: int) -> None:
+        """Title an unnamed session from its first `count` messages, off the loop so no turn waits on it;
+        a title still being written is cancelled, so an older reply never lands over a newer one.
+        """
+
+        if self._projection.value.name:
+            return
+
+        if self._title_task is not None:
+            self._title_task.cancel()
+
+        self._title_task = asyncio.create_task(self._title_session(self._opening_messages[:count]))
+        self._title_task.add_done_callback(partial(self._log_task_exit, "session title"))
+
+    async def _title_session(self, messages: list[str]) -> None:
+        """Store a generated title as the automatic name; any failure keeps the previous one."""
+
+        try:
+            title = await self._sdk_client.generate_title(messages)
+        except Exception:
+            self._logger.warning("Session title failed", exc_info=True, **self._log_context)
+
+            return
+
+        summary = self._projection.value
+
+        # A hand name given while the model was answering wins.
+        if not title or summary.name:
+            return
+
+        self._projection.update_fields(auto_name=title, updated_at=datetime.now(UTC))
+        self._logger.info("Session titled", title=title, **self._log_context)
 
     def cancel_turn_complete(self) -> None:
         """Cancel this session's `on_turn_complete` disposition - promotion's one state change.
@@ -499,16 +589,6 @@ class SessionService:
 
         return projection.value
 
-    def get_tool_output(self, session_id: str, tool_use_id: str) -> ToolOutputContent:
-        """Read persisted tool output content."""
-
-        return self._tool_output.get_content(session_id, tool_use_id)
-
-    def get_tool_output_path(self, session_id: str, tool_use_id: str) -> Path:
-        """Resolve path to persisted tool output file."""
-
-        return self._tool_output.get_path(session_id, tool_use_id)
-
     def get_attachment(self, session_id: str, filename: str) -> AttachmentInfo:
         """Resolve attachment path and media type."""
 
@@ -558,7 +638,7 @@ class SessionService:
         self._logger.info("Reconnecting MCP server", server_name=server_name, **self._log_context)
         await self._sdk_client.reconnect_mcp_server(server_name)
 
-        return await self._sdk_client.get_mcp_status()
+        return self._noted_mcp_status(await self._sdk_client.get_mcp_status())
 
     async def toggle_mcp_server(self, server_name: str, *, enabled: bool) -> dict:
         """Toggle an MCP server enabled/disabled and return fresh status."""
@@ -571,12 +651,18 @@ class SessionService:
         )
         await self._sdk_client.toggle_mcp_server(server_name, enabled)
 
-        return await self._sdk_client.get_mcp_status()
+        return self._noted_mcp_status(await self._sdk_client.get_mcp_status())
 
     async def get_mcp_status(self) -> dict:
         """Return current MCP server status."""
 
         return await self._sdk_client.get_mcp_status()
+
+    def _noted_mcp_status(self, status: dict) -> dict:
+        if self._event_pipeline is not None:
+            self._event_pipeline.note_mcp_status(status)
+
+        return status
 
     # Incoming Events
     # ----------------------------------------------------------------------------------------------
@@ -599,7 +685,11 @@ class SessionService:
         transcript matches answers with an anchored pattern that any prefix/suffix would break.
 
         Raises AttachmentInvalid if an attachment fails base64 decode or exceeds MAX_ATTACHMENT_BYTES.
+        Raises SessionNotReady if the runtime never connected - refused, not accepted and lost.
         """
+
+        if self._runtime_connect_failed:
+            raise SessionNotReady()
 
         self._logger.info("Sending query", prompt=prompt[:100], **self._log_context)
 
@@ -612,11 +702,17 @@ class SessionService:
             # Drop comments with a blank reply - they are never sent.
             replies = [r for r in (inline_replies or []) if (r.get("response") or "").strip()]
 
+            if attachments:
+                await self.ensure_storage()
+
             attachment_meta = self._store_attachments(attachments) if attachments else []
 
             # Nothing left once blank replies are dropped.
             if not prompt.strip() and not replies and not attachment_meta and not note:
                 return
+
+            # One id for the display event's turn, the agent's copy of the message and its echo.
+            message_uuid = str(uuid.uuid4())
 
             # Display-only event - content=prompt (never serialized XML) so the optimistic
             # pending turn reconciles by content.
@@ -629,10 +725,8 @@ class SessionService:
                 attachments=attachment_meta or None,
                 inline_replies=replies or None,
                 note=note,
+                turn_id=message_uuid,
             )
-
-            # Suppress the SDK echo - the injected event is canonical (one query, one echo).
-            self._event_pipeline.suppress_next_user_echo()
 
             extra_parts = []
 
@@ -647,9 +741,12 @@ class SessionService:
             if extra_parts:
                 text = (prompt + "\n\n" if prompt else "") + "\n\n".join(extra_parts)
 
+            # The injected event is canonical; the agent's copy of this message is dropped.
+            self._event_pipeline.suppress_user_echo(message_uuid)
+
             content_blocks = self._build_content_blocks(text, attachments or [])
             self._arm_stall_watchdog()
-            await self._sdk_client.query(content_blocks)
+            await self._sdk_client.query(content_blocks, message_uuid=message_uuid)
 
             return
 
@@ -732,6 +829,7 @@ class SessionService:
                 on_init=self._handle_init,
                 on_event=self._handle_event,
                 resume_session_id=session_id,
+                on_stream_lost=self._schedule_turn_complete,
             )
 
             self._suppress_restart_divider = True
@@ -765,7 +863,14 @@ class SessionService:
                 buffered=health.buffered,
                 **self._log_context,
             )
-            await self.restart(self.current_session_id)
+
+            if self.current_session_id is not None:
+                await self.restart(self.current_session_id)
+            else:
+                # Never announced: there is no agent transcript to resume, so start fresh under the same id.
+                session_id = self._session_id
+                await self.stop()
+                await self.start(session_id=session_id)
 
             return
 
@@ -877,9 +982,11 @@ class SessionService:
         await self._event_pipeline.inject_event(
             event_type=EventType.SYSTEM,
             subtype=EventSubtype.INTERRUPT_SENT,
+            turn_running=self._event_pipeline.turn_tracker.running,
         )
 
         await self._emit_compact_boundary_fallback(status="interrupted")
+        self._event_pipeline.expire_pending_echo_suppressions()
         await self._sdk_client.interrupt()
 
     @classmethod
@@ -1015,14 +1122,25 @@ class SessionService:
             provider=self._session_provider,
         )
 
+        historical = self._event_pipeline.get_historical_events()
+
         # Replay events into projection when session.json is missing on disk (fork copies
         # events.jsonl but not session.json; this also self-heals corruption).
         if not self._projection.loaded_from_disk:
-            for event in self._event_pipeline.get_historical_events():
+            for event in historical:
                 self._projection.update(event)
 
             self._projection.save()
             self._logger.info("Replayed projection from events", **self._log_context)
+
+        self._projection.seed_last_result_cost(historical)
+        self._projection.seed_background_work(historical)
+
+        user_messages = [e for e in historical if self._is_user_message(e)]
+        self._user_message_count = len(user_messages)
+        self._opening_messages = [e.content for e in user_messages if e.content][
+            : SESSION_TITLE_AFTER_MESSAGES[-1]
+        ]
 
         summary = self._projection.value
 
@@ -1031,15 +1149,15 @@ class SessionService:
         capabilities = self._sdk_client.capabilities
 
         if summary.model and capabilities.supports_set_model_mid_session:
-            await self._sdk_client.set_model(summary.model)
+            await self._sdk_client.set_model(summary.model, wait=False)
             self._last_known_model = summary.model
 
         if summary.permission_mode and capabilities.supports_set_permission_mode:
-            await self._sdk_client.set_permission_mode(summary.permission_mode)
+            await self._sdk_client.set_permission_mode(summary.permission_mode, wait=False)
             self._last_known_permission_mode = summary.permission_mode
 
         if summary.effort_level and capabilities.supports_set_effort_level:
-            await self._sdk_client.set_effort_level(summary.effort_level)
+            await self._sdk_client.set_effort_level(summary.effort_level, wait=False)
             self._last_known_effort_level = summary.effort_level
 
         await self._emit_container_restarted_if_resumed()
@@ -1092,8 +1210,23 @@ class SessionService:
         """Broadcast event to all SSE subscribers."""
 
         await self._broadcaster.broadcast(event)
-        self._projection.update(event)
+
+        # The daemon's mutation poll reads the summary from memory while the listing reads disk, so a
+        # turn's last change is written at once; the debounced write still follows it, so an older
+        # snapshot a debounced write already had in flight never has the last word.
+        if self._projection.update(event):
+            self._projection.save()
+
         self._projection.schedule_save()
+
+        if self._is_user_message(event):
+            self._user_message_count += 1
+
+            if event.content and len(self._opening_messages) < SESSION_TITLE_AFTER_MESSAGES[-1]:
+                self._opening_messages.append(event.content)
+
+            if self._user_message_count in SESSION_TITLE_AFTER_MESSAGES:
+                self._schedule_title(self._user_message_count)
 
         # A tool between start and output is working, not stalling - the runtime emits nothing for a long one.
         if event.subtype == "tool_use":

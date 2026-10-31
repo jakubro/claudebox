@@ -1,8 +1,11 @@
 """Tests for claudebox.agent_session.runtime_claude - ClaudeRuntime composition adapter."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,7 +13,14 @@ import pytest
 
 from claudebox.agent_session.config import ClaudeAgentSessionConfig, RuntimeCapabilities
 from claudebox.agent_session.hooks import HookCallbacks
-from claudebox.agent_session.runtime_claude import ClaudeRuntime
+from claudebox.agent_session.orchestration.errors import ChangeRefused, SessionNotReady
+from claudebox.agent_session.runtime_claude import (
+    ClaudeRuntime,
+    SdkAssistantMessage,
+    SdkResultMessage,
+    SdkTextBlock,
+)
+from claudebox.core.io import write_json
 
 
 def _make_config(**overrides) -> ClaudeAgentSessionConfig:
@@ -45,6 +55,15 @@ def _make_runtime(**config_overrides) -> ClaudeRuntime:
         return ClaudeRuntime(config)
 
 
+def _connected(runtime: ClaudeRuntime) -> ClaudeRuntime:
+    """Mark the runtime connected with nothing left queued, so calls go straight to the agent."""
+
+    runtime.ready.set()
+    runtime._drained.set()
+
+    return runtime
+
+
 class TestInit:
     """ClaudeRuntime initialization state."""
 
@@ -54,17 +73,11 @@ class TestInit:
         runtime = _make_runtime()
         assert not runtime.ready.is_set()
 
-    def test_buffer_starts_empty(self):
-        """Message buffer is empty on fresh runtime."""
+    def test_queue_starts_empty(self):
+        """Nothing is queued on a fresh runtime."""
 
         runtime = _make_runtime()
-        assert len(runtime._buffer) == 0
-
-    def test_pending_calls_starts_empty(self):
-        """Pending calls deque is empty on fresh runtime."""
-
-        runtime = _make_runtime()
-        assert len(runtime._pending_calls) == 0
+        assert len(runtime._queue) == 0
 
     def test_stderr_callback_wired_into_sdk_options(self):
         """Options.stderr is wired to the runtime's _stderr method before SDK construction."""
@@ -133,7 +146,7 @@ class TestQuery:
 
         runtime = _make_runtime()
         await runtime.query("hello")
-        assert list(runtime._buffer) == ["hello"]
+        assert list(runtime._queue) == [("hello", None)]
 
     @pytest.mark.anyio
     async def test_buffers_content_blocks_when_not_ready(self):
@@ -142,7 +155,7 @@ class TestQuery:
         runtime = _make_runtime()
         blocks = [{"type": "text", "text": "hi"}]
         await runtime.query(blocks)
-        assert list(runtime._buffer) == [blocks]
+        assert list(runtime._queue) == [(blocks, None)]
 
     @pytest.mark.anyio
     async def test_buffer_preserves_order(self):
@@ -152,14 +165,63 @@ class TestQuery:
         await runtime.query("first")
         await runtime.query("second")
         await runtime.query("third")
-        assert list(runtime._buffer) == ["first", "second", "third"]
+        assert list(runtime._queue) == [("first", None), ("second", None), ("third", None)]
+
+    @pytest.mark.anyio
+    async def test_a_message_uuid_rides_on_the_transport_message(self):
+        """The CLI keeps the uuid it is given, so the echo and the transcript line carry it."""
+
+        runtime = _make_runtime()
+        _connected(runtime)
+        sent: list[dict] = []
+
+        async def capture(stream):
+            sent.extend([m async for m in stream])
+
+        with patch.object(runtime._sdk, "query", new_callable=AsyncMock, side_effect=capture):
+            await runtime.query([{"type": "text", "text": "hi"}], message_uuid="U1")
+            await runtime.query("plain text", message_uuid="U2")
+
+        assert [(m["uuid"], m["message"]["content"]) for m in sent] == [
+            ("U1", [{"type": "text", "text": "hi"}]),
+            ("U2", "plain text"),
+        ]
+
+    @pytest.mark.anyio
+    async def test_content_blocks_without_a_uuid_carry_none(self):
+        runtime = _make_runtime()
+        _connected(runtime)
+        sent: list[dict] = []
+
+        async def capture(stream):
+            sent.extend([m async for m in stream])
+
+        with patch.object(runtime._sdk, "query", new_callable=AsyncMock, side_effect=capture):
+            await runtime.query([{"type": "text", "text": "hi"}])
+
+        assert "uuid" not in sent[0]
+
+    @pytest.mark.anyio
+    async def test_a_query_buffered_before_connect_is_flushed_with_its_uuid(self):
+        runtime = _make_runtime()
+        await runtime.query([{"type": "text", "text": "early"}], message_uuid="U1")
+        sent: list[dict] = []
+
+        async def capture(stream):
+            sent.extend([m async for m in stream])
+
+        with patch.object(runtime._sdk, "query", new_callable=AsyncMock, side_effect=capture):
+            runtime.ready.set()
+            await runtime._flush_on_ready()
+
+        assert sent[0]["uuid"] == "U1"
 
     @pytest.mark.anyio
     async def test_string_query_delegates_to_sdk_when_ready(self):
         """String query forwards to self._sdk.query when ready."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "query", new_callable=AsyncMock) as mock_query:
             await runtime.query("hello")
@@ -170,7 +232,7 @@ class TestQuery:
         """Content block query wraps in stream and forwards when ready."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "query", new_callable=AsyncMock) as mock_query:
             blocks = [{"type": "text", "text": "hi"}]
@@ -180,6 +242,29 @@ class TestQuery:
             # Argument should be an async iterator, not the raw list.
             arg = mock_query.call_args[0][0]
             assert arg is not blocks
+
+    @pytest.mark.anyio
+    async def test_refuses_when_connect_failed(self):
+        """A query into a runtime that failed to connect is refused, not buffered."""
+
+        runtime = _make_runtime()
+        runtime.connect_error = "agent process would not start"
+
+        with pytest.raises(RuntimeError, match="agent process would not start"):
+            await runtime.query("hello")
+
+        assert len(runtime._queue) == 0
+
+    @pytest.mark.anyio
+    async def test_refuses_even_if_ready_is_also_set(self):
+        """connect_error takes priority over ready - both are set together on a failed connect."""
+
+        runtime = _make_runtime()
+        runtime.ready.set()
+        runtime.connect_error = "agent process would not start"
+
+        with pytest.raises(RuntimeError, match="agent process would not start"):
+            await runtime.query("hello")
 
 
 class TestInterrupt:
@@ -192,17 +277,17 @@ class TestInterrupt:
         runtime = _make_runtime()
         await runtime.query("a")
         await runtime.query("b")
-        assert len(runtime._buffer) == 2
+        assert len(runtime._queue) == 2
 
         await runtime.interrupt()
-        assert len(runtime._buffer) == 0
+        assert len(runtime._queue) == 0
 
     @pytest.mark.anyio
     async def test_delegates_when_ready(self):
         """Interrupt forwards to self._sdk.interrupt when ready."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "interrupt", new_callable=AsyncMock) as mock_interrupt:
             await runtime.interrupt()
@@ -217,18 +302,22 @@ class TestSetModel:
         """set_model is queued as pending call when not connected."""
 
         runtime = _make_runtime()
-        await runtime.set_model("claude-3-opus")
-        assert len(runtime._pending_calls) == 1
-        method, args, _ = runtime._pending_calls[0]
-        assert method == "set_model"
-        assert args == ("claude-3-opus",)
+        await runtime.set_model("claude-3-opus", wait=False)
+
+        with patch.object(runtime._sdk, "set_model", new_callable=AsyncMock) as sdk_call:
+            assert len(runtime._queue) == 1
+            sdk_call.assert_not_awaited()
+            runtime.ready.set()
+            await runtime._flush_on_ready()
+
+        sdk_call.assert_awaited_once_with("claude-3-opus")
 
     @pytest.mark.anyio
     async def test_delegates_when_ready(self):
         """set_model forwards to self._sdk.set_model when ready."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "set_model", new_callable=AsyncMock) as mock_set_model:
             await runtime.set_model("claude-3-opus")
@@ -243,18 +332,22 @@ class TestSetPermissionMode:
         """set_permission_mode is queued as pending call when not connected."""
 
         runtime = _make_runtime()
-        await runtime.set_permission_mode("auto")
-        assert len(runtime._pending_calls) == 1
-        method, args, _ = runtime._pending_calls[0]
-        assert method == "set_permission_mode"
-        assert args == ("auto",)
+        await runtime.set_permission_mode("auto", wait=False)
+
+        with patch.object(runtime._sdk, "set_permission_mode", new_callable=AsyncMock) as sdk_call:
+            assert len(runtime._queue) == 1
+            sdk_call.assert_not_awaited()
+            runtime.ready.set()
+            await runtime._flush_on_ready()
+
+        sdk_call.assert_awaited_once_with("auto")
 
     @pytest.mark.anyio
     async def test_delegates_when_ready(self):
         """set_permission_mode forwards to self._sdk.set_permission_mode when ready."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(
             runtime._sdk,
@@ -265,30 +358,124 @@ class TestSetPermissionMode:
             mock_set_perm.assert_awaited_once_with("auto")
 
 
+def _with_control(runtime: ClaudeRuntime, **mock_kwargs) -> AsyncMock:
+    """Give the runtime's SDK a control channel; returns the request mock."""
+
+    request = AsyncMock(return_value={}, **mock_kwargs)
+    runtime._sdk._query = MagicMock(_send_control_request=request)
+
+    return request
+
+
 class TestSetEffortLevel:
-    """set_effort_level queueing and side-channel write."""
+    """set_effort_level queueing and the agent's own apply_flag_settings request."""
 
     @pytest.mark.anyio
     async def test_queued_when_not_ready(self):
         """set_effort_level is queued as pending call when not connected."""
 
         runtime = _make_runtime()
-        await runtime.set_effort_level("high")
-        assert len(runtime._pending_calls) == 1
-        method, args, _ = runtime._pending_calls[0]
-        assert method == "set_effort_level"
-        assert args == ("high",)
+        await runtime.set_effort_level("high", wait=False)
+        request = _with_control(runtime)
+
+        assert len(runtime._queue) == 1
+        request.assert_not_awaited()
+        runtime.ready.set()
+        await runtime._flush_on_ready()
+
+        request.assert_awaited_once()
 
     @pytest.mark.anyio
-    async def test_writes_settings_json_when_ready(self):
-        """set_effort_level writes effortLevel to settings.json when ready."""
-
+    async def test_sends_apply_flag_settings_when_ready(self):
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
+        request = _with_control(runtime)
 
-        with patch.object(ClaudeRuntime, "_write_effort_to_settings") as mock_write:
-            await runtime.set_effort_level("high")
-            mock_write.assert_called_once_with("high")
+        await runtime.set_effort_level("high")
+
+        request.assert_awaited_once_with(
+            {"subtype": "apply_flag_settings", "settings": {"effortLevel": "high"}},
+        )
+
+    @pytest.mark.anyio
+    async def test_writes_no_settings_file(self, tmp_path):
+        runtime = _make_runtime(session_dir=tmp_path)
+        _connected(runtime)
+        _with_control(runtime)
+
+        await runtime.set_effort_level("low")
+
+        settings = tmp_path / "claude.json"
+        assert not settings.exists() or "effortLevel" not in json.loads(
+            settings.read_text() or "{}",
+        )
+
+    @pytest.mark.anyio
+    async def test_member_level_reaches_only_its_own_agent(self, tmp_path):
+        primary = _make_runtime(session_dir=tmp_path / "primary", is_primary=True)
+        member = _make_runtime(session_dir=tmp_path / "member", is_primary=False)
+        _connected(primary)
+        _connected(member)
+        primary_request, member_request = _with_control(primary), _with_control(member)
+
+        await member.set_effort_level("low")
+
+        member_request.assert_awaited_once()
+        primary_request.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_timeout_is_refused_and_leaves_the_level_unchanged(self):
+        changed = AsyncMock()
+        runtime = _make_runtime(hooks=HookCallbacks(on_effort_level_changed=changed))
+        _connected(runtime)
+        _with_control(runtime, side_effect=TimeoutError)
+
+        with pytest.raises(ChangeRefused) as refused:
+            await runtime.set_effort_level("low")
+
+        assert refused.value.context == {
+            "setting": "effort_level",
+            "value": "low",
+            "reason": "timed out",
+        }
+
+        changed.assert_not_awaited()
+        assert runtime._last_known_effort_level == "xhigh"
+
+    def test_agent_starts_at_the_default_level(self):
+        assert ClaudeRuntime._build_sdk_options(_make_config()).effort == "xhigh"
+
+    def test_agent_starts_at_the_recorded_level(self):
+        assert ClaudeRuntime._build_sdk_options(_make_config(effort_level="low")).effort == "low"
+
+    @pytest.mark.anyio
+    async def test_a_new_sessions_first_differing_level_is_reported(self):
+        """The first set on a new session is a change from the default the session started at."""
+
+        changed = AsyncMock()
+        runtime = _make_runtime(hooks=HookCallbacks(on_effort_level_changed=changed))
+        _connected(runtime)
+        _with_control(runtime)
+
+        await runtime.set_effort_level("max")
+
+        changed.assert_awaited_once_with("max")
+
+    @pytest.mark.anyio
+    async def test_a_resumed_sessions_first_set_adopts_silently(self):
+        """A resume replays its recorded level; that is not a change."""
+
+        changed = AsyncMock()
+        runtime = _make_runtime(
+            resume_session_id="sess-1",
+            hooks=HookCallbacks(on_effort_level_changed=changed),
+        )
+        _connected(runtime)
+        _with_control(runtime)
+
+        await runtime.set_effort_level("max")
+
+        changed.assert_not_awaited()
 
 
 class TestGetContextUsage:
@@ -307,7 +494,7 @@ class TestGetContextUsage:
         """SDK returns {} -> get_context_usage returns None (no data signal)."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "get_context_usage", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {}
@@ -320,7 +507,7 @@ class TestGetContextUsage:
         """SDK returns partial dict -> None (treat as no data; no fabricated 0s)."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "get_context_usage", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"totalTokens": 100}  # maxTokens missing
@@ -341,7 +528,7 @@ class TestGetContextUsage:
         from claudebox.agent_session.catalogs import ContextUsage
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "get_context_usage", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"totalTokens": 12345, "maxTokens": 200000}
@@ -363,16 +550,16 @@ class TestMcpServerHiding:
 
     @pytest.mark.anyio
     async def test_get_mcp_status_filters_sibling_server(self):
-        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+        from claudebox.agent_session._sibling_sessions import CLAUDEBOX_MCP_SERVER_NAME
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "get_mcp_status", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {
                 "mcpServers": [
                     {"name": "jina", "status": "connected"},
-                    {"name": SIBLING_MCP_SERVER_NAME, "status": "connected"},
+                    {"name": CLAUDEBOX_MCP_SERVER_NAME, "status": "connected"},
                 ],
             }
             result = await runtime.get_mcp_status()
@@ -382,7 +569,7 @@ class TestMcpServerHiding:
     @pytest.mark.anyio
     async def test_get_mcp_status_preserves_other_top_level_keys(self):
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "get_mcp_status", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"mcpServers": [], "other": "value"}
@@ -392,20 +579,20 @@ class TestMcpServerHiding:
 
     @pytest.mark.anyio
     async def test_reconnect_mcp_server_protects_sibling_name(self):
-        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+        from claudebox.agent_session._sibling_sessions import CLAUDEBOX_MCP_SERVER_NAME
         from claudebox.agent_session.orchestration.errors import McpServerProtected
 
         runtime = _make_runtime()
 
         with pytest.raises(McpServerProtected):
-            await runtime.reconnect_mcp_server(SIBLING_MCP_SERVER_NAME)
+            await runtime.reconnect_mcp_server(CLAUDEBOX_MCP_SERVER_NAME)
 
-        assert list(runtime._pending_calls) == []  # refused outright, never queued for later
+        assert list(runtime._queue) == []  # refused outright, never queued for later
 
     @pytest.mark.anyio
     async def test_reconnect_mcp_server_forwards_other_names_when_ready(self):
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(
             runtime._sdk,
@@ -420,25 +607,25 @@ class TestMcpServerHiding:
     async def test_reconnect_mcp_server_queues_other_names_when_not_ready(self):
         runtime = _make_runtime()
 
-        await runtime.reconnect_mcp_server("jina")
+        await runtime.reconnect_mcp_server("jina", wait=False)
 
-        assert list(runtime._pending_calls) == [("reconnect_mcp_server", ("jina",), {})]
+        assert len(runtime._queue) == 1
 
     @pytest.mark.anyio
     async def test_toggle_mcp_server_protects_sibling_name(self):
-        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+        from claudebox.agent_session._sibling_sessions import CLAUDEBOX_MCP_SERVER_NAME
         from claudebox.agent_session.orchestration.errors import McpServerProtected
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with pytest.raises(McpServerProtected):
-            await runtime.toggle_mcp_server(SIBLING_MCP_SERVER_NAME, False)
+            await runtime.toggle_mcp_server(CLAUDEBOX_MCP_SERVER_NAME, False)
 
     @pytest.mark.anyio
     async def test_toggle_mcp_server_forwards_other_names_when_ready(self):
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "toggle_mcp_server", new_callable=AsyncMock) as mock_toggle:
             await runtime.toggle_mcp_server("jina", False)
@@ -450,15 +637,15 @@ class TestMcpServerBuilding:
     """_build_mcp_servers/_sibling_sdk_tools - the in-process SDK MCP server construction."""
 
     def test_build_mcp_servers_keys_on_sibling_server_name(self):
-        from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+        from claudebox.agent_session._sibling_sessions import CLAUDEBOX_MCP_SERVER_NAME
 
         runtime = _make_runtime()
 
         servers = runtime._build_mcp_servers()
 
-        assert set(servers) == {SIBLING_MCP_SERVER_NAME}
-        assert servers[SIBLING_MCP_SERVER_NAME]["type"] == "sdk"
-        assert servers[SIBLING_MCP_SERVER_NAME]["name"] == SIBLING_MCP_SERVER_NAME
+        assert set(servers) == {CLAUDEBOX_MCP_SERVER_NAME}
+        assert servers[CLAUDEBOX_MCP_SERVER_NAME]["type"] == "sdk"
+        assert servers[CLAUDEBOX_MCP_SERVER_NAME]["name"] == CLAUDEBOX_MCP_SERVER_NAME
 
     def test_sibling_sdk_tools_returns_three_tools_with_expected_names(self):
         runtime = _make_runtime()
@@ -539,6 +726,63 @@ class TestMcpServerBuilding:
 
         mock_read.assert_awaited_once_with("s1", 5)
 
+    def test_server_carries_needs_user_beside_the_sibling_tools(self):
+        runtime = _make_runtime()
+
+        with patch("claudebox.agent_session.runtime_claude.create_sdk_mcp_server") as create:
+            runtime._build_mcp_servers()
+
+        tools = {t.name: t for t in create.call_args.kwargs["tools"]}
+
+        assert set(tools) == {"session_spawn", "session_ask", "session_read", "needs_user"}
+        schema = tools["needs_user"].input_schema
+        assert set(schema["properties"]) == {"reason", "replies"}
+        assert schema["required"] == ["reason"]
+
+    def test_needs_user_is_allowed_without_a_permission_prompt(self):
+        options = ClaudeRuntime._build_sdk_options(_make_config(permission_mode="default"))
+
+        assert options.allowed_tools == ["mcp__claudebox__needs_user"]
+
+    @pytest.mark.anyio
+    async def test_needs_user_tool_acknowledges(self, tmp_path):
+        runtime = _make_runtime(session_dir=tmp_path)
+
+        result = await runtime._needs_user_sdk_tool().handler({"reason": "Decide: retry state"})
+
+        assert "has been told" in result["content"][0]["text"]
+        assert "is_error" not in result
+
+    @pytest.mark.anyio
+    async def test_needs_user_tool_says_which_replies_were_dropped(self, tmp_path):
+        runtime = _make_runtime(session_dir=tmp_path)
+        replies = ["A", "B", "C", "D", "E", "F", "G"]
+
+        result = await runtime._needs_user_sdk_tool().handler(
+            {"reason": "Pick", "replies": replies},
+        )
+
+        text = result["content"][0]["text"]
+        assert "has been told" in text
+        assert "2 more were dropped" in text
+
+    @pytest.mark.anyio
+    async def test_needs_user_tool_mentions_no_drop_within_the_limit(self, tmp_path):
+        runtime = _make_runtime(session_dir=tmp_path)
+
+        result = await runtime._needs_user_sdk_tool().handler({"reason": "Pick", "replies": ["A"]})
+
+        assert "dropped" not in result["content"][0]["text"]
+
+    @pytest.mark.anyio
+    async def test_needs_user_tool_tells_a_spawned_session_it_was_ignored(self, tmp_path):
+        write_json(tmp_path / "session.json", {"spawned_from_session_id": "parent-1"})
+        runtime = _make_runtime(session_dir=tmp_path)
+
+        result = await runtime._needs_user_sdk_tool().handler({"reason": "Decide: retry state"})
+
+        assert result["content"][0]["text"].startswith("Ignored")
+
 
 class TestConnect:
     """Connection lifecycle - ready event + flush task."""
@@ -596,6 +840,27 @@ class TestConnect:
 
         assert order == ["isolate", "sdk_connect"]
 
+    @pytest.mark.anyio
+    async def test_records_connect_error_and_still_sets_ready_on_failure(self):
+        """A raised connect still sets ready, so parked waiters wake and check connect_error."""
+
+        runtime = _make_runtime()
+
+        with (
+            patch.object(
+                runtime._sdk,
+                "connect",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("agent process would not start"),
+            ),
+            patch.object(ClaudeRuntime, "_isolate_settings_file"),
+            pytest.raises(RuntimeError, match="agent process would not start"),
+        ):
+            await runtime.connect()
+
+        assert runtime.ready.is_set()
+        assert runtime.connect_error == "agent process would not start"
+
 
 class TestDisconnect:
     """Disconnect cleanup - clears state, cancels flush task."""
@@ -605,7 +870,7 @@ class TestDisconnect:
         """disconnect clears the ready event."""
 
         runtime = _make_runtime()
-        runtime.ready.set()
+        _connected(runtime)
 
         with patch.object(runtime._sdk, "disconnect", new_callable=AsyncMock):
             await runtime.disconnect()
@@ -617,24 +882,24 @@ class TestDisconnect:
         """disconnect empties the message buffer."""
 
         runtime = _make_runtime()
-        runtime._buffer.append("leftover")
+        await runtime.query("leftover")
 
         with patch.object(runtime._sdk, "disconnect", new_callable=AsyncMock):
             await runtime.disconnect()
 
-        assert len(runtime._buffer) == 0
+        assert len(runtime._queue) == 0
 
     @pytest.mark.anyio
     async def test_clears_pending_calls(self):
         """disconnect empties pending calls."""
 
         runtime = _make_runtime()
-        runtime._pending_calls.append(("set_model", ("m",), {}))
+        await runtime.set_model("m", wait=False)
 
         with patch.object(runtime._sdk, "disconnect", new_callable=AsyncMock):
             await runtime.disconnect()
 
-        assert len(runtime._pending_calls) == 0
+        assert len(runtime._queue) == 0
 
     @pytest.mark.anyio
     async def test_cancels_flush_task(self):
@@ -654,8 +919,9 @@ class TestDisconnect:
 
         runtime = _make_runtime()
         runtime.ready.set()
-        runtime._buffer.append("msg")
-        runtime._pending_calls.append(("set_model", ("m",), {}))
+        await runtime.query("msg")
+        await runtime.set_model("m", wait=False)
+        assert len(runtime._queue) == 2
 
         with (
             patch.object(
@@ -669,20 +935,19 @@ class TestDisconnect:
             await runtime.disconnect()
 
         assert not runtime.ready.is_set()
-        assert len(runtime._buffer) == 0
-        assert len(runtime._pending_calls) == 0
+        assert len(runtime._queue) == 0
 
 
 class TestFlushOnReady:
     """Buffered message + pending call flushing after ready."""
 
     @pytest.mark.anyio
-    async def test_flushes_pending_calls_before_queries(self):
-        """Pending SDK calls (e.g. set_model) are replayed before buffered queries."""
+    async def test_flushes_in_the_order_queued(self):
+        """A change queued before a prompt is applied before it."""
 
         runtime = _make_runtime()
-        runtime._pending_calls.append(("set_model", ("claude-3",), {}))
-        runtime._buffer.append("hello")
+        await runtime.set_model("claude-3", wait=False)
+        await runtime.query("hello")
 
         call_order: list[tuple[str, str]] = []
 
@@ -716,7 +981,9 @@ class TestFlushOnReady:
         """Buffered queries are flushed in FIFO order."""
 
         runtime = _make_runtime()
-        runtime._buffer.extend(["first", "second", "third"])
+
+        for prompt in ("first", "second", "third"):
+            await runtime.query(prompt)
 
         flushed: list[str] = []
 
@@ -739,22 +1006,21 @@ class TestFlushOnReady:
         """Buffer is empty after flush completes."""
 
         runtime = _make_runtime()
-        runtime._buffer.append("msg")
+        await runtime.query("msg")
 
         with patch.object(runtime._sdk, "query", new_callable=AsyncMock):
             runtime.ready.set()
             await runtime._flush_on_ready()
 
-        assert len(runtime._buffer) == 0
-        assert len(runtime._pending_calls) == 0
+        assert len(runtime._queue) == 0
 
     @pytest.mark.anyio
     async def test_multiple_pending_calls_replayed(self):
         """Multiple pending calls are replayed in order."""
 
         runtime = _make_runtime()
-        runtime._pending_calls.append(("set_model", ("m1",), {}))
-        runtime._pending_calls.append(("set_permission_mode", ("auto",), {}))
+        await runtime.set_model("m1", wait=False)
+        await runtime.set_permission_mode("auto", wait=False)
 
         call_order: list[tuple[str, str]] = []
 
@@ -782,6 +1048,265 @@ class TestFlushOnReady:
             await runtime._flush_on_ready()
 
         assert call_order == [("set_model", "m1"), ("set_permission_mode", "auto")]
+
+    @pytest.mark.anyio
+    async def test_clears_without_flushing_when_connect_failed(self):
+        """A failed connect drops whatever was buffered before the failure was known, rather
+        than sending it into a client that never connected."""
+
+        runtime = _make_runtime()
+        await runtime.query("hello")
+        await runtime.set_model("m1", wait=False)
+        runtime.connect_error = "agent process would not start"
+
+        with (
+            patch.object(runtime._sdk, "query", new_callable=AsyncMock) as mock_query,
+            patch.object(runtime._sdk, "set_model", new_callable=AsyncMock) as mock_set_model,
+        ):
+            runtime.ready.set()
+            await runtime._flush_on_ready()
+
+        mock_query.assert_not_awaited()
+        mock_set_model.assert_not_awaited()
+        assert len(runtime._queue) == 0
+
+
+class TestQueuedChanges:
+    """A change made before the agent connects answers with its outcome and never stalls the queue."""
+
+    @staticmethod
+    def _refusing(runtime: ClaudeRuntime, method: str, text: str) -> AsyncMock:
+        mock = AsyncMock(side_effect=Exception(text))
+        setattr(runtime._sdk, method, mock)
+
+        return mock
+
+    @staticmethod
+    async def _drain(runtime: ClaudeRuntime) -> None:
+        runtime.ready.set()
+        await runtime._flush_on_ready()
+
+    @pytest.mark.anyio
+    async def test_a_refused_change_does_not_strand_queued_prompts(self):
+        runtime = _make_runtime()
+        self._refusing(runtime, "set_permission_mode", "not launched with skip-permissions")
+        runtime._sdk.query = AsyncMock()
+
+        change = asyncio.create_task(runtime.set_permission_mode("bypassPermissions"))
+        await asyncio.sleep(0)
+        await runtime.query("alpha")
+        await self._drain(runtime)
+
+        with pytest.raises(ChangeRefused) as refused:
+            await change
+
+        assert refused.value.context["reason"] == "not launched with skip-permissions"
+        runtime._sdk.query.assert_awaited_once_with("alpha")
+        assert list(runtime._queue) == []
+
+    @pytest.mark.anyio
+    async def test_a_refused_change_does_not_skip_later_changes(self):
+        runtime = _make_runtime()
+        self._refusing(runtime, "set_model", "unknown model")
+        request = _with_control(runtime)
+
+        await runtime.set_model("claude-nonexistent-9", wait=False)
+        await runtime.set_effort_level("low", wait=False)
+        await self._drain(runtime)
+
+        request.assert_awaited_once_with(
+            {"subtype": "apply_flag_settings", "settings": {"effortLevel": "low"}},
+        )
+
+    @pytest.mark.anyio
+    async def test_a_failed_prompt_does_not_strand_the_next(self):
+        runtime = _make_runtime()
+        sent: list[str] = []
+
+        async def send(prompt):
+            if prompt == "first":
+                raise RuntimeError("transport closed")
+
+            sent.append(prompt)
+
+        runtime._sdk.query = AsyncMock(side_effect=send)
+        await runtime.query("first")
+        await runtime.query("second")
+        await self._drain(runtime)
+
+        assert sent == ["second"]
+        assert runtime._drained.is_set()
+
+    @pytest.mark.anyio
+    async def test_calls_during_the_drain_wait_behind_it(self):
+        runtime = _make_runtime()
+        release = asyncio.Event()
+        sent: list[str] = []
+
+        async def slow_model(_model):
+            await release.wait()
+
+        runtime._sdk.set_model = AsyncMock(side_effect=slow_model)
+        runtime._sdk.query = AsyncMock(side_effect=sent.append)
+        await runtime.set_model("m1", wait=False)
+        await runtime.query("first")
+        runtime.ready.set()
+        drain = asyncio.create_task(runtime._flush_on_ready())
+        await asyncio.sleep(0)
+
+        await runtime.query("second")
+        release.set()
+        await drain
+
+        assert sent == ["first", "second"]
+
+    @pytest.mark.anyio
+    async def test_a_pick_during_the_drain_waits_behind_an_older_prompt(self):
+        runtime = _make_runtime()
+        release = asyncio.Event()
+        order: list[str] = []
+
+        async def slow_send(prompt):
+            order.append(prompt)
+
+            if prompt == "first":
+                await release.wait()
+
+        async def set_mode(mode):
+            order.append(mode)
+
+        runtime._sdk.query = AsyncMock(side_effect=slow_send)
+        runtime._sdk.set_permission_mode = AsyncMock(side_effect=set_mode)
+        await runtime.query("first")
+        await runtime.query("second")
+        runtime.ready.set()
+        drain = asyncio.create_task(runtime._flush_on_ready())
+        await asyncio.sleep(0)
+
+        await runtime.set_permission_mode("plan", wait=False)
+        release.set()
+        await drain
+
+        assert order == ["first", "second", "plan"]
+
+    @pytest.mark.anyio
+    async def test_picks_during_the_drain_keep_their_order(self):
+        runtime = _make_runtime()
+        release = asyncio.Event()
+        applied: list[str] = []
+
+        async def set_mode(mode):
+            await release.wait()
+            applied.append(mode)
+
+        runtime._sdk.set_permission_mode = AsyncMock(side_effect=set_mode)
+        await runtime.set_permission_mode("plan", wait=False)
+        runtime.ready.set()
+        drain = asyncio.create_task(runtime._flush_on_ready())
+        await asyncio.sleep(0)
+
+        await runtime.set_permission_mode("default", wait=False)
+        release.set()
+        await drain
+
+        assert applied == ["plan", "default"]
+
+    @pytest.mark.anyio
+    async def test_queued_change_answers_with_its_outcome(self):
+        runtime = _make_runtime()
+        runtime._sdk.set_permission_mode = AsyncMock()
+
+        change = asyncio.create_task(runtime.set_permission_mode("plan"))
+        await asyncio.sleep(0.01)
+
+        assert not change.done()
+        await self._drain(runtime)
+        await change
+        runtime._sdk.set_permission_mode.assert_awaited_once_with("plan")
+
+    @pytest.mark.anyio
+    async def test_queued_change_times_out_and_is_withdrawn(self):
+        runtime = _make_runtime()
+        runtime._sdk.set_model = AsyncMock()
+
+        with (
+            patch(
+                "claudebox.agent_session.runtime_claude.QUEUED_CHANGE_TIMEOUT",
+                timedelta(seconds=0.05),
+            ),
+            pytest.raises(ChangeRefused) as refused,
+        ):
+            await runtime.set_model("m1")
+
+        assert refused.value.context["reason"] == "timed out"
+        await self._drain(runtime)
+        runtime._sdk.set_model.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_wait_false_returns_at_once_and_logs_a_refusal(self):
+        runtime = _make_runtime()
+        runtime._logger = MagicMock()
+        self._refusing(runtime, "set_model", "unknown model")
+
+        await runtime.set_model("claude-nonexistent-9", wait=False)
+        await self._drain(runtime)
+
+        runtime._logger.error.assert_called_once_with(
+            "Queued change refused",
+            setting="model",
+            value="claude-nonexistent-9",
+            reason="unknown model",
+        )
+
+    @pytest.mark.anyio
+    async def test_connected_refusal_raises_change_refused(self):
+        changed = AsyncMock()
+        runtime = _connected(_make_runtime(hooks=HookCallbacks(on_permission_mode_changed=changed)))
+        self._refusing(runtime, "set_permission_mode", "not launched with skip-permissions")
+
+        with pytest.raises(ChangeRefused) as refused:
+            await runtime.set_permission_mode("bypassPermissions")
+
+        assert refused.value.status_code == 409
+        assert refused.value.context["setting"] == "permission_mode"
+        changed.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_connected_timeout_raises_change_refused(self):
+        runtime = _connected(_make_runtime())
+        runtime._sdk.set_model = AsyncMock(side_effect=TimeoutError)
+
+        with pytest.raises(ChangeRefused) as refused:
+            await runtime.set_model("m1")
+
+        assert refused.value.context["reason"] == "timed out"
+
+    @pytest.mark.anyio
+    async def test_connect_error_fails_queued_changes(self):
+        runtime = _make_runtime()
+        runtime._sdk.set_model = AsyncMock()
+
+        change = asyncio.create_task(runtime.set_model("m1"))
+        await asyncio.sleep(0)
+        runtime.connect_error = "agent process would not start"
+        await self._drain(runtime)
+
+        with pytest.raises(SessionNotReady):
+            await change
+
+        runtime._sdk.set_model.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_disconnect_resets_drained(self):
+        runtime = _connected(_make_runtime())
+        runtime._sdk.disconnect = AsyncMock()
+        runtime._sdk.query = AsyncMock()
+
+        await runtime.disconnect()
+        await runtime.query("after")
+
+        runtime._sdk.query.assert_not_awaited()
+        assert list(runtime._queue) == [("after", None)]
 
 
 class TestStderr:
@@ -918,57 +1443,6 @@ class TestContentBlocksStream:
             assert msg["message"]["content"] is blocks
 
 
-class TestWriteEffortToSettings:
-    """settings.json effort level writing."""
-
-    def test_creates_file_when_missing(self, tmp_path):
-        """Creates settings.json with effortLevel when file doesn't exist."""
-
-        settings_path = tmp_path / ".claude" / "settings.json"
-
-        with patch(
-            "claudebox.agent_session.runtime_claude.claude_settings_file",
-            lambda: settings_path,
-        ):
-            ClaudeRuntime._write_effort_to_settings("high")
-
-        result = json.loads(settings_path.read_text())
-        assert result["effortLevel"] == "high"
-
-    def test_preserves_existing_keys(self, tmp_path):
-        """Merges effortLevel without overwriting other settings."""
-
-        settings_path = tmp_path / ".claude" / "settings.json"
-        settings_path.parent.mkdir(parents=True)
-        settings_path.write_text(json.dumps({"theme": "dark", "effortLevel": "low"}))
-
-        with patch(
-            "claudebox.agent_session.runtime_claude.claude_settings_file",
-            lambda: settings_path,
-        ):
-            ClaudeRuntime._write_effort_to_settings("max")
-
-        result = json.loads(settings_path.read_text())
-        assert result["effortLevel"] == "max"
-        assert result["theme"] == "dark"
-
-    def test_handles_corrupt_json(self, tmp_path):
-        """Overwrites corrupt settings.json with valid content."""
-
-        settings_path = tmp_path / ".claude" / "settings.json"
-        settings_path.parent.mkdir(parents=True)
-        settings_path.write_text("{invalid json")
-
-        with patch(
-            "claudebox.agent_session.runtime_claude.claude_settings_file",
-            lambda: settings_path,
-        ):
-            ClaudeRuntime._write_effort_to_settings("medium")
-
-        result = json.loads(settings_path.read_text())
-        assert result["effortLevel"] == "medium"
-
-
 class TestIsolateSettingsFile:
     """Per-session settings.json isolation via symlink to {session_dir}/claude.json."""
 
@@ -983,12 +1457,12 @@ class TestIsolateSettingsFile:
         return claude_dir, claude_dir / "settings.json"
 
     @staticmethod
-    def _runtime_for_session_dir(session_dir) -> ClaudeRuntime:
+    def _runtime_for_session_dir(session_dir, **config_overrides) -> ClaudeRuntime:
         """Build ClaudeRuntime with session_dir set; SDK construction mocked."""
 
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        return _make_runtime(session_dir=session_dir)
+        return _make_runtime(session_dir=session_dir, **config_overrides)
 
     def test_first_start_seeds_from_profile_settings(self, tmp_workspace):
         """settings.json present as regular file -> copied to claude.json + symlinked."""
@@ -1107,6 +1581,92 @@ class TestIsolateSettingsFile:
 
         target = settings_path.resolve()
         assert target.read_text() == '{"effort": "max"}'
+
+    def test_member_isolate_never_reclaims_the_shared_symlink(self, tmp_workspace):
+        """A member starting after the primary does not steal the shared settings.json symlink."""
+
+        _, settings_path = self._settings_paths(tmp_workspace)
+        settings_path.write_text('{"effort": "high"}')
+
+        primary = self._runtime_for_session_dir(tmp_workspace / "sessions" / "primary")
+        primary._isolate_settings_file()
+        primary_target = settings_path.resolve()
+
+        member = self._runtime_for_session_dir(
+            tmp_workspace / "sessions" / "member",
+            is_primary=False,
+        )
+        member._isolate_settings_file()
+
+        assert settings_path.resolve() == primary_target
+
+
+class TestGenerateTitle:
+    """A title comes from a separate one-shot query on the CLI's small model."""
+
+    @staticmethod
+    def _reply(*texts):
+        captured = {}
+
+        async def fake_query(*, prompt, options):
+            captured.update(prompt=prompt, options=options)
+            yield SdkAssistantMessage(
+                content=[SdkTextBlock(text=t) for t in texts],
+                model="claude-haiku-4-5-20251001",
+            )
+            yield SdkResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="side",
+            )
+
+        return fake_query, captured
+
+    @pytest.mark.anyio
+    async def test_returns_the_cleaned_reply(self):
+        runtime = _make_runtime()
+        fake_query, _ = self._reply('"Fixing the CSV', ' parser."')
+
+        with patch("claudebox.agent_session.runtime_claude.sdk_query", fake_query):
+            title = await runtime.generate_title(["fix my parser", "still failing", "thanks"])
+
+        assert title == "Fixing the CSV parser"
+
+    @pytest.mark.anyio
+    async def test_runs_toolless_settingless_and_unsaved_on_the_small_model(self):
+        runtime = _make_runtime(cwd="/work/repo")
+        fake_query, captured = self._reply("A title")
+
+        with patch("claudebox.agent_session.runtime_claude.sdk_query", fake_query):
+            await runtime.generate_title(["one", "two", "three"])
+
+        options = captured["options"]
+        assert options.model == "haiku"
+        assert options.tools == []
+        assert options.setting_sources == []
+        assert options.max_turns == 1
+        assert options.cwd == "/work/repo"
+        assert options.extra_args == {"no-session-persistence": None}
+        assert "<message>\ntwo\n</message>" in captured["prompt"]
+
+    @pytest.mark.anyio
+    async def test_query_failure_propagates(self):
+        """The caller decides what a failure means; the runtime does not swallow it."""
+
+        runtime = _make_runtime()
+
+        async def failing_query(*, prompt, options):
+            raise RuntimeError("cli exited")
+            yield
+
+        with (
+            patch("claudebox.agent_session.runtime_claude.sdk_query", failing_query),
+            pytest.raises(RuntimeError, match="cli exited"),
+        ):
+            await runtime.generate_title(["one", "two", "three"])
 
 
 class TestStreamHealth:

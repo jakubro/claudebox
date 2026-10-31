@@ -1,5 +1,7 @@
 """Board domain models - daemon-specific events and re-exported from extension."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from claudebox import DataClass

@@ -6,6 +6,7 @@ import withPanelBoundary from '../features/app/components/withPanelBoundary'
 import BoardsPanel from '../features/boards'
 import BookmarksPanel from '../features/bookmarks'
 import ContainersPanel from '../features/containers'
+import CronsPanel from '../features/crons'
 import HelpPanel from '../features/help'
 import LogsPanel from '../features/logs'
 import McpPanel from '../features/mcp'
@@ -27,6 +28,7 @@ export const components = {
   stash: withPanelBoundary(StashPanel, 'stash'),
   mcp: withPanelBoundary(McpPanel, 'mcp'),
   tasks: withPanelBoundary(TasksPanel, 'tasks'),
+  crons: withPanelBoundary(CronsPanel, 'crons'),
   sessions: withPanelBoundary(SessionsPanel, 'sessions'),
   boards: withPanelBoundary(BoardsPanel, 'boards'),
   help: withPanelBoundary(HelpPanel, 'help'),
@@ -49,6 +51,7 @@ export const PANEL_SIDES = {
   stash: 'right',
   mcp: 'right',
   tasks: 'right',
+  crons: 'right',
   usage: 'right',
   help: 'right',
   commands: 'right',
@@ -60,6 +63,7 @@ export const CANONICAL_RIGHT_ORDER = [
   'todos',
   'stash',
   'tasks',
+  'crons',
   'bookmarks',
   'boards',
   'usage',

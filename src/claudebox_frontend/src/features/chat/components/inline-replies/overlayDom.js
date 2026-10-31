@@ -62,6 +62,11 @@ export function clampHorizontal(box, bounds) {
   return Math.min(Math.max(bounds.left + EDGE_PAD, box.left), maxLeft)
 }
 
+/** Widest a float may be inside `bounds`, edge padding included. */
+export function maxFloatWidth(bounds) {
+  return bounds.right - bounds.left - 2 * EDGE_PAD
+}
+
 /**
  * Resolve vertical collisions among open floats: a box whose horizontal band overlaps an already-placed
  * one is pushed below it, so pinned floats never cover each other. Pure - desired rects in, adjusted

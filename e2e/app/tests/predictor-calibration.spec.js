@@ -12,9 +12,7 @@ import {
 } from '../../../src/claudebox_frontend/src/config/dimensions.js'
 import { predictTurnHeight } from '../../../src/claudebox_frontend/src/features/chat/utils/predictTurnHeight.js'
 import { TurnRoutingMode } from '../../../src/claudebox_frontend/src/utils/eventProcessing.js'
-import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSEDynamic } from '../mocks/sse.js'
+import { disableAutoCollapse, openSessionWithAPI } from '../helpers.js'
 
 // --- Fixture matrix ---
 
@@ -165,6 +163,55 @@ function buildFixtures() {
     )
   }
 
+  // Hard line breaks: a list renders one row per item and paragraphs open a gap, however short
+  // the lines are - character count alone cannot see either.
+  for (const n of [12, 30]) {
+    fxs.push(
+      fixture(`list-${n}`, {
+        assistantEvents: [
+          {
+            subtype: 'text',
+            content: Array.from({ length: n }, (_, i) => `- item ${i}: a short line`).join('\n'),
+          },
+        ],
+      }),
+    )
+  }
+  fxs.push(
+    fixture('paragraphs-6', {
+      assistantEvents: [
+        {
+          subtype: 'text',
+          content: Array.from({ length: 6 }, () => 'A paragraph of prose. '.repeat(6)).join('\n\n'),
+        },
+      ],
+    }),
+  )
+
+  // A live Bash call usually prints one line; unless marked as changing nothing, it opens expanded.
+  for (const n of [1, 3]) {
+    const bashEvents = []
+    for (let i = 0; i < n; i++) {
+      bashEvents.push({
+        subtype: 'tool_use',
+        content: 'Bash',
+        tool_use_id: `bash-line-${n}-${i}`,
+        tool_name: 'Bash',
+        tool_input: { command: `echo step-${i}` },
+      })
+      bashEvents.push({
+        subtype: 'tool_result',
+        content: `step-${i}`,
+        tool_use_id: `bash-line-${n}-${i}`,
+      })
+    }
+    fxs.push(
+      fixture(`bash-line-${n}`, {
+        assistantEvents: [{ subtype: 'text', content: 'Running.' }, ...bashEvents],
+      }),
+    )
+  }
+
   // Hidden ToolSearch calls must not inflate predicted height: mixes a hidden search with the
   // tool it discovered, isolating whether predictor and renderer agree it contributes nothing.
   fxs.push(
@@ -299,7 +346,13 @@ const ROUTING_STATES = [
     mode: TurnRoutingMode.BASH_ONLY,
     label: 'split on',
     sessionUiState: { rightSlotView: 'terminal' },
-    excludedFixtures: new Set(['cal-bash-1', 'cal-bash-3', ...MIXED_ALL_LAYOUT_QUIRK]),
+    excludedFixtures: new Set([
+      'cal-bash-1',
+      'cal-bash-3',
+      'cal-bash-line-1',
+      'cal-bash-line-3',
+      ...MIXED_ALL_LAYOUT_QUIRK,
+    ]),
   },
   {
     mode: TurnRoutingMode.ALL_TOOLS,
@@ -308,6 +361,8 @@ const ROUTING_STATES = [
     excludedFixtures: new Set([
       'cal-bash-1',
       'cal-bash-3',
+      'cal-bash-line-1',
+      'cal-bash-line-3',
       'cal-tools-1',
       'cal-tools-3',
       ...MIXED_ALL_LAYOUT_QUIRK,
@@ -345,6 +400,8 @@ function turnFromFixture(f) {
       type: 'assistant',
       subtype: e.subtype || 'text',
       content: e.content || '',
+      tool_use_id: e.tool_use_id,
+      tool_input: e.tool_input,
     })),
   }
 }
@@ -357,92 +414,114 @@ test.describe('predictor accuracy regression', () => {
 
   for (const state of ROUTING_STATES) {
     for (const { name, viewport } of WIDTHS) {
-      test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px), ${state.label}`, async ({
-        page,
-      }) => {
-        // Marginal on the 5s cap: the pinned webfont's metrics push narrow-width wrapping over it.
-        test.setTimeout(15000)
-        await page.setViewportSize(viewport)
-        await mockAPI(page, { sessionUiStateDefaults: state.sessionUiState })
-        await mockSSEDynamic(page, () => EVENTS)
-        await page.goto(DEFAULT_SESSION_URL)
-        await waitForAppReady(page)
-        // Predictor estimates expanded heights; keep every turn expanded to match.
-        await disableAutoCollapse(page)
+      for (const collapsed of [false, true]) {
+        // The collapsed strip prices the same at every width and mode; one pass covers it.
+        if (collapsed && (state.mode !== TurnRoutingMode.OFF || name !== 'default')) {
+          continue
+        }
+        const collapseLabel = collapsed ? ', auto-collapse on' : ''
+        test(`drift < ${(DRIFT_BOUND * 100).toFixed(0)}% across fixture matrix at ${name} width (${viewport.width}px), ${state.label}${collapseLabel}`, async ({
+          page,
+        }) => {
+          // Marginal on the default budget: the pinned webfont's metrics push narrow-width wrapping over it.
+          test.setTimeout(30_000)
+          await page.setViewportSize(viewport)
+          await openSessionWithAPI(page, EVENTS, { sessionUiStateDefaults: state.sessionUiState })
+          if (!collapsed) {
+            await disableAutoCollapse(page)
+          }
+          const lastTurnId = FIXTURES[FIXTURES.length - 1].turnId
+          // Every turn has landed once the last one renders, so the collapse pass has run too.
+          await page.locator(`.turn-container[data-turn-id="${lastTurnId}"]`).waitFor()
 
-        const turnIds = FIXTURES.map(f => f.turnId).filter(id => !state.excludedFixtures.has(id))
+          const turnIds = FIXTURES.map(f => f.turnId).filter(id => !state.excludedFixtures.has(id))
 
-        // List is windowed - sweep it fully, recording each turn's height as it mounts.
-        const captured = await page.evaluate(async ids => {
-          const container = document.querySelector('.chat-messages')
-          const contentArea = document.querySelector('.chat-content-area')
-          const settle = () =>
-            new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-          const measured = {}
-          const step = Math.max(1, Math.floor(container.clientHeight / 2))
+          // List is windowed - sweep it fully, recording each turn's height as it mounts.
+          const expectCollapsed = collapsed ? turnIds.filter(id => id !== lastTurnId) : []
+          const captured = await page.evaluate(
+            async ({ ids, collapsedIds }) => {
+              const container = document.querySelector('.chat-messages')
+              const contentArea = document.querySelector('.chat-content-area')
+              const settle = () =>
+                new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+              const measured = {}
+              const step = Math.max(1, Math.floor(container.clientHeight / 2))
 
-          for (let top = 0; top <= container.scrollHeight; top += step) {
-            container.scrollTop = top
-            await settle()
-            for (const id of ids) {
-              if (measured[id] == null) {
-                const el = document.querySelector(`[data-turn-id="${id}"]`)
-                if (el) {
-                  measured[id] = el.offsetHeight
+              for (let top = 0; top <= container.scrollHeight; top += step) {
+                container.scrollTop = top
+                await settle()
+                for (const id of ids) {
+                  if (measured[id] == null) {
+                    const el = document.querySelector(`.turn-container[data-turn-id="${id}"]`)
+                    // Replay can still be landing; a turn counts once it shows the state under test.
+                    const isCollapsed = el?.classList.contains('turn-collapsed')
+                    if (el && isCollapsed === collapsedIds.includes(id)) {
+                      // The whole row the list positions, bottom margin included.
+                      const row = el.closest('.historical-turn-row')
+                      measured[id] = row
+                        ? Math.round(row.getBoundingClientRect().height)
+                        : el.offsetHeight + parseFloat(getComputedStyle(el).marginBottom)
+                    }
+                  }
                 }
               }
+
+              return ids.map(id => ({
+                turnId: id,
+                measured: measured[id] ?? null,
+                containerWidth: container.clientWidth,
+                contentAreaWidth: contentArea?.clientWidth ?? null,
+              }))
+            },
+            { ids: turnIds, collapsedIds: expectCollapsed },
+          )
+
+          const records = []
+          const failures = []
+          for (const c of captured) {
+            if (c.measured == null) {
+              failures.push(`${c.turnId} not found in DOM`)
+              continue
+            }
+            const f = FIXTURE_BY_ID.get(c.turnId)
+            const turn = turnFromFixture(f)
+            const effectiveWidth = Math.max(0, c.containerWidth - TURN_HORIZONTAL_PADDING_PX)
+            const mode = effectiveModeFor(state, c.contentAreaWidth)
+            const isCollapsed = collapsed && c.turnId !== lastTurnId
+            const predicted = predictTurnHeight(turn, effectiveWidth, isCollapsed, mode)
+            const drift = Math.abs(predicted - c.measured) / c.measured
+            records.push({
+              turnId: c.turnId,
+              containerWidth: c.containerWidth,
+              mode,
+              measured: c.measured,
+              predicted,
+              drift,
+              pass: drift < DRIFT_BOUND,
+            })
+            if (drift >= DRIFT_BOUND) {
+              failures.push(
+                `${c.turnId.padEnd(32)} measured=${String(c.measured).padStart(5)}px predicted=${String(predicted).padStart(5)}px drift=${(drift * 100).toFixed(1)}%`,
+              )
             }
           }
 
-          return ids.map(id => ({
-            turnId: id,
-            measured: measured[id] ?? null,
-            containerWidth: container.clientWidth,
-            contentAreaWidth: contentArea?.clientWidth ?? null,
-          }))
-        }, turnIds)
+          // Always dump for offline calibration / re-fitting.
+          fs.writeFileSync(
+            path.join(
+              DUMP_DIR,
+              `calibration-${name}-${state.mode}${collapsed ? '-collapsed' : ''}.json`,
+            ),
+            JSON.stringify({ width: viewport.width, mode: state.mode, records }, null, 2),
+          )
 
-        const records = []
-        const failures = []
-        for (const c of captured) {
-          if (c.measured == null) {
-            failures.push(`${c.turnId} not found in DOM`)
-            continue
-          }
-          const f = FIXTURE_BY_ID.get(c.turnId)
-          const turn = turnFromFixture(f)
-          const effectiveWidth = Math.max(0, c.containerWidth - TURN_HORIZONTAL_PADDING_PX)
-          const mode = effectiveModeFor(state, c.contentAreaWidth)
-          const predicted = predictTurnHeight(turn, effectiveWidth, false, mode)
-          const drift = Math.abs(predicted - c.measured) / c.measured
-          records.push({
-            turnId: c.turnId,
-            containerWidth: c.containerWidth,
-            mode,
-            measured: c.measured,
-            predicted,
-            drift,
-            pass: drift < DRIFT_BOUND,
-          })
-          if (drift >= DRIFT_BOUND) {
-            failures.push(
-              `${c.turnId.padEnd(32)} measured=${String(c.measured).padStart(5)}px predicted=${String(predicted).padStart(5)}px drift=${(drift * 100).toFixed(1)}%`,
+          if (failures.length > 0) {
+            throw new Error(
+              `${failures.length}/${records.length} fixtures exceed ${(DRIFT_BOUND * 100).toFixed(0)}% drift at ${name} width (${viewport.width}px), ${state.label}:\n  ${failures.join('\n  ')}`,
             )
           }
-        }
-
-        // Always dump for offline calibration / re-fitting.
-        fs.writeFileSync(
-          path.join(DUMP_DIR, `calibration-${name}-${state.mode}.json`),
-          JSON.stringify({ width: viewport.width, mode: state.mode, records }, null, 2),
-        )
-
-        if (failures.length > 0) {
-          throw new Error(
-            `${failures.length}/${records.length} fixtures exceed ${(DRIFT_BOUND * 100).toFixed(0)}% drift at ${name} width (${viewport.width}px), ${state.label}:\n  ${failures.join('\n  ')}`,
-          )
-        }
-      })
+        })
+      }
     }
   }
 })

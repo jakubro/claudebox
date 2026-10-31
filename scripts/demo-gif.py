@@ -5,6 +5,8 @@
 # ///
 """Assemble Playwright-captured demo frames into the README's looping GIF."""
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path

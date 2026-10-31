@@ -1,5 +1,7 @@
 """Claudebox CLI - verb-mode subparser dispatch + per-verb handlers."""
 
+from __future__ import annotations
+
 from . import (
     cmd_build,
     cmd_containers,

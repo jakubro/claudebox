@@ -1,7 +1,7 @@
 /** Tests for useBoardData hook. */
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import useBoardData from './useBoardData'
 
 const mockGetBoard = vi.fn()
@@ -9,17 +9,59 @@ vi.mock('../../../api/boards', () => ({
   getBoard: (...args) => mockGetBoard(...args),
 }))
 
-const mockStreamContext = { sessionsChanged: 0, containerStatus: 0 }
+const mockStreamContext = { sessionsChanged: 0, changesByWorkspace: {}, boardChanges: {} }
 vi.mock('../../../context/DaemonStreamContext', () => ({
   useDaemonStreamContext: () => mockStreamContext,
+}))
+
+vi.mock('../../../context/WorkspaceContext', () => ({
+  useWorkspace: () => ({ workspaceId: 'ws-1' }),
 }))
 
 describe('useBoardData', () => {
   beforeEach(() => {
     mockGetBoard.mockReset()
     mockStreamContext.sessionsChanged = 0
-    mockStreamContext.containerStatus = 0
+    mockStreamContext.changesByWorkspace = {}
+    mockStreamContext.boardChanges = {}
   })
+
+  function renderBoard() {
+    return renderHook(({ id }) => useBoardData(id), { initialProps: { id: 'b1' } })
+  }
+
+  async function renderLoadedBoard() {
+    const hook = renderBoard()
+    await waitFor(() => {
+      expect(hook.result.current.loading).toBe(false)
+    })
+
+    return hook
+  }
+
+  async function renderRequestedBoard() {
+    const hook = renderBoard()
+    await waitFor(() => {
+      expect(mockGetBoard).toHaveBeenCalledWith('b1')
+    })
+
+    return hook
+  }
+
+  async function renderSwitchingBoards(respondB2) {
+    let resolveB1
+    mockGetBoard.mockImplementation(id => {
+      if (id === 'b1') {
+        return new Promise(resolve => {
+          resolveB1 = resolve
+        })
+      }
+      return respondB2()
+    })
+    const hook = await renderRequestedBoard()
+
+    return { ...hook, resolveB1 }
+  }
 
   it('fetches board data on mount', async () => {
     const boardData = { id: 'b1', name: 'Sprint', columns: [] }
@@ -61,21 +103,15 @@ describe('useBoardData', () => {
     expect(result.current.board).toBeNull()
   })
 
-  it('re-fetches when sessionsChanged increments', async () => {
+  it('re-fetches on a change in its own workspace', async () => {
     const boardData = { id: 'b1', name: 'Sprint', columns: [] }
     mockGetBoard.mockResolvedValue(boardData)
 
-    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { rerender } = await renderLoadedBoard()
 
     expect(mockGetBoard).toHaveBeenCalledTimes(1)
 
-    mockStreamContext.sessionsChanged = 1
+    mockStreamContext.changesByWorkspace = { 'ws-1': 1 }
     rerender({ id: 'b1' })
 
     await waitFor(() => {
@@ -83,38 +119,27 @@ describe('useBoardData', () => {
     })
   })
 
-  it('re-fetches when containerStatus increments', async () => {
+  it("does not re-fetch on another workspace's change", async () => {
     const boardData = { id: 'b1', name: 'Sprint', columns: [] }
     mockGetBoard.mockResolvedValue(boardData)
 
-    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { rerender } = await renderLoadedBoard()
 
     expect(mockGetBoard).toHaveBeenCalledTimes(1)
 
-    mockStreamContext.containerStatus = 1
+    // What the stream holds after one sessions_changed from another workspace.
+    mockStreamContext.sessionsChanged = 1
+    mockStreamContext.changesByWorkspace = { 'ws-2': 1 }
     rerender({ id: 'b1' })
+    await new Promise(resolve => setTimeout(resolve, 0))
 
-    await waitFor(() => {
-      expect(mockGetBoard).toHaveBeenCalledTimes(2)
-    })
+    expect(mockGetBoard).toHaveBeenCalledTimes(1)
   })
 
   it('re-fetches when boardId changes', async () => {
     mockGetBoard.mockResolvedValue({ id: 'b1', name: 'Board 1' })
 
-    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result, rerender } = await renderLoadedBoard()
 
     mockGetBoard.mockResolvedValue({ id: 'b2', name: 'Board 2' })
     rerender({ id: 'b2' })
@@ -153,19 +178,17 @@ describe('useBoardData', () => {
       }),
     )
 
-    const { rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
+    const { rerender } = renderBoard()
 
     await waitFor(() => {
       expect(mockGetBoard).toHaveBeenCalledTimes(1)
     })
 
-    mockStreamContext.sessionsChanged = 1
+    mockStreamContext.changesByWorkspace = { 'ws-1': 1 }
     rerender({ id: 'b1' })
-    mockStreamContext.sessionsChanged = 2
+    mockStreamContext.changesByWorkspace = { 'ws-1': 2 }
     rerender({ id: 'b1' })
-    mockStreamContext.containerStatus = 1
+    mockStreamContext.changesByWorkspace = { 'ws-1': 3 }
     rerender({ id: 'b1' })
 
     // Three signals arrived while the first request was still outstanding - none started a
@@ -188,17 +211,15 @@ describe('useBoardData', () => {
         }),
     )
 
-    const { rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
+    const { rerender } = renderBoard()
 
     await waitFor(() => {
       expect(mockGetBoard).toHaveBeenCalledTimes(1)
     })
 
-    mockStreamContext.sessionsChanged = 1
+    mockStreamContext.changesByWorkspace = { 'ws-1': 1 }
     rerender({ id: 'b1' })
-    mockStreamContext.containerStatus = 1
+    mockStreamContext.changesByWorkspace = { 'ws-1': 2 }
     rerender({ id: 'b1' })
 
     resolvers[0]({ id: 'b1', name: 'Sprint', columns: [] })
@@ -215,23 +236,9 @@ describe('useBoardData', () => {
   })
 
   it('does not apply the previous board response after switching boards mid-request', async () => {
-    let resolveB1
-    mockGetBoard.mockImplementation(id => {
-      if (id === 'b1') {
-        return new Promise(resolve => {
-          resolveB1 = resolve
-        })
-      }
-      return Promise.resolve({ id: 'b2', name: 'Board 2', columns: [] })
-    })
-
-    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
-
-    await waitFor(() => {
-      expect(mockGetBoard).toHaveBeenCalledWith('b1')
-    })
+    const { result, rerender, resolveB1 } = await renderSwitchingBoards(() =>
+      Promise.resolve({ id: 'b2', name: 'Board 2', columns: [] }),
+    )
 
     rerender({ id: 'b2' })
 
@@ -251,23 +258,7 @@ describe('useBoardData', () => {
   })
 
   it('keeps loading true for the new board while the previous board settles late', async () => {
-    let resolveB1
-    mockGetBoard.mockImplementation(id => {
-      if (id === 'b1') {
-        return new Promise(resolve => {
-          resolveB1 = resolve
-        })
-      }
-      return new Promise(() => {})
-    })
-
-    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
-
-    await waitFor(() => {
-      expect(mockGetBoard).toHaveBeenCalledWith('b1')
-    })
+    const { result, rerender, resolveB1 } = await renderSwitchingBoards(() => new Promise(() => {}))
 
     rerender({ id: 'b2' })
 
@@ -281,23 +272,9 @@ describe('useBoardData', () => {
   })
 
   it('settles an orphaned joiner when its board is switched away, without a spurious extra fetch', async () => {
-    let resolveB1
-    mockGetBoard.mockImplementation(id => {
-      if (id === 'b1') {
-        return new Promise(resolve => {
-          resolveB1 = resolve
-        })
-      }
-      return Promise.resolve({ id: 'b2', name: 'Board 2', columns: [] })
-    })
-
-    const { result, rerender } = renderHook(({ id }) => useBoardData(id), {
-      initialProps: { id: 'b1' },
-    })
-
-    await waitFor(() => {
-      expect(mockGetBoard).toHaveBeenCalledWith('b1')
-    })
+    const { result, rerender, resolveB1 } = await renderSwitchingBoards(() =>
+      Promise.resolve({ id: 'b2', name: 'Board 2', columns: [] }),
+    )
 
     let joinerSettled = false
     act(() => {
@@ -324,5 +301,45 @@ describe('useBoardData', () => {
     })
 
     expect(mockGetBoard).toHaveBeenCalledTimes(2)
+  })
+
+  async function mounted(id = 'b1') {
+    mockGetBoard.mockResolvedValue({ id, name: 'Sprint', columns: [] })
+    const hook = renderHook(({ boardId }) => useBoardData(boardId), {
+      initialProps: { boardId: id },
+    })
+    await waitFor(() => expect(hook.result.current.loading).toBe(false))
+    return hook
+  }
+
+  it("re-fetches on its own board's update", async () => {
+    const { rerender } = await mounted()
+
+    mockStreamContext.boardChanges = { 'ws-1/b1': 1 }
+    rerender({ boardId: 'b1' })
+
+    await waitFor(() => expect(mockGetBoard).toHaveBeenCalledTimes(2))
+  })
+
+  it.each([
+    ["another board's update", { 'ws-1/b2': 1 }],
+    ['the same board id in another workspace', { 'ws-2/b1': 1 }],
+  ])('ignores %s', async (_label, changes) => {
+    const { rerender } = await mounted()
+
+    mockStreamContext.boardChanges = changes
+    rerender({ boardId: 'b1' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    expect(mockGetBoard).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes the update count', async () => {
+    const { result, rerender } = await mounted()
+
+    mockStreamContext.boardChanges = { 'ws-1/b1': 3 }
+    rerender({ boardId: 'b1' })
+
+    expect(result.current.updates).toBe(3)
   })
 })

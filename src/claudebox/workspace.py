@@ -1,5 +1,7 @@
 """Workspace context for managing Claude SDK workspaces and sessions."""
 
+from __future__ import annotations
+
 import os
 from collections.abc import Iterable
 from pathlib import Path
@@ -37,7 +39,7 @@ class Workspace:
 
         return self.path.name
 
-    def list_sessions(self) -> Iterable["Session"]:
+    def list_sessions(self) -> Iterable[Session]:
         """Yield Session objects for each session directory in workspace."""
 
         from .session.session import Session
@@ -56,7 +58,7 @@ class Workspace:
 
             yield Session(session_id, workspace=self, _session_dir=session_dir)
 
-    def find_session(self, session_id: str) -> "Session | None":
+    def find_session(self, session_id: str) -> Session | None:
         """Find existing session by ID, or None if not found."""
 
         from .session.session import Session
@@ -68,7 +70,7 @@ class Workspace:
 
         return Session(session_id, workspace=self, _session_dir=session_dir)
 
-    def ensure_session(self, session_id: str) -> "Session":
+    def ensure_session(self, session_id: str) -> Session:
         """Find existing session or create new timestamped directory."""
 
         from .session.session import Session
@@ -102,14 +104,26 @@ class Workspace:
 
         return self.path / CONFIG_DIR_NAME / HOST_CLAUDE_DIR_SUBPATH / "projects"
 
-    @property
-    def sdk_workspace_hash(self) -> str:
-        """Workspace identifier used by Claude SDK for project directory naming."""
 
-        return str(self.path).replace("/", "-")
+def claude_projects_root() -> Path:
+    """Return this process's Claude projects folder, under `$CLAUDE_CONFIG_DIR` else `~/.claude`."""
 
-    @property
-    def sdk_project_dir(self) -> Path:
-        """SDK project directory: ~/.claude/projects/{workspace_hash}/"""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
 
-        return self.sdk_projects_root / self.sdk_workspace_hash
+
+def find_sdk_transcript(projects_root: Path, session_id: str) -> Path | None:
+    """Return the `<session_id>.jsonl` under any project folder of `projects_root`, or None.
+
+    Found by id, as the CLI finds it, because the folder name is the CLI's to choose.
+    """
+
+    if not projects_root.is_dir():
+        return None
+
+    for project in sorted(projects_root.iterdir()):
+        transcript = project / f"{session_id}.jsonl"
+
+        if transcript.is_file():
+            return transcript
+
+    return None

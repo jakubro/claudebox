@@ -1,5 +1,7 @@
 """Claude Code hook decorator and request/response types."""
 
+from __future__ import annotations
+
 import functools
 import inspect
 import os
@@ -47,7 +49,7 @@ class HookResponse:
 
         env_file = os.environ["CLAUDE_ENV_FILE"]
 
-        with open(env_file, "a") as f:
+        with open(env_file, "a", encoding="utf-8") as f:
             f.write(f"export {name}={value}\n")
 
     def show(self, message: str) -> None:

@@ -1,0 +1,6 @@
+{"type": "user", "subtype": "text", "is_human": true, "content": "Read the guide", "ts": "2025-01-18T12:00:00Z", "turn_id": "turn_001", "id": "evt_001", "primary": true}
+{"type": "assistant", "subtype": "tool_use", "content": "Read", "ts": "2025-01-18T12:00:01Z", "tool_use_id": "tool_001", "tool_name": "Read", "tool_input": {"file_path": "/home/user/project/docs/guide/README.md"}, "id": "evt_002", "primary": false, "is_human": false}
+{"type": "assistant", "subtype": "tool_result", "content": "     1\t# Guide\n     2\t\n     3\t![diagram](img/d.png)", "ts": "2025-01-18T12:00:02Z", "tool_use_id": "tool_001", "id": "evt_003", "primary": false, "is_human": false}
+{"type": "assistant", "subtype": "tool_use", "content": "Read", "ts": "2025-01-18T12:00:02Z", "tool_use_id": "tool_002", "tool_name": "Read", "tool_input": {"file_path": "guide.md"}, "id": "evt_005", "primary": false, "is_human": false}
+{"type": "assistant", "subtype": "tool_result", "content": "     1\t# Bare\n     2\t\n     3\t![bare](img/b.png)", "ts": "2025-01-18T12:00:02Z", "tool_use_id": "tool_002", "id": "evt_006", "primary": false, "is_human": false}
+{"type": "result", "subtype": "success", "turn_id": "turn_001", "ts": "2025-01-18T12:00:03Z", "id": "evt_004", "primary": false, "is_human": false}

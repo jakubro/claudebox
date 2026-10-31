@@ -3,36 +3,99 @@
 .turn-progress {
   margin-top: 10px;
   margin-bottom: 10px;
+  min-height: 1lh;
   font-size: 13px;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.turn-progress-working {
+.turn-answer-copy-btn {
+  position: static;
+  opacity: 1;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.turn-progress-waiting .turn-answer-copy-btn {
+  padding-left: 6px;
+}
+
+.turn-progress-working,
+.turn-progress-waiting {
   color: var(--text-muted);
 }
 
-.turn-progress-working .progress-spinner {
-  display: inline-block;
+.progress-spinner {
+  flex-shrink: 0;
+}
+
+.turn-progress-working .progress-spinner,
+.turn-progress-stopping .progress-spinner {
   animation: spin 1s linear infinite;
 }
 
-.turn-progress-working .dot {
+.turn-progress-working .dot,
+.turn-progress-waiting .dot {
   opacity: 0;
   animation: dot-fade 1.2s infinite;
 }
 
-.turn-progress-working .dot-1 {
+.turn-progress-working .dot-1,
+.turn-progress-waiting .dot-1 {
   animation-delay: 0s;
 }
-.turn-progress-working .dot-2 {
+.turn-progress-working .dot-2,
+.turn-progress-waiting .dot-2 {
   animation-delay: 0.2s;
 }
-.turn-progress-working .dot-3 {
+.turn-progress-working .dot-3,
+.turn-progress-waiting .dot-3 {
   animation-delay: 0.4s;
+}
+
+.turn-progress-waiting {
+  gap: 0;
+  min-width: 0;
+}
+
+.turn-progress-waiting .progress-spinner {
+  margin-right: 6px;
+  opacity: 0.6;
+  animation: spin 2s linear infinite;
+}
+
+.turn-progress-waiting .turn-progress-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-progress-waiting .turn-progress-dots {
+  flex-shrink: 0;
+}
+
+.turn-progress-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.turn-progress-text .turn-progress-label {
+  display: inline-block;
+  max-width: calc(100% - 3ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
 }
 
 .turn-progress-complete {
   color: #4caf50;
+}
+
+.turn-error .turn-progress-complete {
+  color: #f44336;
 }

@@ -95,3 +95,47 @@
 .compaction-summary strong {
   font-weight: 600;
 }
+
+.compaction-summary h1,
+.compaction-summary h2,
+.compaction-summary h3,
+.compaction-summary h4,
+.compaction-summary h5,
+.compaction-summary h6 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+}
+
+.compaction-summary h1:first-child,
+.compaction-summary h2:first-child,
+.compaction-summary h3:first-child,
+.compaction-summary h4:first-child,
+.compaction-summary h5:first-child,
+.compaction-summary h6:first-child {
+  margin-top: 0;
+}
+
+.compaction-summary h1 {
+  font-size: 1.4em;
+}
+
+.compaction-summary h2 {
+  font-size: 1.2em;
+}
+
+.compaction-summary h3 {
+  font-size: 1.1em;
+}
+
+.compaction-summary h4 {
+  font-size: 1em;
+}
+
+.compaction-summary h5 {
+  font-size: 0.875em;
+}
+
+.compaction-summary h6 {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}

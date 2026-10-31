@@ -1,5 +1,7 @@
 """Daemon-specific constants - health polling, shutdown, registry filenames."""
 
+from __future__ import annotations
+
 from datetime import timedelta
 
 import httpx
@@ -7,12 +9,14 @@ import httpx
 
 # Registry filenames under each workspace's claudebox config dir.
 DAEMON_STATE_FILE = "daemon-state.json"  # per-workspace container registry
-UI_STATE_FILE = "ui-state.json"  # per-workspace UI state
 
 
 # Container health - ongoing monitoring
 CONTAINER_HEALTH_MONITOR_INTERVAL = timedelta(seconds=5)
 CONTAINER_HEALTH_MAX_FAILURES = 3  # consecutive failures -> crashed
+
+# Sessions listing - first/last messages ship as previews; session.json keeps them whole
+LISTING_PREVIEW_CHARS = 300
 
 # Session mutation polling - detecting in-session content changes
 SESSION_MUTATION_POLL_INTERVAL = timedelta(seconds=5)
@@ -21,6 +25,12 @@ SESSION_MUTATION_POLL_INTERVAL = timedelta(seconds=5)
 CONTAINER_HEALTH_STARTUP_MAX_RETRIES = 30  # max poll attempts
 CONTAINER_HEALTH_STARTUP_INTERVAL = timedelta(seconds=1)
 CONTAINER_HEALTH_STARTUP_TIMEOUT = timedelta(seconds=3)  # per-attempt HTTP timeout
+
+# A container that has not answered yet is booting, not crashing, so the monitor's crash transition
+# waits out the same budget the startup poll runs through - derived, so raising one raises both.
+CONTAINER_STARTUP_BUDGET = CONTAINER_HEALTH_STARTUP_MAX_RETRIES * (
+    CONTAINER_HEALTH_STARTUP_TIMEOUT + CONTAINER_HEALTH_STARTUP_INTERVAL
+)
 
 # Container lifecycle
 # read exceeds the 1s SSE keepalive ping so healthy streams never trip it

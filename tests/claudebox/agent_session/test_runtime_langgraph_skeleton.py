@@ -1,5 +1,7 @@
 """LangGraphRuntime skeleton - capability matrix, Protocol stubs, factory dispatch."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest

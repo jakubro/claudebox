@@ -17,33 +17,26 @@ const SESSION_SCOPED_PREFIXES = [
 ]
 
 /**
- * Live session ids for the current workspace plus every other registered workspace's.
- * Storage keys carry no workspace segment, so a session alive elsewhere must count as live
- * here too or it looks dead and gets swept. Best-effort: a workspace whose sessions fetch
- * fails contributes nothing; a failed workspace-list fetch falls back to just currentLiveIds.
+ * Live session ids across every registered workspace - storage keys carry no workspace segment.
+ * Null when any lookup fails: a partial set would mark that workspace's sessions dead.
  * @param {string} currentWorkspaceId
  * @param {Iterable<string>} currentLiveIds - Live ids already fetched for the current workspace.
- * @returns {Promise<Set<string>>}
+ * @returns {Promise<Set<string> | null>}
  */
 export async function collectLiveSessionIdsAcrossWorkspaces(currentWorkspaceId, currentLiveIds) {
   const ids = new Set(currentLiveIds)
-  let workspaces
 
   try {
-    workspaces = await listWorkspaces()
-  } catch {
-    return ids
-  }
-
-  const others = workspaces.filter(w => w.id !== currentWorkspaceId)
-  const results = await Promise.allSettled(others.map(w => listSessionsForWorkspace(w.id)))
-
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      for (const session of result.value.sessions || []) {
+    const workspaces = await listWorkspaces()
+    const others = workspaces.filter(w => w.id !== currentWorkspaceId)
+    const listings = await Promise.all(others.map(w => listSessionsForWorkspace(w.id)))
+    for (const listing of listings) {
+      for (const session of listing.sessions || []) {
         ids.add(session.session_id)
       }
     }
+  } catch {
+    return null
   }
 
   return ids

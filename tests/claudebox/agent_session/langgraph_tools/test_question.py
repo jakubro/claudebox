@@ -1,5 +1,7 @@
 """question.py @tool tests - ask_user_question backed by interrupt()."""
 
+from __future__ import annotations
+
 from claudebox.agent_session.langgraph_tools.question import make_question_tools
 
 

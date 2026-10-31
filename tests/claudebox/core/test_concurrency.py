@@ -1,10 +1,12 @@
 """Tests for claudebox.concurrency - sync/async bridging and call collapsing."""
 
+from __future__ import annotations
+
 import asyncio
 
 import pytest
 
-from claudebox.core.concurrency import SingleFlight, maybe_awaitable
+from claudebox.core.concurrency import KeyedSingleFlight, SingleFlight, maybe_awaitable
 
 
 class TestMaybeAwaitable:
@@ -143,3 +145,144 @@ class TestSingleFlight:
             await flight.run(_failing)
 
         assert await flight.run(_working) == "ok"
+
+
+class TestKeyedSingleFlight:
+    """One job per key; the job is cancelled only once every caller has left."""
+
+    @staticmethod
+    def _gated_job(starts: list, release: asyncio.Event, value: str):
+        async def _job():
+            starts.append(value)
+            await release.wait()
+
+            return value
+
+        return _job
+
+    @pytest.mark.anyio
+    async def test_concurrent_callers_of_one_key_run_the_job_once(self):
+        flight = KeyedSingleFlight()
+        starts: list = []
+        release = asyncio.Event()
+        job = self._gated_job(starts, release, "a")
+
+        waiters = [asyncio.create_task(flight.run("k", job)) for _ in range(3)]
+        await asyncio.sleep(0)
+        release.set()
+
+        assert await asyncio.gather(*waiters) == ["a", "a", "a"]
+        assert starts == ["a"]
+
+    @pytest.mark.anyio
+    async def test_different_keys_run_independently(self):
+        flight = KeyedSingleFlight()
+        starts: list = []
+        release = asyncio.Event()
+
+        first = asyncio.create_task(flight.run("k1", self._gated_job(starts, release, "a")))
+        second = asyncio.create_task(flight.run("k2", self._gated_job(starts, release, "b")))
+        await asyncio.sleep(0)
+        release.set()
+
+        assert await asyncio.gather(first, second) == ["a", "b"]
+        assert starts == ["a", "b"]
+
+    @pytest.mark.anyio
+    async def test_one_caller_leaving_keeps_the_job_for_the_others(self):
+        flight = KeyedSingleFlight()
+        starts: list = []
+        release = asyncio.Event()
+        job = self._gated_job(starts, release, "a")
+
+        quitter = asyncio.create_task(flight.run("k", job))
+        stayer = asyncio.create_task(flight.run("k", job))
+        await asyncio.sleep(0)
+        quitter.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await quitter
+
+        release.set()
+
+        assert await stayer == "a"
+
+    @pytest.mark.anyio
+    async def test_the_last_caller_leaving_cancels_the_job(self):
+        flight = KeyedSingleFlight()
+        cancelled = asyncio.Event()
+
+        async def _job():
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+
+                raise
+
+        callers = [asyncio.create_task(flight.run("k", _job)) for _ in range(2)]
+        await asyncio.sleep(0)
+
+        for caller in callers:
+            caller.cancel()
+
+        await asyncio.gather(*callers, return_exceptions=True)
+        await asyncio.wait_for(cancelled.wait(), 1)
+
+    @pytest.mark.anyio
+    async def test_failure_reaches_every_caller(self):
+        flight = KeyedSingleFlight()
+        release = asyncio.Event()
+
+        async def _job():
+            await release.wait()
+
+            raise ValueError("boom")
+
+        waiters = [asyncio.create_task(flight.run("k", _job)) for _ in range(2)]
+        await asyncio.sleep(0)
+        release.set()
+        results = await asyncio.gather(*waiters, return_exceptions=True)
+
+        assert [type(r) for r in results] == [ValueError, ValueError]
+
+    @pytest.mark.anyio
+    async def test_a_run_after_the_last_settled_is_fresh(self):
+        flight = KeyedSingleFlight()
+        starts: list = []
+        release = asyncio.Event()
+        release.set()
+        job = self._gated_job(starts, release, "a")
+
+        await flight.run("k", job)
+        await flight.run("k", job)
+
+        assert starts == ["a", "a"]
+
+    @pytest.mark.anyio
+    async def test_a_caller_arriving_while_a_cancelled_job_unwinds_starts_afresh(self):
+        flight = KeyedSingleFlight()
+        unwinding = asyncio.Event()
+        unwound = asyncio.Event()
+
+        async def _abandoned():
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                unwinding.set()
+                await unwound.wait()
+
+                raise
+
+        async def _fresh():
+            return "fresh"
+
+        quitter = asyncio.create_task(flight.run("k", _abandoned))
+        await asyncio.sleep(0)
+        quitter.cancel()
+        await unwinding.wait()
+
+        assert await flight.run("k", _fresh) == "fresh"
+
+        unwound.set()
+        await asyncio.gather(quitter, return_exceptions=True)

@@ -1,5 +1,7 @@
 """Tests for claudebox.constants - env-overridable accessors."""
 
+from __future__ import annotations
+
 from claudebox.constants import DAEMON_PORT, daemon_base_url
 
 

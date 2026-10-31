@@ -16,6 +16,30 @@ vi.mock('../config/storage', () => ({
   WORKSPACE_STORAGE_KEY: 'claudebox-workspace-id',
 }))
 
+async function renderLoaded(wrapper) {
+  const hook = renderHook(() => useWorkspace(), { wrapper })
+  await waitFor(() => {
+    expect(hook.result.current.loading).toBe(false)
+  })
+
+  return hook
+}
+
+async function renderTwoWorkspaces(wrapper) {
+  fetch.mockResolvedValue({
+    ok: true,
+    json: () =>
+      Promise.resolve({
+        workspaces: [
+          { id: 'ws-1', name: 'First' },
+          { id: 'ws-2', name: 'Second' },
+        ],
+      }),
+  })
+
+  return renderLoaded(wrapper)
+}
+
 describe('useWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -48,11 +72,7 @@ describe('useWorkspace', () => {
       json: () => Promise.resolve({ workspaces: [{ id: 'ws-1', name: 'My Workspace' }] }),
     })
 
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded(wrapper)
 
     expect(result.current.workspaceId).toBe('ws-1')
     expect(result.current.workspaces).toEqual([{ id: 'ws-1', name: 'My Workspace' }])
@@ -62,22 +82,7 @@ describe('useWorkspace', () => {
   it('restores workspace from localStorage when multiple exist', async () => {
     mockLocalStorage['claudebox-workspace-id'] = 'ws-2'
 
-    fetch.mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          workspaces: [
-            { id: 'ws-1', name: 'First' },
-            { id: 'ws-2', name: 'Second' },
-          ],
-        }),
-    })
-
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderTwoWorkspaces(wrapper)
 
     expect(result.current.workspaceId).toBe('ws-2')
     expect(mockSetWorkspaceId).toHaveBeenCalledWith('ws-2')
@@ -86,22 +91,7 @@ describe('useWorkspace', () => {
   it('falls back to first workspace when stored ID not found', async () => {
     mockLocalStorage['claudebox-workspace-id'] = 'ws-gone'
 
-    fetch.mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          workspaces: [
-            { id: 'ws-1', name: 'First' },
-            { id: 'ws-2', name: 'Second' },
-          ],
-        }),
-    })
-
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderTwoWorkspaces(wrapper)
 
     expect(result.current.workspaceId).toBe('ws-1')
   })
@@ -109,11 +99,7 @@ describe('useWorkspace', () => {
   it('handles daemon not available gracefully', async () => {
     fetch.mockRejectedValue(new Error('Connection refused'))
 
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded(wrapper)
 
     expect(result.current.workspaceId).toBeNull()
     expect(result.current.workspaces).toEqual([])
@@ -122,32 +108,13 @@ describe('useWorkspace', () => {
   it('handles failed response gracefully', async () => {
     fetch.mockResolvedValue({ ok: false })
 
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded(wrapper)
 
     expect(result.current.workspaceId).toBeNull()
   })
 
   it('selectWorkspace updates state and persists', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          workspaces: [
-            { id: 'ws-1', name: 'First' },
-            { id: 'ws-2', name: 'Second' },
-          ],
-        }),
-    })
-
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderTwoWorkspaces(wrapper)
 
     act(() => {
       result.current.selectWorkspace('ws-2')
@@ -164,11 +131,7 @@ describe('useWorkspace', () => {
       json: () => Promise.resolve({ workspaces: [] }),
     })
 
-    const { result } = renderHook(() => useWorkspace(), { wrapper })
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
+    const { result } = await renderLoaded(wrapper)
 
     expect(result.current.workspaceId).toBeNull()
     expect(result.current.workspaces).toEqual([])

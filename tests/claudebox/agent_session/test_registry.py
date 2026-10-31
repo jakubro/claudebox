@@ -1,5 +1,7 @@
 """Resolver maps workspace `agent` strings to runtime classes."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox import UnknownRuntime, resolve_runtime_class

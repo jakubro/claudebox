@@ -1,9 +1,12 @@
 """Async polling primitives - start/stop lifecycle with cancellation handling."""
 
+from __future__ import annotations
+
 import asyncio
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from .file_cache import FileStamp, file_stamp
 from .logging import get_logger
 
 
@@ -64,12 +67,12 @@ class AsyncPoller(ABC):
 
 
 class MtimeWatcher(AsyncPoller):
-    """Watch files for mtime changes with debounce; subclasses implement _on_changed()."""
+    """Watch files for file-stamp changes with debounce; subclasses implement _on_changed()."""
 
     def __init__(self, *, interval: float, debounce: float, name: str) -> None:
         super().__init__(interval=interval, name=name)
         self._debounce = debounce
-        self._watched: dict[str, float] = {}
+        self._watched: dict[str, FileStamp | None] = {}
 
     def sync_watches(self, paths: list[Path]) -> None:
         """Replace watched set with the given paths."""
@@ -78,21 +81,29 @@ class MtimeWatcher(AsyncPoller):
 
         for path in paths:
             key = str(path)
-            new_watched[key] = self._watched.get(key, self._get_mtime(path))
+            new_watched[key] = self._watched[key] if key in self._watched else file_stamp(path)
 
         self._watched = new_watched
 
     async def _poll(self) -> None:
-        """Check watched files for mtime changes."""
+        """Check watched files for file-stamp changes."""
 
         for key in list(self._watched.keys()):
             path = Path(key)
-            current_mtime = self._get_mtime(path)
-            previous_mtime = self._watched.get(key, 0)
+            current = file_stamp(path)
+            previous = self._watched.get(key)
 
-            if current_mtime != previous_mtime and current_mtime > 0:
-                self._watched[key] = current_mtime
+            if current is None:
+                continue
 
+            self._watched[key] = current
+
+            # A write in the tick an unsettled sample was taken in leaves the stamp equal.
+            unsettled_now_settled = (
+                previous is not None and not previous.settled and current.settled
+            )
+
+            if current != previous or unsettled_now_settled:
                 if self._debounce > 0:
                     await asyncio.sleep(self._debounce)
 
@@ -101,12 +112,3 @@ class MtimeWatcher(AsyncPoller):
     @abstractmethod
     async def _on_changed(self, path: Path) -> None:
         """React to a file change. Called after debounce."""
-
-    @classmethod
-    def _get_mtime(cls, path: Path) -> float:
-        """Return file modification time, or 0 if unavailable."""
-
-        try:
-            return path.stat().st_mtime
-        except OSError:
-            return 0

@@ -245,12 +245,7 @@ describe('SessionHeaderStrip', () => {
   })
 
   it('Stop button - idle stops silently, no modal', async () => {
-    const user = userEvent.setup()
-    mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
-    mockActiveSessionId = 'sess-1'
-    mockContainerMap = { containerMap: { 'sess-1': 'container-1' }, stoppingSessions: new Set() }
-
-    render(<SessionHeaderStrip />)
+    const user = renderAttachedStrip()
 
     await user.click(screen.getByTestId('session-header-stop-btn'))
 
@@ -260,13 +255,8 @@ describe('SessionHeaderStrip', () => {
   })
 
   it('Stop button - responding shows confirm modal; Cancel keeps response running', async () => {
-    const user = userEvent.setup()
-    mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
-    mockActiveSessionId = 'sess-1'
     mockEvents = { ...mockEvents, isResponding: true }
-    mockContainerMap = { containerMap: { 'sess-1': 'container-1' }, stoppingSessions: new Set() }
-
-    render(<SessionHeaderStrip />)
+    const user = renderAttachedStrip()
 
     await user.click(screen.getByTestId('session-header-stop-btn'))
     expect(screen.getByTestId('confirm-stop-modal')).toBeInTheDocument()
@@ -280,13 +270,8 @@ describe('SessionHeaderStrip', () => {
   })
 
   it('Stop button - responding + Continue stops the container', async () => {
-    const user = userEvent.setup()
-    mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
-    mockActiveSessionId = 'sess-1'
     mockEvents = { ...mockEvents, isResponding: true }
-    mockContainerMap = { containerMap: { 'sess-1': 'container-1' }, stoppingSessions: new Set() }
-
-    render(<SessionHeaderStrip />)
+    const user = renderAttachedStrip()
 
     await user.click(screen.getByTestId('session-header-stop-btn'))
     await user.click(screen.getByTestId('confirm-stop-modal-confirm'))
@@ -296,14 +281,9 @@ describe('SessionHeaderStrip', () => {
   })
 
   it('clicking the session name copies the session directory', async () => {
-    const user = userEvent.setup()
-    mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
-    mockActiveSessionId = 'sess-1'
     mockSessionDir = '/tmp/sessions/abc'
-    mockContainerMap = { containerMap: { 'sess-1': 'container-1' }, stoppingSessions: new Set() }
     mockCopy.mockClear()
-
-    render(<SessionHeaderStrip />)
+    const user = renderAttachedStrip()
 
     await user.click(screen.getByTestId('session-header-session-name'))
     expect(mockCopy).toHaveBeenCalledWith('/tmp/sessions/abc')
@@ -346,6 +326,38 @@ describe('SessionHeaderStrip', () => {
     expect(mockDeleteContainer).toHaveBeenCalledWith('fallback-container')
   })
 
+  it.each([
+    [{ activity: 'working' }, 'working', 'Working'],
+    [{ activity: 'waiting' }, 'waiting', 'Waiting on background work'],
+    [{ needs_user: 'Decide: which branch' }, 'needs-you', 'Needs you'],
+    [{}, 'running', 'Container running'],
+  ])('a running session with %o shows the %s dot and names it', (fields, state, title) => {
+    mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
+    mockActiveSessionId = 'sess-1'
+    mockSessions = [{ session_id: 'sess-1', container_id: 'container-1', ...fields }]
+
+    render(<SessionHeaderStrip />)
+
+    const dot = screen.getByTestId('session-header-status-dot')
+    expect(dot).toHaveAttribute('data-status', state)
+    expect(dot).toHaveClass(`container-status-${state}`)
+    expect(dot).toHaveAttribute('title', title)
+  })
+
+  it('shows a stopping session amber whatever its agent is doing', () => {
+    mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
+    mockActiveSessionId = 'sess-1'
+    mockSessions = [{ session_id: 'sess-1', container_id: 'container-1', activity: 'working' }]
+    mockContainerMap = { containerMap: {}, stoppingSessions: new Set(['sess-1']) }
+
+    render(<SessionHeaderStrip />)
+
+    expect(screen.getByTestId('session-header-status-dot')).toHaveAttribute(
+      'data-status',
+      'stopping',
+    )
+  })
+
   describe('session rail path', () => {
     beforeEach(() => {
       mockSessionData = { sessionId: 'leaf', sessionName: 'Leaf' }
@@ -369,6 +381,16 @@ describe('SessionHeaderStrip', () => {
           is_side_thread: true,
         },
       ]
+    })
+
+    it("every entry shows its own session's state", () => {
+      mockSessions[0] = { ...mockSessions[0], needs_user: 'Decide: root question' }
+      mockSessions[2] = { ...mockSessions[2], activity: 'working' }
+
+      render(<SessionHeaderStrip />)
+
+      const dots = screen.getAllByTestId('session-header-status-dot')
+      expect(dots.map(d => d.dataset.status)).toEqual(['needs-you', 'running', 'working'])
     })
 
     it('renders one entry per rail group, ancestry order, with the focused one marked', () => {
@@ -453,3 +475,13 @@ describe('SessionHeaderStrip', () => {
     })
   })
 })
+
+function renderAttachedStrip() {
+  const user = userEvent.setup()
+  mockSessionData = { sessionId: 'sess-1', sessionName: 'X' }
+  mockActiveSessionId = 'sess-1'
+  mockContainerMap = { containerMap: { 'sess-1': 'container-1' }, stoppingSessions: new Set() }
+  render(<SessionHeaderStrip />)
+
+  return user
+}

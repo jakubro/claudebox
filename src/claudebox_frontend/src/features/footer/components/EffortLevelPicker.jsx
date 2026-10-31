@@ -7,9 +7,8 @@ import useCapabilities from '../../../hooks/useCapabilities'
 import useDropdown from '../../../hooks/useDropdown'
 
 /**
- * Effort level dropdown: levels load once from SessionDataContext on connect; all values show on every
- * model since the SDK handles compatibility. Updates optimistically on selection, confirmed by the next
- * refresh. `defaultValue` previews what a new session would inherit (e.g. on welcome).
+ * Effort level dropdown, every level on every model (the SDK handles compatibility); a pick shows at once
+ * until its change settles. `defaultValue` previews what a new session would inherit (e.g. on welcome).
  *
  * @param {object} props
  * @param {string|null} props.currentEffortLevel - Currently active effort level.
@@ -37,7 +36,10 @@ export default function EffortLevelPicker({ currentEffortLevel, defaultValue, di
       setIsOpen(false)
       if (levelId !== effectiveLevel) {
         setOptimisticLevel(levelId)
-        setEffortLevel(levelId)
+        // A refused change settles without the session reporting it; a newer pick keeps its own.
+        setEffortLevel(levelId)?.finally(() =>
+          setOptimisticLevel(prev => (prev === levelId ? null : prev)),
+        )
       }
     },
     [effectiveLevel, setEffortLevel, setIsOpen],

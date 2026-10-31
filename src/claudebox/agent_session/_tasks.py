@@ -9,6 +9,9 @@ fast-lookup cache for task_get/task_list/task_output during the running session;
 restart rebuilds it by replaying prior task_create/task_update/task_stop/task_output entries.
 """
 
+from __future__ import annotations
+
+import builtins
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -121,7 +124,7 @@ class TaskService:
         subject: str | None = None,
         description: str | None = None,
         active_form: str | None = None,
-        add_blocked_by: list[int] | tuple[int, ...] | None = None,
+        add_blocked_by: builtins.list[int] | tuple[int, ...] | None = None,
     ) -> Task:
         """Mutate fields on an existing task; return the updated record."""
 
@@ -186,7 +189,7 @@ class TaskService:
 
         return task
 
-    def list(self, *, status_filter: TaskStatus | None = None) -> list[Task]:
+    def list(self, *, status_filter: TaskStatus | None = None) -> builtins.list[Task]:
         """Return tasks, optionally filtered by status; ordered by id ascending."""
 
         tasks = sorted(self._tasks.values(), key=lambda t: t.id)

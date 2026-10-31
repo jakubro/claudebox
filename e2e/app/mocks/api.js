@@ -80,12 +80,14 @@ export async function mockAPI(page, options = {}) {
   const sessionsFixture = options.sessionsFixture || 'sessions/default.json'
   const statusFixture = options.statusFixture || 'status/default.json'
   const handlers = options.handlers || {}
-  // Matches the app's own default (off); specs needing the split pass it explicitly.
-  const sessionUiStateDefaults = options.sessionUiStateDefaults || {}
+  // Every call inline unless a spec passes its own; `{}` gives the app's own default, Focused.
+  const sessionUiStateDefaults = options.sessionUiStateDefaults ?? { rightSlotView: 'everything' }
   // Plan-limit entries: pre-session (session-defaults) and in-session (sessions/current) sources,
   // each empty by default so most tests never see a footer item.
   const sessionDefaultsRateLimits = options.sessionDefaultsRateLimits || []
   const sessionRateLimits = options.sessionRateLimits || []
+  // Merged over the session-defaults response - e.g. the bundles a workspace declares.
+  const sessionDefaultsOverrides = options.sessionDefaults || {}
   const workspaces = options.workspaces || DEFAULT_WORKSPACES
 
   const ws = wsPrefix()
@@ -180,7 +182,7 @@ export async function mockAPI(page, options = {}) {
       await route.fulfill({
         json: {
           workspace: '/home/user/project',
-          model: 'claude-opus-5',
+          model: 'claude-opus-5-5',
           permission_mode: 'default',
           effort_level: 'xhigh',
           runtime_name: 'Claude',
@@ -189,10 +191,9 @@ export async function mockAPI(page, options = {}) {
           rate_limits: sessionDefaultsRateLimits,
           available_models: [
             { id: 'claude-fable-5-1', name: 'Fable 5.1', context_window: 1000000 },
-            { id: 'claude-fable-5', name: 'Fable 5', context_window: 1000000 },
-            { id: 'claude-opus-5', name: 'Opus 5', context_window: 1000000 },
-            { id: 'claude-sonnet-5', name: 'Sonnet 5', context_window: 1000000 },
-            { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', context_window: 200000 },
+            { id: 'claude-opus-5-5', name: 'Opus 5.5', context_window: 1000000 },
+            { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', context_window: 1000000 },
+            { id: 'claude-haiku-5-5', name: 'Haiku 5.5', context_window: 1000000 },
           ],
           available_permission_modes: [
             { id: 'default', name: 'Default', description: 'Standard permission behavior' },
@@ -207,6 +208,10 @@ export async function mockAPI(page, options = {}) {
             { id: 'medium', name: 'Medium' },
             { id: 'low', name: 'Low' },
           ],
+          logged_in: true,
+          bundle_names: [],
+          bundles: {},
+          ...sessionDefaultsOverrides,
         },
       })
     }
@@ -264,8 +269,18 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
+  // GET /api/workspaces/{ws}/sessions/schedules - after sessions/:id, which matches it too
+  await page.route(`**${ws}/sessions/schedules`, async route => {
+    if (handlers.getSessionSchedules) {
+      await handlers.getSessionSchedules(route)
+    } else {
+      await route.fulfill({ json: { sessions: [] } })
+    }
+  })
+
   // GET/PATCH /api/workspaces/{ws}/ui-state - UI state persistence
-  const uiState = { global: {}, sessions: {} }
+  // A store several pages share, so one tab's saves reach another tab's reads.
+  const uiState = options.uiState ?? { global: {}, sessions: {} }
   await page.route(new RegExp(`${ws}/ui-state`), async route => {
     const url = new URL(route.request().url())
     const sessionId = url.searchParams.get('session_id')
@@ -297,6 +312,11 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
+  // GET /api/workspaces/{ws}/files/image - images a message shows; specs serving one route it first
+  await page.route(new RegExp(`${ws}/files/image`), route =>
+    route.fulfill({ status: 404, json: { error: 'file_not_found' } }),
+  )
+
   // POST /api/workspaces/{ws}/sessions/:id/fork - Fork session
   await page.route(new RegExp(`${ws}/sessions/[^/]+/fork`), async route => {
     if (handlers.forkSession) {
@@ -311,19 +331,25 @@ export async function mockAPI(page, options = {}) {
 
   // --- Container-proxied endpoints (via containerFetch) ---
 
-  // GET .../api/sessions/current
-  await page.route(`**${cp}/api/sessions/current`, async route => {
+  // GET .../api/sessions/current?session_id=... - the named session's own data, as the container
+  // answers it; an unnamed request gets the fixture's session, the container's primary.
+  await page.route(`**${cp}/api/sessions/current*`, async route => {
     if (handlers.getSessionStatus) {
       await handlers.getSessionStatus(route)
     } else {
+      const named = new URL(route.request().url()).searchParams.get('session_id')
       await route.fulfill({
-        json: { ...loadFixture(statusFixture), rate_limits: sessionRateLimits },
+        json: {
+          ...loadFixture(statusFixture),
+          ...(named && { session_id: named }),
+          rate_limits: sessionRateLimits,
+        },
       })
     }
   })
 
-  // GET .../api/sessions/current/tool-output/:tool_use_id
-  await page.route(new RegExp(`${cp}/api/sessions/current/tool-output/[^/]+$`), async route => {
+  // GET .../api/sessions/:id/tool-output/:tool_use_id
+  await page.route(new RegExp(`${cp}/api/sessions/[^/]+/tool-output/[^/]+$`), async route => {
     if (handlers.getToolOutput) {
       await handlers.getToolOutput(route)
     } else {
@@ -331,9 +357,9 @@ export async function mockAPI(page, options = {}) {
     }
   })
 
-  // GET .../api/sessions/current/tool-output/:id/download
+  // GET .../api/sessions/:id/tool-output/:id/download
   await page.route(
-    new RegExp(`${cp}/api/sessions/current/tool-output/[^/]+/download`),
+    new RegExp(`${cp}/api/sessions/[^/]+/tool-output/[^/]+/download`),
     async route => {
       if (handlers.downloadToolOutput) {
         await handlers.downloadToolOutput(route)
@@ -371,7 +397,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST .../api/model
-  await page.route(`**${cp}/api/model`, async route => {
+  await page.route(`**${cp}/api/model*`, async route => {
     if (handlers.setModel) {
       await handlers.setModel(route)
     } else {
@@ -380,7 +406,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST .../api/permission-mode
-  await page.route(`**${cp}/api/permission-mode`, async route => {
+  await page.route(`**${cp}/api/permission-mode*`, async route => {
     if (handlers.setPermissionMode) {
       await handlers.setPermissionMode(route)
     } else {
@@ -389,7 +415,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST .../api/effort-level
-  await page.route(`**${cp}/api/effort-level`, async route => {
+  await page.route(`**${cp}/api/effort-level*`, async route => {
     if (handlers.setEffortLevel) {
       await handlers.setEffortLevel(route)
     } else {
@@ -398,7 +424,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST .../api/send
-  await page.route(`**${cp}/api/send`, async route => {
+  await page.route(`**${cp}/api/send*`, async route => {
     if (handlers.send) {
       await handlers.send(route)
     } else {
@@ -407,7 +433,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST .../api/interrupt
-  await page.route(`**${cp}/api/interrupt`, async route => {
+  await page.route(`**${cp}/api/interrupt*`, async route => {
     if (handlers.interrupt) {
       await handlers.interrupt(route)
     } else {
@@ -416,7 +442,7 @@ export async function mockAPI(page, options = {}) {
   })
 
   // POST .../api/files/resolve-paths
-  await page.route(`**${cp}/api/files/resolve-paths`, async route => {
+  await page.route(`**${cp}/api/files/resolve-paths*`, async route => {
     if (handlers.resolvePaths) {
       await handlers.resolvePaths(route)
     } else {

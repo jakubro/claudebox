@@ -24,6 +24,12 @@ vi.mock('../../api/boards', () => ({
   reorderSwimlanes: vi.fn(),
 }))
 
+const mockSetError = vi.fn()
+
+vi.mock('../../context/InteractionContext', () => ({
+  useInteraction: () => ({ setError: mockSetError }),
+}))
+
 vi.mock('../../context/SessionRoutingContext', () => ({
   useSessionRouting: () => ({ density: 'comfortable' }),
 }))
@@ -179,6 +185,33 @@ const board = {
   },
 }
 
+function renderBoard() {
+  mockBoardData.board = board
+  render(<BoardTab boardId="board-1" />)
+}
+
+function setupBoard() {
+  const user = userEvent.setup()
+  renderBoard()
+
+  return user
+}
+
+function setupFailingBoard(api) {
+  const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  api.mockRejectedValueOnce(new Error('boom'))
+  const user = setupBoard()
+
+  return { consoleSpy, user }
+}
+
+async function openBacklogMenu() {
+  const user = setupBoard()
+  await user.click(screen.getByTestId('ctx-col-backlog'))
+
+  return user
+}
+
 describe('BoardTab', () => {
   beforeEach(() => {
     capturedDnd = null
@@ -188,7 +221,7 @@ describe('BoardTab', () => {
     mockBoardData.refresh.mockClear()
     archiveTicket.mockReset().mockResolvedValue(undefined)
     assignTickets.mockReset().mockResolvedValue(undefined)
-    moveTicket.mockReset().mockResolvedValue(undefined)
+    moveTicket.mockReset().mockImplementation(async (_boardId, path) => ({ path }))
     reorderStates.mockReset().mockResolvedValue(undefined)
     reorderSwimlanes.mockReset().mockResolvedValue(undefined)
   })
@@ -215,8 +248,7 @@ describe('BoardTab', () => {
   })
 
   it('renders columns, known swimlanes, and the unsorted lane with correctly filtered tickets', () => {
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    renderBoard()
 
     expect(screen.getByText('Backlog')).toBeInTheDocument()
     expect(screen.getByText('Doing')).toBeInTheDocument()
@@ -249,8 +281,7 @@ describe('BoardTab', () => {
   })
 
   it('collapses terminal columns by default via the board-identity effect', () => {
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    renderBoard()
 
     expect(screen.getByTestId('collapsed-done')).toBeInTheDocument()
     expect(screen.queryByTestId('collapsed-backlog')).not.toBeInTheDocument()
@@ -260,9 +291,7 @@ describe('BoardTab', () => {
   })
 
   it('toggles a column collapsed state and updates the grid template', async () => {
-    const user = userEvent.setup()
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    const user = setupBoard()
 
     await user.click(screen.getByTestId('toggle-col-backlog'))
 
@@ -272,9 +301,7 @@ describe('BoardTab', () => {
   })
 
   it('opens a ticket detail overlay on click and closes it', async () => {
-    const user = userEvent.setup()
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    const user = setupBoard()
 
     await user.click(screen.getByTestId('ticket-tickets/a.md'))
     expect(screen.getByTestId('ticket-detail')).toBeInTheDocument()
@@ -285,9 +312,7 @@ describe('BoardTab', () => {
   })
 
   it('single click selection replaces the previous selection', async () => {
-    const user = userEvent.setup()
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    const user = setupBoard()
 
     await user.click(screen.getByTestId('select-tickets/a.md'))
     expect(screen.getByTestId('select-tickets/a.md')).toHaveAttribute('data-selected', 'true')
@@ -298,9 +323,7 @@ describe('BoardTab', () => {
   })
 
   it('ctrl-click selection accumulates multiple tickets', async () => {
-    const user = userEvent.setup()
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    const user = setupBoard()
 
     await user.click(screen.getByTestId('select-tickets/a.md'))
     await user.keyboard('{Control>}')
@@ -312,9 +335,7 @@ describe('BoardTab', () => {
   })
 
   it('checkbox-style toggle (no event) preserves the existing selection', async () => {
-    const user = userEvent.setup()
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    const user = setupBoard()
 
     await user.click(screen.getByTestId('checkbox-tickets/a.md'))
     await user.click(screen.getByTestId('checkbox-tickets/b.md'))
@@ -324,8 +345,7 @@ describe('BoardTab', () => {
   })
 
   it('shows the dragged ticket in the drag overlay once a drag starts', async () => {
-    mockBoardData.board = board
-    render(<BoardTab boardId="board-1" />)
+    renderBoard()
 
     expect(screen.queryByTestId('drag-overlay-ticket')).not.toBeInTheDocument()
 
@@ -338,11 +358,7 @@ describe('BoardTab', () => {
 
   describe('column context menu', () => {
     it('shows boundary-disabled move buttons and the correct archive count', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
-
-      await user.click(screen.getByTestId('ctx-col-backlog'))
+      await openBacklogMenu()
 
       expect(screen.getByText('Move left')).toBeDisabled()
       expect(screen.getByText('Move right')).not.toBeDisabled()
@@ -352,9 +368,7 @@ describe('BoardTab', () => {
     })
 
     it('disables archive when the column has no tickets', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const user = setupBoard()
 
       await user.click(screen.getByTestId('ctx-col-done'))
 
@@ -363,11 +377,7 @@ describe('BoardTab', () => {
     })
 
     it('closes on backdrop click', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
-
-      await user.click(screen.getByTestId('ctx-col-backlog'))
+      const user = await openBacklogMenu()
       expect(screen.getByText('Move left')).toBeInTheDocument()
 
       await user.click(document.querySelector('.swimlane-context-backdrop'))
@@ -375,11 +385,7 @@ describe('BoardTab', () => {
     })
 
     it('moves a column right and refreshes', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
-
-      await user.click(screen.getByTestId('ctx-col-backlog'))
+      const user = await openBacklogMenu()
       await user.click(screen.getByText('Move right'))
 
       expect(reorderStates).toHaveBeenCalledWith('board-1', ['doing', 'backlog', 'done'])
@@ -387,11 +393,7 @@ describe('BoardTab', () => {
     })
 
     it('logs and does not refresh when reordering columns fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const user = userEvent.setup()
-      reorderStates.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy, user } = setupFailingBoard(reorderStates)
 
       await user.click(screen.getByTestId('ctx-col-backlog'))
       await user.click(screen.getByText('Move right'))
@@ -401,11 +403,7 @@ describe('BoardTab', () => {
     })
 
     it('bulk-archives every ticket in a column and refreshes', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
-
-      await user.click(screen.getByTestId('ctx-col-backlog'))
+      const user = await openBacklogMenu()
       await user.click(screen.getByText('Archive all tickets in Backlog state (3 tickets)'))
 
       expect(archiveTicket).toHaveBeenCalledTimes(3)
@@ -418,9 +416,7 @@ describe('BoardTab', () => {
 
   describe('per-ticket archive', () => {
     it('archives a single ticket and refreshes', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const user = setupBoard()
 
       await user.click(screen.getByTestId('archive-tickets/a.md'))
 
@@ -429,11 +425,7 @@ describe('BoardTab', () => {
     })
 
     it('logs when archiving a single ticket fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const user = userEvent.setup()
-      archiveTicket.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy, user } = setupFailingBoard(archiveTicket)
 
       await user.click(screen.getByTestId('archive-tickets/a.md'))
 
@@ -441,9 +433,7 @@ describe('BoardTab', () => {
     })
 
     it('bulk-archives a cell and refreshes', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const user = setupBoard()
 
       await user.click(screen.getByTestId('archive-cell-backlog-lane-1'))
 
@@ -452,9 +442,7 @@ describe('BoardTab', () => {
     })
 
     it('no-ops a cell archive with an empty ticket list', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const user = setupBoard()
 
       await user.click(screen.getByTestId('archive-cell-done-lane-1'))
 
@@ -463,11 +451,7 @@ describe('BoardTab', () => {
     })
 
     it('logs when bulk cell archive fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const user = userEvent.setup()
-      archiveTicket.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy, user } = setupFailingBoard(archiveTicket)
 
       await user.click(screen.getByTestId('archive-cell-backlog-lane-1'))
 
@@ -477,8 +461,7 @@ describe('BoardTab', () => {
 
   describe('handleDragEnd', () => {
     it('is a no-op when there is no drop target', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({ active: { id: 'tickets/a.md' }, over: null })
@@ -488,8 +471,7 @@ describe('BoardTab', () => {
     })
 
     it('is a no-op when the dragged id has no matching ticket', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -502,8 +484,7 @@ describe('BoardTab', () => {
     })
 
     it('reorders columns via header-to-header drop', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -517,8 +498,7 @@ describe('BoardTab', () => {
     })
 
     it('is a no-op dropping a column header onto itself', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -531,10 +511,7 @@ describe('BoardTab', () => {
     })
 
     it('logs when column header reorder fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      reorderStates.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy } = setupFailingBoard(reorderStates)
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -547,8 +524,7 @@ describe('BoardTab', () => {
     })
 
     it('reorders swimlanes via header-to-header drop', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -562,8 +538,7 @@ describe('BoardTab', () => {
     })
 
     it('is a no-op dropping a swimlane header onto itself', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -576,10 +551,7 @@ describe('BoardTab', () => {
     })
 
     it('logs when swimlane header reorder fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      reorderSwimlanes.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy } = setupFailingBoard(reorderSwimlanes)
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -592,8 +564,7 @@ describe('BoardTab', () => {
     })
 
     it('moves a ticket onto a column header and auto-assigns it (active column, no session)', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -611,9 +582,46 @@ describe('BoardTab', () => {
       expect(mockBoardData.refresh).toHaveBeenCalled()
     })
 
-    it('moves a ticket onto a bare column droppable (col: prefix)', async () => {
+    it('assigns a moved ticket under the path its move returned', async () => {
       mockBoardData.board = board
+      moveTicket.mockResolvedValueOnce({ path: 'tickets/active/a.md' })
       render(<BoardTab boardId="board-1" />)
+
+      await act(async () => {
+        await capturedDnd.onDragEnd({
+          active: { id: 'tickets/a.md' },
+          over: { id: 'col-header:doing' },
+        })
+      })
+
+      expect(assignTickets).toHaveBeenCalledWith('board-1', ['tickets/active/a.md'])
+    })
+
+    it('a refused move shows why and leaves the board as the daemon has it', async () => {
+      mockBoardData.board = board
+      const refusal = Object.assign(
+        new Error('The target column already holds a ticket named a.md'),
+        { userFacing: true },
+      )
+      moveTicket.mockRejectedValue(refusal)
+      render(<BoardTab boardId="board-1" />)
+
+      await act(async () => {
+        await capturedDnd.onDragEnd({
+          active: { id: 'tickets/a.md' },
+          over: { id: 'col-header:doing' },
+        })
+      })
+
+      expect(mockSetError).toHaveBeenCalledWith(
+        'The target column already holds a ticket named a.md',
+      )
+      expect(assignTickets).not.toHaveBeenCalled()
+      expect(mockBoardData.refresh).toHaveBeenCalled()
+    })
+
+    it('moves a ticket onto a bare column droppable (col: prefix)', async () => {
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -630,8 +638,7 @@ describe('BoardTab', () => {
     })
 
     it('moves a ticket onto a cell (column::swimlane) without auto-assigning a non-active column', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -649,8 +656,7 @@ describe('BoardTab', () => {
     })
 
     it('moves a ticket by dropping it onto another ticket, computing a drop index', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -670,8 +676,7 @@ describe('BoardTab', () => {
     })
 
     it('does not auto-assign a single ticket that already owns a session', async () => {
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      renderBoard()
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -684,10 +689,7 @@ describe('BoardTab', () => {
     })
 
     it('logs when moving a ticket fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      moveTicket.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy } = setupFailingBoard(moveTicket)
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -700,10 +702,7 @@ describe('BoardTab', () => {
     })
 
     it('logs but still refreshes when auto-assign fails', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      assignTickets.mockRejectedValueOnce(new Error('boom'))
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const { consoleSpy } = setupFailingBoard(assignTickets)
 
       await act(async () => {
         await capturedDnd.onDragEnd({
@@ -717,9 +716,7 @@ describe('BoardTab', () => {
     })
 
     it('bulk-moves every selected ticket and preserves origin lanes across a cross-lane drop', async () => {
-      const user = userEvent.setup()
-      mockBoardData.board = board
-      render(<BoardTab boardId="board-1" />)
+      const user = setupBoard()
 
       await user.click(screen.getByTestId('checkbox-tickets/a.md'))
       await user.click(screen.getByTestId('checkbox-tickets/b.md'))

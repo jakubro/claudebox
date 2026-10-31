@@ -1,5 +1,7 @@
 """Event-loop lag detection, exposed via /api/daemon/health for host-side supervision."""
 
+from __future__ import annotations
+
 import time
 
 from claudebox import AsyncPoller

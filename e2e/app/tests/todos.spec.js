@@ -1,9 +1,8 @@
 /** E2E tests for todos panel functionality. */
 
 import { expect, test } from '@playwright/test'
-import { openTodosPanel, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSession, openTodosPanel } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 test.describe('Todos Panel', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,9 +11,7 @@ test.describe('Todos Panel', () => {
 
   test.describe('Todo List Display', () => {
     test.beforeEach(async ({ page }) => {
-      await mockSSE(page, 'events/tool-todowrite.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-todowrite.jsonl')
       await openTodosPanel(page)
     })
 
@@ -64,9 +61,7 @@ test.describe('Todos Panel', () => {
   test.describe('Empty State', () => {
     // SPEC: panel-todo:empty
     test('shows empty message when no todos', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
       await openTodosPanel(page)
 
       const todoPanel = page.locator('[data-testid="panel-todos"]')
@@ -77,9 +72,7 @@ test.describe('Todos Panel', () => {
   test.describe('Subagent Segmentation', () => {
     // SPEC: panel-todo:main-first
     test('main agent todos appear first without section header', async ({ page }) => {
-      await mockSSE(page, 'events/todos-subagent.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/todos-subagent.jsonl')
       await openTodosPanel(page)
 
       const sections = page.locator('[data-testid="todo-section"]')
@@ -92,9 +85,7 @@ test.describe('Todos Panel', () => {
 
     // SPEC: panel-todo:subagent-section
     test('subagent todos grouped under labeled section', async ({ page }) => {
-      await mockSSE(page, 'events/todos-subagent.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/todos-subagent.jsonl')
       await openTodosPanel(page)
 
       const sections = page.locator('[data-testid="todo-section"]')
@@ -108,9 +99,7 @@ test.describe('Todos Panel', () => {
 
     // SPEC: panel-todo:subagent-label
     test('section label shows Task description with tooltip', async ({ page }) => {
-      await mockSSE(page, 'events/todos-subagent.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/todos-subagent.jsonl')
       await openTodosPanel(page)
 
       const header = page.locator('[data-testid="todo-section-header"]')
@@ -126,9 +115,7 @@ test.describe('Todos Panel', () => {
 
     // SPEC: panel-todo:subagent-fallback
     test('falls back to truncated tool_use_id when description unavailable', async ({ page }) => {
-      await mockSSE(page, 'events/todos-fallback.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/todos-fallback.jsonl')
       await openTodosPanel(page)
 
       // TodoWrite has parent_tool_use_id "toolu_abc123xyz" but no matching Task event
@@ -139,9 +126,7 @@ test.describe('Todos Panel', () => {
 
     // SPEC: panel-todo:subagent-cleanup
     test('subagent section disappears when Task completes', async ({ page }) => {
-      await mockSSE(page, 'events/todos-cleanup.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/todos-cleanup.jsonl')
       await openTodosPanel(page)
 
       // Fixture includes a Task tool_result, so the subagent section is already cleaned up.
@@ -153,9 +138,7 @@ test.describe('Todos Panel', () => {
 
   test.describe('Item Subtitle and Blocked-by', () => {
     test.beforeEach(async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-create.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-task-create.jsonl')
       await openTodosPanel(page)
       // Wait for the panel to populate (two TaskCreate events become two rows).
       await expect(
@@ -204,9 +187,7 @@ test.describe('Todos Panel', () => {
   test.describe('Badge Count', () => {
     // SPEC: panel-todo:badge
     test('badge shows incomplete todo count across all subagents', async ({ page }) => {
-      await mockSSE(page, 'events/todos-subagent.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/todos-subagent.jsonl')
 
       // todos-subagent.jsonl: main has 1 incomplete + subagent has 2 incomplete = 3
       const badge = page.locator('[data-testid="icon-todos"] .icon-badge')
@@ -217,9 +198,7 @@ test.describe('Todos Panel', () => {
     // SPEC: panel-todo:badge-update
     // MOCK-LIMITED: fixture delivers all SSE events at once - checks final badge state, not incremental.
     test('badge updates as TodoWrite events arrive', async ({ page }) => {
-      await mockSSE(page, 'events/tool-todowrite.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-todowrite.jsonl')
 
       // tool-todowrite.jsonl: 1 completed + 1 in_progress + 2 pending = 3 incomplete
       const badge = page.locator('[data-testid="icon-todos"] .icon-badge')

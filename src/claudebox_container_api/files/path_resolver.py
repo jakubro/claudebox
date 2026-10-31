@@ -1,10 +1,13 @@
 """Path resolver - resolve file path candidates against workspace index."""
 
+from __future__ import annotations
+
 import os
 import threading
 import time
 import uuid
 from pathlib import Path
+from time import monotonic
 
 from pathspec import PathSpec
 
@@ -156,12 +159,12 @@ class PathResolver:
 
             self._resolve_cache.clear()
 
-            started = time.monotonic()
+            started = monotonic()
             index = self._build_index()
-            self._last_walk_seconds = time.monotonic() - started
+            self._last_walk_seconds = monotonic() - started
 
             # Stamped after the walk, so the TTL measures time served, not time building.
-            self._index_cache = (time.monotonic(), index)
+            self._index_cache = (monotonic(), index)
             self._persist_index(index)
 
             return index
@@ -174,7 +177,7 @@ class PathResolver:
 
         cached_time, cached_index = self._index_cache
 
-        if time.monotonic() - cached_time < self._index_ttl_seconds():
+        if monotonic() - cached_time < self._index_ttl_seconds():
             return cached_index
 
         return None
@@ -233,7 +236,7 @@ class PathResolver:
             if time.time() - saved["saved_at"] > PATH_INDEX_LOAD_MAX_AGE.total_seconds():
                 return
 
-            self._index_cache = (time.monotonic(), saved["index"])
+            self._index_cache = (monotonic(), saved["index"])
             self._last_walk_seconds = saved["last_walk_seconds"]
         except (OSError, ValueError, KeyError, TypeError):
             pass

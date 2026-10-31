@@ -1,4 +1,4 @@
-/** Coordinate a right-slot column's scroll ownership: latch on intent, re-engage on return. */
+/** Coordinate one scroll container's ownership: latch on intent, re-engage on return. */
 
 import { AUTOSCROLL_THRESHOLD } from '../../../config/dimensions'
 import { PROGRAMMATIC_SCROLL_HOLD_MS } from '../../../config/timing'

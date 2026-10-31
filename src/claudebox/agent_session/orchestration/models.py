@@ -1,5 +1,7 @@
 """Session models - event and summary data structures."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -69,6 +71,11 @@ class PublishedEvent(Event):
     `turn_id` is None for system events. `previous_model`, `previous_permission_mode`, and
     `previous_effort_level` hold the prior value, set only on the matching `*_changed` event.
     `context_tokens` is an average per turn; `source_offset` is a byte offset for async task events.
+    `turn_running`, set only on `interrupt_sent`, says whether a turn ran when Stop was sent.
+    `command_layout`, set only on a Bash `tool_use` that lays out differently, is display-only.
+    `command_read_only` is true on a Bash `tool_use` whose command changes nothing, never false.
+    `command_changed` on a Bash `tool_result` is whether the call changed anything; null unmeasured.
+    `mcp_read_only` is true on an MCP `tool_use` its server declares read-only, never false.
     """
 
     id: str
@@ -81,6 +88,10 @@ class PublishedEvent(Event):
     tool_input: dict | None = None
     is_error: bool | None = None
     tool_use_result: dict | None = None
+    command_layout: str | None = None
+    command_read_only: bool | None = None
+    command_changed: bool | None = None
+    mcp_read_only: bool | None = None
 
     # Result/session fields
     model: str | None = None
@@ -95,6 +106,7 @@ class PublishedEvent(Event):
     # System message fields
     message_data: dict | None = None
     count: int | None = None
+    turn_running: bool | None = None
 
     # Nested event fields (for async task streaming)
     parent_tool_use_id: str | None = None
@@ -126,10 +138,10 @@ class SessionSummary(SessionMetadata):
     """Session metadata extended with display-specific fields.
 
     `commands` groups slash commands by type (custom, mcp, builtin); `session_prompt` is
-    per-session text injected after compaction.
+    per-session text injected after compaction. `last_result_cost_usd` is the last result's
+    `cost_usd` as its runtime reported it - under Claude a running total, not the turn's cost.
     """
 
-    session_dir: Path | None = None
     workspace: Path | None = None
     permission_mode: str | None = None
     todos: list[dict] | None = None
@@ -141,12 +153,10 @@ class SessionSummary(SessionMetadata):
     commands: dict[str, list[dict]] | None = None
     session_prompt: str | None = None
     effort_level: str | None = None
+    last_result_cost_usd: float | None = None
 
     def __post_init__(self) -> None:
         """Convert string paths and timestamps to proper types."""
-
-        if self.session_dir is not None:
-            self.session_dir = Path(self.session_dir)
 
         if self.workspace is not None:
             self.workspace = Path(self.workspace)

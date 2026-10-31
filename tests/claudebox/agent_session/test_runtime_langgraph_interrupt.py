@@ -5,6 +5,8 @@ AskUserQuestion HITL: an `interrupt()` call pauses the graph; the runtime detect
 as `Command(resume=...)`, not a fresh HumanMessage.
 """
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from claudebox.agent_session.config import LangGraphAgentSessionConfig
+from claudebox.agent_session.events import ResultPayload
 from claudebox.agent_session.runtime_langgraph import LangGraphRuntime
 
 
@@ -190,14 +193,17 @@ class TestInterruptDropsQueuedMiddlewareEvents:
 
     @pytest.mark.anyio
     async def test_queued_events_do_not_survive_the_interrupt(self, tmp_path):
-        async def _cancel(_graph_input, config=None, version=None):
-            raise asyncio.CancelledError
+        started = asyncio.Event()
+
+        async def _parked(_graph_input, config=None, version=None):
+            started.set()
+            await asyncio.Event().wait()
 
             if False:  # pragma: no cover - keeps this an async generator
                 yield None
 
         runtime = LangGraphRuntime(_config(tmp_path))
-        runtime._graph = _stub_graph(has_interrupts=False, astream_events_factory=_cancel)
+        runtime._graph = _stub_graph(has_interrupts=False, astream_events_factory=_parked)
 
         await runtime._compaction_finished(
             pre_tokens=900,
@@ -207,10 +213,245 @@ class TestInterruptDropsQueuedMiddlewareEvents:
         )
 
         kinds = []
+        turn = runtime._drive_turn("hello")
+        kinds.append((await anext(turn)).kind)
+        reading = asyncio.ensure_future(anext(turn))
+        await started.wait()
+        await runtime.interrupt()
+        closing = await reading
+        kinds.append(closing.kind)
+
+        assert kinds == ["user_message", "result"]
+        assert isinstance(closing.payload, ResultPayload)
+        assert closing.payload.subtype == "error_during_execution"
+        assert runtime._take_pending_events() == []
+
+
+def _ai(text: str):
+    from langchain_core.messages import AIMessage
+
+    return AIMessage(
+        content=text,
+        usage_metadata={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+    )
+
+
+def _answer(text: str) -> dict:
+    return {"event": "on_chat_model_end", "data": {"output": _ai(text)}}
+
+
+class _Graph:
+    """astream_events stand-in: each call replays the next script, parking forever at "PARK"."""
+
+    def __init__(self, *scripts: list):
+        self._scripts = list(scripts)
+        self.calls = 0
+        self.cancelled = False
+        self.parked = asyncio.Event()
+
+    async def astream_events(self, _graph_input, config=None, version=None):
+        script = self._scripts[self.calls]
+        self.calls += 1
+
+        for step in script:
+            if step == "PARK":
+                self.parked.set()
+
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.cancelled = True
+
+                    raise
+            elif isinstance(step, Exception):
+                raise step
+            else:
+                yield step
+
+
+def _runtime(tmp_path: Path, graph: _Graph, *, has_interrupts: bool = False) -> LangGraphRuntime:
+    runtime = LangGraphRuntime(_config(tmp_path))
+    stub = _stub_graph(has_interrupts=has_interrupts)
+    stub.astream_events = graph.astream_events
+    runtime._graph = stub
+    runtime.ready.set()
+
+    return runtime
+
+
+async def _collect(runtime: LangGraphRuntime, into: list) -> None:
+    async for event in runtime.receive_events():
+        into.append(event)
+
+
+async def _until(predicate, timeout: float = 5.0) -> None:
+    async with asyncio.timeout(timeout):
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+
+class TestStopEndsTheTurnNotTheReader:
+    """Stop ends the running turn with one result; the task reading the stream keeps running."""
+
+    @pytest.mark.anyio
+    async def test_the_reader_survives_and_a_waiting_follow_up_starts(self, tmp_path):
+        graph = _Graph([_answer("partial"), "PARK"], [_answer("b")])
+        runtime = _runtime(tmp_path, graph)
+        events: list = []
+        await runtime.query("A")
+        await runtime.query("B")
+        reader = asyncio.create_task(_collect(runtime, events))
+
+        await asyncio.wait_for(graph.parked.wait(), 5)
+        await runtime.interrupt()
+        await _until(lambda: len(events) >= 6)
+
+        assert not reader.done()
+        assert [e.kind for e in events[:6]] == [
+            "system_init",
+            "user_message",
+            "assistant_message",
+            "result",
+            "user_message",
+            "assistant_message",
+        ]
+        reader.cancel()
+
+    @pytest.mark.anyio
+    async def test_a_stop_before_the_graph_task_runs_leaves_the_question_pending(self, tmp_path):
+        graph = _Graph([_answer("never")])
+        runtime = _runtime(tmp_path, graph, has_interrupts=True)
+        runtime._awaiting_resume = True
+        pressed = asyncio.Event()
+
+        async def _stop_request() -> None:
+            await pressed.wait()
+            await runtime.interrupt()
+
+        await runtime.query("<response:AskUserQuestion>A</response:AskUserQuestion>")
+        stream = runtime.receive_events()
+        [await anext(stream) for _ in range(2)]
+        stopper = asyncio.create_task(_stop_request())
+        await asyncio.sleep(0)
+        pressed.set()
+        closing = await asyncio.wait_for(anext(stream), 5)
+        await stopper
+
+        assert closing.kind == "result"
+        assert isinstance(closing.payload, ResultPayload)
+        assert closing.payload.subtype == "error_during_execution"
+        assert graph.calls == 0
+        assert runtime._awaiting_resume is True
+        assert runtime._turn_active is False
+
+    @pytest.mark.anyio
+    async def test_a_stop_while_the_reader_is_busy_still_closes_with_one_result(self, tmp_path):
+        graph = _Graph([_answer("partial"), _answer("never")])
+        runtime = _runtime(tmp_path, graph)
+        await runtime.query("A")
+        stream = runtime.receive_events()
+
+        kinds = [(await anext(stream)).kind for _ in range(3)]
+        await runtime.interrupt()
+        closing = await anext(stream)
+
+        assert kinds == ["system_init", "user_message", "assistant_message"]
+        assert closing.kind == "result"
+        assert isinstance(closing.payload, ResultPayload)
+        assert closing.payload.subtype == "error_during_execution"
+        assert closing.payload.is_error is True
+        assert closing.payload.result is None
+
+    @pytest.mark.anyio
+    async def test_a_stop_before_the_graph_starts_keeps_the_message_and_never_runs_it(
+        self,
+        tmp_path,
+    ):
+        graph = _Graph([_answer("never")])
+        runtime = _runtime(tmp_path, graph)
+        release = asyncio.Event()
+        probing = asyncio.Event()
+
+        async def _parked_probe(_config):
+            probing.set()
+            await release.wait()
+
+        runtime._checkpointer = MagicMock()
+        runtime._checkpointer.aget_tuple = _parked_probe
+        events: list = []
+        await runtime.query("A")
+        reader = asyncio.create_task(_collect(runtime, events))
+
+        await asyncio.wait_for(probing.wait(), 5)
+        await runtime.interrupt()
+        release.set()
+        await _until(lambda: len(events) >= 3)
+
+        assert [e.kind for e in events] == ["system_init", "user_message", "result"]
+        assert events[2].payload.subtype == "error_during_execution"
+        assert events[2].payload.result is None
+        assert graph.calls == 0
+        assert not reader.done()
+        reader.cancel()
+
+    @pytest.mark.anyio
+    async def test_cancelling_the_reader_cancels_the_graph_with_no_result(self, tmp_path):
+        graph = _Graph(["PARK"])
+        runtime = _runtime(tmp_path, graph)
+        events: list = []
+        await runtime.query("A")
+        reader = asyncio.create_task(_collect(runtime, events))
+
+        await asyncio.wait_for(graph.parked.wait(), 5)
+        reader.cancel()
 
         with pytest.raises(asyncio.CancelledError):
-            async for event in runtime._drive_turn("hello"):
-                kinds.append(event.kind)
+            await reader
 
-        assert kinds[-1] == "result"
-        assert runtime._take_pending_events() == []
+        assert graph.cancelled
+        assert [e.kind for e in events] == ["system_init", "user_message"]
+        assert runtime._graph_task is None
+
+    @pytest.mark.anyio
+    async def test_a_stopped_answer_leaves_the_question_pending(self, tmp_path):
+        graph = _Graph(["PARK"])
+        runtime = _runtime(tmp_path, graph, has_interrupts=True)
+        runtime._awaiting_resume = True
+        events: list = []
+        await runtime.query("<response:AskUserQuestion>A</response:AskUserQuestion>")
+        reader = asyncio.create_task(_collect(runtime, events))
+
+        await asyncio.wait_for(graph.parked.wait(), 5)
+        await runtime.interrupt()
+        await _until(lambda: len(events) >= 3)
+
+        assert events[2].kind == "result"
+        assert runtime._awaiting_resume is True
+        reader.cancel()
+
+    @pytest.mark.anyio
+    async def test_a_stop_with_nothing_running_does_not_touch_the_next_turn(self, tmp_path):
+        graph = _Graph([_answer("fine")])
+        runtime = _runtime(tmp_path, graph)
+        await runtime.interrupt()
+        events: list = []
+        await runtime.query("A")
+        reader = asyncio.create_task(_collect(runtime, events))
+
+        await _until(lambda: len(events) >= 4)
+
+        assert events[3].kind == "result"
+        assert events[3].payload.result == "fine"
+        reader.cancel()
+
+    @pytest.mark.anyio
+    async def test_a_graph_failure_still_reaches_the_reader_with_no_result(self, tmp_path):
+        graph = _Graph([RuntimeError("model down")])
+        runtime = _runtime(tmp_path, graph)
+        events: list = []
+        await runtime.query("A")
+
+        with pytest.raises(RuntimeError, match="model down"):
+            await _collect(runtime, events)
+
+        assert [e.kind for e in events] == ["system_init", "user_message"]

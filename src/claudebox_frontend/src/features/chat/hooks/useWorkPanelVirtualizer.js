@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { WORK_ENTRY_HORIZONTAL_PADDING_PX, WORK_OVERSCAN } from '../../../config/dimensions'
+import {
+  useTurnKeyedVirtualizer,
+  useVirtualizerGeometry,
+} from '../../../hooks/useVirtualListGeometry'
 import { predictWorkEntryHeight } from '../utils/predictWorkEntryHeight'
 import useElementWidth from './useElementWidth'
-import { useTurnKeyedVirtualizer, useVirtualizerGeometry } from './useVirtualListGeometry'
 
 /**
  * Window the work panel's turn entries against its own scroll container. `turns` is unfiltered -

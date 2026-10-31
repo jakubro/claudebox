@@ -8,6 +8,8 @@ Fields are extended alphabetically; new entries land Optional with safe defaults
 can be wired without the bundle needing to know about siblings.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -25,5 +27,5 @@ class DaemonServiceBundle:
     remote daemon would swap each field for an HTTP client of the same shape, tool code unchanged.
     """
 
-    sessions: "SiblingSessionClient | None" = None
-    tasks: "TaskService | None" = None
+    sessions: SiblingSessionClient | None = None
+    tasks: TaskService | None = None

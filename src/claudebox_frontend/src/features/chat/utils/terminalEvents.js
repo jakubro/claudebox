@@ -1,7 +1,7 @@
 /** Pure derivations for the terminal column - session-wide top-level Bash call/result pairing. */
 
 import { isHumanEvent } from '../../../utils/eventPredicates'
-import { indexEvents, isTopLevelBashCall } from '../../../utils/eventProcessing'
+import { indexEvents, injectedByToolUse, isTopLevelBashCall } from '../../../utils/eventProcessing'
 
 /**
  * Top-level Bash calls paired with their results, in arrival order; pairing from `indexEvents`.
@@ -12,6 +12,7 @@ import { indexEvents, isTopLevelBashCall } from '../../../utils/eventProcessing'
  */
 export function deriveTerminalEntries(events) {
   const { toolResults } = indexEvents(events)
+  const injected = injectedByToolUse(events)
   const entries = []
   let currentTurnId = null
 
@@ -32,10 +33,12 @@ export function deriveTerminalEntries(events) {
       // || not ?? - LangGraph sends an empty string, not undefined, for a missing description.
       description: event.tool_input?.description || null,
       command: event.tool_input?.command ?? '',
+      commandLayout: event.command_layout ?? null,
       result: toolResults.get(event.tool_use_id) ?? null,
       // The call's own original timestamp (not arrival time) - the overview derives duration as
       // result.ts minus this, so it must be the tool_use event's own `ts`, never `event.timestamp`.
       callTs: event.ts ?? null,
+      injected: injected.get(event.tool_use_id) ?? null,
     })
   }
 

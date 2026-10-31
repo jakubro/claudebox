@@ -5,10 +5,11 @@ import { darkTheme } from '@uiw/react-json-view/dark'
 import { useMemo } from 'react'
 import CopyButton from '../../../../../../../../components/CopyButton.jsx'
 import Markdown from '../../../../../../../../components/Markdown'
+import { useSessionWorkspace } from '../../../../../../../../context/SessionDataContext'
 import { computeTimingOffsets } from '../../../../../../../../utils/eventProcessing'
 import { hasDiffItems } from '../../../../../../../../utils/todoDiff'
 import { useTurn } from '../../../../hooks/useTurn'
-import SystemReminders from '../../../SystemReminders'
+import { skillBaseDir } from '../../utils/toolResultFormatters'
 import CollapsibleSection from './components/CollapsibleSection'
 import McpContentBlocks from './components/McpContentBlocks'
 import NestedContent from './components/NestedContent'
@@ -32,6 +33,8 @@ import { SyntaxHighlightedCodeBlock } from './components/tool-content-renderer/c
  * @param {Array} props.nestedBlocks - Nested subagent blocks: `{kind: 'tool', toolUse, toolResult}`
  *   or `{kind: 'text', event}`.
  * @param {string} [props.toolUseId] - Tool use ID for persisted output lookup.
+ * @param {string|null} [props.contentData.sourceUrl] - The page a WebFetch fetched.
+ * @param {string|null} [props.contentData.commandLayout] - Shown in place of `command`, which copy keeps.
  * @param {number} [props.lineOffset] - Starting line number for Edit tool diffs.
  */
 export default function ToolBlockExpandedContent({
@@ -47,6 +50,7 @@ export default function ToolBlockExpandedContent({
   lineOffset = null,
 }) {
   const { turnStartTime } = useTurn()
+  const workspaceDir = useSessionWorkspace()
 
   const {
     details,
@@ -57,8 +61,9 @@ export default function ToolBlockExpandedContent({
     plan,
     todoData,
     taskPrompt,
-    systemReminders,
     persistedOutput,
+    sourceUrl = null,
+    commandLayout = null,
   } = contentData
 
   const hasNested = nestedBlocks.length > 0
@@ -109,7 +114,11 @@ export default function ToolBlockExpandedContent({
           <div className="tool-details-wrapper">
             <CopyButton text={command} className="tool-copy-btn" title="Copy command" size={12} />
             <div className="tool-details">
-              <SyntaxHighlightedCodeBlock code={command} language="bash" showGutter={false} />
+              <SyntaxHighlightedCodeBlock
+                code={commandLayout ?? command}
+                language="bash"
+                showGutter={false}
+              />
             </div>
           </div>
         </CollapsibleSection>
@@ -129,6 +138,7 @@ export default function ToolBlockExpandedContent({
                   filePath={filePath}
                   outputMode={outputMode}
                   lineOffset={lineOffset}
+                  sourceUrl={sourceUrl}
                 />
               ))}
             {!isTask && jsonData && (
@@ -186,7 +196,7 @@ export default function ToolBlockExpandedContent({
 
       {skillContent && (
         <div className="tool-skill-content turn-text">
-          <Markdown>{skillContent}</Markdown>
+          <Markdown baseDir={skillBaseDir(skillContent)}>{skillContent}</Markdown>
         </div>
       )}
 
@@ -194,17 +204,13 @@ export default function ToolBlockExpandedContent({
 
       {plan && (
         <div className="tool-plan turn-text">
-          <Markdown>{plan}</Markdown>
+          <Markdown baseDir={workspaceDir}>{plan}</Markdown>
         </div>
       )}
 
       {/* TaskCreate / TaskUpdate route to the same TodoList renderer fed by appendTaskDiffs; their formatters do not populate todoData, so a non-empty todoDiff also gates rendering. */}
       {((todoData && todoData.length > 0) || hasDiffItems(todoDiff)) && (
         <TodoList todos={todoData} todoDiff={todoDiff} />
-      )}
-
-      {systemReminders && systemReminders.length > 0 && (
-        <SystemReminders reminders={systemReminders} />
       )}
     </div>
   )

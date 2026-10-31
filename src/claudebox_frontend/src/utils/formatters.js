@@ -2,7 +2,12 @@
 
 import { remark } from 'remark'
 import strip from 'strip-markdown'
-import { parseLocalCommandSegments, parseSlashCommand, parseStructuredQA } from './parsers'
+import {
+  matchFormResponse,
+  parseLocalCommandSegments,
+  parseSlashCommand,
+  parseStructuredQA,
+} from './parsers'
 
 const stripper = remark().use(strip)
 
@@ -73,9 +78,8 @@ export function formatBlockTiming(duration, relativeTime) {
   return parts.join(' · ')
 }
 
-/** Format date as relative time (e.g., "5m ago", "2d ago"). */
-export function formatRelativeTime(date) {
-  const now = new Date()
+/** Format date as relative time (e.g., "5m ago", "2d ago"), measured from `now`. */
+export function formatRelativeTime(date, now = Date.now()) {
   const diff = now - new Date(date)
   const minutes = Math.floor(diff / 60000)
   const hours = Math.floor(diff / 3600000)
@@ -154,9 +158,7 @@ export function stripMarkdown(text) {
   if (!text) {
     return ''
   }
-  return String(stripper.processSync(text))
-    .replace(/<[^>]*>/g, '')
-    .trim()
+  return String(stripper.processSync(text)).trim()
 }
 
 /** Extract filename from path. */
@@ -185,37 +187,23 @@ function formatStructuredQA(content) {
   return questions.map(q => `${q.text}: ${q.answers.join(', ')}`).join('\n')
 }
 
-/** Format user message for clipboard copy; prepends the note (a sibling field, never inside `message`) ahead of the formatted answer. */
+/** Format a user message for copy; a note leads a form answer and follows anything else, as drawn. */
 export function formatUserMessageForCopy(message, note = null) {
-  const notePrefix = note?.trim() ? `${note.trim()}\n\n` : ''
+  const trimmedNote = note?.trim() ?? ''
 
   if (!message) {
-    return note?.trim() || ''
+    return trimmedNote
   }
 
-  // Check for slash command first (entire message is command)
-  const slashCmd = parseSlashCommand(message)
-  if (slashCmd) {
-    const cmd = slashCmd.cmd.startsWith('/') ? slashCmd.cmd : `/${slashCmd.cmd}`
-    return notePrefix + (slashCmd.args ? `${cmd} ${slashCmd.args}` : cmd)
+  const formResponse = matchFormResponse(message)
+  if (!formResponse) {
+    const body = formatMessageBody(message)
+    return trimmedNote ? `${body}\n\n${trimmedNote}` : body
   }
 
-  const segments = parseLocalCommandSegments(message)
-  if (segments) {
-    return notePrefix + (segments.length > 0 ? segments.map(s => s.content).join('\n\n') : message)
-  }
-
-  // response:AskUserQuestion or response:ExitPlanMode: single full-wrap block
-  const qaMatch = message.match(
-    /^<response:(?:AskUserQuestion|ExitPlanMode)>([\s\S]*?)<\/response:(?:AskUserQuestion|ExitPlanMode)>$/,
-  )
-  if (qaMatch) {
-    const content = qaMatch[1].trim()
-    const formatted = formatStructuredQA(content)
-    return notePrefix + (formatted || content || message)
-  }
-
-  return notePrefix + message
+  const content = formResponse[1].trim()
+  const formatted = formatStructuredQA(content) || content || message
+  return trimmedNote ? `${trimmedNote}\n\n${formatted}` : formatted
 }
 
 /** Format unix timestamp (seconds) as HH:MM:SS time string. */
@@ -255,4 +243,19 @@ export function formatFileSize(bytes) {
     return `${(bytes / 1024).toFixed(0)} KB`
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatMessageBody(message) {
+  const slashCmd = parseSlashCommand(message)
+  if (slashCmd) {
+    const cmd = slashCmd.cmd.startsWith('/') ? slashCmd.cmd : `/${slashCmd.cmd}`
+    return slashCmd.args ? `${cmd} ${slashCmd.args}` : cmd
+  }
+
+  const segments = parseLocalCommandSegments(message)
+  if (segments) {
+    return segments.length > 0 ? segments.map(s => s.content).join('\n\n') : message
+  }
+
+  return message
 }

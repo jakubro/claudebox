@@ -10,9 +10,12 @@
     "src/claudebox_frontend": {
       "project": [
         "src/**/*.{js,jsx}",
-        "!src/**/*.test.{js,jsx}"
+        "!src/**/*.test.{js,jsx}",
+        "!src/test-utils/**"
       ],
       "ignoreDependencies": [
+        "@fontsource/dejavu-mono",
+        "@fontsource/dejavu-sans",
         "@fontsource/inter",
         "@fontsource/jetbrains-mono",
         "@testing-library/*",
@@ -25,8 +28,7 @@
     },
     "e2e/app": {
       "entry": ["tests/**/*.spec.{js,jsx}", "playwright.demo.config.js"],
-      "project": ["**/*.{js,jsx}"],
-      "ignoreDependencies": ["serve"]
+      "project": ["**/*.{js,jsx}"]
     }
   }
 }

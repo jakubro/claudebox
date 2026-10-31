@@ -2,13 +2,70 @@
 
 import { expect, test } from '@playwright/test'
 import { waitForMobileReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
+import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, loadFixture, mockAPI } from '../mocks/api.js'
 import { createSSEController, mockSSE } from '../mocks/sse.js'
+
+async function openMobileSession(page) {
+  await mockSSE(page)
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForMobileReady(page)
+}
+
+async function mockContextTokens(page, lastContextTokens) {
+  await mockAPI(page, {
+    handlers: {
+      getSessionStatus: async route => {
+        await route.fulfill({
+          json: {
+            session_id: 'test-session-001',
+            name: null,
+            workspace: '/home/user/project',
+            permission_mode: 'bypassPermissions',
+            model: 'claude-sonnet-5',
+            num_turns: 0,
+            total_cost_usd: 0,
+            total_duration_ms: 0,
+            last_context_tokens: lastContextTokens,
+            context_window: 200000,
+            started_at: '2025-01-18T12:00:00Z',
+            updated_at: '2025-01-18T12:00:00Z',
+            first_message: null,
+            last_message: null,
+            todos: [],
+            commands: { custom: [], mcp: [], builtin: [] },
+            effort_level: 'medium',
+          },
+        })
+      },
+    },
+  })
+}
 
 test.describe('Mobile Layout', () => {
   test.beforeEach(async ({ page }) => {
     await mockAPI(page)
     await mockSSE(page)
+  })
+
+  // SPEC: mobile:no-bundle
+  test('a bundled session shows no bundle name and no bundle picker', async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+    await mockAPI(page, {
+      sessionDefaults: {
+        bundle_names: ['research'],
+        bundles: { research: { declared: { model: 'claude-opus-5-5' }, keys: ['model'] } },
+      },
+      handlers: {
+        getSessionStatus: route =>
+          route.fulfill({
+            json: { ...loadFixture('status/default.json'), rate_limits: [], bundle: 'research' },
+          }),
+      },
+    })
+    await openMobileSession(page)
+
+    await expect(page.locator('[data-testid="footer-bundle"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="footer-bundle-picker"]')).toHaveCount(0)
   })
 
   // SPEC: mobile:activation
@@ -119,9 +176,7 @@ test.describe('Mobile Layout', () => {
   // SPEC: mobile:top-session-name
   test('top bar renders the session name', async ({ page }) => {
     await mockAPI(page, { statusFixture: 'status/with-name.json' })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page)
 
     await expect(page.locator('.mobile-top-session-name')).toContainText('My Custom Session')
   })
@@ -256,74 +311,87 @@ test.describe('Mobile Layout', () => {
     await expect(dot).toHaveAttribute('title', 'Disconnected')
   })
 
-  // SPEC: mobile:status-context-pct
-  test('status strip renders percentage from tokens / context window', async ({ page }) => {
+  // SPEC: notify:needs-you-replies-edit
+  test("a reply's arrow on a phone puts its text in the message box without opening the keyboard", async ({
+    page,
+  }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
     await mockAPI(page, {
       handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
+        getSessionStatus: route =>
+          route.fulfill({
             json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-5',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 60000,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              effort_level: 'medium',
+              ...loadFixture('status/default.json'),
+              needs_user: 'Approve: file the ticket',
+              needs_user_replies: ['Go', 'Hold'],
             },
-          })
-        },
+          }),
       },
     })
-    await mockSSE(page)
+    await mockSSE(page, 'events/needs-user-replies.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
     await waitForMobileReady(page)
+
+    const arrow = page.getByTestId('needs-user-replies').getByTitle('Edit in message box').first()
+    await expect(arrow).toBeVisible()
+    await arrow.tap()
+
+    const input = page.locator('[data-testid="chat-input"]')
+    await expect(input).toHaveValue('Go')
+    await expect(input).not.toBeFocused()
+  })
+
+  // SPEC: mobile:status-disconnected
+  test('a cut before the open stays cut', async ({ page }) => {
+    const controller = await createSSEController(page)
+    await page.clock.install({ time: new Date('2025-01-18T12:00:00Z') })
+    await page.clock.pauseAt(new Date('2025-01-18T12:00:01Z'))
+    await page.goto(DEFAULT_SESSION_URL)
+
+    let state = 'none'
+    for (let i = 0; i < 5000 && state !== 0; i++) {
+      await page.clock.runFor(1)
+      state = await page.evaluate(() => {
+        const stream = window.__sseChatInstance
+        return stream?.url.includes('/api/stream') ? stream.readyState : 'none'
+      })
+    }
+    expect(state).toBe(0)
+
+    await controller.triggerError()
+    await page.clock.runFor(50)
+
+    await expect(page.locator('.status-strip-dot')).not.toHaveClass(/connected/)
+  })
+
+  // SPEC: chat:added-text-box
+  test("a held turn's corner triangle shows on a phone and opens its box on tap", async ({
+    page,
+  }) => {
+    await mockSSE(page, 'events/stop-hook-feedback.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForMobileReady(page)
+
+    const toggle = page
+      .locator('.turn-text', { hasText: 'PING' })
+      .getByTestId('injected-context-toggle')
+    await expect(toggle).toBeVisible()
+    await toggle.tap()
+    await expect(page.getByTestId('injected-context-box')).toContainText('HOOK-MARKER')
+  })
+
+  // SPEC: mobile:status-context-pct
+  test('status strip renders percentage from tokens / context window', async ({ page }) => {
+    await mockContextTokens(page, 60000)
+    await openMobileSession(page)
 
     await expect(page.locator('.status-strip-pct')).toHaveText('30%')
   })
 
   // SPEC: mobile:status-context-cap
   test('status percentage caps at 100% when tokens exceed context window', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-5',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 500000,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              effort_level: 'medium',
-            },
-          })
-        },
-      },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await mockContextTokens(page, 500000)
+    await openMobileSession(page)
 
     await expect(page.locator('.status-strip-pct')).toHaveText('100%')
   })
@@ -331,36 +399,8 @@ test.describe('Mobile Layout', () => {
   // SPEC: mobile:status-context-color
   test('status fill color shifts as context fills up', async ({ page }) => {
     // Low vs. high context yield different colors via getContextBarColor; assert distinctness, not exact codes.
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-5',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 10000,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              effort_level: 'medium',
-            },
-          })
-        },
-      },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await mockContextTokens(page, 10000)
+    await openMobileSession(page)
 
     const fill = page.locator('.status-strip-fill')
     const lowColor = await fill.evaluate(el => el.style.background)
@@ -368,33 +408,7 @@ test.describe('Mobile Layout', () => {
 
     // Now load a session with much higher tokens - re-fetch by reload with new mock.
     await page.unroute(/\/sessions\/[^/]+\/status/).catch(() => {})
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              permission_mode: 'bypassPermissions',
-              model: 'claude-sonnet-5',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 180000,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              effort_level: 'medium',
-            },
-          })
-        },
-      },
-    })
+    await mockContextTokens(page, 180000)
     await page.reload()
     await waitForMobileReady(page)
     const highColor = await page.locator('.status-strip-fill').evaluate(el => el.style.background)
@@ -408,9 +422,7 @@ test.describe('Mobile Layout', () => {
     page,
   }) => {
     await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page)
 
     await page.locator('.mobile-top-bar button[title="Menu"]').click()
     const drawer = page.locator('.mobile-drawer')
@@ -431,13 +443,49 @@ test.describe('Mobile Layout', () => {
     await expect(items.locator('.sessions-timestamp')).toHaveCount(3)
   })
 
+  // SPEC: panel-session:needs-you
+  test('a drawer row shows a session that needs you with the dark orange dot and its reason', async ({
+    page,
+  }) => {
+    await mockAPI(page, { sessionsFixture: 'sessions/needs-you.json' })
+    await openMobileSession(page)
+
+    await page.locator('.mobile-top-bar button[title="Menu"]').click()
+    const asking = page
+      .locator('.mobile-drawer-sessions .sessions-item-mobile')
+      .filter({ hasText: 'askrun01' })
+
+    await expect(asking.locator('.container-status-dot')).toHaveClass(/container-status-needs-you/)
+    await expect(asking.locator('.sessions-last')).toHaveText(
+      'Decide: which migration path to keep',
+    )
+  })
+
+  // SPEC: mobile:session-list-working-dot
+  test('a drawer row shows a working session the same way a desktop row does', async ({ page }) => {
+    await mockAPI(page, { sessionsFixture: 'sessions/working.json' })
+    await openMobileSession(page)
+
+    await page.locator('.mobile-top-bar button[title="Menu"]').click()
+    const rows = page.locator('.mobile-drawer-sessions .sessions-item-mobile')
+
+    await expect(
+      rows
+        .filter({ has: page.locator('.sessions-id').getByText('working1', { exact: true }) })
+        .locator('.container-status-dot'),
+    ).toHaveClass(/container-status-working/)
+    await expect(
+      rows
+        .filter({ has: page.locator('.sessions-id').getByText('waiting1', { exact: true }) })
+        .locator('.container-status-dot'),
+    ).toHaveClass(/container-status-waiting/)
+  })
+
   // SPEC: mobile:drawer-session-switch
   // SPEC: mobile:session-list-tap-resume
   test('tapping a non-current session row resumes it and closes the drawer', async ({ page }) => {
     await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page)
 
     await page.locator('.mobile-top-bar button[title="Menu"]').click()
     const target = page
@@ -463,9 +511,7 @@ test.describe('Mobile Layout', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page)
 
     await page.locator('.mobile-top-bar button[title="Menu"]').click()
     await page.locator('.mobile-drawer-new-session').click()
@@ -487,9 +533,7 @@ test.describe('Mobile Layout', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page)
 
     await page.locator('.mobile-top-bar button[title="Menu"]').click()
     const closeBtn = page.locator('.mobile-drawer-close-session')
@@ -562,9 +606,7 @@ test.describe('Mobile Layout', () => {
     page,
   }) => {
     await mockAPI(page, { statusFixture: 'status/with-name.json' })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page)
 
     await page.locator('.mobile-top-bar button[title="Session details"]').click()
     const sheet = page.locator('.details-sheet')
@@ -579,5 +621,18 @@ test.describe('Mobile Layout', () => {
     await expect(sheet).toContainText('Model')
     await expect(sheet).toContainText('Effort')
     await expect(sheet).toContainText('Permission')
+  })
+
+  // SPEC: error:tool-block-containment
+  test('a malformed tool call does not take down the mobile layout, which has no boundary above it', async ({
+    page,
+  }) => {
+    await mockAPI(page)
+    await mockSSE(page, 'events/chat-malformed-question.jsonl')
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForMobileReady(page)
+
+    await expect(page.getByText('This tool call could not be read')).toBeVisible()
+    await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
   })
 })

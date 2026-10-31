@@ -3,8 +3,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createFaviconCanvas,
+  drawWorkingFavicon,
   drawWorkspaceBadge,
   getColorFromPalette,
+  NEEDS_YOU_COLORS,
   NORMAL_COLORS,
   NOTIFICATION_COLORS,
   setFaviconFromCanvas,
@@ -35,6 +37,12 @@ describe('getColorFromPalette', () => {
 describe('NOTIFICATION_COLORS', () => {
   it('has 3 orange palette entries', () => {
     expect(NOTIFICATION_COLORS).toHaveLength(3)
+  })
+})
+
+describe('NEEDS_YOU_COLORS', () => {
+  it('has 3 red palette entries', () => {
+    expect(NEEDS_YOU_COLORS).toHaveLength(3)
   })
 })
 
@@ -105,6 +113,38 @@ describe('drawWorkspaceBadge', () => {
     drawWorkspaceBadge(ctx, '#1e3a5f')
 
     expect(ctx.globalAlpha).toBe(1)
+  })
+})
+
+describe('drawWorkingFavicon', () => {
+  function recordingCtx() {
+    const ctx = { beginPath: vi.fn(), arc: vi.fn(), globalAlpha: 1, strokeStyle: '', lineWidth: 0 }
+    const alphas = []
+    ctx.save = vi.fn()
+    ctx.restore = vi.fn(() => {
+      ctx.globalAlpha = 1
+    })
+    ctx.stroke = vi.fn(() => alphas.push(ctx.globalAlpha))
+    return { ctx, alphas }
+  }
+
+  it('strokes the arc at the given alpha and restores the context afterwards', () => {
+    const { ctx, alphas } = recordingCtx()
+
+    drawWorkingFavicon(ctx, { alpha: 0.5 })
+
+    expect(alphas.length).toBeGreaterThan(0)
+    expect(alphas.every(a => a === 0.5)).toBe(true)
+    expect(ctx.save).toHaveBeenCalledTimes(1)
+    expect(ctx.restore).toHaveBeenCalledTimes(1)
+  })
+
+  it('strokes fully opaque by default', () => {
+    const { ctx, alphas } = recordingCtx()
+
+    drawWorkingFavicon(ctx)
+
+    expect(alphas.every(a => a === 1)).toBe(true)
   })
 })
 

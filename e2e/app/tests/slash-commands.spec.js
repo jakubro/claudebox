@@ -1,16 +1,18 @@
 /** E2E tests for slash command autocomplete. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSessionWithAPI, waitForAppReady } from '../helpers.js'
+import { DEFAULT_WORKSPACE_ID } from '../mocks/api.js'
+
+async function openSlashAutocomplete(page) {
+  await page.locator('[data-testid="chat-input"]').click()
+  await page.keyboard.type('/')
+  await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
+}
 
 test.describe('Slash Commands', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
   })
 
   // SPEC: input:slash-trigger
@@ -33,11 +35,7 @@ test.describe('Slash Commands', () => {
 
   // SPEC: input:slash-trigger
   test('shows commands from session data', async ({ page }) => {
-    const input = page.locator('[data-testid="chat-input"]')
-    await input.click()
-    await page.keyboard.type('/')
-
-    await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
+    await openSlashAutocomplete(page)
 
     // Commands come from the status fixture (/help, /clear, /compact).
     await expect(page.locator('[data-testid="command-autocomplete"]')).toContainText('/help')
@@ -81,10 +79,7 @@ test.describe('Slash Commands', () => {
   // SPEC: input:slash-tab-cursor
   test('selecting command inserts it', async ({ page }) => {
     const input = page.locator('[data-testid="chat-input"]')
-    await input.click()
-    await page.keyboard.type('/')
-
-    await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
+    await openSlashAutocomplete(page)
     await page.keyboard.press('Enter')
 
     await expect(input).toHaveValue(/^\/\w+/)
@@ -101,10 +96,7 @@ test.describe('Slash Commands', () => {
   // SPEC: input:slash-insert
   test('clicking command inserts it', async ({ page }) => {
     const input = page.locator('[data-testid="chat-input"]')
-    await input.click()
-    await page.keyboard.type('/')
-
-    await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
+    await openSlashAutocomplete(page)
     await page.locator('[data-testid="command-autocomplete"] .autocomplete-item').first().click()
 
     await expect(input).toHaveValue(/^\/\w+/)
@@ -114,11 +106,7 @@ test.describe('Slash Commands', () => {
 test.describe('Slash Commands - Message Styling', () => {
   // SPEC: chat:user-message-slash-command-styling
   test('slash command in message renders bold', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/slash-command-message.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/slash-command-message.jsonl')
 
     const turn = page.locator('.turn-container').first()
     await expect(turn).toBeVisible()
@@ -135,11 +123,7 @@ test.describe('Slash Commands - Message Styling', () => {
 
   // SPEC: chat:user-message-slash-command-styling
   test('slash command token is not wrapped in an anchor', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/slash-command-message.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/slash-command-message.jsonl')
 
     const helpToken = page.locator('.slash-command').first()
     await expect(helpToken).toBeVisible()

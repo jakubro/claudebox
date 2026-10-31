@@ -1,9 +1,13 @@
 """Tests for claudebox.agent_session.orchestration.async_monitor.AsyncTaskMonitor."""
 
+from __future__ import annotations
+
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import aiofiles
 import pytest
 
 from claudebox.agent_session.orchestration.async_monitor import AsyncTaskMonitor
@@ -189,8 +193,6 @@ class TestRun:
     @pytest.mark.anyio
     async def test_waits_for_file_to_exist(self, tmp_path):
         """Monitor waits for the output file before reading."""
-        import asyncio
-
         monitor, output_file, cb = _make_monitor(tmp_path)
 
         async def _stop_cb(event, path, off):
@@ -214,8 +216,6 @@ class TestRun:
     @pytest.mark.anyio
     async def test_stops_before_file_exists(self, tmp_path):
         """If stopped while waiting for file, run exits cleanly."""
-        import asyncio
-
         monitor, _output_file, cb = _make_monitor(tmp_path)
 
         async def _stop_soon():
@@ -269,3 +269,143 @@ class TestRun:
         assert offsets_seen == sorted(offsets_seen)
         assert offsets_seen[0] > 0
         assert offsets_seen[2] > offsets_seen[1] > offsets_seen[0]
+
+
+class TestSplitLineHandling:
+    """A line split across writes is processed once, complete - never lost in fragments."""
+
+    @pytest.mark.anyio
+    async def test_line_split_across_two_writes_is_processed_once_complete(self, tmp_path):
+        monitor, output_file, cb = _make_monitor(tmp_path)
+        output_file.write_text("")
+
+        line = json.dumps({"type": "system", "message": {"subtype": "split-two"}})
+        split_at = len(line) // 2
+
+        async def _stop_cb(event, path, off):
+            await cb(event, path, off)
+            monitor.stop()
+
+        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]
+
+        async def _write_in_two_parts():
+            async with aiofiles.open(output_file, "a") as f:
+                await f.write(line[:split_at])
+
+            await asyncio.sleep(0.25)
+
+            async with aiofiles.open(output_file, "a") as f:
+                await f.write(line[split_at:] + "\n")
+
+        async def _run():
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(monitor.run())
+                tg.create_task(_write_in_two_parts())
+
+        await asyncio.wait_for(_run(), timeout=3.0)
+
+        assert cb.call_count == 1
+        event = cb.call_args_list[0][0][0]
+        assert event.raw["message"]["subtype"] == "split-two"
+
+    @pytest.mark.anyio
+    async def test_line_split_across_many_writes(self, tmp_path):
+        monitor, output_file, cb = _make_monitor(tmp_path)
+        output_file.write_text("")
+
+        line = json.dumps({"type": "system", "message": {"subtype": "split-many"}})
+        chunk_size = 5
+        chunks = [line[i : i + chunk_size] for i in range(0, len(line), chunk_size)]
+
+        async def _stop_cb(event, path, off):
+            await cb(event, path, off)
+            monitor.stop()
+
+        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]
+
+        async def _write_slowly():
+            for i, chunk in enumerate(chunks):
+                async with aiofiles.open(output_file, "a") as f:
+                    await f.write(chunk if i < len(chunks) - 1 else chunk + "\n")
+
+                await asyncio.sleep(0.05)
+
+        async def _run():
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(monitor.run())
+                tg.create_task(_write_slowly())
+
+        await asyncio.wait_for(_run(), timeout=3.0)
+
+        assert cb.call_count == 1
+        event = cb.call_args_list[0][0][0]
+        assert event.raw["message"]["subtype"] == "split-many"
+
+    @pytest.mark.anyio
+    async def test_writer_stops_mid_line_emits_nothing(self, tmp_path):
+        monitor, output_file, cb = _make_monitor(tmp_path)
+        output_file.write_text('{"type": "system", "message"')
+
+        async def _stop_soon():
+            await asyncio.sleep(0.3)
+            monitor.stop()
+
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(monitor.run())
+            tg.create_task(_stop_soon())
+
+        cb.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_resume_from_a_recorded_offset_respects_the_completeness_rule(self, tmp_path):
+        """The persisted offset only ever lands on a line boundary, so a reattach never
+        mistakes a leftover fragment from before the reattach for a complete line."""
+
+        first_line = json.dumps({"type": "system", "message": {"subtype": "first"}}) + "\n"
+        output_file = tmp_path / "output.jsonl"
+        output_file.write_text(first_line)
+
+        monitor, _, cb = _make_monitor(tmp_path, start_offset=len(first_line))
+
+        second_line = json.dumps({"type": "system", "message": {"subtype": "second"}})
+        split_at = len(second_line) // 2
+
+        async def _stop_cb(event, path, off):
+            await cb(event, path, off)
+            monitor.stop()
+
+        monitor.on_event = _stop_cb  # ty: ignore[invalid-assignment]
+
+        async def _write_in_two_parts():
+            async with aiofiles.open(output_file, "a") as f:
+                await f.write(second_line[:split_at])
+
+            await asyncio.sleep(0.25)
+
+            async with aiofiles.open(output_file, "a") as f:
+                await f.write(second_line[split_at:] + "\n")
+
+        async def _run():
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(monitor.run())
+                tg.create_task(_write_in_two_parts())
+
+        await asyncio.wait_for(_run(), timeout=3.0)
+
+        assert cb.call_count == 1
+        event = cb.call_args_list[0][0][0]
+        assert event.raw["message"]["subtype"] == "second"
+
+
+class TestUnparseableCompleteLine:
+    """A complete line that fails conversion, not just JSON decoding, is reported once."""
+
+    @pytest.mark.anyio
+    async def test_valid_json_non_dict_shape_is_reported_not_raised(self, tmp_path):
+        monitor, _, cb = _make_monitor(tmp_path)
+
+        with patch.object(monitor._logger, "warning") as mock_warn:
+            await monitor._process_line(json.dumps([1, 2, 3]))
+            mock_warn.assert_called_once()
+
+        cb.assert_not_called()

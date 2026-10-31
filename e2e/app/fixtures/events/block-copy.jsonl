@@ -1,0 +1,4 @@
+{"type": "user", "subtype": "text", "is_human": true, "content": "Show parts", "ts": "2025-01-18T12:00:00Z", "turn_id": "turn_001", "id": "evt_001", "primary": true}
+{"type": "assistant", "subtype": "text", "content": "First paragraph with **bold**, a [link](https://example.com) and a `code span`.\n\n## Setup\n\n- one\n  - nested\n- two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> quoted line\n> - quoted bullet\n\n```js\nconst x = 1\n```\n\n$$\nx^2 + y^2\n$$\n\n---\n\n<details>\n<summary>More</summary>\n\nHidden **text**.\n\n</details>", "ts": "2025-01-18T12:00:01Z", "id": "evt_002", "primary": true, "is_human": false}
+{"type": "assistant", "subtype": "text", "content": "A short second message.", "ts": "2025-01-18T12:00:02Z", "id": "evt_003", "primary": true, "is_human": false}
+{"type": "result", "subtype": "success", "turn_id": "turn_001", "ts": "2025-01-18T12:00:03Z", "id": "evt_004", "primary": false, "is_human": false}

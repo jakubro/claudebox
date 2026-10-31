@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Headless browser helper for in-container UI debugging - observe and interact."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys

@@ -1,5 +1,7 @@
 """Shared test fixtures for claudebox test suite."""
 
+from __future__ import annotations
+
 import os
 import shutil
 import sys
@@ -63,6 +65,24 @@ def isolate_home(tmp_path, monkeypatch):
     home = tmp_path / "_home"
     home.mkdir(exist_ok=True)
     monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: home))
+
+
+@pytest.fixture(autouse=True)
+def isolate_tmp_remap(tmp_path, monkeypatch):
+    """Point the managed /tmp at a per-test path - the test tree itself usually lives under /tmp,
+    which the spawn check would otherwise refuse, and no test may touch the real /tmp."""
+
+    monkeypatch.setattr("claudebox.temp.TMP_PATH", tmp_path / "_managed_tmp")
+
+
+@pytest.fixture(autouse=True)
+def isolate_trace_socket(tmp_path, monkeypatch):
+    """Point Bash call measurement at a dead socket - in a session container a real one answers."""
+
+    monkeypatch.setattr(
+        "claudebox.agent_session.orchestration.trace.CONTAINER_TRACE_SOCKET",
+        tmp_path / "trace.sock",
+    )
 
 
 @pytest.fixture

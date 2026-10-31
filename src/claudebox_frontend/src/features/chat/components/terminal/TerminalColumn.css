@@ -99,21 +99,38 @@
   color: var(--error);
 }
 
-/* Centres the 22px button box (12px icon + 8px padding + 2px border) on the entry's first line.
-   Comment and command are both ~17px line boxes here, so either one centres the same. */
+/* Centres the 16px button box on the entry's first line. Comment and command are both 16.8px
+   line boxes (12px at line-height 1.4), so either one centres the same. */
+.terminal-entry .terminal-jump-btn,
+.terminal-entry .terminal-bookmark-btn,
+.terminal-entry .terminal-copy-btn {
+  top: 0.4px;
+  width: var(--block-strip-btn-width);
+  height: var(--block-strip-btn-height);
+  padding: 0;
+}
+
 .terminal-entry .terminal-jump-btn {
-  top: -2.5px;
-  right: 28px;
+  right: calc(2 * (var(--block-strip-btn-width) + var(--block-strip-gap)));
+}
+
+.terminal-entry .terminal-bookmark-btn {
+  right: calc(var(--block-strip-btn-width) + var(--block-strip-gap));
 }
 
 .terminal-entry .terminal-copy-btn {
-  top: -2.5px;
   right: 0;
 }
 
 .terminal-entry:hover .terminal-jump-btn,
-.terminal-entry:hover .terminal-copy-btn {
+.terminal-entry:hover .terminal-copy-btn,
+.terminal-entry:hover .terminal-bookmark-btn,
+.terminal-entry .terminal-bookmark-btn.active {
   opacity: 1;
+}
+
+.terminal-entry .terminal-bookmark-btn.active {
+  color: #e8b931;
 }
 
 .terminal-entry-pending {

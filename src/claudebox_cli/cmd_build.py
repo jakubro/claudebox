@@ -1,5 +1,7 @@
 """Handler for the ``build`` verb - build the container image."""
 
+from __future__ import annotations
+
 import argparse
 
 

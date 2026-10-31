@@ -21,6 +21,11 @@ describe('aggregateCost', () => {
     },
   ]
 
+  it('measures the interval edge from the given time', () => {
+    const later = now + 2 * 60 * 60 * 1000
+    expect(aggregateCost(sessions, 60 * 60 * 1000, later)).toBe(0)
+  })
+
   it('aggregates all sessions for Infinity interval', () => {
     expect(aggregateCost(sessions, Infinity)).toBeCloseTo(0.6)
   })

@@ -1,0 +1,10 @@
+{"type":"user","subtype":"message","is_human":true,"content":"Start the audit agent and tell me what it finds","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"The audit agent is running; I will report when it finishes.","ts":"2025-01-18T12:00:01Z","turn_id":"turn_001","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:02Z","id":"evt_003","primary":false,"is_human":false}
+{"type":"system","subtype":"task_notification","turn_id":"turn_001","message_data":{"task_id":"agent_1","status":"completed","summary":"Audit done"},"ts":"2025-01-18T12:03:00Z","id":"evt_004","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The audit found two issues in the billing module.","ts":"2025-01-18T12:03:01Z","turn_id":"turn_001","id":"evt_005","primary":true,"is_human":false}
+{"type":"system","subtype":"interrupt_sent","turn_id":"turn_001","turn_running":true,"ts":"2025-01-18T12:03:02Z","id":"evt_006","primary":false,"is_human":false}
+{"type":"user","subtype":"message","is_human":true,"content":"Thanks, that is all","ts":"2025-01-18T12:04:00Z","turn_id":"turn_002","id":"evt_007","primary":true}
+{"type":"assistant","subtype":"text","content":"Glad to help.","ts":"2025-01-18T12:04:01Z","turn_id":"turn_002","id":"evt_008","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","ts":"2025-01-18T12:04:02Z","id":"evt_009","primary":false,"is_human":false}
+{"type":"system","subtype":"interrupt_sent","turn_id":"turn_002","turn_running":false,"ts":"2025-01-18T12:04:03Z","id":"evt_010","primary":false,"is_human":false}

@@ -1,5 +1,7 @@
 """UI state persistence - workspace-scoped HTTP adapters."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from claudebox import JSONResponse

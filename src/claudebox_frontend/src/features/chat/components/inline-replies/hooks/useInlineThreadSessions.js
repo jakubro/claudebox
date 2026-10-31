@@ -3,51 +3,23 @@
 import { useCallback, useRef, useState } from 'react'
 import { interruptSide, sendSideMessage } from '../../../../../api/chat'
 import { forkSession, getSessionEvents, resumeSession } from '../../../../../api/sessions'
+import { EventSubtype, EventType } from '../../../../../config/schema'
+import { NORMAL_BATCH_INTERVAL } from '../../../../../config/timing'
 import { useEvents } from '../../../../../context/EventsContext'
-import { isForkDivider } from '../../../utils/turnFold'
-
-/**
- * Rebuild a thread's question/answer history from its raw event log, segmented on each human
- * message and starting past the fork divider, so a reload draws only the thread's own exchanges.
- *
- * Each entry keeps its initiating turn id, so a re-attached reload routes arriving text to the
- * entry that asked for it even once a follow-up has added a newer one.
- * @param {Array} events
- * @returns {Array<{question: string, answer: string, turnId: string|null}>}
- */
-export function buildThreadHistory(events) {
-  let seam = -1
-
-  for (let i = 0; i < events.length; i++) {
-    if (isForkDivider(events[i])) {
-      seam = i
-    }
-  }
-
-  const own = seam === -1 ? events : events.slice(seam + 1)
-  const history = []
-
-  for (const e of own) {
-    if (e.type === 'user' && e.is_human && e.content) {
-      history.push({ question: e.content, answer: '', turnId: e.turn_id ?? null })
-    } else if (e.type === 'assistant' && e.subtype === 'text' && e.content) {
-      if (history.length === 0) {
-        history.push({ question: '', answer: '', turnId: null })
-      }
-      history[history.length - 1].answer += e.content
-    }
-  }
-
-  return history
-}
+import { countExchanges, quoteBlock, threadOwnEvents } from '../threadEvents'
 
 /** @param {string|null} containerId - The parent's container id; a side thread shares it. */
 export default function useInlineThreadSessions(containerId) {
   const { subscribeSession } = useEvents()
 
-  // replyId -> { sessionId, history: [{question, answer}], running, error }
+  // replyId -> { sessionId, events, pending: [{content, at}], running, error }
   const [threads, setThreads] = useState(() => new Map())
   const cleanupsRef = useRef(new Map())
+  // replyId -> events arrived since the last flush; one state update per batch, not per event.
+  const bufferRef = useRef(new Map())
+  const flushTimerRef = useRef(null)
+  // replyId -> its first ask's fork, resolving to the side session's id
+  const forksRef = useRef(new Map())
 
   const patch = useCallback((replyId, partial) => {
     setThreads(prev => {
@@ -58,99 +30,94 @@ export default function useInlineThreadSessions(containerId) {
     })
   }, [])
 
+  // Also drops events still buffered for the reply, so a reload right after cannot replay them twice.
   const detach = useCallback(replyId => {
     cleanupsRef.current.get(replyId)?.()
     cleanupsRef.current.delete(replyId)
+    bufferRef.current.delete(replyId)
   }, [])
 
-  // Reads history off the LATEST state (functional form), not a closure - two rapid submits
-  // for the same reply must not have the second overwrite the first's own optimistic entry.
-  const appendQuestion = useCallback((replyId, question) => {
+  // Folds every buffered event into its thread. An echoed question retires the oldest pending
+  // one; a result or a logged error ends the answer, which renders in its own turn.
+  const flush = useCallback(() => {
+    clearTimeout(flushTimerRef.current)
+    flushTimerRef.current = null
+
+    if (bufferRef.current.size === 0) {
+      return
+    }
+
+    const batches = [...bufferRef.current].map(([replyId, events]) => ({
+      replyId,
+      events,
+      echoes: countExchanges(events, []),
+      ending: events.find(_endsAnswer),
+    }))
+    bufferRef.current = new Map()
+
     setThreads(prev => {
-      const entry = prev.get(replyId)
-      const history = [...(entry?.history || []), { question, answer: '', turnId: null }]
       const next = new Map(prev)
-      next.set(replyId, { ...entry, running: true, error: null, history })
+
+      for (const { replyId, events, echoes, ending } of batches) {
+        const entry = next.get(replyId) || {}
+        const ended = ending
+          ? { running: false, error: _endingError(ending) }
+          : { running: entry.running, error: entry.error }
+
+        next.set(replyId, {
+          ...entry,
+          ...ended,
+          events: [...(entry.events || []), ...events],
+          pending: (entry.pending || []).slice(echoes),
+        })
+      }
 
       return next
     })
-  }, [])
 
-  // The prompt is echoed back before the answer, carrying the turn id the runtime minted - bind
-  // it to the most recently asked entry, since the frontend cannot know that id at send time.
-  const bindTurnId = useCallback((replyId, turnId) => {
-    setThreads(prev => {
-      const entry = prev.get(replyId)
-
-      if (!entry) {
-        return prev
+    for (const { replyId, ending } of batches) {
+      if (ending) {
+        detach(replyId)
       }
+    }
+  }, [detach])
 
-      const history = entry.history.slice()
+  // Reads the LATEST state (functional form) - two rapid submits for the same reply must each keep
+  // their own pending question. Buffered events flush first, so `at` counts everything arrived.
+  const appendQuestion = useCallback(
+    (replyId, question) => {
+      flush()
+      setThreads(prev => {
+        const entry = prev.get(replyId) || {}
+        const events = entry.events || []
+        const pending = [...(entry.pending || []), { content: question, at: events.length }]
+        const next = new Map(prev)
+        next.set(replyId, { ...entry, events, pending, running: true, error: null })
 
-      for (let i = history.length - 1; i >= 0; i--) {
-        if (history[i].turnId == null) {
-          history[i] = { ...history[i], turnId }
-          break
-        }
-      }
-
-      const next = new Map(prev)
-      next.set(replyId, { ...entry, history })
-
-      return next
-    })
-  }, [])
-
-  // Appends to the entry whose turn id matches, so two overlapping answers never cross; falls
-  // back to the most recent entry when the id is absent or unmatched.
-  const appendAnswer = useCallback((replyId, turnId, text) => {
-    setThreads(prev => {
-      const entry = prev.get(replyId)
-
-      if (!entry || entry.history.length === 0) {
-        return prev
-      }
-
-      const history = entry.history.slice()
-      let idx = turnId ? history.findIndex(h => h.turnId === turnId) : -1
-
-      if (idx === -1) {
-        idx = history.length - 1
-      }
-
-      history[idx] = { ...history[idx], answer: `${history[idx].answer}${text}` }
-
-      const next = new Map(prev)
-      next.set(replyId, { ...entry, history })
-
-      return next
-    })
-  }, [])
+        return next
+      })
+    },
+    [flush],
+  )
 
   const handleEvent = useCallback(
     (replyId, raw) => {
-      let data
+      let event
 
       try {
-        data = JSON.parse(raw.data)
+        event = JSON.parse(raw.data)
       } catch {
         return
       }
 
-      if (data.type === 'user' && data.is_human && data.turn_id) {
-        bindTurnId(replyId, data.turn_id)
-      } else if (data.type === 'assistant' && data.subtype === 'text' && data.content) {
-        appendAnswer(replyId, data.turn_id, data.content)
-      } else if (data.type === 'result') {
-        patch(replyId, { running: false })
-        detach(replyId)
-      } else if (data.type === 'system' && data.subtype === 'error') {
-        patch(replyId, { running: false, error: data.content || 'The answer failed to arrive' })
-        detach(replyId)
+      event.timestamp = Date.now()
+      bufferRef.current.set(replyId, [...(bufferRef.current.get(replyId) || []), event])
+
+      if (!flushTimerRef.current) {
+        flushTimerRef.current = setTimeout(flush, NORMAL_BATCH_INTERVAL)
       }
     },
-    [bindTurnId, appendAnswer, patch, detach],
+    [flush],
   )
 
   const attach = useCallback(
@@ -170,58 +137,70 @@ export default function useInlineThreadSessions(containerId) {
     [subscribeSession, containerId, handleEvent, detach, patch],
   )
 
-  /** Fork the parent into a shared-container side thread (first ask) or resume an existing one
-   * (a follow-up after it stopped), then send the given text as the next question. */
+  /** Fork the parent into a shared-container side thread (first ask, sent beneath its quote) or
+   * resume it (any later ask, even one made while that fork is on its way), then send it. */
   const submit = useCallback(
     async (reply, parentSessionId, text) => {
-      const prompt = text?.trim()
+      const typed = text?.trim()
 
-      if (!prompt) {
+      if (!typed) {
         return null
       }
 
+      const forking = reply.threadSessionId ? null : forksRef.current.get(reply.id)
+      const fork =
+        reply.threadSessionId || forking
+          ? null
+          : forkSession(parentSessionId, null, { share_container: true }).then(
+              forked => forked.session_id,
+            )
+      if (fork) {
+        forksRef.current.set(reply.id, fork)
+      }
+
+      const prompt = fork ? `${quoteBlock(reply.quote)}\n\n${typed}` : typed
       appendQuestion(reply.id, prompt)
 
       try {
-        let sessionId = reply.threadSessionId
+        let sessionId
 
-        if (sessionId) {
-          await resumeSession(sessionId)
-        } else {
-          const forked = await forkSession(parentSessionId, null, { share_container: true })
-          sessionId = forked.session_id
+        if (fork) {
+          sessionId = await fork
           patch(reply.id, { sessionId })
+        } else {
+          sessionId = reply.threadSessionId ?? (await forking)
+          await resumeSession(sessionId)
         }
 
         attach(reply.id, sessionId)
-        await sendSideMessage(sessionId, prompt)
+        await sendSideMessage(sessionId, prompt, containerId)
 
         return sessionId
       } catch (_err) {
+        forksRef.current.delete(reply.id)
         patch(reply.id, { running: false, error: 'Failed to send' })
         detach(reply.id)
 
         return null
       }
     },
-    [attach, detach, patch, appendQuestion],
+    [attach, detach, patch, appendQuestion, containerId],
   )
 
-  /** Mount/reload re-attach: read the persisted log, rebuild the history, and subscribe live only
-   * if the read-only route reports the session still running. */
+  /** Mount/reload re-attach: read the persisted log, keep the thread's own events, and subscribe
+   * live only if the read-only route reports the session still running. */
   const load = useCallback(
     async (replyId, sessionId) => {
       try {
         const { events, running } = await getSessionEvents(sessionId)
-        const history = buildThreadHistory(events)
 
-        patch(replyId, { sessionId, history, running })
+        patch(replyId, { sessionId, events: threadOwnEvents(events), pending: [], running })
 
         if (running) {
           attach(replyId, sessionId)
         }
       } catch {
-        patch(replyId, { sessionId, history: [], running: false })
+        patch(replyId, { sessionId, events: [], pending: [], running: false })
       }
     },
     [attach, patch],
@@ -251,7 +230,24 @@ export default function useInlineThreadSessions(containerId) {
     }
 
     cleanupsRef.current.clear()
+    clearTimeout(flushTimerRef.current)
+    flushTimerRef.current = null
+    bufferRef.current = new Map()
   }, [])
 
   return { threads, submit, load, interruptThread, detach, releaseAll }
+}
+
+function _endsAnswer(event) {
+  return (
+    event.type === EventType.RESULT ||
+    (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR)
+  )
+}
+
+// A logged error already renders in its turn; only an empty one needs the float's own line.
+function _endingError(event) {
+  return event.type === EventType.SYSTEM && !event.content?.trim()
+    ? 'The answer failed to arrive'
+    : null
 }

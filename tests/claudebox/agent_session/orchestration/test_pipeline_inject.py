@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.pipeline - event injection and buffering."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

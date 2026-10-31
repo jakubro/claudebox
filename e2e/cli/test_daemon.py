@@ -3,6 +3,8 @@
 Real-binary surfaces: raw-print sub-help, fake-systemctl status, and traceback-absence on failure.
 """
 
+from __future__ import annotations
+
 import pytest
 
 

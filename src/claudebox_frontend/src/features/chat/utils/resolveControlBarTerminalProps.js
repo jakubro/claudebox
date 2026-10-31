@@ -10,7 +10,7 @@ import { RightSlotView } from './rightSlotViews'
 export function resolveControlBarTerminalProps(sessionId, terminalSplit) {
   return {
     hydratingTerminalSplit: Boolean(sessionId) && terminalSplit == null,
-    rightSlotView: terminalSplit?.view ?? RightSlotView.OFF,
+    rightSlotView: terminalSplit?.view ?? RightSlotView.FOCUSED,
     terminalSplitRatio: terminalSplit?.ratio ?? CHAT_SPLIT_DEFAULT_RATIO,
   }
 }

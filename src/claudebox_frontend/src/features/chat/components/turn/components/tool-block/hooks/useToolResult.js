@@ -1,6 +1,6 @@
 /** Extract and compute tool result state from raw tool use and result data. */
 
-import { NotificationStatus, ToolName } from '../../../../../../../config/schema'
+import { NotificationStatus, normalizeToolName, ToolName } from '../../../../../../../config/schema'
 import { isAsyncTask } from '../../../../../../../utils/eventPredicates'
 import { useTurn } from '../../../hooks/useTurn'
 import { extractToolResult } from '../utils/toolResultFormatters'
@@ -44,7 +44,7 @@ export default function useToolResult(toolUse, toolResult, todoDiff) {
 
   const {
     summary,
-    isError,
+    isError: formattedIsError,
     details,
     jsonData,
     contentBlocks,
@@ -74,6 +74,9 @@ export default function useToolResult(toolUse, toolResult, todoDiff) {
         backgroundTask: null,
       }
     : extractToolResult(toolName, input, resultContent, { todoDiff })
+  const isError =
+    formattedIsError ||
+    (normalizeToolName(toolName) === ToolName.BASH && toolResult?.is_error === true)
 
   // Compute effective status for background tasks and TaskOutput
   const effectiveSummary = isAsync

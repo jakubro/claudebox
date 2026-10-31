@@ -10,9 +10,25 @@ describe('useDrafts', () => {
     vi.restoreAllMocks()
   })
 
+  function renderDrafts(value) {
+    const { textarea, textareaRef, resizeTextarea } = makeDraftDeps(value)
+    const { rerender } = renderHook(
+      ({ sessionId }) => useDrafts(sessionId, textareaRef, resizeTextarea),
+      { initialProps: { sessionId: 'session-1' } },
+    )
+
+    return { textarea, textareaRef, resizeTextarea, rerender }
+  }
+
   /** Create mock textarea element. */
   function createMockTextarea(value = '') {
     return { value }
+  }
+
+  function makeDraftDeps(value = '') {
+    const textarea = createMockTextarea(value)
+
+    return { textarea, textareaRef: { current: textarea }, resizeTextarea: vi.fn() }
   }
 
   it('returns default drafts when no stored value', () => {
@@ -56,14 +72,7 @@ describe('useDrafts', () => {
       'draft:session-2',
       JSON.stringify({ current: 'session 2 draft', stack: [] }),
     )
-    const textarea = createMockTextarea('')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
-
-    const { rerender } = renderHook(
-      ({ sessionId }) => useDrafts(sessionId, textareaRef, resizeTextarea),
-      { initialProps: { sessionId: 'session-1' } },
-    )
+    const { textarea, resizeTextarea, rerender } = renderDrafts('')
 
     rerender({ sessionId: 'session-2' })
 
@@ -86,9 +95,7 @@ describe('useDrafts', () => {
       'draft:session-2',
       JSON.stringify({ current: 'session 2 draft', stack: [] }),
     )
-    const textarea = createMockTextarea('')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
+    const { textarea, textareaRef, resizeTextarea } = makeDraftDeps()
 
     const { result, rerender } = renderHook(
       ({ sessionId }) => useDrafts(sessionId, textareaRef, resizeTextarea),
@@ -106,9 +113,7 @@ describe('useDrafts', () => {
   })
 
   it('skips restore on async draft load when userHasTypedRef is true', () => {
-    const textarea = createMockTextarea('')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
+    const { textarea, textareaRef, resizeTextarea } = makeDraftDeps()
 
     const { result, rerender } = renderHook(() =>
       useDrafts('session-1', textareaRef, resizeTextarea),
@@ -131,14 +136,7 @@ describe('useDrafts', () => {
       'draft:session-2',
       JSON.stringify({ current: 'session 2 draft', stack: [] }),
     )
-    const textarea = createMockTextarea('old session text')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
-
-    const { rerender } = renderHook(
-      ({ sessionId }) => useDrafts(sessionId, textareaRef, resizeTextarea),
-      { initialProps: { sessionId: 'session-1' } },
-    )
+    const { textarea, rerender } = renderDrafts('old session text')
 
     rerender({ sessionId: 'session-2' })
 
@@ -146,9 +144,7 @@ describe('useDrafts', () => {
   })
 
   it('restores draft when draft loads after initial render', () => {
-    const textarea = createMockTextarea('')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
+    const { textarea, textareaRef, resizeTextarea } = makeDraftDeps()
 
     const { result, rerender } = renderHook(() =>
       useDrafts('session-1', textareaRef, resizeTextarea),
@@ -205,14 +201,7 @@ describe('useDrafts', () => {
   })
 
   it('clears textarea on switch to session with no draft', () => {
-    const textarea = createMockTextarea('old text')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
-
-    const { rerender } = renderHook(
-      ({ sessionId }) => useDrafts(sessionId, textareaRef, resizeTextarea),
-      { initialProps: { sessionId: 'session-1' } },
-    )
+    const { textarea, rerender } = renderDrafts('old text')
 
     rerender({ sessionId: 'session-2' })
 
@@ -222,14 +211,7 @@ describe('useDrafts', () => {
   it('restores original draft when switching back', () => {
     localStorage.setItem('draft:session-1', JSON.stringify({ current: 'draft A', stack: [] }))
     localStorage.setItem('draft:session-2', JSON.stringify({ current: 'draft B', stack: [] }))
-    const textarea = createMockTextarea('')
-    const textareaRef = { current: textarea }
-    const resizeTextarea = vi.fn()
-
-    const { rerender } = renderHook(
-      ({ sessionId }) => useDrafts(sessionId, textareaRef, resizeTextarea),
-      { initialProps: { sessionId: 'session-1' } },
-    )
+    const { textarea, rerender } = renderDrafts('')
 
     expect(textarea.value).toBe('draft A')
 

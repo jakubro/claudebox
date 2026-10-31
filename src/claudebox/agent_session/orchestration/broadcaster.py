@@ -1,5 +1,7 @@
 """Session broadcaster - event serialization and replay boundaries."""
 
+from __future__ import annotations
+
 import asyncio
 from datetime import UTC, datetime
 

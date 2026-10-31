@@ -43,6 +43,7 @@ const RIGHT_PANELS = [
   'todos',
   'stash',
   'tasks',
+  'crons',
   'bookmarks',
   'boards',
   'usage',

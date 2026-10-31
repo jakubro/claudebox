@@ -95,16 +95,16 @@ describe('collectLiveSessionIdsAcrossWorkspaces', () => {
     expect(listSessionsForWorkspace).not.toHaveBeenCalledWith('ws-a')
   })
 
-  it('falls back to the current workspace alone when the workspace list fetch fails', async () => {
+  it('reports unavailable when the workspace list fetch fails', async () => {
     listWorkspaces.mockRejectedValue(new Error('daemon unreachable'))
 
     const ids = await collectLiveSessionIdsAcrossWorkspaces('ws-a', ['current-ws-session'])
 
-    expect(ids).toEqual(new Set(['current-ws-session']))
+    expect(ids).toBeNull()
     expect(listSessionsForWorkspace).not.toHaveBeenCalled()
   })
 
-  it('a single failing workspace contributes nothing but does not block the others', async () => {
+  it("reports unavailable when any other workspace's listing fails", async () => {
     listWorkspaces.mockResolvedValue([{ id: 'ws-a' }, { id: 'ws-b' }, { id: 'ws-c' }])
     listSessionsForWorkspace.mockImplementation(id =>
       id === 'ws-b'
@@ -112,10 +112,9 @@ describe('collectLiveSessionIdsAcrossWorkspaces', () => {
         : Promise.resolve({ sessions: [{ session_id: `${id}-session` }] }),
     )
 
-    const ids = await collectLiveSessionIdsAcrossWorkspaces('ws-a', [])
+    const ids = await collectLiveSessionIdsAcrossWorkspaces('ws-a', ['current-ws-session'])
 
-    expect(ids.has('ws-c-session')).toBe(true)
-    expect(ids.has('ws-b-session')).toBe(false)
+    expect(ids).toBeNull()
   })
 
   it('a single workspace with no sessions elsewhere returns only the current live set', async () => {

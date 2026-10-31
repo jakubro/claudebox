@@ -2,6 +2,9 @@
 
 import { unescapeXml } from './xml'
 
+const FORM_RESPONSE =
+  /^<response:(?:AskUserQuestion|ExitPlanMode)>([\s\S]*?)<\/response:(?:AskUserQuestion|ExitPlanMode)>$/
+
 /**
  * Walk `<local-command-stdout|stderr>` blocks in `message` into interleaved segments; returns null
  * (not []) when none are present, so callers can branch on absence without re-running the regex.
@@ -38,6 +41,16 @@ export function parseLocalCommandSegments(message) {
   return segments
 }
 
+/** Whether `message` is a wrapped AskUserQuestion/ExitPlanMode answer, parseable or not. */
+export function isFormResponse(message) {
+  return FORM_RESPONSE.test(message)
+}
+
+/** Match a wrapped AskUserQuestion/ExitPlanMode answer, its body in group 1. */
+export function matchFormResponse(message) {
+  return message.match(FORM_RESPONSE)
+}
+
 /** Returns array of segments: { type: 'text' | 'stdout' | 'stderr' | 'qa', content: string, questions?: [] } */
 export function parseLocalCommandOutput(message) {
   if (!message) {
@@ -50,9 +63,7 @@ export function parseLocalCommandOutput(message) {
   }
 
   // response:AskUserQuestion or response:ExitPlanMode: single full-wrap block
-  const qaMatch = message.match(
-    /^<response:(?:AskUserQuestion|ExitPlanMode)>([\s\S]*?)<\/response:(?:AskUserQuestion|ExitPlanMode)>$/,
-  )
+  const qaMatch = message.match(FORM_RESPONSE)
   if (qaMatch) {
     const content = qaMatch[1].trim()
     const questions = parseStructuredQA(content)
@@ -193,4 +204,16 @@ export function parseSlashCommand(content) {
     return { cmd: match[1], args: match[2]?.trim() || '' }
   }
   return null
+}
+
+/** Split `<system-reminder>` blocks out of content, as `{ content, reminders }`. */
+export function extractSystemReminders(content) {
+  const reminders = []
+  const pattern = /<system-reminder>([\s\S]*?)<\/system-reminder>/g
+  let match
+  while ((match = pattern.exec(content)) !== null) {
+    reminders.push(match[1].trim())
+  }
+  const cleanedContent = content.replace(pattern, '').replace(/^\n+|\n+$/g, '')
+  return { content: cleanedContent, reminders }
 }

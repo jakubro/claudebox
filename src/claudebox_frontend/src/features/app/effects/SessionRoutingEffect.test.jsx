@@ -16,9 +16,11 @@ const mockSelectWorkspace = vi.fn()
 // Other contexts (no-op for board path)
 const mockReconnectSSE = vi.fn()
 const mockDisconnectSSE = vi.fn()
+const mockCloseSSE = vi.fn()
 const mockStartResume = vi.fn()
+const mockSettleResumeRequest = vi.fn()
 const mockClearResume = vi.fn()
-const mockNotifyContainerChanged = vi.fn()
+const mockNotifyAddressChanged = vi.fn()
 const mockSetSessionContainer = vi.fn()
 const mockClearProgress = vi.fn()
 const mockClearSessionData = vi.fn()
@@ -51,9 +53,11 @@ vi.mock('../../../context/EventsContext', () => ({
   useEvents: () => ({
     reconnectSSE: mockReconnectSSE,
     disconnectSSE: mockDisconnectSSE,
+    closeSSE: mockCloseSSE,
     startResume: mockStartResume,
+    settleResumeRequest: mockSettleResumeRequest,
     clearResume: mockClearResume,
-    notifyContainerChanged: mockNotifyContainerChanged,
+    notifyAddressChanged: mockNotifyAddressChanged,
     consumeJustCreatedSession: mockConsumeJustCreatedSession,
   }),
 }))
@@ -70,7 +74,7 @@ vi.mock('../../../context/InteractionContext', () => ({
   useInteraction: () => ({ setError: mockSetError }),
 }))
 
-vi.mock('../../../api/apiClient', () => ({ setContainerId: vi.fn() }))
+vi.mock('../../../api/apiClient', () => ({ setAddress: vi.fn() }))
 vi.mock('../../../api/sessions', () => ({ resumeSession: vi.fn() }))
 
 import { resumeSession } from '../../../api/sessions'
@@ -170,5 +174,101 @@ describe('SessionRoutingEffect - session resume', () => {
       expect(mockConsumeJustCreatedSession).toHaveBeenCalledWith('s1')
     })
     expect(resumeSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('SessionRoutingEffect - open request lifetime', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockActiveSessionId = null
+    mockActiveBoardId = null
+    mockActiveWorkspaceId = null
+    mockWorkspaceId = null
+    mockConsumeJustCreatedSession.mockReturnValue(false)
+    mockStartResume.mockReturnValueOnce(7).mockReturnValueOnce(8)
+  })
+
+  it('settles the open request immediately before reconnecting', async () => {
+    const order = []
+    mockSettleResumeRequest.mockImplementation(token => order.push(`settle:${token}`))
+    mockReconnectSSE.mockImplementation(() => order.push('reconnect'))
+    resumeSession.mockResolvedValue({ container_id: 'c1' })
+    mockActiveSessionId = 's1'
+
+    render()
+
+    await waitFor(() => {
+      expect(order).toEqual(['settle:7', 'reconnect'])
+    })
+  })
+
+  it('settles nothing for a response that arrives after the route moved on', async () => {
+    let resolveFirst
+    resumeSession.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveFirst = resolve
+        }),
+    )
+    resumeSession.mockImplementationOnce(() => new Promise(() => {}))
+    mockActiveSessionId = 's1'
+    const { rerender } = render()
+    mockActiveSessionId = 's2'
+    rerender()
+
+    resolveFirst({ container_id: 'c1' })
+    await waitFor(() => {
+      expect(resumeSession).toHaveBeenCalledWith('s2')
+    })
+
+    expect(mockSettleResumeRequest).not.toHaveBeenCalled()
+    expect(mockReconnectSSE).not.toHaveBeenCalled()
+  })
+
+  it('aborts a pending open when the route goes home', () => {
+    resumeSession.mockImplementation(() => new Promise(() => {}))
+    mockActiveSessionId = 's1'
+    const { rerender } = render()
+    mockClearResume.mockClear()
+
+    mockActiveSessionId = null
+    rerender()
+
+    expect(mockClearResume).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts a pending open when the route lands on a session this tab just created', () => {
+    mockActiveSessionId = 's-new'
+    mockConsumeJustCreatedSession.mockReturnValue(true)
+
+    render()
+
+    expect(mockClearResume).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('SessionRoutingEffect - leaving every session', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockActiveSessionId = null
+    mockActiveBoardId = null
+    mockActiveWorkspaceId = null
+    mockWorkspaceId = null
+    mockConsumeJustCreatedSession.mockReturnValue(false)
+    resumeSession.mockResolvedValue({ container_id: 'c1' })
+  })
+
+  it('releases the session left, not merely its stream, when no session is routed', async () => {
+    mockActiveSessionId = 's1'
+    const { rerender } = render()
+    await waitFor(() => {
+      expect(resumeSession).toHaveBeenCalledWith('s1')
+    })
+
+    mockActiveSessionId = null
+    rerender()
+
+    expect(mockCloseSSE).toHaveBeenCalledTimes(1)
+    expect(mockDisconnectSSE).not.toHaveBeenCalled()
   })
 })

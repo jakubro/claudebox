@@ -1,5 +1,7 @@
 #!/opt/claudebox/claudebox/.venv/bin/python
 
+from __future__ import annotations
+
 import json
 
 from claudebox import HookRequest, hook
@@ -13,7 +15,7 @@ def main(request: HookRequest):
         path = request.session.path / "audit" / "bash.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(path, "a") as f:
+        with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(request.data) + "\n")
 
 

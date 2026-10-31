@@ -1,5 +1,7 @@
 """Daemon domain facade - re-exports service, lifecycle, and singleton."""
 
+from __future__ import annotations
+
 import contextlib
 
 from .boards import BoardNotFound, BoardParseError, BoardService
@@ -13,7 +15,13 @@ from .containers import (
 )
 from .errors import DaemonError, DaemonNotReady, WorkspaceUnavailable
 from .service import DaemonService
-from .sessions import SessionInfo, SessionNotFound, SessionService, resolve_link_messages
+from .sessions import (
+    SEEDED_BUNDLE_KEYS,
+    SessionInfo,
+    SessionNotFound,
+    SessionService,
+    resolve_link_messages,
+)
 from .ui_state import UIState, UIStateService
 from .workspaces import WorkspaceService
 
@@ -54,7 +62,7 @@ async def get_workspace(workspace_id: str) -> WorkspaceService:
     daemon = get_daemon()
     workspace = await daemon.get_workspace(workspace_id)
 
-    if not workspace.workspace.available:
+    if not workspace.available:
         raise WorkspaceUnavailable(workspace_id=workspace_id)
 
     return workspace

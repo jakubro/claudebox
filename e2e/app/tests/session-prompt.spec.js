@@ -1,9 +1,33 @@
 /** E2E tests for session prompt editor in the chat control bar. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { openSession, openSessionWithAPI, openWithNoSession, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
+
+function statusWithPrompt(sessionPrompt) {
+  return {
+    session_id: 'test-session-001',
+    name: null,
+    workspace: '/home/user/project',
+    model: 'claude-sonnet-5',
+    permission_mode: 'bypassPermissions',
+    num_turns: 0,
+    total_cost_usd: 0,
+    total_duration_ms: 0,
+    last_context_tokens: 0,
+    context_window: 200000,
+    started_at: '2025-01-18T12:00:00Z',
+    updated_at: '2025-01-18T12:00:00Z',
+    first_message: null,
+    last_message: null,
+    todos: [],
+    commands: { custom: [], mcp: [], builtin: [] },
+    session_dir: '/tmp/sessions/test-session-001',
+    parent_session_id: null,
+    session_prompt: sessionPrompt,
+  }
+}
 
 test.describe('Session Prompt', () => {
   test.beforeEach(async ({ page }) => {
@@ -94,35 +118,12 @@ test.describe('Session Prompt', () => {
       handlers: {
         getSessionStatus: async route => {
           await route.fulfill({
-            json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              model: 'claude-sonnet-5',
-              permission_mode: 'bypassPermissions',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 0,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              session_dir: '/tmp/sessions/test-session-001',
-              parent_session_id: null,
-              session_prompt: 'Always run tests before committing',
-            },
+            json: statusWithPrompt('Always run tests before committing'),
           })
         },
       },
     })
-    await mockSSE(page)
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const btn = page.locator('.session-prompt-btn')
     await expect(btn).toHaveClass(/has-content/)
@@ -131,22 +132,7 @@ test.describe('Session Prompt', () => {
 
   // SPEC: chat:session-prompt-disabled
   test('button disabled when no session loaded', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: null,
-              workspace: '/home/user/project',
-            },
-          })
-        },
-      },
-    })
-    await mockSSE(page)
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openWithNoSession(page)
 
     await expect(page.locator('.session-prompt-btn')).toBeDisabled()
   })
@@ -180,35 +166,12 @@ test.describe('Session Prompt', () => {
       handlers: {
         getSessionStatus: async route => {
           await route.fulfill({
-            json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              model: 'claude-sonnet-5',
-              permission_mode: 'bypassPermissions',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 0,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              session_dir: '/tmp/sessions/test-session-001',
-              parent_session_id: null,
-              session_prompt: 'Always run tests',
-            },
+            json: statusWithPrompt('Always run tests'),
           })
         },
       },
     })
-    await mockSSE(page)
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('.session-prompt-btn').click()
     await expect(page.locator('.session-prompt-textarea')).toHaveValue('Always run tests')
@@ -241,27 +204,7 @@ test.describe('Session Prompt', () => {
       handlers: {
         getSessionStatus: async route => {
           await route.fulfill({
-            json: {
-              session_id: 'test-session-001',
-              name: null,
-              workspace: '/home/user/project',
-              model: 'claude-sonnet-5',
-              permission_mode: 'bypassPermissions',
-              num_turns: 0,
-              total_cost_usd: 0,
-              total_duration_ms: 0,
-              last_context_tokens: 0,
-              context_window: 200000,
-              started_at: '2025-01-18T12:00:00Z',
-              updated_at: '2025-01-18T12:00:00Z',
-              first_message: null,
-              last_message: null,
-              todos: [],
-              commands: { custom: [], mcp: [], builtin: [] },
-              session_dir: '/tmp/sessions/test-session-001',
-              parent_session_id: null,
-              session_prompt: 'Old prompt text',
-            },
+            json: statusWithPrompt('Old prompt text'),
           })
         },
         updateSessionPrompt: async route => {
@@ -270,10 +213,7 @@ test.describe('Session Prompt', () => {
         },
       },
     })
-    await mockSSE(page)
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('.session-prompt-btn').click()
     await page.locator('.session-prompt-textarea').fill('   ')
@@ -285,35 +225,12 @@ test.describe('Session Prompt', () => {
 
   // SPEC: chat:session-prompt-persist
   test('prompt survives page refresh', async ({ page }) => {
-    const statusJson = {
-      session_id: 'test-session-001',
-      name: null,
-      workspace: '/home/user/project',
-      model: 'claude-sonnet-5',
-      permission_mode: 'bypassPermissions',
-      num_turns: 0,
-      total_cost_usd: 0,
-      total_duration_ms: 0,
-      last_context_tokens: 0,
-      context_window: 200000,
-      started_at: '2025-01-18T12:00:00Z',
-      updated_at: '2025-01-18T12:00:00Z',
-      first_message: null,
-      last_message: null,
-      todos: [],
-      commands: [],
-      session_dir: '/tmp/sessions/test-session-001',
-      parent_session_id: null,
-      session_prompt: 'Persisted prompt',
-    }
+    const statusJson = { ...statusWithPrompt('Persisted prompt'), commands: [] }
 
     await mockAPI(page, {
       handlers: { getSessionStatus: async route => route.fulfill({ json: statusJson }) },
     })
-    await mockSSE(page)
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
     await expect(page.locator('.session-prompt-btn')).toHaveClass(/has-content/)
 
     // Re-register mocks before reload
@@ -329,11 +246,7 @@ test.describe('Session Prompt', () => {
 
   // SPEC: chat:session-prompt-inject
   test('session prompt visible as system-reminder after compaction', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/compaction-with-session-prompt.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/compaction-with-session-prompt.jsonl')
 
     // Expand compaction block to reveal summary (collapsed by default)
     await page.locator('.compaction-header').click()

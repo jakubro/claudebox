@@ -9,7 +9,10 @@ Runtimes write to the real `checkpoints.sqlite` under session_dir, so a second r
 resumes through the file, just as it would across a container restart.
 """
 
+from __future__ import annotations
+
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -42,7 +45,7 @@ class _ScriptedChatModel(FakeMessagesListChatModel):
     path; accepting the bind keeps the tool-calling loop intact while the script still picks the calls.
     """
 
-    def bind_tools(self, tools: Any, **kwargs: Any) -> "_ScriptedChatModel":
+    def bind_tools(self, tools: Any, **kwargs: Any) -> _ScriptedChatModel:
         return self
 
 
@@ -288,7 +291,7 @@ class TestRealGraphToolTurn:
 class TestSessionStartContext:
     """The profile's session-start hook reaches the model, exactly once per thread."""
 
-    BOOTSTRAP = "load the instruction hierarchy first"
+    BOOTSTRAP = "read the project notes before answering"
 
     @staticmethod
     def _hook(tmp_path: Path, context: str) -> str:
@@ -647,3 +650,57 @@ class TestContextUsageSeededOnResume:
 
         assert usage is not None
         assert usage.used_tokens == 150
+
+
+class TestRealGraphMessageUuid:
+    @pytest.mark.anyio
+    async def test_a_given_message_uuid_is_the_turns_uuid_and_its_journal_key(self, tmp_path):
+        """A send under a message uuid opens its turn, and its fork-journal entry, under that id."""
+
+        runtime = await _connected_runtime(tmp_path, [AIMessage(content="ok")])
+
+        try:
+            await runtime.query([{"type": "text", "text": "/plan the move"}], message_uuid="U1")
+            events = [event async for event in _bounded(runtime.receive_events(), 4)]
+        finally:
+            await runtime.disconnect()
+
+        human = next(e for e in events if e.kind == "user_message")
+        assert human.payload.uuid == "U1"
+        assert "U1" in json.loads((tmp_path / "checkpoint_turns.json").read_text())
+
+
+class TestRealGraphStop:
+    @pytest.mark.anyio
+    async def test_a_stop_landing_before_the_graph_starts_still_ends_the_turn(self, tmp_path):
+        """A Stop that runs between the graph task's creation and its first step closes the turn."""
+
+        runtime = await _connected_runtime(tmp_path, [AIMessage(content="second")])
+        pressed = asyncio.Event()
+
+        async def _stop_request() -> None:
+            await pressed.wait()
+            await runtime.interrupt()
+
+        try:
+            await runtime.query("A")
+            stream = runtime.receive_events()
+            opening = [(await anext(stream)).kind for _ in range(2)]
+            stopper = asyncio.create_task(_stop_request())
+            await asyncio.sleep(0)
+
+            # Queues the Stop's wake-up ahead of the graph task the next read creates.
+            pressed.set()
+            closing = await asyncio.wait_for(anext(stream), 5)
+            await stopper
+            await runtime.query("B")
+            follow_up = [event async for event in _bounded(stream, 3)]
+        finally:
+            await runtime.disconnect()
+
+        assert opening == ["system_init", "user_message"]
+        assert closing.kind == "result"
+        assert isinstance(closing.payload, ResultPayload)
+        assert closing.payload.subtype == "error_during_execution"
+        assert [e.kind for e in follow_up] == ["user_message", "assistant_message", "result"]
+        assert follow_up[1].payload.content[0].text == "second"

@@ -4,6 +4,8 @@ Bare ``claudebox`` binds a root handler that returns 2 through normal dispatch; 
 hard-error via argparse's own path instead - no translation, no deprecation warnings.
 """
 
+from __future__ import annotations
+
 import pytest
 
 from host_cli import app

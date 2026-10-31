@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.session - send and stop lifecycle."""
 
+from __future__ import annotations
+
 import asyncio
 import base64
 from unittest.mock import AsyncMock, MagicMock
@@ -7,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from claudebox.agent_session.orchestration.errors import SessionNotReady
+from claudebox.agent_session.orchestration.models import EventSubtype, EventType
 from claudebox.agent_session.orchestration.session import SessionService
 
 
@@ -32,7 +35,8 @@ def _wire_send_dependencies(session, tmp_workspace, *, with_base_session=True):
 
     session._event_pipeline = MagicMock()
     session._event_pipeline.inject_event = AsyncMock()
-    session._event_pipeline.suppress_next_user_echo = MagicMock()
+    session._event_pipeline.suppress_user_echo = MagicMock()
+    session._event_pipeline.ensure_initialized = AsyncMock()
     session._event_pipeline.set_prompt = MagicMock()
 
     if with_base_session:
@@ -57,7 +61,6 @@ def _wire_broadcast_surface(session, *, subscriber=None):
     session._sdk_client = MagicMock()
     session._sdk_client.disconnect = AsyncMock()
     session._projection = MagicMock(flush=AsyncMock())
-    session._tool_output = MagicMock()
     session._attachment_service = MagicMock()
     session._summary_cache = MagicMock()
 
@@ -66,24 +69,50 @@ def _wire_broadcast_surface(session, *, subscriber=None):
 
 
 class TestSendWithAttachments:
-    """send() with attachments triggers suppress_next_user_echo on pipeline."""
+    """send() with attachments sends one message uuid to the display event, the echo and the agent."""
 
     @pytest.mark.anyio
-    async def test_attachments_suppress_next_user_echo(self, tmp_workspace):
+    async def test_a_text_attachment_shares_one_uuid_across_event_echo_and_query(
+        self,
+        tmp_workspace,
+    ):
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace)
 
         attachments = [
             {
-                "name": "photo.png",
-                "type": "image/png",
-                "data": base64.b64encode(b"fake-png-data").decode(),
+                "name": "notes.txt",
+                "type": "text/plain",
+                "data": base64.b64encode(b"line one MARKER\n").decode(),
             },
         ]
 
-        await session.send("Describe this image", attachments=attachments)
+        await session.send("please review", attachments=attachments)
 
-        session._event_pipeline.suppress_next_user_echo.assert_called_once()  # ty: ignore[unresolved-attribute]
+        uuid_ = session._event_pipeline.inject_event.call_args.kwargs["turn_id"]  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.suppress_user_echo.assert_called_once_with(uuid_)  # ty: ignore[unresolved-attribute]
+        query = session._sdk_client.query.call_args  # ty: ignore[unresolved-attribute]
+        assert query.kwargs == {"message_uuid": uuid_}
+        assert [b.get("text") for b in query.args[0]] == [
+            "please review",
+            "[File: notes.txt]\nline one MARKER\n",
+        ]
+
+    @pytest.mark.anyio
+    async def test_each_send_mints_its_own_uuid(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        _wire_send_dependencies(session, tmp_workspace)
+        attachment = {
+            "name": "a.txt",
+            "type": "text/plain",
+            "data": base64.b64encode(b"x").decode(),
+        }
+
+        await session.send("one", attachments=[attachment])
+        await session.send("two", attachments=[attachment])
+
+        armed = [c.args[0] for c in session._event_pipeline.suppress_user_echo.call_args_list]  # ty: ignore[unresolved-attribute]
+        assert len(set(armed)) == 2
 
     @pytest.mark.anyio
     async def test_attachments_inject_synthetic_user_event(self, tmp_workspace):
@@ -152,7 +181,7 @@ class TestSendWithAttachments:
 
 
 class TestSendWithoutAttachments:
-    """send() without attachments does NOT trigger suppress_next_user_echo."""
+    """send() without attachments arms no echo suppression."""
 
     @pytest.mark.anyio
     async def test_no_attachments_no_suppress(self, tmp_workspace):
@@ -161,7 +190,7 @@ class TestSendWithoutAttachments:
 
         await session.send("Hello, Claude")
 
-        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.suppress_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
     async def test_no_attachments_sets_prompt_and_queries(self, tmp_workspace):
@@ -184,7 +213,7 @@ class TestSendWithoutAttachments:
 
         await session.send("Hi", attachments=[])
 
-        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.suppress_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
         session._event_pipeline.set_prompt.assert_called_once_with("Hi")  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
@@ -196,7 +225,7 @@ class TestSendWithoutAttachments:
 
         await session.send("Hey", attachments=None)
 
-        session._event_pipeline.suppress_next_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.suppress_user_echo.assert_not_called()  # ty: ignore[unresolved-attribute]
         session._event_pipeline.set_prompt.assert_called_once_with("Hey")  # ty: ignore[unresolved-attribute]
 
 
@@ -236,24 +265,152 @@ class TestSendBeforeInit:
         session._sdk_client.query.assert_awaited_once_with("/compact")  # ty: ignore[unresolved-attribute]
 
     @pytest.mark.anyio
-    async def test_attachment_send_still_asserts_before_init(self, tmp_workspace):
-        """Attachment path retains its _base_session guard - the only branch that needs it."""
+    async def test_attachment_send_creates_storage_before_init(self, tmp_workspace):
+        """Storage is created from the start id before the attachment is stored and sent."""
 
         session = _make_session(tmp_workspace)
         _wire_send_dependencies(session, tmp_workspace, with_base_session=False)
+        session._session_id = "start-id"
+        order: list[str] = []
 
-        assert session._base_session is None
+        async def initialize(session_id):
+            order.append(f"init {session_id}")
+            base = MagicMock()
+            base.path = tmp_workspace / "session-dir"
+            base.path.mkdir(parents=True, exist_ok=True)
+            session._base_session = base
 
+        session._event_pipeline.ensure_initialized = AsyncMock(side_effect=initialize)
+        session._sdk_client.query = AsyncMock(side_effect=lambda *a, **k: order.append("query"))  # ty: ignore[invalid-assignment]
         attachments = [
-            {
-                "name": "f.txt",
-                "type": "text/plain",
-                "data": base64.b64encode(b"data").decode(),
-            },
+            {"name": "f.txt", "type": "text/plain", "data": base64.b64encode(b"data").decode()},
         ]
 
-        with pytest.raises(AssertionError, match="no active session"):
-            await session.send("hi", attachments=attachments)
+        await session.send("hi", attachments=attachments)
+
+        assert order == ["init start-id", "query"]
+        assert list((tmp_workspace / "session-dir").rglob("*_f.txt"))
+
+
+class TestSendWhenConnectFailed:
+    """send() refuses once the runtime's connect has failed - before touching the pipeline."""
+
+    @pytest.mark.anyio
+    async def test_raises_session_not_ready(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        _wire_send_dependencies(session, tmp_workspace)
+        session._runtime_connect_failed = True
+
+        with pytest.raises(SessionNotReady):
+            await session.send("hello")
+
+        session._sdk_client.query.assert_not_awaited()  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_connect_failed_property_reflects_the_flag(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        assert session.connect_failed is False
+
+        session._runtime_connect_failed = True
+        assert session.connect_failed is True
+
+
+class TestOnConnectDone:
+    """The connect task's own done-callback turns a raised connect into terminal state."""
+
+    @pytest.mark.anyio
+    async def test_ignores_a_cancelled_task(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+
+        async def _never_runs():
+            raise RuntimeError("should not run")
+
+        task = asyncio.ensure_future(_never_runs())
+        task.cancel()
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        session._on_connect_done("sess-1", task)
+
+        assert session.connect_failed is False
+
+    @pytest.mark.anyio
+    async def test_ignores_a_successful_task(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+
+        task = asyncio.ensure_future(asyncio.sleep(0))
+        await task
+
+        session._on_connect_done("sess-1", task)
+
+        assert session.connect_failed is False
+
+    @pytest.mark.anyio
+    async def test_marks_failed_and_schedules_reporting_on_exception(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._report_connect_failure = AsyncMock()
+
+        async def _fail():
+            raise RuntimeError("agent process would not start")
+
+        task = asyncio.ensure_future(_fail())
+
+        try:
+            await task
+        except RuntimeError:
+            pass
+
+        session._on_connect_done("sess-1", task)
+        await asyncio.sleep(0)  # let the scheduled reporting task run
+
+        assert session.connect_failed is True
+        session._report_connect_failure.assert_awaited_once_with(
+            "sess-1",
+            "agent process would not start",
+        )
+
+
+class TestReportConnectFailure:
+    """Persists and broadcasts a failed connect through the normal event pipeline."""
+
+    @pytest.mark.anyio
+    async def test_initializes_storage_then_injects_system_error(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._event_pipeline = MagicMock()
+        session._event_pipeline.ensure_initialized = AsyncMock()
+        session._event_pipeline.inject_event = AsyncMock()
+
+        await session._report_connect_failure("sess-1", "agent process would not start")
+
+        session._event_pipeline.ensure_initialized.assert_awaited_once_with("sess-1")
+        session._event_pipeline.inject_event.assert_awaited_once()
+        kwargs = session._event_pipeline.inject_event.call_args.kwargs
+        assert kwargs["event_type"] == EventType.SYSTEM
+        assert kwargs["subtype"] == EventSubtype.ERROR
+        assert "agent process would not start" in kwargs["content"]
+
+    @pytest.mark.anyio
+    async def test_noop_when_pipeline_absent(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._event_pipeline = None  # ty: ignore[invalid-assignment]
+
+        await session._report_connect_failure("sess-1", "boom")
+
+    @pytest.mark.anyio
+    async def test_does_not_raise_if_injection_itself_fails(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._event_pipeline = MagicMock()
+        session._event_pipeline.ensure_initialized = AsyncMock(
+            side_effect=RuntimeError("disk full"),
+        )
+        session._logger = MagicMock()
+
+        await session._report_connect_failure("sess-1", "boom")
+
+        session._logger.exception.assert_called_once()
 
 
 # --- stop ---
@@ -311,7 +468,6 @@ class TestStopDisposalOrdering:
         session._sdk_client = mock_client
         session._broadcaster = MagicMock(close=AsyncMock())
         session._projection = MagicMock(flush=AsyncMock())
-        session._tool_output = MagicMock()
         session._attachment_service = MagicMock()
         session._summary_cache = MagicMock()
 
@@ -338,6 +494,7 @@ class TestStopDisposalOrdering:
 
         assert dispose_calls == [
             ("_stall_watchdog_task", "cancel"),
+            ("_title_task", "cancel"),
             ("_pipeline_task", "cancel"),
             ("_client_task", "cancel"),
             ("_event_pipeline", "stop"),
@@ -360,7 +517,6 @@ class TestStopIdempotent:
         session._sdk_client.disconnect = AsyncMock()
         session._broadcaster = MagicMock(close=AsyncMock())
         session._projection = MagicMock(flush=AsyncMock())
-        session._tool_output = MagicMock()
         session._attachment_service = MagicMock()
         session._summary_cache = MagicMock()
 
@@ -393,7 +549,6 @@ class TestUnsubscribeAfterStop:
         session._sdk_client = MagicMock()
         session._sdk_client.disconnect = AsyncMock()
         session._projection = MagicMock(flush=AsyncMock())
-        session._tool_output = MagicMock()
         session._attachment_service = MagicMock()
         session._summary_cache = MagicMock()
 

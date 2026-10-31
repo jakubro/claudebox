@@ -9,6 +9,8 @@ allowlist, interpreted by the caller (LangGraph filters the sub-agent's bound to
 recursive `make_tools(sub_ctx)`); `None` means "every tool the parent has".
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 

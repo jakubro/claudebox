@@ -1,5 +1,7 @@
 """Async task manager - monitor lifecycle and event detection."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
@@ -186,7 +188,7 @@ class AsyncTaskManager:
 
         last_text = ""
 
-        with open(output_path) as f:
+        with open(output_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
 

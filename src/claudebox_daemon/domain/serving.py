@@ -1,5 +1,7 @@
 """Serving-capacity probe - can the daemon still get work done, not just schedule callbacks."""
 
+from __future__ import annotations
+
 import asyncio
 import time
 

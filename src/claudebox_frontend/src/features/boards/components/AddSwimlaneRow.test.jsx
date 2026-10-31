@@ -2,7 +2,7 @@
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSwimlane } from '../../../api/boards'
 import AddSwimlaneRow from './AddSwimlaneRow'
 
@@ -13,6 +13,14 @@ vi.mock('../../../api/boards', () => ({
 const defaultProps = {
   boardId: 'board-1',
   refresh: vi.fn(),
+}
+
+async function openAddForm() {
+  const user = userEvent.setup()
+  render(<AddSwimlaneRow {...defaultProps} />)
+  await user.click(screen.getByText('+ Add swimlane'))
+
+  return user
 }
 
 describe('AddSwimlaneRow', () => {
@@ -37,11 +45,8 @@ describe('AddSwimlaneRow', () => {
   })
 
   it('calls createSwimlane on Enter with trimmed name', async () => {
-    const user = userEvent.setup()
     vi.mocked(createSwimlane).mockResolvedValue()
-    render(<AddSwimlaneRow {...defaultProps} />)
-
-    await user.click(screen.getByText('+ Add swimlane'))
+    const user = await openAddForm()
     const input = screen.getByPlaceholderText('Swimlane name...')
     await user.type(input, '  New Lane  {Enter}')
 
@@ -49,10 +54,7 @@ describe('AddSwimlaneRow', () => {
   })
 
   it('cancels on Escape', async () => {
-    const user = userEvent.setup()
-    render(<AddSwimlaneRow {...defaultProps} />)
-
-    await user.click(screen.getByText('+ Add swimlane'))
+    const user = await openAddForm()
     expect(screen.getByPlaceholderText('Swimlane name...')).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
@@ -62,10 +64,7 @@ describe('AddSwimlaneRow', () => {
   })
 
   it('does not create swimlane with empty name', async () => {
-    const user = userEvent.setup()
-    render(<AddSwimlaneRow {...defaultProps} />)
-
-    await user.click(screen.getByText('+ Add swimlane'))
+    const user = await openAddForm()
     const input = screen.getByPlaceholderText('Swimlane name...')
     await user.type(input, '   {Enter}')
 

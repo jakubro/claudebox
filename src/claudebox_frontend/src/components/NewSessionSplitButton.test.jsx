@@ -18,6 +18,12 @@ vi.mock('../hooks/useNewSession', () => ({
   }),
 }))
 
+let mockSessionDefaults = null
+
+vi.mock('../hooks/useSessionDefaults', () => ({
+  default: () => mockSessionDefaults,
+}))
+
 import NewSessionSplitButton from './NewSessionSplitButton'
 
 describe('NewSessionSplitButton', () => {
@@ -26,6 +32,7 @@ describe('NewSessionSplitButton', () => {
     mockExecuteInNewTab = vi.fn()
     mockIsCreating = false
     mockIsCreatingInNewTab = false
+    mockSessionDefaults = null
   })
 
   it('renders main button with default data-testid prefix `session-`', () => {
@@ -112,5 +119,44 @@ describe('NewSessionSplitButton', () => {
 
     const dropdown = screen.getByText('New session').closest('.new-session-dropdown')
     expect(dropdown).toHaveClass('new-session-dropdown-portal')
+  })
+
+  it('lists one row per declared bundle after a divider, in declaration order', async () => {
+    mockSessionDefaults = { bundle_names: ['research', 'ops'] }
+    const user = userEvent.setup()
+    const { container } = render(<NewSessionSplitButton dataTestIdPrefix="header" />)
+
+    await user.click(screen.getByTitle('More start options'))
+
+    const rows = [...container.querySelectorAll('.dropdown-option')].map(el => el.textContent)
+    expect(rows).toEqual([
+      'New session',
+      'New session in new browser tab',
+      'New session - research',
+      'New session - ops',
+    ])
+    expect(container.querySelector('.new-session-dropdown-divider')).not.toBeNull()
+  })
+
+  it('a bundle row creates a session under that bundle', async () => {
+    mockSessionDefaults = { bundle_names: ['research'] }
+    const user = userEvent.setup()
+    render(<NewSessionSplitButton dataTestIdPrefix="header" />)
+
+    await user.click(screen.getByTitle('More start options'))
+    await user.click(screen.getByTestId('header-new-session-bundle-research'))
+
+    expect(mockExecute).toHaveBeenCalledWith('research')
+  })
+
+  it('a workspace with no bundles shows no divider and no bundle rows', async () => {
+    mockSessionDefaults = { bundle_names: [] }
+    const user = userEvent.setup()
+    const { container } = render(<NewSessionSplitButton />)
+
+    await user.click(screen.getByTitle('More start options'))
+
+    expect(container.querySelectorAll('.dropdown-option')).toHaveLength(2)
+    expect(container.querySelector('.new-session-dropdown-divider')).toBeNull()
   })
 })

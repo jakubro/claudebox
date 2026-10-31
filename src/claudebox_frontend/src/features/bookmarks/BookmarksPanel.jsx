@@ -1,54 +1,42 @@
 /** Side panel listing bookmarked messages with session-scoped and global tabs. */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import PanelListItem from '../../components/PanelListItem'
+import { useCallback, useMemo } from 'react'
+import RelativeTime from '../../components/RelativeTime'
+import SessionScopeTabs from '../../components/SessionScopeTabs'
 import { AUTOSCROLL_THRESHOLD } from '../../config/dimensions'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useBookmarksContext } from '../../context/BookmarksContext'
 import { useContainerMap } from '../../context/ContainerMapContext'
-import { useEvents } from '../../context/EventsContext'
 import { useSessionData } from '../../context/SessionDataContext'
-import { useSessionRouting } from '../../context/SessionRoutingContext'
 import { useSessionsList } from '../../context/SessionsContext'
-import { useStillRunningToast } from '../../context/StillRunningToastContext'
-import { useWorkspace } from '../../context/WorkspaceContext'
-import { parseBookmarkId } from '../../utils/bookmarkIds'
-import { formatMessagePreview, formatRelativeTime } from '../../utils/formatters'
-import { openSessionInNewTab } from '../../utils/navigation'
+import useOpenInNewTab from '../../hooks/useOpenInNewTab'
+import useSessionScopeTab from '../../hooks/useSessionScopeTab'
+import useSwitchToSession from '../../hooks/useSwitchToSession'
+import { bookmarkJumpOptions, parseBookmarkId, parseTail } from '../../utils/bookmarkIds'
+import { formatMessagePreview } from '../../utils/formatters'
 import { computeScrollDestination, scrollAndHighlight } from '../../utils/scroll'
+import { displayName, isAutoNamed } from '../../utils/sessionName'
+import { sessionDotState } from '../../utils/sessionRow'
 
 export default function BookmarksPanel() {
-  const { sessionId, sessionName } = useSessionData()
-  const { isResponding } = useEvents()
-  const { showStillRunningToast } = useStillRunningToast()
-  // Tab mirrors session presence ("session" active, "all" none); manual clicks lose to the next auto-switch.
-  const [tab, setTab] = useState(() => (sessionId ? 'session' : 'all'))
-  useEffect(() => {
-    setTab(sessionId ? 'session' : 'all')
-  }, [sessionId])
+  const { sessionId } = useSessionData()
+  const [tab, setTab] = useSessionScopeTab(sessionId)
   const { allBookmarks, bookmarkMeta, loading, toggleBookmark, removeBookmark } =
     useBookmarksContext()
-  const { navigateToSession } = useSessionRouting()
-  const { workspaceId } = useWorkspace()
   const { sessions } = useSessionsList()
   const { deriveSessionStatus } = useContainerMap()
-  const { markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef, focusedGroupRootRef } =
-    useAppActions()
+  const sessionsById = useMemo(() => new Map(sessions.map(s => [s.session_id, s])), [sessions])
+  const dotState = id => sessionDotState(deriveSessionStatus(id, sessions), sessionsById.get(id))
+  const {
+    markUserIntentRef,
+    markProgrammaticScrollRef,
+    scrollToTurnRef,
+    focusedGroupRootRef,
+    jumpToBookmarkRef,
+  } = useAppActions()
 
-  // Brief flash on click - window.open paints with no visible feedback (openSessionInNewTab is sync).
-  const [openingKey, setOpeningKey] = useState(null)
-
-  const handleOpenInNewTab = useCallback(
-    (sid, itemKey, jump) => {
-      if (!(workspaceId && sid)) {
-        return
-      }
-      setOpeningKey(itemKey)
-      setTimeout(() => setOpeningKey(null), 400)
-      openSessionInNewTab(workspaceId, sid, jump)
-    },
-    [workspaceId],
-  )
+  const { openingKey, openInNewTab: handleOpenInNewTab } = useOpenInNewTab()
+  const switchToSession = useSwitchToSession()
 
   const sessionBookmarks = useMemo(() => {
     if (!(sessionId && allBookmarks[sessionId])) {
@@ -72,11 +60,20 @@ export default function BookmarksPanel() {
         continue
       }
       const session = sessions.find(s => s.session_id === sid)
-      const sessionName = session?.name || sid.slice(0, 8)
+      const sessionName = displayName(session) || sid.slice(0, 8)
+      const sessionNameIsAuto = isAutoNamed(session)
       for (const bookmarkId of bookmarkIds) {
         const { turnId, messageType } = parseBookmarkId(bookmarkId)
         const meta = bookmarkMeta[`${sid}/${bookmarkId}`] || {}
-        result.push({ sessionId: sid, sessionName, bookmarkId, turnId, messageType, ...meta })
+        result.push({
+          sessionId: sid,
+          sessionName,
+          sessionNameIsAuto,
+          bookmarkId,
+          turnId,
+          messageType,
+          ...meta,
+        })
       }
     }
     result.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
@@ -86,6 +83,10 @@ export default function BookmarksPanel() {
   /** Scroll to and highlight the bookmarked message element. */
   const handleSessionBookmarkClick = useCallback(
     (turnId, messageType) => {
+      if (parseTail(messageType)) {
+        jumpToBookmarkRef.current?.(turnId, messageType)
+        return
+      }
       // Windowed list: a far-off turn has no element yet, so hand the id to the chat panel to mount + call back.
       const bring = scrollToTurnRef.current
       if (!bring) {
@@ -127,7 +128,13 @@ export default function BookmarksPanel() {
         }
       })
     },
-    [markUserIntentRef, markProgrammaticScrollRef, scrollToTurnRef, focusedGroupRootRef],
+    [
+      markUserIntentRef,
+      markProgrammaticScrollRef,
+      scrollToTurnRef,
+      focusedGroupRootRef,
+      jumpToBookmarkRef,
+    ],
   )
 
   const handleAllBookmarkClick = useCallback(
@@ -136,32 +143,11 @@ export default function BookmarksPanel() {
         handleSessionBookmarkClick(turnId, messageType)
         return
       }
-      if (!workspaceId) {
-        return
-      }
-      // Snapshot prior session before navigating - the still-running toast needs it after the switch.
-      const prevId = sessionId
-      const prevName = sessionName
-      const prevWasResponding = isResponding
       // URL carries the jump target via /turns/<role>-<id>; ChatPanel reads activeTurnId from
       // routing context and scrolls after replay.
-      navigateToSession(workspaceId, sid, { turnId, messageType })
-      if (prevWasResponding && prevId && prevId !== sid) {
-        showStillRunningToast({
-          sessionName: prevName || prevId.slice(0, 8),
-          onReturn: () => navigateToSession(workspaceId, prevId),
-        })
-      }
+      switchToSession(sid, bookmarkJumpOptions(turnId, messageType))
     },
-    [
-      sessionId,
-      sessionName,
-      isResponding,
-      workspaceId,
-      navigateToSession,
-      handleSessionBookmarkClick,
-      showStillRunningToast,
-    ],
+    [sessionId, handleSessionBookmarkClick, switchToSession],
   )
 
   const handleRemoveSessionBookmark = useCallback(
@@ -193,20 +179,12 @@ export default function BookmarksPanel() {
 
   return (
     <div className="panel-content bookmarks-panel" data-testid="panel-bookmarks">
-      <div className="bookmarks-tabs">
-        <PanelListItem
-          label="This session"
-          active={tab === 'session'}
-          onClick={() => setTab('session')}
-          count={sessionCount}
-        />
-        <PanelListItem
-          label="All sessions"
-          active={tab === 'all'}
-          onClick={() => setTab('all')}
-          count={allCount}
-        />
-      </div>
+      <SessionScopeTabs
+        tab={tab}
+        onTabChange={setTab}
+        sessionCount={sessionCount}
+        allCount={allCount}
+      />
       <div className="bookmarks-list">
         {tab === 'session' ? (
           sessionCount === 0 ? (
@@ -218,10 +196,11 @@ export default function BookmarksPanel() {
                 className={`bookmark-item${openingKey === bm.bookmarkId ? ' bookmark-item-opening' : ''}`}
                 onClick={e => {
                   if (e.altKey) {
-                    handleOpenInNewTab(sessionId, bm.bookmarkId, {
-                      turnId: bm.turnId,
-                      messageType: bm.messageType,
-                    })
+                    handleOpenInNewTab(
+                      sessionId,
+                      bm.bookmarkId,
+                      bookmarkJumpOptions(bm.turnId, bm.messageType),
+                    )
                     return
                   }
                   handleSessionBookmarkClick(bm.turnId, bm.messageType)
@@ -229,10 +208,11 @@ export default function BookmarksPanel() {
                 onAuxClick={e => {
                   if (e.button === 1) {
                     e.preventDefault()
-                    handleOpenInNewTab(sessionId, bm.bookmarkId, {
-                      turnId: bm.turnId,
-                      messageType: bm.messageType,
-                    })
+                    handleOpenInNewTab(
+                      sessionId,
+                      bm.bookmarkId,
+                      bookmarkJumpOptions(bm.turnId, bm.messageType),
+                    )
                   }
                 }}
                 data-testid="bookmark-item">
@@ -246,7 +226,7 @@ export default function BookmarksPanel() {
                 <div className="bookmark-row">
                   {sessionId && (
                     <span
-                      className={`container-status-dot container-status-${deriveSessionStatus(sessionId, sessions)}`}
+                      className={`container-status-dot container-status-${dotState(sessionId)}`}
                     />
                   )}
                   <span
@@ -256,7 +236,11 @@ export default function BookmarksPanel() {
                   </span>
                 </div>
                 <div className="bookmark-meta">
-                  {bm.ts && <span className="bookmark-time">{formatRelativeTime(bm.ts)}</span>}
+                  {bm.ts && (
+                    <span className="bookmark-time">
+                      <RelativeTime date={bm.ts} />
+                    </span>
+                  )}
                 </div>
               </div>
             ))
@@ -272,10 +256,11 @@ export default function BookmarksPanel() {
               }`}
               onClick={e => {
                 if (e.altKey) {
-                  handleOpenInNewTab(bm.sessionId, `${bm.sessionId}/${bm.bookmarkId}`, {
-                    turnId: bm.turnId,
-                    messageType: bm.messageType,
-                  })
+                  handleOpenInNewTab(
+                    bm.sessionId,
+                    `${bm.sessionId}/${bm.bookmarkId}`,
+                    bookmarkJumpOptions(bm.turnId, bm.messageType),
+                  )
                   return
                 }
                 handleAllBookmarkClick(bm.sessionId, bm.turnId, bm.messageType)
@@ -283,10 +268,11 @@ export default function BookmarksPanel() {
               onAuxClick={e => {
                 if (e.button === 1) {
                   e.preventDefault()
-                  handleOpenInNewTab(bm.sessionId, `${bm.sessionId}/${bm.bookmarkId}`, {
-                    turnId: bm.turnId,
-                    messageType: bm.messageType,
-                  })
+                  handleOpenInNewTab(
+                    bm.sessionId,
+                    `${bm.sessionId}/${bm.bookmarkId}`,
+                    bookmarkJumpOptions(bm.turnId, bm.messageType),
+                  )
                 }
               }}
               data-testid="bookmark-item">
@@ -299,7 +285,7 @@ export default function BookmarksPanel() {
               </button>
               <div className="bookmark-row">
                 <span
-                  className={`container-status-dot container-status-${deriveSessionStatus(bm.sessionId, sessions)}`}
+                  className={`container-status-dot container-status-${dotState(bm.sessionId)}`}
                 />
                 <span
                   className="bookmark-preview"
@@ -308,8 +294,15 @@ export default function BookmarksPanel() {
                 </span>
               </div>
               <div className="bookmark-meta">
-                <span className="bookmark-session-name">{bm.sessionName}</span>
-                {bm.ts && <span className="bookmark-time">{formatRelativeTime(bm.ts)}</span>}
+                <span
+                  className={`bookmark-session-name${bm.sessionNameIsAuto ? ' auto-named' : ''}`}>
+                  {bm.sessionName}
+                </span>
+                {bm.ts && (
+                  <span className="bookmark-time">
+                    <RelativeTime date={bm.ts} />
+                  </span>
+                )}
               </div>
             </div>
           ))

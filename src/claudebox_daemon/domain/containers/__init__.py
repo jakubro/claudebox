@@ -1,5 +1,7 @@
 """Container domain: models, registry, proxy, lifecycle orchestration."""
 
+from __future__ import annotations
+
 from .errors import ContainerNotFound, ContainerTimeout, ContainerUnavailable
 from .models import Container, ContainerStatus, ContainerStatusEvent
 from .proxy import ContainerProxyClient

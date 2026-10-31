@@ -1,5 +1,7 @@
 """String formatting utilities."""
 
+from __future__ import annotations
+
 
 def wrap_box(text: str, width: int = 150) -> str:
     """Wrap text in a Unicode box-drawing border."""

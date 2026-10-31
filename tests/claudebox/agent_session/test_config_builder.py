@@ -1,5 +1,9 @@
 """Tests for ClaudeRuntime._build_sdk_options - config -> SDK options round-trip."""
 
+from __future__ import annotations
+
+import importlib.util
+import mmap
 from pathlib import Path
 
 from claudebox.agent_session.config import ClaudeAgentSessionConfig, RuntimeCapabilities
@@ -21,7 +25,7 @@ def _config(**overrides) -> ClaudeAgentSessionConfig:
         "resume_session_id": None,
         "session_dir": Path("/tmp/sessions/abc-123"),
         "hooks": HookCallbacks(),
-        "system_prompt": "do the thing",
+        "system_prompt_file": Path("/run/claudebox/prompt.md"),
     }
     defaults.update(overrides)
 
@@ -32,15 +36,40 @@ class TestBuildSdkOptions:
     """ClaudeRuntime._build_sdk_options round-trips field-for-field."""
 
     def test_passes_through_universal_fields(self):
-        """system_prompt, permission_mode, env, cwd, max_buffer_size reach the options."""
+        """system_prompt_file, permission_mode, cwd, max_buffer_size reach the options."""
 
         opts = ClaudeRuntime._build_sdk_options(_config(max_buffer_size=42))
 
-        assert opts.system_prompt == "do the thing"
+        assert opts.system_prompt == {"type": "file", "path": "/run/claudebox/prompt.md"}
         assert opts.permission_mode == "default"
-        assert opts.env == {"FOO": "bar"}
         assert opts.cwd == "/workspace"
         assert opts.max_buffer_size == 42
+
+    def test_env_lets_a_turn_end_on_needs_user(self):
+        """The CLI gets the session's environment plus needs_user as a tool a turn may end on."""
+
+        opts = ClaudeRuntime._build_sdk_options(_config())
+
+        assert opts.env == {
+            "FOO": "bar",
+            "CLAUDE_CODE_TERMINAL_MCP_TOOLS": "mcp__claudebox__needs_user",
+        }
+
+    def test_bundled_cli_still_reads_the_terminal_tools_variable(self):
+        """The agent CLI the SDK bundles carries the undocumented variable the options set."""
+
+        spec = importlib.util.find_spec("claude_agent_sdk")
+        assert spec is not None and spec.submodule_search_locations is not None
+        cli = Path(spec.submodule_search_locations[0]) / "_bundled" / "claude"
+
+        with cli.open("rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as image:
+            assert image.find(b"CLAUDE_CODE_TERMINAL_MCP_TOOLS") != -1
+
+    def test_no_prompt_file_passes_no_system_prompt(self):
+        """A profile without a prompt leaves the SDK's system prompt unset."""
+
+        opts = ClaudeRuntime._build_sdk_options(_config(system_prompt_file=None))
+        assert opts.system_prompt is None
 
     def test_setting_sources_default_user_project(self):
         """Default setting_sources is ['user', 'project']."""

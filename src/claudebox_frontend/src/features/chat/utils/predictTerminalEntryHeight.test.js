@@ -26,7 +26,13 @@ describe('predictTerminalEntryHeight', () => {
   })
 
   it('prices a pending entry as command + "Running..." line, no comment', () => {
-    const metrics = { hasComment: false, pending: true, outputText: '', isPersisted: false }
+    const metrics = {
+      hasComment: false,
+      commandLines: 1,
+      pending: true,
+      outputText: '',
+      isPersisted: false,
+    }
     const expected = TERMINAL_ENTRY_BASE_HEIGHT_PX + 2 * TERMINAL_LINE_HEIGHT_PX
     expect(predictTerminalEntryHeight(metrics)).toBe(
       Math.max(expected, TERMINAL_ENTRY_MIN_PREDICTED_HEIGHT_PX),
@@ -36,12 +42,14 @@ describe('predictTerminalEntryHeight', () => {
   it('adds one line for a pending entry with a comment', () => {
     const withComment = predictTerminalEntryHeight({
       hasComment: true,
+      commandLines: 1,
       pending: true,
       outputText: '',
       isPersisted: false,
     })
     const withoutComment = predictTerminalEntryHeight({
       hasComment: false,
+      commandLines: 1,
       pending: true,
       outputText: '',
       isPersisted: false,
@@ -65,6 +73,7 @@ describe('predictTerminalEntryHeight', () => {
   it('prices a resolved entry by hard line count, never wrapping on content length', () => {
     const oneLine = predictTerminalEntryHeight({
       hasComment: false,
+      commandLines: 1,
       pending: false,
       outputText: 'x'.repeat(500),
       isPersisted: false,
@@ -78,12 +87,14 @@ describe('predictTerminalEntryHeight', () => {
     // delta reflects the formula rather than one side's clamp.
     const four = predictTerminalEntryHeight({
       hasComment: false,
+      commandLines: 1,
       pending: false,
       outputText: 'one\ntwo\nthree\nfour',
       isPersisted: false,
     })
     const two = predictTerminalEntryHeight({
       hasComment: false,
+      commandLines: 1,
       pending: false,
       outputText: 'one\ntwo',
       isPersisted: false,
@@ -95,12 +106,14 @@ describe('predictTerminalEntryHeight', () => {
     // Two output lines (rather than one) keeps the non-persisted side clear of MIN too.
     const persisted = predictTerminalEntryHeight({
       hasComment: false,
+      commandLines: 1,
       pending: false,
       outputText: 'preview one\npreview two',
       isPersisted: true,
     })
     const plain = predictTerminalEntryHeight({
       hasComment: false,
+      commandLines: 1,
       pending: false,
       outputText: 'preview one\npreview two',
       isPersisted: false,
@@ -108,8 +121,26 @@ describe('predictTerminalEntryHeight', () => {
     expect(persisted - plain).toBe(TERMINAL_LINE_HEIGHT_PX)
   })
 
+  it('adds one line per line of the command', () => {
+    const metrics = {
+      hasComment: false,
+      pending: false,
+      outputText: 'one\ntwo',
+      isPersisted: false,
+    }
+    const three = predictTerminalEntryHeight({ ...metrics, commandLines: 3 })
+    const one = predictTerminalEntryHeight({ ...metrics, commandLines: 1 })
+    expect(three - one).toBe(2 * TERMINAL_LINE_HEIGHT_PX)
+  })
+
   it('clamps to MIN for an entry with no output', () => {
-    const metrics = { hasComment: false, pending: false, outputText: '', isPersisted: false }
+    const metrics = {
+      hasComment: false,
+      commandLines: 1,
+      pending: false,
+      outputText: '',
+      isPersisted: false,
+    }
     expect(predictTerminalEntryHeight(metrics)).toBeGreaterThanOrEqual(
       TERMINAL_ENTRY_MIN_PREDICTED_HEIGHT_PX,
     )
@@ -134,6 +165,15 @@ describe('deriveEntryMetrics', () => {
     expect(metrics.pending).toBe(false)
     expect(metrics.outputText).toBe('a.txt\nb.txt')
     expect(metrics.isPersisted).toBe(false)
+  })
+
+  it.each([
+    ['a laid-out command, pending', { commandLayout: 'cd /srv\nls\npwd', result: null }, 3],
+    ['a laid-out command, settled', { commandLayout: 'cd /srv\nls\npwd' }, 3],
+    ['a command the agent wrote on two lines', { command: 'cd /srv \\\n  && ls' }, 2],
+    ['a one-line command', {}, 1],
+  ])('counts the lines the entry shows for %s', (_, overrides, lines) => {
+    expect(deriveEntryMetrics(entry(overrides)).commandLines).toBe(lines)
   })
 
   it('marks a pending entry as not failed - running carries no verdict yet', () => {

@@ -7,6 +7,8 @@ This subclass wraps the summarization in a start/finish pair, using the same tri
 the parent checks, so a start is announced only when a boundary is certain to follow.
 """
 
+from __future__ import annotations
+
 from collections.abc import Awaitable
 from typing import Any, Protocol
 

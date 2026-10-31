@@ -1,7 +1,7 @@
 /** Tests for settingLabels utility. */
 
 import { describe, expect, it } from 'vitest'
-import { getSettingChangeInfo, isSettingInitEvent } from './settingLabels'
+import { dividerRows, getSettingChangeInfo } from './settingLabels'
 
 const models = [
   { id: 'claude-opus-5', name: 'Opus 5' },
@@ -210,40 +210,54 @@ describe('getSettingChangeInfo', () => {
   })
 })
 
-describe('isSettingInitEvent', () => {
-  it('returns true for model_changed with null previous_model', () => {
-    expect(isSettingInitEvent({ subtype: 'model_changed', previous_model: null })).toBe(true)
+describe('dividerRows', () => {
+  const restart = { subtype: 'container_restarted', message_data: null }
+  const model = id => ({ subtype: 'model_changed', model: id, previous_model: 'x' })
+  const effort = id => ({
+    subtype: 'effort_level_changed',
+    content: id,
+    previous_effort_level: 'x',
+  })
+  const mode = id => ({
+    subtype: 'permission_mode_changed',
+    permission_mode: id,
+    previous_permission_mode: 'x',
+  })
+  const fork = { subtype: 'container_restarted', message_data: { fork_parent_session_id: 'p' } }
+  const mismatch = {
+    subtype: 'container_restarted',
+    message_data: { runtime_mismatch: { expected: 'Claude', persisted: 'LangGraph' } },
+  }
+
+  it('merges a run into one row: each kind once, at its last value, in first-occurrence order', () => {
+    const rows = dividerRows([restart, restart, model('opus'), model('sonnet'), effort('high')])
+
+    expect(rows).toEqual([[restart, model('sonnet'), effort('high')]])
   })
 
-  it('returns false for model_changed with a previous_model', () => {
-    expect(
-      isSettingInitEvent({ subtype: 'model_changed', previous_model: 'claude-sonnet-5' }),
-    ).toBe(false)
+  it('keeps a single change as a row of its own', () => {
+    expect(dividerRows([model('opus')])).toEqual([[model('opus')]])
   })
 
-  it('returns true for permission_mode_changed with null previous_permission_mode', () => {
-    expect(
-      isSettingInitEvent({ subtype: 'permission_mode_changed', previous_permission_mode: null }),
-    ).toBe(true)
+  it('shows a setting changed and changed back at its final value', () => {
+    expect(dividerRows([mode('plan'), model('opus'), mode('default')])).toEqual([
+      [mode('default'), model('opus')],
+    ])
   })
 
-  it('returns true for effort_level_changed with null previous_effort_level', () => {
-    expect(
-      isSettingInitEvent({ subtype: 'effort_level_changed', previous_effort_level: null }),
-    ).toBe(true)
+  it('gives a fork its own row and merges either side of it separately', () => {
+    expect(dividerRows([restart, fork, model('opus'), restart])).toEqual([
+      [restart],
+      [fork],
+      [model('opus'), restart],
+    ])
   })
 
-  it('returns false for container_restarted regardless of payload', () => {
-    expect(isSettingInitEvent({ subtype: 'container_restarted' })).toBe(false)
-    expect(
-      isSettingInitEvent({
-        subtype: 'container_restarted',
-        message_data: { fork_parent_session_id: 'p' },
-      }),
-    ).toBe(false)
+  it('never merges a runtime mismatch with the restart after it', () => {
+    expect(dividerRows([mismatch, restart])).toEqual([[mismatch], [restart]])
   })
 
-  it('returns false for any unrecognized subtype (no init concept)', () => {
-    expect(isSettingInitEvent({ subtype: 'something_else' })).toBe(false)
+  it('has no rows for no events', () => {
+    expect(dividerRows([])).toEqual([])
   })
 })

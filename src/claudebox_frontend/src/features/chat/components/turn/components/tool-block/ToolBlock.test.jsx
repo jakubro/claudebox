@@ -1,6 +1,6 @@
 /** Tests for ToolBlock. */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -55,7 +55,8 @@ vi.mock('./components/tool-block-expanded-content/ToolBlockExpandedContent', () 
     <div
       data-testid="tool-block-expanded"
       data-tool-name={props.toolName}
-      data-has-tool-input={props.toolInput ? 'true' : 'false'}>
+      data-has-tool-input={props.toolInput ? 'true' : 'false'}
+      data-source-url={props.contentData?.sourceUrl ?? ''}>
       expanded-content
     </div>
   ),
@@ -157,6 +158,28 @@ describe('ToolBlock', () => {
     content: 'file1.txt\nfile2.txt',
   }
 
+  describe('the page a WebFetch fetched', () => {
+    const expanded = () => {
+      if (!screen.queryByTestId('tool-block-expanded')) {
+        fireEvent.click(screen.getByTestId('tool-block-header'))
+      }
+      return screen.getByTestId('tool-block-expanded')
+    }
+
+    it.each([
+      ['WebFetch', { url: 'https://e.com/a', prompt: 'p' }, 'https://e.com/a'],
+      ['WebFetch', { prompt: 'p' }, ''],
+      ['Read', { file_path: '/a.md', url: 'https://e.com/a' }, ''],
+    ])('%s with %o passes %s down', (name, input, expected) => {
+      renderToolBlock({
+        toolUse: { content: name, tool_use_id: 'tu-9', tool_input: input },
+        toolResult: { content: 'line one\nline two' },
+      })
+
+      expect(expanded()).toHaveAttribute('data-source-url', expected)
+    })
+  })
+
   describe('status attributes', () => {
     it('sets data-tool-status to completed for finished tool', () => {
       renderToolBlock({ toolUse: readToolUse, toolResult: readResult })
@@ -199,11 +222,126 @@ describe('ToolBlock', () => {
       expect(block).toHaveClass('tool-error')
     })
 
+    it.each([
+      ['an unmarked', bashToolUse],
+      ['a marked', { ...bashToolUse, command_read_only: true }],
+    ])('marks %s Bash call failed when its result reports an error', (_label, toolUse) => {
+      renderToolBlock({
+        toolUse,
+        toolResult: { content: 'Exit code 2\nls: cannot access x', is_error: true },
+      })
+
+      const block = screen.getByTestId('tool-block')
+      expect(block).toHaveClass('tool-error')
+      expect(block).toHaveAttribute('data-tool-status', 'error')
+    })
+
     it('applies nested class when nested prop is true', () => {
       renderToolBlock({ toolUse: readToolUse, toolResult: readResult, nested: true })
 
       const block = screen.getByTestId('tool-block')
       expect(block).toHaveClass('nested')
+    })
+  })
+
+  describe('a Bash command that changes nothing', () => {
+    const markedBash = { ...bashToolUse, command_read_only: true }
+
+    it.each([
+      ['done', bashResult],
+      ['running', null],
+    ])('starts collapsed while %s', (_label, toolResult) => {
+      renderToolBlock({ toolUse: markedBash, toolResult })
+
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-expanded', 'false')
+    })
+
+    it('starts expanded when unmarked and its output runs to several lines', () => {
+      renderToolBlock({ toolUse: bashToolUse, toolResult: bashResult })
+
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-expanded', 'true')
+    })
+
+    it('opens on a click like any collapsed block', () => {
+      renderToolBlock({ toolUse: markedBash, toolResult: bashResult })
+      fireEvent.click(screen.getByTestId('tool-block-header'))
+
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-expanded', 'true')
+    })
+  })
+
+  describe('a Bash call measured once it finished', () => {
+    const markedBash = { ...bashToolUse, command_read_only: true }
+    const measured = changed => ({ ...bashResult, command_changed: changed })
+    const block = () => screen.getByTestId('tool-block')
+    const rerenderWith = (view, props) =>
+      view.rerender(
+        <TurnProvider {...defaultTurnContext}>
+          <ToolBlock {...props} />
+        </TurnProvider>,
+      )
+
+    it('collapses when it is found to have changed nothing', () => {
+      const view = renderToolBlock({ toolUse: bashToolUse, toolResult: null })
+      expect(block()).toHaveAttribute('data-expanded', 'true')
+
+      rerenderWith(view, { toolUse: bashToolUse, toolResult: measured(false) })
+      expect(block()).toHaveAttribute('data-expanded', 'false')
+    })
+
+    it('opens when it is found to have changed something', () => {
+      const view = renderToolBlock({ toolUse: markedBash, toolResult: null })
+      expect(block()).toHaveAttribute('data-expanded', 'false')
+
+      rerenderWith(view, { toolUse: markedBash, toolResult: measured(true) })
+      expect(block()).toHaveAttribute('data-expanded', 'true')
+    })
+
+    it.each([
+      ['opened', markedBash, false],
+      ['closed', bashToolUse, true],
+    ])('keeps a block the reader %s by hand as it is', (_label, toolUse, changed) => {
+      const view = renderToolBlock({ toolUse, toolResult: null })
+      const before = block().getAttribute('data-expanded')
+      fireEvent.click(screen.getByTestId('tool-block-header'))
+      const toggled = block().getAttribute('data-expanded')
+      expect(toggled).not.toBe(before)
+
+      rerenderWith(view, { toolUse, toolResult: measured(changed) })
+      expect(block()).toHaveAttribute('data-expanded', toggled)
+    })
+
+    it.each([
+      [bashToolUse, false, 'false'],
+      [markedBash, true, 'true'],
+    ])('opens in the state its measurement gave it', (toolUse, changed, expanded) => {
+      renderToolBlock({ toolUse, toolResult: measured(changed) })
+      expect(block()).toHaveAttribute('data-expanded', expanded)
+    })
+  })
+
+  describe('a Bash command whose output is one line', () => {
+    it.each([
+      ['written', 'unmeasured', undefined, true],
+      ['written', 'measured as changing something', true, true],
+      ['written', 'measured as changing nothing', false, false],
+      ['(Bash completed with no output)', 'unmeasured', undefined, true],
+      ['(Bash completed with no output)', 'measured as changing something', true, true],
+      ['(Bash completed with no output)', 'measured as changing nothing', false, false],
+    ])('printing %s, %s, starts expanded: %s', (content, _label, changed, expanded) => {
+      renderToolBlock({ toolUse: bashToolUse, toolResult: { content, command_changed: changed } })
+
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-expanded', String(expanded))
+      expect(Boolean(screen.queryByTestId('tool-block-expanded'))).toBe(expanded)
+    })
+
+    it("starts a LangGraph session's bash expanded the same way", () => {
+      renderToolBlock({
+        toolUse: { ...bashToolUse, content: 'bash' },
+        toolResult: { content: 'written', command_changed: true },
+      })
+
+      expect(screen.getByTestId('tool-block')).toHaveAttribute('data-expanded', 'true')
     })
   })
 
@@ -614,6 +752,18 @@ describe('ToolBlock', () => {
       expect(questions).toHaveAttribute('data-disabled', 'true')
     })
 
+    it('marks an unanswered question disabled when the transcript is read-only', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: null })
+
+      expect(screen.getByTestId('interactive-questions')).toHaveAttribute('data-disabled', 'true')
+    })
+
+    it('keeps an unanswered question answerable when the transcript can submit', () => {
+      renderToolBlock({ toolUse: askToolUse, toolResult: null }, { onFormSubmit: vi.fn() })
+
+      expect(screen.getByTestId('interactive-questions')).toHaveAttribute('data-disabled', 'false')
+    })
+
     it('passes wasAnswered to header when answered locally', async () => {
       const user = userEvent.setup()
 
@@ -810,6 +960,12 @@ describe('ToolBlock', () => {
       renderToolBlock({ toolUse: planToolUse, toolResult: planResult })
 
       expect(screen.getByTestId('interactive-questions')).toBeInTheDocument()
+    })
+
+    it('marks an unanswered plan approval disabled when the transcript is read-only', () => {
+      renderToolBlock({ toolUse: planToolUse, toolResult: planResult })
+
+      expect(screen.getByTestId('interactive-questions')).toHaveAttribute('data-disabled', 'true')
     })
 
     it('hides interactive questions when already answered via hasNextUserMessage', () => {
@@ -1057,6 +1213,121 @@ describe('ToolBlock', () => {
       renderToolBlock({ toolUse: readToolUse, toolResult: readResult })
 
       expect(screen.getByTestId('tool-block-header')).toHaveAttribute('data-editor-url', '')
+    })
+  })
+
+  describe('malformed input containment', () => {
+    it('renders a WebFetch whose url is not text with the placeholder header', () => {
+      const toolUse = {
+        content: 'WebFetch',
+        tool_use_id: 'tu-malformed-url',
+        tool_input: { url: 42, prompt: 'p' },
+      }
+
+      renderToolBlock({ toolUse, toolResult: { content: 'page text' } })
+
+      expect(screen.getByTestId('tool-block-header')).toHaveTextContent('WebFetch(url)')
+    })
+
+    it('renders an unreadable call when questions arrives as text instead of a list', () => {
+      const toolUse = {
+        content: 'AskUserQuestion',
+        tool_use_id: 'tu-malformed-questions',
+        tool_input: { questions: 'What is your name?' },
+      }
+
+      renderToolBlock({ toolUse, toolResult: null })
+
+      const block = screen.getByTestId('tool-block')
+      expect(block).toHaveClass('tool-error')
+      expect(block).toHaveAttribute('data-tool-status', 'error')
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-summary',
+        'This tool call could not be read',
+      )
+      expect(screen.queryByTestId('interactive-questions')).not.toBeInTheDocument()
+    })
+
+    it('renders an unreadable call when plan is not text', () => {
+      const toolUse = {
+        content: 'ExitPlanMode',
+        tool_use_id: 'tu-malformed-plan',
+        tool_input: { plan: { unexpected: 'shape' } },
+      }
+
+      renderToolBlock({ toolUse, toolResult: null })
+
+      expect(screen.getByTestId('tool-block')).toHaveClass('tool-error')
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-summary',
+        'This tool call could not be read',
+      )
+    })
+
+    it('renders an unreadable call when a subagent prompt is not text', () => {
+      const toolUse = {
+        content: 'Task',
+        tool_use_id: 'tu-malformed-prompt',
+        tool_input: { prompt: ['not', 'a', 'string'] },
+      }
+
+      renderToolBlock({ toolUse, toolResult: null })
+
+      expect(screen.getByTestId('tool-block')).toHaveClass('tool-error')
+      expect(screen.getByTestId('tool-block-header')).toHaveAttribute(
+        'data-summary',
+        'This tool call could not be read',
+      )
+    })
+
+    it('shows the raw input when expanded', async () => {
+      const user = userEvent.setup()
+      const toolUse = {
+        content: 'ExitPlanMode',
+        tool_use_id: 'tu-malformed-expand',
+        tool_input: { plan: 12345 },
+      }
+
+      renderToolBlock({ toolUse, toolResult: null })
+      if (!screen.queryByText('plan')) {
+        await user.click(screen.getByTestId('tool-block-header'))
+      }
+
+      expect(screen.getByText('plan')).toBeInTheDocument()
+      expect(screen.getByText('12345')).toBeInTheDocument()
+    })
+
+    it('a malformed Task call - collapsed by default - still expands on click', async () => {
+      const user = userEvent.setup()
+      const toolUse = {
+        content: 'Task',
+        tool_use_id: 'tu-malformed-task-collapsed',
+        tool_input: { prompt: ['not', 'a', 'string'] },
+      }
+
+      renderToolBlock({ toolUse, toolResult: null })
+
+      expect(screen.queryByText('prompt')).not.toBeInTheDocument()
+      await user.click(screen.getByTestId('tool-block-header'))
+
+      expect(screen.getByText('prompt')).toBeInTheDocument()
+    })
+
+    it('a well-formed AskUserQuestion call is unaffected', () => {
+      const toolUse = {
+        content: 'AskUserQuestion',
+        tool_use_id: 'tu-well-formed',
+        tool_input: { questions: [{ question: 'Continue?' }] },
+      }
+
+      renderToolBlock(
+        { toolUse, toolResult: null },
+        { hasNextUserMessage: false, nextUserMessageIsFormResponse: false },
+      )
+
+      const block = screen.getByTestId('tool-block')
+      expect(block).not.toHaveClass('tool-error')
+      expect(screen.getByTestId('interactive-questions')).toBeInTheDocument()
     })
   })
 })

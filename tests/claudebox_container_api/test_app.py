@@ -1,5 +1,7 @@
 """Tests for the container API app factory - host binding forwarded to http_serve."""
 
+from __future__ import annotations
+
 from unittest.mock import patch
 
 from claudebox_container_api.app import run_container_api

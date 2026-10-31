@@ -33,7 +33,12 @@ vi.mock('../../../context/SessionsContext', () => ({
   useSessionsList: () => ({ sessions: mockSessions }),
 }))
 
-// Reads TurnRoutingContext itself - proves the "routing off, everything inline" contract without
+let mockStoredView = {}
+vi.mock('../../../api/uiState', () => ({
+  getUiState: () => Promise.resolve({ session: mockStoredView }),
+}))
+
+// Reads TurnRoutingContext itself - proves which view the group shows without
 // pulling in a real Turn tree, whose routing logic HistoricalTurnList and Turn already test.
 vi.mock('./HistoricalTurnList', () => ({
   default: ({ turns, isSideThread, messagesEl }) => {
@@ -56,80 +61,66 @@ vi.mock('./HistoricalTurnList', () => ({
   },
 }))
 
+function renderAncestor(status, turns) {
+  vi.mocked(useAncestorTranscript).mockReturnValue({
+    status,
+    turns,
+    turnResults: {},
+    taskNotifications: new Map(),
+    todoDiffs: new Map(),
+    duplicateAskUserIds: new Set(),
+  })
+  render(<AncestorGroup sessionId="sess-1" />)
+}
+
 describe('AncestorGroup', () => {
   beforeEach(() => {
     vi.mocked(useAncestorTranscript).mockReset()
     mockSessions = []
+    mockStoredView = {}
   })
 
   it('shows nothing while the transcript is loading', () => {
-    vi.mocked(useAncestorTranscript).mockReturnValue({
-      status: 'loading',
-      turns: [],
-      turnResults: {},
-      taskNotifications: new Map(),
-      todoDiffs: new Map(),
-      duplicateAskUserIds: new Set(),
-    })
-
-    render(<AncestorGroup sessionId="sess-1" />)
+    renderAncestor('loading', [])
 
     expect(screen.queryByTestId('historical-turn-list')).not.toBeInTheDocument()
     expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument()
   })
 
-  it('renders the transcript through HistoricalTurnList once ready - no second turn renderer', () => {
-    vi.mocked(useAncestorTranscript).mockReturnValue({
-      status: 'ready',
-      turns: [{ turn_id: 't1', userMessage: 'hello' }],
-      turnResults: {},
-      taskNotifications: new Map(),
-      todoDiffs: new Map(),
-      duplicateAskUserIds: new Set(),
-    })
+  it('renders the transcript through HistoricalTurnList once ready - no second turn renderer', async () => {
+    renderAncestor('ready', [{ turn_id: 't1', userMessage: 'hello' }])
 
-    render(<AncestorGroup sessionId="sess-1" />)
-
-    const list = screen.getByTestId('historical-turn-list')
+    const list = await screen.findByTestId('historical-turn-list')
     expect(list).toHaveAttribute('data-turn-count', '1')
     expect(screen.getByText('hello')).toBeInTheDocument()
   })
 
   // Regression: AncestorGroup owns its scroll container and must attach it the way every other
   // column does - a stale prop name leaves this rail's virtualizer with no scroll element.
-  it('gives HistoricalTurnList a real scroll element, not an unattached ref', () => {
-    vi.mocked(useAncestorTranscript).mockReturnValue({
-      status: 'ready',
-      turns: [{ turn_id: 't1', userMessage: 'hello' }],
-      turnResults: {},
-      taskNotifications: new Map(),
-      todoDiffs: new Map(),
-      duplicateAskUserIds: new Set(),
-    })
+  it('gives HistoricalTurnList a real scroll element, not an unattached ref', async () => {
+    renderAncestor('ready', [{ turn_id: 't1', userMessage: 'hello' }])
 
-    render(<AncestorGroup sessionId="sess-1" />)
-
-    expect(screen.getByTestId('historical-turn-list')).toHaveAttribute(
+    expect(await screen.findByTestId('historical-turn-list')).toHaveAttribute(
       'data-has-messages-el',
       'true',
     )
   })
 
-  it('routes every block inline - the routing context is explicitly OFF, no right column', () => {
-    vi.mocked(useAncestorTranscript).mockReturnValue({
-      status: 'ready',
-      turns: [{ turn_id: 't1', userMessage: 'hello' }],
-      turnResults: {},
-      taskNotifications: new Map(),
-      todoDiffs: new Map(),
-      duplicateAskUserIds: new Set(),
-    })
-
-    render(<AncestorGroup sessionId="sess-1" />)
-
-    expect(screen.getByTestId('historical-turn-list')).toHaveAttribute(
-      'data-routing-mode',
+  it.each([
+    ['never picked a view, Focused', {}, TurnRoutingMode.FOCUSED],
+    ['picked Everything, every call inline', { rightSlotView: 'everything' }, TurnRoutingMode.OFF],
+    [
+      'picked Terminal, Everything with no column',
+      { rightSlotView: 'terminal' },
       TurnRoutingMode.OFF,
+    ],
+  ])('shows a session that %s', async (_label, stored, mode) => {
+    mockStoredView = stored
+    renderAncestor('ready', [{ turn_id: 't1', userMessage: 'hello' }])
+
+    expect(await screen.findByTestId('historical-turn-list')).toHaveAttribute(
+      'data-routing-mode',
+      mode,
     )
   })
 
@@ -165,39 +156,21 @@ describe('AncestorGroup', () => {
     expect(screen.getByTestId('rail-ancestor')).toHaveAttribute('data-session-id', 'sess-42')
   })
 
-  it('passes isSideThread through from the fetched sessions list', () => {
+  it('passes isSideThread through from the fetched sessions list', async () => {
     mockSessions = [{ session_id: 'sess-1', is_side_thread: true }]
-    vi.mocked(useAncestorTranscript).mockReturnValue({
-      status: 'ready',
-      turns: [],
-      turnResults: {},
-      taskNotifications: new Map(),
-      todoDiffs: new Map(),
-      duplicateAskUserIds: new Set(),
-    })
+    renderAncestor('ready', [])
 
-    render(<AncestorGroup sessionId="sess-1" />)
-
-    expect(screen.getByTestId('historical-turn-list')).toHaveAttribute(
+    expect(await screen.findByTestId('historical-turn-list')).toHaveAttribute(
       'data-is-side-thread',
       'true',
     )
   })
 
-  it('defaults isSideThread to false when the session carries no marker', () => {
+  it('defaults isSideThread to false when the session carries no marker', async () => {
     mockSessions = [{ session_id: 'sess-1' }]
-    vi.mocked(useAncestorTranscript).mockReturnValue({
-      status: 'ready',
-      turns: [],
-      turnResults: {},
-      taskNotifications: new Map(),
-      todoDiffs: new Map(),
-      duplicateAskUserIds: new Set(),
-    })
+    renderAncestor('ready', [])
 
-    render(<AncestorGroup sessionId="sess-1" />)
-
-    expect(screen.getByTestId('historical-turn-list')).toHaveAttribute(
+    expect(await screen.findByTestId('historical-turn-list')).toHaveAttribute(
       'data-is-side-thread',
       'false',
     )

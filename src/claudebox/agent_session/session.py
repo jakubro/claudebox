@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .config import AgentSessionConfig, ClaudeAgentSessionConfig, LangGraphAgentSessionConfig
 from .errors import UnknownRuntime
 from .protocol import AgentSession

@@ -8,7 +8,8 @@ import { promoteSession } from '../../api/sessions'
 import { getUiState, patchSessionUiState } from '../../api/uiState'
 import ConfirmStopModal from '../../components/ConfirmStopModal.jsx'
 import ErrorBoundary from '../../components/ErrorBoundary.jsx'
-import { SCROLL_SETTLE_MAX_FRAMES } from '../../config/timing'
+import { TaskKind } from '../../config/schema'
+import { SCROLL_SETTLE_MAX_FRAMES, SCROLL_SETTLE_STILL_FRAMES } from '../../config/timing'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useBookmarksContext } from '../../context/BookmarksContext'
 import { useDaemonStreamContext } from '../../context/DaemonStreamContext'
@@ -18,11 +19,21 @@ import { useSessionActions, useSessionData } from '../../context/SessionDataCont
 import { useSessionRouting } from '../../context/SessionRoutingContext'
 import { useSessionsList } from '../../context/SessionsContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import useBackgroundWaiting from '../../hooks/useBackgroundWaiting'
+import useCapabilities from '../../hooks/useCapabilities'
 import useIsMobile from '../../hooks/useIsMobile'
 import useNewSession from '../../hooks/useNewSession'
-import { computeDuplicateAskUserIds } from '../../utils/eventProcessing'
+import useSessionOwnership from '../../hooks/useSessionOwnership'
+import { useScrollElementRef } from '../../hooks/useVirtualListGeometry'
+import { computeDuplicateAskUserIds, TurnRoutingMode } from '../../utils/eventProcessing'
 import { MOUNT_FRAMES, pollFrames, withMountedTurn } from '../../utils/mountTurn'
-import { findVisibleToolBlock, jumpToTask, jumpToTaskInWorkColumn } from '../../utils/taskScroll'
+import { isOpenFor, toggleOpenFor } from '../../utils/sessionOwnership'
+import {
+  findVisibleToolBlock,
+  jumpToTask,
+  jumpToTaskInTerminalColumn,
+  jumpToTaskInWorkColumn,
+} from '../../utils/taskScroll'
 import ChatInputArea from './components/ChatInputArea'
 import ChatSplitDivider from './components/ChatSplitDivider'
 import ChatControlBar from './components/chat-control-bar'
@@ -31,15 +42,21 @@ import HistoricalTurnList from './components/HistoricalTurnList'
 import { InlineThreadsOverlay, QuoteAffordance } from './components/inline-replies'
 import useInlineReplies from './components/inline-replies/hooks/useInlineReplies'
 import useInlineThreadSessions from './components/inline-replies/hooks/useInlineThreadSessions'
-import MiniMap from './components/minimap'
+import TranscriptMiniMap from './components/minimap'
 import QueuedMessageBubble from './components/QueuedMessageBubble'
+import ReplayOverlay from './components/ReplayOverlay'
 import RewindModal from './components/RewindModal'
 import RightSlotColumns from './components/RightSlotColumns'
 import SettingChangeDivider from './components/SettingChangeDivider'
 import Turn from './components/turn'
+import { FocusedMarksContext } from './components/turn/FocusedMarksContext'
+import { useFocusedMarksFor } from './components/turn/hooks/useFocusedMarks'
 import { TurnCollapseProvider } from './components/turn/TurnCollapseContext'
 import { TurnRoutingContext } from './components/turn/TurnRoutingContext'
+import { turnRecordProps } from './components/turn/utils/turnContent'
 import WelcomeContent from './components/WelcomeContent'
+import useActiveTurnReplies from './hooks/useActiveTurnReplies'
+import useBookmarkJump from './hooks/useBookmarkJump'
 import useChatController from './hooks/useChatController'
 import useChatCreatingClear from './hooks/useChatCreatingClear'
 import useChatRewindFork from './hooks/useChatRewindFork'
@@ -50,9 +67,7 @@ import useMessageJump from './hooks/useMessageJump'
 import useNotifications from './hooks/useNotifications'
 import useTerminalJump from './hooks/useTerminalJump'
 import { useTerminalSplitLayout } from './hooks/useTerminalSplitLayout'
-import useTurnHeights from './hooks/useTurnHeights'
 import { useTurnJump } from './hooks/useTurnJump'
-import { useScrollElementRef } from './hooks/useVirtualListGeometry'
 import useWorkJump from './hooks/useWorkJump'
 import { useWorkPanelLiveState } from './hooks/useWorkPanelLiveState'
 import { findTopmostVisibleTurn } from './utils/findTopmostVisibleTurn'
@@ -60,6 +75,8 @@ import { getOverlayStatusText } from './utils/overlayStatus'
 import { tryRefocusChatTextarea } from './utils/refocusChatInput'
 import { resolveControlBarTerminalProps } from './utils/resolveControlBarTerminalProps'
 import { RightSlotView, resolveRightSlotRoutingMode } from './utils/rightSlotViews'
+import { createRowSizeStore } from './utils/rowSizeStore'
+import { dividerRows } from './utils/settingLabels'
 import { deriveTerminalEntries } from './utils/terminalEvents'
 import { buildTerminalMinimapBars } from './utils/terminalMinimapBars'
 import { computeFoldBoundary } from './utils/turnFold'
@@ -82,24 +99,36 @@ export default function ChatPanel() {
     containerId,
     isCompacting,
     isCreating,
+    isCreateRequestPending,
+    isResumeRequestPending,
     clearCreating,
     clearResume,
     startForking,
     clearForking,
   } = useEvents()
+  const { isOwnerAttached, ownerSessionId } = useSessionOwnership()
 
   const { progressMessage } = useDaemonStreamContext()
 
   const { isSubmitting, interruptStatus, isAwaitingResponse, setError } = useInteraction()
+  const { isWaiting, awaitingPickup, runningBackgroundWork } = useBackgroundWaiting()
 
-  const { sessionId, sessionName, workspace, notificationsEnabled } = useSessionData()
+  const { sessionData, sessionId, sessionName, workspace, notificationsEnabled, deferredBundle } =
+    useSessionData()
   const { reloadSession } = useSessionActions()
-  const { activeSessionId, activeTurnId, activeMessageType, navigateToSession, replaceTurnInUrl } =
-    useSessionRouting()
+  const {
+    activeSessionId,
+    activeTurnId,
+    activeMessageType,
+    activeTarget,
+    navigateToSession,
+    replaceTurnInUrl,
+  } = useSessionRouting()
   const { workspaceId } = useWorkspace()
   const { seedSession, sessions } = useSessionsList()
   const isSideThread = Boolean(sessions.find(s => s.session_id === sessionId)?.is_side_thread)
-  const { isBookmarked, isTurnBookmarked, toggleBookmark } = useBookmarksContext()
+  const { isBookmarked, isTurnBookmarked, bookmarkedPartsOf, toggleBookmark } =
+    useBookmarksContext()
 
   // Stable ref to events for ChatInput (avoids re-render from events subscription)
   const eventsRef = useRef(events)
@@ -110,15 +139,22 @@ export default function ChatPanel() {
   turnsRef.current = turns
 
   // The last turn carries live events; earlier ones render via the memoized HistoricalTurnList.
-  // Computed here so useTurnHeights below prices a promoted thread's fold from the same slice.
+  // Computed here so the minimap prices a promoted thread's fold from the same slice.
   const lastTurnIndex = turns.length - 1
   const activeTurn = turns.length > 0 ? turns[lastTurnIndex] : null
   const historicalTurns = turns.slice(0, -1)
   const foldBoundary = computeFoldBoundary(historicalTurns, isSideThread)
-  const [historicalExpanded, setHistoricalExpanded] = useState(false)
+  // The panel outlives every session it shows: the fold belongs to the routed session it was opened in.
+  const routedSessionRef = useRef(activeSessionId)
+  routedSessionRef.current = activeSessionId
+  const [expandedFor, setExpandedFor] = useState(null)
+  const historicalExpanded = isOpenFor(expandedFor, activeSessionId)
   // Stable identity: an inline arrow defeats HistoricalTurnList's memo comparator, which compares
   // every prop by identity - the whole list then re-renders on every streaming flush.
-  const toggleHistoricalExpanded = useCallback(() => setHistoricalExpanded(prev => !prev), [])
+  const toggleHistoricalExpanded = useCallback(
+    () => setExpandedFor(prev => toggleOpenFor(prev, routedSessionRef.current)),
+    [],
+  )
 
   const {
     jumpPrevRef,
@@ -135,6 +171,7 @@ export default function ChatPanel() {
     scrollToTurnRef,
     expandTurnRef,
     jumpToTaskRef,
+    jumpToBookmarkRef,
     focusChatTab,
     focusedGroupRootRef,
   } = useAppActions()
@@ -152,6 +189,7 @@ export default function ChatPanel() {
     executeFork,
   } = useChatRewindFork({
     sessionId,
+    routedSessionId: activeSessionId,
     workspaceId,
     isResponding,
     navigateToSession,
@@ -189,31 +227,17 @@ export default function ChatPanel() {
       requeueItem,
       sendNowItem,
     },
-    deferred: { deferredSend, deferSend },
+    deferred: { deferredSend, deferSend, returnedInput, clearReturnedInput },
     send,
   } = useChatController({
     events,
     contextRefs,
+    activeTurnId,
   })
 
   // The transcript's own scroll element, reached via attachment rather than a per-commit mirror -
   // see useScrollElementRef. messagesRef.current keeps working for every other reader below.
   const [messagesEl, attachMessagesRef] = useScrollElementRef(messagesRef)
-
-  // Bridges deferred->pending continuity: holds the last deferred content until showPendingMessages populates.
-  const [deferredHold, setDeferredHold] = useState(null)
-  const prevDeferredRef = useRef(deferredSend)
-  useEffect(() => {
-    if (prevDeferredRef.current && !deferredSend) {
-      setDeferredHold(prevDeferredRef.current)
-    }
-    prevDeferredRef.current = deferredSend
-  }, [deferredSend])
-  useEffect(() => {
-    if (deferredHold && showPendingMessages.length > 0) {
-      setDeferredHold(null)
-    }
-  }, [deferredHold, showPendingMessages.length])
 
   // New-session workflow (welcome page deferred-send relies on this)
   const { executeNewSession } = useNewSession()
@@ -283,34 +307,36 @@ export default function ChatPanel() {
   // Auto-clears creating state once SSE connects, plus a timeout if it never reconnects (container failure).
   useChatCreatingClear({
     isCreating,
+    isCreateRequestPending,
     isConnected,
     deferredSend,
-    deferredHold,
     showPendingMessagesLength: showPendingMessages.length,
     turnsLength: turns.length,
     clearCreating,
   })
 
-  // Timeout: auto-clear resuming if replay_ended never arrives (e.g. SSE reconnect failure)
+  // Timeout: auto-clear resuming if replay_ended never arrives (e.g. SSE reconnect failure); arms
+  // only once the open request has settled, however long that takes.
   useEffect(() => {
-    if (!isResuming) {
+    if (!isResuming || isResumeRequestPending) {
       return
     }
     const timer = setTimeout(() => {
       clearResume()
     }, 30000)
     return () => clearTimeout(timer)
-  }, [isResuming, clearResume])
+  }, [isResuming, isResumeRequestPending, clearResume])
 
-  // Kept out of ChatPanel for the cognitive-complexity gate; runs the cross-session replay jump.
-  const { scrollToTurnAndHighlight, handleTerminalEntryClick } = useTurnJump({
+  const jumpToBookmark = useBookmarkJump({
+    jumpToBookmarkRef,
+    scrollToTurnRef,
+    expandTurnRef,
+    jumpToTaskRef,
     turnsRef,
-    turnVirtualizerRef,
+    panelRef,
     messagesRef,
-    chatAutoScrollEnabledRef,
-    isReplaying,
-    activeTurnId,
-    activeMessageType,
+    markUserIntent,
+    markProgrammaticScroll,
   })
 
   // Driven by useChatController, which forwards controller.onAutoScrollChange transitions into reactive state.
@@ -320,23 +346,48 @@ export default function ChatPanel() {
   const [terminalMinimapPinned, setTerminalMinimapPinned] = useState(true)
   const [workMinimapPinned, setWorkMinimapPinned] = useState(true)
   const isMobile = useIsMobile()
+  const { runtimeName } = useCapabilities()
   // On desktop, MiniMap still renders when unpinned (auto-hide toggles a `visible` class on it).
   // The `minimap-pinned` className reserves layout space only when pinned and on desktop.
   const reserveMinimapSpace = minimapPinned && !isMobile
 
+  // Pins toggled since the session's read was issued; its reply leaves those alone.
+  const touchedPinsRef = useRef(new Set())
+
+  // Pinned until the attached session's own values arrive; a reply for a session left is dropped.
   useEffect(() => {
+    let cancelled = false
+    touchedPinsRef.current = new Set()
+    setMinimapPinned(true)
+    setTerminalMinimapPinned(true)
+    setWorkMinimapPinned(true)
     if (sessionId) {
       getUiState(sessionId)
         .then(data => {
-          setMinimapPinned(data.session?.minimapPinned ?? true)
-          setTerminalMinimapPinned(data.session?.terminalMinimapPinned ?? true)
-          setWorkMinimapPinned(data.session?.workMinimapPinned ?? true)
+          if (cancelled) {
+            return
+          }
+          const pins = {
+            minimapPinned: setMinimapPinned,
+            terminalMinimapPinned: setTerminalMinimapPinned,
+            workMinimapPinned: setWorkMinimapPinned,
+          }
+          for (const [key, setPinned] of Object.entries(pins)) {
+            if (!touchedPinsRef.current.has(key)) {
+              setPinned(data.session?.[key] ?? true)
+            }
+          }
         })
         .catch(err => console.warn('ChatPanel: getUiState failed', err))
+    }
+
+    return () => {
+      cancelled = true
     }
   }, [sessionId])
 
   const handleToggleMinimap = useCallback(() => {
+    touchedPinsRef.current.add('minimapPinned')
     setMinimapPinned(prev => {
       const next = !prev
       if (sessionId) {
@@ -347,6 +398,7 @@ export default function ChatPanel() {
   }, [sessionId])
 
   const handleToggleTerminalMinimap = useCallback(() => {
+    touchedPinsRef.current.add('terminalMinimapPinned')
     setTerminalMinimapPinned(prev => {
       const next = !prev
       if (sessionId) {
@@ -357,6 +409,7 @@ export default function ChatPanel() {
   }, [sessionId])
 
   const handleToggleWorkMinimap = useCallback(() => {
+    touchedPinsRef.current.add('workMinimapPinned')
     setWorkMinimapPinned(prev => {
       const next = !prev
       if (sessionId) {
@@ -366,14 +419,39 @@ export default function ChatPanel() {
     })
   }, [sessionId])
 
-  // Preference + ratio, hydrated per session; a width-driven collapse leaves the preference alone.
+  // Read for the owner: the attached id is still empty when replay ends.
+  // Keyed on that id, the transcript would draw before its view is read.
+  // Not before a workspace is picked: that read fails and holds Focused until another session opens.
+  // A width-driven collapse leaves the preference alone.
+  const viewSessionId = workspaceId ? ownerSessionId : null
   const { contentAreaRef, terminalSplit, activeView, setRightSlotView, setTerminalSplitRatio } =
-    useTerminalSplitLayout(sessionId, isMobile)
+    useTerminalSplitLayout(viewSessionId, isMobile)
   const showTerminalSplit = activeView?.id === RightSlotView.TERMINAL
   const showWorkView = activeView?.id === RightSlotView.WORK
-  // Computed once for both consumers: useTurnHeights runs in this body, above the Provider it
-  // renders, so it cannot read the context - deriving the mode twice would let the two desync.
-  const routingMode = resolveRightSlotRoutingMode(activeView)
+  // Computed once for both consumers: the minimap renders outside the Provider below, so it cannot
+  // read the context - deriving the mode twice would let the two desync.
+  const routingMode = resolveRightSlotRoutingMode(terminalSplit?.view, activeView, isMobile)
+  // A thread's calls never reach the right column, so its turns take only Focused's hiding.
+  const threadRoutingMode =
+    routingMode === TurnRoutingMode.FOCUSED ? TurnRoutingMode.FOCUSED : TurnRoutingMode.OFF
+  const focusedMarks = useFocusedMarksFor(runtimeName, !isMobile)
+  const controlBarTerminalProps = resolveControlBarTerminalProps(viewSessionId, terminalSplit)
+  // The transcript mounts only once the session's view is read, so a replay that ends first must
+  // not yet land a linked turn or settle at the bottom - there is nothing drawn to move.
+  const transcriptPending = isReplaying || controlBarTerminalProps.hydratingTerminalSplit
+
+  // Also runs the cross-session replay jump.
+  const { scrollToTurnAndHighlight, handleTerminalEntryClick } = useTurnJump({
+    turnsRef,
+    turnVirtualizerRef,
+    messagesRef,
+    chatAutoScrollEnabledRef,
+    isReplaying: transcriptPending,
+    activeTurnId,
+    activeMessageType,
+    activeTarget,
+    jumpToBookmark,
+  })
   const terminalEntries = useMemo(() => deriveTerminalEntries(events), [events])
 
   // One scroll-position controller per right-slot column, owned here because every consumer of
@@ -504,6 +582,24 @@ export default function ChatPanel() {
   ])
 
   const composerHandleRef = useRef(null)
+  const quoteShowingRef = useRef(false)
+  const autocompleteOpenRef = useRef(false)
+  const focusComposer = useCallback(() => composerHandleRef.current?.focus(), [])
+  // Read at call time, so the handle's per-keystroke churn never re-renders the reply boxes.
+  const sendFromReplyBox = useCallback(() => {
+    composerHandleRef.current?.submit()
+    composerHandleRef.current?.focus()
+  }, [])
+  const handleEditReply = useCallback(label => composerHandleRef.current?.replaceInput(label), [])
+
+  // A failed creation's input goes back into the composer, and its first-message bubble goes away.
+  useEffect(() => {
+    if (!returnedInput) {
+      return
+    }
+    composerHandleRef.current?.returnInput(returnedInput)
+    clearReturnedInput()
+  }, [returnedInput, clearReturnedInput])
 
   // {hasSelection, submit} for the active turn's live form; Enter in the composer submits it.
   // Only one turn awaits an answer, so ToolBlock's register/unregister is last-writer-wins.
@@ -517,12 +613,21 @@ export default function ChatPanel() {
     add: addInlineReply,
     editReply: editInlineReply,
     remove: removeInlineReply,
-    markSent: markInlineRepliesSent,
+    claimWireReplies: claimInlineWireReplies,
+    settleClaim: settleInlineRepliesClaim,
+    hasSendable: hasBufferedReplies,
+    markAsked: markInlineReplyAsked,
     linkThreadSession,
     linkPromotedSession,
     linkRailPromotion,
     unsentRef: inlineRepliesUnsentRef,
   } = useInlineReplies(sessionId)
+  // The session the reply buffer holds: it reloads one commit after the id changes, and the overlay
+  // remounts on it so the loaded buffer is adopted as restored, not as freshly quoted.
+  const [repliesSessionId, setRepliesSessionId] = useState(sessionId)
+  useEffect(() => {
+    setRepliesSessionId(sessionId)
+  }, [sessionId])
 
   // Side-thread sessions for floats asked on their own - forked into the same container, never
   // touching the main transcript. See docs/ARCHITECTURE.md section 1.5, per-thread submit.
@@ -538,16 +643,24 @@ export default function ChatPanel() {
   const handleSubmitInlineThread = useCallback(
     (replyId, text) => {
       const reply = inlineRepliesUnsentRef.current.find(r => r.id === replyId)
-      if (!(reply && sessionId)) {
+      if (!(reply && sessionId && text?.trim())) {
         return
       }
+      const ownerSessionId = sessionId
+      markInlineReplyAsked(replyId)
       submitInlineThread(reply, sessionId, text).then(newSessionId => {
         if (newSessionId && !reply.threadSessionId) {
-          linkThreadSession(replyId, newSessionId)
+          linkThreadSession(replyId, newSessionId, ownerSessionId)
         }
       })
     },
-    [inlineRepliesUnsentRef, sessionId, submitInlineThread, linkThreadSession],
+    [
+      inlineRepliesUnsentRef,
+      sessionId,
+      markInlineReplyAsked,
+      submitInlineThread,
+      linkThreadSession,
+    ],
   )
 
   // Promote a side thread into its own tab. Stop first: the fork copies the transcript from disk.
@@ -559,6 +672,7 @@ export default function ChatPanel() {
         return
       }
       const sideSessionId = reply.threadSessionId
+      const ownerSessionId = sessionId
       const result = await executeFork(null, 'fork-browser-tab', {
         sourceId: sideSessionId,
         parentSessionId: sessionId,
@@ -570,7 +684,7 @@ export default function ChatPanel() {
       }
       detachInlineThread(replyId)
       await loadInlineThread(replyId, sideSessionId)
-      linkPromotedSession(replyId, result.session_id)
+      linkPromotedSession(replyId, result.session_id, ownerSessionId)
       if (!result.tabOpened) {
         setError('Popup blocked - open the promoted session from the sessions panel')
       }
@@ -595,6 +709,7 @@ export default function ChatPanel() {
         return
       }
       const sideSessionId = reply.threadSessionId
+      const ownerSessionId = sessionId
       try {
         await promoteSession(sideSessionId)
       } catch {
@@ -604,7 +719,7 @@ export default function ChatPanel() {
       // The origin session's own subscription to this thread is redundant the moment the thread
       // becomes the rail's own live group, which mounts its own ChatPanel and its own stream.
       detachInlineThread(replyId)
-      linkRailPromotion(replyId)
+      linkRailPromotion(replyId, ownerSessionId)
       navigateToSession(workspaceId, sideSessionId)
     },
     [
@@ -648,27 +763,26 @@ export default function ChatPanel() {
 
   // Folds buffered inline replies into one turn with the composer prompt + attachments; no-op if empty.
   // content=prompt (never the serialized XML) keeps the optimistic pending turn reconcilable.
+  // The replies are claimed for this send, so no other send can carry them while it is on its way.
   const sendWithInlineReplies = useCallback(
-    (content, opts = {}) => {
-      // Thread-linked replies never join a batch (see useInlineReplies' markSent) - their
-      // follow-up draft text must not count toward "is there anything buffered to send".
-      const nonBlank = inlineRepliesUnsentRef.current.filter(
-        r => r.response.trim() && !r.threadSessionId,
-      )
+    async (content, opts = {}) => {
+      const claim = claimInlineWireReplies()
       const hasContent = typeof content === 'string' ? content.trim() : content
-      if (!(hasContent || opts.attachments?.length) && nonBlank.length === 0) {
+      if (!(hasContent || opts.attachments?.length) && claim.ids.length === 0) {
         return undefined
       }
-      const wire = markInlineRepliesSent()
-      return send(content, { ...opts, inlineReplies: wire.length > 0 ? wire : null })
+      let sent = false
+      try {
+        sent = await send(content, {
+          ...opts,
+          inlineReplies: claim.wire.length > 0 ? claim.wire : null,
+        })
+      } finally {
+        settleInlineRepliesClaim(claim, sent)
+      }
+      return sent
     },
-    [send, inlineRepliesUnsentRef, markInlineRepliesSent],
-  )
-
-  // With no side bar, composer Enter is the trigger, so it must know a batch is buffered when its field is empty.
-  const hasBufferedReplies = useCallback(
-    () => inlineRepliesUnsentRef.current.some(r => r.response.trim() && !r.threadSessionId),
-    [inlineRepliesUnsentRef],
+    [send, claimInlineWireReplies, settleInlineRepliesClaim],
   )
 
   // Affordance click: capture the quote; the highlight + docked box appear via the overlay.
@@ -678,13 +792,14 @@ export default function ChatPanel() {
   const composerMaxHeight = useComposerMaxHeight(panelRef)
 
   // Sourced from transcript turns (durable) plus just-sent pending messages, so a fresh send docks immediately.
-  // Each reply carries its own source-turn anchor, so the overlay docks it at its source block.
+  // Each reply carries its source-turn anchor, so the overlay docks it at that block, and keeps its
+  // unsent id; one sent without an id takes its position instead.
   const sentInlineThreads = useMemo(() => {
     const fromTurns = turns.flatMap(t =>
-      (t.inlineReplies || []).map((r, i) => ({ ...r, id: `${t.turn_id}:reply:${i}` })),
+      (t.inlineReplies || []).map((r, i) => ({ id: `${t.turn_id}:reply:${i}`, ...r })),
     )
     const fromPending = showPendingMessages.flatMap((pm, pi) =>
-      (pm.inlineReplies || []).map((r, i) => ({ ...r, id: `pending:${pi}:${i}` })),
+      (pm.inlineReplies || []).map((r, i) => ({ id: `pending:${pi}:${i}`, ...r })),
     )
     return [...fromTurns, ...fromPending]
   }, [turns, showPendingMessages])
@@ -708,39 +823,67 @@ export default function ChatPanel() {
     })
   }, [autoCollapseEnabledRef])
 
-  const handleToggleTurnCollapse = useCallback(turnId => {
+  const collapsedTurnIdsRef = useRef(collapsedTurnIds)
+  collapsedTurnIdsRef.current = collapsedTurnIds
+
+  // The hand-expand memory is written before the update is queued: an auto-collapse recompute
+  // landing in the same flush must already see it, or it re-collapses the turn.
+  const setTurnExpandedByHand = useCallback((turnId, expanded) => {
+    if (expanded) {
+      manuallyExpandedIdsRef.current.add(turnId)
+    } else {
+      manuallyExpandedIdsRef.current.delete(turnId)
+    }
     setCollapsedTurnIds(prev => {
+      if (prev.has(turnId) !== expanded) {
+        return prev
+      }
       const next = new Set(prev)
-      if (next.has(turnId)) {
-        // Expanding by hand: remember it so the new-turn recompute keeps it open.
+      if (expanded) {
         next.delete(turnId)
-        manuallyExpandedIdsRef.current.add(turnId)
       } else {
-        // Collapsing by hand: return the turn to auto control.
         next.add(turnId)
-        manuallyExpandedIdsRef.current.delete(turnId)
       }
       return next
     })
   }, [])
 
-  // Sibling panels can't open a collapsed turn directly; delegating to the header toggle keeps
-  // manuallyExpandedIdsRef in sync so the turn doesn't silently re-collapse.
+  const handleToggleTurnCollapse = useCallback(
+    turnId => setTurnExpandedByHand(turnId, collapsedTurnIdsRef.current.has(turnId)),
+    [setTurnExpandedByHand],
+  )
+
+  // Sibling panels open a turn through this, counting as a hand-expand so it does not re-collapse.
   useEffect(() => {
     expandTurnRef.current = turnId => {
-      if (turnId && collapsedTurnIds.has(turnId)) {
-        handleToggleTurnCollapse(turnId)
+      if (turnId) {
+        setTurnExpandedByHand(turnId, true)
       }
     }
     return () => {
       expandTurnRef.current = null
     }
-  }, [expandTurnRef, collapsedTurnIds, handleToggleTurnCollapse])
+  }, [expandTurnRef, setTurnExpandedByHand])
 
   // The Tasks panel reaches a task's tool block through this - the work view routes every
   // top-level call out of the transcript, so the landing column depends on which one is active.
   useEffect(() => {
     jumpToTaskRef.current = task => {
+      if (showTerminalSplit && task.kind === TaskKind.COMMAND) {
+        jumpToTaskInTerminalColumn(
+          terminalEntries.findIndex(e => e.id === task.id),
+          task.id,
+          {
+            container: terminalContainerRef.current,
+            virtualizer: terminalVirtualizerRef.current,
+            root: panelRef.current,
+            markUserIntent: markTerminalUserIntent,
+            markProgrammaticScroll: markTerminalProgrammaticScroll,
+            markReturnedToBottom: markTerminalReturnedToBottom,
+          },
+        )
+        return
+      }
       if (showWorkView) {
         const turnIndex = turns.findIndex(t => t.turn_id === task.turnId)
         if (turnIndex < 0) {
@@ -764,10 +907,15 @@ export default function ChatPanel() {
         }
         pollFrames(
           MOUNT_FRAMES,
-          () => findVisibleToolBlock(task.id, panelRef.current),
+          () => findVisibleToolBlock(task.id, panelRef.current, { reveal: task.reveal }),
           el => {
             if (el) {
-              jumpToTask(el, messagesRef.current, { markUserIntent, markProgrammaticScroll })
+              jumpToTask(el, messagesRef.current, {
+                markUserIntent,
+                markProgrammaticScroll,
+                highlightClass: task.highlightClass,
+                highlightMs: task.highlightMs,
+              })
             }
           },
         )
@@ -799,6 +947,12 @@ export default function ChatPanel() {
     }
   }, [
     jumpToTaskRef,
+    showTerminalSplit,
+    terminalEntries,
+    terminalContainerRef,
+    markTerminalUserIntent,
+    markTerminalProgrammaticScroll,
+    markTerminalReturnedToBottom,
     showWorkView,
     turns,
     workContainerRef,
@@ -844,13 +998,14 @@ export default function ChatPanel() {
     // Keying on lastTurnId alone leaves arrivals expanded, mis-sizing minimap segments (short-strip pricing).
   }, [autoCollapseEnabled, lastTurnId, turns.length])
 
-  // Mirrors autoscroll's session reset - a new session opens with only the last turn shown.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId is the reset trigger
+  // Mirrors autoscroll's session reset - a new session opens with only the last turn shown. Keyed on the
+  // routed owner, known before the session id settles, so a link's expand made meanwhile survives.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ownerSessionId is the reset trigger
   useEffect(() => {
     autoCollapseEnabledRef.current = true
     setAutoCollapseEnabled(true)
     manuallyExpandedIdsRef.current.clear()
-  }, [sessionId, autoCollapseEnabledRef])
+  }, [ownerSessionId, autoCollapseEnabledRef])
 
   // Clicks on the empty .chat-messages background (not a turn/interactive child) restore focus to the textarea.
   // pointerDownPosRef tells a click from a drag-select; dragging must never refocus (would clear the selection).
@@ -910,24 +1065,17 @@ export default function ChatPanel() {
     [handleScroll, isReplaying, syncTurnSegmentToUrl],
   )
 
-  // Minimap proportionality is priced by the predictor: a windowed-out turn has nothing to measure.
-  // foldBoundary/historicalExpanded keep it in step with HistoricalTurnList's own fold state below.
-  const { turnHeights, userMessageHeights, getLogicalScrollHeight } = useTurnHeights(
-    messagesRef,
-    turns,
-    collapsedTurnIds,
-    routingMode,
-    foldBoundary,
-    historicalExpanded,
-  )
+  // Written by the turn list as it measures, read by the minimap - so a measurement re-renders only
+  // the minimap, never this panel.
+  const [rowSizes] = useState(createRowSizeStore)
 
   // Turns land with estimated heights; windowed rows swap in real heights over several frames, so
-  // re-scroll every frame until scrollHeight stops growing, capped so an animation can't stall it.
+  // re-scroll every frame until scrollHeight holds for a few, capped so an animation can't stall it.
   // Keyed on turns.length, not an isReplaying edge: React can fold a whole replay into one commit.
-  // Skipped while replaying (refires later) and when the URL names a turn (races that deep link).
+  // Skipped until the transcript draws (refires then) and when the URL names a turn (races that link).
   // biome-ignore lint/correctness/useExhaustiveDependencies: turns.length is a deliberate trigger (see below)
   useEffect(() => {
-    if (isReplaying || activeTurnId) {
+    if (transcriptPending || activeTurnId) {
       return undefined
     }
 
@@ -935,6 +1083,7 @@ export default function ChatPanel() {
     let lastHeight = -1
     let lastScrollTop = -1
     let framesLeft = SCROLL_SETTLE_MAX_FRAMES
+    let stillFrames = 0
     const settle = () => {
       const el = messagesRef.current
       if (!el) {
@@ -950,18 +1099,20 @@ export default function ChatPanel() {
       framesLeft -= 1
       lastScrollTop = el.scrollTop
       const height = el.scrollHeight
-      if (framesLeft > 0 && height !== lastHeight) {
-        lastHeight = height
+      stillFrames = height === lastHeight ? stillFrames + 1 : 0
+      lastHeight = height
+      if (framesLeft > 0 && stillFrames < SCROLL_SETTLE_STILL_FRAMES) {
         id = requestAnimationFrame(settle)
       }
     }
     id = requestAnimationFrame(settle)
     return () => cancelAnimationFrame(id)
-  }, [turns.length, isReplaying, activeTurnId, scrollToBottom, messagesRef])
+  }, [turns.length, transcriptPending, activeTurnId, scrollToBottom, messagesRef])
 
   // Desktop notifications and sound when response completes while tab is hidden
   useNotifications({
-    isResponding,
+    isResponding: isResponding || awaitingPickup,
+    isWaiting,
     isReplaying,
     events,
     sessionName,
@@ -974,7 +1125,7 @@ export default function ChatPanel() {
 
   // Extracted to keep ChatPanel below the cognitive-complexity gate.
   const { isActiveTurnResponding, workPanelNow } = useWorkPanelLiveState({
-    isResponding,
+    isResponding: isResponding || awaitingPickup,
     isAwaitingResponse,
     interruptStatus,
     pendingMessageCount: showPendingMessages.length,
@@ -1002,13 +1153,25 @@ export default function ChatPanel() {
     isResuming,
   })
 
-  // Interrupt handler
+  // Interrupt handler; never while the session on screen is not yet the one the tab addresses
   const showInterrupt =
-    isResponding ||
-    showPendingMessages.length > 0 ||
-    queueItems.length > 0 ||
-    isSubmitting ||
-    isAwaitingResponse
+    isOwnerAttached &&
+    (isResponding ||
+      showPendingMessages.length > 0 ||
+      queueItems.length > 0 ||
+      isSubmitting ||
+      isAwaitingResponse)
+
+  const overlayComposer = useMemo(
+    () => ({
+      canInterrupt: showInterrupt,
+      focus: focusComposer,
+      send: sendFromReplyBox,
+      quoteShowingRef,
+      autocompleteOpenRef,
+    }),
+    [showInterrupt, focusComposer, sendFromReplyBox],
+  )
 
   // extractOrEmpty tolerates an empty composer, so the no-note case needs no branch.
   // sendWithInlineReplies also folds in buffered inline replies and clears the composer.
@@ -1018,12 +1181,27 @@ export default function ChatPanel() {
         rawPrompt: '',
         currentAttachments: [],
       }
-      await sendWithInlineReplies(answer, {
+      const sent = await sendWithInlineReplies(answer, {
         attachments: payload.currentAttachments,
         note: payload.rawPrompt,
       })
+      if (!sent) {
+        composerHandleRef.current?.restoreInput?.(payload)
+      }
+      // The clicked Submit or reply button has unmounted, leaving the cursor on the page - unless
+      // the reader has put it in another field while the answer was sending.
+      if (document.activeElement === document.body) {
+        composerHandleRef.current?.focus()
+      }
     },
     [sendWithInlineReplies],
+  )
+
+  const activeReplies = useActiveTurnReplies(
+    sessionData,
+    activeSessionId,
+    activeTurn?.events,
+    showPendingMessages.length > 0,
   )
 
   // Edit a queued message - remove from queue, pass to ChatInput via state
@@ -1050,6 +1228,7 @@ export default function ChatPanel() {
       events: eventsRef,
       composerHandle: composerHandleRef,
       pendingForm: pendingFormRef,
+      autocompleteOpen: autocompleteOpenRef,
     }),
     [panelRef, messagesRef, chatAutoScrollEnabledRef],
   )
@@ -1073,26 +1252,34 @@ export default function ChatPanel() {
     hasEvents,
   }
 
-  // Reload guard: confirm when Claude is responding
-  const [pendingReload, setPendingReload] = useState(false)
+  // Reload guard: confirm when Claude is responding. Shown only for the session it was opened in.
+  const [pendingReloadFor, setPendingReloadFor] = useState(null)
+  const pendingReload = isOpenFor(pendingReloadFor, activeSessionId)
 
   const handleReload = useCallback(() => {
     if (isResponding) {
-      setPendingReload(true)
+      setPendingReloadFor(routedSessionRef.current)
       return
     }
     reloadSession()
   }, [isResponding, reloadSession])
 
   const handleReloadConfirm = useCallback(async () => {
-    setPendingReload(false)
+    setPendingReloadFor(null)
     await interrupt()
     reloadSession()
   }, [reloadSession])
 
   const handleReloadCancel = useCallback(() => {
-    setPendingReload(false)
+    setPendingReloadFor(null)
   }, [])
+
+  // Leaving a session closes what was open in it, so a return shows it folded and unprompted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeSessionId is the reset trigger
+  useEffect(() => {
+    setExpandedFor(null)
+    setPendingReloadFor(null)
+  }, [activeSessionId])
 
   // Welcome and chat share the outer panel structure, so one ChatInput instance persists across the transition.
   // Required for the always-focused composer invariant.
@@ -1106,10 +1293,10 @@ export default function ChatPanel() {
       if (!(trimmed || (attachments && attachments.length > 0))) {
         return
       }
-      executeNewSession()
+      executeNewSession(deferredBundle)
       deferSend(trimmed || '', attachments || [])
     },
-    [executeNewSession, deferSend],
+    [executeNewSession, deferSend, deferredBundle],
   )
 
   // Mirrors inputState above. onWelcomeDeferSend is the welcome->active bridge; the rest forward unchanged.
@@ -1121,7 +1308,16 @@ export default function ChatPanel() {
     hasBufferedReplies,
   }
 
-  const controlBarTerminalProps = resolveControlBarTerminalProps(sessionId, terminalSplit)
+  const activeResultStatus = activeTurn?.turn_id ? turnResults[activeTurn.turn_id] : null
+  const activeWaitingOn =
+    isWaiting && !interruptStatus && showPendingMessages.length === 0 ? runningBackgroundWork : null
+
+  const isTranscriptEmpty =
+    turns.length === 0 &&
+    showPendingMessages.length === 0 &&
+    queueItems.length === 0 &&
+    !deferredSend &&
+    !isCreating
 
   return (
     <div className="chat-panel" ref={panelRef} data-testid="panel-chat">
@@ -1161,268 +1357,271 @@ export default function ChatPanel() {
         />
       )}
       <div className="chat-content-area" ref={contentAreaRef}>
-        <ErrorBoundary label="chat-transcript" resetKey={sessionId}>
-          {isWelcome ? (
-            <WelcomeContent />
-          ) : (
-            <>
-              {/* Rendered before .chat-transcript-column, not after the right slot: the sibling
+        <FocusedMarksContext.Provider value={focusedMarks}>
+          <ErrorBoundary label="chat-transcript" resetKey={sessionId}>
+            {isWelcome ? (
+              <WelcomeContent />
+            ) : (
+              <>
+                {/* Rendered before .chat-transcript-column, not after the right slot: the sibling
                   rules below key off `~`, which matches only following siblings. */}
-              {showReplayOverlay && (
-                <div className="chat-replay-overlay">
-                  <div className={`chat-replay-progress-bar${isCreating ? ' indeterminate' : ''}`}>
-                    {!isCreating && (
-                      <div
-                        className="chat-replay-progress-fill"
-                        style={{
-                          // Clamped: live events drain through this queue, outside replayTotal.
-                          width: `${replayTotal > 0 ? Math.min(100, (replayProgress / replayTotal) * 100) : 0}%`,
-                        }}
-                      />
-                    )}
-                  </div>
-                  {overlayStatusText && (
-                    <p className="chat-replay-status-text">{overlayStatusText}</p>
-                  )}
-                </div>
-              )}
-              <div
-                className="chat-transcript-column"
-                style={
-                  showTerminalSplit || showWorkView
-                    ? {
-                        flexGrow: 0,
-                        flexShrink: 0,
-                        flexBasis: `${(terminalSplit.ratio * 100).toFixed(4)}%`,
-                      }
-                    : undefined
-                }>
+                {showReplayOverlay && (
+                  <ReplayOverlay
+                    isCreating={isCreating}
+                    replayProgress={replayProgress}
+                    replayTotal={replayTotal}
+                    statusText={overlayStatusText}
+                  />
+                )}
                 <div
-                  className={`chat-messages${reserveMinimapSpace ? ' minimap-pinned' : ''}`}
-                  ref={attachMessagesRef}
-                  onScroll={wrappedHandleScroll}
-                  onPointerDown={handleMessagesPointerDown}
-                  onClick={handleMessagesClick}
-                  tabIndex={-1}
-                  data-testid="chat-messages">
-                  {turns.length === 0 &&
-                  showPendingMessages.length === 0 &&
-                  queueItems.length === 0 &&
-                  !deferredSend &&
-                  !deferredHold &&
-                  !isCreating ? (
-                    <p className="chat-empty">Waiting for messages...</p>
-                  ) : (
-                    <TurnRoutingContext.Provider value={routingMode}>
-                      <TurnCollapseProvider
-                        collapsedTurnIds={collapsedTurnIds}
-                        onToggleTurnCollapse={handleToggleTurnCollapse}>
-                        <HistoricalTurnList
-                          messagesEl={messagesEl}
-                          virtualizerRef={turnVirtualizerRef}
-                          turns={historicalTurns}
-                          boundaryNextUserMessage={activeTurn?.userMessage ?? null}
-                          todoDiffs={todoDiffs}
-                          taskNotifications={taskNotifications}
-                          turnResults={turnResults}
-                          duplicateAskUserIds={duplicateAskUserIds}
-                          hasPendingMessages={showPendingMessages.length > 0}
-                          forkingTurnId={forkingTurnId}
-                          onFormSubmit={handleFormSubmit}
-                          registerPendingForm={registerPendingForm}
-                          onRewind={handleRewindRequest}
-                          isBookmarked={isBookmarked}
-                          onToggleBookmark={toggleBookmark}
-                          isSideThread={isSideThread}
-                          expanded={historicalExpanded}
-                          onToggleExpanded={toggleHistoricalExpanded}
-                        />
-                        {activeTurn && [
-                          <Turn
-                            key={`${activeTurn.turn_id || 'g'}-${lastTurnIndex}`}
-                            userMessage={activeTurn.userMessage}
-                            attachments={activeTurn.attachments}
-                            inlineReplies={activeTurn.inlineReplies}
-                            note={activeTurn.note}
-                            events={activeTurn.events}
-                            turnId={activeTurn.turn_id}
+                  className="chat-transcript-column"
+                  style={
+                    showTerminalSplit || showWorkView
+                      ? {
+                          flexGrow: 0,
+                          flexShrink: 0,
+                          flexBasis: `${(terminalSplit.ratio * 100).toFixed(4)}%`,
+                        }
+                      : undefined
+                  }>
+                  <div
+                    className={`chat-messages${reserveMinimapSpace ? ' minimap-pinned' : ''}`}
+                    ref={attachMessagesRef}
+                    onScroll={wrappedHandleScroll}
+                    onPointerDown={handleMessagesPointerDown}
+                    onClick={handleMessagesClick}
+                    tabIndex={-1}
+                    data-testid="chat-messages">
+                    {controlBarTerminalProps.hydratingTerminalSplit ? null : isTranscriptEmpty ? (
+                      <p className="chat-empty">Waiting for messages...</p>
+                    ) : (
+                      <TurnRoutingContext.Provider value={routingMode}>
+                        <TurnCollapseProvider
+                          collapsedTurnIds={collapsedTurnIds}
+                          onToggleTurnCollapse={handleToggleTurnCollapse}>
+                          <HistoricalTurnList
+                            messagesEl={messagesEl}
+                            virtualizerRef={turnVirtualizerRef}
+                            turns={historicalTurns}
+                            boundaryNextUserMessage={activeTurn?.userMessage ?? null}
                             todoDiffs={todoDiffs}
                             taskNotifications={taskNotifications}
-                            resultStatus={
-                              activeTurn.turn_id ? turnResults[activeTurn.turn_id] : null
-                            }
-                            interrupted={activeTurn.interrupted}
-                            isActive={isActiveTurnResponding}
-                            showProgress={isActiveTurnResponding}
-                            isStopping={
-                              interruptStatus === 'stopping' || interruptStatus === 'stopped'
-                            }
-                            hasNextUserMessage={false}
-                            hasPendingMessages={showPendingMessages.length > 0}
+                            turnResults={turnResults}
                             duplicateAskUserIds={duplicateAskUserIds}
+                            hasPendingMessages={showPendingMessages.length > 0}
+                            forkingTurnId={forkingTurnId}
                             onFormSubmit={handleFormSubmit}
                             registerPendingForm={registerPendingForm}
                             onRewind={handleRewindRequest}
-                            forking={forkingTurnId === activeTurn.turn_id}
-                            isUserBookmarked={isBookmarked(activeTurn.turn_id, 'user')}
-                            isAssistantBookmarked={isBookmarked(activeTurn.turn_id, 'assistant')}
+                            isBookmarked={isBookmarked}
+                            bookmarkedPartsOf={bookmarkedPartsOf}
                             onToggleBookmark={toggleBookmark}
-                          />,
-                          ...(activeTurn.settingChanges || []).map((event, ci) => (
-                            <SettingChangeDivider key={`sc-${lastTurnIndex}-${ci}`} event={event} />
-                          )),
-                        ]}
-                        {/* Pending turns from prior session activity are hidden during resume/replay, so
-                    optimistic pending messages from session A don't bleed into session B on tab-switch.
-                    The deferred-message Turn is its own render path and stays visible during boot. */}
-                        <div className="chat-overlay-hoist">
-                          {!(isResuming || isReplaying) &&
-                            showPendingMessages.map((pm, i) => (
+                            isSideThread={isSideThread}
+                            expanded={historicalExpanded}
+                            onToggleExpanded={toggleHistoricalExpanded}
+                            rowSizes={rowSizes}
+                          />
+                          {activeTurn && [
+                            <Turn
+                              key={`${activeTurn.turn_id || 'g'}-${lastTurnIndex}`}
+                              {...turnRecordProps(activeTurn)}
+                              todoDiffs={todoDiffs}
+                              taskNotifications={taskNotifications}
+                              resultStatus={activeResultStatus}
+                              interrupted={activeTurn.interrupted}
+                              isActive={isActiveTurnResponding}
+                              showProgress={isActiveTurnResponding}
+                              isStopping={
+                                interruptStatus === 'stopping' || interruptStatus === 'stopped'
+                              }
+                              hasNextUserMessage={false}
+                              hasPendingMessages={showPendingMessages.length > 0}
+                              duplicateAskUserIds={duplicateAskUserIds}
+                              onFormSubmit={handleFormSubmit}
+                              registerPendingForm={registerPendingForm}
+                              onRewind={handleRewindRequest}
+                              forking={forkingTurnId === activeTurn.turn_id}
+                              isUserBookmarked={isBookmarked(activeTurn.turn_id, 'user')}
+                              isAssistantBookmarked={isBookmarked(activeTurn.turn_id, 'assistant')}
+                              bookmarkedParts={bookmarkedPartsOf(activeTurn.turn_id)}
+                              onToggleBookmark={toggleBookmark}
+                              waitingOn={activeWaitingOn}
+                              replies={activeReplies}
+                              onReply={handleFormSubmit}
+                              onEditReply={handleEditReply}
+                            />,
+                            ...dividerRows(activeTurn.settingChanges || []).map((row, ri) => (
+                              <SettingChangeDivider
+                                key={`sc-${lastTurnIndex}-${ri}`}
+                                events={row}
+                              />
+                            )),
+                          ]}
+                          {/* Pending turns from prior session activity are hidden during
+                            resume/replay, so optimistic pending messages from session A don't bleed
+                            into session B on tab-switch. The deferred-message Turn is its own
+                            render path and stays visible during boot. */}
+                          <div className="chat-overlay-hoist">
+                            {!(isResuming || isReplaying) &&
+                              showPendingMessages.map((pm, i) => (
+                                <Turn
+                                  key={`pending-${pm.id}`}
+                                  userMessage={pm.content}
+                                  attachments={pm.attachments}
+                                  inlineReplies={pm.inlineReplies}
+                                  note={pm.note}
+                                  events={[]}
+                                  pending={true}
+                                  hasNextUserMessage={true}
+                                  showProgress={
+                                    i === showPendingMessages.length - 1 && !interruptStatus
+                                  }
+                                  isStopping={
+                                    (interruptStatus === 'stopping' ||
+                                      interruptStatus === 'stopped') &&
+                                    i === showPendingMessages.length - 1
+                                  }
+                                  isCompacting={
+                                    i === showPendingMessages.length - 1 && isCompacting
+                                  }
+                                />
+                              ))}
+                            {deferredSend && showPendingMessages.length === 0 && (
                               <Turn
-                                key={`pending-${pm.id}`}
-                                userMessage={pm.content}
-                                attachments={pm.attachments}
-                                inlineReplies={pm.inlineReplies}
-                                note={pm.note}
+                                key="deferred"
+                                userMessage={deferredSend.content}
+                                attachments={deferredSend.attachments}
                                 events={[]}
                                 pending={true}
                                 hasNextUserMessage={true}
-                                showProgress={
-                                  i === showPendingMessages.length - 1 && !interruptStatus
-                                }
-                                isStopping={
-                                  (interruptStatus === 'stopping' ||
-                                    interruptStatus === 'stopped') &&
-                                  i === showPendingMessages.length - 1
-                                }
-                                isCompacting={i === showPendingMessages.length - 1 && isCompacting}
+                                showProgress={true}
+                                isCompacting={isCompacting}
+                              />
+                            )}
+                            {queueItems.map(item => (
+                              <QueuedMessageBubble
+                                key={`queued-${item.id}`}
+                                item={item}
+                                onEdit={handleEditQueued}
+                                onCancel={cancelQueuedItem}
+                                onRequeue={requeueItem}
+                                onSendNow={sendNowItem}
                               />
                             ))}
-                          {(deferredSend || deferredHold) && showPendingMessages.length === 0 && (
-                            <Turn
-                              key="deferred"
-                              userMessage={(deferredSend || deferredHold).content}
-                              attachments={(deferredSend || deferredHold).attachments}
-                              events={[]}
-                              pending={true}
-                              hasNextUserMessage={true}
-                              showProgress={true}
-                              isCompacting={isCompacting}
-                            />
-                          )}
-                          {queueItems.map(item => (
-                            <QueuedMessageBubble
-                              key={`queued-${item.id}`}
-                              item={item}
-                              onEdit={handleEditQueued}
-                              onCancel={cancelQueuedItem}
-                              onRequeue={requeueItem}
-                              onSendNow={sendNowItem}
-                            />
-                          ))}
-                        </div>
-                      </TurnCollapseProvider>
-                    </TurnRoutingContext.Provider>
+                          </div>
+                        </TurnCollapseProvider>
+                      </TurnRoutingContext.Provider>
+                    )}
+                  </div>
+                  {/* Held back while the loading screen is up: the minimap paints above the overlay
+                    and resizes on every drained slice, so it would twitch over a still screen. And
+                    until the transcript mounts, since it measures the live turn's element once. */}
+                  {!(isMobile || showReplayOverlay || transcriptPending) && (
+                    <TranscriptMiniMap
+                      turns={turns}
+                      messagesRef={messagesRef}
+                      collapsedTurnIds={collapsedTurnIds}
+                      routingMode={routingMode}
+                      foldBoundary={foldBoundary}
+                      foldExpanded={historicalExpanded}
+                      rowSizes={rowSizes}
+                      bookmarkedPartsOf={bookmarkedPartsOf}
+                      isMarked={focusedMarks.isMarked}
+                      turnResults={turnResults}
+                      pendingCount={showPendingMessages.length}
+                      autoScrollEnabledRef={chatAutoScrollEnabledRef}
+                      persistent={minimapPinned}
+                      isStreaming={isResponding}
+                      isTurnBookmarked={isTurnBookmarked}
+                    />
                   )}
                 </div>
-                {/* Held back while the loading screen is up: the minimap paints above the overlay
-                    and resizes on every drained slice, so it would twitch over a still screen. */}
-                {!(isMobile || showReplayOverlay) && (
-                  <MiniMap
-                    groups={turns}
-                    turnResults={turnResults}
-                    messagesRef={messagesRef}
-                    pendingCount={showPendingMessages.length}
-                    turnHeights={turnHeights}
-                    userMessageHeights={userMessageHeights}
-                    autoScrollEnabledRef={chatAutoScrollEnabledRef}
-                    persistent={minimapPinned}
-                    isStreaming={isResponding}
-                    isTurnBookmarked={isTurnBookmarked}
-                    getLogicalScrollHeight={getLogicalScrollHeight}
-                  />
-                )}
-              </div>
-              {(showTerminalSplit || showWorkView) && (
-                <>
-                  <ChatSplitDivider
-                    ratio={terminalSplit.ratio}
-                    onRatioChange={setTerminalSplitRatio}
-                  />
-                  <div className="chat-right-slot">
-                    <RightSlotColumns
-                      showTerminalSplit={showTerminalSplit}
-                      showWorkView={showWorkView}
-                      showReplayOverlay={showReplayOverlay}
-                      isMobile={isMobile}
-                      terminalEntries={terminalEntries}
-                      onTerminalEntryClick={handleTerminalEntryClick}
-                      terminalContainerRef={terminalContainerRef}
-                      terminalVirtualizerRef={terminalVirtualizerRef}
-                      terminalTrailingEntryRef={terminalTrailingEntryRef}
-                      onTerminalScroll={handleTerminalScroll}
-                      scrollTerminalToBottom={scrollTerminalToBottom}
-                      terminalMetricsCacheRef={terminalMetricsCacheRef}
-                      terminalMinimapPinned={terminalMinimapPinned}
-                      terminalBars={terminalBars}
-                      getTerminalAutoScrollEnabled={getTerminalAutoScrollEnabled}
-                      getTerminalLogicalScrollHeight={getTerminalLogicalScrollHeight}
-                      onTerminalMinimapLanding={handleTerminalMinimapLanding}
-                      turns={turns}
-                      mode={routingMode}
-                      activeTurnId={activeTurn?.turn_id ?? null}
-                      isActive={isActiveTurnResponding}
-                      now={workPanelNow}
-                      todoDiffs={todoDiffs}
-                      taskNotifications={taskNotifications}
-                      duplicateAskUserIds={duplicateAskUserIds}
-                      hasPendingMessages={showPendingMessages.length > 0}
-                      onFormSubmit={handleFormSubmit}
-                      registerPendingForm={registerPendingForm}
-                      onEntryJump={scrollToTurnAndHighlight}
-                      workContainerRef={workContainerRef}
-                      workVirtualizerRef={workVirtualizerRef}
-                      onWorkScroll={handleWorkScroll}
-                      scrollWorkToBottom={scrollWorkToBottom}
-                      workMetricsCacheRef={workMetricsCacheRef}
-                      workMinimapPinned={workMinimapPinned}
-                      workBars={workBars}
-                      getWorkAutoScrollEnabled={getWorkAutoScrollEnabled}
-                      getWorkLogicalScrollHeight={getWorkLogicalScrollHeight}
-                      onWorkMinimapLanding={handleWorkMinimapLanding}
+                {(showTerminalSplit || showWorkView) && (
+                  <>
+                    <ChatSplitDivider
+                      ratio={terminalSplit.ratio}
+                      onRatioChange={setTerminalSplitRatio}
                     />
-                  </div>
-                </>
-              )}
-              {!isMobile && (
-                <InlineThreadsOverlay
+                    <div className="chat-right-slot">
+                      <RightSlotColumns
+                        showTerminalSplit={showTerminalSplit}
+                        showWorkView={showWorkView}
+                        showReplayOverlay={showReplayOverlay}
+                        isMobile={isMobile}
+                        terminalEntries={terminalEntries}
+                        onTerminalEntryClick={handleTerminalEntryClick}
+                        terminalContainerRef={terminalContainerRef}
+                        terminalVirtualizerRef={terminalVirtualizerRef}
+                        terminalTrailingEntryRef={terminalTrailingEntryRef}
+                        onTerminalScroll={handleTerminalScroll}
+                        scrollTerminalToBottom={scrollTerminalToBottom}
+                        terminalMetricsCacheRef={terminalMetricsCacheRef}
+                        terminalMinimapPinned={terminalMinimapPinned}
+                        terminalBars={terminalBars}
+                        getTerminalAutoScrollEnabled={getTerminalAutoScrollEnabled}
+                        getTerminalLogicalScrollHeight={getTerminalLogicalScrollHeight}
+                        onTerminalMinimapLanding={handleTerminalMinimapLanding}
+                        turns={turns}
+                        mode={routingMode}
+                        activeTurnId={activeTurn?.turn_id ?? null}
+                        isActive={isActiveTurnResponding}
+                        now={workPanelNow}
+                        todoDiffs={todoDiffs}
+                        taskNotifications={taskNotifications}
+                        duplicateAskUserIds={duplicateAskUserIds}
+                        hasPendingMessages={showPendingMessages.length > 0}
+                        onFormSubmit={handleFormSubmit}
+                        registerPendingForm={registerPendingForm}
+                        onEntryJump={scrollToTurnAndHighlight}
+                        workContainerRef={workContainerRef}
+                        workVirtualizerRef={workVirtualizerRef}
+                        onWorkScroll={handleWorkScroll}
+                        scrollWorkToBottom={scrollWorkToBottom}
+                        workMetricsCacheRef={workMetricsCacheRef}
+                        workMinimapPinned={workMinimapPinned}
+                        workBars={workBars}
+                        getWorkAutoScrollEnabled={getWorkAutoScrollEnabled}
+                        getWorkLogicalScrollHeight={getWorkLogicalScrollHeight}
+                        onWorkMinimapLanding={handleWorkMinimapLanding}
+                      />
+                    </div>
+                  </>
+                )}
+                {!isMobile && (
+                  <TurnRoutingContext.Provider value={threadRoutingMode}>
+                    <InlineThreadsOverlay
+                      key={repliesSessionId}
+                      messagesRef={messagesRef}
+                      unsent={inlineRepliesUnsent}
+                      sentThreads={sentInlineThreads}
+                      resolveSignal={turns.length}
+                      maxHeight={composerMaxHeight}
+                      onEditReply={editInlineReply}
+                      onRemove={removeInlineReply}
+                      threadSessions={{
+                        threads: inlineThreads,
+                        onSubmit: handleSubmitInlineThread,
+                        onInterrupt: interruptInlineThread,
+                        onPromote: handlePromoteThread,
+                        onPromoteToRail: handlePromoteThreadToRail,
+                        onFocusRailPromoted: handleFocusRailPromoted,
+                        workspaceId,
+                      }}
+                      composer={overlayComposer}
+                      sessionId={repliesSessionId}
+                    />
+                  </TurnRoutingContext.Provider>
+                )}
+                <QuoteAffordance
                   messagesRef={messagesRef}
-                  unsent={inlineRepliesUnsent}
-                  sentThreads={sentInlineThreads}
-                  resolveSignal={turns.length}
-                  maxHeight={composerMaxHeight}
-                  onEditReply={editInlineReply}
-                  onRemove={removeInlineReply}
-                  threadSessions={{
-                    threads: inlineThreads,
-                    onSubmit: handleSubmitInlineThread,
-                    onInterrupt: interruptInlineThread,
-                    onPromote: handlePromoteThread,
-                    onPromoteToRail: handlePromoteThreadToRail,
-                    onFocusRailPromoted: handleFocusRailPromoted,
-                    workspaceId,
-                  }}
-                  canInterrupt={showInterrupt}
+                  enabled={!(isMobile || showReplayOverlay)}
+                  onQuote={handleQuote}
+                  showingRef={quoteShowingRef}
                 />
-              )}
-              <QuoteAffordance
-                messagesRef={messagesRef}
-                enabled={!(isMobile || showReplayOverlay)}
-                onQuote={handleQuote}
-              />
-            </>
-          )}
-        </ErrorBoundary>
+              </>
+            )}
+          </ErrorBoundary>
+        </FocusedMarksContext.Provider>
       </div>
       <ChatInputArea
         isWelcome={isWelcome}

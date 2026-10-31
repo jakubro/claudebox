@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.conversion - message-to-event pipeline."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 
 import pytest
@@ -194,6 +196,61 @@ class TestDictMessageToEventsAssistant:
         assert events[1].subtype == "text"
 
 
+class TestDictMessageToEventsAgentFailure:
+    """An assistant message the agent labels with an error becomes the turn's failure event."""
+
+    @staticmethod
+    def _labelled(error: str, text: str, **extra) -> dict:
+        return {
+            "type": "assistant",
+            "message": {"model": "<synthetic>", "content": [{"type": "text", "text": text}]},
+            "error": error,
+            **extra,
+        }
+
+    def test_missing_login_shows_the_login_instruction(self):
+        events = _events(
+            self._labelled("authentication_failed", "Not logged in · Please run /login"),
+        )
+
+        assert [(e.type, e.subtype) for e in events] == [("system", "error")]
+        assert events[0].content == (
+            "Not logged in. Run `claudebox run` in a terminal in this workspace and finish the "
+            "login it opens, then send your message again."
+        )
+
+    def test_other_label_keeps_the_agents_text(self):
+        events = _events(self._labelled("billing_error", "Credit balance is too low"))
+
+        assert [(e.type, e.subtype, e.content) for e in events] == [
+            ("system", "error", "Credit balance is too low"),
+        ]
+
+    def test_labelled_message_without_text_shows_its_label(self):
+        data = {
+            "type": "assistant",
+            "message": {"model": "<synthetic>", "content": []},
+            "error": "billing_error",
+        }
+
+        assert [(e.type, e.subtype, e.content) for e in _events(data)] == [
+            ("system", "error", "billing_error"),
+        ]
+
+    def test_subagent_transcript_line_stays_a_reply(self):
+        events = _events(self._labelled("rate_limit", "Rate limited", isSidechain=True))
+
+        assert [(e.type, e.subtype, e.content) for e in events] == [
+            ("assistant", "text", "Rate limited"),
+        ]
+
+    def test_nested_live_message_stays_a_reply(self):
+        data = self._labelled("server_error", "Overloaded")
+        data["message"]["parent_tool_use_id"] = "toolu_parent"
+
+        assert [(e.type, e.subtype) for e in _events(data)] == [("assistant", "text")]
+
+
 class TestDictMessageToEventsUnknown:
     """Test fallback for unknown message structures."""
 
@@ -261,7 +318,7 @@ class TestToPublishedEvent:
             raw={"message": {"total_cost_usd": 0.05, "duration_ms": 1200}},
         )
         pub = to_published_event(event, id_="e1", ts=datetime.now(UTC), turn_id="t1")
-        assert pub.cost_usd == 0.05
+        assert pub.cost_usd == pytest.approx(0.05)
         assert pub.duration_ms == 1200
 
     def test_result_no_context_tokens_promotion(self):
@@ -344,6 +401,10 @@ class TestSerializeEvent:
                 "tool_input": None,
                 "is_error": None,
                 "tool_use_result": None,
+                "command_layout": None,
+                "command_read_only": None,
+                "command_changed": None,
+                "mcp_read_only": None,
                 "model": None,
                 "previous_model": None,
                 "cost_usd": None,
@@ -354,6 +415,7 @@ class TestSerializeEvent:
                 "previous_effort_level": None,
                 "message_data": None,
                 "count": None,
+                "turn_running": None,
                 "parent_tool_use_id": None,
                 "source_file": None,
                 "source_offset": None,

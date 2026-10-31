@@ -4,6 +4,8 @@ Must stay exception-safe (return what was resolved, never raise) and never write
 stdout/stderr - stray output corrupts argcomplete's fd-8 completion stream.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 

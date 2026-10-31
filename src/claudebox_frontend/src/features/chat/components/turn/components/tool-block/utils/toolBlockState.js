@@ -12,7 +12,7 @@ export function isPlanAwaitingAnswer(toolName, plan, wasAnswered) {
   return toolName === ToolName.EXIT_PLAN_MODE && plan && !wasAnswered
 }
 
-/** Single-line result identical to the summary - keep expandable but start collapsed. */
+/** Single-line result identical to the summary. */
 export function isSingleLineDuplicate(effectiveDetails, effectiveSummary) {
   return (
     effectiveDetails &&
@@ -33,7 +33,6 @@ export function hasExpandableContent({
   pendingQuestions,
   todoData,
   taskPrompt,
-  systemReminders,
   persistedOutput,
   toolInput,
   command,
@@ -49,16 +48,16 @@ export function hasExpandableContent({
       pendingQuestions ||
       todoData ||
       taskPrompt ||
-      systemReminders ||
       persistedOutput ||
       toolInput ||
       command,
   )
 }
 
-/** Default-collapsed state for the block: dupe-of-summary or per-tool defaults. */
+/** Start collapsed: a no-change command, a non-Bash dupe of the summary, or the tool's default. */
 export function shouldStartCollapsed({
   toolName,
+  readOnlyCommand = false,
   singleLineDuplicate,
   jsonData,
   contentBlocks,
@@ -67,7 +66,8 @@ export function shouldStartCollapsed({
   wasAnswered,
 }) {
   return (
-    singleLineDuplicate ||
+    readOnlyCommand ||
+    (singleLineDuplicate && toolName !== ToolName.BASH) ||
     shouldCollapseByDefault(toolName, jsonData, hasNested, isPending, wasAnswered, contentBlocks)
   )
 }

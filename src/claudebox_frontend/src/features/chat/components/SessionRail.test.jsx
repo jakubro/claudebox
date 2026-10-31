@@ -74,6 +74,43 @@ describe('SessionRail', () => {
     expect(screen.getByTestId('panel-chat')).toBeInTheDocument()
   })
 
+  it('never remounts ChatPanel across a drill, a focus move back, another session and the welcome page', () => {
+    const steps = [
+      railState({
+        groups: [{ sessionId: 'T1', isFocused: true, isRoot: true }],
+        focusedSessionId: 'T1',
+      }),
+      railState({
+        groups: [
+          { sessionId: 'T1', isFocused: false, isRoot: true },
+          { sessionId: 'T2', isFocused: true, isRoot: false },
+        ],
+        focusedSessionId: 'T2',
+      }),
+      railState({
+        groups: [
+          { sessionId: 'T1', isFocused: true, isRoot: true },
+          { sessionId: 'T2', isFocused: false, isRoot: false },
+        ],
+        focusedSessionId: 'T1',
+      }),
+      railState({
+        groups: [{ sessionId: 'S', isFocused: true, isRoot: true }],
+        focusedSessionId: 'S',
+      }),
+      railState({ groups: [] }),
+    ]
+    vi.mocked(useSessionRail).mockReturnValue(steps[0])
+    const { rerender } = render(<SessionRail />)
+
+    for (const step of steps.slice(1)) {
+      vi.mocked(useSessionRail).mockReturnValue(step)
+      rerender(<SessionRail />)
+    }
+
+    expect(chatPanelMounts).toBe(1)
+  })
+
   it('a rail of one renders exactly one live ChatPanel and no ancestors', () => {
     vi.mocked(useSessionRail).mockReturnValue(
       railState({

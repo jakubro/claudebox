@@ -1,22 +1,16 @@
 /** E2E tests for the auto-collapse control-bar toggle and its collapse behavior. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSessionWithAPI } from '../helpers.js'
 
 // multi-turn.jsonl carries three completed turns (turn_001, turn_002, turn_003).
 test.describe('Auto-collapse turns', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/multi-turn.jsonl')
+    await openSessionWithAPI(page, 'events/multi-turn.jsonl')
   })
 
   // SPEC: chat:turn-autocollapse-toggle
   test('is on by default and keeps only the last turn expanded', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const toggle = page.locator('[data-testid="autocollapse-toggle"]')
     await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await expect(toggle).toHaveClass(/pressed/)
@@ -32,9 +26,6 @@ test.describe('Auto-collapse turns', () => {
   test('toggling off expands all turns, toggling on re-collapses all but the last', async ({
     page,
   }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const toggle = page.locator('[data-testid="autocollapse-toggle"]')
     const turns = page.locator('.turn-container')
     await expect(turns.nth(0)).toHaveClass(/turn-collapsed/)
@@ -56,9 +47,6 @@ test.describe('Auto-collapse turns', () => {
 
   // SPEC: chat:turn-autocollapse-behavior
   test('a hand-expanded earlier turn stays open while auto-collapse is on', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const turns = page.locator('.turn-container')
     await expect(turns.nth(0)).toHaveClass(/turn-collapsed/)
 
@@ -74,9 +62,6 @@ test.describe('Auto-collapse turns', () => {
 
   // SPEC: chat:turn-autocollapse-behavior
   test('a hand-expanded earlier turn stays open when a new turn arrives', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
     const turns = page.locator('.turn-container')
     await expect(turns.nth(0)).toHaveClass(/turn-collapsed/)
 
@@ -88,7 +73,7 @@ test.describe('Auto-collapse turns', () => {
     await page.evaluate(
       events => {
         const inst = window.__sseChatInstance
-        if (!inst || inst.readyState !== 1) {
+        if (inst?.readyState !== 1) {
           return
         }
         for (const ev of events) {

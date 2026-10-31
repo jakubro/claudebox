@@ -5,6 +5,7 @@
 import { Bookmark } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
 import CopyButton from '../../../../components/CopyButton.jsx'
+import RelativeTime from '../../../../components/RelativeTime'
 import { LIVE_TICK_INTERVAL_MS } from '../../../../config/timing'
 import { createPropsComparator, sameIdSet } from '../../../../utils/comparators'
 import {
@@ -13,34 +14,52 @@ import {
   processEvents,
 } from '../../../../utils/eventProcessing'
 import { formatUserMessageForCopy } from '../../../../utils/formatters'
+import InjectedContext from './components/InjectedContext'
+import NeedsUserReplies from './components/NeedsUserReplies'
 import RewindSplitButton from './components/RewindSplitButton'
 import TurnBlockList from './components/TurnBlockList'
 import TurnMeta from './components/TurnMeta'
 import TurnProgress from './components/TurnProgress'
 import UserMessageContent from './components/user-message-content'
+import { useFocusedMarks } from './hooks/useFocusedMarks'
 import { useTurnCollapse } from './hooks/useTurnCollapse'
 import { useTurnRoutingMode } from './hooks/useTurnRoutingMode'
 import { TurnProvider } from './TurnContext'
-import { getAssistantTextContent, getTurnPreview, getTurnTimeRange } from './utils/turnContent'
+import { moveHiddenInjected } from './utils/groupBlocks'
+import {
+  getAnswerText,
+  getAssistantTextContent,
+  getProgressLabel,
+  getTurnPreview,
+  getTurnTimeRange,
+} from './utils/turnContent'
 
 /**
  * @param {Map} props.todoDiffs - Todo changes keyed by tool_use_id
+ * @param {string} [props.sessionId] - Session the blocks read files from, if not the conversation's
  * @param {boolean} props.pending - Whether this is an optimistic pending turn
  * @param {string} props.resultStatus - Result status: "error" or "success"
  * @param {Array} props.inlineReplies - Inline reply pairs (quote/from/response) for the user message
- * @param {string} [props.note] - Message typed alongside an AskUserQuestion/ExitPlanMode answer
+ * @param {string} [props.note] - Message box text sent alongside a form answer or a one-click reply
+ * @param {string} [props.userMessageTime] - When the user message was sent; none until it is confirmed
  * @param {Set} props.duplicateAskUserIds - Cross-turn duplicate AskUserQuestion IDs to hide
  * @param {boolean} props.isCompacting - Compaction in progress, for pending turns with no events
  *   to derive it from
+ * @param {Array<{id: string, name: string}>|null} [props.waitingOn] - Background work the idle session waits on
  * @param {Function} props.onToggleBookmark - Callback to toggle bookmark: (turnId, messageType, preview)
+ * @param {Set<string>} [props.bookmarkedParts] - Bookmarked part and tool-call tails of this turn
+ * @param {string[]|null} [props.replies] - One-click replies the agent's ask offers, shown last
+ * @param {function(string): Promise<void>} [props.onReply] - Sends a reply's label as the user's message
  */
 function Turn({
   userMessage,
   attachments = null,
   inlineReplies = null,
   note = null,
+  userMessageTime = null,
   events,
   turnId = null,
+  sessionId = null,
   todoDiffs = null,
   taskNotifications = null,
   pending = false,
@@ -62,7 +81,12 @@ function Turn({
   isCompacting = false,
   isUserBookmarked = false,
   isAssistantBookmarked = false,
+  bookmarkedParts = null,
   onToggleBookmark,
+  waitingOn = null,
+  replies = null,
+  onReply,
+  onEditReply,
 }) {
   // Collapse state follows TurnCollapseProvider when present, falling back to local state for
   // standalone rendering (pending turns, isolated tests) with no provider mounted.
@@ -80,10 +104,26 @@ function Turn({
   }
 
   const routingMode = useTurnRoutingMode()
-  const blocks = useMemo(() => processEvents(events), [events])
+  const { isMarked } = useFocusedMarks()
+  const processed = useMemo(() => processEvents(events), [events])
+  const { blocks, injected } = useMemo(
+    () =>
+      moveHiddenInjected(
+        processed.blocks,
+        processed.injected,
+        routingMode,
+        bookmarkedParts,
+        isMarked,
+      ),
+    [processed, routingMode, bookmarkedParts, isMarked],
+  )
   const hasVisibleBlocks = useMemo(
-    () => hasVisibleBlock(blocks, routingMode),
-    [blocks, routingMode],
+    () => hasVisibleBlock(blocks, routingMode, bookmarkedParts, isMarked),
+    [blocks, routingMode, bookmarkedParts, isMarked],
+  )
+  const progressLabel = useMemo(
+    () => getProgressLabel(processed.blocks, routingMode, bookmarkedParts, isMarked),
+    [processed, routingMode, bookmarkedParts, isMarked],
   )
 
   // Compaction has its own spinner via CompactionBlock, or via isCompacting prop for pending turns with no events
@@ -130,19 +170,19 @@ function Turn({
 
   // Generate preview for collapsed state
   const preview = useMemo(
-    () => getTurnPreview(blocks, duration, routingMode),
-    [blocks, duration, routingMode],
+    () => getTurnPreview(blocks, duration, routingMode, bookmarkedParts, isMarked),
+    [blocks, duration, routingMode, bookmarkedParts, isMarked],
   )
 
   // Full assistant text content for copy button (without system reminders)
   const assistantTextContent = useMemo(() => getAssistantTextContent(blocks), [blocks])
+  const answerText = useMemo(() => getAnswerText(blocks), [blocks])
 
   // Don't allow collapsing active/in-progress turns
-  const isInProgress = isActive || isStopping || (hasPendingMessages && !hasNextUserMessage)
+  const awaitsQueuedMessage = hasPendingMessages && !hasNextUserMessage
+  const isInProgress = isActive || isStopping || awaitsQueuedMessage
   const canCollapse = !isInProgress && hasVisibleBlocks
 
-  // Shared between the two mutually exclusive gates below - the bubble's own copy, and the
-  // standalone row that stands in for it (framed while pending, bare once emptied by routing).
   const progressRow = (
     <TurnProgress
       isActive={isActive}
@@ -150,10 +190,44 @@ function Turn({
       showProgress={showProgress}
       hasActiveCompaction={hasActiveCompaction}
       pending={pending}
-      hasPendingMessages={hasPendingMessages}
-      hasNextUserMessage={hasNextUserMessage}
+      awaitsQueuedMessage={awaitsQueuedMessage}
       duration={duration}
-    />
+      endTime={endTime}
+      waitingOn={waitingOn}
+      label={progressLabel}
+      failed={resultStatus === 'error'}>
+      {startTime && canCollapse && !collapsed && answerText ? (
+        <CopyButton
+          text={answerText}
+          className="turn-answer-copy-btn"
+          title="Copy message"
+          size={12}
+        />
+      ) : null}
+    </TurnProgress>
+  )
+
+  const userActions = (
+    <>
+      {turnId && onRewind && (
+        <RewindSplitButton turnId={turnId} onRewind={onRewind} forking={forking} />
+      )}
+      {turnId && onToggleBookmark && (
+        <button
+          type="button"
+          className={`message-bookmark-btn ${isUserBookmarked ? 'active' : ''}`}
+          title={isUserBookmarked ? 'Remove bookmark' : 'Bookmark this message'}
+          onClick={() => onToggleBookmark(turnId, 'user', userMessage || '')}>
+          <Bookmark size={12} fill={isUserBookmarked ? 'currentColor' : 'none'} />
+        </button>
+      )}
+      <CopyButton
+        text={formatUserMessageForCopy(userMessage, note)}
+        className="message-copy-btn"
+        title="Copy message"
+        size={12}
+      />
+    </>
   )
 
   return (
@@ -161,34 +235,36 @@ function Turn({
       className={`turn-container ${pending ? 'pending' : ''} ${collapsed ? 'turn-collapsed' : ''}`}
       data-testid="turn-container"
       data-turn-id={turnId || undefined}>
-      {(userMessage || attachments?.length > 0 || inlineReplies?.length > 0) && (
+      {(userMessage ||
+        attachments?.length > 0 ||
+        inlineReplies?.length > 0 ||
+        injected.length > 0) && (
         <div
           className={`chat-message chat-message-user${isUserBookmarked ? ' bookmarked' : ''}${forking ? ' forking' : ''}`}
           data-testid="message-user">
+          {userMessageTime ? (
+            <span className="user-message-meta">
+              <span className="user-message-actions">{userActions}</span>
+              <span
+                className="user-message-timestamp"
+                data-testid="message-user-timestamp"
+                title={new Date(userMessageTime).toLocaleString()}>
+                <RelativeTime date={userMessageTime} />
+              </span>
+            </span>
+          ) : null}
           <UserMessageContent
             message={userMessage}
             attachments={attachments}
             inlineReplies={inlineReplies}
             note={note}
           />
-          {turnId && onToggleBookmark && (
-            <button
-              type="button"
-              className={`message-bookmark-btn ${isUserBookmarked ? 'active' : ''}`}
-              title={isUserBookmarked ? 'Remove bookmark' : 'Bookmark this message'}
-              onClick={() => onToggleBookmark(turnId, 'user', userMessage || '')}>
-              <Bookmark size={12} fill={isUserBookmarked ? 'currentColor' : 'none'} />
-            </button>
+          {userMessageTime ? null : userActions}
+          {injected.length > 0 && (
+            <div className="injected-context-corner">
+              <InjectedContext entries={injected} />
+            </div>
           )}
-          {turnId && onRewind && (
-            <RewindSplitButton turnId={turnId} onRewind={onRewind} forking={forking} />
-          )}
-          <CopyButton
-            text={formatUserMessageForCopy(userMessage, note)}
-            className="message-copy-btn"
-            title="Copy message"
-            size={12}
-          />
         </div>
       )}
       {hasVisibleBlocks && (
@@ -215,6 +291,7 @@ function Turn({
             </div>
           )}
           <TurnProvider
+            sessionId={sessionId}
             hasNextUserMessage={hasNextUserMessage}
             nextUserMessageIsFormResponse={nextUserMessageIsFormResponse}
             nextUserMessage={nextUserMessage}
@@ -225,32 +302,32 @@ function Turn({
             registerPendingForm={registerPendingForm}
             turnStartTime={startTime}
             now={now}
-            isActiveTurn={isActive}>
+            isActiveTurn={isActive}
+            {...(turnId && onToggleBookmark && { turnId, bookmarkedParts, onToggleBookmark })}>
             <div className={`turn-content${collapsed ? ' turn-content-collapsed' : ''}`}>
               <TurnBlockList
                 blocks={blocks}
                 blockOffsets={blockOffsets}
                 duplicateAskUserIds={duplicateAskUserIds}
                 todoDiffs={todoDiffs}
+                bookmarkedParts={bookmarkedParts}
               />
               {progressRow}
+              {replies && onReply && (
+                <NeedsUserReplies replies={replies} onReply={onReply} onEdit={onEditReply} />
+              )}
             </div>
           </TurnProvider>
         </div>
       )}
-      {!hasVisibleBlocks &&
-        showProgress &&
-        // Framed while the turn has said nothing yet; bare once it has blocks, which means its
-        // content is being drawn in the work column instead.
-        (blocks.length === 0 ? (
-          <div className="turn-progress-pending" data-testid="turn-progress-pending">
-            {progressRow}
-          </div>
-        ) : (
-          <div className="turn-progress-bare" data-testid="turn-progress-bare">
-            {progressRow}
-          </div>
-        ))}
+      {!hasVisibleBlocks && (showProgress || waitingOn) && (
+        <div className="turn-progress-pending" data-testid="turn-progress-pending">
+          {progressRow}
+        </div>
+      )}
+      {!hasVisibleBlocks && replies && onReply && (
+        <NeedsUserReplies replies={replies} onReply={onReply} onEdit={onEditReply} />
+      )}
     </div>
   )
 }
@@ -261,6 +338,7 @@ const arePropsEqual = createPropsComparator({
     a.length === b.length &&
     (a.length === 0 || a[a.length - 1].timestamp === b[b.length - 1].timestamp),
   duplicateAskUserIds: sameIdSet,
+  bookmarkedParts: sameIdSet,
 })
 
 export default memo(Turn, arePropsEqual)

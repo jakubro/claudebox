@@ -3,12 +3,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DEFAULT_WORKSPACE_ID } from './api.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const fixturesDir = path.join(__dirname, '../fixtures')
 
 /** Load a JSONL events fixture (one JSON object per line) as an array of event objects. */
-function loadEventsFromFixture(relativePath) {
+export function loadEventsFromFixture(relativePath) {
   const fullPath = path.join(fixturesDir, relativePath)
   const content = fs.readFileSync(fullPath, 'utf-8')
   return content
@@ -77,6 +78,9 @@ async function injectEventSourceMock(page, events) {
         const isDaemon = url.includes('/api/daemon/')
 
         setTimeout(() => {
+          if (this.readyState === 2) {
+            return
+          }
           this.readyState = 1 // OPEN
           if (this.onopen) {
             this.onopen(new Event('open'))
@@ -159,9 +163,11 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
       }
       window.__sseChatInstance = null
       window.__sseLogsInstance = null
-      // Keyed session streams (subscribeSession's ?session_id=... address), kept distinct from
-      // the primary chat stream so a bleed assertion targets the right one.
+      // Keyed session streams (the reply-box subscription dials replay=false), kept apart from the
+      // chat stream - which names its session too - so a bleed assertion targets the right one.
       window.__sseSessionInstances = {}
+      // Chat streams by the session their URL names, so a test can connect one session's own.
+      window.__sseChatInstancesBySession = {}
 
       class MockEventSource extends window.MockEventSourceBase {
         constructor(url) {
@@ -173,7 +179,7 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
 
           const isDaemon = opts.trackDaemon && url.includes('/api/daemon/stream')
           const isLogs = url.includes('/api/logs')
-          const sessionMatch = url.match(/[?&]session_id=([^&]+)/)
+          const sessionMatch = /[?&]replay=false\b/.test(url) && url.match(/[?&]session_id=([^&]+)/)
           const sessionId = sessionMatch ? decodeURIComponent(sessionMatch[1]) : null
 
           if (isDaemon) {
@@ -184,10 +190,17 @@ async function injectControllableMock(page, { autoConnect, trackDaemon, countCon
             window.__sseSessionInstances[sessionId] = this
           } else {
             window.__sseChatInstance = this
+            const chatSession = url.match(/[?&]session_id=([^&]+)/)
+            if (chatSession) {
+              window.__sseChatInstancesBySession[decodeURIComponent(chatSession[1])] = this
+            }
           }
 
           if (opts.autoConnect) {
             setTimeout(() => {
+              if (this.readyState === 2) {
+                return
+              }
               // Honor the kill flag set by chat.kill(): simulates a container death where the
               // stream never reconnects until a fresh container_id arrives. A keyed session
               // stream is a separate connection and is never subject to this flag.
@@ -316,6 +329,25 @@ export async function createSSEController(page, { autoConnect = true } = {}) {
       })
     },
 
+    /** Whether a chat stream for `sessionId` has been dialled. */
+    async hasChatStreamFor(sessionId) {
+      return page.evaluate(id => !!window.__sseChatInstancesBySession[id], sessionId)
+    },
+
+    /** Connect the deferred chat stream dialled for `sessionId`, not merely the latest one. */
+    async connectSession(sessionId) {
+      await page.evaluate(id => {
+        const instance = window.__sseChatInstancesBySession[id]
+        if (instance && instance.readyState === 0) {
+          instance.readyState = 1
+          if (instance.onopen) {
+            instance.onopen(new Event('open'))
+          }
+          instance._emit('open', new Event('open'))
+        }
+      }, sessionId)
+    },
+
     /** Send an event to the connected chat SSE stream */
     async sendEvent(event) {
       await sendToInstance(page, '__sseChatInstance', event)
@@ -430,9 +462,14 @@ export async function createDaemonSSEController(page) {
       await this.sendEvent({ type: 'session_progress', message })
     },
 
-    /** Send a container_status event. */
-    async sendContainerStatus(containerId, status) {
-      await this.sendEvent({ type: 'container_status', container_id: containerId, status })
+    /** Send a container_status event, from the default workspace unless told otherwise. */
+    async sendContainerStatus(containerId, status, workspaceId = DEFAULT_WORKSPACE_ID) {
+      await this.sendEvent({
+        type: 'container_status',
+        container_id: containerId,
+        status,
+        workspace_id: workspaceId,
+      })
     },
 
     /**

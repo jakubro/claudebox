@@ -1,16 +1,16 @@
 /** E2E tests for stash functionality. */
 
 import { expect, test } from '@playwright/test'
-import { openStashPanel, resolveOpsPayload, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import {
+  openSessionWithAPI,
+  openStashPanel,
+  resolveOpsPayload,
+  waitForAppReady,
+} from '../helpers.js'
 
 test.describe('Stash', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
     await openStashPanel(page)
   })
 

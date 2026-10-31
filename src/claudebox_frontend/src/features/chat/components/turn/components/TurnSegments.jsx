@@ -1,16 +1,14 @@
 /** Shared per-segment block dispatch - reused by the transcript and the work panel. */
 
-import CopyButton from '../../../../../components/CopyButton.jsx'
-import Markdown from '../../../../../components/Markdown'
 import { BlockType } from '../../../../../config/schema'
+import { reminderEntries } from '../../../../../utils/eventProcessing'
+import { extractSystemReminders } from '../../../../../utils/parsers'
 import CompactionBlock from './CompactionBlock'
-import LocalCommandBlock from './LocalCommandBlock'
-import SystemReminders from './SystemReminders'
 import ThinkingBlock from './ThinkingBlock'
+import TurnTextBlock from './TurnTextBlock'
 import ToolBlock from './tool-block'
 import LookupsGroup from './tool-block/components/tool-block-expanded-content/components/LookupsGroup'
 import TodosGroup from './tool-block/components/tool-block-expanded-content/components/TodosGroup'
-import { extractSystemReminders } from './tool-block/utils/toolResultFormatters'
 
 /**
  * Renders one turn's segments (from `groupBlocks`) into their block components. Both the transcript
@@ -36,6 +34,7 @@ export default function TurnSegments({
             toolUseId: b.toolUse?.tool_use_id,
             toolUse: b.toolUse,
           }))}
+          injected={segment.blocks.flatMap(b => b.injected ?? [])}
         />
       )
     }
@@ -46,29 +45,26 @@ export default function TurnSegments({
     }
     const { block, index: i } = segment
     if (block.type === BlockType.TEXT) {
-      const { content: cleanedContent, reminders } = extractSystemReminders(block.event.content)
-      const cmdMatch = cleanedContent.match(
-        /^<local-command-(stdout|stderr)>([\s\S]*)<\/local-command-\1>$/,
-      )
+      const { content, reminders } = extractSystemReminders(block.event.content)
       return (
-        <div key={i} className="turn-text">
-          {cmdMatch ? (
-            <LocalCommandBlock type={cmdMatch[1]} content={cmdMatch[2].trim()} />
-          ) : (
-            <Markdown>{cleanedContent}</Markdown>
-          )}
-          <CopyButton
-            text={cleanedContent}
-            className="turn-text-copy-btn"
-            title="Copy message"
-            size={12}
-          />
-          {reminders.length > 0 && <SystemReminders reminders={reminders} />}
-        </div>
+        <TurnTextBlock
+          key={i}
+          content={content}
+          eventId={block.event.id}
+          segment={block.segment ?? 0}
+          injected={[...reminderEntries(reminders), ...(block.injected ?? [])]}
+        />
       )
     }
     if (block.type === BlockType.THINKING) {
-      return <ThinkingBlock key={i} event={block.event} blockRelativeTime={blockOffsets[i]} />
+      return (
+        <ThinkingBlock
+          key={i}
+          event={block.event}
+          blockRelativeTime={blockOffsets[i]}
+          injected={block.injected}
+        />
+      )
     }
     if (block.type === BlockType.TOOL) {
       const toolUseId = block.toolUse?.tool_use_id
@@ -85,6 +81,7 @@ export default function TurnSegments({
           skillContent={block.skillContent}
           todoDiff={todoDiff}
           blockRelativeTime={blockOffsets[i]}
+          injected={block.injected}
         />
       )
     }
@@ -95,6 +92,7 @@ export default function TurnSegments({
           event={block.event}
           summary={block.summary}
           isCompacting={block.isCompacting}
+          injected={block.injected}
         />
       )
     }

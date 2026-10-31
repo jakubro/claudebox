@@ -3,11 +3,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { interrupt, interruptSide, sendMessage, sendSideMessage } from './chat'
 
-vi.mock('./apiClient', () => ({
+vi.mock('./apiClient', async importOriginal => ({
+  ...(await importOriginal()),
   containerFetch: vi.fn(),
 }))
 
-import { containerFetch } from './apiClient'
+import { containerFetch, setAddress } from './apiClient'
+
+beforeEach(() => {
+  setAddress('c-1', 'addressed-1')
+})
 
 describe('sendMessage', () => {
   beforeEach(() => {
@@ -20,11 +25,25 @@ describe('sendMessage', () => {
     await sendMessage('hello')
 
     expect(containerFetch).toHaveBeenCalledOnce()
-    expect(containerFetch).toHaveBeenCalledWith('/api/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'hello' }),
-    })
+    expect(containerFetch).toHaveBeenCalledWith(
+      '/api/send?session_id=addressed-1',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'hello' }),
+      },
+      undefined,
+    )
+  })
+
+  it('sends into a named target instead of the addressed session', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await sendMessage('hello', { target: { sessionId: 'other-1', containerId: 'c-2' } })
+
+    const [path, , containerId] = containerFetch.mock.calls[0]
+    expect(path).toBe('/api/send?session_id=other-1')
+    expect(containerId).toBe('c-2')
   })
 
   it('includes attachments when provided', async () => {
@@ -96,7 +115,9 @@ describe('interrupt', () => {
     await interrupt()
 
     expect(containerFetch).toHaveBeenCalledOnce()
-    expect(containerFetch).toHaveBeenCalledWith('/api/interrupt', { method: 'POST' })
+    expect(containerFetch).toHaveBeenCalledWith('/api/interrupt?session_id=addressed-1', {
+      method: 'POST',
+    })
   })
 
   it('throws on network error', async () => {
@@ -116,11 +137,27 @@ describe('sendSideMessage', () => {
 
     await sendSideMessage('side-1', 'why this branch?')
 
-    expect(containerFetch).toHaveBeenCalledWith('/api/send?session_id=side-1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'why this branch?' }),
-    })
+    expect(containerFetch).toHaveBeenCalledWith(
+      '/api/send?session_id=side-1',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'why this branch?' }),
+      },
+      undefined,
+    )
+  })
+
+  it('sends a side message to the container it is given', async () => {
+    containerFetch.mockResolvedValue({ ok: true })
+
+    await sendSideMessage('side-1', 'hi', 'c1')
+
+    expect(containerFetch).toHaveBeenCalledWith(
+      '/api/send?session_id=side-1',
+      expect.any(Object),
+      'c1',
+    )
   })
 
   it('encodes a session id containing reserved URL characters', async () => {

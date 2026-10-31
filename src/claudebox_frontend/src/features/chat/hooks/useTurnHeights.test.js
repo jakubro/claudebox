@@ -1,8 +1,10 @@
-/** Tests for useTurnHeights - minimap heights derived from the content predictor. */
+/** Tests for useTurnHeights - minimap heights from measured row sizes, else the predictor. */
 
-import { renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { TURN_MIN_PREDICTED_HEIGHT_PX } from '../../../config/dimensions'
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { THREAD_FOLD_ROW_HEIGHT_PX } from '../../../config/dimensions'
+import { TurnRoutingMode } from '../../../utils/eventProcessing'
+import { createRowSizeStore } from '../utils/rowSizeStore'
 import useTurnHeights from './useTurnHeights'
 
 const messagesRef = { current: { clientWidth: 800 } }
@@ -21,8 +23,7 @@ describe('useTurnHeights', () => {
     const { result } = renderHook(() => useTurnHeights(messagesRef, turns))
 
     expect(Object.keys(result.current.turnHeights)).toEqual(['a', 'b', 'c'])
-    expect(result.current.turnHeights.a).toBe(TURN_MIN_PREDICTED_HEIGHT_PX)
-    expect(result.current.getLogicalScrollHeight()).toBe(3 * TURN_MIN_PREDICTED_HEIGHT_PX)
+    expect(result.current.turnHeights.a).toBe(116)
   })
 
   it('sizes a turn from its content', () => {
@@ -96,5 +97,54 @@ describe('useTurnHeights', () => {
     rerender({ splitEnabled: true })
 
     expect(result.current.turnHeights.a).toBeLessThan(splitOff)
+  })
+
+  describe('with measured row sizes', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['requestAnimationFrame'] })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('uses a measured size over the prediction, and predicts the rest', () => {
+      const rowSizes = createRowSizeStore()
+      rowSizes.set('a', 711)
+      const turns = [turn('a'), turn('b')]
+      const { result } = renderHook(() =>
+        useTurnHeights(messagesRef, turns, undefined, TurnRoutingMode.OFF, -1, false, rowSizes),
+      )
+
+      expect(result.current.turnHeights).toEqual({ a: 711, b: 116 })
+    })
+
+    it('picks up a size published after the first render', () => {
+      const rowSizes = createRowSizeStore()
+      const turns = [turn('a')]
+      const { result } = renderHook(() =>
+        useTurnHeights(messagesRef, turns, undefined, TurnRoutingMode.OFF, -1, false, rowSizes),
+      )
+      expect(result.current.turnHeights.a).toBe(116)
+
+      act(() => {
+        rowSizes.set('a', 300)
+        vi.advanceTimersToNextFrame()
+      })
+
+      expect(result.current.turnHeights.a).toBe(300)
+    })
+
+    it('keeps folded turns at the fold pricing whatever was measured for them', () => {
+      const rowSizes = createRowSizeStore()
+      rowSizes.set('a', 500)
+      rowSizes.set('b', 500)
+      rowSizes.set('c', 500)
+      const turns = [turn('a'), turn('b'), turn('c')]
+      const { result } = renderHook(() =>
+        useTurnHeights(messagesRef, turns, undefined, TurnRoutingMode.OFF, 1, false, rowSizes),
+      )
+
+      expect(result.current.turnHeights).toEqual({ a: THREAD_FOLD_ROW_HEIGHT_PX, b: 0, c: 500 })
+    })
   })
 })

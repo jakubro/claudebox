@@ -7,6 +7,8 @@ A regression there breaks the CLI outright, not just this file. The executable b
 property invocation alone would not surface cleanly.
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 

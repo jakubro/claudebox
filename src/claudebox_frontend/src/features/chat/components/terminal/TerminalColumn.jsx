@@ -1,8 +1,8 @@
 /** Session-wide shell transcript: every top-level Bash call, oldest first, windowed like the transcript. */
 
 import { useEffect, useRef } from 'react'
+import { useScrollElementRef } from '../../../../hooks/useVirtualListGeometry'
 import useTerminalVirtualizer from '../../hooks/useTerminalVirtualizer'
-import { useScrollElementRef } from '../../hooks/useVirtualListGeometry'
 import TerminalEntry from './components/TerminalEntry'
 
 /**

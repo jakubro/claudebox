@@ -1,5 +1,7 @@
 """Container lifecycle and log-stream endpoints."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from claudebox import BroadcastEventSourceResponse, SessionNotReady

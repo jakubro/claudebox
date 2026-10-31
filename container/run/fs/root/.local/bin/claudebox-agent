@@ -4,6 +4,8 @@
 # - Ensures our Claudebox customizations apply consistently to all implementations
 set -euo pipefail
 
+PROMPT_FILE=""
+
 # --------------------------------------------------------------------------------------------------
 # Agents
 # --------------------------------------------------------------------------------------------------
@@ -20,12 +22,11 @@ execute-claude() {
   fi
 
   # Custom system prompt
-  if ! item-in-array "--system-prompt" "$@"; then
-    local prompt
-    prompt="$(get-agent-prompt)"
+  if ! has-system-prompt "$@"; then
+    write-agent-prompt claude
 
-    if [[ -n $prompt ]]; then
-      args+=(--system-prompt "$prompt")
+    if [[ -n $PROMPT_FILE ]]; then
+      args+=(--system-prompt-file "$PROMPT_FILE")
     fi
   fi
 
@@ -41,7 +42,8 @@ execute-claude() {
     agent=$(get-web-server)
     sync-dev-dependencies
   else
-    agent=claude
+    # Not a PATH lookup: the ~/.local/bin/claude shim re-enters this script and may sort first
+    agent=$(mise which claude)
   fi
 
   local agent_cmd
@@ -56,7 +58,7 @@ execute-claude() {
 
   # Verbose mode
   if [[ ${CLAUDEBOX_VERBOSE:-0} == 1 ]]; then
-    string-replace "${cmd[*]}" "${prompt:-}" "[[prompt]]"
+    echo "${cmd[*]}"
   fi
 
   # Launch Claude Code
@@ -82,12 +84,11 @@ execute-langgraph() {
   # Custom system prompt, compiled from the langgraph-native prompt file. The Claude persona
   # is written against features langgraph does not have, so it gets its own entrypoint file
   # rather than a shared one.
-  if ! item-in-array "--system-prompt" "$@"; then
-    local prompt
-    prompt="$(get-agent-prompt langgraph)"
+  if ! has-system-prompt "$@"; then
+    write-agent-prompt langgraph
 
-    if [[ -n $prompt ]]; then
-      args+=(--system-prompt "$prompt")
+    if [[ -n $PROMPT_FILE ]]; then
+      args+=(--system-prompt-file "$PROMPT_FILE")
     fi
   fi
 
@@ -100,9 +101,9 @@ execute-langgraph() {
       "$@"
   )
 
-  # Verbose mode - the compiled prompt is redacted, same as the claude path
+  # Verbose mode
   if [[ ${CLAUDEBOX_VERBOSE:-0} == 1 ]]; then
-    string-replace "${cmd[*]}" "${prompt:-}" "[[prompt]]"
+    echo "${cmd[*]}"
   fi
 
   # Launch the container API server
@@ -125,23 +126,65 @@ sync-dev-dependencies() {
     return 0
   fi
 
+  # The library is mounted read-only, so syncing into it would end the container under `set -e`.
+  if [[ ! -w ~/.claudebox/lib ]]; then
+    echo "claudebox: dev mode: skipping the dependency sync - the library is mounted read-only" >&2
+
+    return 0
+  fi
+
   (
     export UV_PROJECT_ENVIRONMENT=/opt/claudebox/.venv
     uv sync --directory ~/.claudebox/lib --extra langgraph-all
   )
 }
 
-# Compiles prompt starting at the entrypoint prompt file for agent $1 (default: claude)
+# Compiles prompt starting at the entrypoint prompt file for agent $1 (default: claude), preferring
+# the file named after CLAUDEBOX_BUNDLE and never falling back to another agent's
 get-agent-prompt() {
   local agent=${1:-claude}
-  local prompt_file=~/.claudebox/profile/prompt.md
+  local base=~/.claudebox/profile/prompt
 
   if [[ $agent != claude ]]; then
-    prompt_file=~/.claudebox/profile/prompt.${agent}.md
+    base=~/.claudebox/profile/prompt.${agent}
   fi
 
-  if [[ -e $prompt_file ]]; then
-    ~/.local/bin/claudebox-prompt "$prompt_file"
+  local candidates=("$base.md")
+
+  if [[ -n ${CLAUDEBOX_BUNDLE:-} ]]; then
+    candidates=("$base.$CLAUDEBOX_BUNDLE.md" "$base.md")
+  fi
+
+  local prompt_file
+
+  for prompt_file in "${candidates[@]}"; do
+    if [[ -e $prompt_file ]]; then
+      ~/.local/bin/claudebox-prompt "$prompt_file"
+
+      return
+    fi
+  done
+}
+
+# Compiles the prompt for agent $1 into PROMPT_FILE, left empty when the profile has none - a file,
+# because the compiled prompt outgrows the kernel's 128 KiB cap on a single argv or env string
+write-agent-prompt() {
+  local prompt
+  prompt="$(get-agent-prompt "$1")"
+
+  if [[ -z $prompt ]]; then
+    return 0
+  fi
+
+  # Not /tmp: a session start replaces /tmp while this file must outlive the server
+  PROMPT_FILE=$(mktemp --suffix=.md /run/claudebox/prompt.XXXXXX)
+  printf '%s' "$prompt" > "$PROMPT_FILE"
+}
+
+# Removes the compiled prompt file once the agent exits
+remove-agent-prompt() {
+  if [[ -n $PROMPT_FILE ]]; then
+    rm -f "$PROMPT_FILE"
   fi
 }
 
@@ -213,15 +256,9 @@ item-in-array() {
   return 1
 }
 
-# Replaces all $2 with $3 in $1
-string-replace() {
-  python -c "
-import sys
-
-_, arg, tok, rep, *_ = sys.argv
-print(arg.replace(tok, rep))
-" "$@"
-
+# Checks if $1..N already carry a system prompt
+has-system-prompt() {
+  item-in-array "--system-prompt" "$@" || item-in-array "--system-prompt-file" "$@"
 }
 
 # --------------------------------------------------------------------------------------------------
@@ -235,7 +272,7 @@ main() {
 
   # Hooks
   on-agent-start-hook
-  trap on-agent-stop-hook EXIT
+  trap 'remove-agent-prompt; on-agent-stop-hook' EXIT
 
   # Execute agent
   local agent=${1:-}

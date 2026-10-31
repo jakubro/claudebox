@@ -1,23 +1,16 @@
-/** Per-turn heights for the minimap, derived from the content predictor. */
+/** Per-turn heights for the minimap - measured where the transcript knows them, else predicted. */
 
-import { useCallback, useMemo } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { THREAD_FOLD_ROW_HEIGHT_PX, TURN_HORIZONTAL_PADDING_PX } from '../../../config/dimensions'
-import { TurnRoutingMode } from '../../../utils/eventProcessing'
+import { NO_TOOL_MARKED, TurnRoutingMode } from '../../../utils/eventProcessing'
 import { predictTurnHeight, predictUserMessageHeight } from '../utils/predictTurnHeight'
 
 const EMPTY_SET = new Set()
+const NO_SIZES = { get: () => undefined, getVersion: () => 0, subscribe: () => () => {} }
 
 /**
- * Per-turn heights and a scroll-axis total for the minimap - all turns, active one included.
- * Priced by `predictTurnHeight`, the same estimator the virtualizer uses; calibrated against
- * fixtures by `e2e/app/tests/predictor-calibration.spec.js` (drift under 30%).
- *
- * Never sourced from real measurements: with the list windowed only a handful of turns have a
- * height, and publishing those re-renders the list, which mounts and measures more, which publishes
- * again - a loop that never settles and that React aborts outright on a long transcript.
- *
- * `foldBoundary`/`foldExpanded` mirror `useTurnVirtualizer`'s own fold pricing, so the minimap
- * never disagrees with the transcript about a promoted thread's folded turns.
+ * Per-turn minimap heights: a `rowSizes` measurement where one exists, else `predictTurnHeight`.
+ * Folded turns price as `useTurnVirtualizer` folds them; only the minimap may read the store.
  */
 export default function useTurnHeights(
   messagesRef,
@@ -26,14 +19,18 @@ export default function useTurnHeights(
   mode = TurnRoutingMode.OFF,
   foldBoundary = -1,
   foldExpanded = false,
+  rowSizes = NO_SIZES,
+  bookmarkedPartsOf = null,
+  isMarked = NO_TOOL_MARKED,
 ) {
   const effectiveWidth = Math.max(
     0,
     (messagesRef?.current?.clientWidth || 0) - TURN_HORIZONTAL_PADDING_PX,
   )
   const folded = foldBoundary >= 0 && !foldExpanded
+  const sizesVersion = useSyncExternalStore(rowSizes.subscribe, rowSizes.getVersion)
 
-  const turnHeights = useMemo(() => {
+  const predictedHeights = useMemo(() => {
     const out = {}
     turns.forEach((turn, index) => {
       const id = turn?.turn_id
@@ -45,15 +42,44 @@ export default function useTurnHeights(
       } else if (folded && index <= foldBoundary) {
         out[id] = 0
       } else {
-        out[id] = predictTurnHeight(turn, effectiveWidth, collapsedTurnIds.has(id), mode)
+        out[id] = predictTurnHeight(
+          turn,
+          effectiveWidth,
+          collapsedTurnIds.has(id),
+          mode,
+          bookmarkedPartsOf?.(id),
+          isMarked,
+        )
       }
     })
     return out
-  }, [turns, effectiveWidth, collapsedTurnIds, mode, folded, foldBoundary])
+  }, [
+    turns,
+    effectiveWidth,
+    collapsedTurnIds,
+    mode,
+    folded,
+    foldBoundary,
+    bookmarkedPartsOf,
+    isMarked,
+  ])
 
-  // Predicted for the same reason as turnHeights: a windowed-out turn has no element to measure,
-  // and measuring only the mounted few would flatten the rest. Folded turns price at zero here
-  // too - a folded human message draws nowhere, on either measurer.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sizesVersion is the store's change signal
+  const turnHeights = useMemo(() => {
+    const out = {}
+    turns.forEach((turn, index) => {
+      const id = turn?.turn_id
+      if (!id) {
+        return
+      }
+      const isFolded = folded && index <= foldBoundary
+      out[id] = (!isFolded && rowSizes.get(id)) || predictedHeights[id]
+    })
+    return out
+  }, [turns, predictedHeights, rowSizes, sizesVersion, folded, foldBoundary])
+
+  // Always predicted: the transcript publishes whole-row sizes only, and a folded human message
+  // draws nowhere, so it prices at zero.
   const userMessageHeights = useMemo(() => {
     const out = {}
     turns.forEach((turn, index) => {
@@ -66,10 +92,5 @@ export default function useTurnHeights(
     return out
   }, [turns, effectiveWidth, folded, foldBoundary])
 
-  const getLogicalScrollHeight = useCallback(
-    () => Object.values(turnHeights).reduce((sum, h) => sum + h, 0),
-    [turnHeights],
-  )
-
-  return { turnHeights, userMessageHeights, getLogicalScrollHeight }
+  return { turnHeights, userMessageHeights }
 }

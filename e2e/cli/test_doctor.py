@@ -4,6 +4,8 @@ Real-binary surfaces: every check row renders, summary + exit-code coherence,
 and probe-command rendering under ``-v`` with fake podman on PATH.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -31,6 +33,7 @@ _DOCTOR_LABELS = [
     "watchdog timer",
     "~/.claudebox/lib",
     "profile",
+    "tmp mounts",
     "workspace",
     "permissions",
     "disk",
@@ -46,6 +49,16 @@ class TestDoctorOutput:
 
         for label in _DOCTOR_LABELS:
             assert label in result.stdout, f"missing doctor row: {label!r}"
+
+    def test_help_lists_every_printed_row_in_order(self, run_claudebox) -> None:
+        run = run_claudebox(["doctor"], timeout=60).stdout
+        help_text = run_claudebox(["doctor", "--help"], timeout=60).stdout
+
+        printed = [line[2:19].strip() for line in run.splitlines() if line[:1] in ("✓", "✗", "○")]
+        checks = help_text.split("Checks (in order, one row each):")[1].split("\n\n")[0]
+        listed = [item.split(" (")[0] for item in " ".join(checks.split()).split(", ")]
+
+        assert printed == listed
 
     def test_doctor_emits_summary_line(self, run_claudebox) -> None:
         result = run_claudebox(["doctor"], timeout=60)
@@ -97,3 +110,58 @@ class TestDoctorProfile:
         stdout = result.stdout.replace("\n", "")
         assert f"✗ profile          {profile} (missing)" in stdout
         assert result.returncode == 1
+
+
+def _write_settings(workspace: Path, body: str) -> None:
+    (workspace / ".workspace").touch()
+    settings_dir = workspace / ".claudebox"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    (settings_dir / "settings.toml").write_text(body)
+
+
+# SPEC: cli:doctor:tmp-mounts
+class TestDoctorTmpMounts:
+    """The /tmp row fails when a session would have to delete something mounted under /tmp."""
+
+    def test_a_mount_under_tmp_fails_naming_it_and_the_opt_out(
+        self,
+        tmp_path,
+        run_claudebox,
+    ) -> None:
+        _write_settings(tmp_path, '[mounts]\n"/srv/agent" = "/tmp/ssh-agent"\n')
+
+        result = run_claudebox(["doctor"], cwd=tmp_path, timeout=60)
+
+        stdout = result.stdout.replace("\n", "")
+        assert "✗ tmp mounts" in stdout
+        assert "/tmp/ssh-agent" in stdout
+        assert "CLAUDEBOX_NO_TMP_REMAP" in stdout
+        assert result.returncode == 1
+
+    def test_the_local_backend_passes(self, tmp_path, run_claudebox) -> None:
+        _write_settings(tmp_path, 'backend = "local"\n[mounts]\n"/srv/agent" = "/tmp/ssh-agent"\n')
+
+        result = run_claudebox(["doctor"], cwd=tmp_path, timeout=60)
+
+        assert "✓ tmp mounts" in result.stdout.replace("\n", "")
+
+
+# SPEC: cli:doctor-local
+class TestDoctorLocalBackend:
+    """With the local backend the runtime rows pass and no container runtime is probed."""
+
+    def test_runtime_rows_pass_naming_the_local_backend(
+        self,
+        tmp_path,
+        run_claudebox,
+        record_dir,
+    ) -> None:
+        _write_settings(tmp_path, 'backend = "local"\n')
+
+        result = run_claudebox(["doctor"], cwd=tmp_path, timeout=60)
+
+        stdout = result.stdout.replace("\n", "")
+        assert "✓ runtime          local backend - no container runtime needed" in stdout
+        assert "✓ runtime info     not needed for the local backend" in stdout
+        assert "(not found)" not in stdout
+        assert not (record_dir / "podman.log").exists()

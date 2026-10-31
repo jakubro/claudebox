@@ -1,10 +1,11 @@
 /** Tests for tool result formatter functions. */
 
 import { describe, expect, it } from 'vitest'
+import { getToolConfig } from '../../../../../../../config/toolRegistry'
 import {
   buildToolHeader,
-  extractSystemReminders,
   extractToolResult,
+  fetchedPageUrl,
   formatTodoWriteResult,
   generateJsonSummary,
   getSummaryText,
@@ -12,6 +13,7 @@ import {
   getToolTooltip,
   hasSpecializedFormatter,
   shouldCollapseByDefault,
+  skillBaseDir,
 } from './toolResultFormatters'
 
 describe('generateJsonSummary', () => {
@@ -29,6 +31,11 @@ describe('generateJsonSummary', () => {
     it('extracts first text from text-type array', () => {
       const parsed = [{ type: 'text', text: 'Hello world' }]
       expect(generateJsonSummary(parsed)).toBe('Hello world')
+    })
+
+    it('falls back to item count when text is a structured value, not text', () => {
+      const parsed = [{ type: 'text', text: { unexpected: 'object' } }]
+      expect(generateJsonSummary(parsed)).toBe('1 item')
     })
 
     it('returns full text (CSS handles truncation)', () => {
@@ -115,6 +122,13 @@ describe('buildToolHeader', () => {
       'WebFetch(example.com/page)',
     )
   })
+
+  it.each([[42], [{ href: 'https://example.com' }]])(
+    'WebFetch: falls back to url when the url is %o',
+    url => {
+      expect(buildToolHeader('WebFetch', { url })).toBe('WebFetch(url)')
+    },
+  )
 
   it('WebSearch: shows query', () => {
     expect(buildToolHeader('WebSearch', { query: 'vitest testing' })).toBe(
@@ -823,6 +837,13 @@ describe('getToolTooltip', () => {
     expect(getToolTooltip('WebFetch', { url: 'https://example.com' })).toBe('https://example.com')
   })
 
+  it.each([[42], [{ href: 'https://example.com' }]])(
+    'returns null for WebFetch when the url is %o',
+    url => {
+      expect(getToolTooltip('WebFetch', { url })).toBe(null)
+    },
+  )
+
   it('returns query for WebSearch tool', () => {
     expect(getToolTooltip('WebSearch', { query: 'search term' })).toBe('search term')
   })
@@ -1045,38 +1066,6 @@ describe('hasSpecializedFormatter', () => {
   })
 })
 
-describe('extractSystemReminders', () => {
-  it('strips edge newlines but preserves leading/trailing spaces after removing reminders', () => {
-    const content = '\n<system-reminder>reminder</system-reminder>\n  indented code  '
-    const result = extractSystemReminders(content)
-
-    expect(result.content).toBe('  indented code  ')
-    expect(result.content.startsWith('  ')).toBe(true)
-    expect(result.content.endsWith('  ')).toBe(true)
-  })
-
-  it('does not strip leading spaces from content when reminder is at end', () => {
-    const content = '  leading spaces<system-reminder>reminder</system-reminder>'
-    const result = extractSystemReminders(content)
-
-    expect(result.content).toBe('  leading spaces')
-  })
-
-  it('does not strip trailing spaces from content when reminder is at start', () => {
-    const content = '<system-reminder>reminder</system-reminder>trailing spaces  '
-    const result = extractSystemReminders(content)
-
-    expect(result.content).toBe('trailing spaces  ')
-  })
-
-  it('strips surrounding newlines but not spaces', () => {
-    const content = '\n\n<system-reminder>reminder</system-reminder>\n  spaced content  \n\n'
-    const result = extractSystemReminders(content)
-
-    expect(result.content).toBe('  spaced content  ')
-  })
-})
-
 describe('formatTodoWriteResult', () => {
   it('separates each pair with a narrower gap than the gap between pairs', () => {
     const result = formatTodoWriteResult({ todos: [] }, '', {
@@ -1115,5 +1104,91 @@ describe('formatTodoWriteResult', () => {
     const result = formatTodoWriteResult({ todos: [] }, '', { todoDiff: {} })
 
     expect(result.summary).toBe('No changes')
+  })
+})
+
+describe('skillBaseDir', () => {
+  it('reads the folder the first line names', () => {
+    expect(skillBaseDir('Base directory for this skill: /root/skills/demo  \n\nBody')).toBe(
+      '/root/skills/demo',
+    )
+  })
+
+  it.each([
+    ['no such line', 'Body only'],
+    ['a relative folder', 'Base directory for this skill: skills/demo\n'],
+    ['the line not first', 'Intro\nBase directory for this skill: /root/skills/demo'],
+  ])('is null with %s', (_label, content) => {
+    expect(skillBaseDir(content)).toBeNull()
+  })
+})
+
+describe('fetchedPageUrl', () => {
+  it('names the page a WebFetch fetched', () => {
+    expect(fetchedPageUrl('WebFetch', { url: 'https://example.com/a' })).toBe(
+      'https://example.com/a',
+    )
+  })
+
+  it('is null for another tool or a missing url', () => {
+    expect(fetchedPageUrl('Read', { url: 'https://example.com/a' })).toBeNull()
+    expect(fetchedPageUrl('WebFetch', {})).toBeNull()
+  })
+})
+
+describe('progressLabel', () => {
+  const label = (name, input = {}) => getToolConfig(name).progressLabel?.(name, input) ?? null
+
+  it.each([
+    ['Read', { file_path: '/work/notes.md' }, 'Reading notes.md'],
+    ['read_file', { path: '/work/notes.md' }, 'Reading notes.md'],
+    ['Grep', { pattern: 'TODO' }, 'Searching for TODO'],
+    ['Glob', { pattern: '**/*.md' }, 'Searching for **/*.md'],
+    ['WebSearch', { query: 'vite wasm assets' }, 'Searching the web for vite wasm assets'],
+    ['WebFetch', { url: 'https://docs.python.org/3/library/re.html' }, 'Fetching docs.python.org'],
+    ['WebFetch', { url: 'docs.python.org/3/library/re.html' }, 'Fetching docs.python.org'],
+    ['Skill', { skill: 'changelog' }, 'Loading changelog skill'],
+    ['skill', { name: 'greet', arguments: 'x' }, 'Loading greet skill'],
+    [
+      'Bash',
+      { command: 'wc -l app.log', description: 'Count lines in the log' },
+      'Count lines in the log',
+    ],
+    ['Bash', { command: 'ls', description: 'List files\nin the folder' }, 'List files'],
+    ['mcp__jina__read_url', { url: 'https://example.com' }, 'Running read_url'],
+    ['mcp__claude_ai_Claude_Docs__query', {}, 'Running query'],
+    ['mcp__claudebox__session_read', { session_id: 'a' }, 'Running session_read'],
+    ['session_read', { session_id: 'a' }, 'Running session_read'],
+  ])('%s %j reads %s', (name, input, expected) => {
+    expect(label(name, input)).toBe(expected)
+  })
+
+  it.each([
+    ['wc -l app.log | head -1', 'Running wc -l app.log'],
+    ['cd src; ls', 'Running cd src'],
+    ['test -f a && cat a', 'Running test -f a'],
+    ['test -f a || echo none', 'Running test -f a'],
+    ['ls\nwc -l notes.txt', 'Running ls'],
+  ])('a command with no description, %j, reads %s', (command, expected) => {
+    expect(label('Bash', { command })).toBe(expected)
+  })
+
+  it.each([
+    'TaskList',
+    'TaskGet',
+    'TaskOutput',
+    'MCPSearch',
+    'ListMcpResourcesTool',
+    'ReadMcpResourceTool',
+    'ReadMcpResourceDirTool',
+    'list_mcp_resources',
+    'read_mcp_resource',
+  ])('%s has no phrase', name => {
+    expect(label(name, { server: 's' })).toBeNull()
+  })
+
+  it('gives null for a call with nothing to name', () => {
+    expect(label('Read', {})).toBeNull()
+    expect(label('Bash', { command: '' })).toBeNull()
   })
 })

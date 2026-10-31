@@ -1,5 +1,7 @@
 """Pydantic request models for daemon HTTP endpoints."""
 
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +17,7 @@ class NewSessionRequest(BaseModel):
     """Body for POST /sessions/new."""
 
     messages: list[str] = []
+    bundle: str | None = None
 
 
 class ForkSessionRequest(BaseModel):

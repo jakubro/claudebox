@@ -56,6 +56,30 @@ describe('predictWorkEntryHeight', () => {
     expect(bashHeight).toBeGreaterThan(editHeight)
   })
 
+  it('prices a Bash call marked as changing nothing the same as an Edit call - it opens collapsed', () => {
+    const marked = { ...toolUseEvent('Bash', 'b-1', { command: 'ls' }), command_read_only: true }
+    const editTurn = { events: [toolUseEvent('Edit', 'e-1', { file_path: 'ls' })] }
+    expect(
+      predictWorkEntryHeight({ events: [marked] }, EFFECTIVE_WIDTH, TurnRoutingMode.ALL_TOOLS),
+    ).toBe(predictWorkEntryHeight(editTurn, EFFECTIVE_WIDTH, TurnRoutingMode.ALL_TOOLS))
+  })
+
+  it('prices a Bash call by what it was measured to do once it finished', () => {
+    const height = (toolUse, changed) =>
+      predictWorkEntryHeight(
+        { events: [toolUse, toolResultEvent(toolUse.tool_use_id, { command_changed: changed })] },
+        EFFECTIVE_WIDTH,
+        TurnRoutingMode.ALL_TOOLS,
+      )
+    const unmarked = toolUseEvent('Bash', 'b-1', { command: 'ls' })
+    const marked = { ...unmarked, command_read_only: true }
+    const editTurn = { events: [toolUseEvent('Edit', 'e-1', { file_path: 'ls' })] }
+    const edit = predictWorkEntryHeight(editTurn, EFFECTIVE_WIDTH, TurnRoutingMode.ALL_TOOLS)
+    expect(height(unmarked, false)).toBe(edit)
+    expect(height(marked, true)).toBe(height(unmarked, null))
+    expect(height(marked, true)).toBeGreaterThan(edit)
+  })
+
   it('under BASH_ONLY, prices only the Bash call - a non-Bash tool call stays out of the panel', () => {
     const turn = {
       events: [

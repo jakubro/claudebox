@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clampHorizontal,
   isRangeVisible,
+  maxFloatWidth,
   positionsEqual,
   rangeContainsPoint,
   spanRect,
@@ -132,5 +133,11 @@ describe('isRangeVisible', () => {
     expect(isRangeVisible(range)).toBe(false)
 
     document.body.innerHTML = ''
+  })
+})
+
+describe('maxFloatWidth', () => {
+  it('leaves the edge padding free on both sides', () => {
+    expect(maxFloatWidth({ left: 100, right: 700 })).toBe(592)
   })
 })

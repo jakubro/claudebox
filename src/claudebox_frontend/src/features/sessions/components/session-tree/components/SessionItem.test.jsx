@@ -2,32 +2,31 @@
 
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SessionItem from './SessionItem'
 
-vi.mock('../../../../../context/ContainerMapContext', () => ({
-  useContainerMap: () => ({
-    stoppingSessions: new Set(),
-    deriveSessionStatus: (_sessionId, _sessions, fallbackContainerId = null) =>
-      fallbackContainerId ? 'running' : 'none',
-  }),
-}))
-
-vi.mock('../../../../../utils/formatters', () => ({
-  formatRelativeTime: ts => (ts ? 'just now' : ''),
-  formatAbsoluteTime: ts => (ts ? 'Apr 25, 2026, 7:40 PM' : ''),
-  formatTurns: n => (n != null ? `${n} turns` : '0 turns'),
-  formatCost: c => (c != null ? `$${c.toFixed(2)}` : '$0.00'),
-  formatMessagePreview: msg => {
-    if (!msg) {
-      return null
-    }
-    if (msg.startsWith('/')) {
-      return msg.split(' ')[0] + (msg.includes(' ') ? ` ${msg.split(' ').slice(1).join(' ')}` : '')
-    }
-    return msg
-  },
-}))
+let realRelativeTime = false
+vi.mock('../../../../../utils/formatters', async importOriginal => {
+  const actual = await importOriginal()
+  return {
+    formatRelativeTime: (ts, now) =>
+      realRelativeTime ? actual.formatRelativeTime(ts, now) : ts ? 'just now' : '',
+    formatAbsoluteTime: ts => (ts ? 'Apr 25, 2026, 7:40 PM' : ''),
+    formatTurns: n => (n != null ? `${n} turns` : '0 turns'),
+    formatCost: c => (c != null ? `$${c.toFixed(2)}` : '$0.00'),
+    formatMessagePreview: msg => {
+      if (!msg) {
+        return null
+      }
+      if (msg.startsWith('/')) {
+        return (
+          msg.split(' ')[0] + (msg.includes(' ') ? ` ${msg.split(' ').slice(1).join(' ')}` : '')
+        )
+      }
+      return msg
+    },
+  }
+})
 
 vi.mock('../../../../../hooks/useDropdown', () => ({
   default: () => ({
@@ -71,42 +70,49 @@ describe('SessionItem', () => {
     ...overrides,
   })
 
-  it('renders session ID (first 8 chars) and name', () => {
-    render(
+  function renderItem(props = {}) {
+    return render(
       <SessionItem
         session={createSession()}
         isCurrent={false}
         onResume={vi.fn()}
         onRename={vi.fn()}
+        {...props}
       />,
     )
+  }
+
+  async function startRename() {
+    const user = userEvent.setup()
+    const onRename = vi.fn()
+    render(
+      <SessionItem
+        session={createSession()}
+        isCurrent={false}
+        onResume={vi.fn()}
+        onRename={onRename}
+      />,
+    )
+    await user.click(screen.getByTitle('Rename session'))
+
+    return { user, onRename }
+  }
+
+  it('renders session ID (first 8 chars) and name', () => {
+    renderItem()
 
     expect(screen.getByText('abc12345')).toBeInTheDocument()
     expect(screen.getByText('Test Session')).toBeInTheDocument()
   })
 
   it('shows time display', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     expect(screen.getByText(/just now/)).toBeInTheDocument()
   })
 
   it('shows turns and cost metadata', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     // Turns/cost appear in both meta-row and meta-overflow (for responsive layout)
     expect(screen.getAllByText(/5 turns/).length).toBeGreaterThan(0)
@@ -114,55 +120,34 @@ describe('SessionItem', () => {
   })
 
   it('shows a runtime badge when the session has one', () => {
-    render(
-      <SessionItem
-        session={createSession({ runtime: 'LangGraph' })}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem({ session: createSession({ runtime: 'LangGraph' }) })
 
     // Appears in both meta-row and meta-overflow, same responsive pattern as turns/cost.
     expect(screen.getAllByText('LangGraph').length).toBeGreaterThan(0)
   })
 
   it('omits the runtime badge for a session with no runtime recorded', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     expect(screen.queryByTestId('sessions-runtime-badge')).not.toBeInTheDocument()
   })
 
   it('shows first/last message preview', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     expect(screen.getByText(/"Hello world"/)).toBeInTheDocument()
     expect(screen.getByText(/"...Goodbye world"/)).toBeInTheDocument()
   })
 
+  it('shows no last-message preview when the session has no last message', () => {
+    const { container } = renderItem({ session: createSession({ last_message: null }) })
+
+    expect(screen.getByText(/"Hello world"/)).toBeInTheDocument()
+    expect(container.querySelector('.sessions-last span')).toBeNull()
+  })
+
   it('highlights current session', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={true}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem({ isCurrent: true })
 
     const item = document.querySelector('.sessions-item-current')
     expect(item).toBeInTheDocument()
@@ -170,28 +155,14 @@ describe('SessionItem', () => {
 
   it('shows full name in title attribute for tooltip on truncated name', () => {
     const longName = 'A very long session name that would definitely be truncated in the UI'
-    render(
-      <SessionItem
-        session={createSession({ name: longName })}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem({ session: createSession({ name: longName }) })
 
     const nameSpan = document.querySelector('.sessions-name')
     expect(nameSpan).toHaveAttribute('title', longName)
   })
 
   it('shows unified Session directory tooltip on ID span', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     const idSpan = document.querySelector('.sessions-id')
     expect(idSpan).toHaveAttribute(
@@ -205,14 +176,7 @@ describe('SessionItem', () => {
     Object.assign(navigator, { clipboard: { writeText } })
 
     vi.useFakeTimers()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     const idSpan = document.querySelector('.sessions-id')
     await act(async () => {
@@ -231,43 +195,20 @@ describe('SessionItem', () => {
   })
 
   it('shows resume button for non-current sessions', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem()
 
     expect(screen.getByTestId('icon-resume')).toBeInTheDocument()
   })
 
   it('hides resume button for current session', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={true}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem({ isCurrent: true })
 
     expect(screen.queryByTestId('icon-resume')).not.toBeInTheDocument()
   })
 
   it('enters edit mode on pencil click, keeping rows 2-5 visible', async () => {
     const user = userEvent.setup()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        isPinned={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin: vi.fn() }}
-      />,
-    )
+    renderItem({ isPinned: false, actions: { onTogglePin: vi.fn() } })
 
     await user.click(screen.getByTitle('Rename session'))
 
@@ -283,18 +224,7 @@ describe('SessionItem', () => {
   })
 
   it('saves rename on Enter', async () => {
-    const user = userEvent.setup()
-    const onRename = vi.fn()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={onRename}
-      />,
-    )
-
-    await user.click(screen.getByTitle('Rename session'))
+    const { user, onRename } = await startRename()
     const input = screen.getByPlaceholderText('Session name...')
     await user.clear(input)
     await user.type(input, 'New Name{Enter}')
@@ -303,18 +233,7 @@ describe('SessionItem', () => {
   })
 
   it('cancels rename on Escape', async () => {
-    const user = userEvent.setup()
-    const onRename = vi.fn()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={onRename}
-      />,
-    )
-
-    await user.click(screen.getByTitle('Rename session'))
+    const { user, onRename } = await startRename()
     const input = screen.getByPlaceholderText('Session name...')
     await user.type(input, 'New Name{Escape}')
 
@@ -325,14 +244,7 @@ describe('SessionItem', () => {
   it('calls onResume when resume clicked', async () => {
     const user = userEvent.setup()
     const onResume = vi.fn()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={onResume}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem({ onResume })
 
     await user.click(
       screen.getByTitle('Resume session (Alt+Click or middle-click for new browser tab)'),
@@ -344,15 +256,7 @@ describe('SessionItem', () => {
   it('calls onOpenInNewTab on Alt+Click resume', () => {
     const onResume = vi.fn()
     const onOpenInNewTab = vi.fn()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        onResume={onResume}
-        onRename={vi.fn()}
-        actions={{ onOpenInNewTab }}
-      />,
-    )
+    renderItem({ onResume, actions: { onOpenInNewTab } })
 
     const btn = screen.getByTitle('Resume session (Alt+Click or middle-click for new browser tab)')
     btn.dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true }))
@@ -361,77 +265,47 @@ describe('SessionItem', () => {
     expect(onResume).not.toHaveBeenCalled()
   })
 
+  it('shows an automatic name styled apart from a hand-given one', () => {
+    renderItem({ session: createSession({ name: null, auto_name: 'Tuning the parser' }) })
+
+    expect(screen.getByText('Tuning the parser')).toHaveClass('sessions-name', 'auto-named')
+  })
+
+  it('shows the hand-given name over an automatic one, unstyled', () => {
+    renderItem({ session: createSession({ name: 'Mine', auto_name: 'Tuning the parser' }) })
+
+    expect(screen.getByText('Mine')).not.toHaveClass('auto-named')
+    expect(screen.queryByText('Tuning the parser')).not.toBeInTheDocument()
+  })
+
   it('handles session without name', () => {
-    render(
-      <SessionItem
-        session={createSession({ name: null })}
-        isCurrent={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    )
+    renderItem({ session: createSession({ name: null }) })
 
     expect(screen.getByText('abc12345')).toBeInTheDocument()
     expect(screen.queryByText('Test Session')).not.toBeInTheDocument()
   })
 
   it('shows pin button for all sessions', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        isPinned={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin: vi.fn() }}
-      />,
-    )
+    renderItem({ isPinned: false, actions: { onTogglePin: vi.fn() } })
 
     expect(screen.getByTestId('icon-pin')).toBeInTheDocument()
   })
 
   it('shows pin button for current session too', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={true}
-        isPinned={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin: vi.fn() }}
-      />,
-    )
+    renderItem({ isCurrent: true, isPinned: false, actions: { onTogglePin: vi.fn() } })
 
     expect(screen.getByTestId('icon-pin')).toBeInTheDocument()
   })
 
   it('applies pinned class when isPinned=true', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        isPinned={true}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin: vi.fn() }}
-      />,
-    )
+    renderItem({ isPinned: true, actions: { onTogglePin: vi.fn() } })
 
     const pinBtn = screen.getByTestId('session-pin-btn')
     expect(pinBtn).toHaveClass('pinned')
   })
 
   it('does not apply pinned class when isPinned=false', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        isPinned={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin: vi.fn() }}
-      />,
-    )
+    renderItem({ isPinned: false, actions: { onTogglePin: vi.fn() } })
 
     const pinBtn = screen.getByTestId('session-pin-btn')
     expect(pinBtn).not.toHaveClass('pinned')
@@ -440,16 +314,7 @@ describe('SessionItem', () => {
   it('calls onTogglePin when pin button clicked', async () => {
     const user = userEvent.setup()
     const onTogglePin = vi.fn()
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        isPinned={false}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin }}
-      />,
-    )
+    renderItem({ isPinned: false, actions: { onTogglePin } })
 
     await user.click(screen.getByTitle('Pin session'))
 
@@ -457,47 +322,29 @@ describe('SessionItem', () => {
   })
 
   it('shows unpin title when pinned', () => {
-    render(
-      <SessionItem
-        session={createSession()}
-        isCurrent={false}
-        isPinned={true}
-        onResume={vi.fn()}
-        onRename={vi.fn()}
-        actions={{ onTogglePin: vi.fn() }}
-      />,
-    )
+    renderItem({ isPinned: true, actions: { onTogglePin: vi.fn() } })
 
     expect(screen.getByTitle('Unpin session')).toBeInTheDocument()
   })
 
   describe('Kill container button', () => {
-    it('shows kill button when session has container_id', () => {
-      render(
-        <SessionItem
-          session={createSession({ container_id: 'ctr-123' })}
-          isCurrent={false}
-          isPinned={false}
-          onResume={vi.fn()}
-          onRename={vi.fn()}
-          actions={{ onTogglePin: vi.fn(), onKillContainer: vi.fn() }}
-        />,
-      )
+    it("shows kill button while the session's container runs", () => {
+      renderItem({
+        session: createSession({ container_id: 'ctr-123' }),
+        status: 'running',
+        isPinned: false,
+        actions: { onTogglePin: vi.fn(), onKillContainer: vi.fn() },
+      })
 
       expect(screen.getByTestId('session-kill-btn')).toBeInTheDocument()
     })
 
-    it('hides kill button when session has no container_id', () => {
-      render(
-        <SessionItem
-          session={createSession({ container_id: null })}
-          isCurrent={false}
-          isPinned={false}
-          onResume={vi.fn()}
-          onRename={vi.fn()}
-          actions={{ onTogglePin: vi.fn(), onKillContainer: vi.fn() }}
-        />,
-      )
+    it('hides kill button when the session has no container', () => {
+      renderItem({
+        session: createSession({ container_id: null }),
+        isPinned: false,
+        actions: { onTogglePin: vi.fn(), onKillContainer: vi.fn() },
+      })
 
       expect(screen.queryByTestId('session-kill-btn')).not.toBeInTheDocument()
     })
@@ -505,37 +352,102 @@ describe('SessionItem', () => {
     it('calls onKillContainer when kill button clicked', async () => {
       const user = userEvent.setup()
       const onKillContainer = vi.fn()
-      render(
-        <SessionItem
-          session={createSession({ container_id: 'ctr-123' })}
-          isCurrent={false}
-          isPinned={false}
-          onResume={vi.fn()}
-          onRename={vi.fn()}
-          actions={{ onTogglePin: vi.fn(), onKillContainer }}
-        />,
-      )
+      renderItem({
+        session: createSession({ container_id: 'ctr-123' }),
+        status: 'running',
+        isPinned: false,
+        actions: { onTogglePin: vi.fn(), onKillContainer },
+      })
 
       await user.click(screen.getByTitle('Stop container'))
 
       expect(onKillContainer).toHaveBeenCalled()
     })
+
+    it('draws the dot from the status it is given, whatever the session record says', () => {
+      const { container, rerender } = renderItem({
+        session: createSession({ container_id: null }),
+        status: 'running',
+        actions: { onTogglePin: vi.fn(), onKillContainer: vi.fn() },
+      })
+      expect(container.querySelector('.container-status-dot')).toHaveClass(
+        'container-status-running',
+      )
+
+      rerender(
+        <SessionItem
+          session={createSession({ container_id: null })}
+          status="stopping"
+          isCurrent={false}
+          onResume={vi.fn()}
+          onRename={vi.fn()}
+          actions={{ onTogglePin: vi.fn(), onKillContainer: vi.fn() }}
+        />,
+      )
+      expect(container.querySelector('.container-status-dot')).toHaveClass(
+        'container-status-stopping',
+      )
+      expect(screen.getByTestId('session-kill-btn')).toBeDisabled()
+    })
+  })
+
+  describe('row states', () => {
+    const renderRow = props =>
+      render(
+        <SessionItem
+          session={createSession({ container_id: 'ctr-1' })}
+          status="running"
+          isCurrent={false}
+          onResume={vi.fn()}
+          onRename={vi.fn()}
+          actions={{ onTogglePin: vi.fn(), onKillContainer: vi.fn() }}
+          {...props}
+        />,
+      )
+
+    it('marks the dot and shows the reason, unquoted, in place of the last message', () => {
+      const { container } = renderRow({ dot: 'needs-you', reason: 'Decide: which path to keep' })
+
+      const dot = container.querySelector('.container-status-dot')
+      expect(dot).toHaveClass('container-status-needs-you')
+      expect(dot).toHaveAttribute('title', 'Needs you')
+      const last = container.querySelector('.sessions-last')
+      expect(last).toHaveTextContent(/^Decide: which path to keep$/)
+      expect(last.querySelector('span')).toHaveAttribute('title', 'Decide: which path to keep')
+      expect(screen.queryByText('"...Goodbye world"')).not.toBeInTheDocument()
+    })
+
+    it('keeps the last message when only a hidden fork needs you', () => {
+      const { container } = renderRow({ dot: 'needs-you', reason: null })
+
+      expect(container.querySelector('.container-status-dot')).toHaveClass(
+        'container-status-needs-you',
+      )
+      expect(screen.getByText('"...Goodbye world"')).toBeInTheDocument()
+    })
+
+    it.each([
+      ['working', 'Working'],
+      ['waiting', 'Waiting on background work'],
+    ])('marks the dot %s with the tooltip %s and keeps the last message', (dot, title) => {
+      const { container } = renderRow({ dot })
+
+      const dotEl = container.querySelector('.container-status-dot')
+      expect(dotEl).toHaveClass(`container-status-${dot}`)
+      expect(dotEl).toHaveAttribute('title', title)
+      expect(screen.getByText('"...Goodbye world"')).toBeInTheDocument()
+    })
+
+    it('offers no stop for a row whose own container is gone, whatever its dot', () => {
+      renderRow({ status: 'none', dot: 'needs-you' })
+
+      expect(screen.queryByTestId('session-kill-btn')).not.toBeInTheDocument()
+    })
   })
 
   describe('Save/Cancel button clicks', () => {
     it('saves rename when Save button is clicked', async () => {
-      const user = userEvent.setup()
-      const onRename = vi.fn()
-      render(
-        <SessionItem
-          session={createSession()}
-          isCurrent={false}
-          onResume={vi.fn()}
-          onRename={onRename}
-        />,
-      )
-
-      await user.click(screen.getByTitle('Rename session'))
+      const { user, onRename } = await startRename()
       const input = screen.getByPlaceholderText('Session name...')
       await user.clear(input)
       await user.type(input, 'Button Save Name')
@@ -547,18 +459,7 @@ describe('SessionItem', () => {
     })
 
     it('cancels rename when Cancel button is clicked', async () => {
-      const user = userEvent.setup()
-      const onRename = vi.fn()
-      render(
-        <SessionItem
-          session={createSession()}
-          isCurrent={false}
-          onResume={vi.fn()}
-          onRename={onRename}
-        />,
-      )
-
-      await user.click(screen.getByTitle('Rename session'))
+      const { user, onRename } = await startRename()
       const input = screen.getByPlaceholderText('Session name...')
       await user.type(input, 'Should Not Save')
 
@@ -571,15 +472,11 @@ describe('SessionItem', () => {
 
   describe('mobile branch (isMobile=true)', () => {
     it('hides pin, kill, and resume split-button', () => {
-      render(
-        <SessionItem
-          isMobile
-          session={createSession({ container_id: 'c-1' })}
-          isCurrent={false}
-          onResume={vi.fn()}
-          onRename={vi.fn()}
-        />,
-      )
+      renderItem({
+        isMobile: true,
+        session: createSession({ container_id: 'c-1' }),
+        status: 'running',
+      })
 
       expect(screen.queryByTestId('session-pin-btn')).not.toBeInTheDocument()
       expect(screen.queryByTestId('session-kill-btn')).not.toBeInTheDocument()
@@ -589,15 +486,7 @@ describe('SessionItem', () => {
     it('outer-card click calls onResume for non-current session', async () => {
       const user = userEvent.setup()
       const onResume = vi.fn()
-      render(
-        <SessionItem
-          isMobile
-          session={createSession()}
-          isCurrent={false}
-          onResume={onResume}
-          onRename={vi.fn()}
-        />,
-      )
+      renderItem({ isMobile: true, onResume })
 
       await user.click(screen.getByTestId('session-item'))
 
@@ -608,16 +497,7 @@ describe('SessionItem', () => {
       const user = userEvent.setup()
       const onResume = vi.fn()
       const onClose = vi.fn()
-      render(
-        <SessionItem
-          isMobile
-          session={createSession()}
-          isCurrent
-          onResume={onResume}
-          onRename={vi.fn()}
-          onClose={onClose}
-        />,
-      )
+      renderItem({ isMobile: true, isCurrent: true, onResume, onClose })
 
       await user.click(screen.getByTestId('session-item'))
 
@@ -628,15 +508,7 @@ describe('SessionItem', () => {
     it('edit pencil click stops propagation to the outer-card click', async () => {
       const user = userEvent.setup()
       const onResume = vi.fn()
-      render(
-        <SessionItem
-          isMobile
-          session={createSession()}
-          isCurrent={false}
-          onResume={onResume}
-          onRename={vi.fn()}
-        />,
-      )
+      renderItem({ isMobile: true, onResume })
 
       await user.click(screen.getByTitle('Rename session'))
 
@@ -645,19 +517,62 @@ describe('SessionItem', () => {
     })
 
     it('outer card exposes role=button when mobile and not editing', () => {
-      render(
-        <SessionItem
-          isMobile
-          session={createSession()}
-          isCurrent={false}
-          onResume={vi.fn()}
-          onRename={vi.fn()}
-        />,
-      )
+      renderItem({ isMobile: true })
 
       const card = screen.getByTestId('session-item')
       expect(card).toHaveAttribute('role', 'button')
       expect(card).toHaveAttribute('tabindex', '0')
     })
+  })
+})
+
+const NOW = Date.parse('2026-03-01T12:00:00Z')
+
+const idleSession = {
+  session_id: 'abc12345-6789-0def-ghij-klmnopqrstuv',
+  session_dir: '/tmp/sessions/abc12345',
+  name: 'Idle one',
+  started_at: new Date(NOW).toISOString(),
+  updated_at: null,
+  num_turns: 1,
+  total_cost_usd: 0,
+  todos: [],
+  commands: [],
+}
+
+function row() {
+  return (
+    <SessionItem session={idleSession} isCurrent={false} onResume={vi.fn()} onRename={vi.fn()} />
+  )
+}
+
+describe('SessionItem relative time', () => {
+  beforeEach(() => {
+    realRelativeTime = true
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+  })
+
+  afterEach(() => {
+    realRelativeTime = false
+    vi.useRealTimers()
+  })
+
+  it('reads 3h ago after three idle hours with no redraw from its parent', () => {
+    render(row())
+    expect(screen.getByText('just now')).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(3 * 3600_000))
+
+    expect(screen.getByText('3h ago')).toBeInTheDocument()
+  })
+
+  it('a redraw with the same session object after the clock moved shows the new text', () => {
+    const { rerender } = render(row())
+    act(() => vi.advanceTimersByTime(5 * 60_000))
+
+    rerender(row())
+
+    expect(screen.getByText('5m ago')).toBeInTheDocument()
   })
 })

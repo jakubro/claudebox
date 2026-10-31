@@ -1,10 +1,13 @@
 """Tests for prune failure reporting - the runtime's own error must reach the user."""
 
+from __future__ import annotations
+
 import argparse
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from claudebox.cleanup import SweepReport
 from claudebox_cli import cmd_prune
 
 
@@ -93,13 +96,22 @@ class TestBackendFailureReporting:
 class TestCategoryIndependence:
     """One category failing must not stop the others from running."""
 
-    def test_image_failure_still_runs_containers_and_exits_non_zero(self, capsys):
+    def test_image_failure_still_runs_containers_and_exits_non_zero(
+        self,
+        capsys,
+        tmp_path,
+        monkeypatch,
+    ):
         """Every category is attempted, and the command reports failure overall."""
 
+        monkeypatch.setenv("HOME", str(tmp_path))
         calls: list[list[str]] = []
 
         def fake_run(args, **_kwargs):
             calls.append(args)
+
+            if args[1] == "ps":
+                return subprocess.CompletedProcess(args, 0, stdout="[]\n", stderr="")
 
             if args[1] == "image":
                 raise subprocess.CalledProcessError(
@@ -119,7 +131,7 @@ class TestCategoryIndependence:
 
         with (
             patch("subprocess.run", side_effect=fake_run),
-            patch.object(cmd_prune, "cleanup_stale_dirs", return_value=[]),
+            patch.object(cmd_prune, "cleanup_stale_dirs", return_value=SweepReport()),
             patch.object(cmd_prune.Config, "load", return_value=SimpleNamespace(backend="podman")),
         ):
             exit_code = cmd_prune.handle(args)
@@ -127,6 +139,6 @@ class TestCategoryIndependence:
         err = _collapse(capsys.readouterr().err)
 
         assert exit_code == 1
-        assert [a[1] for a in calls] == ["image", "container"]
+        assert [a[1] for a in calls] == ["ps", "image", "container"]
         assert "cannot remove image" in err
         assert "stopped containers" in err

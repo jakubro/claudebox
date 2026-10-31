@@ -1,5 +1,7 @@
 """Handler for the ``shell`` verb - open bash shell in a fresh container."""
 
+from __future__ import annotations
+
 import argparse
 
 

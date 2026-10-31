@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.executors - per-concern pools and admission tracking."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import threading
@@ -17,7 +19,7 @@ class TestPoolIsolation:
 
     @pytest.mark.anyio
     async def test_a_saturated_listing_pool_does_not_delay_state_work(self):
-        """The reported outage: queued listings held every worker the registry writes needed too."""
+        """Queued listings must never hold the workers registry writes need."""
 
         pools = DaemonExecutors.create()
         release = asyncio.Event()
@@ -127,7 +129,7 @@ class TestPoolObservability:
 
             assert stats.queued == 0
             assert stats.running == 0
-            assert stats.oldest_queued_seconds == 0.0
+            assert stats.oldest_queued_seconds == pytest.approx(0.0)
         finally:
             pool.shutdown()
 

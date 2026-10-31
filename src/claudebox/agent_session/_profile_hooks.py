@@ -11,6 +11,8 @@ Hook failure is never fatal: a crash, timeout, or non-JSON response degrades to 
 context" rather than taking the session down with it.
 """
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
 from typing import Any

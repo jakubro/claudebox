@@ -4,6 +4,8 @@ Surfaces only the real binary can prove: raw-print sub-help (Rich-bypassed) and 
 rendering against the hermetic fake daemon.
 """
 
+from __future__ import annotations
+
 import pytest
 
 
@@ -58,3 +60,96 @@ class TestContainersDaemonUnreachable:
         combined = result.stdout + result.stderr
         assert "daemon not reachable" in combined
         assert "Traceback" not in result.stderr
+
+
+_NOW = "2026-01-01T00:00:00+00:00"
+
+
+def _listing(container_id: str, status: str, session_id: str) -> dict:
+    return {
+        "id": container_id,
+        "backend_id": "b-" + container_id,
+        "status": status,
+        "session_id": session_id,
+        "labels": {"kind": "session"},
+        "created_at": _NOW,
+        "members": [],
+    }
+
+
+# SPEC: cli:containers-list-session
+class TestContainersListSessions:
+    """Each row names its session, the session's name and, while the container runs, its state."""
+
+    @pytest.fixture
+    def daemon(self, hermetic_home, httpserver):
+        (hermetic_home / ".claudebox").mkdir()
+        (hermetic_home / ".claudebox" / "daemon.json").write_text(
+            '{"workspaces": [{"id": "ws-list", "path": "/srv/ws-list"}]}',
+        )
+        httpserver.expect_request("/api/workspaces/ws-list/containers").respond_with_json(
+            {
+                "containers": [
+                    _listing("c1aaaaaaaaaa1111", "running", "6d3c97d7-1111"),
+                    _listing("c2bbbbbbbbbb2222", "running", "9f2c41ab-2222"),
+                    _listing("c3cccccccccc3333", "stopped", "4ad147d3-3333"),
+                ],
+            },
+        )
+
+        return httpserver
+
+    def _rows(self, result) -> dict[str, str]:
+        lines = (result.stdout + result.stderr).splitlines()
+
+        return {
+            cid: next(line for line in lines if cid in line)
+            for cid in ("c1aaaa", "c2bbbb", "c3cccc")
+        }
+
+    def test_session_columns_name_the_session_and_its_state(self, daemon, run_claudebox) -> None:
+        daemon.expect_request("/api/workspaces/ws-list/sessions").respond_with_json(
+            {
+                "sessions": [
+                    {
+                        "session_id": "6d3c97d7-1111",
+                        "name": "Fix the login flow",
+                        "needs_user": "Decide: x",
+                    },
+                    {
+                        "session_id": "9f2c41ab-2222",
+                        "auto_name": "Tidy the notes",
+                        "activity": "working",
+                    },
+                    {"session_id": "4ad147d3-3333", "name": "Old spike", "needs_user": "Decide: y"},
+                ],
+            },
+        )
+
+        result = run_claudebox(
+            ["containers", "list"],
+            env={"COLUMNS": "250", "FORCE_COLOR": "1", "COLORTERM": "truecolor"},
+        )
+        rows = self._rows(result)
+
+        assert result.returncode == 0, result.stderr
+        assert "SESSION STATE" in result.stdout + result.stderr
+        assert "6d3c97d7" in rows["c1aaaa"] and "Fix the login flow" in rows["c1aaaa"]
+        assert "\x1b[38;2;194;65;12mneeds you" in rows["c1aaaa"]
+        assert "Tidy the notes" in rows["c2bbbb"]
+        assert "\x1b[38;2;168;85;247mworking" in rows["c2bbbb"]
+        assert "Old spike" in rows["c3cccc"] and "needs you" not in rows["c3cccc"]
+
+    def test_unloadable_sessions_leave_the_rows_without_session_columns(
+        self,
+        daemon,
+        run_claudebox,
+    ) -> None:
+        daemon.expect_request("/api/workspaces/ws-list/sessions").respond_with_data("", status=500)
+
+        result = run_claudebox(["containers", "list"], env={"COLUMNS": "250", "NO_COLOR": "1"})
+        rows = self._rows(result)
+
+        assert result.returncode == 0, result.stderr
+        assert all(rows.values())
+        assert "6d3c97d7" not in rows["c1aaaa"]

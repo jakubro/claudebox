@@ -89,6 +89,16 @@ describe('ThinkingBlock', () => {
       expect(timing).toHaveTextContent('@ +35s')
     })
 
+    it('shows the time of the thinking on hover', () => {
+      const event = { ...createEvent('Thought'), ts: '2025-01-18T12:00:36Z' }
+      render(<ThinkingBlock event={event} blockRelativeTime={35} />)
+
+      expect(document.querySelector('.block-timing')).toHaveAttribute(
+        'title',
+        new Date('2025-01-18T12:00:36Z').toLocaleString(),
+      )
+    })
+
     it('does not render timing when blockRelativeTime is null', () => {
       render(<ThinkingBlock event={createEvent('Thought')} />)
 

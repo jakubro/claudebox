@@ -1,15 +1,17 @@
 """Persistent key-value store for UI state with global and per-session namespaces."""
 
+from __future__ import annotations
+
 import asyncio
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from claudebox import read_json, write_json
-from claudebox.constants import CONFIG_DIR_NAME, SESSION_MAX_AGE
+from claudebox import days_before, read_json, write_json
+from claudebox.constants import CONFIG_DIR_NAME, UI_STATE_FILE, UI_STATE_VERSION
 from .models import UIState
 from .._locking import locked
-from ...constants import UI_STATE_FILE
 
 
 if TYPE_CHECKING:
@@ -19,10 +21,16 @@ if TYPE_CHECKING:
 class UIStateService:
     """Read and patch UI state backed by a per-workspace JSON file with versioning and pruning."""
 
-    VERSION = 3
+    VERSION = UI_STATE_VERSION
 
-    def __init__(self, workspace: "RegisteredWorkspace", executor: ThreadPoolExecutor) -> None:
+    def __init__(
+        self,
+        workspace: RegisteredWorkspace,
+        executor: ThreadPoolExecutor,
+        session_days: int,
+    ) -> None:
         self._state_path = workspace.path / CONFIG_DIR_NAME / UI_STATE_FILE
+        self._session_days = session_days
         # Daemon-owned executor - keeps patch()'s locked read-modify-write off the event loop.
         self._executor = executor
 
@@ -60,7 +68,11 @@ class UIStateService:
                 updated_session = self._apply_operations(virtual["session"], data["session"])
                 physical["sessions"][session_id] = virtual["session"] = updated_session
 
-            physical["sessions"] = self._prune_old_sessions(physical["sessions"])
+            physical["sessions"] = self._prune_old_sessions(
+                physical["sessions"],
+                physical.get("global", {}).get("pinnedSessions", []),
+                self._session_days,
+            )
 
             write_json(self._state_path, physical)
 
@@ -169,14 +181,15 @@ class UIStateService:
         return current, keys[-1]
 
     @classmethod
-    def _prune_old_sessions(cls, sessions: dict) -> dict:
-        """Remove sessions older than expiry threshold."""
+    def _prune_old_sessions(cls, sessions: dict, pinned: Iterable[str], days: int) -> dict:
+        """Remove sessions idle longer than `days` days, keeping every pinned one."""
 
-        cutoff = datetime.now(UTC) - SESSION_MAX_AGE
+        cutoff = days_before(datetime.now(UTC), days)
         cutoff_iso = cutoff.isoformat()
+        kept = set(pinned)
 
         return {
             session_id: data
             for session_id, data in sessions.items()
-            if data["updated_at"] >= cutoff_iso
+            if session_id in kept or data["updated_at"] >= cutoff_iso
         }

@@ -19,6 +19,8 @@ export const TURN_ASSISTANT_BUBBLE_HEIGHT_PX = 64
 export const TURN_HORIZONTAL_PADDING_PX = 56
 export const AVG_CHAR_WIDTH_PX = 8
 export const LINE_HEIGHT_PX = 18
+/** Extra space a blank line opens between two markdown paragraphs or blocks. */
+export const PX_PER_TEXT_BLOCK_GAP = 12
 export const PX_PER_THINKING_BLOCK = 60
 export const PX_PER_TOOL_BLOCK = 40
 /** Bash's own Command + Result sections add chrome beyond a plain tool block. */
@@ -31,10 +33,16 @@ export const ATTACHMENT_GAP_PX = 8
 /** Flat height of the collapsed "Replied inline" placeholder (independent of comment count). */
 export const PX_PER_INLINE_REPLIES_PLACEHOLDER = 30
 export const TURN_MIN_PREDICTED_HEIGHT_PX = 100
+/** .turn-container's bottom margin, inside each windowed row's measured height. */
+export const TURN_ROW_MARGIN_PX = 16
 /** A promoted thread's folded-history row - fixed height, whatever run it stands in for. */
 export const THREAD_FOLD_ROW_HEIGHT_PX = 32
 // Turns mounted beyond the viewport per side - avoids scroll gaps, bounds the mounted set on large sessions.
 export const TURN_OVERSCAN = 4
+/** A session row's .sessions-item min-height plus its bottom margin; the origin line adds one row. */
+export const SESSION_ROW_ESTIMATE_PX = 94
+export const SESSION_ROW_ORIGIN_LINE_PX = 16
+export const SESSION_LIST_OVERSCAN = 10
 export const FLOATING_PANEL_MIN_HEIGHT = 300
 export const WIDE_FLOAT_MIN_HEIGHT_RATIO = 0.3
 export const WIDE_FLOAT_MIN_WIDTH_RATIO = 0.6
@@ -69,3 +77,5 @@ export const WORK_ENTRY_HORIZONTAL_PADDING_PX = 32
 /** Mermaid zoom overlay's scale bounds, relative to the fitted (opening) scale. */
 export const MERMAID_ZOOM_MIN_SCALE_RATIO = 0.25
 export const MERMAID_ZOOM_MAX_SCALE_RATIO = 8
+export const INLINE_FLOAT_MIN_WIDTH = 280
+export const INLINE_FLOAT_MIN_BODY_HEIGHT = 60

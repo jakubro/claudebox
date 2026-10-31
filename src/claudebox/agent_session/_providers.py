@@ -7,6 +7,8 @@ Imports `httpx` only, no `langchain_*` packages, so provider-package lazy loadin
 `init_chat_model` at runtime rather than happening here at import time.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Self
@@ -26,7 +28,7 @@ class ProviderSpec:
 
     Attributes:
         provider: Bare provider name as init_chat_model expects (e.g. "anthropic", "ollama").
-        model_id: Bare model id with no provider prefix (e.g. "claude-opus-5", "llama3.2:3b").
+        model_id: Bare model id with no provider prefix (e.g. "claude-opus-5-5", "llama3.2:3b").
         full_id: Composite "provider:model_id" forwarded to init_chat_model; equals raw_model
             passed to parse().
         kwargs: Forwarded verbatim to init_chat_model; unrecognized keys raise at provider init.
@@ -84,13 +86,11 @@ MODEL_CONTEXT_WINDOW: dict[str, int] = {
     "qwen2.5:32b": 32_768,
     "mistral:7b": 32_768,
     "phi3.5:3.8b": 128_000,
-    # Anthropic - dated id and alias both resolve to the same window
+    # Anthropic
     "claude-fable-5-1": 1_000_000,
-    "claude-fable-5": 1_000_000,
-    "claude-opus-5": 1_000_000,
-    "claude-sonnet-5": 1_000_000,
-    "claude-haiku-4-5-20251001": 200_000,
-    "claude-haiku-4-5": 200_000,
+    "claude-opus-5-5": 1_000_000,
+    "claude-sonnet-5-5": 1_000_000,
+    "claude-haiku-5-5": 1_000_000,
     # OpenAI
     "gpt-4o": 128_000,
     "gpt-4o-mini": 128_000,
@@ -133,13 +133,11 @@ PRICE_PER_MTOK: dict[str, dict[str, float]] = {
     "qwen2.5:32b": {"input": 0.0, "output": 0.0},
     "mistral:7b": {"input": 0.0, "output": 0.0},
     "phi3.5:3.8b": {"input": 0.0, "output": 0.0},
-    # Anthropic - dated id and alias both resolve to the same rates
+    # Anthropic
     "claude-fable-5-1": {"input": 10.0, "output": 50.0},
-    "claude-fable-5": {"input": 10.0, "output": 50.0},
-    "claude-opus-5": {"input": 5.0, "output": 25.0},
-    "claude-sonnet-5": {"input": 3.0, "output": 15.0},
-    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
-    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+    "claude-opus-5-5": {"input": 4.0, "output": 20.0},
+    "claude-sonnet-5-5": {"input": 2.0, "output": 10.0},
+    "claude-haiku-5-5": {"input": 0.10, "output": 0.50},
     # OpenAI
     "gpt-4o": {"input": 2.50, "output": 10.0},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},

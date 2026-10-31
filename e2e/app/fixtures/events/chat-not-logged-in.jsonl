@@ -1,0 +1,3 @@
+{"type":"user","subtype":"message","is_human":true,"content":"say hi","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"system","subtype":"error","turn_id":"turn_001","ts":"2025-01-18T12:00:01Z","content":"Not logged in. Run `claudebox run` in a terminal in this workspace and finish the login it opens, then send your message again.","id":"evt_002","primary":false,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:01Z","content":"Not logged in · Please run /login","id":"evt_003","primary":false,"is_human":false}

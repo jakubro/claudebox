@@ -2,10 +2,13 @@
 # Claudebox installation script
 #
 # Usage: curl -LsSf https://raw.githubusercontent.com/jakubro/claudebox/main/bin/install.sh | bash
-set -euo pipefail
+# -E so the ERR trap registered at the foot of this file reaches functions and subshells too.
+set -Eeuo pipefail
 
 LOCK_FILE="$HOME/.claudebox/update.lock"
 LOCK_INFO="$HOME/.claudebox/update.lock.info"
+
+SCRIPT_PATH=${BASH_SOURCE[0]:-}
 
 # --------------------------------------------------------------------------------------------------
 # Core
@@ -15,19 +18,25 @@ LOCK_INFO="$HOME/.claudebox/update.lock.info"
 install_lib() {
   mkdir -p ~/.claudebox
 
-  if [[ -z ${BASH_SOURCE[0]} ]]; then
-    # Remote installation via git
+  # Piped to bash: no file to link against, so the library has to come from the remote.
+  if [[ -z $SCRIPT_PATH ]]; then
     install_lib_remote "$REMOTE_SOURCE_PATH"
-  else
-    # Local installation via symlink
-    local script_dir
-    script_dir=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
-
-    local local_source_path
-    local_source_path=$(realpath "$script_dir"/..) # root of this repo
-
-    install_lib_symlink "$local_source_path"
+    return
   fi
+
+  local script_dir
+  script_dir=$(dirname "$(realpath "$SCRIPT_PATH")")
+
+  local local_source_path
+  local_source_path=$(realpath "$script_dir"/..) # root of this repo
+
+  # An installed clone running its own updater: linking it to itself would delete the source first.
+  if [[ ! -L ~/.claudebox/lib && $local_source_path == "$(realpath -m ~/.claudebox/lib)" ]]; then
+    install_lib_remote "$REMOTE_SOURCE_PATH"
+    return
+  fi
+
+  install_lib_symlink "$local_source_path"
 }
 
 # Clone or update library from remote git repository
@@ -44,20 +53,86 @@ install_lib_remote() {
       unlink lib
       print_success "Removed"
     elif [[ -e lib ]]; then
-      print_step "Updating existing installation..."
-      if (cd lib && git pull --depth 1); then
-        print_success "Updated"
+      if update_lib_in_place; then
         return
-      else
-        print_fail "git pull failed"
-        print_step "Falling back to full clone..."
-        rm -rf lib
       fi
+
+      print_step "Falling back to a staged clone..."
+
+      if ! stage_and_swap_lib "$source"; then
+        print_fail "staged clone also failed - keeping the existing installation"
+        return 1
+      fi
+
+      print_success "Installed"
+      return
     fi
 
     git clone --depth 1 "$source" lib
     print_success "Installed"
   )
+}
+
+# Fetch and hard-reset the clone in ./lib to its remote HEAD, discarding local edits
+update_lib_in_place() {
+  print_step "Updating existing installation..."
+
+  (
+    cd lib
+
+    if ! git fetch --depth 1; then
+      print_fail "git fetch failed"
+      exit 1
+    fi
+
+    local dirty
+    dirty=$(git status --porcelain)
+    if [[ -n $dirty ]]; then
+      print_warn "discarding local changes: $(echo "$dirty" | cut -c4- | paste -sd ', ')"
+    fi
+
+    if ! git reset --hard FETCH_HEAD >/dev/null; then
+      print_fail "git reset failed"
+      exit 1
+    fi
+
+    # Ignored paths stay: the running daemon serves from .venv and the built UI, and later steps refresh them
+    if ! git clean -fd >/dev/null; then
+      print_fail "git clean failed"
+      exit 1
+    fi
+
+    print_success "Updated"
+  )
+}
+
+# Clone into a scratch sibling and swap it in only once the clone succeeds
+stage_and_swap_lib() {
+  local source=$1
+
+  rm -rf lib.new
+  if ! git clone --depth 1 "$source" lib.new; then
+    rm -rf lib.new
+    return 1
+  fi
+
+  carry_build_products lib lib.new
+
+  rm -rf lib.old
+  mv lib lib.old
+  mv lib.new lib
+  rm -rf lib.old
+}
+
+# Move the virtualenv and built UI the running daemon serves from into a replacement tree
+carry_build_products() {
+  local from=$1 to=$2 product
+
+  for product in .venv src/claudebox_frontend/dist; do
+    if [[ -e $from/$product && ! -e $to/$product ]]; then
+      mkdir -p "$(dirname "$to/$product")" && mv "$from/$product" "$to/$product"
+    fi
+  done
 }
 
 # Create symlink to local library source for development
@@ -126,9 +201,13 @@ resolve_backend() {
 # Read backend value from settings.toml, empty if commented or absent
 read_config_backend() {
   local settings=~/.claudebox/settings.toml
-  if [[ -f $settings ]]; then
-    grep -oP '^\s*backend\s*=\s*"\K[^"]+' "$settings" | head -1
+
+  if [[ ! -f $settings ]]; then
+    return 0
   fi
+
+  # The key ships commented, so no match is ordinary - unguarded, grep's exit 1 would end the run.
+  grep -oP '^\s*backend\s*=\s*"\K[^"]+' "$settings" | head -1 || true
 }
 
 # Write or update backend value in settings.toml
@@ -350,20 +429,24 @@ ensure_nvm() {
     return
   fi
 
-  curl -LsSf https://raw.githubusercontent.com/nvm-sh/nvm/master/install | /bin/bash
+  curl -LsSf https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | /bin/bash
   source_nvm
   print_success "Installed"
 }
 
 # Load nvm as a shell function
 source_nvm() {
-  if type nvm &>/dev/null; then
+  # The file test leads: nothing sources an rc file under `curl | bash`, so `type nvm` answers only
+  # for a caller that already loaded it, and a tilde inside quotes never expands to a real path.
+  local nvm_dir=${NVM_DIR:-$HOME/.nvm}
+
+  if [[ -s "$nvm_dir/nvm.sh" ]]; then
+    source "$nvm_dir/nvm.sh"
+
     return 0
   fi
 
-  local nvm_dir="${NVM_DIR:-~/.nvm}"
-  if [[ -s "$nvm_dir/nvm.sh" ]]; then
-    source "$nvm_dir/nvm.sh"
+  if type nvm &>/dev/null; then
     return 0
   fi
 
@@ -389,8 +472,15 @@ ensure_caddy() {
   version=$(
     curl -sSI https://github.com/caddyserver/caddy/releases/latest \
       | grep -i '^location:' \
-      | grep -oP 'v\K[0-9.]+'
+      | grep -oP 'v\K[0-9.]+' \
+      || true
   )
+
+  # A redirect that stops carrying a version reads as an empty match, which must not pass for one.
+  if [[ -z $version ]]; then
+    print_error_top "could not resolve the latest Caddy release from GitHub"
+    exit 1
+  fi
 
   local url="https://github.com/caddyserver/caddy/releases/download/v${version}/caddy_${version}_${PLATFORM_OS}_${PLATFORM_ARCH}.tar.gz"
 
@@ -519,6 +609,15 @@ acquire_update_lock() {
   } >"$LOCK_INFO"
 }
 
+# Name the command that ended the run, once - a subshell traps there and again in its parent
+on_error() {
+  local rc=$1 line=$2 command=$3
+
+  if ((BASH_SUBSHELL == 0)); then
+    print_error_top "aborted at line $line: $command (exit $rc)"
+  fi
+}
+
 cleanup() {
   if [[ -n $TMP_DIR ]]; then
     rm -rf "$TMP_DIR"
@@ -599,7 +698,10 @@ BANNER
   print_result "✓ Installation complete" "Claudebox running on https://localhost:41820"
 }
 
-# Run when executed, not when sourced. BASH_SOURCE is empty under 'curl | bash'.
-if [[ -z ${BASH_SOURCE[0]:-} || ${BASH_SOURCE[0]:-} == "$0" ]]; then
+# At file scope, not in main(), so a failure above it is named and a sourcing caller gets it too
+trap 'on_error $? $LINENO "$BASH_COMMAND"' ERR
+
+# Run when executed, not when sourced. SCRIPT_PATH is empty under 'curl | bash'.
+if [[ -z $SCRIPT_PATH || $SCRIPT_PATH == "$0" ]]; then
   main "$@"
 fi

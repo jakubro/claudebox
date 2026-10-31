@@ -1,5 +1,7 @@
 """Capability transport - Session.get_capabilities, REST endpoint, session-info envelope, SSE init enrichment."""
 
+from __future__ import annotations
+
 import dataclasses
 from unittest.mock import MagicMock
 

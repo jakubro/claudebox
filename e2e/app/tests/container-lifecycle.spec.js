@@ -1,7 +1,17 @@
 /** E2E tests for container lifecycle, status indicators, overlays, and daemon SSE. */
 
 import { expect, test } from '@playwright/test'
-import { openSessionsPanel, waitForAppReady } from '../helpers.js'
+import {
+  captureSends,
+  openLiveSessionWithAPI,
+  openResumingSession,
+  openSession,
+  openSessionsPanel,
+  openSessionWithAPI,
+  openStashPanel,
+  serveSessionList,
+  waitForAppReady,
+} from '../helpers.js'
 import {
   DEFAULT_CONTAINER_ID,
   DEFAULT_SESSION_ID,
@@ -10,7 +20,46 @@ import {
   loadFixture,
   mockAPI,
 } from '../mocks/api.js'
-import { createDaemonSSEController, createSSEController, mockSSE } from '../mocks/sse.js'
+import {
+  createDaemonSSEController,
+  createSSEController,
+  loadEventsFromFixture,
+  mockSSE,
+  mockSSEDynamic,
+} from '../mocks/sse.js'
+
+async function mockSessionOnContainer(page) {
+  await mockAPI(page)
+  await serveSessionList(page, base => [{ ...base, container_id: DEFAULT_CONTAINER_ID }])
+}
+
+async function openPanelListing(page, sessionsFrom) {
+  await mockAPI(page)
+  await serveSessionList(page, sessionsFrom)
+  await openSession(page)
+  await openSessionsPanel(page)
+}
+
+async function startHeldCreation(page, created) {
+  let release
+  const released = new Promise(resolve => {
+    release = resolve
+  })
+  const daemon = await createDaemonSSEController(page)
+  await mockAPI(page, {
+    handlers: {
+      newSession: async route => {
+        await released
+        await route.fulfill({ status: 200, json: created })
+      },
+    },
+  })
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  await page.locator('[data-testid="header-new-session-btn"]').click()
+
+  return { daemon, release }
+}
 
 test.describe('Container Lifecycle', () => {
   test('each session has its own container', async ({ page }) => {
@@ -27,9 +76,7 @@ test.describe('Container Lifecycle', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect.poll(() => containerIds.size).toBeGreaterThanOrEqual(1)
@@ -57,9 +104,7 @@ test.describe('Container Lifecycle', () => {
         })
       },
     )
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openSessionsPanel(page)
     const resumeBtn = page
@@ -82,20 +127,7 @@ test.describe('Container Lifecycle', () => {
     })
     await mockSSE(page)
 
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          json: {
-            sessions: [
-              {
-                ...loadFixture('sessions/default.json').sessions[0],
-                container_id: DEFAULT_CONTAINER_ID,
-              },
-            ],
-          },
-        })
-      }
-    })
+    await serveSessionList(page, base => [{ ...base, container_id: DEFAULT_CONTAINER_ID }])
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -108,45 +140,30 @@ test.describe('Container Lifecycle', () => {
   })
 
   test('container status rendered from sessions list', async ({ page }) => {
-    await mockAPI(page)
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        const base = loadFixture('sessions/default.json').sessions[0]
-        await route.fulfill({
-          json: {
-            sessions: [
-              {
-                ...base,
-                session_id: 's-running',
-                container_id: 'ctr-1',
-                container_status: 'running',
-                num_turns: 1,
-              },
-              {
-                ...base,
-                session_id: 's-starting',
-                container_id: 'ctr-2',
-                container_status: 'starting',
-                num_turns: 1,
-              },
-              {
-                ...base,
-                session_id: 's-crashed',
-                container_id: 'ctr-3',
-                container_status: 'crashed',
-                num_turns: 1,
-              },
-              { ...base, session_id: 's-stopped', container_status: 'stopped', num_turns: 1 },
-            ],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSessionsPanel(page)
+    await openPanelListing(page, base => [
+      {
+        ...base,
+        session_id: 's-running',
+        container_id: 'ctr-1',
+        container_status: 'running',
+        num_turns: 1,
+      },
+      {
+        ...base,
+        session_id: 's-starting',
+        container_id: 'ctr-2',
+        container_status: 'starting',
+        num_turns: 1,
+      },
+      {
+        ...base,
+        session_id: 's-crashed',
+        container_id: 'ctr-3',
+        container_status: 'crashed',
+        num_turns: 1,
+      },
+      { ...base, session_id: 's-stopped', container_status: 'stopped', num_turns: 1 },
+    ])
     const dots = page.locator('.sessions-panel .container-status-dot')
     await expect(dots.first()).toBeVisible()
     expect(await dots.count()).toBeGreaterThanOrEqual(4)
@@ -154,24 +171,8 @@ test.describe('Container Lifecycle', () => {
 
   test('daemon monitors container health (sessions list reflects status)', async ({ page }) => {
     // Health monitoring is daemon-side; this only verifies the frontend renders sessions-list status.
-    await mockAPI(page)
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          json: {
-            sessions: [
-              {
-                ...loadFixture('sessions/default.json').sessions[0],
-                container_id: DEFAULT_CONTAINER_ID,
-              },
-            ],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await mockSessionOnContainer(page)
+    await openSession(page)
 
     await openSessionsPanel(page)
     const dot = page.locator('.container-status-dot.container-status-running').first()
@@ -183,24 +184,8 @@ test.describe('Container Status Indicators', () => {
   // SPEC: container:tab-dot
   // SPEC: layout:header-status-dot
   test('session header strip shows green dot when container running', async ({ page }) => {
-    await mockAPI(page)
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          json: {
-            sessions: [
-              {
-                ...loadFixture('sessions/default.json').sessions[0],
-                container_id: DEFAULT_CONTAINER_ID,
-              },
-            ],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await mockSessionOnContainer(page)
+    await openSession(page)
 
     const dot = page.locator(
       '[data-testid="session-header-strip"] [data-testid="session-header-status-dot"]',
@@ -209,26 +194,34 @@ test.describe('Container Status Indicators', () => {
   })
 
   // SPEC: container:tab-dot
+  // SPEC: layout:header-status-dot
+  test("session header strip shows the open session's state, named on hover", async ({ page }) => {
+    const sid = name => `${name}-0000-0000-0000-000000000000`
+    await mockAPI(page, { sessionsFixture: 'sessions/working.json' })
+    await mockSSE(page)
+    const dot = page.locator(
+      '[data-testid="session-header-strip"] [data-testid="session-header-status-dot"]',
+    )
+
+    for (const [session, state, title] of [
+      ['working1', 'working', 'Working'],
+      ['waiting1', 'waiting', 'Waiting on background work'],
+      ['askwait1', 'needs-you', 'Needs you'],
+    ]) {
+      await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${sid(session)}`)
+      await waitForAppReady(page)
+
+      await expect(dot).toHaveAttribute('data-status', state)
+      await expect(dot).toHaveClass(new RegExp(`container-status-${state}`))
+      await expect(dot).toHaveAttribute('title', title)
+    }
+  })
+
+  // SPEC: container:tab-dot
   test('session tab shows amber dot while container is stopping', async ({ page }) => {
     // Covers the amber branch of the green/amber/gray dot-state contract.
-    await mockAPI(page)
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          json: {
-            sessions: [
-              {
-                ...loadFixture('sessions/default.json').sessions[0],
-                container_id: DEFAULT_CONTAINER_ID,
-              },
-            ],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await mockSessionOnContainer(page)
+    await openSession(page)
 
     // The header-strip dot watches the container map and swaps to the stopping class.
     await page.evaluate(sid => {
@@ -256,37 +249,19 @@ test.describe('Container Status Indicators', () => {
   // SPEC: container:panel-dot
   // SPEC: panel-session:container-dot
   test('sessions panel rows show container status dots', async ({ page }) => {
-    await mockAPI(page)
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          json: {
-            sessions: [
-              {
-                ...loadFixture('sessions/default.json').sessions[0],
-                container_id: DEFAULT_CONTAINER_ID,
-                num_turns: 1,
-              },
-              {
-                session_id: 'no-ctr',
-                name: 'No Container',
-                workspace: '/home/user/project',
-                num_turns: 2,
-                total_cost_usd: 0,
-                total_duration_ms: 0,
-                started_at: '2025-01-17T12:00:00Z',
-                updated_at: '2025-01-17T12:00:00Z',
-              },
-            ],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSessionsPanel(page)
+    await openPanelListing(page, base => [
+      { ...base, container_id: DEFAULT_CONTAINER_ID, num_turns: 1 },
+      {
+        session_id: 'no-ctr',
+        name: 'No Container',
+        workspace: '/home/user/project',
+        num_turns: 2,
+        total_cost_usd: 0,
+        total_duration_ms: 0,
+        started_at: '2025-01-17T12:00:00Z',
+        updated_at: '2025-01-17T12:00:00Z',
+      },
+    ])
     // Session with container: green dot
     await expect(
       page.locator('.sessions-panel .container-status-dot.container-status-running'),
@@ -302,6 +277,8 @@ test.describe('Container Status Indicators', () => {
   test('stopping a session clears every status dot together - no surface wedges', async ({
     page,
   }) => {
+    // Waits out the sessions list's 2 s refresh debounce.
+    test.setTimeout(30_000)
     const daemon = await createDaemonSSEController(page)
     await mockAPI(page)
 
@@ -355,7 +332,7 @@ test.describe('Container Status Indicators', () => {
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopping')
     await daemon.sendContainerStatus(DEFAULT_CONTAINER_ID, 'stopped')
     stopped = true
-    await daemon.sendEvent({ type: 'sessions_changed' })
+    await daemon.sendEvent({ type: 'sessions_changed', workspace_id: DEFAULT_WORKSPACE_ID })
 
     // Every dot clears together - none wedged on stopping, none back to running.
     await expect(headerDot).toHaveAttribute('data-status', 'none')
@@ -365,6 +342,8 @@ test.describe('Container Status Indicators', () => {
 
   // SPEC: container:thread-stop-independent
   test('a side conversation finishing its answer clears only its own dot', async ({ page }) => {
+    // Waits out the sessions list's 2 s refresh debounce.
+    test.setTimeout(30_000)
     const daemon = await createDaemonSSEController(page)
     await mockAPI(page)
 
@@ -372,28 +351,17 @@ test.describe('Container Status Indicators', () => {
     // The side thread starts live (resolves to the parent's container); the daemon's health poll
     // later drops it from the container's live set while the container itself never stops.
     let sideThreadLive = true
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback()
-        return
-      }
-      const base = loadFixture('sessions/default.json').sessions[0]
-      await route.fulfill({
-        json: {
-          sessions: [
-            { ...base, num_turns: 1, container_id: DEFAULT_CONTAINER_ID },
-            {
-              ...base,
-              session_id: sideThreadId,
-              parent_session_id: DEFAULT_SESSION_ID,
-              is_side_thread: true,
-              num_turns: 1,
-              container_id: sideThreadLive ? DEFAULT_CONTAINER_ID : null,
-            },
-          ],
-        },
-      })
-    })
+    await serveSessionList(page, base => [
+      { ...base, num_turns: 1, container_id: DEFAULT_CONTAINER_ID },
+      {
+        ...base,
+        session_id: sideThreadId,
+        parent_session_id: DEFAULT_SESSION_ID,
+        is_side_thread: true,
+        num_turns: 1,
+        container_id: sideThreadLive ? DEFAULT_CONTAINER_ID : null,
+      },
+    ])
     // No mockSSE() here - the controllable mock already auto-connects chat SSE, and layering
     // another EventSource override on top would clobber the daemon stream sendEvent() uses.
     await page.goto(DEFAULT_SESSION_URL)
@@ -415,10 +383,34 @@ test.describe('Container Status Indicators', () => {
     // The side thread finishes answering and drops out of the container's live set - no
     // container-level event fires at all, since the container itself never stops.
     sideThreadLive = false
-    await daemon.sendEvent({ type: 'sessions_changed' })
+    await daemon.sendEvent({ type: 'sessions_changed', workspace_id: DEFAULT_WORKSPACE_ID })
 
     await expect(threadDot).toHaveClass(/container-status-none/)
     await expect(primaryDot).toHaveAttribute('data-status', 'running')
+  })
+
+  // SPEC: container:dot-states
+  test('the session states colour any dot, outside the Sessions panel too', async ({ page }) => {
+    await openSessionWithAPI(page)
+
+    const paint = await page.evaluate(() => {
+      const out = {}
+      for (const state of ['running', 'working', 'waiting', 'needs-you']) {
+        const span = document.createElement('span')
+        span.className = `container-status-dot container-status-${state}`
+        document.body.appendChild(span)
+        const style = getComputedStyle(span)
+        out[state] = { color: style.backgroundColor, opacity: Number(style.opacity) }
+        span.remove()
+      }
+      return out
+    })
+
+    expect(paint.working.color).toBe('rgb(168, 85, 247)')
+    expect(paint.waiting.color).toBe(paint.working.color)
+    expect(paint.waiting.opacity).toBeLessThan(paint.working.opacity)
+    expect(paint['needs-you'].color).toBe('rgb(194, 65, 12)')
+    expect(paint.running.color).not.toBe(paint.working.color)
   })
 
   // SPEC: container:dot-states
@@ -426,10 +418,7 @@ test.describe('Container Status Indicators', () => {
     page,
   }) => {
     // Mounts a real dot per documented state and reads its computed color, anchoring the class->color contract.
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
 
     const colors = await page.evaluate(() => {
       const states = [
@@ -487,6 +476,106 @@ test.describe('Container Status Indicators', () => {
   })
 })
 
+test.describe('Working dot', () => {
+  const row = (page, shortId) =>
+    page
+      .locator('[data-testid="session-item"]')
+      .filter({ has: page.locator('.sessions-id').getByText(shortId, { exact: true }) })
+  const dotOf = (page, shortId) => row(page, shortId).locator('.container-status-dot')
+  const paint = dot =>
+    dot.evaluate(el => {
+      const style = getComputedStyle(el)
+      const [r, g, b] = style.backgroundColor.match(/\d+/g).map(Number)
+      const max = Math.max(r, g, b)
+      const min = Math.min(r, g, b)
+      const hue =
+        max === r
+          ? (60 * (g - b)) / (max - min)
+          : max === g
+            ? 60 * (2 + (b - r) / (max - min))
+            : 60 * (4 + (r - g) / (max - min))
+      return {
+        color: style.backgroundColor,
+        hue: (hue + 360) % 360,
+        opacity: Number(style.opacity),
+        animation: style.animationName,
+      }
+    })
+
+  test.beforeEach(async ({ page }) => {
+    await mockAPI(page, { sessionsFixture: 'sessions/working.json' })
+    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/containers/*`, async route => {
+      if (route.request().method() === 'DELETE') {
+        await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+      } else {
+        await route.fallback()
+      }
+    })
+    await openSession(page)
+    await openSessionsPanel(page)
+  })
+
+  // SPEC: panel-session:working-dot
+  // SPEC: container:panel-dot
+  test("a working session's dot is purple and holds still", async ({ page }) => {
+    const dot = dotOf(page, 'working1')
+
+    await expect(dot).toHaveClass(/container-status-working/)
+    await expect(dot).toHaveAttribute('title', 'Working')
+    const working = await paint(dot)
+    expect(working.hue).toBeGreaterThan(255)
+    expect(working.hue).toBeLessThan(310)
+    expect(working.opacity).toBe(1)
+    expect(working.animation).toBe('none')
+  })
+
+  // SPEC: panel-session:working-dot-background
+  test('a session waiting on background work shows the same purple, dimmer', async ({ page }) => {
+    const waitingDot = dotOf(page, 'waiting1')
+
+    await expect(waitingDot).toHaveClass(/container-status-waiting/)
+    await expect(waitingDot).toHaveAttribute('title', 'Waiting on background work')
+    const working = await paint(dotOf(page, 'working1'))
+    const waiting = await paint(waitingDot)
+    expect(waiting.color).toBe(working.color)
+    expect(waiting.opacity).toBeLessThan(working.opacity)
+  })
+
+  // SPEC: panel-session:working-dot-precedence
+  test('working outranks needing you, needing you outranks waiting, stopping outranks working', async ({
+    page,
+  }) => {
+    await expect(dotOf(page, 'askwork1')).toHaveClass(/container-status-working/)
+    await expect(row(page, 'askwork1').locator('.sessions-last')).toHaveText(
+      '"...the agent\'s last reply"',
+    )
+    await expect(dotOf(page, 'askwait1')).toHaveClass(/container-status-needs-you/)
+    await expect(row(page, 'askwait1').locator('.sessions-last')).toHaveText(
+      'Decide: which branch to merge',
+    )
+    await expect(dotOf(page, 'stale001')).toHaveClass(/container-status-none/)
+
+    await row(page, 'working1').getByTestId('session-kill-btn').click()
+    await expect(dotOf(page, 'working1')).toHaveClass(/container-status-stopping/)
+  })
+
+  // SPEC: panel-session:working-dot-folded
+  test('a row whose forks are folded shows working when a fork beneath it works', async ({
+    page,
+  }) => {
+    await expect(dotOf(page, 'fparent1')).toHaveClass(/container-status-working/)
+
+    await page
+      .locator('.sessions-tree-node')
+      .filter({ hasText: 'fparent1' })
+      .getByTitle('Expand')
+      .click()
+
+    await expect(dotOf(page, 'fchild01')).toHaveClass(/container-status-working/)
+    await expect(dotOf(page, 'fparent1')).toHaveClass(/container-status-none/)
+  })
+})
+
 test.describe('Session Creation Overlay', () => {
   // SPEC: container:creation-overlay
   // SPEC: container:provisional-tab
@@ -496,26 +585,11 @@ test.describe('Session Creation Overlay', () => {
   // SPEC: container:creation-messages-inline
   test('shows creation overlay with header-strip Creating… and progress', async ({ page }) => {
     // Delay the newSession response so the overlay stays observable.
-    let resolveNewSession
-    const newSessionPromise = new Promise(resolve => {
-      resolveNewSession = resolve
+    const { daemon, release } = await startHeldCreation(page, {
+      session_id: 'created-session',
+      container_id: 'new-ctr',
+      name: null,
     })
-    const daemon = await createDaemonSSEController(page)
-    await mockAPI(page, {
-      handlers: {
-        newSession: async route => {
-          await newSessionPromise
-          await route.fulfill({
-            status: 200,
-            json: { session_id: 'created-session', container_id: 'new-ctr', name: null },
-          })
-        },
-      },
-    })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="header-new-session-btn"]').click()
 
     await expect(page.locator('[data-testid="session-header-strip"]')).toContainText('Creating')
     await expect(page.locator('.session-header-strip-spinner')).toBeVisible()
@@ -536,7 +610,7 @@ test.describe('Session Creation Overlay', () => {
 
     // Sending must be blocked while the container is being created.
     let sendCalled = false
-    await page.route('**/api/send', async route => {
+    await page.route('**/api/send*', async route => {
       sendCalled = true
       await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
     })
@@ -548,7 +622,7 @@ test.describe('Session Creation Overlay', () => {
       })
       .toBe(false)
 
-    resolveNewSession()
+    release()
   })
 
   // SPEC: container:creation-success
@@ -563,9 +637,7 @@ test.describe('Session Creation Overlay', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('[data-testid="header-new-session-btn"]').click()
 
@@ -582,9 +654,7 @@ test.describe('Session Creation Overlay', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('[data-testid="header-new-session-btn"]').click()
 
@@ -594,6 +664,446 @@ test.describe('Session Creation Overlay', () => {
     const footerError = page.locator('[data-testid="footer-status"][data-status="error"]')
     const errorText = page.locator('.footer-error, [data-status="error"]')
     await expect(footerError.or(errorText).first()).toBeVisible({ timeout: 5000 })
+  })
+
+  // SPEC: container:creation-failure
+  // SPEC: container:creation-input-own-session
+  test('what is typed while a session is created comes back to the box when it fails', async ({
+    page,
+  }) => {
+    let answer
+    const answered = new Promise(resolve => {
+      answer = resolve
+    })
+    await mockAPI(page, {
+      handlers: {
+        newSession: async route => {
+          await answered
+          await route.fulfill({ status: 500, json: { error: 'Container creation failed' } })
+        },
+      },
+    })
+    await mockSSE(page)
+    const sends = []
+    page.on('request', request => {
+      if (request.url().includes('/api/send')) {
+        sends.push(request.url())
+      }
+    })
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await page.locator('[data-testid="header-new-session-btn"]').click()
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('first for new')
+    await input.press('Enter')
+    await input.fill('queued for new')
+    await input.press('Alt+Enter')
+    const bubble = page.locator('[data-testid="queued-message-bubble"]')
+    await expect(bubble).toBeVisible()
+    await expect(bubble.getByTitle('Send now')).toHaveCount(0)
+
+    answer()
+
+    await expect(input).toHaveValue('first for new\n\nqueued for new')
+    await expect(bubble).toHaveCount(0)
+    expect(sends).toEqual([])
+  })
+})
+
+test.describe('Session creation refused over /tmp', () => {
+  // SPEC: container:creation-tmp-conflict
+  test('a workspace under /tmp fails creation once, naming the path and the setting', async ({
+    page,
+  }) => {
+    let calls = 0
+    await mockAPI(page, {
+      handlers: {
+        newSession: async route => {
+          calls += 1
+          await route.fulfill({
+            status: 409,
+            json: { error: 'container_tmp_mount_conflict', paths: '/tmp/proj' },
+          })
+        },
+      },
+    })
+    await openSession(page)
+
+    await page.locator('[data-testid="header-new-session-btn"]').click()
+
+    const footer = page.locator('[data-testid="footer"]')
+    await expect(footer).toContainText('/tmp/proj')
+    await expect(footer).toContainText('CLAUDEBOX_NO_TMP_REMAP')
+    expect(calls).toBe(1)
+  })
+})
+
+test.describe('Session creation refused over its network mode', () => {
+  for (const [where, body, parts] of [
+    [
+      'the workspace settings',
+      { source: 'workspace' },
+      ['[network] mode = "host"', 'claudebox run'],
+    ],
+    ['a bundle', { source: 'bundle', bundle: 'web' }, ['bundle web', '[network] mode = "host"']],
+  ]) {
+    // SPEC: container:creation-network-mode-refused
+    test(`a host network mode set in ${where} fails creation once, naming it`, async ({ page }) => {
+      let calls = 0
+      await mockAPI(page, {
+        handlers: {
+          newSession: async route => {
+            calls += 1
+            await route.fulfill({
+              status: 409,
+              json: { error: 'network_mode_unsupported', mode: 'host', ...body },
+            })
+          },
+        },
+      })
+      await openSession(page)
+
+      await page.locator('[data-testid="header-new-session-btn"]').click()
+
+      const footer = page.locator('[data-testid="footer"]')
+      for (const part of parts) {
+        await expect(footer).toContainText(part)
+      }
+      expect(calls).toBe(1)
+    })
+  }
+})
+
+test.describe('Session list while a session comes up', () => {
+  // SPEC: container:start-keeps-session-list
+  test('the session list keeps its rows while the session replays', async ({ page }) => {
+    await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
+    await openResumingSession(page)
+    await openSessionsPanel(page)
+
+    // The fixture opens a replay and never ends it, so the session stays coming up.
+    await expect(page.locator('[data-testid="panel-tasks"]')).toContainText('Resuming...')
+    const panel = page.locator('[data-testid="panel-sessions"]')
+    await expect(panel).not.toContainText('Resuming...')
+    await expect(panel.locator('[data-testid="session-item"]').first()).toBeVisible()
+  })
+})
+
+const SECOND_SESSION_URL = `/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/test-session-002`
+
+/** Hold the second session's resume open until the returned function is called. */
+async function holdSecondSessionResume(page) {
+  let release
+  const held = new Promise(resolve => {
+    release = resolve
+  })
+  let requested = false
+  await page.route(`**/sessions/test-session-002/resume`, async route => {
+    requested = true
+    await held
+    await route.fulfill({
+      status: 200,
+      json: { session_id: 'test-session-002', container_id: DEFAULT_CONTAINER_ID },
+    })
+  })
+  return { release, wasRequested: () => requested }
+}
+
+async function switchToHeldSecondSession(page, resume) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  await page.evaluate(url => {
+    window.location.hash = url.slice(1)
+  }, SECOND_SESSION_URL)
+  await expect.poll(resume.wasRequested).toBe(true)
+}
+
+test.describe('Following a link into another workspace', () => {
+  // SPEC: routing:cross-workspace-link
+  test('opens the session the link names instead of that workspace home', async ({ page }) => {
+    await mockAPI(page, {
+      workspaces: [
+        { id: DEFAULT_WORKSPACE_ID, path: '/home/user/project', name: 'project' },
+        { id: 'ws-other', path: '/home/user/other', name: 'other' },
+      ],
+    })
+    await mockSSE(page)
+    await page.goto('/#/workspaces/ws-other')
+    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+
+    const resumed = page.waitForRequest(/\/sessions\/test-session-001\/resume/)
+    await page.evaluate(url => {
+      window.location.hash = url.slice(1)
+    }, DEFAULT_SESSION_URL)
+    await resumed
+
+    await expect(page.locator('[data-testid="footer-session"]')).toContainText('test')
+    expect(new URL(page.url()).hash).toBe(DEFAULT_SESSION_URL.slice(1))
+  })
+})
+
+test.describe('Opening a session', () => {
+  // SPEC: container:opening-actions-own-session
+  test('a picker change made while another session opens waits for it', async ({ page }) => {
+    let opened = false
+    await mockAPI(page, {
+      sessionsFixture: 'sessions/multiple.json',
+      handlers: {
+        getSessionStatus: route =>
+          route.fulfill({
+            json: {
+              ...loadFixture('status/default.json'),
+              session_id: opened ? 'test-session-002' : DEFAULT_SESSION_ID,
+            },
+          }),
+      },
+    })
+    await mockSSE(page)
+    const resume = await holdSecondSessionResume(page)
+    const modelPosts = []
+    await page.route('**/containers/*/api/model*', async route => {
+      modelPosts.push(route.request().postDataJSON().model)
+      await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+    })
+    await switchToHeldSecondSession(page, resume)
+
+    await page.locator('[data-testid="footer-model"]').click()
+    await page.locator('[data-testid="model-dropdown"]').getByText('Haiku 5.5').click()
+    await expect
+      .poll(() => modelPosts.length, {
+        timeout: 1000,
+        message: 'the session being left must not receive the pick',
+      })
+      .toBe(0)
+
+    opened = true
+    resume.release()
+    await expect.poll(() => modelPosts).toEqual(['claude-haiku-5-5'])
+  })
+
+  // SPEC: container:opening-actions-own-session
+  test('picks still taking effect reach the session they were made for after a move to another', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      sessionsFixture: 'sessions/multiple.json',
+      handlers: {
+        getSessionStatus: route => {
+          const id = new URL(route.request().url()).searchParams.get('session_id')
+          return route.fulfill({ json: { ...loadFixture('status/default.json'), session_id: id } })
+        },
+      },
+    })
+    await mockSSE(page)
+    const resume = await holdSecondSessionResume(page)
+    const effortUrls = []
+    await page.route('**/containers/*/api/effort-level*', async route => {
+      effortUrls.push(route.request().url())
+      await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+    })
+    let releasePermission
+    const permissionHeld = new Promise(resolve => {
+      releasePermission = resolve
+    })
+    let permissionRequested = false
+    await page.route('**/containers/*/api/permission-mode*', async route => {
+      permissionRequested = true
+      await permissionHeld
+      await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+    })
+    await switchToHeldSecondSession(page, resume)
+    await page.locator('[data-testid="footer-permission-mode-picker"]').click()
+    await page.locator('[data-testid="permission-mode-dropdown"]').getByText('Plan').first().click()
+    await page.locator('[data-testid="footer-effort"]').click()
+    await page
+      .locator('[data-testid="effort-dropdown"] *')
+      .filter({ hasText: /^Low$/ })
+      .first()
+      .click()
+    resume.release()
+    await expect.poll(() => permissionRequested).toBe(true)
+
+    await page.evaluate(url => {
+      window.location.hash = url.slice(1)
+    }, DEFAULT_SESSION_URL)
+    await expect(page.locator('[data-testid="footer-permission-mode-picker"]')).toHaveAttribute(
+      'data-permission-mode',
+      'bypassPermissions',
+    )
+    releasePermission()
+
+    await expect.poll(() => effortUrls.length).toBe(1)
+    expect(effortUrls[0]).toContain('session_id=test-session-002')
+  })
+
+  // SPEC: chat:control-reload
+  test('a reload still restarting leaves the tab on the session moved to', async ({ page }) => {
+    await mockAPI(page, {
+      sessionsFixture: 'sessions/multiple.json',
+      handlers: {
+        resumeSession: route =>
+          route.fulfill({
+            json: { session_id: 'test-session-002', container_id: DEFAULT_CONTAINER_ID },
+          }),
+      },
+    })
+    await mockSSE(page)
+    let releaseReload
+    const reloadHeld = new Promise(resolve => {
+      releaseReload = resolve
+    })
+    let holdReload = false
+    await page.route('**/sessions/test-session-001/resume', async route => {
+      if (holdReload) {
+        await reloadHeld
+      }
+      await route.fulfill({
+        json: { session_id: DEFAULT_SESSION_ID, container_id: DEFAULT_CONTAINER_ID },
+      })
+    })
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    holdReload = true
+    await page.locator('button[title="Reload session (picks up config changes)"]').click()
+    await page.evaluate(url => {
+      window.location.hash = url.slice(1)
+    }, SECOND_SESSION_URL)
+    await expect
+      .poll(() => page.evaluate(() => window.__sseChatInstance?.url ?? ''))
+      .toContain('session_id=test-session-002')
+    releaseReload()
+    await page.waitForTimeout(500)
+
+    expect(await page.evaluate(() => window.__sseChatInstance?.url ?? '')).toContain(
+      'session_id=test-session-002',
+    )
+    expect(page.url()).toContain('/sessions/test-session-002')
+  })
+
+  // SPEC: panel-stash:session-scoped
+  // SPEC: footer:notifications-session-scoped
+  // SPEC: chat:minimap-toggle-session-scoped
+  test('the session left answering its settings read late changes nothing here', async ({
+    page,
+  }) => {
+    let releaseFirst
+    const firstHeld = new Promise(resolve => {
+      releaseFirst = resolve
+    })
+    const SETTINGS = {
+      [DEFAULT_SESSION_ID]: {
+        stash: [{ text: 'a-secret', timestamp: 1 }],
+        notificationsEnabled: true,
+        minimapPinned: false,
+      },
+      'test-session-002': {
+        stash: [{ text: 'b-item', timestamp: 2 }],
+        notificationsEnabled: false,
+        minimapPinned: true,
+      },
+    }
+    let opened = false
+    await mockAPI(page, {
+      sessionsFixture: 'sessions/multiple.json',
+      handlers: {
+        getUIState: async route => {
+          const id = new URL(route.request().url()).searchParams.get('session_id')
+          if (id === DEFAULT_SESSION_ID) {
+            await firstHeld
+          }
+          await route.fulfill({ json: { global: {}, session: SETTINGS[id] ?? {} } })
+        },
+        resumeSession: route =>
+          route.fulfill({
+            json: { session_id: 'test-session-002', container_id: DEFAULT_CONTAINER_ID },
+          }),
+        getSessionStatus: route =>
+          route.fulfill({
+            json: {
+              ...loadFixture('status/default.json'),
+              session_id: opened ? 'test-session-002' : DEFAULT_SESSION_ID,
+            },
+          }),
+      },
+    })
+    await mockSSE(page)
+    const firstRead = page.waitForRequest(/ui-state\?session_id=test-session-001/)
+    await page.goto(DEFAULT_SESSION_URL)
+    await firstRead
+
+    opened = true
+    const secondRead = page.waitForRequest(/ui-state\?session_id=test-session-002/)
+    await page.evaluate(url => {
+      window.location.hash = url.slice(1)
+    }, SECOND_SESSION_URL)
+    await secondRead
+    await openStashPanel(page)
+    await expect(page.locator('[data-testid="stash-item"]')).toHaveText(['b-item'])
+
+    const lateReply = page.waitForResponse(/ui-state\?session_id=test-session-001/)
+    releaseFirst()
+    await lateReply
+
+    await expect(page.locator('[data-testid="stash-item"]')).toHaveText(['b-item'])
+    await expect(page.locator('[data-testid="footer-notifications-toggle"]')).not.toHaveClass(
+      /enabled/,
+    )
+    await expect(page.locator('[data-testid="control-minimap-toggle"]')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  // SPEC: container:resume-no-previous-session
+  test('a slow open keeps its loading screen instead of showing the session left', async ({
+    page,
+  }) => {
+    await page.clock.install()
+    await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
+    await mockSSE(page)
+    const resume = await holdSecondSessionResume(page)
+    await switchToHeldSecondSession(page, resume)
+    await expect(page.locator('.chat-replay-overlay')).toBeVisible()
+
+    await page.clock.fastForward(31_000)
+
+    await expect(page.locator('.chat-replay-overlay')).toBeVisible()
+    resume.release()
+  })
+})
+
+test.describe('Creating a session slowly', () => {
+  // SPEC: container:creation-overlay-spans-request
+  test('"Creating" stays for as long as the create request runs', async ({ page }) => {
+    await page.clock.install()
+    let release
+    const held = new Promise(resolve => {
+      release = resolve
+    })
+    await mockAPI(page, {
+      handlers: {
+        newSession: async route => {
+          await held
+          await route.fulfill({
+            status: 200,
+            json: { session_id: 'slow-session', container_id: 'slow-ctr', name: null },
+          })
+        },
+      },
+    })
+    await openSession(page)
+
+    await page.locator('[data-testid="header-new-session-btn"]').click()
+    const strip = page.locator('[data-testid="session-header-strip"]')
+    await expect(strip).toContainText('Creating')
+
+    await page.clock.fastForward(31_000)
+
+    await expect(strip).toContainText('Creating')
+    await expect(page.locator('.chat-replay-overlay')).toBeVisible()
+    release()
   })
 })
 
@@ -639,15 +1149,56 @@ test.describe('Session Resume Overlay', () => {
     expect(sends).toHaveLength(0)
   })
 
+  // SPEC: chat:queue-while-loading
+  // SPEC: footer:loading-hint
+  // SPEC: container:resume-textarea-stays-enabled
+  test('Enter and Alt+Enter while the session loads keep the text and show why', async ({
+    page,
+  }) => {
+    // A buffered inline reply must not go out on its own while the session loads.
+    await page.addInitScript(sessionId => {
+      const reply = {
+        id: 'r1',
+        quote: 'q',
+        from: 'assistant',
+        turnId: null,
+        prefix: '',
+        suffix: '',
+        offset: 0,
+        response: 'MY-REPLY',
+        threadSessionId: null,
+        promotedSessionId: null,
+        railPromoted: false,
+      }
+      localStorage.setItem(`inline-replies:${sessionId}`, JSON.stringify([reply]))
+    }, DEFAULT_SESSION_ID)
+    // resuming.jsonl stays in the resuming state: replay_started without replay_ended.
+    await mockSSE(page, 'events/resuming.jsonl')
+    await mockAPI(page)
+    const sends = await captureSends(page)
+    await page.goto(DEFAULT_SESSION_URL)
+    await expect(page.locator('.chat-replay-overlay')).toBeVisible()
+
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('typed while loading')
+    await input.press('Enter')
+    await input.press('Alt+Enter')
+
+    await expect(page.locator('[data-testid="footer"]')).toContainText(
+      'Wait for the session to load',
+    )
+    await expect(page.locator('[data-testid="queued-message-bubble"]')).toHaveCount(0)
+    await expect(input).toHaveValue('typed while loading')
+    expect(sends).toHaveLength(0)
+  })
+
   // SPEC: chat:loading-covers-split
   test('the loading screen covers transcript, divider and right view together, settled beneath it', async ({
     page,
   }) => {
     // resuming.jsonl stays in the resuming state: replay_started without replay_ended.
-    await mockSSE(page, 'events/resuming.jsonl')
     await mockAPI(page, { sessionUiStateDefaults: { rightSlotView: 'terminal' } })
-    await page.goto(DEFAULT_SESSION_URL)
-    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+    await openResumingSession(page)
 
     const overlay = page.locator('.chat-replay-overlay')
     await expect(overlay).toBeVisible()
@@ -700,12 +1251,10 @@ test.describe('Session Resume Overlay', () => {
     page,
   }) => {
     // resuming.jsonl stays in the resuming state: replay_started without replay_ended.
-    await mockSSE(page, 'events/resuming.jsonl')
     await mockAPI(page, {
       sessionUiStateDefaults: { rightSlotView: 'terminal', terminalMinimapPinned: true },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+    await openResumingSession(page)
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
     await expect(page.getByTestId('terminal-minimap')).not.toBeVisible()
@@ -737,26 +1286,31 @@ test.describe('Session Resume Overlay', () => {
 
   // SPEC: chat:replay-stays-responsive
   test('history materializes while the transcript is still loading', async ({ page }) => {
+    const events = loadEventsFromFixture('events/long-conversation.jsonl')
+    await mockSSEDynamic(page, () => [
+      { type: 'system', subtype: 'replay_started', count: events.length },
+      ...events,
+    ])
     await mockAPI(page)
-    await mockSSE(page, 'events/long-conversation.jsonl')
     await page.goto(DEFAULT_SESSION_URL)
 
     // Turns reach the page while the overlay is still up - the drain is sliced, not committed in one batch.
-    await page.waitForFunction(
-      () =>
-        !!document.querySelector('.chat-replay-overlay') &&
-        document.querySelectorAll('[data-testid="turn-container"]').length > 0,
-      null,
-      { timeout: 4000 },
-    )
+    const overlay = page.locator('.chat-replay-overlay')
+    await expect(page.locator('[data-testid="turn-container"]').first()).toBeAttached()
+    await expect(overlay).toBeVisible()
+
+    await page.waitForFunction(() => window.__sseChatInstance?.readyState === 1)
+    await page.evaluate(() => {
+      const msg = { data: JSON.stringify({ type: 'system', subtype: 'replay_ended' }) }
+      window.__sseChatInstance.onmessage?.(msg)
+      window.__sseChatInstance._emit('message', msg)
+    })
+    await expect(overlay).not.toBeVisible()
   })
 
   // SPEC: chat:replay-stays-responsive
   test('slicing the load changes timing only, never turn order', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/long-conversation.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/long-conversation.jsonl')
 
     await expect(page.locator('.chat-replay-overlay')).not.toBeVisible()
 
@@ -775,26 +1329,11 @@ test.describe('Session Resume Overlay', () => {
   // SPEC: container:resume-daemon-phase
   test('resume shows daemon phase progress before replay', async ({ page }) => {
     // A delayed new-session exposes the daemon progress phase that precedes resume.
-    let resolveNewSession
-    const newSessionPromise = new Promise(resolve => {
-      resolveNewSession = resolve
+    const { daemon, release } = await startHeldCreation(page, {
+      session_id: 'daemon-resume-test',
+      container_id: 'resume-ctr',
+      name: null,
     })
-    const daemon = await createDaemonSSEController(page)
-    await mockAPI(page, {
-      handlers: {
-        newSession: async route => {
-          await newSessionPromise
-          await route.fulfill({
-            status: 200,
-            json: { session_id: 'daemon-resume-test', container_id: 'resume-ctr', name: null },
-          })
-        },
-      },
-    })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
     // Daemon phase progress messages (Phase 1, before replay).
@@ -804,15 +1343,12 @@ test.describe('Session Resume Overlay', () => {
     await daemon.sendProgress('Resuming session')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Resuming session')
 
-    resolveNewSession()
+    release()
   })
 
   // SPEC: container:resume-overlay
   test('overlay dismissed after replay completes', async ({ page }) => {
-    await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openLiveSessionWithAPI(page)
 
     await expect(page.locator('.chat-replay-overlay')).not.toBeVisible()
     await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
@@ -825,6 +1361,7 @@ test.describe('Welcome State', () => {
   // SPEC: container:welcome-name
   // SPEC: container:welcome-path
   // SPEC: container:welcome-shortcuts
+  // SPEC: container:welcome-login-notice
   test('shows welcome page when no container active', async ({ page }) => {
     await mockAPI(page)
     await mockSSE(page)
@@ -845,6 +1382,81 @@ test.describe('Welcome State', () => {
     await expect(shortcuts).toBeVisible()
     await expect(shortcuts).toContainText('Alt+1')
     await expect(shortcuts).toContainText('Sessions')
+    await expect(welcome.locator('[data-testid="welcome-login-notice"]')).toHaveCount(0)
+  })
+
+  // SPEC: container:welcome-login-notice
+  test('a workspace with no login says so on the welcome page and still sends the first message', async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      sessionDefaults: { logged_in: false },
+      handlers: {
+        newSession: async route => {
+          await route.fulfill({
+            status: 200,
+            json: {
+              session_id: 'welcome-no-login',
+              container_id: DEFAULT_CONTAINER_ID,
+              name: null,
+            },
+          })
+        },
+      },
+    })
+    await mockSSE(page)
+    const sendCalls = await captureSends(page)
+
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await waitForAppReady(page)
+
+    const notice = page.locator('[data-testid="welcome-login-notice"]')
+    await expect(notice).toBeVisible()
+    await expect(notice.locator('code')).toHaveText('claudebox run')
+
+    await page.locator('[data-testid="chat-input"]').fill('say hi')
+    await page.locator('[data-testid="chat-input"]').press('Enter')
+
+    await expect.poll(() => sendCalls.length, { timeout: 10000 }).toBeGreaterThan(0)
+    expect(sendCalls[0].prompt).toBe('say hi')
+  })
+
+  // SPEC: container:welcome-login-notice
+  test('a workspace whose agent is not Claude shows no login notice', async ({ page }) => {
+    await mockAPI(page, { sessionDefaults: { logged_in: null } })
+    await mockSSE(page)
+
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await waitForAppReady(page)
+
+    await expect(page.locator('[data-testid="welcome-page"]')).toBeVisible()
+    await expect(page.locator('[data-testid="welcome-login-notice"]')).toHaveCount(0)
+  })
+
+  // SPEC: container:welcome-after-leaving
+  test('leaving a session for the workspace address shows the welcome page and lets go of it', async ({
+    page,
+  }) => {
+    await mockAPI(page)
+    await mockSSE(page)
+    const modelPosts = []
+    await page.route('**/containers/*/api/model*', async route => {
+      modelPosts.push(route.request().url())
+      await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+    })
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+
+    await page.evaluate(ws => {
+      window.location.hash = `/workspaces/${ws}`
+    }, DEFAULT_WORKSPACE_ID)
+
+    await expect(page.locator('[data-testid="welcome-page"]')).toBeVisible()
+    await page.locator('[data-testid="footer-model"]').click()
+    await page.locator('[data-testid="model-dropdown"]').getByText('Haiku 5.5').click()
+    await expect
+      .poll(() => modelPosts.length, { timeout: 1000, message: 'the session left got the pick' })
+      .toBe(0)
   })
 
   // SPEC: container:welcome-input
@@ -868,11 +1480,7 @@ test.describe('Welcome State', () => {
     await mockSSE(page)
 
     // Registered after mockAPI so it wins Playwright's LIFO route precedence over the default handler.
-    const sendCalls = []
-    await page.route('**/api/send', async route => {
-      sendCalls.push(await route.request().postDataJSON())
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    const sendCalls = await captureSends(page)
 
     await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
     await waitForAppReady(page)
@@ -941,6 +1549,19 @@ test.describe('Welcome State', () => {
     expect(resumeCalls).toHaveLength(0)
   })
 
+  // SPEC: container:welcome-alt-enter-keeps-text
+  test('Alt+Enter on the welcome page keeps the typed text', async ({ page }) => {
+    await mockAPI(page)
+    await mockSSE(page)
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('hello')
+
+    await input.press('Alt+Enter')
+
+    await expect(input).toHaveValue('hello')
+  })
+
   // SPEC: footer:welcome-defaults
   test('footer shows session defaults from the workspace, not "-" placeholders', async ({
     page,
@@ -953,7 +1574,7 @@ test.describe('Welcome State', () => {
 
     // Workspace, model, effort, permission pickers must reflect the session-defaults endpoint response, never "-".
     await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
-    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 5')
+    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 5.5')
     await expect(page.locator('[data-testid="footer-effort"]')).toContainText('XHigh')
     await expect(page.locator('[data-testid="footer-permission-mode-picker"]')).toContainText(
       'Default',
@@ -985,7 +1606,7 @@ test.describe('Welcome State', () => {
     await mockSSE(page)
 
     // Capture the effort-level API call from the buffered drain.
-    await page.route('**/api/effort-level', async route => {
+    await page.route('**/api/effort-level*', async route => {
       setEffortBody = await route.request().postDataJSON()
       await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
     })
@@ -1011,6 +1632,35 @@ test.describe('Welcome State', () => {
     await expect.poll(() => newSessionCalled).toBe(true)
     await expect.poll(() => setEffortBody).toEqual({ effort_level: 'max' })
   })
+
+  // SPEC: input:welcome-config-buffer
+  test('picker change on welcome is dropped when an existing session is opened instead', async ({
+    page,
+  }) => {
+    const modelRequests = []
+    await mockAPI(page, {
+      handlers: {
+        setModel: async route => {
+          modelRequests.push(route.request().postDataJSON())
+          await route.fulfill({ status: 200, body: 'null', contentType: 'application/json' })
+        },
+      },
+    })
+    await mockSSE(page)
+
+    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Opus 5.5')
+    await page.locator('[data-testid="footer-model"]').click()
+    await page.locator('[data-testid="model-dropdown"]').getByText('Haiku 5.5').click()
+    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Haiku 5.5')
+
+    const attached = page.waitForRequest(/ui-state\?session_id=/)
+    await page.goto(DEFAULT_SESSION_URL)
+    await attached
+
+    await expect(page.locator('[data-testid="footer-model"]')).toContainText('Sonnet 5')
+    expect(modelRequests).toEqual([])
+  })
 })
 
 test.describe('Daemon SSE Stream', () => {
@@ -1028,26 +1678,11 @@ test.describe('Daemon SSE Stream', () => {
   })
 
   test('daemon SSE progress events shown during creation', async ({ page }) => {
-    let resolveNewSession
-    const newSessionPromise = new Promise(resolve => {
-      resolveNewSession = resolve
+    const { daemon, release } = await startHeldCreation(page, {
+      session_id: 'daemon-sse-test',
+      container_id: 'sse-ctr',
+      name: null,
     })
-    const daemon = await createDaemonSSEController(page)
-    await mockAPI(page, {
-      handlers: {
-        newSession: async route => {
-          await newSessionPromise
-          await route.fulfill({
-            status: 200,
-            json: { session_id: 'daemon-sse-test', container_id: 'sse-ctr', name: null },
-          })
-        },
-      },
-    })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="header-new-session-btn"]').click()
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
 
     await daemon.sendProgress('Creating container')
@@ -1056,7 +1691,7 @@ test.describe('Daemon SSE Stream', () => {
     await daemon.sendProgress('Starting session')
     await expect(page.locator('.chat-replay-status-text')).toContainText('Starting session')
 
-    resolveNewSession()
+    release()
   })
 })
 
@@ -1105,32 +1740,17 @@ test.describe('Kill Container Button', () => {
   // SPEC: panel-session:kill-button
   // SPEC: panel-session:kill-container
   test('kill button visible for sessions with running container', async ({ page }) => {
-    await mockAPI(page)
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        const base = loadFixture('sessions/default.json').sessions[0]
-        await route.fulfill({
-          json: {
-            sessions: [
-              { ...base, container_id: DEFAULT_CONTAINER_ID, num_turns: 1 },
-              {
-                ...base,
-                session_id: 'no-ctr-session',
-                container_id: null,
-                num_turns: 2,
-                started_at: '2025-01-17T12:00:00Z',
-                updated_at: '2025-01-17T12:00:00Z',
-              },
-            ],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSessionsPanel(page)
+    await openPanelListing(page, base => [
+      { ...base, container_id: DEFAULT_CONTAINER_ID, num_turns: 1 },
+      {
+        ...base,
+        session_id: 'no-ctr-session',
+        container_id: null,
+        num_turns: 2,
+        started_at: '2025-01-17T12:00:00Z',
+        updated_at: '2025-01-17T12:00:00Z',
+      },
+    ])
 
     const killBtns = page.locator('[data-testid="session-kill-btn"]')
     await expect(killBtns).toHaveCount(1)
@@ -1148,19 +1768,10 @@ test.describe('Kill Container Button', () => {
         },
       },
     })
-    await page.route(`**/api/workspaces/${DEFAULT_WORKSPACE_ID}/sessions`, async route => {
-      if (route.request().method() === 'GET') {
-        const base = loadFixture('sessions/default.json').sessions[0]
-        await route.fulfill({
-          json: {
-            sessions: [{ ...base, container_id: DEFAULT_CONTAINER_ID, num_turns: 1 }],
-          },
-        })
-      }
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await serveSessionList(page, base => [
+      { ...base, container_id: DEFAULT_CONTAINER_ID, num_turns: 1 },
+    ])
+    await openSession(page)
 
     await openSessionsPanel(page)
 

@@ -1,6 +1,6 @@
 [project]
 name = "claudebox"
-version = "1.6.0"
+version = "1.7.0"
 requires-python = ">=3.13"
 dependencies = [
   "aiofiles>=24.0",
@@ -10,7 +10,6 @@ dependencies = [
   "fastapi>=0.115",
   "filelock>=3.0",
   "httpx>=0.27",
-  "inflection>=0.5",
   "langchain>=1.0,<2",
   "langchain-core>=1.0,<2",
   "langchain-mcp-adapters>=0.2,<1",
@@ -22,11 +21,15 @@ dependencies = [
   "markdownify>=0.11",
   "nbformat>=5.10",
   "pathspec>=0.12",
+  "pydantic>=2.9",
   "ruamel.yaml>=0.18",
   "rich>=13.0",
   "rich-argparse>=1.6",
   "sse-starlette>=2.0",
+  "starlette>=0.46",
   "structlog>=24.0",
+  "tree-sitter>=0.25",
+  "tree-sitter-bash>=0.25",
   "uvicorn[standard]>=0.30",
 ]
 
@@ -66,15 +69,94 @@ langgraph-all = ["claudebox[anthropic,openai,google,groq,mistral,bedrock,cohere,
 
 dev = [
   "anyio[trio]>=4.0",
+  "deptry>=0.25.1",
+  "import-linter>=2.15",
   "inline-snapshot",
   "pytest-anyio",
   "pytest-cov",
   "pytest-httpserver>=1.0,<2",
   "pytest-socket>=0.7",
+  "pytest-xdist>=3.8",
   "pytest>=8.0",
   "ruff>=0.16",
   "ty>=0.0.72",
 ]
+
+[tool.deptry]
+known_first_party = [
+  "claudebox",
+  "claudebox_cli",
+  "claudebox_container_api",
+  "claudebox_daemon",
+  "claudebox_frontend",
+]
+
+[tool.deptry.per_rule_ignores]
+# Provider packages are imported by name through init_chat_model, which deptry cannot see; the rest is
+# the test and lint toolchain, imported by nothing under src/.
+DEP002 = [
+  "langchain-ollama",
+  "langchain-anthropic",
+  "langchain-openai",
+  "langchain-google-genai",
+  "langchain-groq",
+  "langchain-mistralai",
+  "langchain-aws",
+  "langchain-cohere",
+  "langchain-fireworks",
+  "langchain-together",
+  "langchain-deepseek",
+  "langchain-xai",
+  "langchain-perplexity",
+  "langchain-nvidia-ai-endpoints",
+  "langchain-huggingface",
+  "anyio",
+  "deptry",
+  "import-linter",
+  "inline-snapshot",
+  "pytest",
+  "pytest-anyio",
+  "pytest-cov",
+  "pytest-httpserver",
+  "pytest-socket",
+  "pytest-xdist",
+  "ruff",
+  "ty",
+]
+
+[tool.importlinter]
+root_packages = ["claudebox", "claudebox_cli", "claudebox_container_api", "claudebox_daemon"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "framework has zero reverse dependencies (GUIDELINES.md, Framework Conventions)"
+type = "forbidden"
+source_modules = ["claudebox"]
+forbidden_modules = ["claudebox_cli", "claudebox_container_api", "claudebox_daemon"]
+
+[[tool.importlinter.contracts]]
+name = "orchestration never imports the container API (GUIDELINES.md, Orchestration Boundary)"
+type = "forbidden"
+source_modules = ["claudebox.agent_session.orchestration"]
+forbidden_modules = ["claudebox_container_api"]
+
+[[tool.importlinter.contracts]]
+name = "container API handlers never import session internals (GUIDELINES.md, Design Principles)"
+type = "forbidden"
+source_modules = ["claudebox_container_api.handlers"]
+forbidden_modules = [
+  "claudebox.agent_session.orchestration.pipeline",
+  "claudebox.agent_session.orchestration.broadcaster",
+  "claudebox.agent_session.orchestration.persistence",
+]
+# Handlers reach the package root, whose lazy facade reaches orchestration; the rule is about direct imports.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "daemon: app over serving over handlers over domain (GUIDELINES.md, Daemon Architecture)"
+type = "layers"
+containers = ["claudebox_daemon"]
+layers = ["app", "serving", "handlers", "domain"]
 
 [tool.coverage.run]
 data_file = "/tmp/.coverage"

@@ -1,7 +1,14 @@
 /** schema.js tests - tool-name normalisation between Claude PascalCase and LangGraph snake_case. */
 
 import { describe, expect, it } from 'vitest'
-import { normalizeToolName, TOOL_NAME_ALIASES, ToolName } from './schema'
+import {
+  isHiddenTool,
+  LANGGRAPH_RUNTIME_NAME,
+  mcpToolOf,
+  normalizeToolName,
+  TOOL_NAME_ALIASES,
+  ToolName,
+} from './schema'
 
 describe('normalizeToolName', () => {
   it('maps LangGraph snake_case task names to Claude canonical names', () => {
@@ -48,5 +55,68 @@ describe('normalizeToolName', () => {
 
   it('TOOL_NAME_ALIASES is frozen', () => {
     expect(Object.isFrozen(TOOL_NAME_ALIASES)).toBe(true)
+  })
+})
+
+describe('mcpToolOf', () => {
+  it.each([
+    ['mcp__jina__read_url', 'Claude', { server: 'jina', tool: 'read_url' }],
+    ['mcp__claude_ai_Docs__query', 'Claude', { server: 'claude_ai_Docs', tool: 'query' }],
+    ['mcp__claudebox__session_spawn', 'Claude', { server: 'claudebox', tool: 'session_spawn' }],
+    ['session_spawn', LANGGRAPH_RUNTIME_NAME, { server: 'claudebox', tool: 'session_spawn' }],
+    ['read_url', LANGGRAPH_RUNTIME_NAME, { server: null, tool: 'read_url' }],
+  ])('%s in a %s session names %j', (name, runtime, expected) => {
+    expect(mcpToolOf(name, runtime)).toEqual(expected)
+  })
+
+  it.each([
+    ['Read', 'Claude'],
+    ['read_url', 'Claude'],
+    ['read_file', LANGGRAPH_RUNTIME_NAME],
+    ['notebook_edit', LANGGRAPH_RUNTIME_NAME],
+    ['task_stop', LANGGRAPH_RUNTIME_NAME],
+    ['list_mcp_resources', LANGGRAPH_RUNTIME_NAME],
+    ['ListMcpResourcesTool', 'Claude'],
+    ['mcp__broken', 'Claude'],
+    ['', 'Claude'],
+  ])("%s in a %s session is the agent's own tool", (name, runtime) => {
+    expect(mcpToolOf(name, runtime)).toBeNull()
+  })
+})
+
+describe('isHiddenTool', () => {
+  const marks = (...names) => new Set(names)
+
+  it('matches the same name', () => {
+    expect(isHiddenTool('mcp__jina__read_url', 'Claude', marks('mcp__jina__read_url'))).toBe(true)
+  })
+
+  it("leaves the same server's other tool and another server's same tool alone", () => {
+    const marked = marks('mcp__jina__read_url')
+    expect(isHiddenTool('mcp__jina__search_web', 'Claude', marked)).toBe(false)
+    expect(isHiddenTool('mcp__other__read_url', 'Claude', marked)).toBe(false)
+  })
+
+  it('matches across runtimes where one side names no server', () => {
+    expect(isHiddenTool('read_url', LANGGRAPH_RUNTIME_NAME, marks('mcp__jina__read_url'))).toBe(
+      true,
+    )
+    expect(isHiddenTool('mcp__jina__read_url', 'Claude', marks('read_url'))).toBe(true)
+  })
+
+  it('matches a LangGraph alias of a claudebox tool marked in a Claude session', () => {
+    expect(isHiddenTool('session_ask', LANGGRAPH_RUNTIME_NAME, marks(ToolName.SESSION_ASK))).toBe(
+      true,
+    )
+  })
+
+  it("never matches an agent's own tool", () => {
+    expect(isHiddenTool('read_file', LANGGRAPH_RUNTIME_NAME, marks('read_file'))).toBe(false)
+    expect(isHiddenTool('Read', 'Claude', marks('Read'))).toBe(false)
+  })
+
+  it('matches nothing with no marks', () => {
+    expect(isHiddenTool('mcp__jina__read_url', 'Claude', new Set())).toBe(false)
+    expect(isHiddenTool('mcp__jina__read_url', 'Claude', null)).toBe(false)
   })
 })

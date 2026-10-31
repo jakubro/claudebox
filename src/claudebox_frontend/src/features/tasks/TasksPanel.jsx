@@ -1,11 +1,12 @@
-/** Panel showing all Task tool invocations with status and navigation. */
+/** Panel showing subagent calls and background shell commands with status and navigation. */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import PanelListItem from '../../components/PanelListItem'
 import { TaskStatus } from '../../config/schema'
 import { LIVE_TICK_INTERVAL_MS } from '../../config/timing'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useEvents } from '../../context/EventsContext'
+import useNow from '../../hooks/useNow'
 import { extractTasks } from '../../utils/eventProcessing'
 import TaskEntry from './components/task-entry'
 
@@ -15,20 +16,14 @@ const FILTERS = [
 ]
 
 export default function TasksPanel() {
-  const { events, taskNotifications, isResuming, isReplaying } = useEvents()
+  const { events, taskNotifications, backgroundLaunches, isResuming, isReplaying } = useEvents()
   const { focusChatTab, jumpToTaskRef } = useAppActions()
   const [filter, setFilter] = useState('running')
-  const [now, setNow] = useState(Date.now())
-
-  // Live-tick for running task durations
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), LIVE_TICK_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [])
+  const now = useNow(LIVE_TICK_INTERVAL_MS)
 
   const allTasks = useMemo(
-    () => extractTasks(events, taskNotifications),
-    [events, taskNotifications],
+    () => extractTasks(events, taskNotifications, backgroundLaunches),
+    [events, taskNotifications, backgroundLaunches],
   )
 
   const filteredTasks = useMemo(() => {

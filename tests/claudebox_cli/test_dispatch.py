@@ -4,6 +4,8 @@ The parser is module-level state in ``host_cli``; tests call ``parser.parse_args
 subprocesses, and the ``cli()`` guard prevents dispatch on import.
 """
 
+from __future__ import annotations
+
 import argparse
 
 import pytest

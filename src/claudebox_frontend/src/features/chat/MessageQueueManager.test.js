@@ -1,7 +1,7 @@
 /** Tests for MessageQueueManager. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import MessageQueueManager from './MessageQueueManager'
+import MessageQueueManager, { failedMessageItem, withSendFailure } from './MessageQueueManager'
 
 describe('MessageQueueManager', () => {
   let manager
@@ -168,6 +168,47 @@ describe('MessageQueueManager', () => {
     })
   })
 
+  describe('a failed send', () => {
+    it('returns its item first and pauses every queued item', () => {
+      const items = [
+        { id: 'x', content: 'x', attachments: null, status: 'queued', addedAt: 1 },
+        { id: 'y', content: 'y', attachments: null, status: 'paused', addedAt: 2 },
+      ]
+      const failed = { id: 'f', content: 'f', attachments: null, status: 'queued', addedAt: 0 }
+
+      expect(withSendFailure(items, failed).map(i => [i.id, i.status])).toEqual([
+        ['f', 'paused'],
+        ['x', 'paused'],
+        ['y', 'paused'],
+      ])
+    })
+
+    it('leaves items held for a creation queued', () => {
+      const held = { id: 'h', content: 'h', status: 'queued', owner: { creation: 1 } }
+
+      expect(withSendFailure([held])).toEqual([held])
+    })
+
+    it('pauses everything in memory with no item to return, notifying once', () => {
+      manager.enqueue('a')
+      manager.enqueue('b')
+      onChange.mockClear()
+
+      manager.handleSendFailure()
+
+      expect(manager.items.map(i => i.status)).toEqual(['paused', 'paused'])
+      expect(onChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('builds a paused item for a message that was never queued', () => {
+      expect(failedMessageItem('never queued', [])).toMatchObject({
+        content: 'never queued',
+        attachments: null,
+        status: 'paused',
+      })
+    })
+  })
+
   describe('cancelItem', () => {
     it('removes item by id', () => {
       const id = manager.enqueue('cancel-me')
@@ -246,7 +287,7 @@ describe('MessageQueueManager', () => {
         { id: 'r1', content: 'restored', attachments: null, status: 'queued', addedAt: 1 },
       ]
       manager.restore(items)
-      expect(manager.items).toBe(items)
+      expect(manager.items).toEqual(items)
       expect(onChange).toHaveBeenCalledTimes(1)
     })
 
@@ -259,47 +300,72 @@ describe('MessageQueueManager', () => {
     })
   })
 
-  describe('mergeRestore', () => {
-    it('preserves in-memory orphans not in stored items', () => {
-      manager.enqueue('orphan')
-      onChange.mockClear()
-      manager.mergeRestore([])
+  describe('items held for a creation', () => {
+    const HELD = { owner: { creation: 3 } }
+
+    it('are skipped by drain, peek and hasQueued', () => {
+      manager.enqueue('for the new session', null, HELD)
+
+      expect(manager.hasQueued()).toBe(false)
+      expect(manager.peek()).toBeNull()
+      expect(manager.dequeue()).toBeNull()
       expect(manager.items).toHaveLength(1)
-      expect(manager.items[0].content).toBe('orphan')
-      expect(onChange).toHaveBeenCalledTimes(1)
     })
 
-    it('combines stored items with orphans', () => {
-      manager.enqueue('orphan')
+    it('are refused by send-now', () => {
+      const id = manager.enqueue('for the new session', null, HELD)
+
+      expect(manager.sendNowItem(id)).toBeNull()
+      expect(manager.items).toHaveLength(1)
+    })
+
+    it('stay queued when the rest pauses', () => {
+      manager.enqueue('here')
+      manager.enqueue('for the new session', null, HELD)
+
+      manager.handleSendFailure()
+
+      expect(manager.items.map(i => i.status)).toEqual(['paused', 'queued'])
+    })
+
+    it('survive a restore of the stored queue', () => {
+      manager.enqueue('for the new session', null, HELD)
       const stored = [
         { id: 's1', content: 'stored', attachments: null, status: 'queued', addedAt: 1 },
       ]
-      manager.mergeRestore(stored)
-      expect(manager.items).toHaveLength(2)
-      expect(manager.items[0].content).toBe('stored')
-      expect(manager.items[1].content).toBe('orphan')
+
+      manager.restore(stored)
+
+      expect(manager.items.map(i => i.content)).toEqual(['stored', 'for the new session'])
     })
 
-    it('does not duplicate items already in stored', () => {
-      const id = manager.enqueue('shared')
-      const stored = [
-        { id, content: 'shared-updated', attachments: null, status: 'queued', addedAt: 1 },
-      ]
-      manager.mergeRestore(stored)
-      expect(manager.items).toHaveLength(1)
-      expect(manager.items[0].content).toBe('shared-updated')
+    it('are taken back in order, leaving the rest', () => {
+      manager.enqueue('first', null, HELD)
+      manager.enqueue('mine')
+      manager.enqueue('second', null, HELD)
+      manager.enqueue('another creation', null, { owner: { creation: 4 } })
+
+      const taken = manager.takeCreation(3)
+
+      expect(taken.map(i => i.content)).toEqual(['first', 'second'])
+      expect(manager.items.map(i => i.content)).toEqual(['mine', 'another creation'])
     })
 
-    it('works with empty in-memory queue', () => {
-      const stored = [
-        { id: 's1', content: 'stored', attachments: null, status: 'queued', addedAt: 1 },
-      ]
-      manager.mergeRestore(stored)
-      expect(manager.items).toHaveLength(1)
-      expect(manager.items[0].content).toBe('stored')
+    it('become ordinary items once adopted', () => {
+      manager.enqueue('for the new session', null, HELD)
+
+      manager.adoptCreation(3)
+
+      expect(manager.items[0].owner).toBeUndefined()
+      expect(manager.dequeue().content).toBe('for the new session')
+    })
+
+    it('are only held for a creation, never for a named session', () => {
+      manager.enqueue('here', null, { owner: { sessionId: 'A' } })
+
+      expect(manager.hasQueued()).toBe(true)
     })
   })
-
   describe('clearAll', () => {
     it('empties the queue', () => {
       manager.enqueue('a')
@@ -364,12 +430,6 @@ describe('MessageQueueManager', () => {
       manager.enqueue('b')
       manager.handleInterrupt()
       expect(manager.items.every(i => i.status === 'paused')).toBe(true)
-    })
-
-    it('handleError pauses all', () => {
-      manager.enqueue('a')
-      manager.handleError()
-      expect(manager.items[0].status).toBe('paused')
     })
   })
 

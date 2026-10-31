@@ -4,6 +4,8 @@ Uses nbformat. `edit_mode` is one of {replace, insert, delete}; cell_id=None req
 edit_mode="insert" (append at end).
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import nbformat

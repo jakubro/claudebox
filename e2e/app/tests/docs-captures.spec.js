@@ -3,8 +3,9 @@
 import { expect, test } from '@playwright/test'
 import {
   openLogsPanel,
+  openSession,
   openSessionsPanel,
-  openSkillsPanel,
+  sessionsHandler,
   waitForAppReady,
   waitForShortcutsReady,
 } from '../helpers.js'
@@ -155,12 +156,21 @@ function layoutHandler(layout) {
 
 test.use({ viewport: { width: 1280, height: 720 } })
 
+async function openSprintBoard(page) {
+  await mockBoards(page)
+  await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
+  await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
+  await page.evaluate(() => document.fonts.ready)
+}
+
+async function openDocsSession(page, fixture = 'events/docs-conversation.jsonl', apiOptions) {
+  await mockDocsAPI(page, apiOptions)
+  await openSession(page, fixture)
+}
+
 test.describe('Docs captures - chat', () => {
   test('a long transcript, older turns folded, minimap beside it', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page)
 
     // Auto-collapse is on by default, which is the state the page describes - do not disable it.
     await expect(page.locator('.turn-container.turn-collapsed').first()).toBeVisible()
@@ -173,24 +183,72 @@ test.describe('Docs captures - chat', () => {
   })
 
   test('the terminal column, with a failed command marked', async ({ page }) => {
-    await mockSSE(page, 'events/terminal-column-mixed.jsonl')
-    await mockDocsAPI(page, { sessionUiStateDefaults: { terminalSplitEnabled: true } })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/terminal-column-mixed.jsonl', {
+      sessionUiStateDefaults: { terminalSplitEnabled: true },
+    })
 
     const column = page.locator('[data-testid="terminal-column"]')
     await expect(column.locator('.terminal-entry-failed').first()).toBeVisible()
 
     await expect(column).toHaveScreenshot([...FEATURES, 'chat-terminal.png'])
   })
+
+  test('a session that needs you, its reason in the sessions list and its replies offered', async ({
+    page,
+  }) => {
+    const reason = 'Approve: merge the index migration'
+    const docsStatus = loadFixture('status/docs.json')
+    await openDocsSession(page, 'events/docs-needs-user.jsonl', {
+      handlers: {
+        getUIState: layoutHandler(singlePanelLayout('sessions', 'Sessions', 330, 'left')),
+        getSessionStatus: async route => {
+          await route.fulfill({
+            json: {
+              ...docsStatus,
+              needs_user: reason,
+              needs_user_replies: ['Merge it', 'Hold for review'],
+            },
+          })
+        },
+        getSessions: sessionsHandler([
+          { ...docsStatus, container_id: DEFAULT_CONTAINER_ID, needs_user: reason },
+          {
+            session_id: 'session-docs-notes',
+            name: 'release notes',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet-5-5',
+            parent_session_id: null,
+            num_turns: 4,
+            total_cost_usd: 0.11,
+            started_at: '2025-01-18T11:10:00Z',
+            updated_at: '2025-01-18T11:40:00Z',
+            first_message: 'Draft the notes for the reports changes.',
+            last_message: 'The notes are ready for review.',
+          },
+        ]),
+        // A row shows its reason only while its session resolves to a running container.
+        getContainers: async route => {
+          await route.fulfill({
+            json: {
+              containers: [
+                { id: DEFAULT_CONTAINER_ID, session_id: DEFAULT_SESSION_ID, status: 'running' },
+              ],
+            },
+          })
+        },
+      },
+    })
+
+    await expect(page.getByTestId('needs-user-replies')).toBeVisible()
+    await expect(page.locator('[data-testid="session-item"]', { hasText: reason })).toBeVisible()
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-needs-you.png'])
+  })
 })
 
 test.describe('Docs captures - rendering', () => {
-  test('markdown, math and highlighted code in one reply', async ({ page }) => {
-    await mockSSE(page, 'events/docs-rendering.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+  test('markdown, math, a callout and highlighted code in one reply', async ({ page }) => {
+    await openDocsSession(page, 'events/docs-rendering.jsonl')
 
     await expect(page.locator('.katex').first()).toBeVisible()
 
@@ -201,17 +259,16 @@ test.describe('Docs captures - rendering', () => {
   })
 
   test('a word-level edit diff', async ({ page }) => {
-    await mockSSE(page, 'events/tool-edit-char-highlight.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/tool-edit-char-highlight.jsonl')
 
     const block = page.locator('[data-testid="tool-block"]').first()
     await expect(block.locator('.tool-expanded-content')).toBeVisible()
 
     await expect(block).toHaveScreenshot([...FEATURES, 'rendering-edit-diff.png'])
   })
+})
 
+test.describe('Docs captures - diagrams', () => {
   test('a Mermaid diagram in the zoom overlay', async ({ page }) => {
     await mockSSE(page, 'events/mermaid-diagram.jsonl')
     await mockDocsAPI(page)
@@ -226,7 +283,30 @@ test.describe('Docs captures - rendering', () => {
     const overlay = page.locator('.zoom-overlay')
     await expect(overlay).toBeVisible()
 
-    await expect(overlay).toHaveScreenshot([...FEATURES, 'rendering-mermaid-zoom.png'])
+    await expect(overlay).toHaveScreenshot([...FEATURES, 'diagrams-mermaid-zoom.png'])
+  })
+
+  test('a GeoJSON map drawn offline, before any tiles load', async ({ page }) => {
+    await openDocsSession(page, 'events/docs-diagrams-map.jsonl')
+
+    const map = page.locator('.geo-map').first()
+    await expect.poll(() => map.locator('path.leaflet-interactive').count()).toBe(5)
+
+    await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot([
+      ...FEATURES,
+      'diagrams-map.png',
+    ])
+  })
+
+  test('an STL model shaded in place', async ({ page }) => {
+    await openDocsSession(page, 'events/docs-diagrams-model.jsonl')
+
+    await expect(page.locator('.stl-viewer canvas').first()).toBeVisible()
+
+    await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot([
+      ...FEATURES,
+      'diagrams-model.png',
+    ])
   })
 })
 
@@ -234,13 +314,10 @@ test.describe('Docs captures - panels', () => {
   test.use({ viewport: { width: 1680, height: 900 } })
 
   test('panels docked around the chat, both icon strips in frame', async ({ page }) => {
-    await mockSSE(page, 'events/docs-panels.jsonl')
-    await mockDocsAPI(page, {
+    await openDocsSession(page, 'events/docs-panels.jsonl', {
       sessionsFixture: 'sessions/multiple.json',
       handlers: { getUIState: layoutHandler(dockedLayout()) },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await expect(page.locator('.icon-strip-left')).toBeVisible()
     await expect(page.locator('.icon-strip-right')).toBeVisible()
@@ -256,10 +333,7 @@ test.describe('Docs captures - panels', () => {
   test('badges on the icons whose panels have something to say', async ({ page }) => {
     // A running background task is what puts a count on Tasks; the strip is the whole frame, so its
     // spinner inside the panel never reaches the picture.
-    await mockSSE(page, 'events/docs-panels-running.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/docs-panels-running.jsonl')
 
     const strip = page.locator('.icon-strip-right')
     await expect(strip.locator('.icon-badge')).toHaveCount(2)
@@ -276,10 +350,7 @@ test.describe('Docs captures - boards', () => {
   test('a board with its swimlanes and columns', async ({ page }) => {
     await mockSSE(page)
     await mockDocsAPI(page)
-    await mockBoards(page)
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
-    await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
-    await page.evaluate(() => document.fonts.ready)
+    await openSprintBoard(page)
 
     const board = page.locator('.board-board')
     await expect(board).toBeVisible()
@@ -290,10 +361,9 @@ test.describe('Docs captures - boards', () => {
 
 test.describe('Docs captures - nested containers', () => {
   test('an inner build and the service it starts, in the terminal column', async ({ page }) => {
-    await mockSSE(page, 'events/docs-nested-containers.jsonl')
-    await mockDocsAPI(page, { sessionUiStateDefaults: { terminalSplitEnabled: true } })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/docs-nested-containers.jsonl', {
+      sessionUiStateDefaults: { terminalSplitEnabled: true },
+    })
 
     const column = page.locator('[data-testid="terminal-column"]')
     await expect(column.locator('.terminal-entry-failed').first()).toBeVisible()
@@ -304,15 +374,12 @@ test.describe('Docs captures - nested containers', () => {
 
 test.describe('Docs captures - many sessions', () => {
   test('the sessions tree, forks nested under what they forked from', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page, {
+    await openDocsSession(page, 'events/docs-conversation.jsonl', {
       sessionsFixture: 'sessions/docs-tree.json',
       handlers: {
         getUIState: layoutHandler(singlePanelLayout('sessions', 'Sessions', 330, 'left')),
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     // Forks arrive folded under the session they came from; the page's point is seeing them.
     await page.locator('.sessions-expand-btn').first().click()
@@ -325,10 +392,7 @@ test.describe('Docs captures - many sessions', () => {
   })
 
   test('the workspace switcher, listing what is registered', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page, { workspaces: THREE_WORKSPACES })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/docs-conversation.jsonl', { workspaces: THREE_WORKSPACES })
 
     await page.locator('[data-testid="workspace-switcher"]').click()
     const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
@@ -341,44 +405,38 @@ test.describe('Docs captures - many sessions', () => {
     await mockSSE(page, 'events/docs-session-spawn.jsonl')
     await mockDocsAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'reports rollup',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet-5',
-                  parent_session_id: null,
-                  num_turns: 9,
-                  total_cost_usd: 0.42,
-                  total_duration_ms: 214000,
-                  started_at: '2025-01-18T12:00:00Z',
-                  updated_at: '2025-01-18T12:24:00Z',
-                  first_message: 'Loading the reports page takes twelve seconds.',
-                  last_message: 'Reports open in about a quarter of a second.',
-                  container_id: DEFAULT_CONTAINER_ID,
-                },
-                {
-                  session_id: 'sib-index',
-                  name: 'events index',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet-5',
-                  parent_session_id: null,
-                  num_turns: 2,
-                  total_cost_usd: 0.03,
-                  total_duration_ms: 41000,
-                  started_at: '2025-01-18T12:00:04Z',
-                  updated_at: '2025-01-18T12:00:45Z',
-                  first_message: 'Add the index on the events table',
-                  last_message: 'Cold path is 1.4s with the index.',
-                  container_id: 'claudebox-sib-index',
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: 'reports rollup',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet-5',
+            parent_session_id: null,
+            num_turns: 9,
+            total_cost_usd: 0.42,
+            total_duration_ms: 214000,
+            started_at: '2025-01-18T12:00:00Z',
+            updated_at: '2025-01-18T12:24:00Z',
+            first_message: 'Loading the reports page takes twelve seconds.',
+            last_message: 'Reports open in about a quarter of a second.',
+            container_id: DEFAULT_CONTAINER_ID,
+          },
+          {
+            session_id: 'sib-index',
+            name: 'events index',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet-5',
+            parent_session_id: null,
+            num_turns: 2,
+            total_cost_usd: 0.03,
+            total_duration_ms: 41000,
+            started_at: '2025-01-18T12:00:04Z',
+            updated_at: '2025-01-18T12:00:45Z',
+            first_message: 'Add the index on the events table',
+            last_message: 'Cold path is 1.4s with the index.',
+            container_id: 'claudebox-sib-index',
+          },
+        ]),
       },
     })
     // The whole viewport: the point is the spawning call and the ordinary row it produced, together.
@@ -395,10 +453,7 @@ test.describe('Docs captures - many sessions', () => {
 
 test.describe('Docs captures - threads', () => {
   test('a quote holding its highlight, with the reply box beside it', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page)
 
     const affordance = page.locator('[data-testid="quote-affordance"]')
     // Select and click as one retried unit: a settling layout can clear the affordance between.
@@ -416,31 +471,24 @@ test.describe('Docs captures - threads', () => {
   })
 
   test('the session rail, one group focused and its parent reading beside it', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page, {
+    await openDocsSession(page, 'events/docs-conversation.jsonl', {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'root-session',
-                  name: 'reports rollup',
-                  parent_session_id: null,
-                  num_turns: 9,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'cache invalidation',
-                  parent_session_id: 'root-session',
-                  num_turns: 3,
-                  container_id: DEFAULT_CONTAINER_ID,
-                  is_side_thread: true,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'root-session',
+            name: 'reports rollup',
+            parent_session_id: null,
+            num_turns: 9,
+          },
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: 'cache invalidation',
+            parent_session_id: 'root-session',
+            num_turns: 3,
+            container_id: DEFAULT_CONTAINER_ID,
+            is_side_thread: true,
+          },
+        ]),
         getSessionEvents: async route => {
           await route.fulfill({
             json: {
@@ -466,8 +514,6 @@ test.describe('Docs captures - threads', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await expect(page.locator('[data-testid="rail-ancestor"]')).toBeVisible()
 
@@ -478,10 +524,7 @@ test.describe('Docs captures - threads', () => {
   })
 
   test('the control bar offering where a fork should land', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page)
 
     await page.locator('.chat-control-fork-chevron').click()
     const dropdown = page.locator('.chat-control-fork-dropdown')
@@ -493,10 +536,7 @@ test.describe('Docs captures - threads', () => {
 
 test.describe('Docs captures - the queue', () => {
   test('messages waiting their turn under the conversation', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page)
 
     const input = page.locator('[data-testid="chat-input"]')
     await input.fill('Then show me the query it runs today.')
@@ -517,10 +557,7 @@ test.describe('Docs captures - a closed panel on hover', () => {
   test('a closed panel opening as a floating preview', async ({ page }) => {
     // A closed panel with something in it: the rolling cost windows would read all zeros unless
     // the fixture's sessions were dated against the wall clock, which a capture cannot do.
-    await mockSSE(page, 'events/docs-mcp-servers.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/docs-mcp-servers.jsonl')
 
     await page.locator('[data-testid="icon-mcp"]').hover()
     const preview = page.locator('.floating-panel')
@@ -538,26 +575,20 @@ test.describe('Docs captures - a board in motion', () => {
     // takes both a sessions entry and a container carrying that id.
     await mockDocsAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: 'session-001',
-                  name: 'polish the board view',
-                  workspace: '/home/user/project',
-                  model: 'claude-sonnet-5',
-                  num_turns: 3,
-                  total_cost_usd: 0.08,
-                  started_at: '2025-01-18T12:00:00Z',
-                  updated_at: '2025-01-18T12:12:00Z',
-                  parent_session_id: null,
-                  container_id: DEFAULT_CONTAINER_ID,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: 'session-001',
+            name: 'polish the board view',
+            workspace: '/home/user/project',
+            model: 'claude-sonnet-5',
+            num_turns: 3,
+            total_cost_usd: 0.08,
+            started_at: '2025-01-18T12:00:00Z',
+            updated_at: '2025-01-18T12:12:00Z',
+            parent_session_id: null,
+            container_id: DEFAULT_CONTAINER_ID,
+          },
+        ]),
         getContainers: async route => {
           await route.fulfill({
             json: {
@@ -569,10 +600,7 @@ test.describe('Docs captures - a board in motion', () => {
         },
       },
     })
-    await mockBoards(page)
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
-    await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
-    await page.evaluate(() => document.fonts.ready)
+    await openSprintBoard(page)
 
     const card = page.locator('.ticket-card', { hasText: 'Polish UI' })
     await expect(card.locator('.ticket-status-dot')).toBeVisible()
@@ -583,10 +611,7 @@ test.describe('Docs captures - a board in motion', () => {
   test('a card mid-drag toward another column', async ({ page }) => {
     await mockSSE(page)
     await mockDocsAPI(page)
-    await mockBoards(page)
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
-    await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
-    await page.evaluate(() => document.fonts.ready)
+    await openSprintBoard(page)
 
     const card = page.locator('.ticket-card', { hasText: 'Setup infra' })
     const box = await card.boundingBox()
@@ -620,10 +645,7 @@ test.describe('Docs captures - starting out', () => {
   })
 
   test('the first message answered', async ({ page }) => {
-    await mockSSE(page, 'events/docs-first-reply.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page, 'events/docs-first-reply.jsonl')
 
     await expect(page.getByText('mounted at the same path inside the container')).toBeVisible()
 
@@ -636,13 +658,10 @@ test.describe('Docs captures - starting out', () => {
 
 test.describe('Docs captures - guides', () => {
   test('the Skills panel, showing what the profile gave the agent', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page, {
+    await openDocsSession(page, 'events/docs-conversation.jsonl', {
       statusFixture: 'status/docs-skills.json',
       handlers: { getUIState: layoutHandler(singlePanelLayout('commands', 'Skills', 420)) },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await expect(page.locator('.skills-item')).toHaveCount(4)
     await expect(page.locator('.skills-item-description').first()).toBeVisible()
@@ -651,10 +670,7 @@ test.describe('Docs captures - guides', () => {
   })
 
   test('the model picker open beside the runtime the session is on', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page)
 
     await page.locator('[data-testid="footer-model"]').click()
     const dropdown = page.locator('.footer-picker-dropdown')
@@ -722,10 +738,7 @@ test.describe('Docs captures - reference', () => {
   test.use({ viewport: { width: 1280, height: 1000 } })
 
   test('the keyboard help overlay', async ({ page }) => {
-    await mockSSE(page, 'events/docs-conversation.jsonl')
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openDocsSession(page)
 
     await waitForShortcutsReady(page)
     await page.keyboard.press('Alt+?')

@@ -1,5 +1,7 @@
 """AgentSessionConfig and RuntimeCapabilities - runtime-neutral configuration surface."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -52,11 +54,14 @@ class AgentSessionConfig:
 class ClaudeAgentSessionConfig(AgentSessionConfig):
     """Claude-specific config fields."""
 
-    system_prompt: str | None = None
+    system_prompt_file: Path | None = None
     setting_sources: list[str] = field(default_factory=lambda: ["user", "project"])
     sdk_passthrough: dict[str, Any] = field(default_factory=dict)
     max_buffer_size: int = _DEFAULT_PROCESS_BUFFER_SIZE
     debug_mode: bool = False
+    # Gates runtime_claude.py's settings.json symlink re-point - a member session still gets its
+    # own isolated file, it just never claims the container-wide shared path.
+    is_primary: bool = True
 
 
 @dataclass
@@ -82,7 +87,7 @@ class LangGraphAgentSessionConfig(AgentSessionConfig):
     `profile_hooks` maps a lifecycle event to its profile script, from `[langgraph.hooks]`;
     only `session_start` is consumed today, and an empty dict falls back to the conventional path.
 
-    `system_prompt` is the persona handed to the graph, via the same `--system-prompt` argument
+    `system_prompt` is the persona handed to the graph, read from the same `--system-prompt-file`
     the container API server already accepts for the Claude runtime.
     """
 

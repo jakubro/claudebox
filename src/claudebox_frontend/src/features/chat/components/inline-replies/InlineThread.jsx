@@ -3,30 +3,40 @@
 // audit-ignore-file: excessive-props
 
 import { Columns2, ExternalLink, Square, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useInteraction } from '../../../../context/InteractionContext'
 import useInterruptHandler from '../../../../hooks/useInterruptHandler'
 import { buildSessionHref } from '../../../../utils/navigation'
+import ColumnScrollController from '../ColumnScrollController'
 import BlockCollapseManager from '../chat-input/BlockCollapseManager'
 import useTextEditingKeys from '../chat-input/hooks/useTextEditingKeys'
+import { applyUndoableEdit } from '../chat-input/utils/undoableEdit'
 import PromotedThreadCard from './PromotedThreadCard'
+import ThreadExchanges from './ThreadExchanges'
+import { countExchanges } from './threadEvents'
+
+// Stable default - a fresh [] per render would re-derive a promoted float's exchanges every time.
+const NO_EVENTS = [] // audit-ignore: misplaced-constant
 
 /**
  * Render an inline-reply thread inside a floating composer.
  * @param {object} props
  * @param {object} props.reply - { id, quote, from, response, threadSessionId, promotedSessionId }.
  * @param {boolean} props.sent - Read-only when sent (batch send); editable when unsent.
- * @param {object} [props.thread] - Side-thread state { sessionId, history, running, error }, which
- *   takes over the render from `sent`/composer.
+ * @param {object} [props.thread] - Thread state { sessionId, events, pending, running, error },
+ *   which takes over the render from `sent`/composer.
  * @param {number} props.maxHeight - Autoresize cap shared with the composer.
  * @param {boolean} [props.pinned] - Whether the float is pinned open (shows the close button).
  * @param {boolean} [props.autoFocus] - Focus the reply field on mount (a freshly-quoted reply).
+ * @param {number} [props.focusSignal] - Focus the field, caret at the end, each time this rises above 0.
  * @param {function} [props.onEdit] - Called (id, response) on edit (unsent only).
  * @param {function} [props.onRemove] - Called (id) on delete (unsent only).
- * @param {function} [props.onClose] - Called (id) when the close button is pressed.
+ * @param {function} [props.onClose] - Called (id) on the close button, or Tab with the caret at the end.
  * @param {function} [props.onFocus] - Called (id) when the reply field gains focus (pins the float).
- * @param {function} [props.onSubmitThread] - (id, text) on Enter, asking in this float's thread.
+ * @param {function} [props.onSubmitThread] - (id, text) on Ctrl+Enter, or Enter once asked, asking
+ *   in this float's thread.
+ * @param {function} [props.onSendChat] - () on Enter in an unsent box: the message box's own Enter.
  * @param {function} [props.onInterruptThread] - Called (id) to stop this thread's own answer.
  * @param {boolean} [props.canInterrupt] - Whether Ctrl+. is currently allowed (mirrors the composer's gate).
  * @param {function} [props.onPromote] - (id) to promote this thread into its own browser tab.
@@ -34,6 +44,7 @@ import PromotedThreadCard from './PromotedThreadCard'
  * @param {function} [props.onFocusRailPromoted] - (threadSessionId) => void, the control a
  *   rail-promoted reply's read-only card offers.
  * @param {string} [props.workspaceId] - Needed to build the promoted-session link once frozen.
+ * @param {number|null} [props.bodyHeight] - Reader-chosen body height; null keeps the default.
  */
 export default function InlineThread({
   reply,
@@ -42,20 +53,30 @@ export default function InlineThread({
   maxHeight,
   pinned,
   autoFocus,
+  focusSignal = 0,
   onEdit,
   onRemove,
   onClose,
   onFocus,
   onSubmitThread,
+  onSendChat,
   onInterruptThread,
   canInterrupt,
   onPromote,
   onPromoteToRail,
   onFocusRailPromoted,
   workspaceId,
+  bodyHeight = null,
 }) {
   const textareaRef = useRef(null)
   const historyRef = useRef(null)
+  const followerRef = useRef(null)
+  const scrollControllerRef = useRef(null)
+  if (!scrollControllerRef.current) {
+    scrollControllerRef.current = new ColumnScrollController()
+  }
+  const scrollController = scrollControllerRef.current
+  const hasLiveHistory = Boolean(thread && !reply.promotedSessionId)
 
   // InteractionContext is ambient and tracks the main session only, so thread mode swaps in the
   // thread's own running state and stop target.
@@ -124,15 +145,14 @@ export default function InlineThread({
     [reply.response],
   )
 
-  const applyResult = useCallback(
-    result => {
-      onEdit(reply.id, result.value)
-      if (result.selStart !== undefined) {
-        pendingSelectionRef.current = { selStart: result.selStart, selEnd: result.selEnd }
-      }
-    },
-    [onEdit, reply.id],
-  )
+  // The browser edit reaches onEdit through the field's onChange; the selection is re-applied after
+  // the re-render, whose autoresize would otherwise lose the caret's scroll-into-view.
+  const applyResult = useCallback(result => {
+    applyUndoableEdit(textareaRef.current, result)
+    if (result.selStart !== undefined) {
+      pendingSelectionRef.current = { selStart: result.selStart, selEnd: result.selEnd }
+    }
+  }, [])
 
   // handleInterrupt already gates via `disabled` above, so useTextEditingKeys' own canInterrupt gate
   // stays at its permissive default.
@@ -153,11 +173,18 @@ export default function InlineThread({
       return
     }
 
+    // In a thread the exchange is the body; the follow-up field below it keeps autoresizing.
+    if (bodyHeight != null && !thread) {
+      ta.style.height = `${bodyHeight}px`
+      ta.style.overflowY = 'auto'
+      return
+    }
+
     ta.style.height = 'auto'
     const next = Math.min(ta.scrollHeight, maxHeight)
     ta.style.height = `${next}px`
     ta.style.overflowY = next >= maxHeight ? 'auto' : 'hidden'
-  }, [reply.response, maxHeight])
+  }, [reply.response, maxHeight, bodyHeight, thread])
 
   // No dep array: runs every render, but the ref gate makes it a no-op except right after a key handler
   // sets a pending selection. Keying off reply.response would stomp the caret on unrelated re-renders.
@@ -177,34 +204,100 @@ export default function InlineThread({
     }
   }, [autoFocus])
 
-  // Opens on the most recent exchange, keyed on the exchange COUNT rather than thread.history:
-  // streaming appends into the last entry without changing the length, so it never re-triggers.
-  const historyLength = thread?.history?.length ?? 0
-  // biome-ignore lint/correctness/useExhaustiveDependencies: historyLength is the re-run trigger
+  useEffect(() => {
+    const ta = textareaRef.current
+    if (focusSignal > 0 && ta) {
+      ta.focus({ preventScroll: true })
+      ta.setSelectionRange(ta.value.length, ta.value.length)
+    }
+  }, [focusSignal])
+
+  // Declared before the effects below, which scroll through the controller it initialises.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hasLiveHistory mounts the history
   useLayoutEffect(() => {
     const el = historyRef.current
-    if (el) {
-      el.scrollTop = el.scrollHeight
+    if (!el) {
+      return undefined
     }
-  }, [historyLength])
+    scrollController.initialize(el)
+    scrollController.attachInputListeners(el)
+    const follower = new ResizeObserver(() => scrollController.scrollToBottom())
+    follower.observe(el)
+    followerRef.current = follower
 
-  // Enter in a float asks (or follows up) in that float's own side thread and never sends the
-  // batch; the batch is reached only from the main composer. Ctrl+Enter does the same.
+    return () => {
+      follower.disconnect()
+      followerRef.current = null
+      scrollController.dispose()
+    }
+  }, [hasLiveHistory, scrollController])
+
+  // Keyed on the exchange COUNT, not thread.events: streaming must not undo the reader's scroll-up.
+  const exchangeCount = useMemo(
+    () => (thread ? countExchanges(thread.events, thread.pending) : 0),
+    [thread],
+  )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: exchangeCount is the re-run trigger
+  useLayoutEffect(() => {
+    scrollController.reset()
+    scrollController.scrollToBottom()
+  }, [exchangeCount])
+
+  // Turns grow in place too - a block expanding, a diagram finishing - with no event to say so.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: thread is the re-run trigger
+  useLayoutEffect(() => {
+    for (const turn of historyRef.current?.children ?? []) {
+      followerRef.current?.observe(turn)
+    }
+    scrollController.scrollToBottom()
+  }, [thread])
+
+  // A question the thread asks is answered in the thread, never in the conversation it came from.
+  const handleThreadFormSubmit = useCallback(
+    answer => {
+      onSubmitThread?.(reply.id, answer)
+      textareaRef.current?.focus({ preventScroll: true })
+    },
+    [onSubmitThread, reply.id],
+  )
+
+  // An unsent box: Enter sends the chat as the message box's Enter does, Ctrl+Enter asks on its own,
+  // Alt+Enter does nothing. A box already asked on its own follows up on any Enter.
   function handleKeyDown(e) {
+    // Tab with the caret at the very end closes the box, as its close button does; elsewhere it indents.
+    const { selectionStart, selectionEnd, value } = e.currentTarget
+    const bareTab = e.key === 'Tab' && !(e.shiftKey || e.ctrlKey || e.altKey || e.metaKey)
+    if (bareTab && onClose && selectionStart === value.length && selectionEnd === value.length) {
+      e.preventDefault()
+      onClose(reply.id)
+      return
+    }
+
     if (handleSharedKeyDown(e)) {
       return
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      // Expand collapsed blocks first - a sent reply must never carry a placeholder. flushSync
-      // commits onEdit's state update before the synchronous onSubmitThread call below reads it.
-      const expanded = collapseManagerRef.current.expandBeforeSubmit(reply.response)
-      if (expanded.value !== reply.response) {
-        flushSync(() => onEdit(reply.id, expanded.value))
-      }
+    if (e.key !== 'Enter' || e.shiftKey) {
+      return
+    }
+    e.preventDefault()
+    // A linked side thread counts before its history loads, so Enter never sends the chat meanwhile.
+    const asks = thread || reply.threadSessionId || e.ctrlKey || e.metaKey
+    if (!asks && e.altKey) {
+      return
+    }
+
+    // Expand collapsed blocks first - a sent reply must never carry a placeholder. flushSync commits
+    // onEdit's state update before the synchronous send below reads the reply buffer.
+    const expanded = collapseManagerRef.current.expandBeforeSubmit(reply.response)
+    if (expanded.value !== reply.response) {
+      flushSync(() => onEdit(reply.id, expanded.value))
+    }
+    if (asks) {
       onSubmitThread?.(reply.id, expanded.value)
-      onEdit(reply.id, '') // clear the composer - the sent text now lives in thread.history
+      onEdit(reply.id, '') // clear the composer - the sent text now lives in the thread
+    } else {
+      onSendChat?.()
     }
   }
 
@@ -224,6 +317,7 @@ export default function InlineThread({
     />
   )
 
+  const bodyStyle = bodyHeight == null ? undefined : { height: bodyHeight, maxHeight: 'none' }
   const promoted = Boolean(reply.promotedSessionId)
   const railPromoted = Boolean(reply.railPromoted)
 
@@ -289,14 +383,17 @@ export default function InlineThread({
       </div>
       {promoted ? (
         <>
-          <div className="inline-thread-history" data-testid="inline-thread-history">
-            {(thread?.history || []).map((turn, i) => (
-              // Index is stable here: history only ever appends, never reorders or removes.
-              <div className="inline-thread-turn" key={i}>
-                <div className="inline-thread-question">{turn.question}</div>
-                <div className="inline-thread-answer">{turn.answer}</div>
-              </div>
-            ))}
+          <div
+            className="inline-thread-history"
+            data-testid="inline-thread-history"
+            style={bodyStyle}>
+            <ThreadExchanges
+              events={thread?.events ?? NO_EVENTS}
+              pending={thread?.pending}
+              running={false}
+              sessionId={reply.threadSessionId}
+              quote={reply.quote}
+            />
           </div>
           <div className="inline-thread-moved-link">
             this conversation moved -&gt;{' '}
@@ -310,44 +407,42 @@ export default function InlineThread({
           </div>
         </>
       ) : thread ? (
-        <>
-          <div
-            className="inline-thread-history"
-            data-testid="inline-thread-history"
-            ref={historyRef}>
-            {thread.history.map((turn, i) => (
-              // Index is stable here: history only ever appends, never reorders or removes.
-              <div className="inline-thread-turn" key={i}>
-                <div className="inline-thread-question">{turn.question}</div>
-                <div className="inline-thread-answer">
-                  {turn.answer}
-                  {thread.running && i === thread.history.length - 1 && (
-                    <span className="inline-thread-working" data-testid="inline-thread-working" />
-                  )}
-                </div>
-              </div>
-            ))}
-            {thread.error && <div className="inline-thread-error">{thread.error}</div>}
-          </div>
-          <div className="inline-thread-followup-row">
-            {replyTextarea}
-            {thread.running && (
-              <button
-                type="button"
-                className="inline-thread-stop"
-                onClick={handleInterrupt}
-                disabled={threadInterrupting}
-                data-testid="inline-thread-stop"
-                title="Stop">
-                <Square size={12} />
-              </button>
-            )}
-          </div>
-        </>
+        <div
+          className="inline-thread-history"
+          data-testid="inline-thread-history"
+          style={bodyStyle}
+          ref={historyRef}
+          onScroll={() => scrollController.handleScroll()}>
+          <ThreadExchanges
+            events={thread.events}
+            pending={thread.pending}
+            running={Boolean(thread.running)}
+            sessionId={thread.sessionId ?? reply.threadSessionId}
+            quote={reply.quote}
+            onFormSubmit={handleThreadFormSubmit}
+          />
+          {thread.error && <div className="inline-thread-error">{thread.error}</div>}
+        </div>
       ) : sent ? (
-        <div className="inline-thread-response">{reply.response}</div>
-      ) : (
-        replyTextarea
+        <div className="inline-thread-response" style={bodyStyle}>
+          {reply.response}
+        </div>
+      ) : null}
+      {!promoted && (thread || !sent) && (
+        <div className="inline-thread-followup-row">
+          {replyTextarea}
+          {thread?.running && (
+            <button
+              type="button"
+              className="inline-thread-stop"
+              onClick={handleInterrupt}
+              disabled={threadInterrupting}
+              data-testid="inline-thread-stop"
+              title="Stop">
+              <Square size={12} />
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

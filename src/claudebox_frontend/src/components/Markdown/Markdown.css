@@ -19,6 +19,95 @@
   background: var(--bg-tertiary);
 }
 
+/* Quote copy button - placed and revealed like the code block's */
+.md-blockquote {
+  position: relative;
+}
+
+.blockquote-copy-btn {
+  top: 5px;
+  right: 5px;
+  padding: 2px 4px;
+  background: var(--bg-secondary);
+  z-index: 1;
+}
+
+.md-blockquote:hover > .blockquote-copy-btn {
+  opacity: 1;
+}
+
+.blockquote-copy-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+/* GitHub alerts - edge, icon and title in the kind's colour, on the surface's own quote background */
+.md-blockquote.markdown-alert {
+  border-left-color: var(--alert-color);
+}
+
+.markdown-alert-note {
+  --alert-color: #4493f8;
+}
+
+.markdown-alert-tip {
+  --alert-color: #3fb950;
+}
+
+.markdown-alert-important {
+  --alert-color: #ab7df8;
+}
+
+.markdown-alert-warning {
+  --alert-color: #d29922;
+}
+
+.markdown-alert-caution {
+  --alert-color: #f85149;
+}
+
+.md-blockquote > .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0.25em 0;
+  font-weight: 600;
+  color: var(--alert-color);
+}
+
+.md-blockquote > .markdown-alert-title:last-child {
+  margin-bottom: 0;
+}
+
+/* Target of a same-message link, flashed on arrival */
+[data-md-block].jump-highlight,
+[data-md-block] .jump-highlight {
+  animation: md-jump-highlight 1.5s ease-out;
+}
+
+@keyframes md-jump-highlight {
+  0% {
+    background: rgba(59, 130, 246, 0.3);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.color-swatch {
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: 0.3em;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.md-image {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Raw HTML elements (rehype-raw + sanitize) */
 details {
   margin: 0.5em 0;

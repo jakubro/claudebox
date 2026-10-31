@@ -1,7 +1,10 @@
 """Event pipeline - SDK messages to persisted, broadcast events."""
 
+from __future__ import annotations
+
 import asyncio
 import dataclasses
+import re
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -9,9 +12,12 @@ from pathlib import Path
 from typing import Protocol
 
 from .async_tasks import AsyncTaskManager
+from .bash_layout import layout_bash_command
+from .bash_read_only import is_read_only_command
 from .conversion import agent_event_to_events, to_published_event
 from .models import Event, EventSubtype, EventType, PublishedEvent
 from .persistence import EventLog
+from .trace import TraceClient
 from .turn_tracker import TurnTracker
 from ..events import AgentEvent, SystemInitPayload, UserMessagePayload
 from ..protocol import AgentSession
@@ -20,6 +26,13 @@ from ...workspace import Workspace
 
 
 logger = get_logger(__name__)
+
+STREAM_LOST_MESSAGE = "The agent's connection ended before it answered"
+
+_BASH_TOOLS = ("Bash", "bash")
+_MCP_PREFIX = "mcp__"
+_MCP_STATUS_TIMEOUT_S = 2.0
+_MCP_NAME_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
 
 
 class OnInit(Protocol):
@@ -34,6 +47,14 @@ class OnEvent(Protocol):
     async def __call__(self, event: PublishedEvent) -> None: ...
 
 
+class OnStreamLost(Protocol):
+    """Callback invoked once, from the consumer task's done-callback, when the runtime stream ended
+    without a result; synchronous, so it can only schedule work.
+    """
+
+    def __call__(self) -> None: ...
+
+
 class EventPipeline:
     """Pipeline: SDK message -> enriched, persisted, broadcast PublishedEvent."""
 
@@ -44,6 +65,8 @@ class EventPipeline:
         on_init: OnInit,
         on_event: OnEvent,
         resume_session_id: str | None = None,
+        *,
+        on_stream_lost: OnStreamLost | None = None,
     ):
         self._logger = get_logger(__name__)
 
@@ -51,6 +74,7 @@ class EventPipeline:
         self._workspace = workspace
         self._on_init = on_init
         self._on_event = on_event
+        self._on_stream_lost = on_stream_lost
         self._resume_session_id = resume_session_id
 
         # State
@@ -68,6 +92,8 @@ class EventPipeline:
         # Buffering before session_id available
         self._buffer: list[PublishedEvent] = []
         self._initialized = False
+        # An on-demand init and the agent's own system_init can race; storage is set up once.
+        self._init_lock = asyncio.Lock()
 
         # Persistence
         self._event_log: EventLog | None = None
@@ -77,6 +103,9 @@ class EventPipeline:
         self._task: asyncio.Task | None = None
         self._last_message_at: float | None = None
         self._stream_lost = False
+        # Whether the current turn already surfaced an error; spans loop passes, since a crash's
+        # error and its stream end arrive in different ones.
+        self._turn_error_surfaced = False
 
         # Async task monitoring
         self._async_task_manager = AsyncTaskManager(on_event=self._process_nested_event)
@@ -84,8 +113,17 @@ class EventPipeline:
         # Prompt for result-only turn detection (set by session before each query)
         self._prompt: str | None = None
 
-        # Suppress next SDK user echo (set by session before attachment queries)
-        self._suppress_user_echo = False
+        # Uuids of synthetic sends awaiting their SDK echo; each is also its own turn's id.
+        self._pending_echo_uuids: set[str] = set()
+
+        self._mcp_read_only_tools: set[str] = set()
+        self._mcp_servers_listed: set[str] = set()
+        self._mcp_servers_asked: set[str] = set()
+
+        self._trace = TraceClient()
+        # A verdict is read once, and a background subagent's events arrive live and tailed.
+        self._trace_registrations: dict[str, asyncio.Future[None]] = {}
+        self._trace_verdicts: dict[str, asyncio.Future[bool | None]] = {}
 
     @property
     def session_id(self) -> str | None:
@@ -137,6 +175,14 @@ class EventPipeline:
         self._task = asyncio.create_task(self._run())
         self._task.add_done_callback(self._on_task_done)
 
+    async def ensure_initialized(self, session_id: str) -> None:
+        """Initialize storage for `session_id` now unless the agent's own system_init already did -
+        lets a caller outside the message loop persist before the agent announces the session.
+        """
+
+        if not self._initialized:
+            await self._initialize(session_id=session_id)
+
     async def stop(self) -> None:
         """Cancel background task, stop monitors, and close files."""
 
@@ -170,12 +216,50 @@ class EventPipeline:
 
         self._prompt = prompt
 
-    def suppress_next_user_echo(self) -> None:
-        """One-shot: session.send() calls this before injecting a synthetic attachment user
-        event; clears itself after suppressing one message.
-        """
+    def note_mcp_status(self, status: dict) -> None:
+        """Take the read-only MCP tools from `status`, as a reconnect or toggle returns it."""
 
-        self._suppress_user_echo = True
+        self._mcp_read_only_tools.clear()
+        self._mcp_servers_listed.clear()
+        self._mcp_servers_asked.clear()
+
+        for server in status.get("mcpServers") or []:
+            tools = server.get("tools") or []
+
+            if not tools:
+                continue
+
+            wire = _MCP_NAME_UNSAFE.sub("_", server.get("name") or "")
+            self._mcp_servers_listed.add(wire)
+            self._mcp_read_only_tools.update(
+                f"{_MCP_PREFIX}{wire}__{tool.get('name')}"
+                for tool in tools
+                if (tool.get("annotations") or {}).get("readOnly") is True
+            )
+
+    def suppress_user_echo(self, message_uuid: str) -> None:
+        """Drop the SDK echo carrying `message_uuid`; expires with that turn if it never comes."""
+
+        self._pending_echo_uuids.add(message_uuid)
+
+    def expire_pending_echo_suppressions(self) -> None:
+        """Drop any unconsumed suppressions - their echo will now never arrive."""
+
+        if self._pending_echo_uuids:
+            self._logger.info(
+                "Echo suppression expired without a matching echo",
+                count=len(self._pending_echo_uuids),
+            )
+            self._pending_echo_uuids.clear()
+
+    def _expire_echo_suppression_for_turn(self, turn_id: str | None) -> None:
+        if turn_id in self._pending_echo_uuids:
+            self._pending_echo_uuids.discard(turn_id)
+            self._logger.info(
+                "Echo suppression expired without a matching echo",
+                turn_id=turn_id,
+                count=1,
+            )
 
     # Event injection
     # ----------------------------------------------------------------------------------------------
@@ -225,6 +309,11 @@ class EventPipeline:
 
         await self._sdk_client.ready.wait()
 
+        if getattr(self._sdk_client, "connect_error", None) is not None:
+            self._running = False
+
+            return
+
         while self._running:
             self._logger.debug("Waiting for SDK messages...")
 
@@ -245,17 +334,21 @@ class EventPipeline:
                     # Suppress SDK echo of a canonical synthetic injection (e.g. attachments) before turn_tracker
                     # runs to avoid spurious state; excludes tool_use_result, which also carries the user kind.
                     if (
-                        self._suppress_user_echo
-                        and isinstance(agent_event.payload, UserMessagePayload)
+                        isinstance(agent_event.payload, UserMessagePayload)
                         and agent_event.payload.tool_use_result is None
+                        and agent_event.payload.uuid in self._pending_echo_uuids
                     ):
-                        self._suppress_user_echo = False
+                        self._pending_echo_uuids.discard(agent_event.payload.uuid)
                         self._logger.debug("Suppressed SDK echo of attachment user message")
                         continue
 
                     self._turn_tracker.on_event(agent_event)
 
                     for event in agent_event_to_events(agent_event):
+                        # Shown before stamping, so the result lands on the question's turn.
+                        if event.type == EventType.RESULT and event.content:
+                            await self._open_unechoed_turn(saw_user_event)
+
                         self._event_counter += 1
 
                         published = to_published_event(
@@ -266,28 +359,36 @@ class EventPipeline:
                         )
 
                         await self._enrich_edit_line_offset(published)
+                        self._enrich_bash_layout(published)
+                        self._enrich_bash_read_only(published)
+                        await self._enrich_bash_traced(published)
+                        await self._enrich_mcp_read_only(published)
                         self._enrich_init_capabilities(published)
 
-                        # User echo is per-cycle; assistant emission is turn-scoped via TurnTracker so a
-                        # crash-restart's trailing result isn't mistaken for a result-only turn.
+                        # User echo is per-cycle; a reply (text or failure) is turn-scoped via
+                        # TurnTracker so a trailing result isn't mistaken for a result-only turn.
                         if published.type == "user" and published.is_human:
                             saw_user_event = True
-                        elif published.type == "assistant":
+                        elif (
+                            published.type == "assistant" or published.subtype == EventSubtype.ERROR
+                        ):
                             self._turn_tracker.mark_assistant_emitted(published.turn_id)
                         elif published.type == "result":
                             saw_result = True
+                            self._expire_echo_suppression_for_turn(published.turn_id)
 
-                        # Result-only turn (e.g. unknown slash command): inject synthetic events so it's visible.
+                        # Result-only turn (e.g. unknown slash command): show its text as the reply.
                         if (
                             published.type == "result"
                             and not self._turn_tracker.has_assistant_emitted(published.turn_id)
                             and published.content
                         ):
-                            await self._surface_result_only_turn(published, saw_user_event)
+                            await self._surface_result_only_turn(published)
 
                         if published.subtype == "task_notification":
                             self._async_task_manager.enrich_notification(published)
 
+                        self._turn_tracker.observe(published)
                         await self._process_event(published)
                         self._async_task_manager.check_event(published)
 
@@ -301,6 +402,9 @@ class EventPipeline:
                     self._stream_lost = True
                     self._running = False
 
+                    if not self._turn_error_surfaced:
+                        await self._inject_error(STREAM_LOST_MESSAGE, saw_user_event)
+
                     break
             except asyncio.CancelledError:
                 # Deliberate shutdown via stop(); re-raised so the task doesn't look alive with the loop gone.
@@ -311,14 +415,13 @@ class EventPipeline:
                 # BaseExceptionGroup isn't an Exception, so anyio task-group failures would
                 # otherwise escape uncaught and kill the consumer silently.
                 self._logger.exception("Pipeline error")
-                await self._surface_error(exc)
+                await self._surface_error(exc, saw_user_event)
             finally:
                 self._prompt = None
 
     def _on_task_done(self, task: asyncio.Task) -> None:
-        """Report how the consumer loop ended, so a dead pipeline is never silent - also retrieves
-        the exception, which a strong-referenced task would otherwise only surface via its destructor.
-        """
+        """Report how the consumer loop ended, retrieving its exception so a dead pipeline is never
+        silent; a loop that ended on stream loss reports it to `on_stream_lost`."""
 
         if task.cancelled():
             self._logger.info("Pipeline task cancelled", session_id=self._session_id)
@@ -339,13 +442,17 @@ class EventPipeline:
                 "Pipeline task exited while still running",
                 session_id=self._session_id,
             )
+        elif self._stream_lost and self._on_stream_lost is not None:
+            self._on_stream_lost()
 
-    async def _surface_error(self, exc: BaseException) -> None:
+    async def _surface_error(self, exc: BaseException, saw_user_event: bool) -> None:
         """Unstick compaction state and surface an error event, never raising - recovery reuses the
         same append that may have just failed, so an unguarded second failure here ends the consumer.
         """
 
         try:
+            await self._open_unechoed_turn(saw_user_event)
+
             # Unstick frontend compaction state so the next pending Turn shows the Working spinner, not Compacting.
             if self._turn_tracker.is_compacting:
                 await self.inject_event(
@@ -359,8 +466,33 @@ class EventPipeline:
                 subtype=EventSubtype.ERROR,
                 content=f"Message failed to process: {exc}",
             )
+            self._turn_error_surfaced = True
         except Exception:
             self._logger.exception("Pipeline error recovery failed")
+
+    async def _inject_error(self, content: str, saw_user_event: bool) -> None:
+        """Inject a `system`/`error` event, never raising, like `_surface_error`."""
+
+        try:
+            await self._open_unechoed_turn(saw_user_event)
+            await self.inject_event(
+                event_type=EventType.SYSTEM,
+                subtype=EventSubtype.ERROR,
+                content=content,
+            )
+            self._turn_error_surfaced = True
+        except Exception:
+            self._logger.exception("Pipeline error recovery failed")
+
+    async def _open_unechoed_turn(self, saw_user_event: bool) -> None:
+        if self._prompt and not saw_user_event and not self._turn_tracker.running:
+            await self.inject_event(
+                event_type=EventType.USER,
+                subtype=EventSubtype.MESSAGE,
+                content=self._prompt,
+                is_human=True,
+                primary=True,
+            )
 
     async def _initialize(
         self,
@@ -373,6 +505,16 @@ class EventPipeline:
         if self._initialized:
             return
 
+        async with self._init_lock:
+            if not self._initialized:
+                await self._initialize_storage(agent_event=agent_event, session_id=session_id)
+
+    async def _initialize_storage(
+        self,
+        *,
+        agent_event: AgentEvent | None,
+        session_id: str | None,
+    ) -> None:
         if agent_event is not None:
             assert isinstance(agent_event.payload, SystemInitPayload)
             self._session_id = agent_event.payload.session_id
@@ -385,6 +527,7 @@ class EventPipeline:
 
         self._event_log = EventLog(session_id=self._session_id, workspace=self._workspace)
         self._historical_events = list(self._event_log.read_all())
+        self._turn_tracker.resume(self._historical_events)
 
         for event in self._historical_events:
             if event.parent_tool_use_id is not None:
@@ -408,6 +551,11 @@ class EventPipeline:
 
         A nested event is dropped only when the other source already claimed its dedup key.
         """
+
+        if event.parent_tool_use_id is None and (
+            (event.type == "user" and event.is_human) or event.type == "result"
+        ):
+            self._turn_error_surfaced = False
 
         if not self._initialized:
             self._buffer.append(event)
@@ -456,6 +604,10 @@ class EventPipeline:
             source_file=source_file,
             source_offset=source_offset,
         )
+        self._enrich_bash_layout(published)
+        self._enrich_bash_read_only(published)
+        await self._enrich_bash_traced(published)
+        await self._enrich_mcp_read_only(published)
         await self._process_event(published)
 
     def _enrich_init_capabilities(self, event: PublishedEvent) -> None:
@@ -489,24 +641,100 @@ class EventPipeline:
             # Best-effort enrichment - a missing/unreadable file just leaves source_offset unset.
             logger.debug("edit_line_offset_failed", path=inp["file_path"], error=str(exc))
 
-    async def _surface_result_only_turn(
-        self,
-        result_event: PublishedEvent,
-        saw_user_event: bool,
-    ) -> None:
-        """Inject synthetic events for a result-only turn (e.g. unknown slash command), since the
-        frontend hides bare result events. Adds a user message (if needed) and assistant text, then
-        marks the result subtype "error" for red border styling.
-        """
+    @staticmethod
+    def _enrich_bash_layout(event: PublishedEvent) -> None:
+        if event.subtype != EventSubtype.TOOL_USE or event.content not in _BASH_TOOLS:
+            return
 
-        if not saw_user_event and self._prompt:
-            await self.inject_event(
-                event_type=EventType.USER,
-                subtype=EventSubtype.MESSAGE,
-                content=self._prompt,
-                is_human=True,
-                primary=True,
-            )
+        try:
+            event.command_layout = layout_bash_command((event.tool_input or {}).get("command"))
+        except Exception as exc:  # noqa: BLE001
+            # Raised into the loop, it would drop this event and the rest of its message.
+            logger.warning("bash_layout_failed", tool_use_id=event.tool_use_id, error=str(exc))
+
+    @staticmethod
+    def _enrich_bash_read_only(event: PublishedEvent) -> None:
+        if event.subtype != EventSubtype.TOOL_USE or event.content not in _BASH_TOOLS:
+            return
+
+        try:
+            if is_read_only_command((event.tool_input or {}).get("command")):
+                event.command_read_only = True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("bash_read_only_failed", tool_use_id=event.tool_use_id, error=str(exc))
+
+    async def _enrich_bash_traced(self, event: PublishedEvent) -> None:
+        call_id = event.tool_use_id
+
+        try:
+            if event.subtype == EventSubtype.TOOL_USE and event.content in _BASH_TOOLS:
+                command = (event.tool_input or {}).get("command")
+
+                if (
+                    call_id
+                    and isinstance(command, str)
+                    and call_id not in self._trace_registrations
+                ):
+                    registration = asyncio.ensure_future(
+                        self._trace.register_command(call_id, command),
+                    )
+                    self._trace_registrations[call_id] = registration
+                    await registration
+            elif event.subtype == EventSubtype.TOOL_RESULT and call_id in self._trace_registrations:
+                if call_id not in self._trace_verdicts:
+                    self._trace_verdicts[call_id] = asyncio.ensure_future(
+                        self._verdict_after_registration(call_id),
+                    )
+
+                event.command_changed = await self._trace_verdicts[call_id]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("bash_trace_failed", tool_use_id=call_id, error=str(exc))
+
+    async def _verdict_after_registration(self, call_id: str) -> bool | None:
+        registration = self._trace_registrations[call_id]
+        await asyncio.wait([registration])
+
+        if registration.exception() is not None:
+            return None
+
+        return await self._trace.verdict_for(call_id)
+
+    async def _enrich_mcp_read_only(self, event: PublishedEvent) -> None:
+        name = event.content or ""
+
+        if (
+            event.subtype != EventSubtype.TOOL_USE
+            or not name.startswith(_MCP_PREFIX)
+            or not self._sdk_client.capabilities.supports_mcp_delegation
+        ):
+            return
+
+        server = name[len(_MCP_PREFIX) :].split("__", 1)[0]
+
+        # Most servers are still connecting at init; a call only comes once its server connected.
+        if server not in self._mcp_servers_listed and server not in self._mcp_servers_asked:
+            asked = self._mcp_servers_asked | {server}
+
+            try:
+                status = await asyncio.wait_for(
+                    self._sdk_client.get_mcp_status(),
+                    timeout=_MCP_STATUS_TIMEOUT_S,
+                )
+                self.note_mcp_status(status)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "mcp_status_read_failed",
+                    tool_use_id=event.tool_use_id,
+                    error=str(exc),
+                )
+
+            self._mcp_servers_asked |= asked
+
+        if name in self._mcp_read_only_tools:
+            event.mcp_read_only = True
+
+    async def _surface_result_only_turn(self, result_event: PublishedEvent) -> None:
+        """Show a result-only turn's text (e.g. unknown command) as the reply; mark it "error"."""
 
         await self.inject_event(
             event_type=EventType.ASSISTANT,

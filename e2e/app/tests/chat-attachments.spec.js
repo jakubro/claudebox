@@ -1,9 +1,8 @@
 /** E2E tests for media attachment input: drag-drop, paste, preview, and validation. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { acceptSends, captureSends, openSession, openSessionWithAPI } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 // Minimal 1x1 transparent PNG as base64
 const TINY_PNG_B64 =
@@ -26,10 +25,7 @@ async function dropFile(page, name, type, base64Data) {
 
 test.describe('Attachments', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
   })
 
   // SPEC: input:attachment-preview
@@ -132,11 +128,7 @@ test.describe('Attachments', () => {
 
   // SPEC: input:attachment
   test('sends attachments in API call with message', async ({ page }) => {
-    const sendCalls = []
-    await page.route('**/api/send', async route => {
-      sendCalls.push(await route.request().postDataJSON())
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    const sendCalls = await captureSends(page)
 
     await dropFile(page, 'image.png', 'image/png', TINY_PNG_B64)
 
@@ -164,9 +156,7 @@ test.describe('Attachment Image Source', () => {
         contentType: 'image/png',
       })
     })
-    await mockSSE(page, 'events/chat-with-stored-attachments.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/chat-with-stored-attachments.jsonl')
 
     const thumb = page.locator('.message-attachment-thumb').first()
     await expect(thumb).toBeVisible()
@@ -181,10 +171,7 @@ test.describe('Attachment Image Source', () => {
 
 test.describe('Attachment Zoom', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/chat-with-attachments.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/chat-with-attachments.jsonl')
   })
 
   // SPEC: chat:attachment-zoom
@@ -241,10 +228,7 @@ test.describe('Attachment Zoom', () => {
 
 test.describe('Attachment Input Extras', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
   })
 
   // SPEC: input:attachment-dragdrop
@@ -263,9 +247,7 @@ test.describe('Attachment Input Extras', () => {
 
   // SPEC: input:attachment
   test('clears attachment preview after submit', async ({ page }) => {
-    await page.route('**/api/send', async route => {
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    await acceptSends(page)
 
     await dropFile(page, 'doc.txt', 'text/plain', btoa('hello'))
 

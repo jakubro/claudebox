@@ -15,8 +15,9 @@ const mockEvents = {
   disconnectSSE: vi.fn(),
   closeSSE: vi.fn(),
   startResume: vi.fn(),
+  settleResumeRequest: vi.fn(),
   clearResume: vi.fn(),
-  notifyContainerChanged: vi.fn(),
+  notifyAddressChanged: vi.fn(),
 }
 vi.mock('../../../context/EventsContext', () => ({
   useEvents: () => mockEvents,
@@ -38,9 +39,9 @@ vi.mock('../../../context/InteractionContext', () => ({
 }))
 
 // Mock API modules
-const mockSetContainerId = vi.fn()
+const mockSetAddress = vi.fn()
 vi.mock('../../../api/apiClient', () => ({
-  setContainerId: (...args) => mockSetContainerId(...args),
+  setAddress: (...args) => mockSetAddress(...args),
 }))
 
 const mockResumeSession = vi.fn()
@@ -90,8 +91,8 @@ describe('ContainerRecoveryEffect', () => {
     })
 
     expect(mockEvents.startResume).toHaveBeenCalled()
-    expect(mockSetContainerId).toHaveBeenCalledWith('fresh-ctr')
-    expect(mockEvents.notifyContainerChanged).toHaveBeenCalled()
+    expect(mockSetAddress).toHaveBeenCalledWith('fresh-ctr', 'sess-1')
+    expect(mockEvents.notifyAddressChanged).toHaveBeenCalled()
     expect(mockContainerMap.setSessionContainer).toHaveBeenCalledWith('sess-1', 'fresh-ctr')
     expect(mockSessionActions.clearSessionData).toHaveBeenCalled()
     expect(mockEvents.reconnectSSE).toHaveBeenCalled()
@@ -131,6 +132,32 @@ describe('ContainerRecoveryEffect', () => {
 
     expect(mockResumeSession).not.toHaveBeenCalled()
     expect(mockEvents.closeSSE).toHaveBeenCalled()
+  })
+
+  it('discards a resume that resolves after the reader switched sessions', async () => {
+    let resolveResume
+    mockResumeSession.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveResume = resolve
+      }),
+    )
+
+    const { rerender } = renderAndExhaust()
+
+    await vi.waitFor(() => {
+      expect(mockResumeSession).toHaveBeenCalledWith('sess-1')
+    })
+
+    mockRouting.activeSessionId = 'sess-2'
+    rerender(<ContainerRecoveryEffect />)
+
+    resolveResume({ container_id: 'stale-ctr' })
+    await vi.waitFor(() => expect(mockSessionActions.clearSessionData).not.toHaveBeenCalled())
+
+    expect(mockSetAddress).not.toHaveBeenCalled()
+    expect(mockEvents.notifyAddressChanged).not.toHaveBeenCalled()
+    expect(mockContainerMap.setSessionContainer).not.toHaveBeenCalled()
+    expect(mockEvents.reconnectSSE).not.toHaveBeenCalled()
   })
 
   it('fires only on counter increment, not re-renders', () => {

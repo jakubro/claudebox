@@ -1,5 +1,7 @@
 """Tests for claudebox.session - session context and path derivation."""
 
+from __future__ import annotations
+
 from claudebox.session.session import Session
 from claudebox.workspace import Workspace
 
@@ -12,23 +14,25 @@ class TestSessionPaths:
         session = ws.ensure_session("test-session")
         assert session.temp_dir == session.path / "tmp"
 
-    def test_sdk_session_dir(self, tmp_workspace):
-        ws = Workspace(start_dir=tmp_workspace)
-        session = ws.ensure_session("test-session")
-        assert session.sdk_session_dir == ws.sdk_project_dir / "test-session"
+    def test_sdk_session_dir_sits_beside_the_transcript(self, tmp_workspace, tmp_path, monkeypatch):
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+        folder = tmp_path / "cfg" / "projects" / "-home-dev-my-app"
+        folder.mkdir(parents=True)
+        (folder / "test-session.jsonl").write_text("{}\n")
+        session = Workspace(start_dir=tmp_workspace).ensure_session("test-session")
 
-    def test_sdk_tool_results_dir(self, tmp_workspace):
-        ws = Workspace(start_dir=tmp_workspace)
-        session = ws.ensure_session("test-session")
-        expected = ws.sdk_project_dir / "test-session" / "tool-results"
-        assert session.sdk_tool_results_dir == expected
+        assert session.sdk_session_dir == folder / "test-session"
 
-    def test_sdk_tool_output_path(self, tmp_workspace):
-        ws = Workspace(start_dir=tmp_workspace)
-        session = ws.ensure_session("test-session")
-        path = session.sdk_tool_output_path("toolu_abc123")
-        assert path.name == "toolu_abc123.txt"
-        assert "tool-results" in str(path)
+    def test_sdk_session_dir_is_none_without_a_transcript(
+        self,
+        tmp_workspace,
+        tmp_path,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+        session = Workspace(start_dir=tmp_workspace).ensure_session("test-session")
+
+        assert session.sdk_session_dir is None
 
 
 class TestSessionInit:

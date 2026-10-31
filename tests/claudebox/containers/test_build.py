@@ -1,5 +1,7 @@
 """Tests for claudebox.containers.build - build argument generation."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox.constants import CONTAINER_IMAGE_NAME

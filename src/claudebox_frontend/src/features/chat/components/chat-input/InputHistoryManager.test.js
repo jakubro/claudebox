@@ -114,6 +114,38 @@ describe('InputHistoryManager', () => {
     })
   })
 
+  describe('setAside', () => {
+    it("returns the box's text and leaves navigation fresh", () => {
+      const m = createManager({ history: ['sent'] })
+      expect(m.setAside('also check the logs')).toBe('also check the logs')
+      expect(m.navState).toEqual({ source: null, index: -1 })
+    })
+
+    it('returns null for a blank box', () => {
+      const m = createManager()
+      expect(m.setAside('  \n ')).toBeNull()
+    })
+
+    it('while a history item shows, returns the text typed before navigating', () => {
+      const m = createManager({
+        history: ['older', 'newer'],
+        drafts: { current: 'fresh words', stack: ['kept'] },
+      })
+      m.navigateUp(true)
+      m.navigateUp(true)
+      expect(m.navState).toEqual({ source: 'history', index: 0 })
+      expect(m.setAside('newer')).toBe('fresh words')
+      expect(m.navState).toEqual({ source: null, index: -1 })
+    })
+
+    it('while a draft shows with nothing typed before, returns null', () => {
+      const m = createManager({ drafts: { current: '', stack: ['kept'] } })
+      m.navigateUp(true)
+      expect(m.setAside('kept')).toBeNull()
+      expect(m.navState).toEqual({ source: null, index: -1 })
+    })
+  })
+
   describe('getDraftItem / getHistoryItem', () => {
     it('returns items with 0 = newest', () => {
       const m = createManager({

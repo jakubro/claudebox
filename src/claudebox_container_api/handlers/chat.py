@@ -1,5 +1,7 @@
 """Chat handlers - prompt submission, SSE streaming, interrupts, model and effort selection."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from claudebox import BroadcastEventSourceResponse

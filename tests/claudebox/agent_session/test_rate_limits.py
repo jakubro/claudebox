@@ -1,9 +1,12 @@
 """Tests for claudebox.agent_session.rate_limits - per-workspace plan-limit store."""
 
+from __future__ import annotations
+
 import time
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from filelock import FileLock
 
 from claudebox.agent_session.rate_limits import RateLimitStore
@@ -59,7 +62,7 @@ class TestGetSetRemove:
 
         entries = store.get()
         assert len(entries) == 1
-        assert entries[0]["utilization"] == 0.9
+        assert entries[0]["utilization"] == pytest.approx(0.9)
 
     def test_set_two_windows_independently(self, tmp_path):
         store = _make_store(tmp_path)

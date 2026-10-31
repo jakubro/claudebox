@@ -1,9 +1,14 @@
 /** E2E tests for the chat work panel: routing, block parity, compaction, interrupt, picker. */
 
 import { expect, test } from '@playwright/test'
-import { resolveOpsPayload, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE, mockSSEDynamic } from '../mocks/sse.js'
+import {
+  openLiveSession,
+  openRunningTask,
+  openSession,
+  resolveOpsPayload,
+  waitForAppReady,
+} from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 /** One turn that routes a Bash call to the work column and then ends. */
 function workTurn(index) {
@@ -101,9 +106,7 @@ test.describe('Work Panel', () => {
   test('picking work shows the work column and hides the terminal; picking terminal reverses it', async ({
     page,
   }) => {
-    await mockSSE(page, 'events/work-panel-mixed.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/work-panel-mixed.jsonl')
 
     await expect(page.getByTestId('work-column')).toBeVisible()
     await expect(page.getByTestId('terminal-column')).toHaveCount(0)
@@ -122,9 +125,7 @@ test.describe('Work Panel', () => {
     test('every tool call moves to the work column, the transcript keeps only the prose', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       await expect(page.locator('.chat-messages [data-testid="tool-block"]')).toHaveCount(0)
       // Auto-collapse leaves only the last turn expanded, so the prose may be full text or a
@@ -141,9 +142,7 @@ test.describe('Work Panel', () => {
     test('a turn whose blocks all moved shows a collapsed preview naming no tool count', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       await controller.sendEvents([
         {
@@ -173,13 +172,91 @@ test.describe('Work Panel', () => {
       await expect(emptiedTurn.locator('[data-testid="message-assistant"]')).toHaveCount(0)
     })
 
+    // SPEC: tool:bash-read-only-collapsed
+    // SPEC: tool:bash-failure-marked
+    test('a work-column Bash block starts and marks failure as it does in its turn', async ({
+      page,
+    }) => {
+      await openSession(page, 'events/tool-bash-read-only.jsonl')
+
+      const block = id =>
+        page.locator(
+          `[data-testid="work-column"] [data-tool-use-id="${id}"][data-testid="tool-block"]`,
+        )
+      await expect(block('tool_ro_list')).toHaveAttribute('data-expanded', 'false')
+      await expect(block('tool_ch_write')).toHaveAttribute('data-expanded', 'true')
+      await expect(block('tool_ro_fail')).toHaveAttribute('data-expanded', 'false')
+      await expect(block('tool_ro_fail')).toHaveAttribute('data-tool-status', 'error')
+      await expect(block('tool_ch_fail')).toHaveAttribute('data-tool-status', 'error')
+      await expect(block('tool_ch_fail').locator('.tool-summary')).toHaveClass(/error/)
+    })
+
+    // SPEC: tool:bash-measured-folds
+    test('a work-column Bash block opens in the state its measurement gave it', async ({
+      page,
+    }) => {
+      await openSession(page, 'events/tool-bash-traced.jsonl')
+
+      const block = id =>
+        page.locator(
+          `[data-testid="work-column"] [data-tool-use-id="${id}"][data-testid="tool-block"]`,
+        )
+      await expect(block('tool_measured_reader')).toHaveAttribute('data-expanded', 'false')
+      await expect(block('tool_measured_writer')).toHaveAttribute('data-expanded', 'true')
+      await expect(block('tool_unmeasured')).toHaveAttribute('data-expanded', 'true')
+    })
+
+    // SPEC: tool:bash-short-output-shows
+    test('a work-column Bash block that changed something opens expanded however little it printed', async ({
+      page,
+    }) => {
+      const controller = await openLiveSession(page)
+      const call = (id, command, content, changed) => [
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Bash',
+          tool_use_id: id,
+          tool_name: 'Bash',
+          tool_input: { command },
+        },
+        {
+          type: 'user',
+          subtype: 'tool_result',
+          content,
+          tool_use_id: id,
+          command_changed: changed,
+        },
+      ]
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'write the notes',
+          turn_id: 't1',
+        },
+        ...call('tu_silent', 'echo x > notes.txt', '(Bash completed with no output)', true),
+        ...call('tu_written', 'echo x > notes.txt; echo written', 'written', true),
+        ...call('tu_hello', 'echo hello', 'hello', false),
+        { type: 'result', subtype: 'success', turn_id: 't1' },
+      ])
+
+      const block = id =>
+        page.locator(
+          `[data-testid="work-column"] [data-tool-use-id="${id}"][data-testid="tool-block"]`,
+        )
+      await expect(block('tu_silent')).toHaveAttribute('data-expanded', 'true')
+      await expect(block('tu_written')).toHaveAttribute('data-expanded', 'true')
+      await expect(block('tu_hello')).toHaveAttribute('data-expanded', 'false')
+    })
+
     // SPEC: tool:work-block-parity
     test('a work-column block renders with the same header and expandable sections as inline', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const bashBlock = page
         .locator('[data-testid="work-column"] [data-testid="tool-block"]')
@@ -187,18 +264,28 @@ test.describe('Work Panel', () => {
         .first()
       await expect(bashBlock).toContainText('2922 passed')
 
-      await bashBlock.locator('.tool-header-area').click()
+      await expect(bashBlock).toHaveAttribute('data-expanded', 'true')
       await expect(bashBlock.locator('.tool-command-section')).toBeVisible()
       await expect(bashBlock.locator('.tool-command-section')).toContainText('just test-fe')
+    })
+
+    // SPEC: tool:bash-command-layout
+    test('a Bash block in the work column is laid out as it is in its turn', async ({ page }) => {
+      await openSession(page, 'events/tool-bash-layout.jsonl')
+
+      const rows = page
+        .locator('[data-testid="work-column"] [data-tool-use-id="tool_lay_loop"]')
+        .locator('.tool-command-section .code-block-row')
+      await expect
+        .poll(() => rows.evaluateAll(els => els.map(el => el.textContent.replace(/\n$/, ''))))
+        .toEqual(['for f in a b; do', '  echo $f', 'done'])
     })
 
     // SPEC: tool:work-task-nested-excluded
     test("a subagent's own calls stay nested inside its Task block, not listed separately", async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const workColumn = page.getByTestId('work-column')
       await expect(workColumn.locator('[data-testid="tool-block"]:has-text("Task")')).toBeVisible()
@@ -215,35 +302,7 @@ test.describe('Work Panel', () => {
     test('a running Task in the work column is collapsed by default, like every other tool', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          is_human: true,
-          content: 'Investigate the flaky test',
-          timestamp: Date.now(),
-          ts: new Date().toISOString(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'tool_use',
-          content: 'Task',
-          timestamp: Date.now(),
-          ts: new Date().toISOString(),
-          tool_use_id: 'tool_work_act_001',
-          tool_name: 'Task',
-          tool_input: {
-            description: 'Investigate',
-            prompt: 'Find the flaky test.',
-            subagent_type: 'Explore',
-          },
-        },
-      ])
+      const controller = await openRunningTask(page, 'tool_work_act_001')
 
       const workColumn = page.getByTestId('work-column')
       const taskBlock = workColumn.locator('[data-testid="tool-block"]:has-text("Task")')
@@ -271,35 +330,7 @@ test.describe('Work Panel', () => {
     test("a running Task's activity line in the work column shows the newest nested call", async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          is_human: true,
-          content: 'Investigate the flaky test',
-          timestamp: Date.now(),
-          ts: new Date().toISOString(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'tool_use',
-          content: 'Task',
-          timestamp: Date.now(),
-          ts: new Date().toISOString(),
-          tool_use_id: 'tool_work_act_002',
-          tool_name: 'Task',
-          tool_input: {
-            description: 'Investigate',
-            prompt: 'Find the flaky test.',
-            subagent_type: 'Explore',
-          },
-        },
-      ])
+      const controller = await openRunningTask(page, 'tool_work_act_002')
 
       const workColumn = page.getByTestId('work-column')
       const taskBlock = workColumn.locator('[data-testid="tool-block"]:has-text("Task")')
@@ -336,9 +367,7 @@ test.describe('Work Panel', () => {
     test('work entries are grouped by turn, oldest first, across the whole session', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const entries = page.getByTestId('work-turn-entry')
       // turn_002 has no tool calls, so it contributes no entry - the remaining four stay ordered.
@@ -351,12 +380,10 @@ test.describe('Work Panel', () => {
 
   test.describe('Live turn', () => {
     // SPEC: chat:work-view-emptied-turn-live
-    test('a turn still responding with only tool calls shows a working indication under the user message, outside any bubble', async ({
+    test('a turn still responding with only tool calls shows a framed working indication under the user message', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       // No result event - the turn stays active while its only content is a tool call.
       await controller.sendEvents([
@@ -371,8 +398,8 @@ test.describe('Work Panel', () => {
         },
       ])
 
-      await expect(page.getByTestId('turn-progress-bare')).toBeVisible()
-      await expect(page.getByTestId('turn-progress-bare')).toContainText('Working')
+      await expect(page.getByTestId('turn-progress-pending')).toBeVisible()
+      await expect(page.getByTestId('turn-progress-pending')).toContainText('Working')
       await expect(page.locator('[data-testid="message-assistant"]')).toHaveCount(0)
 
       await controller.sendEvents([
@@ -380,8 +407,8 @@ test.describe('Work Panel', () => {
         { type: 'result', subtype: 'success', turn_id: 't1' },
       ])
 
-      // Completion removes only the working indication - still no assistant bubble.
-      await expect(page.getByTestId('turn-progress-bare')).toHaveCount(0)
+      // Completion removes the framed indication - still no assistant bubble.
+      await expect(page.getByTestId('turn-progress-pending')).toHaveCount(0)
       await expect(page.locator('[data-testid="message-assistant"]')).toHaveCount(0)
       await expect(page.getByTestId('message-user')).toBeVisible()
     })
@@ -392,9 +419,7 @@ test.describe('Work Panel', () => {
     test('the compaction marker appears once in the transcript and once in the work column, expanding independently', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const transcriptMarker = page.locator('.chat-messages .compaction-block')
       const workMarker = page.locator('[data-testid="work-column"] .compaction-block')
@@ -413,9 +438,7 @@ test.describe('Work Panel', () => {
     test("an interrupted turn's last work-column tool block carries the same yellow left border", async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const marked = page.locator(
         '[data-testid="work-turn-entry"][data-work-turn-id="turn_004"] .work-interrupted-block',
@@ -428,9 +451,7 @@ test.describe('Work Panel', () => {
     test("marks nothing when the interrupted turn's trailing block is prose, even with an earlier tool call", async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const entry = page.locator('[data-testid="work-turn-entry"][data-work-turn-id="turn_005"]')
       await expect(entry.locator('[data-testid="tool-block"]')).toHaveCount(1)
@@ -445,9 +466,7 @@ test.describe('Work Panel', () => {
   test.describe('Empty state', () => {
     // SPEC: chat:work-column-empty
     test('a session with no tool calls shows the empty message', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       await expect(page.getByTestId('work-empty')).toHaveText('No work has happened yet.')
     })
@@ -456,9 +475,7 @@ test.describe('Work Panel', () => {
     test('a brand-new session with the work view picked shows the same empty message', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       await expect(page.getByTestId('work-empty')).toHaveText('No work has happened yet.')
       await expect(page.getByTestId('right-slot-view-work')).toHaveClass(/pressed/)
@@ -471,9 +488,7 @@ test.describe('Work Panel', () => {
     test("clicking a work entry's separator scrolls the transcript to that turn and highlights it", async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const entry = page.locator('[data-testid="work-turn-entry"][data-work-turn-id="turn_003"]')
       await entry.locator('.work-turn-separator').click()
@@ -487,9 +502,7 @@ test.describe('Work Panel', () => {
   test.describe('Windowing', () => {
     // SPEC: chat:work-column-offscreen-absent
     test('only entries near the viewport are present in the page', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       for (let i = 0; i < 20; i++) {
         await controller.sendEvents([
@@ -521,9 +534,7 @@ test.describe('Work Panel', () => {
   test.describe('Persistence', () => {
     // SPEC: chat:right-slot-view-persist
     test('the chosen view survives a reload, independent of another session', async ({ page }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const patchedViews = []
       page.on('request', request => {
@@ -551,9 +562,7 @@ test.describe('Work Panel', () => {
     test('the bar divides at the same x as the column divider under the work view too', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       await expect(page.locator('.panel-control-bar')).toHaveCount(1)
       const left = page.locator('.panel-control-bar-left')
@@ -570,9 +579,7 @@ test.describe('Work Panel', () => {
       page,
     }) => {
       await page.setViewportSize({ width: 1280, height: 800 })
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
       await expect(page.locator('.panel-control-bar-left')).toBeVisible()
 
       await page.setViewportSize({ width: 500, height: 800 })
@@ -586,9 +593,7 @@ test.describe('Work Panel', () => {
   test.describe('Autoscroll', () => {
     // SPEC: chat:work-column-autoscroll
     test('follows a new turn at the bottom, stays put once scrolled up', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       // Enough turns to overflow the column, so scroll position is meaningful.
       for (let i = 0; i < 15; i++) {
@@ -628,9 +633,7 @@ test.describe('Work Panel', () => {
       page,
     }) => {
       const events = Array.from({ length: 15 }, (_, i) => workTurn(i)).flat()
-      await mockSSEDynamic(page, () => events)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, events)
 
       const work = page.locator('[data-testid="work-column"]')
       const entries = page.getByTestId('work-turn-entry')
@@ -645,9 +648,7 @@ test.describe('Work Panel', () => {
       page,
     }) => {
       await mockAPI(page, { sessionUiStateDefaults: { rightSlotView: 'off' } })
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       for (let i = 0; i < 15; i++) {
         await controller.sendEvents(workTurn(i))
@@ -669,9 +670,7 @@ test.describe('Work Panel', () => {
     test('stays pinned to the bottom while a single turn accumulates calls, not only when it ends', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       await controller.sendEvents([
         {
@@ -714,9 +713,7 @@ test.describe('Work Panel', () => {
       page,
     }) => {
       const events = Array.from({ length: 15 }, (_, i) => workTurn(i)).flat()
-      await mockSSEDynamic(page, () => events)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, events)
 
       const transcript = page.locator('[data-testid="chat-messages"]')
       const box = await transcript.boundingBox()
@@ -737,9 +734,7 @@ test.describe('Work Panel', () => {
     test('clicking the work control jumps to the newest entry and resumes following', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       for (let i = 0; i < 15; i++) {
         await controller.sendEvents(workTurn(i))
@@ -767,6 +762,15 @@ test.describe('Work Panel', () => {
   })
 
   test.describe('Step Navigation', () => {
+    async function openFilledAtTop(page, prefix, count) {
+      const controller = await openLiveSession(page)
+      await fillWork(page, controller, prefix, count)
+      const column = page.locator('[data-testid="work-column"]')
+      await expect.poll(() => topEntryTurnId(page)).not.toBeNull()
+      await forceScrollToTop(page, column)
+      await expect.poll(() => topEntryTurnId(page)).toBe(`${prefix}0`)
+    }
+
     /** Fill the work column with `count` working turns, well past what it shows in one viewport. */
     async function fillWork(page, controller, prefix, count) {
       const events = Array.from({ length: count }, (_, i) => [
@@ -807,9 +811,7 @@ test.describe('Work Panel', () => {
     test('up and down controls sit left of the autoscroll control, in the transcript group order', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const prev = page.getByTestId('work-jump-prev')
       const next = page.getByTestId('work-jump-next')
@@ -825,16 +827,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-column-step
     test('clicking down, then up, steps the column one turn at a time', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await fillWork(page, controller, 'btn', 25)
-
-      const column = page.locator('[data-testid="work-column"]')
-      await expect.poll(() => topEntryTurnId(page)).not.toBeNull()
-
-      await forceScrollToTop(page, column)
-      await expect.poll(() => topEntryTurnId(page)).toBe('btn0')
+      await openFilledAtTop(page, 'btn', 25)
 
       await page.getByTestId('work-jump-next').click()
       await expect.poll(() => topEntryTurnId(page)).toBe('btn1')
@@ -851,15 +844,7 @@ test.describe('Work Panel', () => {
     test('Alt+PageDown and Alt+PageUp do the same as the buttons, from anywhere in the app', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await fillWork(page, controller, 'key', 25)
-
-      const column = page.locator('[data-testid="work-column"]')
-      await expect.poll(() => topEntryTurnId(page)).not.toBeNull()
-      await forceScrollToTop(page, column)
-      await expect.poll(() => topEntryTurnId(page)).toBe('key0')
+      await openFilledAtTop(page, 'key', 25)
 
       await page.keyboard.press('Alt+PageDown')
       await expect.poll(() => topEntryTurnId(page)).toBe('key1')
@@ -872,9 +857,7 @@ test.describe('Work Panel', () => {
     test('the case that pays for it: never lands on a prose-only turn, stepping either direction', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       // Working, prose, working, prose, working - a naive index stepper lands on the prose ones.
       await controller.sendEvents([
@@ -904,15 +887,7 @@ test.describe('Work Panel', () => {
     test('reaches a turn that was never on screen, stepping down repeatedly from the top', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await fillWork(page, controller, 'reach', 30)
-
-      const column = page.locator('[data-testid="work-column"]')
-      await expect.poll(() => topEntryTurnId(page)).not.toBeNull()
-      await forceScrollToTop(page, column)
-      await expect.poll(() => topEntryTurnId(page)).toBe('reach0')
+      await openFilledAtTop(page, 'reach', 30)
 
       for (let i = 0; i < 15; i++) {
         await page.getByTestId('work-jump-next').click()
@@ -922,9 +897,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-column-step
     test('stepping to a turn flashes it', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
       await fillWork(page, controller, 'flash', 20)
 
       await page.getByTestId('work-jump-prev').click()
@@ -938,9 +911,7 @@ test.describe('Work Panel', () => {
     test('stepping past the last turn settles at the end; past the first stays at the top', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
       await fillWork(page, controller, 'end', 20)
 
       const column = page.locator('[data-testid="work-column"]')
@@ -966,9 +937,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: shortcut:right-column-no-ends
     test('the work group has no jump-to-top or jump-to-end control', async ({ page }) => {
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       const right = page.locator('.panel-control-bar-right')
       await expect(right.locator('button')).toHaveCount(4)
@@ -979,9 +948,7 @@ test.describe('Work Panel', () => {
       test('Alt+Up/Down move the transcript and leave the work column untouched', async ({
         page,
       }) => {
-        const controller = await createSSEController(page)
-        await page.goto(DEFAULT_SESSION_URL)
-        await waitForAppReady(page)
+        const controller = await openLiveSession(page)
         await fillWork(page, controller, 'iso1', 20)
 
         const column = page.locator('[data-testid="work-column"]')
@@ -1000,9 +967,7 @@ test.describe('Work Panel', () => {
       test('Alt+PageUp/PageDown move the work column and leave the transcript untouched', async ({
         page,
       }) => {
-        const controller = await createSSEController(page)
-        await page.goto(DEFAULT_SESSION_URL)
-        await waitForAppReady(page)
+        const controller = await openLiveSession(page)
         await fillWork(page, controller, 'iso2', 20)
 
         const messagesContainer = page.locator('[data-testid="chat-messages"]')
@@ -1022,9 +987,7 @@ test.describe('Work Panel', () => {
     test('the composer keeps focus and its caret position across Alt+PageDown', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
       await fillWork(page, controller, 'composer', 10)
 
       const textarea = page.locator('.chat-input textarea')
@@ -1045,7 +1008,8 @@ test.describe('Work Panel', () => {
     const iso = ms => new Date(BASE_TS + ms).toISOString()
 
     /** Working turns covering every bar state - fast, slow, failed, running - plus one prose. */
-    async function seedOverviewTurns(page, controller) {
+    async function openOverviewTurns(page) {
+      const controller = await openLiveSession(page)
       await controller.sendEvents([
         { type: 'user', subtype: 'text', is_human: true, content: 'fast', turn_id: 'fast' },
         {
@@ -1187,10 +1151,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:control-work-minimap
     test('a map toggle sits rightmost in the work group', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       const toggle = page.getByTestId('work-minimap-toggle')
       const indicator = page.getByTestId('work-autoscroll-indicator')
@@ -1204,10 +1165,7 @@ test.describe('Work Panel', () => {
     test('one bar per working turn, oldest at the top, in column order - prose turns excluded', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       // Five turns sent (one prose-only) - the overview must agree with the column: four bars.
       await expect(page.locator('[data-testid="work-minimap-bar"]')).toHaveCount(4)
@@ -1217,10 +1175,7 @@ test.describe('Work Panel', () => {
     test('has no segments or human-message lines - those are transcript-only concepts', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       const overview = page.getByTestId('work-minimap')
       await expect(overview.locator('[data-testid="minimap-segment"]')).toHaveCount(0)
@@ -1229,10 +1184,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-minimap-bar-height
     test('a bar with more output is taller than one with less', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       const bars = page.locator('[data-testid="work-minimap-bar"]')
       const heights = await bars.evaluateAll(els => els.map(el => Number.parseFloat(el.style.flex)))
@@ -1242,10 +1194,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-minimap-bar-width
     test('a slower turn is visibly wider, within the shared 8-20px range', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       const bars = page.locator('[data-testid="work-minimap-bar"]')
       const widths = await bars.evaluateAll(els => els.map(el => Number.parseFloat(el.style.width)))
@@ -1260,10 +1209,7 @@ test.describe('Work Panel', () => {
     test('a failed turn is coloured apart from passing and still-running ones', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       const bars = page.locator('[data-testid="work-minimap-bar"]')
       await expect(bars.nth(0)).toHaveClass(/work-minimap-bar-passed/)
@@ -1280,9 +1226,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-minimap-shared-behavior
     test('clicking the overview jumps the column to that position', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
       await fillOverviewColumn(page, controller, 25)
 
       const column = page.locator('[data-testid="work-column"]')
@@ -1297,9 +1241,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-minimap-shared-behavior
     test('dragging the overview scrolls the column continuously', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
       await fillOverviewColumn(page, controller, 25)
 
       const column = page.locator('[data-testid="work-column"]')
@@ -1326,10 +1268,7 @@ test.describe('Work Panel', () => {
     test('toggling the work overview leaves the transcript overview untouched', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       const transcriptOverview = page.locator('.minimap-overlay')
       await expect(transcriptOverview).toHaveClass(/visible/)
@@ -1345,10 +1284,7 @@ test.describe('Work Panel', () => {
     test('a pinned work overview keeps entries clear of it, the same as the terminal', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       // Pinned by default (claim:chat:minimap-toggle-persist).
       const column = page.locator('[data-testid="work-column"]')
@@ -1369,9 +1305,7 @@ test.describe('Work Panel', () => {
       await mockAPI(page, {
         sessionUiStateDefaults: { rightSlotView: 'work', workMinimapPinned: false },
       })
-      await mockSSE(page, 'events/work-panel-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/work-panel-mixed.jsonl')
 
       await expect(page.getByTestId('work-minimap-toggle')).not.toHaveClass(/pressed/)
       await expect(page.getByTestId('control-minimap-toggle')).toHaveClass(/pressed/)
@@ -1381,10 +1315,7 @@ test.describe('Work Panel', () => {
     test('turning the work view off removes the work overview; the transcript keeps its own', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await seedOverviewTurns(page, controller)
+      await openOverviewTurns(page)
 
       await expect(page.getByTestId('work-minimap')).toBeVisible()
 
@@ -1396,9 +1327,7 @@ test.describe('Work Panel', () => {
 
     // SPEC: chat:work-minimap
     test('a session with no tool calls shows no work overview', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       await expect(page.getByTestId('work-empty')).toBeVisible()
       await expect(page.getByTestId('work-minimap')).not.toBeAttached()

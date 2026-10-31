@@ -5,6 +5,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useCallback } from 'react'
 import { useContainerMap } from '../../../context/ContainerMapContext'
 import { useSessionsList } from '../../../context/SessionsContext'
+import { SESSION_STATES, sessionDotState } from '../../../utils/sessionRow'
 import useTicketContextMenu from '../hooks/useTicketContextMenu'
 import TicketContextMenu from './TicketContextMenu'
 
@@ -62,9 +63,16 @@ export default function TicketCard({
   )
 
   // Mapped to the card's dot/label vocabulary: 'none' status shows as gray "stopped".
-  const sessionStatus = ticket.session ? deriveSessionStatus(ticket.session, sessions) : null
-  const statusClass =
-    sessionStatus === 'running' ? 'running' : sessionStatus === 'stopping' ? 'stopping' : 'stopped'
+  const sessionDot = ticket.session
+    ? sessionDotState(
+        deriveSessionStatus(ticket.session, sessions),
+        sessions.find(s => s.session_id === ticket.session),
+      )
+    : null
+  const statusLabel = { none: 'stopped', 'needs-you': 'needs you' }[sessionDot] ?? sessionDot
+  const dotClass = SESSION_STATES.includes(sessionDot)
+    ? `container-status-${sessionDot}`
+    : statusLabel
 
   const className = [
     'ticket-card',
@@ -95,9 +103,9 @@ export default function TicketCard({
       </div>
       {ticket.session && (
         <div className="ticket-card-session">
-          <span className={`ticket-status-dot ${statusClass}`} />
+          <span className={`ticket-status-dot ${dotClass}`} />
           <span className="ticket-session-id">
-            {statusClass} ({ticket.session.slice(0, 4)}..)
+            {statusLabel} ({ticket.session.slice(0, 4)}..)
           </span>
         </div>
       )}

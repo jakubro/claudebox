@@ -11,20 +11,14 @@ function withDiffs(todoDiffs) {
   )
 }
 
+function renderAdded(added) {
+  const diffs = new Map([['t1', { added, started: [], completed: [], removed: [] }]])
+  render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
+}
+
 describe('TodosGroup', () => {
   it('mounts inside the shared ToolBlock chrome with the static "Todos" header', () => {
-    const diffs = new Map([
-      [
-        't1',
-        {
-          added: [{ content: 'A', _taskId: '1', status: 'pending' }],
-          started: [],
-          completed: [],
-          removed: [],
-        },
-      ],
-    ])
-    render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
+    renderAdded([{ content: 'A', _taskId: '1', status: 'pending' }])
 
     // Chrome host carries the same .tool-block class as every other tool block.
     const host = screen.getByTestId('todos-group')
@@ -55,35 +49,13 @@ describe('TodosGroup', () => {
   })
 
   it('opens expanded by default - row body visible without clicking', () => {
-    const diffs = new Map([
-      [
-        't1',
-        {
-          added: [{ content: 'A', _taskId: '1', status: 'pending' }],
-          started: [],
-          completed: [],
-          removed: [],
-        },
-      ],
-    ])
-    render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
+    renderAdded([{ content: 'A', _taskId: '1', status: 'pending' }])
 
     expect(screen.getByTestId('todos-group-rows')).toBeInTheDocument()
   })
 
   it('toggles the row body when the chrome header is clicked', () => {
-    const diffs = new Map([
-      [
-        't1',
-        {
-          added: [{ content: 'A', _taskId: '1', status: 'pending' }],
-          started: [],
-          completed: [],
-          removed: [],
-        },
-      ],
-    ])
-    render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
+    renderAdded([{ content: 'A', _taskId: '1', status: 'pending' }])
 
     expect(screen.queryByTestId('todos-group-rows')).toBeInTheDocument()
 
@@ -210,18 +182,7 @@ describe('TodosGroup', () => {
   })
 
   it('treats cross-run blockers (taskIds not in the merged set) as resolved', () => {
-    const diffs = new Map([
-      [
-        't1',
-        {
-          added: [{ content: 'X', _taskId: '2', status: 'pending', blockedBy: ['99'] }],
-          started: [],
-          completed: [],
-          removed: [],
-        },
-      ],
-    ])
-    render(<TodosGroup taskBlocks={[{ toolUseId: 't1' }]} />, { wrapper: withDiffs(diffs) })
+    renderAdded([{ content: 'X', _taskId: '2', status: 'pending', blockedBy: ['99'] }])
 
     const icon = document.querySelector('.todo-icon').textContent
     expect(icon).toBe('○')

@@ -1,5 +1,7 @@
 """Board service - board CRUD, ticket move, assign, archive."""
 
+from __future__ import annotations
+
 import asyncio
 import re
 from pathlib import Path
@@ -7,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from claudebox import Broadcaster, SingleFlight, find_files, get_logger
 from claudebox.extensions.tickets import (
+    TicketMoveRefused,
     add_swimlane,
     archive_ticket,
     assign_ticket,
@@ -41,9 +44,9 @@ class BoardService:
 
     def __init__(
         self,
-        workspace: "RegisteredWorkspace",
-        sessions: "SessionService",
-        containers: "ContainerService",
+        workspace: RegisteredWorkspace,
+        sessions: SessionService,
+        containers: ContainerService,
         events: Broadcaster,
         executor: ObservedPool,
     ) -> None:
@@ -65,6 +68,7 @@ class BoardService:
         )
 
         self._boards: dict[str, Path] = {}
+        self._ticket_files: dict[str, list[Path]] = {}
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -170,8 +174,15 @@ class BoardService:
 
         yaml_path = self._resolve(board_id)
         root = Path(self._workspace.path)
+        board = parse_board(yaml_path, root)
+        self._ticket_files[board_id] = [
+            yaml_path.parent / ticket.path
+            for tickets in board.columns.values()
+            for ticket in tickets
+        ]
+        self._sync_watches()
 
-        return parse_board(yaml_path, root)
+        return board
 
     # Ticket Operations
     # ----------------------------------------------------------------------------------------------
@@ -215,7 +226,14 @@ class BoardService:
 
         yaml_path = self._resolve(board_id)
 
-        return move_ticket(yaml_path, ticket_path, column=column, swimlane=swimlane, index=index)
+        return move_ticket(
+            yaml_path,
+            ticket_path,
+            root=Path(self._workspace.path),
+            column=column,
+            swimlane=swimlane,
+            index=index,
+        )
 
     def archive(self, board_id: str, ticket_path: str) -> None:
         """Archive a ticket - remove from YAML, file stays on disk."""
@@ -230,14 +248,20 @@ class BoardService:
         *,
         parallel: bool = True,
     ) -> list[dict]:
-        """Assign tickets to new sessions, returning {ticket_path, session_id} mappings."""
+        """Assign tickets to new sessions; per ticket, failed_prompts lists prompts that never arrived
+        and move_refused names why the ticket stayed in its column, the assignment kept."""
 
         yaml_path = self._resolve(board_id)
         root = Path(self._workspace.path)
         board = parse_board(yaml_path, root)
         prompt_sequence = board.prompt.get("sequence") or []
+        ticket_paths = list(dict.fromkeys(ticket_paths))
 
         active_state = next((s for s in board.states if s.active), None)
+        on_board = {ticket.path for tickets in board.columns.values() for ticket in tickets}
+
+        if missing := [path for path in ticket_paths if path not in on_board]:
+            raise TicketNotFound(board_id=board_id, ticket_path=missing[0])
 
         results = []
 
@@ -246,30 +270,70 @@ class BoardService:
             for ticket_path in ticket_paths:
                 result = await self._sessions.create()
                 assign_ticket(yaml_path, ticket_path, result.session_id)
+                moved, refused = self._move_to_active(yaml_path, ticket_path, active_state, root)
+                failed = await self._send_prompt_sequence(result, prompt_sequence, [moved])
 
-                if active_state:
-                    move_ticket(yaml_path, ticket_path, column=active_state.id)
-
-                await self._send_prompt_sequence(result, prompt_sequence, [ticket_path])
-
-                results.append({"ticket_path": ticket_path, "session_id": result.session_id})
+                results.append(
+                    {
+                        "ticket_path": ticket_path,
+                        "session_id": result.session_id,
+                        "failed_prompts": failed,
+                        "move_refused": refused,
+                    },
+                )
         else:
             result = await self._sessions.create()
+            moves = {}
 
             for ticket_path in ticket_paths:
                 assign_ticket(yaml_path, ticket_path, result.session_id)
+                moves[ticket_path] = self._move_to_active(
+                    yaml_path,
+                    ticket_path,
+                    active_state,
+                    root,
+                )
 
-                if active_state:
-                    move_ticket(yaml_path, ticket_path, column=active_state.id)
-
-            await self._send_prompt_sequence(result, prompt_sequence, ticket_paths)
+            # One shared session and prompt sequence for every ticket in the batch, so a
+            # failure here applies identically to each ticket's own result entry below.
+            failed = await self._send_prompt_sequence(
+                result,
+                prompt_sequence,
+                [moved for moved, _ in moves.values()],
+            )
 
             for ticket_path in ticket_paths:
-                results.append({"ticket_path": ticket_path, "session_id": result.session_id})
+                results.append(
+                    {
+                        "ticket_path": ticket_path,
+                        "session_id": result.session_id,
+                        "failed_prompts": failed,
+                        "move_refused": moves[ticket_path][1],
+                    },
+                )
 
         await self._broadcast_update(board_id)
 
         return results
+
+    @staticmethod
+    def _move_to_active(
+        yaml_path: Path,
+        ticket_path: str,
+        active_state,
+        root: Path,
+    ) -> tuple[str, str | None]:
+        """Return the ticket's path after the move and why the move was refused, if it was."""
+
+        if active_state is None:
+            return ticket_path, None
+
+        try:
+            entry = move_ticket(yaml_path, ticket_path, root=root, column=active_state.id)
+        except TicketMoveRefused as exc:
+            return ticket_path, exc.context["reason"]
+
+        return str(entry["path"]), None
 
     # Swimlane Operations
     # ----------------------------------------------------------------------------------------------
@@ -331,7 +395,18 @@ class BoardService:
             found[bid] = yaml_path
 
         self._boards = found
-        self._watcher.sync_watches(list(found.values()))
+        self._ticket_files = {
+            bid: files for bid, files in self._ticket_files.items() if bid in found
+        }
+        self._sync_watches()
+
+    def _sync_watches(self) -> None:
+        owners = {path: bid for bid, path in self._boards.items()}
+
+        for bid, files in self._ticket_files.items():
+            owners.update(dict.fromkeys(files, bid))
+
+        self._watcher.sync(owners)
 
     def _resolve(self, board_id: str) -> Path:
         """Resolve board_id to its yaml_path, raising BoardNotFound if missing."""
@@ -349,10 +424,14 @@ class BoardService:
         session_result,
         prompt_sequence,
         ticket_paths: list[str],
-    ) -> None:
-        """Send prompt sequence messages to a newly created session, expanding ``{ticket}``."""
+    ) -> list[str]:
+        """Send prompt sequence messages to a newly created session, expanding ``{ticket}``.
+
+        Returns the messages that did not arrive, so the caller's assignment can reflect it.
+        """
 
         single = len(ticket_paths) == 1
+        failed = []
 
         for template in prompt_sequence:
             if single:
@@ -364,13 +443,18 @@ class BoardService:
                 ticket_ref = "\n" + "\n".join(ticket_paths)
                 message = re.sub(r"[ \t]*\{ticket\}", ticket_ref, template)
 
-            await deliver_prompt(
+            delivered = await deliver_prompt(
                 self._logger,
                 self._containers,
                 session_result.container_id,
                 message,
                 session_id=session_result.session_id,
             )
+
+            if not delivered:
+                failed.append(message)
+
+        return failed
 
     async def _broadcast_update(self, board_id: str) -> None:
         """Broadcast that a board has been updated."""

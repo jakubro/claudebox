@@ -1,9 +1,11 @@
 """Filesystem utilities."""
 
+from __future__ import annotations
+
 import contextlib
 import shutil
 import tempfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Generator, Iterable, Iterator
 from pathlib import Path
 
 from pathspec import PathSpec
@@ -33,12 +35,19 @@ def touch_dir(path: str | Path) -> Path:
     return path
 
 
-def touch_file(path: str | Path) -> Path:
-    """Create file and parent directories if needed, return Path."""
+def touch_file(path: str | Path, content: str = "") -> Path:
+    """Create file with content and parent directories if needed, return Path.
+
+    An existing file is left alone (touching a read-only one fails) unless empty and given content.
+    """
 
     path = Path(path)
+
+    if path.exists() and (path.stat().st_size or not content):
+        return path
+
     touch_dir(path.parent)
-    path.touch()
+    path.write_text(content)
 
     return path
 
@@ -64,7 +73,7 @@ def remove_path(path: str | Path) -> None:
 
 
 @contextlib.contextmanager
-def make_temp_dir(**kwargs) -> Iterator[Path]:
+def make_temp_dir(**kwargs) -> Generator[Path]:
     """Create a temporary directory that auto-cleans on exit.
 
     Creates `dir` first if missing, then forwards remaining kwargs to tempfile.TemporaryDirectory.

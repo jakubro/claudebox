@@ -25,6 +25,16 @@ const makeHandlers = () => ({
 })
 
 describe('QueuedMessageBubble', () => {
+  it('offers no send-now on an item held for a session still being created', () => {
+    const item = { ...makeItem('queued'), owner: { creation: 1 } }
+    const { getByTitle, queryByTitle } = render(
+      <QueuedMessageBubble item={item} {...makeHandlers()} />,
+    )
+    expect(queryByTitle('Send now')).toBeNull()
+    expect(getByTitle('Edit')).toBeDefined()
+    expect(getByTitle('Cancel')).toBeDefined()
+  })
+
   it('queued item shows Send now, Edit, Cancel buttons and no paused class', () => {
     const { getByTitle, queryByTitle, getByTestId } = render(
       <QueuedMessageBubble item={makeItem('queued')} {...makeHandlers()} />,

@@ -27,6 +27,15 @@ function TestConsumer() {
   return <div data-testid="consumer">{ctx.bookmarkedMessageIds.has('m1') ? 'yes' : 'no'}</div>
 }
 
+function LoadingConsumer() {
+  const ctx = useBookmarksContext()
+  return (
+    <div data-testid="loading-consumer">
+      {String(ctx.loading)}/{ctx.error ?? 'null'}
+    </div>
+  )
+}
+
 describe('BookmarksContext', () => {
   it('provides context to children', () => {
     render(
@@ -60,15 +69,6 @@ describe('BookmarksContext', () => {
       loading: true,
       error: 'boom',
     })
-
-    function LoadingConsumer() {
-      const ctx = useBookmarksContext()
-      return (
-        <div data-testid="loading-consumer">
-          {String(ctx.loading)}/{ctx.error ?? 'null'}
-        </div>
-      )
-    }
 
     render(
       <BookmarksProvider>

@@ -14,6 +14,13 @@ vi.mock('../../../../../hooks/useCapabilities', () => ({
   default: () => ({ capabilities: mockCapabilities(), runtimeName: 'Claude' }),
 }))
 
+function renderKeyboard() {
+  const env = setup()
+  const { result } = renderHook(() => useChatKeyboard(env.params))
+
+  return { ...env, result }
+}
+
 /** Build a stub params object with a real textarea attached to the document. */
 function setup() {
   const textarea = document.createElement('textarea')
@@ -26,6 +33,7 @@ function setup() {
     commitInput: vi.fn(),
     extractInput: vi.fn(),
     send: vi.fn(),
+    submitBlock: vi.fn(() => null),
     setSending: vi.fn(),
     enqueueMessage: vi.fn(),
     deferSend: vi.fn(),
@@ -86,8 +94,7 @@ function readState(textarea) {
 
 describe('useChatKeyboard - Tab/Shift+Tab', () => {
   it('Tab inserts 2 spaces at caret in content zone (no selection)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, 'hello world', 5)
     const e = keyEvent('Tab')
@@ -105,8 +112,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab snaps from 0 leading whitespace to 2 (col 0)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, 'hello', 0)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -116,8 +122,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab snaps from 1 leading to 2 (not 3)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, ' hello', 0)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -127,8 +132,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab snaps from 2 to 4 with caret at boundary (col = leadingLen)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '  hello', 2)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -138,8 +142,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab snaps from 4 to 6 with caret in leading zone (col 0)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '    hello', 0)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -149,8 +152,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab replaces single-line selection in content zone with 2 spaces', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, 'hello world', 6, 11)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -161,8 +163,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab indents two lines via multi-line selection', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, 'a\nb', 0, 3)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -176,8 +177,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab on empty multi-line selection (selection ends at \\n) operates only on first line', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, 'a\nb', 0, 2) // selects "a\n" only
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -188,8 +188,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab dedents 2 leading spaces to 0', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '  hello', 2)
     result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }))
@@ -199,8 +198,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab dedents 3 leading spaces to 2', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '   hello', 3)
     result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }))
@@ -210,8 +208,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab dedents 1 leading space to 0', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, ' hello', 1)
     result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }))
@@ -221,10 +218,9 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab is no-op on unindented line (preventDefault still called, value unchanged)', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello', 0)
     const e = keyEvent('Tab', { shiftKey: true })
@@ -238,8 +234,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab dedents multi-line with mixed leading whitespace per line', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '  a\n    b\nc', 0, 11)
     result.current.handleKeyDown(keyEvent('Tab', { shiftKey: true }))
@@ -254,8 +249,7 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Shift+Tab on single-line selection still snap-dedents the line', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     // Selection in content zone of a line that has 2 leading spaces.
     setTextarea(textarea, '  hello', 4, 7) // selects "llo"
@@ -267,10 +261,9 @@ describe('useChatKeyboard - Tab/Shift+Tab', () => {
   })
 
   it('Tab dispatches exactly one input event so drafts/autocomplete observers refresh', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello', 0)
     result.current.handleKeyDown(keyEvent('Tab'))
@@ -284,8 +277,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   // Layer 1: indent inheritance on prose lines.
 
   it('Shift+Enter on plain prose with no indent inserts plain newline', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, 'hello', 5)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -295,8 +287,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter end-of-line inherits 3-space indent', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '   hello', 8)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -306,8 +297,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter mid-content split inherits indent on new line', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     // "   hello world" caret at 9 (between "hello " and "world")
     setTextarea(textarea, '   hello world', 9)
@@ -324,8 +314,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   // Layer 2: list-marker continuation.
 
   it('Shift+Enter continues dash bullet at end of line', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '- foo', 5)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -335,8 +324,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter continues asterisk bullet', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '* foo', 5)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -346,8 +334,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter continues plus bullet', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '+ foo', 5)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -357,8 +344,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter auto-increments numbered list (dot)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '1. foo', 6)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -368,8 +354,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter auto-increments numbered list (paren)', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '1) foo', 6)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -379,8 +364,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter auto-increments multi-digit numbered list', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '42. foo', 7)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -390,8 +374,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter on unchecked task continues with empty checkbox', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '- [ ] foo', 9)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -401,8 +384,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter on checked task ([x]) continues with always-unchecked checkbox', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '- [x] foo', 9)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -413,8 +395,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter on indented sub-bullet inherits indent + marker', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '  - sub', 7)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -424,8 +405,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter mid-content list split inserts marker on new line', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     // "- foo bar" caret at 6 (between "foo " and "bar")
     setTextarea(textarea, '- foo bar', 6)
@@ -438,8 +418,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   // Empty-marker exit.
 
   it('Shift+Enter on empty bullet (- ) exits list, current line empty', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '- ', 2)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -449,8 +428,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter on empty numbered (1. ) exits list', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '1. ', 3)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -460,8 +438,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter on empty task (- [ ] ) exits list', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '- [ ] ', 6)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -471,8 +448,7 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 
   it('Shift+Enter on empty indented bullet preserves indent on both lines', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
 
     setTextarea(textarea, '  - ', 4)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -499,10 +475,9 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   // Input event firing - drafts/autocomplete observers must refresh.
 
   it('Shift+Enter dispatches exactly one input event', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello', 5)
     result.current.handleKeyDown(keyEvent('Enter', { shiftKey: true }))
@@ -512,12 +487,91 @@ describe('useChatKeyboard - Shift+Enter smart newline', () => {
   })
 })
 
+describe('useChatKeyboard - Enter while a send is on its way', () => {
+  function heldSend(params) {
+    const pending = []
+    let sending = false
+    params.setSending = vi.fn(value => {
+      sending = value
+    })
+    params.submitBlock = vi.fn(() => (sending ? 'sending' : null))
+    params.send = vi.fn(
+      () =>
+        new Promise(resolve => {
+          pending.push(resolve)
+        }),
+    )
+    params.peekInput = vi.fn(() =>
+      params.textareaRef.current.value
+        ? { rawPrompt: params.textareaRef.current.value, currentAttachments: [] }
+        : null,
+    )
+    return pending
+  }
+
+  async function sendWhileHeld(text) {
+    const { textarea, params, cleanup } = setup()
+    const pending = heldSend(params)
+    const { result } = renderHook(() => useChatKeyboard(params))
+    textarea.value = text
+    await act(async () => {
+      void result.current.handleSubmit()
+    })
+
+    return { textarea, params, cleanup, pending, result }
+  }
+
+  it('sends the box once the send in flight lands, in order', async () => {
+    const { textarea, params, cleanup, pending, result } = await sendWhileHeld('FIRST')
+    textarea.value = 'SECOND'
+    await act(async () => {
+      await result.current.handleSubmit()
+    })
+    expect(params.send).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      pending[0](true)
+    })
+
+    expect(params.send.mock.calls.map(call => call[0])).toEqual(['FIRST', 'SECOND'])
+    cleanup()
+  })
+
+  it('drops an Enter on the text already on its way', async () => {
+    const { params, cleanup, pending, result } = await sendWhileHeld('TWICE')
+    await act(async () => {
+      await result.current.handleSubmit()
+    })
+    await act(async () => {
+      pending[0](true)
+    })
+
+    expect(params.send).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+
+  it('sends nothing more when the first send fails', async () => {
+    const { textarea, params, cleanup, pending, result } = await sendWhileHeld('FIRST')
+    textarea.value = 'SECOND'
+    await act(async () => {
+      await result.current.handleSubmit()
+    })
+    await act(async () => {
+      pending[0](false)
+    })
+
+    expect(params.send).toHaveBeenCalledTimes(1)
+    expect(params.commitInput).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('SECOND')
+    cleanup()
+  })
+})
+
 describe('useChatKeyboard - Ctrl+, wrap in tags', () => {
   it('wraps the selection and dispatches exactly one input event', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello world', 6, 11)
     result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
@@ -528,10 +582,9 @@ describe('useChatKeyboard - Ctrl+, wrap in tags', () => {
   })
 
   it('wraps at the caret with no selection and still dispatches once', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'hello', 5)
     result.current.handleKeyDown(keyEvent(',', { ctrlKey: true }))
@@ -544,10 +597,9 @@ describe('useChatKeyboard - Ctrl+, wrap in tags', () => {
 
 describe('useChatKeyboard - Ctrl+S stash', () => {
   it('clears the textarea, saves an empty draft, and dispatches exactly one input event', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, params, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, 'stash me', 8)
     result.current.handleKeyDown(keyEvent('s', { ctrlKey: true }))
@@ -560,10 +612,9 @@ describe('useChatKeyboard - Ctrl+S stash', () => {
   })
 
   it('is a no-op on an empty textarea and dispatches nothing', () => {
-    const { textarea, params, cleanup } = setup()
+    const { textarea, params, cleanup, result } = renderKeyboard()
     const inputSpy = vi.fn()
     textarea.addEventListener('input', inputSpy)
-    const { result } = renderHook(() => useChatKeyboard(params))
 
     setTextarea(textarea, '', 0)
     result.current.handleKeyDown(keyEvent('s', { ctrlKey: true }))
@@ -579,8 +630,7 @@ describe('useChatKeyboard - picker consequence of dispatching', () => {
   const dictCommands = { custom: [{ name: 'greet', description: 'Greet by name' }] }
 
   it('an editing key that leaves the caret inside a leading command opens the picker', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
     const { result: autocomplete } = renderHook(() =>
       useAutocomplete({ current: textarea }, dictCommands),
     )
@@ -599,8 +649,7 @@ describe('useChatKeyboard - picker consequence of dispatching', () => {
   })
 
   it('an editing key that moves the caret out of the leading command closes the picker', () => {
-    const { textarea, params, cleanup } = setup()
-    const { result } = renderHook(() => useChatKeyboard(params))
+    const { textarea, cleanup, result } = renderKeyboard()
     const { result: autocomplete } = renderHook(() =>
       useAutocomplete({ current: textarea }, dictCommands),
     )

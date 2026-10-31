@@ -3,19 +3,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getBoard } from '../../../api/boards'
 import { useDaemonStreamContext } from '../../../context/DaemonStreamContext'
+import { useWorkspace } from '../../../context/WorkspaceContext'
+import { boardChangeKey } from '../../../utils/boardChanges'
 import { createDeferred } from '../../../utils/deferred'
 
 /**
  * Manage a single board's state with SSE-driven updates.
  * @param {string|null} boardId - Board ID to load.
- * @returns {object} Board state, loading/error indicators, and refresh action.
+ * @returns {object} Board state, loading/error indicators, refresh action, and `updates` - how many
+ *   times this board's files changed since mount.
  */
 export default function useBoardData(boardId) {
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const { sessionsChanged, containerStatus } = useDaemonStreamContext()
+  const { workspaceId } = useWorkspace()
+  const { changesByWorkspace, boardChanges } = useDaemonStreamContext()
+  const workspaceChanges = changesByWorkspace[workspaceId] ?? 0
+  const boardUpdates = boardChanges[boardChangeKey(workspaceId, boardId)] ?? 0
 
   // Coalesces concurrent triggers (mount, SSE signals) onto one request, keyed on the board it
   // addressed - a switch mid-flight must not apply the old board's response to the new one.
@@ -89,15 +95,22 @@ export default function useBoardData(boardId) {
     fetchBoard()
   }, [fetchBoard])
 
-  // Refresh on board_update SSE events
+  // Refresh on the shown workspace's session and container changes, and on this board's own file
+  // changes; a board edit never counts as a workspace change, so it lists no sessions.
   useEffect(() => {
-    if (sessionsChanged > 0 || containerStatus > 0) {
+    if (workspaceChanges > 0) {
       fetchBoard()
     }
-  }, [sessionsChanged, containerStatus, fetchBoard])
+  }, [workspaceChanges, fetchBoard])
+
+  useEffect(() => {
+    if (boardUpdates > 0) {
+      fetchBoard()
+    }
+  }, [boardUpdates, fetchBoard])
 
   return useMemo(
-    () => ({ board, loading, error, refresh: fetchBoard }),
-    [board, loading, error, fetchBoard],
+    () => ({ board, loading, error, refresh: fetchBoard, updates: boardUpdates }),
+    [board, loading, error, fetchBoard, boardUpdates],
   )
 }

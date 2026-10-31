@@ -1,5 +1,7 @@
 """MCP server management endpoints - reconnect, toggle, status."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from ._models import ReconnectMcpServerRequest, ToggleMcpServerRequest

@@ -4,6 +4,8 @@ No path containment; the container is the isolation boundary. `edit_file` mirror
 edit semantics so habits transfer between the two.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool

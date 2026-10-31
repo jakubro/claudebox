@@ -6,6 +6,7 @@ import {
   buildSearchResults,
   buildSessionTree,
   countTreeRows,
+  flattenSessionTree,
   matchesSearchQuery,
   matchesSessionFilter,
   originIdFor,
@@ -150,6 +151,12 @@ describe('matchesSessionFilter', () => {
     ).toBe(false)
   })
 
+  it('named leaves out a session that has only an automatic name', () => {
+    const session = mkSession('a', { name: null, auto_name: 'Tuning the parser' })
+
+    expect(matchesSessionFilter(SESSION_FILTERS.NAMED, session, pinnedSet)).toBe(false)
+  })
+
   it('pinned matches only sessions in the pinned set', () => {
     expect(matchesSessionFilter(SESSION_FILTERS.PINNED, mkSession('pinned-1'), pinnedSet)).toBe(
       true,
@@ -218,11 +225,80 @@ describe('countTreeRows', () => {
   })
 })
 
+describe('flattenSessionTree', () => {
+  const shape = rows =>
+    rows.map(r => [
+      r.session.session_id,
+      r.depth,
+      r.isLastChild,
+      r.continuations.join(','),
+      r.isExpanded,
+    ])
+
+  it('lists a collapsed fork parent alone, marking that it has children', () => {
+    const tree = buildSessionTree(
+      [mkSession('p'), mkSession('c', { parent_session_id: 'p' })],
+      [],
+      null,
+    )
+
+    const rows = flattenSessionTree(tree, new Set())
+
+    expect(shape(rows)).toEqual([['p', 0, true, '', false]])
+    expect(rows[0].hasChildren).toBe(true)
+  })
+
+  it('lists expanded forks depth-first under their parent', () => {
+    const tree = {
+      rootSessions: [mkSession('r1'), mkSession('r2')],
+      childrenMap: new Map([
+        ['r1', [mkSession('c1'), mkSession('c2')]],
+        ['c1', [mkSession('g1')]],
+      ]),
+    }
+
+    const rows = flattenSessionTree(tree, new Set(['r1', 'c1']))
+
+    expect(shape(rows)).toEqual([
+      ['r1', 0, false, '', true],
+      ['c1', 1, false, 'false', true],
+      ['g1', 2, true, 'false,true', false],
+      ['c2', 1, true, 'false', false],
+      ['r2', 0, true, '', false],
+    ])
+  })
+
+  it('lists a pinned fork twice under distinct keys', () => {
+    const tree = buildSessionTree(
+      [mkSession('p'), mkSession('c', { parent_session_id: 'p' })],
+      ['c'],
+      null,
+    )
+
+    const rows = flattenSessionTree(tree, new Set(['p']))
+
+    expect(rows.filter(r => r.session.session_id === 'c')).toHaveLength(2)
+    expect(new Set(rows.map(r => r.key)).size).toBe(rows.length)
+  })
+})
+
 describe('matchesSearchQuery', () => {
   it('matches on name, case-insensitively', () => {
     expect(matchesSearchQuery(mkSession('a', { name: 'Parser Rewrite' }), 'parser')).toBe(true)
     expect(matchesSearchQuery(mkSession('a', { name: 'Parser Rewrite' }), 'PARSER')).toBe(true)
     expect(matchesSearchQuery(mkSession('a', { name: 'Parser Rewrite' }), 'compiler')).toBe(false)
+  })
+
+  it('matches on an automatic name when no hand-given name outranks it', () => {
+    expect(matchesSearchQuery(mkSession('a', { auto_name: 'Tuning the parser' }), 'tuning')).toBe(
+      true,
+    )
+    expect(
+      matchesSearchQuery(
+        mkSession('a', { name: 'Mine', auto_name: 'Tuning the parser' }),
+        'tuning',
+      ),
+    ).toBe(false)
   })
 
   it('matches on the full session id, not just its displayed prefix', () => {
@@ -278,5 +354,30 @@ describe('buildSearchResults', () => {
     ]
     const results = buildSearchResults(sessions, 'spike', ['pinned'], null)
     expect(results.map(s => s.session_id)).toEqual(['pinned', 'ctr', 'plain'])
+  })
+})
+
+describe('flattenSessionTree hidden sessions', () => {
+  const tree = {
+    rootSessions: [mkSession('p')],
+    childrenMap: new Map([
+      ['p', [mkSession('c')]],
+      ['c', [mkSession('g')]],
+    ]),
+  }
+
+  it('gives a collapsed row every session beneath it, at any depth', () => {
+    const [row] = flattenSessionTree(tree, new Set())
+
+    expect(row.hiddenSessions.map(s => s.session_id)).toEqual(['c', 'g'])
+  })
+
+  it('gives an expanded row none, and its collapsed child the ones beneath that child', () => {
+    const rows = flattenSessionTree(tree, new Set(['p']))
+
+    expect(rows.map(r => [r.session.session_id, r.hiddenSessions.map(s => s.session_id)])).toEqual([
+      ['p', []],
+      ['c', ['g']],
+    ])
   })
 })

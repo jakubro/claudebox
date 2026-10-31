@@ -8,13 +8,15 @@
 }
 
 /* Shared grid context: column tracks declared here so every .containers-row (subgrid) lines up.
-   grid-auto-rows: min-content mirrors .board-board in BoardTab.css - needed for scrollable grids. */
+   grid-auto-rows: min-content mirrors .board-board in BoardTab.css - needed for scrollable grids.
+   The dot's track is auto: a subgrid's border and padding land inside its edge track, so a fixed
+   one pushes the dot into the session id's column. */
 .containers-list {
   flex: 1;
   overflow-y: auto;
   padding: 4px 8px;
   display: grid;
-  grid-template-columns: 8px auto auto 1fr auto auto auto auto;
+  grid-template-columns: auto auto auto 1fr auto auto auto auto;
   column-gap: 8px;
   grid-auto-rows: min-content;
 }
@@ -104,6 +106,11 @@
   color: var(--success);
 }
 
+.containers-session-name.auto-named {
+  font-style: italic;
+  opacity: 0.7;
+}
+
 .containers-state {
   color: var(--text-muted);
 }
@@ -134,10 +141,8 @@
   display: flex;
   align-items: baseline;
   gap: 4px;
-  /* Nudge the action cluster 1px down so icon buttons sit on the row's text baseline.
-     Paired with the matching translateY below on .containers-action-btn - keeps wrapped children
-     (e.g. ResumeControl) aligned with the per-button glyphs. */
-  transform: translateY(1px);
+  /* Nudge the whole cluster, never one button, so Stop, Play and chevron sit level with the row's text. */
+  transform: translateY(2px);
 }
 
 /* Scope ResumeControl to the panel: the base rule (SessionItem.css) uses align-items: center, but
@@ -154,8 +159,6 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  /* Nudge the button 1px down to match the row's text baseline; paired with .containers-actions' translateY. */
-  transform: translateY(1px);
 }
 
 .containers-action-btn:hover {

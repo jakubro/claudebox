@@ -1,5 +1,7 @@
 """Tests for rotating file handler in core logging module."""
 
+from __future__ import annotations
+
 import logging
 import logging.handlers
 from pathlib import Path

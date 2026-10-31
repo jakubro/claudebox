@@ -1,5 +1,7 @@
 """Tests for ``claudebox.core.log_rendering`` - ISO timestamp + shape normalization + file-format guard."""
 
+from __future__ import annotations
+
 import re
 
 from claudebox.core.log_rendering import format_timestamp_iso, render_event

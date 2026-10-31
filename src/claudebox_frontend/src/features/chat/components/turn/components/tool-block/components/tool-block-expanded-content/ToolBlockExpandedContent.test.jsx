@@ -46,6 +46,9 @@ vi.mock('@uiw/react-json-view/dark', () => ({
   darkTheme: {},
 }))
 
+const writeText = vi.fn().mockResolvedValue(undefined)
+Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+
 // Default TurnProvider values for tests
 const defaultTurnContext = {
   hasNextUserMessage: false,
@@ -79,7 +82,6 @@ describe('ToolBlockExpandedContent', () => {
     plan: null,
     todoData: null,
     taskPrompt: null,
-    systemReminders: null,
     persistedOutput: null,
   }
 
@@ -306,25 +308,6 @@ describe('ToolBlockExpandedContent', () => {
     expect(document.querySelector('.todo-list')).not.toBeInTheDocument()
   })
 
-  it('renders SystemReminders when reminders exist', () => {
-    renderExpanded({
-      ...defaultProps,
-      contentData: { ...defaultContentData, systemReminders: ['reminder1', 'reminder2'] },
-    })
-
-    // Real SystemReminders renders collapsed button with count
-    expect(screen.getByText('System Reminders (2)')).toBeInTheDocument()
-  })
-
-  it('does not render SystemReminders when empty', () => {
-    renderExpanded({
-      ...defaultProps,
-      contentData: { ...defaultContentData, systemReminders: [] },
-    })
-
-    expect(screen.queryByText(/System Reminder/)).not.toBeInTheDocument()
-  })
-
   it('renders skillContent as Markdown when provided', () => {
     renderExpanded({
       ...defaultProps,
@@ -434,6 +417,28 @@ describe('ToolBlockExpandedContent', () => {
       const code = screen.getByTestId('syntax-code-block')
       expect(code).toHaveTextContent('ls -la')
       expect(code).toHaveAttribute('data-language', 'bash')
+    })
+
+    it('shows the laid-out command when the call carries one', () => {
+      renderExpanded({
+        ...bashProps,
+        command: 'cd /srv; ls',
+        contentData: { ...defaultContentData, commandLayout: 'cd /srv\nls' },
+      })
+
+      expect(screen.getByTestId('syntax-code-block').textContent).toBe('cd /srv\nls')
+    })
+
+    it('copies the command as sent, not its layout', async () => {
+      renderExpanded({
+        ...bashProps,
+        command: 'cd /srv; ls',
+        contentData: { ...defaultContentData, commandLayout: 'cd /srv\nls' },
+      })
+
+      fireEvent.click(screen.getByTitle('Copy command'))
+
+      await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('cd /srv; ls'))
     })
 
     it('opts the Command section out of the line-number gutter', () => {

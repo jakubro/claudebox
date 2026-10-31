@@ -2,7 +2,9 @@
 
 import CopyButton from '../../../../../../../../../../components/CopyButton.jsx'
 import Markdown from '../../../../../../../../../../components/Markdown'
+import { ToolName } from '../../../../../../../../../../config/schema'
 import { getToolConfig } from '../../../../../../../../../../config/toolRegistry'
+import { useSessionWorkspace } from '../../../../../../../../../../context/SessionDataContext'
 import {
   getLanguageFromPath,
   looksLikeMarkdown,
@@ -16,11 +18,15 @@ import {
   getCopyableText,
 } from './utils/copyableText'
 
+// Markdown printed by a command run in the working directory; other tools' output names no place.
+const OUTPUT_IN_WORKSPACE = new Set([ToolName.BASH, ToolName.TASK_OUTPUT])
+
 /**
  * @param {string} props.toolName - Tool name (Edit, Read, Write, Grep, etc.).
  * @param {string} [props.filePath] - File path for syntax highlighting.
  * @param {string} [props.outputMode] - Grep output mode (files_with_matches, etc.).
  * @param {number} [props.lineOffset] - Starting line number for Edit tool diffs.
+ * @param {string|null} [props.sourceUrl] - The page a WebFetch fetched.
  */
 export default function ToolContentRenderer({
   toolName,
@@ -28,7 +34,10 @@ export default function ToolContentRenderer({
   filePath,
   outputMode = null,
   lineOffset = null,
+  sourceUrl = null,
 }) {
+  const workspaceDir = useSessionWorkspace()
+
   if (!details) {
     return null
   }
@@ -44,7 +53,11 @@ export default function ToolContentRenderer({
       const startingLineNumber = extractStartingLineNumber(details)
       return (
         <div className="tool-details-wrapper">
-          <MarkdownPreview content={code} startingLineNumber={startingLineNumber} />
+          <MarkdownPreview
+            content={code}
+            startingLineNumber={startingLineNumber}
+            filePath={filePath}
+          />
         </div>
       )
     }
@@ -89,7 +102,7 @@ export default function ToolContentRenderer({
       <div className="tool-details-wrapper">
         <CopyButton text={copyableText} className="tool-copy-btn" title="Copy output" size={12} />
         <div className="tool-markdown-content turn-text">
-          <Markdown>{details}</Markdown>
+          <Markdown baseUrl={sourceUrl}>{details}</Markdown>
         </div>
       </div>
     )
@@ -99,7 +112,10 @@ export default function ToolContentRenderer({
   if (looksLikeMarkdown(details)) {
     return (
       <div className="tool-details-wrapper">
-        <MarkdownPreview content={details} />
+        <MarkdownPreview
+          content={details}
+          baseDir={OUTPUT_IN_WORKSPACE.has(toolName) ? workspaceDir : null}
+        />
       </div>
     )
   }

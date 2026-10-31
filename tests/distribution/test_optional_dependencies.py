@@ -2,6 +2,8 @@
 a single-requirement `langchain-<x>` extra, bundled into `langgraph-all`, preinstalled in the agent image;
 catches missing extras, unbundled extras, or relocated core deps."""
 
+from __future__ import annotations
+
 import re
 import tomllib
 from pathlib import Path

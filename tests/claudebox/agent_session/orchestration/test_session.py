@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.session - content block building and internal commands."""
 
+from __future__ import annotations
+
 import asyncio
 import base64
 from types import SimpleNamespace
@@ -189,7 +191,7 @@ class TestOnSessionStartRemapsTmp:
         calls = []
         monkeypatch.setattr(
             "claudebox.agent_session.orchestration.session.ensure_tmp",
-            lambda session: calls.append(session),
+            calls.append,
         )
         svc = SessionService(workspace=tmp_path, remaps_tmp=True)
         svc._base_session = cast(Any, SimpleNamespace(id="s1"))
@@ -203,7 +205,7 @@ class TestOnSessionStartRemapsTmp:
         calls = []
         monkeypatch.setattr(
             "claudebox.agent_session.orchestration.session.ensure_tmp",
-            lambda session: calls.append(session),
+            calls.append,
         )
         svc = SessionService(workspace=tmp_path, remaps_tmp=False)
         svc._base_session = cast(Any, SimpleNamespace(id="s1"))
@@ -284,3 +286,21 @@ class TestStartRemapsTmpBeforeSpawn:
         await svc.stop()
 
         assert "ensure_tmp" not in order
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("remaps_tmp", [True, False])
+    async def test_config_is_primary_matches_remaps_tmp(self, tmp_path, monkeypatch, remaps_tmp):
+        captured: list[Any] = []
+        order: list[str] = []
+        self._patch(monkeypatch, order)
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.make_agent_session",
+            lambda config: captured.append(config) or _FakeSdkClient(order),
+        )
+        svc = SessionService(workspace=tmp_path, remaps_tmp=remaps_tmp)
+
+        await svc.start()
+        await asyncio.sleep(0)
+        await svc.stop()
+
+        assert captured[0].is_primary is remaps_tmp

@@ -1,9 +1,31 @@
 /** E2E tests for message queue functionality. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, loadFixture, mockAPI } from '../mocks/api.js'
-import { createSSEController } from '../mocks/sse.js'
+import { openLiveSession } from '../helpers.js'
+import { loadFixture, mockAPI } from '../mocks/api.js'
+
+async function openLiveInput(page) {
+  const controller = await openLiveSession(page)
+
+  return { controller, input: page.locator('[data-testid="chat-input"]') }
+}
+
+async function openWithResponseRunning(page, turnId, prompt, reply) {
+  const { controller, input } = await openLiveInput(page)
+  await controller.sendEvents([
+    {
+      type: 'user',
+      subtype: 'text',
+      content: prompt,
+      is_human: true,
+      timestamp: Date.now(),
+      turn_id: turnId,
+    },
+    { type: 'assistant', subtype: 'text', content: reply, timestamp: Date.now() + 100 },
+  ])
+
+  return { controller, input }
+}
 
 test.describe('Message Queue', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,9 +35,7 @@ test.describe('Message Queue', () => {
   test.describe('Queue Send', () => {
     // SPEC: input:queue-send
     test('Alt+Enter queues message as dimmed bubble', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('queued message')
       await input.press('Alt+Enter')
@@ -28,9 +48,7 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-bubble
     test('queued messages appear as dimmed inline bubbles', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('first queued')
       await input.press('Alt+Enter')
@@ -50,9 +68,7 @@ test.describe('Message Queue', () => {
   test.describe('Queue Actions', () => {
     // SPEC: chat:queue-actions
     test('queued bubbles show edit and cancel on hover', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('hoverable message')
       await input.press('Alt+Enter')
@@ -66,9 +82,7 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-cancel
     test('cancel removes message from queue', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('cancel me')
       await input.press('Alt+Enter')
@@ -82,9 +96,7 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-edit
     test('edit returns message content to input', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('edit me')
       await input.press('Alt+Enter')
@@ -101,26 +113,12 @@ test.describe('Message Queue', () => {
   test.describe('Queue Drain', () => {
     // SPEC: chat:queue-drain
     test('queued message auto-sends when response completes', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'first message',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working on it...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      const { controller, input } = await openWithResponseRunning(
+        page,
+        'turn_001',
+        'first message',
+        'Working on it...',
+      )
 
       await input.fill('queued follow-up')
       await input.press('Alt+Enter')
@@ -141,9 +139,7 @@ test.describe('Message Queue', () => {
   test.describe('Queue Bypass', () => {
     // SPEC: chat:queue-bypass
     test('Enter sends immediately even with queued messages', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('queued first')
       await input.press('Alt+Enter')
@@ -159,27 +155,13 @@ test.describe('Message Queue', () => {
   test.describe('Queue Pause', () => {
     // SPEC: chat:queue-pause-interrupt
     test('interrupt pauses queued messages', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
-
       // Interrupt is only available once a response is in progress.
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'trigger response',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_002',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Responding...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      const { input } = await openWithResponseRunning(
+        page,
+        'turn_002',
+        'trigger response',
+        'Responding...',
+      )
 
       await input.fill('will be paused')
       await input.press('Alt+Enter')
@@ -192,26 +174,7 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-pause-actions
     test('paused bubbles show re-queue and cancel buttons', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'msg',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_003',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      const { input } = await openWithResponseRunning(page, 'turn_003', 'msg', 'Working...')
 
       await input.fill('paused msg')
       await input.press('Alt+Enter')
@@ -226,15 +189,13 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-pause-error
     test('error pauses queued messages', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('will pause on error')
       await input.press('Alt+Enter')
 
       // Override send to return error (triggers setError -> pauseAll)
-      await page.route('**/api/send', route =>
+      await page.route('**/api/send*', route =>
         route.fulfill({ status: 500, json: { error: 'Server error' } }),
       )
 
@@ -246,28 +207,30 @@ test.describe('Message Queue', () => {
       await expect(bubble).toHaveClass(/paused/)
     })
 
+    // SPEC: chat:queue-pause-error
+    test('an error that is not a failed send leaves the queue running', async ({ page }) => {
+      const { input } = await openLiveInput(page)
+      await input.fill('stays queued')
+      await input.press('Alt+Enter')
+      const bubble = page.locator('[data-testid="queued-message-bubble"]')
+      await expect(bubble).toBeVisible()
+
+      await page.evaluate(() => {
+        const dataTransfer = new DataTransfer()
+        const file = new File([new ArrayBuffer(11 * 1024 * 1024)], 'big.bin')
+        dataTransfer.items.add(file)
+        document
+          .querySelector('.chat-input-wrapper')
+          .dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
+      })
+
+      await expect(page.locator('.footer-error-text')).toContainText('big.bin exceeds 10MB limit')
+      await expect(bubble).not.toHaveClass(/paused/)
+    })
+
     // SPEC: chat:queue-requeue
     test('re-queue returns paused message to active queue', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'msg',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_004',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working...',
-          timestamp: Date.now() + 100,
-        },
-      ])
+      const { input } = await openWithResponseRunning(page, 'turn_004', 'msg', 'Working...')
 
       await input.fill('requeue me')
       await input.press('Alt+Enter')
@@ -286,9 +249,7 @@ test.describe('Message Queue', () => {
   test.describe('Queue Send Now', () => {
     // SPEC: chat:queue-send-now
     test('send now button sends message immediately, skipping queue order', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('first queued')
       await input.press('Alt+Enter')
@@ -312,9 +273,7 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-actions
     test('queued bubbles show send-now, edit, and cancel on hover', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('hover me')
       await input.press('Alt+Enter')
@@ -331,17 +290,13 @@ test.describe('Message Queue', () => {
   test.describe('Queue Persistence', () => {
     // SPEC: chat:queue-persist
     test('queued messages survive page refresh', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('survives refresh')
       await input.press('Alt+Enter')
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
 
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openLiveSession(page)
 
       // Queued bubble reappears from localStorage.
       await expect(page.locator('[data-testid="queued-message-bubble"]')).toBeVisible()
@@ -355,7 +310,7 @@ test.describe('Message Queue', () => {
       // Override session routes so sessionId actually changes on new session.
       const statusFixture = loadFixture('status/default.json')
       let currentSessionId = statusFixture.session_id
-      await page.route('**/api/sessions/current', async route => {
+      await page.route('**/api/sessions/current*', async route => {
         await route.fulfill({ json: { ...statusFixture, session_id: currentSessionId } })
       })
       await page.route('**/sessions/new', async route => {
@@ -363,9 +318,7 @@ test.describe('Message Queue', () => {
         await route.fulfill({ json: { session_id: 'new-session-id' } })
       })
 
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await input.fill('will be cleared')
       await input.press('Alt+Enter')
@@ -379,9 +332,7 @@ test.describe('Message Queue', () => {
 
     // SPEC: chat:queue-attachments
     test('queued messages preserve attachments through edit', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const { input } = await openLiveInput(page)
 
       await page.evaluate(() => {
         const file = new File(['test content'], 'test.txt', { type: 'text/plain' })

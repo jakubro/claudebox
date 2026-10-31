@@ -5,13 +5,14 @@ import { TurnContext } from '../TurnContext'
 
 /**
  * @returns {{
+ *   sessionId: string|null,
  *   hasNextUserMessage: boolean,
  *   nextUserMessageIsFormResponse: boolean,
  *   nextUserMessage: string,
  *   hasPendingMessages: boolean,
  *   todoDiffs: Map,
  *   taskNotifications: Object,
- *   onFormSubmit: Function,
+ *   onFormSubmit: Function|undefined,
  *   registerPendingForm: Function,
  *   turnStartTime: number,
  *   now: number,

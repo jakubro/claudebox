@@ -14,8 +14,10 @@ import ActiveStatus from './components/ActiveStatus'
  * @param {number|null} props.lastEventTimestamp - Timestamp of last SSE event.
  * @param {boolean} props.isSubmitting - Whether a request is being submitted.
  * @param {boolean} props.isAwaitingResponse - Whether waiting for first response.
+ * @param {boolean} [props.isWaiting] - Whether the idle session waits on background work it started.
  * @param {string|null} props.interruptStatus - Interrupt state ("stopping"|"stopped"|null).
  * @param {string|null} props.errorMessage - Error message to display.
+ * @param {string|null} [props.hintMessage] - Brief hint for a keystroke that did nothing.
  * @param {boolean} props.isReplaying - Whether session history is replaying.
  * @param {boolean} props.isCreating - Whether a new session is being created.
  * @param {boolean} props.isForking - Whether a fork operation is in flight.
@@ -30,14 +32,30 @@ export default function StatusIndicator({
   lastEventTimestamp,
   isSubmitting,
   isAwaitingResponse,
+  isWaiting = false,
   interruptStatus,
   errorMessage,
+  hintMessage,
   isReplaying,
   isCreating,
   isForking,
   isOpeningBoard,
   isOpeningWorkspace,
 }) {
+  // A hint answers a keystroke the reader just made, so it outranks every ongoing state briefly.
+  if (hintMessage) {
+    return (
+      <>
+        <span
+          className="status-dot status-connected status-working"
+          data-testid="footer-status"
+          data-status="hint"
+        />
+        <span className="footer-item footer-status-text">{hintMessage}</span>
+      </>
+    )
+  }
+
   // Resuming state (highest priority during session load)
   if (isReplaying) {
     return (
@@ -182,6 +200,23 @@ export default function StatusIndicator({
     // Submitting state (POST in flight)
     if (isSubmitting) {
       return <ActiveStatus label="Submitting" status="submitting" />
+    }
+
+    if (isWaiting) {
+      return (
+        <>
+          <span
+            className="status-dot status-connected status-waiting"
+            data-testid="footer-status"
+            data-status="waiting"
+          />
+          <span className="footer-item footer-status-text">
+            Waiting<span className="dot dot-1">.</span>
+            <span className="dot dot-2">.</span>
+            <span className="dot dot-3">.</span>
+          </span>
+        </>
+      )
     }
 
     return (

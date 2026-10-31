@@ -1,5 +1,7 @@
 """Shared structlog ConsoleRenderer with ISO timestamps for daemon stderr and ``claudebox logs``."""
 
+from __future__ import annotations
+
 from collections.abc import MutableMapping
 from datetime import UTC, datetime
 from typing import Any

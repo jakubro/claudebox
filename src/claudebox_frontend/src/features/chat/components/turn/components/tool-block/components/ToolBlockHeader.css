@@ -52,7 +52,9 @@
   min-width: 0;
 }
 
-.tool-open-in-editor-btn {
+.tool-open-in-editor-btn,
+.tool-bookmark-btn,
+.tool-focus-hide-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -66,12 +68,28 @@
   transition: opacity 0.15s;
 }
 
-.tool-header-area:hover .tool-open-in-editor-btn {
+.tool-header-area:hover .tool-open-in-editor-btn,
+.tool-header-area:hover .tool-bookmark-btn,
+.tool-header-area:hover .tool-focus-hide-btn,
+.tool-bookmark-btn.active,
+.tool-focus-hide-btn.active {
   opacity: 1;
 }
 
-.tool-open-in-editor-btn:hover {
+.tool-open-in-editor-btn:hover,
+.tool-bookmark-btn:hover,
+.tool-focus-hide-btn:hover {
   color: var(--text-primary);
+}
+
+.tool-bookmark-btn.active {
+  color: #e8b931;
+}
+
+.tool-focus-hide-btn.active {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
 }
 
 .block-timing {

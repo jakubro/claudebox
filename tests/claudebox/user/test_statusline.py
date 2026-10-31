@@ -1,6 +1,10 @@
 """Tests for claudebox.statusline - statusline decorator and request type."""
 
+from __future__ import annotations
+
 from datetime import timedelta
+
+import pytest
 
 from claudebox.user.statusline import StatuslineRequest, statusline
 
@@ -55,7 +59,7 @@ class TestStatuslineRequest:
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
         data = _make_statusline_data(workspace_path=str(tmp_workspace))
         req = StatuslineRequest(data)
-        assert req.total_cost == 0.0512
+        assert req.total_cost == pytest.approx(0.0512)
 
     def test_parses_conversation_duration(self, tmp_workspace, monkeypatch):
         monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))

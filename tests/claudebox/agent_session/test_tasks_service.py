@@ -1,5 +1,7 @@
 """TaskService unit tests - in-memory store + event-replay rebuild."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
@@ -175,7 +177,7 @@ class TestAsdict:
 
 class TestRebuildFromEvents:
     def _write(self, path: Path, events: list[dict]) -> None:
-        path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+        path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
 
     def test_missing_file_is_noop(self, service, tmp_path):
         service.rebuild_from_events(tmp_path / "absent.jsonl")

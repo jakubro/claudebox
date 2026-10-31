@@ -1,5 +1,7 @@
 """LangGraphRuntime lifecycle + event assembly + usage telemetry - stub-model coverage."""
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -145,6 +147,37 @@ class TestConnect:
         with pytest.raises(RuntimeError, match="model"):
             await runtime.connect()
 
+        # ready must fire even on failure - otherwise every waiter (query, receive_events,
+        # EventPipeline._run) blocks forever instead of seeing connect_error.
+        assert runtime.ready.is_set()
+        assert runtime.connect_error is not None
+
+    @pytest.mark.anyio
+    async def test_connect_error_stays_none_on_success(self, tmp_path):
+        runtime = LangGraphRuntime(_make_config(tmp_path))
+
+        with (
+            patch(
+                "claudebox.agent_session.runtime_langgraph.init_chat_model",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "claudebox.agent_session.runtime_langgraph.create_agent",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "claudebox.agent_session._providers.httpx.Client",
+                return_value=_ok_httpx_client_mock(),
+            ),
+            patch(
+                "claudebox.agent_session.runtime_langgraph.AsyncSqliteSaver.from_conn_string",
+                return_value=_async_sqlite_cm_mock(),
+            ),
+        ):
+            await runtime.connect()
+
+        assert runtime.connect_error is None
+
 
 class TestDisconnect:
     @pytest.mark.anyio
@@ -248,6 +281,19 @@ class TestDisconnect:
         assert hasattr(chat_model, "_client")
         assert callable(getattr(chat_model._client, "close", None))
 
+    @pytest.mark.anyio
+    async def test_clears_connect_error(self, tmp_path):
+        runtime = LangGraphRuntime(_make_config(tmp_path, model=None))
+
+        with pytest.raises(RuntimeError):
+            await runtime.connect()
+
+        assert runtime.connect_error is not None
+
+        await runtime.disconnect()
+
+        assert runtime.connect_error is None
+
 
 class TestQuery:
     @pytest.mark.anyio
@@ -258,6 +304,46 @@ class TestQuery:
 
         # _prompt_queue is the only observable signal at this layer.
         assert runtime._prompt_queue.qsize() == 1
+
+    @pytest.mark.anyio
+    async def test_refuses_after_connect_error(self, tmp_path):
+        runtime = LangGraphRuntime(_make_config(tmp_path, model=None))
+
+        with pytest.raises(RuntimeError):
+            await runtime.connect()
+
+        with pytest.raises(RuntimeError, match="model"):
+            await runtime.query("hello")
+
+        # Refused, not buffered - nothing was staged for a drain that will never come.
+        assert runtime._prompt_queue.qsize() == 0
+
+
+class TestReceiveEventsConnectFailure:
+    @pytest.mark.anyio
+    async def test_ends_cleanly_instead_of_driving_a_turn_with_no_graph(self, tmp_path):
+        """A prompt staged in the race window before connect_error was known must not reach
+        _drive_turn - there is no graph to drive it with. Bounded via _drain_n: pre-fix this
+        either stalls (empty queue) or raises _drive_turn's own graph-not-None assertion
+        (staged queue), never a clean end."""
+
+        runtime = LangGraphRuntime(_make_config(tmp_path, model=None))
+
+        with pytest.raises(RuntimeError):
+            await runtime.connect()
+
+        assert runtime.connect_error is not None
+        runtime._prompt_queue.put_nowait(("staged before the failure was known", None))
+
+        stream = runtime.receive_events()
+        events = [evt async for evt in _drain_n(stream, 1)]
+
+        assert [evt.kind for evt in events] == ["system_init"]
+
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(anext(stream), 5.0)
+
+        assert runtime._prompt_queue.qsize() == 0
 
 
 class TestEventAssembly:
@@ -522,13 +608,13 @@ class TestUsageAndCost:
     def test_cost_accumulates_across_calls(self, tmp_path):
         """Each call is billed for the whole prompt it re-sent, so per-call costs sum."""
 
-        runtime = LangGraphRuntime(_make_config(tmp_path, model="anthropic:claude-sonnet-5"))
+        runtime = LangGraphRuntime(_make_config(tmp_path, model="anthropic:claude-sonnet-5-5"))
 
         first = runtime._accumulate_usage(1_000_000, 0)
         second = runtime._accumulate_usage(500_000, 0)
 
-        assert (first, second) == (3.0, 1.5)
-        assert runtime._total_cost_usd == pytest.approx(4.5)
+        assert (first, second) == (2.0, 1.0)
+        assert runtime._total_cost_usd == pytest.approx(3.0)
 
     def test_billing_leaves_context_occupancy_alone(self, tmp_path):
         """Occupancy is a level the turn loop sets, not a running total of billed tokens."""
@@ -546,8 +632,8 @@ class TestUsageAndCost:
 
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=1_000_000)
 
-        assert cost == 0.0
-        assert runtime._total_cost_usd == 0.0
+        assert cost == pytest.approx(0.0)
+        assert runtime._total_cost_usd == pytest.approx(0.0)
 
     def test_unknown_model_returns_none(self, tmp_path):
         """Unknown model (no curated table entry, no override) -> None cost."""
@@ -557,22 +643,19 @@ class TestUsageAndCost:
         cost = runtime._accumulate_usage(input_tokens=1_000_000, output_tokens=1_000_000)
 
         assert cost is None
-        assert runtime._total_cost_usd == 0.0
+        assert runtime._total_cost_usd == pytest.approx(0.0)
 
 
-class TestAstreamTaskRace:
-    """`_astream_task` is set BEFORE astream iteration starts so early interrupt() works."""
+class TestGraphTask:
+    """Each turn's graph runs in a task of its own, never on the task reading the stream."""
 
     @pytest.mark.anyio
-    async def test_astream_task_set_before_first_event(self, tmp_path):
-        """A scripted astream that captures the task at the first yield sees a non-None pointer."""
-
+    async def test_the_graph_task_exists_at_the_first_event_and_is_not_the_reader(self, tmp_path):
         runtime = LangGraphRuntime(_make_config(tmp_path))
         captured: list = []
 
         async def _astream_events(graph_input, config=None, version=None):
-            # The task pointer must already be set at the first yield.
-            captured.append(runtime._astream_task)
+            captured.append((runtime._graph_task, asyncio.current_task()))
             ai = AIMessage(
                 content="hi",
                 usage_metadata={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
@@ -585,11 +668,15 @@ class TestAstreamTaskRace:
         runtime.ready.set()
 
         await runtime.query("hello")
+        reader_task = asyncio.current_task()
 
         async for _ in _drain_n(runtime.receive_events(), 3):
             pass
 
-        assert captured and captured[0] is not None
+        graph_task, running_on = captured[0]
+        assert graph_task is not None
+        assert graph_task is running_on
+        assert running_on is not reader_task
 
 
 class TestDriveTurn:

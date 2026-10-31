@@ -1,5 +1,7 @@
 """Container runtime abstraction for podman and docker backends."""
 
+from __future__ import annotations
+
 import json
 import subprocess
 import time
@@ -22,9 +24,9 @@ class ContainerBackend:
     # Image Operations
     # ----------------------------------------------------------------------------------------------
 
-    def build_image(self, *args) -> None:
+    def build_image(self, *args, pass_fds: tuple[int, ...] = ()) -> None:
         # Unbounded: a build/pull can run for minutes; CLI-only, never daemon-dispatched.
-        self._exec("build", *args, check=True)
+        self._exec("build", *args, check=True, pass_fds=pass_fds)
 
     # Container Lifecycle
     # ----------------------------------------------------------------------------------------------
@@ -155,14 +157,14 @@ class ContainerBackend:
         """
 
         try:
-            cgroup = Path(f"/proc/{pid}/cgroup").read_text()
+            cgroup = Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8")
         except OSError:
             return None
 
         return next((cid for cid in candidate_ids if cid in cgroup), None)
 
     def list_containers(self, labels: dict[str, str] | None = None) -> list[dict]:
-        """List containers matching a label filter."""
+        """List containers matching a label filter, in podman's shape for either runtime."""
 
         labels = labels or {}
         labels = {**labels, **DEFAULT_LABELS}
@@ -182,8 +184,11 @@ class ContainerBackend:
 
         if not output:
             return []
-
-        return json.loads(output)
+        elif output.startswith("["):
+            # Podman's emulation of docker prints podman's array, so the shape decides, not the name.
+            return json.loads(output)
+        else:
+            return [_podman_shaped(json.loads(line)) for line in output.splitlines()]
 
     def _exec(
         self,
@@ -219,3 +224,9 @@ class ContainerBackend:
             )
 
             raise
+
+
+def _podman_shaped(container: dict) -> dict:
+    labels = (pair.partition("=") for pair in container["Labels"].split(",") if pair)
+
+    return {**container, "Id": container["ID"], "Labels": {key: value for key, _, value in labels}}

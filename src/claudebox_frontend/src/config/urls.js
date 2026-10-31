@@ -3,5 +3,6 @@
 export const SSE_URL = '/api/stream'
 export const DAEMON_STREAM_URL = '/api/daemon/stream'
 export const DAEMON_REPORT_URL = '/api/daemon/report'
+export const DAEMON_HEALTH_URL = '/api/daemon/health'
 export const STATUS_URL = 'https://status.claude.com/api/v2/summary.json'
 export const STATUS_PAGE_URL = 'https://status.claude.com'

@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.ui_state.service - persistent UI state store."""
 
+from __future__ import annotations
+
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +27,11 @@ def _make_service(tmp_path: Path) -> UIStateService:
     ws = RegisteredWorkspace(id="test-ws", path=tmp_path)
     (tmp_path / ".claudebox").mkdir(parents=True, exist_ok=True)
 
-    return UIStateService(ws, executor=ThreadPoolExecutor(max_workers=1))
+    return UIStateService(
+        ws,
+        executor=ThreadPoolExecutor(max_workers=1),
+        session_days=365,
+    )
 
 
 # --- _apply_operations ---
@@ -151,22 +157,74 @@ class TestPruneOldSessions:
     def test_keeps_recent(self):
         now = datetime.now(UTC).isoformat()
         sessions = {"s1": {"updated_at": now}}
-        result = UIStateService._prune_old_sessions(sessions)
+        result = UIStateService._prune_old_sessions(sessions, [], 365)
         assert "s1" in result
 
     def test_removes_old(self):
         old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
         sessions = {"s1": {"updated_at": old}}
-        result = UIStateService._prune_old_sessions(sessions)
+        result = UIStateService._prune_old_sessions(sessions, [], 365)
         assert "s1" not in result
 
     def test_mixed(self):
         now = datetime.now(UTC).isoformat()
         old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
         sessions = {"recent": {"updated_at": now}, "stale": {"updated_at": old}}
-        result = UIStateService._prune_old_sessions(sessions)
+        result = UIStateService._prune_old_sessions(sessions, [], 365)
         assert "recent" in result
         assert "stale" not in result
+
+    def test_follows_the_lifetime_it_is_given(self):
+        idle = {days: (datetime.now(UTC) - timedelta(days=days)).isoformat() for days in (29, 31)}
+        sessions = {"idle-29": {"updated_at": idle[29]}, "idle-31": {"updated_at": idle[31]}}
+        result = UIStateService._prune_old_sessions(sessions, [], 30)
+        assert list(result) == ["idle-29"]
+
+    def test_keeps_a_pinned_session_however_old(self):
+        old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+        sessions = {"pinned": {"updated_at": old}, "unpinned": {"updated_at": old}}
+        result = UIStateService._prune_old_sessions(sessions, ["pinned"], 365)
+        assert list(result) == ["pinned"]
+
+
+class TestPatchKeepsPinnedSettings:
+    """A write sweeps aged per-session settings, sparing every session pinned once it applies."""
+
+    AGED = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+
+    def _seed(self, tmp_path: Path, pinned: list[str]) -> UIStateService:
+        svc = _make_service(tmp_path)
+        write_json(
+            svc._state_path,
+            {
+                "version": UIStateService.VERSION,
+                "global": {"pinnedSessions": pinned},
+                "sessions": {
+                    sid: {"minimapPinned": False, "updated_at": self.AGED} for sid in "ab"
+                },
+            },
+        )
+
+        return svc
+
+    @pytest.mark.anyio
+    async def test_a_write_keeps_a_pinned_sessions_aged_settings(self, tmp_path):
+        svc = self._seed(tmp_path, ["a"])
+
+        await svc.patch(None, **{"global": [{"op": "set", "path": "theme", "value": "dark"}]})
+
+        assert list(svc._load(None)[0]["sessions"]) == ["a"]
+
+    @pytest.mark.anyio
+    async def test_an_unpin_in_the_same_write_drops_the_aged_settings(self, tmp_path):
+        svc = self._seed(tmp_path, ["a"])
+
+        await svc.patch(
+            None,
+            **{"global": [{"op": "remove", "path": "pinnedSessions", "value": "a"}]},
+        )
+
+        assert svc._load(None)[0]["sessions"] == {}
 
 
 # --- _load ---

@@ -61,6 +61,11 @@
   box-shadow: 0 0 6px currentColor;
 }
 
+.status-dot.status-waiting {
+  animation: color-cycle 2.4s ease-in-out infinite;
+  opacity: 0.6;
+}
+
 @keyframes color-cycle {
   0%,
   100% {
@@ -94,11 +99,8 @@
   background: #f59e0b;
 }
 
-.status-silent {
-  opacity: 0.6;
-}
-
 .status-dot.status-silent {
+  opacity: 0.6;
   animation: none;
   background: var(--text-muted);
   box-shadow: none;

@@ -2,10 +2,19 @@
 
 import { useState } from 'react'
 import Markdown from '../../../../../components/Markdown'
+import { useSessionWorkspace } from '../../../../../context/SessionDataContext'
 import { formatBlockTiming } from '../../../../../utils/formatters'
+import InjectedContext from './InjectedContext'
 
-export default function ThinkingBlock({ event, blockRelativeTime = null }) {
+/**
+ * @param {object} props
+ * @param {object} props.event - The thinking event.
+ * @param {number|null} [props.blockRelativeTime] - Offset from the turn's start, in seconds.
+ * @param {Array} [props.injected] - Text the agent received after this block that no one wrote.
+ */
+export default function ThinkingBlock({ event, blockRelativeTime = null, injected = null }) {
   const [expanded, setExpanded] = useState(false)
+  const workspaceDir = useSessionWorkspace()
 
   const content = event?.content || ''
   if (!content.trim()) {
@@ -25,17 +34,24 @@ export default function ThinkingBlock({ event, blockRelativeTime = null }) {
         <div className="thinking-header">
           <span className="thinking-bullet">○</span>
           <span className="thinking-label">Thinking</span>
-          {timing && <span className="block-timing">{timing}</span>}
+          {timing && (
+            <span
+              className="block-timing"
+              title={event.ts ? new Date(event.ts).toLocaleString() : undefined}>
+              {timing}
+            </span>
+          )}
         </div>
         <div className="thinking-preview">
           <span className="thinking-corner">└</span>
           {expanded ? (
             <span className="thinking-content-inline">
-              <Markdown>{content}</Markdown>
+              <Markdown baseDir={workspaceDir}>{content}</Markdown>
             </span>
           ) : (
             <span className="thinking-summary">{firstLine}</span>
           )}
+          <InjectedContext entries={injected} />
         </div>
       </div>
     </div>

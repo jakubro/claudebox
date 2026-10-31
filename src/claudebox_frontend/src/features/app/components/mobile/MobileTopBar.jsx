@@ -10,14 +10,16 @@ import { useSessionData } from '../../../../context/SessionDataContext'
  * @param {boolean} props.detailsOpen - Whether details sheet is open.
  */
 export default function MobileTopBar({ onHamburger, onToggleDetails, detailsOpen }) {
-  const { sessionName } = useSessionData()
+  const { sessionName, sessionNameIsAuto } = useSessionData()
 
   return (
     <div className="mobile-top-bar">
       <button type="button" className="mobile-top-btn" onClick={onHamburger} title="Menu">
         <Menu size={18} />
       </button>
-      <span className="mobile-top-session-name" title={sessionName || 'No session'}>
+      <span
+        className={`mobile-top-session-name${sessionNameIsAuto ? ' auto-named' : ''}`}
+        title={sessionName || 'No session'}>
         {sessionName || 'claudebox'}
       </span>
       <div className="mobile-top-actions">

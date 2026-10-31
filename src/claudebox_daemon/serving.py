@@ -1,10 +1,13 @@
 """Server wiring - Caddy reverse proxy for H2/TLS in production, uvicorn in dev."""
 
+from __future__ import annotations
+
 import atexit
 import logging
 import os
 import signal
 import subprocess
+import sys
 import textwrap
 import threading
 
@@ -46,6 +49,8 @@ def backend_server(factory, *, port: int) -> None:
         frontend_dev_server(port)
     else:
         https_proxy(port)
+
+    signal.signal(signal.SIGTERM, _exit_on_sigterm)
 
     logger.info(_startup_banner(port))
     http_serve(
@@ -201,6 +206,14 @@ def _stop_subprocess(proc: subprocess.Popen) -> None:
         proc.wait(timeout=SERVER_PROCESS_TERMINATION_TIMEOUT.total_seconds())
     except subprocess.TimeoutExpired:
         _signal_group(proc, signal.SIGKILL)
+
+
+def _exit_on_sigterm(signum: int, _frame) -> None:
+    """Exit through SystemExit so the atexit stops run - uvicorn re-raises a caught SIGTERM into
+    this handler after its shutdown, and the default handler would kill the process before them.
+    """
+
+    sys.exit(128 + signum)
 
 
 def _signal_group(proc: subprocess.Popen, sig: signal.Signals) -> None:

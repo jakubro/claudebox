@@ -4,8 +4,8 @@
   "type": "module",
   "description": "Containerized isolation, customizable agent profiles, and a visual web UI — for AI coding agents.",
   "devDependencies": {
-    "@biomejs/biome": "^2.3.11",
-    "jscpd": "^5.0.15",
+    "@biomejs/biome": "^2.5.0",
+    "jscpd": "5.4.2",
     "knip": "^6"
   }
 }

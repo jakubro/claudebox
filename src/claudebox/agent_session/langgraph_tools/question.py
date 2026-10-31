@@ -11,6 +11,8 @@ The `questions` list passes through verbatim to the frontend's InteractiveQuesti
 rendered identically to Claude's AskUserQuestion (see `ask_user_question` below for field shape).
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from langchain_core.tools import BaseTool, tool

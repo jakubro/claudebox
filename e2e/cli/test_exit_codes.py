@@ -5,6 +5,8 @@ tests/claudebox_cli/test_dispatch.py; this file asserts the real-binary contract
 failures surface as exit codes, never a Python traceback.
 """
 
+from __future__ import annotations
+
 import pytest
 
 

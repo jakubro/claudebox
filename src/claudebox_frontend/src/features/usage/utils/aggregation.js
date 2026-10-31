@@ -14,8 +14,8 @@ export const INTERVALS = [
  * snapshot): root sessions have a zero snapshot so they contribute their full cost, forks avoid
  * double-counting against the ancestor by counting only what accrued past the inherited transcript.
  */
-export function aggregateCost(sessions, intervalMs) {
-  const cutoff = intervalMs === Infinity ? 0 : Date.now() - intervalMs
+export function aggregateCost(sessions, intervalMs, now = Date.now()) {
+  const cutoff = intervalMs === Infinity ? 0 : now - intervalMs
   return sessions
     .filter(s => new Date(s.started_at).getTime() >= cutoff)
     .reduce((sum, s) => sum + (s.total_cost_usd || 0) - s.fork_point_cost_usd, 0)

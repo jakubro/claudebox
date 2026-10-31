@@ -32,6 +32,11 @@
   border-left-color: #f44336;
 }
 
+.task-kind-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
 .task-description {
   flex: 1;
   font-size: 12px;

@@ -16,7 +16,7 @@ export default function HelpPanel() {
                     <td colSpan="2">{section.title}</td>
                   </tr>
                   {section.bindings.map(binding => (
-                    <tr key={binding.keys}>
+                    <tr key={`${binding.keys}:${binding.action}`}>
                       <td className="help-key">{binding.keys}</td>
                       <td>{binding.action}</td>
                     </tr>

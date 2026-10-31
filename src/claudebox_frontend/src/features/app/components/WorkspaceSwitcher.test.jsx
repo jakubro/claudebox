@@ -72,6 +72,16 @@ vi.mock('../../../context/EventsContext', () => ({
 
 describe('WorkspaceSwitcher', () => {
   const chatPanels = [{ id: 'chat' }, { id: 'file:/tmp/test.js' }]
+
+  async function openSwitcher(workspaces, workspaceId) {
+    const user = userEvent.setup()
+    mockWorkspaceCtx.workspaces = workspaces
+    mockWorkspaceCtx.workspaceId = workspaceId
+    render(<WorkspaceSwitcher panels={chatPanels} />)
+    await user.click(screen.getByTestId('workspace-switcher'))
+
+    return user
+  }
   const twoWorkspaces = [
     { id: 'project-a', path: '/home/user/project-a' },
     { id: 'project-b', path: '/home/user/project-b' },
@@ -124,52 +134,28 @@ describe('WorkspaceSwitcher', () => {
   })
 
   it('shows check icon next to selected workspace', async () => {
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    await openSwitcher(twoWorkspaces, 'project-a')
 
     const checks = screen.getAllByTestId('icon-check')
     expect(checks).toHaveLength(1)
   })
 
   it('shows workspace paths in dropdown', async () => {
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    await openSwitcher(twoWorkspaces, 'project-a')
 
     expect(screen.getByText('/home/user/project-a')).toBeInTheDocument()
     expect(screen.getByText('/home/user/project-b')).toBeInTheDocument()
   })
 
   it('calls selectWorkspace on selection', async () => {
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    const user = await openSwitcher(twoWorkspaces, 'project-a')
     await user.click(screen.getByText('project-b'))
 
     expect(mockWorkspaceCtx.selectWorkspace).toHaveBeenCalledWith('project-b')
   })
 
   it('does not call selectWorkspace when selecting current workspace', async () => {
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    const user = await openSwitcher(twoWorkspaces, 'project-a')
     const dropdown = screen.getByTestId('workspace-switcher-dropdown')
     const currentOption = dropdown.querySelector('.workspace-switcher-option.selected')
     await user.click(currentOption)
@@ -178,13 +164,7 @@ describe('WorkspaceSwitcher', () => {
   })
 
   it('closes dropdown after selection', async () => {
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    const user = await openSwitcher(twoWorkspaces, 'project-a')
     expect(screen.getByTestId('workspace-switcher-dropdown')).toBeInTheDocument()
 
     await user.click(screen.getByText('project-b'))
@@ -192,13 +172,7 @@ describe('WorkspaceSwitcher', () => {
   })
 
   it('closes dropdown on Escape', async () => {
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    const user = await openSwitcher(twoWorkspaces, 'project-a')
     expect(screen.getByTestId('workspace-switcher-dropdown')).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
@@ -207,13 +181,7 @@ describe('WorkspaceSwitcher', () => {
 
   it('middle-click on workspace opens it in new browser tab', async () => {
     const { openWorkspaceInNewTab } = await import('../../../utils/navigation')
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    await openSwitcher(twoWorkspaces, 'project-a')
 
     const options = screen
       .getByTestId('workspace-switcher-dropdown')
@@ -225,13 +193,7 @@ describe('WorkspaceSwitcher', () => {
 
   it('Alt+Click on workspace opens it in new browser tab', async () => {
     const { openWorkspaceInNewTab } = await import('../../../utils/navigation')
-    const user = userEvent.setup()
-    mockWorkspaceCtx.workspaces = twoWorkspaces
-    mockWorkspaceCtx.workspaceId = 'project-a'
-
-    render(<WorkspaceSwitcher panels={chatPanels} />)
-
-    await user.click(screen.getByTestId('workspace-switcher'))
+    await openSwitcher(twoWorkspaces, 'project-a')
 
     const options = screen
       .getByTestId('workspace-switcher-dropdown')
@@ -243,26 +205,21 @@ describe('WorkspaceSwitcher', () => {
   })
 
   describe('color palette', () => {
-    it('shows color palette in dropdown for single workspace', async () => {
-      const user = userEvent.setup()
+    function renderColoredSolo() {
       mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
       mockWorkspaceCtx.workspaceId = 'solo'
-
+      mockSessionsCtx.workspaceColor = '#1e3a5f'
       render(<WorkspaceSwitcher panels={chatPanels} />)
+    }
 
-      await user.click(screen.getByTestId('workspace-switcher'))
+    it('shows color palette in dropdown for single workspace', async () => {
+      await openSwitcher([{ id: 'solo', path: '/home/user/solo' }], 'solo')
 
       expect(screen.getByTestId('workspace-color-palette')).toBeInTheDocument()
     })
 
     it('does not show workspace list for single workspace', async () => {
-      const user = userEvent.setup()
-      mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
-      mockWorkspaceCtx.workspaceId = 'solo'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
-
-      await user.click(screen.getByTestId('workspace-switcher'))
+      await openSwitcher([{ id: 'solo', path: '/home/user/solo' }], 'solo')
 
       const dropdown = screen.getByTestId('workspace-switcher-dropdown')
       // The workspace list section is hidden when only one workspace exists.
@@ -273,13 +230,7 @@ describe('WorkspaceSwitcher', () => {
     })
 
     it('shows workspace list and palette for multiple workspaces', async () => {
-      const user = userEvent.setup()
-      mockWorkspaceCtx.workspaces = twoWorkspaces
-      mockWorkspaceCtx.workspaceId = 'project-a'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
-
-      await user.click(screen.getByTestId('workspace-switcher'))
+      await openSwitcher(twoWorkspaces, 'project-a')
 
       const dropdown = screen.getByTestId('workspace-switcher-dropdown')
       expect(dropdown.querySelector('.workspace-switcher-divider')).toBeInTheDocument()
@@ -287,13 +238,7 @@ describe('WorkspaceSwitcher', () => {
     })
 
     it('calls setWorkspaceColor when clicking a swatch', async () => {
-      const user = userEvent.setup()
-      mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
-      mockWorkspaceCtx.workspaceId = 'solo'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
-
-      await user.click(screen.getByTestId('workspace-switcher'))
+      const user = await openSwitcher([{ id: 'solo', path: '/home/user/solo' }], 'solo')
 
       const swatches = screen
         .getByTestId('workspace-color-palette')
@@ -305,11 +250,7 @@ describe('WorkspaceSwitcher', () => {
 
     it('toggles color off when clicking active swatch', async () => {
       const user = userEvent.setup()
-      mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
-      mockWorkspaceCtx.workspaceId = 'solo'
-      mockSessionsCtx.workspaceColor = '#1e3a5f'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
+      renderColoredSolo()
 
       await user.click(screen.getByTestId('workspace-switcher'))
 
@@ -323,11 +264,7 @@ describe('WorkspaceSwitcher', () => {
 
     it('shows clear button when color is active', async () => {
       const user = userEvent.setup()
-      mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
-      mockWorkspaceCtx.workspaceId = 'solo'
-      mockSessionsCtx.workspaceColor = '#1e3a5f'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
+      renderColoredSolo()
 
       await user.click(screen.getByTestId('workspace-switcher'))
 
@@ -338,13 +275,7 @@ describe('WorkspaceSwitcher', () => {
     })
 
     it('does not show clear button when no color is active', async () => {
-      const user = userEvent.setup()
-      mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
-      mockWorkspaceCtx.workspaceId = 'solo'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
-
-      await user.click(screen.getByTestId('workspace-switcher'))
+      await openSwitcher([{ id: 'solo', path: '/home/user/solo' }], 'solo')
 
       const clearBtn = screen
         .getByTestId('workspace-color-palette')
@@ -353,11 +284,7 @@ describe('WorkspaceSwitcher', () => {
     })
 
     it('shows colored dot in button when color is set', () => {
-      mockWorkspaceCtx.workspaces = [{ id: 'solo', path: '/home/user/solo' }]
-      mockWorkspaceCtx.workspaceId = 'solo'
-      mockSessionsCtx.workspaceColor = '#1e3a5f'
-
-      render(<WorkspaceSwitcher panels={chatPanels} />)
+      renderColoredSolo()
 
       const dot = screen.getByTestId('workspace-switcher').querySelector('.workspace-switcher-dot')
       expect(dot).toBeInTheDocument()

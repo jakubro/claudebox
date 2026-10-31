@@ -6,16 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockFocusChatTab = vi.fn()
 const mockSetError = vi.fn()
 const mockNewSession = vi.fn()
-const mockNotifyContainerChanged = vi.fn()
+const mockNotifyAddressChanged = vi.fn()
 const mockReconnectSSE = vi.fn()
-const mockStartCreating = vi.fn()
-const mockClearCreating = vi.fn()
+const mockStartCreating = vi.fn(() => 4)
+const mockSettleCreateRequest = vi.fn()
+const mockFailCreating = vi.fn()
 const mockMarkJustCreatedSession = vi.fn()
-const mockSetContainerId = vi.fn()
+const mockSetAddress = vi.fn()
 const mockNavigateToSession = vi.fn()
 
 vi.mock('../api/apiClient', () => ({
-  setContainerId: (...args) => mockSetContainerId(...args),
+  setAddress: (...args) => mockSetAddress(...args),
 }))
 
 vi.mock('../api/sessions', () => ({
@@ -36,10 +37,11 @@ vi.mock('../context/InteractionContext', () => ({
 
 vi.mock('../context/EventsContext', () => ({
   useEvents: () => ({
-    notifyContainerChanged: mockNotifyContainerChanged,
+    notifyAddressChanged: mockNotifyAddressChanged,
     reconnectSSE: mockReconnectSSE,
     startCreating: mockStartCreating,
-    clearCreating: mockClearCreating,
+    settleCreateRequest: mockSettleCreateRequest,
+    failCreating: mockFailCreating,
     markJustCreatedSession: mockMarkJustCreatedSession,
     isCreating: false,
     isResponding: false,
@@ -48,6 +50,7 @@ vi.mock('../context/EventsContext', () => ({
 
 vi.mock('../context/SessionRoutingContext', () => ({
   useSessionRouting: () => ({
+    activeSessionId: 'sess-a',
     navigateToSession: mockNavigateToSession,
   }),
 }))
@@ -70,8 +73,14 @@ const mockClearSessionData = vi.fn()
 const mockSeedSessionData = vi.fn()
 const mockMergeSessionData = vi.fn()
 
+let mockDeferredBundle = null
+let mockSessionData = null
+const mockRefreshSession = vi.fn()
+
 vi.mock('../context/SessionDataContext', () => ({
   useSessionData: () => ({
+    deferredBundle: mockDeferredBundle,
+    sessionData: mockSessionData,
     sessionId: null,
     sessionName: null,
     model: 'claude-sonnet-5',
@@ -82,6 +91,7 @@ vi.mock('../context/SessionDataContext', () => ({
     clearSessionData: mockClearSessionData,
     seedSessionData: mockSeedSessionData,
     mergeSessionData: mockMergeSessionData,
+    refreshSession: mockRefreshSession,
   }),
 }))
 
@@ -112,6 +122,22 @@ import useNewSession from './useNewSession'
 describe('useNewSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDeferredBundle = null
+    mockSessionData = null
+  })
+
+  it.each([
+    ['the bundle picked on the welcome screen', 'research', undefined, 'research'],
+    ['a bundle named by the caller over the pick', 'research', 'review', 'review'],
+    ['no bundle with nothing picked', null, undefined, undefined],
+  ])('creates under %s', async (_label, picked, named, expected) => {
+    mockDeferredBundle = picked
+    mockNewSession.mockResolvedValue({})
+    const { result } = renderHook(() => useNewSession())
+
+    await result.current.executeNewSession(named)
+
+    expect(mockNewSession.mock.calls[0][0].bundle).toBe(expected)
   })
 
   it('seeds session data, sets container, and navigates on success', async () => {
@@ -122,9 +148,12 @@ describe('useNewSession', () => {
     const ok = await result.current.executeNewSession()
 
     expect(ok).toBe(true)
-    expect(mockStartCreating).toHaveBeenCalledTimes(1)
-    // clearCreating NOT called on success - ChatPanel effect clears when SSE connects
-    expect(mockClearCreating).not.toHaveBeenCalled()
+    expect(mockStartCreating).toHaveBeenCalledWith('sess-a')
+    expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, 's1')
+    expect(mockSettleCreateRequest.mock.invocationCallOrder[0]).toBeLessThan(
+      mockReconnectSSE.mock.invocationCallOrder[0],
+    )
+    expect(mockFailCreating).not.toHaveBeenCalled()
     // Pre-call clears stale data; post-call seeds with the full SessionInfo response.
     expect(mockClearSessionData).toHaveBeenCalledTimes(1)
     expect(mockSeedSessionData).toHaveBeenCalledWith({
@@ -134,8 +163,8 @@ describe('useNewSession', () => {
     })
     expect(mockMergeSessionData).not.toHaveBeenCalled()
     expect(mockNewSession).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) })
-    expect(mockSetContainerId).toHaveBeenCalledWith('c1')
-    expect(mockNotifyContainerChanged).toHaveBeenCalledTimes(1)
+    expect(mockSetAddress).toHaveBeenCalledWith('c1', 's1')
+    expect(mockNotifyAddressChanged).toHaveBeenCalledTimes(1)
     expect(mockReconnectSSE).toHaveBeenCalledTimes(1)
     expect(mockSetSessionContainer).toHaveBeenCalledWith('s1', 'c1')
     expect(mockNavigateToSession).toHaveBeenCalledWith('my-workspace', 's1')
@@ -157,15 +186,15 @@ describe('useNewSession', () => {
 
     expect(ok).toBe(true)
     expect(mockStartCreating).toHaveBeenCalledTimes(1)
-    expect(mockClearCreating).not.toHaveBeenCalled()
-    expect(mockSetContainerId).not.toHaveBeenCalled()
-    expect(mockNotifyContainerChanged).not.toHaveBeenCalled()
+    expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, null)
+    expect(mockSetAddress).not.toHaveBeenCalled()
+    expect(mockNotifyAddressChanged).not.toHaveBeenCalled()
     expect(mockReconnectSSE).not.toHaveBeenCalled()
     expect(mockNavigateToSession).not.toHaveBeenCalled()
     expect(mockFocusChatTab).toHaveBeenCalledTimes(2)
   })
 
-  it('clears creating and surfaces an error on failure', async () => {
+  it('fails its creation and surfaces an error on failure', async () => {
     mockNewSession.mockRejectedValue(new Error('boom'))
 
     const { result } = renderHook(() => useNewSession())
@@ -174,12 +203,54 @@ describe('useNewSession', () => {
 
     expect(ok).toBe(false)
     expect(mockStartCreating).toHaveBeenCalledTimes(1)
-    expect(mockClearCreating).toHaveBeenCalledTimes(1)
+    expect(mockFailCreating).toHaveBeenCalledWith(4)
+    expect(mockSettleCreateRequest).not.toHaveBeenCalled()
     expect(mockSetError).toHaveBeenCalledWith('New session failed')
     expect(mockReconnectSSE).not.toHaveBeenCalled()
     expect(mockNavigateToSession).not.toHaveBeenCalled()
     // focusChatTab called once at start, not again after error
     expect(mockFocusChatTab).toHaveBeenCalledTimes(1)
+  })
+
+  it('puts the session left back on screen when the creation fails', async () => {
+    mockSessionData = { session_id: 'A', name: 'Alpha', model: 'claude-opus-5' }
+    mockNewSession.mockRejectedValue(new Error('boom'))
+    const { result } = renderHook(() => useNewSession())
+
+    await result.current.executeNewSession()
+
+    expect(mockClearSessionData).toHaveBeenCalledTimes(1)
+    expect(mockSeedSessionData).toHaveBeenCalledWith({
+      session_id: 'A',
+      name: 'Alpha',
+      model: 'claude-opus-5',
+    })
+    expect(mockRefreshSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails its creation, without an error, when the request is aborted', async () => {
+    const abort = new Error('aborted')
+    abort.name = 'AbortError'
+    mockNewSession.mockRejectedValue(abort)
+
+    const { result } = renderHook(() => useNewSession())
+
+    const ok = await result.current.executeNewSession()
+
+    expect(ok).toBe(false)
+    expect(mockFailCreating).toHaveBeenCalledWith(4)
+    expect(mockSetError).not.toHaveBeenCalled()
+  })
+
+  it('fails the creation it cancels', async () => {
+    mockNewSession.mockImplementation(() => new Promise(() => {}))
+
+    const { result } = renderHook(() => useNewSession())
+
+    void result.current.executeNewSession()
+    result.current.cancelCreation()
+
+    expect(mockFailCreating).toHaveBeenCalledWith(4)
   })
 
   it('returns a stable executeNewSession across renders', () => {
@@ -234,7 +305,7 @@ describe('useNewSession', () => {
       await result.current.executeNewSessionInNewTab()
 
       expect(mockStartCreating).not.toHaveBeenCalled()
-      expect(mockClearCreating).not.toHaveBeenCalled()
+      expect(mockFailCreating).not.toHaveBeenCalled()
     })
 
     it('drives the local in-tab spinner via isCreatingInNewTab', async () => {

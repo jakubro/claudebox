@@ -1,5 +1,7 @@
 """Profile session-start hook resolution and execution."""
 
+from __future__ import annotations
+
 import asyncio
 import stat
 import subprocess
@@ -17,7 +19,7 @@ def _write_hook(path: Path, body: str) -> Path:
     """Write an executable hook script and return its path."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body)
+    path.write_text(body, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IRWXU)
 
     return path

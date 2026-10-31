@@ -1,10 +1,11 @@
 /** Render a horizontal row of attachment thumbnails with fullscreen zoom on click. */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { containerUrl } from '../../../../../../../api/apiClient'
+import { containerUrl, sessionPath } from '../../../../../../../api/apiClient'
 import ZoomOverlay from '../../../../../../../components/ZoomOverlay.jsx'
 import { formatFileSize } from '../../../../../../../utils/formatters'
+import { TurnContext } from '../../../TurnContext'
 
 /**
  * Supports two shapes: pending messages `{name, type, data}` (base64, rendered as a data URL)
@@ -13,6 +14,8 @@ import { formatFileSize } from '../../../../../../../utils/formatters'
  */
 export default function AttachmentThumbnails({ attachments }) {
   const [zoomedSrc, setZoomedSrc] = useState(null)
+  // A pending message renders outside any turn; its files are always the conversation's own.
+  const turnSessionId = useContext(TurnContext)?.sessionId ?? undefined
 
   const handleZoomClose = useCallback(() => setZoomedSrc(null), [])
 
@@ -42,7 +45,7 @@ export default function AttachmentThumbnails({ attachments }) {
   /** Resolve image source URL for an attachment. */
   function imgSrc(a) {
     return a.filename
-      ? containerUrl(`/api/sessions/current/attachments/${a.filename}`)
+      ? containerUrl(sessionPath(`/api/sessions/current/attachments/${a.filename}`, turnSessionId))
       : `data:${a.type};base64,${a.data}`
   }
 

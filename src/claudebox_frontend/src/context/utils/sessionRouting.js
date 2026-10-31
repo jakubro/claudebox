@@ -5,10 +5,11 @@
  *
  * Session route may carry an optional `/turns/<role>-<turnId>` segment (`u` = user, `a` =
  * assistant) that serializes a paused-at-turn reading position; absence means "at bottom,
- * autoscroll engaged".
+ * autoscroll engaged". An assistant segment may name one bookmarked part after it,
+ * `/turns/a-<turnId>/<p-...|tool-...>`.
  *
  * @param {string} hash - Window location hash.
- * @returns {{ workspaceId: string, sessionId: string | null, boardId: string | null, turnId: string | null, messageType: 'user' | 'assistant' | null, density: 'comfortable' | 'terse', sendMessages: string[] } | null}
+ * @returns {{ workspaceId: string, sessionId: string | null, boardId: string | null, turnId: string | null, messageType: 'user' | 'assistant' | null, target: string | null, density: 'comfortable' | 'terse', sendMessages: string[] } | null}
  */
 export function parseHash(hash) {
   const hashPath = hash.split('?')[0]
@@ -25,14 +26,15 @@ export function parseHash(hash) {
       boardId: boardMatch[2],
       turnId: null,
       messageType: null,
+      target: null,
       density,
       sendMessages: [],
     }
   }
 
-  // Session route: #/workspaces/{id}[/sessions/{sessionId}[/turns/(u|a)-{turnId}]]
+  // Session route: #/workspaces/{id}[/sessions/{sessionId}[/turns/(u|a)-{turnId}[/{part}]]]
   const match = hashPath.match(
-    /^#\/workspaces\/([a-zA-Z0-9_.-]+)(?:\/sessions\/([a-zA-Z0-9_-]+)(?:\/turns\/(u|a)-([a-zA-Z0-9_-]+))?)?$/,
+    /^#\/workspaces\/([a-zA-Z0-9_.-]+)(?:\/sessions\/([a-zA-Z0-9_-]+)(?:\/turns\/(u|a)-([a-zA-Z0-9_-]+)(?:\/((?:p|tool)-[a-zA-Z0-9_-]+))?)?)?$/,
   )
   if (!match) {
     return null
@@ -43,6 +45,7 @@ export function parseHash(hash) {
     boardId: null,
     turnId: match[4] ?? null,
     messageType: match[3] === 'u' ? 'user' : match[3] === 'a' ? 'assistant' : null,
+    target: match[3] === 'a' ? (match[5] ?? null) : null,
     density,
     // Carried first-message text - only the workspace-only form honors it (never session/board).
     sendMessages: match[2] ? [] : params.getAll('send'),
@@ -50,17 +53,19 @@ export function parseHash(hash) {
 }
 
 /**
- * Build the `/turns/<role>-<turnId>` segment for a URL; empty string when either input is
- * missing - a bare session URL means "at bottom, autoscroll engaged".
+ * Build the `/turns/<role>-<turnId>[/<part>]` segment for a URL; empty string when either of the
+ * first two is missing - a bare session URL means "at bottom, autoscroll engaged".
  *
  * @param {string | null | undefined} turnId
  * @param {'user' | 'assistant' | null | undefined} messageType
+ * @param {string | null} [target] - A part or tool-call tail; kept only on an assistant segment
  * @returns {string}
  */
-export function buildTurnSegment(turnId, messageType) {
+export function buildTurnSegment(turnId, messageType, target = null) {
   if (!(turnId && messageType)) {
     return ''
   }
   const rolePrefix = messageType === 'user' ? 'u' : 'a'
-  return `/turns/${rolePrefix}-${turnId}`
+  const part = target && messageType !== 'user' ? `/${target}` : ''
+  return `/turns/${rolePrefix}-${turnId}${part}`
 }

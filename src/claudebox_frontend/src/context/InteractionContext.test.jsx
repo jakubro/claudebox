@@ -13,10 +13,16 @@ vi.mock('./EventsContext', () => ({
   useEvents: () => mockEventsData,
 }))
 
+let mockRouting = { activeSessionId: 'A' }
+vi.mock('./SessionRoutingContext', () => ({
+  useSessionRouting: () => mockRouting,
+}))
+
 describe('useInteraction', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mockEventsData = { events: [], isResponding: false }
+    mockRouting = { activeSessionId: 'A' }
   })
 
   afterEach(() => {
@@ -24,9 +30,56 @@ describe('useInteraction', () => {
   })
 
   const wrapper = ({ children }) => <InteractionProvider>{children}</InteractionProvider>
+  const renderInteraction = () => renderHook(() => useInteraction(), { wrapper })
+
+  it('reads flags raised in one session as idle in another, and live again back in it', () => {
+    const { result, rerender } = renderInteraction()
+    act(() => {
+      result.current.startSubmitting()
+      result.current.submitSucceeded()
+    })
+    expect(result.current.isAwaitingResponse).toBe(true)
+
+    mockRouting = { activeSessionId: 'B' }
+    rerender()
+    expect(result.current.isAwaitingResponse).toBe(false)
+    expect(result.current.isSubmitting).toBe(false)
+
+    mockRouting = { activeSessionId: 'A' }
+    rerender()
+    expect(result.current.isAwaitingResponse).toBe(true)
+  })
+
+  it('reads an interrupt started in one session as none in another', () => {
+    const { result, rerender } = renderInteraction()
+    act(() => {
+      result.current.startInterrupt()
+    })
+
+    mockRouting = { activeSessionId: 'B' }
+    rerender()
+
+    expect(result.current.interruptStatus).toBe(null)
+  })
+
+  it('shows a hint for as long as a transient error, without touching the submit state', () => {
+    const { result } = renderInteraction()
+    act(() => {
+      result.current.startSubmitting()
+      result.current.showHint('Wait for the session to load')
+    })
+
+    expect(result.current.hintMessage).toBe('Wait for the session to load')
+    expect(result.current.isSubmitting).toBe(true)
+
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(result.current.hintMessage).toBe(null)
+  })
 
   it('startSubmitting() sets isSubmitting=true', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.startSubmitting()
@@ -36,7 +89,7 @@ describe('useInteraction', () => {
   })
 
   it('submitSucceeded() clears isSubmitting, sets isAwaitingResponse', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.startSubmitting()
@@ -53,7 +106,7 @@ describe('useInteraction', () => {
   })
 
   it('submitFailed() clears isSubmitting', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.startSubmitting()
@@ -70,7 +123,7 @@ describe('useInteraction', () => {
   })
 
   it('startInterrupt() sets interruptStatus="stopping"', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.startInterrupt()
@@ -80,7 +133,7 @@ describe('useInteraction', () => {
   })
 
   it('completeInterrupt() sets interruptStatus="stopped"', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.startInterrupt()
@@ -91,7 +144,7 @@ describe('useInteraction', () => {
   })
 
   it('setError() sets error message and clears transient states', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.startSubmitting()
@@ -105,7 +158,7 @@ describe('useInteraction', () => {
   })
 
   it('auto-clears error message after 4 seconds', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     act(() => {
       result.current.setError('Temporary error')
@@ -122,9 +175,10 @@ describe('useInteraction', () => {
 
   it('clears "stopped" status after result event arrives', () => {
     mockEventsData = { events: [], isResponding: true }
-    const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
+    const { result, rerender } = renderInteraction()
 
     act(() => {
+      result.current.startInterrupt()
       result.current.completeInterrupt()
     })
 
@@ -145,9 +199,10 @@ describe('useInteraction', () => {
 
   it('keeps "stopped" status when responses arrive without result event', () => {
     mockEventsData = { events: [], isResponding: false }
-    const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
+    const { result, rerender } = renderInteraction()
 
     act(() => {
+      result.current.startInterrupt()
       result.current.completeInterrupt()
     })
 
@@ -172,12 +227,14 @@ describe('useInteraction', () => {
       const { sendMessage } = await import('../api/chat')
       sendMessage.mockResolvedValueOnce({})
 
-      const { result } = renderHook(() => useInteraction(), { wrapper })
+      const { result } = renderInteraction()
 
+      let outcome
       await act(async () => {
-        await result.current.submitPrompt('hello world')
+        outcome = await result.current.submitPrompt('hello world')
       })
 
+      expect(outcome).toBe(true)
       expect(sendMessage).toHaveBeenCalledWith('hello world')
       expect(result.current.isSubmitting).toBe(false)
       expect(result.current.isAwaitingResponse).toBe(true)
@@ -187,12 +244,14 @@ describe('useInteraction', () => {
       const { sendMessage } = await import('../api/chat')
       sendMessage.mockRejectedValueOnce(new Error('network error'))
 
-      const { result } = renderHook(() => useInteraction(), { wrapper })
+      const { result } = renderInteraction()
 
+      let outcome
       await act(async () => {
-        await result.current.submitPrompt('hello world')
+        outcome = await result.current.submitPrompt('hello world')
       })
 
+      expect(outcome).toBe(false)
       expect(result.current.isSubmitting).toBe(false)
       expect(result.current.isAwaitingResponse).toBe(false)
       expect(result.current.errorMessage).toBe('Send failed')
@@ -202,7 +261,7 @@ describe('useInteraction', () => {
       const { sendMessage } = await import('../api/chat')
       sendMessage.mockClear()
 
-      const { result } = renderHook(() => useInteraction(), { wrapper })
+      const { result } = renderInteraction()
 
       await act(async () => {
         await result.current.submitPrompt('')
@@ -229,7 +288,7 @@ describe('useInteraction', () => {
         }),
       )
 
-      const { result } = renderHook(() => useInteraction(), { wrapper })
+      const { result } = renderInteraction()
 
       let submitPromise
       act(() => {
@@ -248,17 +307,20 @@ describe('useInteraction', () => {
   })
 
   describe('isAwaitingResponse clearing', () => {
-    it('clears isAwaitingResponse when assistant event arrives after submission timestamp', () => {
-      vi.setSystemTime(new Date(1000))
-
-      const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
-
+    const renderAwaitingResponse = submittedAt => {
+      vi.setSystemTime(new Date(submittedAt))
+      const view = renderInteraction()
       act(() => {
-        result.current.startSubmitting()
-        result.current.submitSucceeded()
+        view.result.current.startSubmitting()
+        view.result.current.submitSucceeded()
       })
+      expect(view.result.current.isAwaitingResponse).toBe(true)
 
-      expect(result.current.isAwaitingResponse).toBe(true)
+      return view
+    }
+
+    it('clears isAwaitingResponse when assistant event arrives after submission timestamp', () => {
+      const { result, rerender } = renderAwaitingResponse(1000)
 
       mockEventsData = {
         events: [{ type: 'assistant', content: 'response', timestamp: 2000 }],
@@ -270,16 +332,7 @@ describe('useInteraction', () => {
     })
 
     it('clears isAwaitingResponse when result event arrives after submission timestamp', () => {
-      vi.setSystemTime(new Date(1000))
-
-      const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
-
-      act(() => {
-        result.current.startSubmitting()
-        result.current.submitSucceeded()
-      })
-
-      expect(result.current.isAwaitingResponse).toBe(true)
+      const { result, rerender } = renderAwaitingResponse(1000)
 
       mockEventsData = {
         events: [{ type: 'result', success: true, timestamp: 2000 }],
@@ -291,16 +344,7 @@ describe('useInteraction', () => {
     })
 
     it('keeps isAwaitingResponse when event timestamp is before submission', () => {
-      vi.setSystemTime(new Date(5000))
-
-      const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
-
-      act(() => {
-        result.current.startSubmitting()
-        result.current.submitSucceeded()
-      })
-
-      expect(result.current.isAwaitingResponse).toBe(true)
+      const { result, rerender } = renderAwaitingResponse(5000)
 
       mockEventsData = {
         events: [{ type: 'assistant', content: 'old', timestamp: 1000 }],
@@ -314,7 +358,7 @@ describe('useInteraction', () => {
     it('clears isAwaitingResponse when SSE arrives before POST resolves (fast backend)', () => {
       vi.setSystemTime(new Date(1000))
 
-      const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
+      const { result, rerender } = renderInteraction()
 
       // startSubmitting captures timestamp at T=1000
       act(() => {
@@ -339,14 +383,7 @@ describe('useInteraction', () => {
     })
 
     it('keeps isAwaitingResponse for non-assistant/non-result events', () => {
-      vi.setSystemTime(new Date(1000))
-
-      const { result, rerender } = renderHook(() => useInteraction(), { wrapper })
-
-      act(() => {
-        result.current.startSubmitting()
-        result.current.submitSucceeded()
-      })
+      const { result, rerender } = renderAwaitingResponse(1000)
 
       mockEventsData = {
         events: [{ type: 'user', content: 'echo', timestamp: 2000 }],
@@ -359,7 +396,7 @@ describe('useInteraction', () => {
   })
 
   it('initial state has all flags false/null', () => {
-    const { result } = renderHook(() => useInteraction(), { wrapper })
+    const { result } = renderInteraction()
 
     expect(result.current.isSubmitting).toBe(false)
     expect(result.current.isAwaitingResponse).toBe(false)

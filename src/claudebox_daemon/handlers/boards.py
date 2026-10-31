@@ -1,5 +1,7 @@
 """Board CRUD - workspace-scoped HTTP adapters for board management."""
 
+from __future__ import annotations
+
 import time
 
 from fastapi import APIRouter

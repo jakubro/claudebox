@@ -3,7 +3,9 @@
 import { expect, test } from '@playwright/test'
 import {
   assertColor,
+  openSession,
   openSessionsPanel,
+  openSessionWithAPI,
   openTodosPanel,
   resolveOpsPayload,
   toggleSessionsPanel,
@@ -13,6 +15,39 @@ import {
 } from '../helpers.js'
 import { DEFAULT_SESSION_URL, loadFixture, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
+
+async function serveUiState(page, session) {
+  await page.route(/\/ui-state/, async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { global: {}, session } })
+    } else {
+      await route.fulfill({ status: 200, json: { status: 'ok' } })
+    }
+  })
+}
+
+async function recordUiStatePatches(page, entry = request => request.postDataJSON()) {
+  const patches = []
+  await page.route(/\/ui-state/, async route => {
+    if (route.request().method() === 'PATCH') {
+      patches.push(await entry(route.request()))
+      await route.fulfill({ status: 200, json: { status: 'ok' } })
+    } else if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { global: {}, session: {} } })
+    }
+  })
+
+  return patches
+}
+
+async function captureUiStateSave(page) {
+  const saved = { payload: null }
+  await recordUiStatePatches(page, async request => {
+    saved.payload = await request.postDataJSON()
+  })
+
+  return saved
+}
 
 test.describe('Layout', () => {
   test.beforeEach(async ({ page }) => {
@@ -62,7 +97,7 @@ test.describe('Layout', () => {
     })
 
     // SPEC: layout:right-strip
-    test('right strip lists todos->stash->tasks->usage->mcp->commands->help top-to-bottom', async ({
+    test('right strip lists todos->stash->tasks->crons->usage->mcp->commands->help top-to-bottom', async ({
       page,
     }) => {
       await page.goto(DEFAULT_SESSION_URL)
@@ -72,6 +107,7 @@ test.describe('Layout', () => {
         'icon-todos',
         'icon-stash',
         'icon-tasks',
+        'icon-crons',
         'icon-usage',
         'icon-mcp',
         'icon-commands',
@@ -101,6 +137,7 @@ test.describe('Layout', () => {
         'icon-todos': 'Todos (Alt+2)',
         'icon-stash': 'Stash (Alt+3)',
         'icon-tasks': 'Tasks (Alt+4)',
+        'icon-crons': 'Crons',
         'icon-bookmarks': 'Bookmarks (Alt+5)',
         'icon-boards': 'Boards (Alt+6)',
         'icon-usage': 'Usage (Alt+7)',
@@ -168,13 +205,14 @@ test.describe('Layout', () => {
     })
 
     // SPEC: layout:default-right-panels
-    test('Todos, Stash, and Tasks panels open by default on right', async ({ page }) => {
+    test('Todos, Stash, Tasks and Crons panels open by default on right', async ({ page }) => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-tasks"]')).toBeVisible()
+      await expect(page.locator('[data-testid="panel-crons"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
 
@@ -269,7 +307,7 @@ test.describe('Layout', () => {
       await waitForAppReady(page)
 
       const modelEl = page.locator('[data-testid="footer-model"]')
-      // Fixture's model id claude-sonnet-5 maps to the display name "Sonnet".
+      // Fixture's model id claude-sonnet-5-5 maps to the display name "Sonnet 5.5".
       await expect(modelEl).toContainText('Sonnet')
       await expect(modelEl.locator('.chevron, svg, [data-icon]').first()).toBeVisible()
     })
@@ -321,9 +359,7 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const modelEl = page.locator('[data-testid="footer-model"]')
       await expect(modelEl).toContainText('-')
@@ -383,11 +419,12 @@ test.describe('Layout', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      // Right side defaults are Todos, Stash, Tasks; Usage and MCP are hidden by default.
+      // Right side defaults are Todos, Stash, Tasks, Crons; Usage and MCP are hidden by default.
       const ids = [
         { sel: '[data-testid="panel-todos"]', name: 'todos' },
         { sel: '[data-testid="stash-empty"]', name: 'stash' },
         { sel: '[data-testid="panel-tasks"]', name: 'tasks' },
+        { sel: '[data-testid="panel-crons"]', name: 'crons' },
       ]
       const tops = []
       for (const { sel, name } of ids) {
@@ -446,19 +483,9 @@ test.describe('Layout', () => {
   test.describe('Layout Persistence', () => {
     // SPEC: layout:save
     test('layout saved after panel toggle', async ({ page }) => {
-      const patchCalls = []
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'PATCH') {
-          patchCalls.push(await route.request().postDataJSON())
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        } else if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        }
-      })
+      const patchCalls = await recordUiStatePatches(page)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -469,19 +496,12 @@ test.describe('Layout', () => {
 
     // SPEC: layout:save
     test('layout debounced on rapid toggles', async ({ page }) => {
-      const patchCalls = []
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'PATCH') {
-          patchCalls.push({ time: Date.now(), data: await route.request().postDataJSON() })
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        } else if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        }
-      })
+      const patchCalls = await recordUiStatePatches(page, async request => ({
+        time: Date.now(),
+        data: await request.postDataJSON(),
+      }))
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await toggleSessionsPanel(page)
       await toggleSessionsPanel(page)
@@ -495,26 +515,16 @@ test.describe('Layout', () => {
 
     // SPEC: layout:save-content
     test('payload includes layout JSON', async ({ page }) => {
-      let savedPayload = null
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'PATCH') {
-          savedPayload = await route.request().postDataJSON()
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        } else if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        }
-      })
+      const saved = await captureUiStateSave(page)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
-      await expect.poll(() => savedPayload).toBeTruthy()
+      await expect.poll(() => saved.payload).toBeTruthy()
 
       // The payload is operation-based; resolve it to a nested object before asserting.
-      const resolved = resolveOpsPayload(savedPayload)
+      const resolved = resolveOpsPayload(saved.payload)
       expect(resolved).toHaveProperty('session.layout')
       expect(resolved).toHaveProperty('session.panelGroups')
       expect(resolved.session.panelGroups).toHaveProperty('left')
@@ -523,26 +533,30 @@ test.describe('Layout', () => {
 
     // SPEC: layout:save-content
     test('payload includes saved panel widths', async ({ page }) => {
-      let savedPayload = null
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'PATCH') {
-          savedPayload = await route.request().postDataJSON()
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        } else if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        }
-      })
+      const saved = await captureUiStateSave(page)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
-      await expect.poll(() => savedPayload).toBeTruthy()
+      await expect.poll(() => saved.payload).toBeTruthy()
 
       // Right panel is open by default, so its width should be in the initial save.
-      const resolved = resolveOpsPayload(savedPayload)
+      const resolved = resolveOpsPayload(saved.payload)
       expect(resolved).toHaveProperty('session.panelGroups.right.width')
       expect(resolved.session.panelGroups.right.width).toBeGreaterThan(0)
+    })
+
+    // SPEC: layout:save
+    test('a session that attaches after the layout settles still saves it', async ({ page }) => {
+      const saved = await captureUiStateSave(page)
+      await page.route(/\/api\/sessions\/current\?/, async route => {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        await route.fallback()
+      })
+
+      await openSession(page)
+
+      await expect.poll(() => saved.payload).toBeTruthy()
+      expect(resolveOpsPayload(saved.payload)).toHaveProperty('session.panelGroups.right.width')
     })
 
     // SPEC: layout:restore
@@ -551,17 +565,9 @@ test.describe('Layout', () => {
       const savedSession = loadFixture('layouts/sessions-open.json')
       savedSession.layout.panels.main.title = '12345678'
 
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: savedSession } })
-        } else {
-          await route.fulfill({ status: 200, json: { global: {}, session: {} } })
-        }
-      })
+      await serveUiState(page, savedSession)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       // Fixture's left.order includes sessions.
       const sessionsPanel = page.locator('[data-testid="panel-sessions"]')
@@ -581,17 +587,9 @@ test.describe('Layout', () => {
 
     // SPEC: layout:restore
     test('falls back to default layout when server returns empty', async ({ page }) => {
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        } else {
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        }
-      })
+      await serveUiState(page, {})
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
@@ -607,23 +605,56 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
+    })
+
+    // SPEC: layout:restore
+    test('opening a session with its own layout builds the chat panel once', async ({ page }) => {
+      const sessionLayout = loadFixture('layouts/session-open-panel.json')
+      const inheritedLayout = loadFixture('layouts/sessions-open-wide.json')
+      await page.route(/\/ui-state/, async route => {
+        if (route.request().method() === 'GET') {
+          const scoped = new URL(route.request().url()).searchParams.has('session_id')
+          await route.fulfill({
+            json: { global: {}, session: scoped ? sessionLayout : inheritedLayout },
+          })
+        } else {
+          await route.fulfill({ status: 200, json: { global: {}, session: {} } })
+        }
+      })
+      await page.addInitScript(() => {
+        window.__chatMounts = 0
+        new MutationObserver(records => {
+          for (const record of records) {
+            for (const node of record.addedNodes) {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                window.__chatMounts += node.matches('.chat-content-area')
+                  ? 1
+                  : node.querySelectorAll('.chat-content-area').length
+              }
+            }
+          }
+        }).observe(document, { childList: true, subtree: true })
+      })
+
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      // The session's own layout, not the inherited one, has no sessions panel.
+      await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
+      await expect(page.locator('[data-testid="panel-sessions"]')).toHaveCount(0)
+      expect(await page.evaluate(() => window.__chatMounts)).toBe(1)
     })
   })
 
   test.describe('Browser Tab Title', () => {
     // SPEC: notify:title-format
     test('title shows session name and workspace', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       // Expected format: "[Session Name] | [Workspace] | Claudebox"
       const title = await page.title()
@@ -645,9 +676,7 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       // Title updates once session data finishes loading.
       await expect.poll(() => page.title()).toContain('my-project')
@@ -662,10 +691,7 @@ test.describe('Layout', () => {
     // SPEC: layout:maximize-restore
     // SPEC: maximize:header-double-click
     test('double-click on tab triggers maximize toggle', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const getGroupWidth = () =>
         page.locator('[data-testid="stash-empty"]').evaluate(el => {
@@ -691,10 +717,7 @@ test.describe('Layout', () => {
 
     // SPEC: layout:maximize-preserve-sizes
     test('layout preserved after unmaximize', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const getGroupWidth = () =>
         page.locator('[data-testid="stash-empty"]').evaluate(el => {
@@ -719,10 +742,7 @@ test.describe('Layout', () => {
 
     // SPEC: layout:tab-middle-click
     test('middle-click closes panel tab', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
 
@@ -745,9 +765,7 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const newBtn = page.locator('[data-testid="header-new-session-btn"]')
       await expect(newBtn).toBeVisible()
@@ -764,10 +782,7 @@ test.describe('Layout', () => {
     // SPEC: layout:header-new-menu
     // SPEC: session-header:dropdown-not-clipped
     test('"+" button chevron opens dropdown with new session options', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       // The header-prefixed testid disambiguates from SessionsPanel's own similar-chevron button.
       const chevron = page.locator('[data-testid="header-new-session-chevron"]')
@@ -790,10 +805,7 @@ test.describe('Layout', () => {
 
     // SPEC: layout:panel-chat-permanent
     test('Chat panel cannot be closed (always visible)', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
 
@@ -816,19 +828,9 @@ test.describe('Layout', () => {
   test.describe('Width Persistence to Server', () => {
     // SPEC: layout:save-content
     test('panel width included in PATCH payload after toggle', async ({ page }) => {
-      const patchCalls = []
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'PATCH') {
-          patchCalls.push(await route.request().postDataJSON())
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        } else if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        }
-      })
+      const patchCalls = await recordUiStatePatches(page)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await toggleSessionsPanel(page)
       await openSessionsPanel(page)
@@ -847,17 +849,9 @@ test.describe('Layout', () => {
       const savedSession = loadFixture('layouts/session-open-panel.json')
       const savedWidth = savedSession.panelGroups.left.width
 
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: savedSession } })
-        } else {
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        }
-      })
+      await serveUiState(page, savedSession)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -889,9 +883,7 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect.poll(() => page.title()).toContain('My Important Task')
     })
@@ -911,9 +903,7 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -939,10 +929,7 @@ test.describe('Layout', () => {
 
   test.describe('Panel Detachment', () => {
     test('detached panel excluded from sidebar order', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
       await expect(page.locator('[data-testid="stash-empty"]')).toBeVisible()
@@ -987,17 +974,9 @@ test.describe('Layout', () => {
       // ui_state.py's server-side auto-copy returns Session A's saved layout for B's ui-state GET.
       const sessionALayout = loadFixture('layouts/sessions-open.json')
 
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: sessionALayout } })
-        } else {
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        }
-      })
+      await serveUiState(page, sessionALayout)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
@@ -1010,17 +989,9 @@ test.describe('Layout', () => {
       const sessionALayout = loadFixture('layouts/sessions-open-wide.json')
       const savedWidth = sessionALayout.panelGroups.left.width
 
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: sessionALayout } })
-        } else {
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        }
-      })
+      await serveUiState(page, sessionALayout)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
 
@@ -1037,17 +1008,9 @@ test.describe('Layout', () => {
 
     // SPEC: layout:auto-copy
     test('new session without previous layout gets default layout', async ({ page }) => {
-      await page.route(/\/ui-state/, async route => {
-        if (route.request().method() === 'GET') {
-          await route.fulfill({ json: { global: {}, session: {} } })
-        } else {
-          await route.fulfill({ status: 200, json: { status: 'ok' } })
-        }
-      })
+      await serveUiState(page, {})
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect(page.locator('[data-testid="panel-chat"]')).toBeVisible()
       await expect(page.locator('[data-testid="panel-todos"]')).toBeVisible()
@@ -1068,9 +1031,7 @@ test.describe('Layout', () => {
         }
       })
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect.poll(() => patchCalls.length).toBeGreaterThan(0)
 
@@ -1083,10 +1044,7 @@ test.describe('Layout', () => {
   test.describe('Panel Close/Open Behavior', () => {
     // SPEC: layout:panel-close-all
     test('chat expands when all side panels close', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const initialWidth = await page.locator('[data-testid="panel-chat"]').evaluate(el => {
         return el.getBoundingClientRect().width
@@ -1111,10 +1069,7 @@ test.describe('Layout', () => {
 
     // SPEC: layout:panel-reopen-after-all
     test('panel widths restore after closing all', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const todosPanel = page.locator('[data-testid="panel-todos"]')
       await expect(todosPanel).toBeVisible()
@@ -1138,10 +1093,7 @@ test.describe('Layout', () => {
     // SPEC: layout:panel-drag-invalidate
     // MOCK-LIMITED: dockview drag/sash setPointerCapture() isn't simulable - checks sashes exist.
     test('resize sashes exist for panel width adjustment', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const todosPanel = page.locator('[data-testid="panel-todos"]')
       await expect(todosPanel).toBeVisible()
@@ -1176,9 +1128,7 @@ test.describe('Layout', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       // The WorkspaceAccentEffect sets --accent-tab-bg on .dockview-theme-dark
       const accentTabBg = await page
@@ -1191,62 +1141,11 @@ test.describe('Layout', () => {
   })
 
   test.describe('Maximize Toggle', () => {
-    // SPEC: layout:maximize-toggle-open
-    test('toggling an already-open side panel while maximized just unmaximizes', async ({
-      page,
-    }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
-
-      const getSessionsWidth = () =>
-        page.locator('[data-testid="panel-sessions"]').evaluate(el => {
-          const group = el.closest('.dv-view')
-          return group ? group.offsetWidth : 0
-        })
-      const initialWidth = await getSessionsWidth()
-      expect(initialWidth).toBeGreaterThan(0)
-
+    async function maximizeStash(page) {
       const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
       await expect(stashTab).toBeVisible()
       await stashTab.dblclick()
-
       // The width read can throw once the panel unmounts while maximized; treat that as 0.
-      await expect
-        .poll(async () => {
-          try {
-            return await getSessionsWidth()
-          } catch {
-            return 0
-          }
-        })
-        .toBeLessThan(5)
-
-      // Alt+1 toggles sessions.
-      await page.keyboard.press('Alt+1')
-
-      await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
-      await expect.poll(getSessionsWidth).toBeGreaterThan(50)
-    })
-
-    // SPEC: layout:maximize-toggle-closed
-    test('toggling a closed side panel while maximized unmaximizes and opens the panel', async ({
-      page,
-    }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
-
-      const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
-      await expect(stashTab).toBeVisible()
-      await stashTab.dblclick()
-
       await expect
         .poll(async () => {
           try {
@@ -1259,6 +1158,42 @@ test.describe('Layout', () => {
           }
         })
         .toBeLessThan(5)
+    }
+
+    // SPEC: layout:maximize-toggle-open
+    test('toggling an already-open side panel while maximized just unmaximizes', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page)
+
+      await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
+
+      const getSessionsWidth = () =>
+        page.locator('[data-testid="panel-sessions"]').evaluate(el => {
+          const group = el.closest('.dv-view')
+          return group ? group.offsetWidth : 0
+        })
+      const initialWidth = await getSessionsWidth()
+      expect(initialWidth).toBeGreaterThan(0)
+
+      await maximizeStash(page)
+
+      // Alt+1 toggles sessions.
+      await page.keyboard.press('Alt+1')
+
+      await expect(page.locator('[data-testid="panel-sessions"]')).toBeVisible()
+      await expect.poll(getSessionsWidth).toBeGreaterThan(50)
+    })
+
+    // SPEC: layout:maximize-toggle-closed
+    test('toggling a closed side panel while maximized unmaximizes and opens the panel', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page)
+
+      await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
+
+      await maximizeStash(page)
 
       // Alt+8 toggles MCP.
       await page.keyboard.press('Alt+8')
@@ -1273,11 +1208,8 @@ test.describe('Layout', () => {
     test('hovering a closed-panel icon while not maximized fires the floating preview after intent delay', async ({
       page,
     }) => {
-      test.setTimeout(15_000)
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      test.setTimeout(30_000)
+      await openSessionWithAPI(page)
 
       // MCP is hidden by default (SPEC section 1.6) - choose it for the closed-panel case.
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
@@ -1290,28 +1222,11 @@ test.describe('Layout', () => {
     test('logs floating preview width follows max(800, 0.6 × viewport) capped at viewport', async ({
       page,
     }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       // Maximizing lets the floating preview render on hover; side-panel collapse stands in as the
       // maximize signal since dockview's dv-groupview-maximized class isn't always set when mocked.
-      const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
-      await expect(stashTab).toBeVisible()
-      await stashTab.dblclick()
-      await expect
-        .poll(async () => {
-          try {
-            return await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
-              const group = el.closest('.dv-view')
-              return group ? group.offsetWidth : 0
-            })
-          } catch {
-            return 0
-          }
-        })
-        .toBeLessThan(5)
+      await maximizeStash(page)
 
       // Default Desktop Chrome viewport (1280x720): 0.6x1280=768 is below the 800px floor, so the
       // formula resolves to 800; a naive max(300, 0.4x viewport) would give 512, ruled out below.
@@ -1327,30 +1242,12 @@ test.describe('Layout', () => {
     test('clicking the logs icon while maximized unmaximizes and opens the strip', async ({
       page,
     }) => {
-      test.setTimeout(15_000)
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      test.setTimeout(30_000)
+      await openSessionWithAPI(page)
 
       await expect(page.locator('[data-testid="bottom-panel-container"]')).not.toBeVisible()
 
-      const stashTab = page.locator('.icon-tab').filter({ hasText: 'Stash' })
-      await expect(stashTab).toBeVisible()
-      await stashTab.dblclick()
-
-      await expect
-        .poll(async () => {
-          try {
-            return await page.locator('[data-testid="panel-sessions"]').evaluate(el => {
-              const group = el.closest('.dv-view')
-              return group ? group.offsetWidth : 0
-            })
-          } catch {
-            return 0
-          }
-        })
-        .toBeLessThan(5)
+      await maximizeStash(page)
 
       // Press Alt+0 (toggle logs) while maximized - same handler the icon click hits.
       await page.keyboard.press('Alt+0')
@@ -1371,10 +1268,7 @@ test.describe('Layout', () => {
   test.describe('Chat Control Bar Pin', () => {
     // SPEC: chat:control-pin
     test('pin button visible in chat control bar', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       // .panel-control-btn scopes to the chat control bar, not the sessions panel's pin.
       const pinBtn = page.locator('.panel-control-btn[title="Pin session"]')
@@ -1383,10 +1277,7 @@ test.describe('Layout', () => {
 
     // SPEC: chat:control-pin
     test('pin button toggles pressed state on click', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const pinBtn = page.locator('.panel-control-btn[title="Pin session"]')
       await expect(pinBtn).toBeVisible()

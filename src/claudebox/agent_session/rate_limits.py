@@ -1,7 +1,9 @@
 """Per-workspace plan-limit state - written by the container, read by both container and daemon."""
 
+from __future__ import annotations
+
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -112,7 +114,7 @@ class RateLimitStore:
         write_json(self._path, {"version": self.VERSION, "windows": entries})
 
     @contextlib.contextmanager
-    def _locked(self) -> Iterator[None]:
+    def _locked(self) -> Generator[None]:
         lock = FileLock(str(self._path) + ".lock", timeout=FILE_LOCK_TIMEOUT_SECONDS)
 
         with lock:

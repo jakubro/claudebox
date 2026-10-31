@@ -2,7 +2,8 @@
 
 import { Bookmark, ChevronDown, ChevronRight } from 'lucide-react'
 import CopyButton from '../../../../../components/CopyButton.jsx'
-import { formatDuration, formatRelativeTime } from '../../../../../utils/formatters'
+import useRelativeTime from '../../../../../hooks/useRelativeTime'
+import { formatDuration } from '../../../../../utils/formatters'
 
 export default function TurnMeta({
   startTime,
@@ -15,6 +16,8 @@ export default function TurnMeta({
   isBookmarked = false,
   onToggleBookmark,
 }) {
+  const startedAgo = useRelativeTime(startTime)
+
   return (
     <div
       className={`turn-meta ${canCollapse ? 'turn-meta-collapsible' : ''}`}
@@ -52,7 +55,7 @@ export default function TurnMeta({
         {formatDuration(duration ?? 0)}
       </span>
       <span className="turn-timestamp" title={new Date(startTime).toLocaleString()}>
-        {formatRelativeTime(startTime)}
+        {startedAgo}
       </span>
     </div>
   )

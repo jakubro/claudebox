@@ -2,39 +2,34 @@
 
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { flattenSessionTree } from '../../utils/sessionTree'
 import SessionTree from './SessionTree'
 import { SessionTreeProvider } from './SessionTreeContext'
 
-vi.mock('../../../../context/ContainerMapContext', () => ({
-  useContainerMap: () => ({
-    containerMap: {},
-    stoppingSessions: new Set(),
-    setSessionContainer: vi.fn(),
-    removeSessionContainer: vi.fn(),
-    deriveSessionStatus: (_sessionId, _sessions, fallbackContainerId = null) =>
-      fallbackContainerId ? 'running' : 'none',
-  }),
-}))
-
-/** Wrap SessionTree with context provider using given children map and expanded set. */
+/** Render a tree's flattened rows as SessionTree nodes inside the context provider. */
 function renderTree(sessions, { childrenMap, expandedSessions = new Set() } = {}) {
-  const map = childrenMap || new Map()
+  const rows = flattenSessionTree(
+    { rootSessions: sessions, childrenMap: childrenMap || new Map() },
+    expandedSessions,
+  )
   return render(
     <SessionTreeProvider
-      childrenMap={map}
-      expandedSessions={expandedSessions}
       currentSessionId="s1"
       pinnedSessions={new Set()}
+      deriveSessionStatus={() => 'none'}
       onResume={vi.fn()}
       onRename={vi.fn()}
       onTogglePin={vi.fn()}
       onToggleExpanded={vi.fn()}>
-      {sessions.map((s, i) => (
+      {rows.map(row => (
         <SessionTree
-          key={s.session_id}
-          session={s}
-          depth={0}
-          isLastChild={i === sessions.length - 1}
+          key={row.key}
+          session={row.session}
+          depth={row.depth}
+          isLastChild={row.isLastChild}
+          continuations={row.continuations}
+          hasChildren={row.hasChildren}
+          isExpanded={row.isExpanded}
         />
       ))}
     </SessionTreeProvider>,

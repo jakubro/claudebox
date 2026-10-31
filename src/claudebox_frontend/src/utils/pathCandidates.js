@@ -74,7 +74,7 @@ export function extractPathCandidates(text) {
 
     const end = start + word.length
 
-    // Skip XML/HTML tags (e.g. "<command-message>scope</command-message>")
+    // Skip XML/HTML tags (e.g. "<command-message>changelog</command-message>")
     if (word.includes('<') || word.includes('>')) {
       continue
     }

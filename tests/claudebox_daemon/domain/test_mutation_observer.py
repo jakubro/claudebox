@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.mutation_observer - session mutation detection."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -18,6 +20,9 @@ from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 def _make_container(
     status: ContainerStatus = ContainerStatus.RUNNING,
     port=8080,
+    session_id: str | None = None,
+    members: list[str] | None = None,
+    live_session_ids: list[str] | None = None,
 ) -> Container:
     """Create a test container."""
 
@@ -26,6 +31,9 @@ def _make_container(
         backend_id="backend-1",
         port=port,
         status=status,
+        session_id=session_id,
+        members=members or [],
+        live_session_ids=live_session_ids or [],
     )
 
 
@@ -34,6 +42,7 @@ def _make_workspace_service(containers=None, path=None):
 
     svc = MagicMock()
     svc.workspace = RegisteredWorkspace(id="ws1", path=path or Path("/nonexistent"))
+    svc.available = True
     svc.container_service = MagicMock()
     svc.container_service.list_all.return_value = containers or []
     svc.session_service = MagicMock()
@@ -152,6 +161,88 @@ class TestCheckContainer:
         result = await observer._check_container(container)
 
         assert result is False
+
+
+class TestCheckMembers:
+    """A live side thread's own changes raise the signal, as its container's primary's do."""
+
+    @staticmethod
+    def _answers(stamps: dict) -> AsyncMock:
+        def _send(*, endpoint, **_kwargs):
+            response = MagicMock()
+            response.raise_for_status = MagicMock()
+            response.json.return_value = {"updated_at": stamps[endpoint].pop(0)}
+
+            return response
+
+        return AsyncMock(side_effect=_send)
+
+    @pytest.mark.anyio
+    async def test_a_live_members_change_is_a_change(self):
+        container = _make_container(
+            session_id="primary",
+            members=["thread"],
+            live_session_ids=["primary", "thread"],
+        )
+        observer = _make_observer()
+        observer._service.proxy.send = self._answers(
+            {
+                "api/sessions/current": ["p1", "p1"],
+                "api/sessions/current?session_id=thread": ["m1", "m2"],
+            },
+        )
+
+        assert await observer._check_container(container) is False
+        assert await observer._check_container(container) is True
+
+    @pytest.mark.anyio
+    async def test_a_member_no_longer_live_is_not_polled(self):
+        container = _make_container(
+            session_id="primary",
+            members=["gone"],
+            live_session_ids=["primary"],
+        )
+        observer = _make_observer()
+        observer._service.proxy.send = self._answers({"api/sessions/current": ["p1"]})
+
+        await observer._check_container(container)
+
+        endpoints = [
+            call.kwargs["endpoint"] for call in observer._service.proxy.send.await_args_list
+        ]
+        assert endpoints == ["api/sessions/current"]
+
+
+class TestPoll:
+    """_poll iterates every workspace; one raising must not stop it reaching the rest."""
+
+    @pytest.mark.anyio
+    async def test_skips_an_unavailable_workspace(self, tmp_path):
+        ws_svc = _make_workspace_service(path=tmp_path)
+        ws_svc.available = False
+        observer = _make_observer([ws_svc])
+
+        await observer._poll()
+
+        ws_svc.container_service.list_all.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_one_workspaces_failure_does_not_stop_the_others_from_being_checked(
+        self,
+        tmp_path,
+    ):
+        failing = _make_workspace_service(path=tmp_path)
+        failing.container_service.list_all.side_effect = RuntimeError("boom")
+
+        container = _make_container()
+        healthy = _make_workspace_service([container], path=tmp_path)
+
+        observer = _make_observer([failing, healthy])
+        observer._service.proxy.send = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        await observer._poll()  # must not raise
+
+        healthy.container_service.list_all.assert_called_once()
 
 
 # --- start / stop lifecycle ---

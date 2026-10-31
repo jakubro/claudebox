@@ -1,5 +1,7 @@
 """Tests for claudebox.structures - DataClass mixin and deep merge."""
 
+from __future__ import annotations
+
 import dataclasses
 
 import pytest

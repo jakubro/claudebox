@@ -1,17 +1,27 @@
 """Container runtime facade - build, run, and backend delegation."""
 
+from __future__ import annotations
+
+import contextlib
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .backend import ContainerBackend
 from .build import build_image
-from .run import get_container_run_args, run_container
+from .run import get_container_run_args, run_container, substitute_held_ports, tmp_mount_conflicts
 from ..config import Config
+from ..core.logging import get_logger
+from ..temp import TmpRemapBlocked
 
 
 if TYPE_CHECKING:
     from .models import ImageBuildMode
+
+
+# Probe and run share one lock per process, or two spawns both see a fixed host port free.
+_FIXED_PORT_LOCK = threading.Lock()
 
 
 class ContainerRuntime:
@@ -25,7 +35,7 @@ class ContainerRuntime:
         self.verbose = verbose
         self._backend = ContainerBackend(self.config.backend, verbose=verbose)
 
-    def build(self, mode: "ImageBuildMode | None" = None) -> None:
+    def build(self, mode: ImageBuildMode | None = None) -> None:
         """Build the container image."""
 
         build_image(mode, config=self.config, backend=self._backend)
@@ -58,22 +68,42 @@ class ContainerRuntime:
         detach: bool = False,
         config: Config | None = None,
     ) -> str | None:
-        """Build run args and spawn a container; ``config`` overrides the captured config."""
+        """Build run args and spawn a container; ``config`` overrides the captured config.
+        A config mounting anything at or under /tmp is refused: the session would delete it."""
 
-        args = get_container_run_args(
-            config or self.config,
-            verbose=self.verbose,
-            name=name,
-            labels=labels,
-            env=env,
-            network=network,
-            publish_all=publish_all,
-            extra_volumes=extra_volumes,
-            run_args=run_args,
-            cmd_args=cmd_args,
-        )
+        config = config or self.config
 
-        return self._backend.run_container(*args, detach=detach)  # ty: ignore[invalid-return-type]
+        if conflicts := tmp_mount_conflicts(config):
+            raise TmpRemapBlocked(paths=",".join(map(str, conflicts)), reason="mounted")
+
+        fixed_ports = any(int(port) for port in config.ports or {})
+
+        with _FIXED_PORT_LOCK if fixed_ports else contextlib.nullcontext():
+            substitutes = substitute_held_ports(config.ports) if fixed_ports else {}
+
+            for held, free in substitutes.items():
+                get_logger(__name__).warning(
+                    "Fixed host port in use; published on a free one",
+                    host_port=held,
+                    substitute_port=free,
+                    container=name,
+                )
+
+            args = get_container_run_args(
+                config,
+                verbose=self.verbose,
+                name=name,
+                labels=labels,
+                env=env,
+                network=network,
+                publish_all=publish_all,
+                extra_volumes=extra_volumes,
+                port_substitutes=substitutes,
+                run_args=run_args,
+                cmd_args=cmd_args,
+            )
+
+            return self._backend.run_container(*args, detach=detach)  # ty: ignore[invalid-return-type]
 
     def get_host_port(self, backend_id: str, container_port: int) -> int:
         """Get the host port mapped to a container port."""

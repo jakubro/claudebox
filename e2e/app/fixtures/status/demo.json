@@ -3,7 +3,7 @@
   "name": "csv fix",
   "workspace": "/home/user/project",
   "permission_mode": "default",
-  "model": "claude-opus-5",
+  "model": "claude-opus-5-5",
   "num_turns": 0,
   "total_cost_usd": 0,
   "total_duration_ms": 0,

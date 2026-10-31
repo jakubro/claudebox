@@ -8,8 +8,10 @@ import { useSessionRouting } from '../../context/SessionRoutingContext'
 import { useSessionsList } from '../../context/SessionsContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import useCopyFlash from '../../hooks/useCopyFlash'
-import { formatRelativeTime } from '../../utils/formatters'
+import useRelativeTime from '../../hooks/useRelativeTime'
 import { formatSessionDirTooltip } from '../../utils/session'
+import { displayName, isAutoNamed } from '../../utils/sessionName'
+import { DOT_TITLES, SESSION_STATES, sessionDotState } from '../../utils/sessionRow'
 import { capitalize } from '../../utils/strings'
 
 /** Color map for the status indicator dot. */
@@ -33,6 +35,7 @@ function ContainerRow({ container }) {
   const { workspaceId } = useWorkspace()
   const [backendCopied, copyBackend] = useCopyFlash()
   const [sessionDirCopied, copySessionDir] = useCopyFlash()
+  const age = useRelativeTime(container.created_at)
 
   const handleStop = useCallback(() => {
     deleteContainer(container.id).catch(err => console.debug('ContainerRow: stop failed', err))
@@ -52,7 +55,6 @@ function ContainerRow({ container }) {
   }, [workspaceId, container.session_id])
 
   const status = container.status || 'stopped'
-  const dotColor = STATUS_COLORS[status] || STATUS_COLORS.stopped
   const kind = container.labels?.kind || ''
   const isRunning = status === 'running' || status === 'starting'
   const isCurrent = !!container.session_id && container.session_id === activeSessionId
@@ -63,19 +65,36 @@ function ContainerRow({ container }) {
   const session = container.session_id
     ? sessions?.find?.(s => s.session_id === container.session_id)
     : null
-  const sessionName = session?.name || ''
+  const sessionName = displayName(session) || ''
   const sessionDir = session?.session_dir || ''
   const shortSessionId = container.session_id ? container.session_id.slice(0, 8) : ''
+  const sessionState = status === 'running' ? sessionDotState(status, session) : null
+  const dot = SESSION_STATES.includes(sessionState)
+    ? { className: ` container-status-${sessionState}`, title: DOT_TITLES[sessionState] }
+    : {
+        style: { background: STATUS_COLORS[status] || STATUS_COLORS.stopped },
+        title: `Status: ${status}`,
+      }
 
   return (
     <div
       className={`containers-row${isCurrent ? ' containers-row-current' : ''}`}
       data-testid={`container-row-${container.id}`}>
       <span
-        className="containers-status-dot"
-        style={{ background: dotColor }}
-        title={`Status: ${status}`}
+        className={`containers-status-dot${dot.className ?? ''}`}
+        style={dot.style}
+        title={dot.title}
       />
+      <span
+        className={`containers-session-id${sessionDir ? ' containers-session-id-clickable' : ''}`}
+        title={sessionDir ? formatSessionDirTooltip(sessionDir) : undefined}
+        onClick={sessionDir ? () => copySessionDir(sessionDir) : undefined}
+        style={{ cursor: sessionDir ? 'pointer' : undefined }}>
+        <span style={{ visibility: sessionDirCopied ? 'hidden' : 'visible' }}>
+          {shortSessionId}
+        </span>
+        {sessionDirCopied && <span className="containers-session-id-copied">Copied!</span>}
+      </span>
       <span
         className={`containers-id${displayId ? ' containers-id-clickable' : ''}`}
         title={displayId ? `Container — ${displayId}` : undefined}
@@ -87,23 +106,13 @@ function ContainerRow({ container }) {
         {backendCopied && <span className="containers-id-copied">Copied!</span>}
       </span>
       <span
-        className={`containers-session-id${sessionDir ? ' containers-session-id-clickable' : ''}`}
-        title={sessionDir ? formatSessionDirTooltip(sessionDir) : undefined}
-        onClick={sessionDir ? () => copySessionDir(sessionDir) : undefined}
-        style={{ cursor: sessionDir ? 'pointer' : undefined }}>
-        <span style={{ visibility: sessionDirCopied ? 'hidden' : 'visible' }}>
-          {shortSessionId}
-        </span>
-        {sessionDirCopied && <span className="containers-session-id-copied">Copied!</span>}
-      </span>
-      <span className="containers-session-name" title={sessionName || undefined}>
+        className={`containers-session-name${isAutoNamed(session) ? ' auto-named' : ''}`}
+        title={sessionName || undefined}>
         {sessionName}
       </span>
       <span className={`containers-state containers-state-${status}`}>{capitalize(status)}</span>
       <span className="containers-kind">{capitalize(kind)}</span>
-      <span className="containers-age">
-        {container.created_at ? formatRelativeTime(container.created_at) : '-'}
-      </span>
+      <span className="containers-age">{age ?? '-'}</span>
       <div className="containers-actions">
         {isRunning && (
           <button

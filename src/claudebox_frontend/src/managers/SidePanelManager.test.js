@@ -29,6 +29,12 @@ describe('SidePanelManager', () => {
   let mockApi
   let manager
 
+  function emptyRightSide(width) {
+    manager.state.right.width = width
+    manager.state.right.order = []
+    mockApi.getPanel.mockReturnValue(null)
+  }
+
   beforeEach(() => {
     mockApi = createMockApi()
     manager = new SidePanelManager(mockApi, CONFIG)
@@ -94,9 +100,7 @@ describe('SidePanelManager', () => {
     })
 
     it('restores width after toggle via requestAnimationFrame', () => {
-      mockApi.getPanel.mockReturnValue(null)
-      manager.state.right.width = 250
-      manager.state.right.order = []
+      emptyRightSide(250)
 
       manager.toggle('todos')
 
@@ -107,9 +111,7 @@ describe('SidePanelManager', () => {
     })
 
     it('preserves width when reopening after all panels on side closed', () => {
-      manager.state.right.width = 300
-      manager.state.right.order = []
-      mockApi.getPanel.mockReturnValue(null)
+      emptyRightSide(300)
 
       manager.toggle('todos')
 
@@ -121,9 +123,7 @@ describe('SidePanelManager', () => {
     })
 
     it('uses default width when no saved width', () => {
-      manager.state.right.width = null
-      manager.state.right.order = []
-      mockApi.getPanel.mockReturnValue(null)
+      emptyRightSide(null)
       global.innerWidth = 1000
 
       manager.toggle('todos')
@@ -574,9 +574,8 @@ describe('SidePanelManager', () => {
 
     describe('width preservation edge cases', () => {
       it('width 0 from closed group is not used (falls back to default)', () => {
-        manager.state.right.width = 0 // Edge case: width became 0
-        manager.state.right.order = []
-        mockApi.getPanel.mockReturnValue(null)
+        // Edge case: width became 0
+        emptyRightSide(0)
         global.innerWidth = 1000
 
         manager.toggle('todos')

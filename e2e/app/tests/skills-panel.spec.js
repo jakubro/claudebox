@@ -1,9 +1,29 @@
 /** E2E tests for Skills panel including tabs, filtering, counts, and empty/resume states. */
 
 import { expect, test } from '@playwright/test'
-import { openSkillsPanel, waitForAppReady } from '../helpers.js'
+import { openResumingSession, openSkillsPanel, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
+
+async function mockCommands(page, commands) {
+  await mockAPI(page, {
+    handlers: {
+      getSessionStatus: async route => {
+        await route.fulfill({
+          json: { session_id: 'test-001', workspace: '/home/user/project', commands },
+        })
+      },
+    },
+  })
+}
+
+async function openSkills(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  await openSkillsPanel(page)
+
+  return page.locator('[data-testid="panel-skills"]')
+}
 
 test.describe('Skills Panel', () => {
   test.beforeEach(async ({ page }) => {
@@ -11,14 +31,9 @@ test.describe('Skills Panel', () => {
   })
 
   // SPEC: layout:panel-order-right
-  // SPEC: tool:skill-content-folds
-  // SPEC: tool:skill-content-tool-result-intervening
   test('opens via icon click in right icon bar', async ({ page }) => {
     await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
+    await openSkills(page)
     const commandsPanel = page.locator('[data-testid="panel-skills"]')
     await expect(commandsPanel).toBeVisible()
 
@@ -60,12 +75,7 @@ test.describe('Skills Panel', () => {
   // SPEC: panel-command:tabs
   test('shows three tabs: Custom, MCP, All', async ({ page }) => {
     await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     await expect(panel.getByRole('button', { name: /Custom/ })).toBeVisible()
     await expect(panel.getByRole('button', { name: /^MCP/ })).toBeVisible()
     await expect(panel.getByRole('button', { name: /^All/ })).toBeVisible()
@@ -74,41 +84,19 @@ test.describe('Skills Panel', () => {
   // SPEC: panel-command:tabs (default tab)
   test('defaults to Custom tab', async ({ page }) => {
     await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     const customBtn = panel.getByRole('button', { name: /Custom/ })
     await expect(customBtn).toHaveClass(/active/)
   })
 
   // SPEC: panel-command:custom-filter
   test('Custom tab shows non-MCP commands only', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-001',
-              workspace: '/home/user/project',
-              commands: {
-                custom: [{ name: 'deploy' }, { name: 'test' }],
-                mcp: [{ name: 'mcp__slack__send' }],
-                builtin: [],
-              },
-            },
-          })
-        },
-      },
+    await mockCommands(page, {
+      custom: [{ name: 'deploy' }, { name: 'test' }],
+      mcp: [{ name: 'mcp__slack__send' }],
+      builtin: [],
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     await expect(panel.getByText('/deploy')).toBeVisible()
     await expect(panel.getByText('/test')).toBeVisible()
     await expect(panel.getByText('/mcp__slack__send')).not.toBeVisible()
@@ -116,29 +104,12 @@ test.describe('Skills Panel', () => {
 
   // SPEC: panel-command:mcp-filter
   test('MCP tab shows only mcp__ commands', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-001',
-              workspace: '/home/user/project',
-              commands: {
-                custom: [{ name: 'deploy' }],
-                mcp: [{ name: 'mcp__slack__send' }, { name: 'mcp__github__pr' }],
-                builtin: [],
-              },
-            },
-          })
-        },
-      },
+    await mockCommands(page, {
+      custom: [{ name: 'deploy' }],
+      mcp: [{ name: 'mcp__slack__send' }, { name: 'mcp__github__pr' }],
+      builtin: [],
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     await panel.getByRole('button', { name: /^MCP/ }).click()
 
     await expect(panel.getByText('/mcp__slack__send')).toBeVisible()
@@ -148,29 +119,12 @@ test.describe('Skills Panel', () => {
 
   // SPEC: panel-command:all-filter
   test('All tab shows all commands', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-001',
-              workspace: '/home/user/project',
-              commands: {
-                custom: [{ name: 'deploy' }],
-                mcp: [{ name: 'mcp__slack__send' }],
-                builtin: [],
-              },
-            },
-          })
-        },
-      },
+    await mockCommands(page, {
+      custom: [{ name: 'deploy' }],
+      mcp: [{ name: 'mcp__slack__send' }],
+      builtin: [],
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     await panel.getByRole('button', { name: /^All/ }).click()
 
     await expect(panel.getByText('/deploy')).toBeVisible()
@@ -179,29 +133,12 @@ test.describe('Skills Panel', () => {
 
   // SPEC: panel-command:tab-counts
   test('tab badges show count per category', async ({ page }) => {
-    await mockAPI(page, {
-      handlers: {
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: {
-              session_id: 'test-001',
-              workspace: '/home/user/project',
-              commands: {
-                custom: [{ name: 'deploy' }, { name: 'test' }],
-                mcp: [{ name: 'mcp__slack__send' }],
-                builtin: [],
-              },
-            },
-          })
-        },
-      },
+    await mockCommands(page, {
+      custom: [{ name: 'deploy' }, { name: 'test' }],
+      mcp: [{ name: 'mcp__slack__send' }],
+      builtin: [],
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     await expect(panel.getByRole('button', { name: /Custom.*2/ })).toBeVisible()
     await expect(panel.getByRole('button', { name: /MCP.*1/ })).toBeVisible()
     await expect(panel.getByRole('button', { name: /All.*3/ })).toBeVisible()
@@ -222,12 +159,7 @@ test.describe('Skills Panel', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
-
-    const panel = page.locator('[data-testid="panel-skills"]')
+    const panel = await openSkills(page)
     await expect(panel.getByText('/compact')).toBeVisible()
   })
 
@@ -246,10 +178,7 @@ test.describe('Skills Panel', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openSkillsPanel(page)
+    await openSkills(page)
 
     await expect(page.getByText('No skills')).toBeVisible()
   })
@@ -258,11 +187,7 @@ test.describe('Skills Panel', () => {
   test('shows "Resuming..." during replay', async ({ page }) => {
     await mockAPI(page)
     // Fixture triggers isReplaying (replay_started without replay_ended).
-    await mockSSE(page, 'events/resuming.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-
-    // Footer is an app-ready indicator that doesn't depend on chat input.
-    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+    await openResumingSession(page)
 
     await page.locator('[data-testid="icon-commands"]').click()
 

@@ -7,6 +7,8 @@ Returns Skill metadata only (per `catalogs.Skill`); `langgraph_tools/skill.py` o
 the source file at invoke time to project the body as a tool result.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from ruamel.yaml import YAML

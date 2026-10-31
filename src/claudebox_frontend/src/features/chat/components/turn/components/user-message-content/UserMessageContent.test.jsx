@@ -19,6 +19,15 @@ vi.mock('../../../../../../hooks/usePathResolution', () => ({
   default: () => mockResolvedPaths.current,
 }))
 
+async function openPhotoZoom() {
+  const user = userEvent.setup()
+  const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
+  render(<UserMessageContent message="See this" attachments={attachments} />)
+  await user.click(screen.getByAltText('photo.png'))
+
+  return user
+}
+
 describe('UserMessageContent', () => {
   it('renders plain text message', () => {
     render(<UserMessageContent message="Hello world" />)
@@ -251,22 +260,14 @@ describe('UserMessageContent', () => {
 
   describe('attachment zoom', () => {
     it('opens zoom overlay on image click', async () => {
-      const user = userEvent.setup()
-      const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
-      render(<UserMessageContent message="See this" attachments={attachments} />)
-
-      await user.click(screen.getByAltText('photo.png'))
+      await openPhotoZoom()
 
       expect(document.querySelector('.zoom-overlay')).toBeInTheDocument()
       expect(screen.getByAltText('Attachment preview')).toBeInTheDocument()
     })
 
     it('closes zoom overlay on close button click', async () => {
-      const user = userEvent.setup()
-      const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
-      render(<UserMessageContent message="See this" attachments={attachments} />)
-
-      await user.click(screen.getByAltText('photo.png'))
+      const user = await openPhotoZoom()
       expect(document.querySelector('.zoom-overlay')).toBeInTheDocument()
 
       await user.click(screen.getByTitle('Close'))
@@ -274,11 +275,7 @@ describe('UserMessageContent', () => {
     })
 
     it('closes zoom overlay on Escape key', async () => {
-      const user = userEvent.setup()
-      const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
-      render(<UserMessageContent message="See this" attachments={attachments} />)
-
-      await user.click(screen.getByAltText('photo.png'))
+      const user = await openPhotoZoom()
       expect(document.querySelector('.zoom-overlay')).toBeInTheDocument()
 
       await user.keyboard('{Escape}')
@@ -286,11 +283,7 @@ describe('UserMessageContent', () => {
     })
 
     it('closes zoom overlay on backdrop click', async () => {
-      const user = userEvent.setup()
-      const attachments = [{ name: 'photo.png', type: 'image/png', data: 'iVBORw0KGgo=' }]
-      render(<UserMessageContent message="See this" attachments={attachments} />)
-
-      await user.click(screen.getByAltText('photo.png'))
+      const user = await openPhotoZoom()
       const overlay = document.querySelector('.zoom-overlay')
       expect(overlay).toBeInTheDocument()
 
@@ -379,6 +372,52 @@ describe('UserMessageContent', () => {
 
       expect(screen.getByText('please also')).toHaveClass('message-note')
       expect(container.querySelector('.message-content-with-commands')).not.toBeNull()
+      expect(container.querySelector('.message-note-rule')).toBeNull()
+      const note = container.querySelector('.message-note')
+      const answer = container.querySelector('.message-content-with-commands')
+      expect(note.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('draws a one-click reply as its choice, a rule, then the note', () => {
+      const { container } = render(<UserMessageContent message="B" note="also rename the hook" />)
+
+      const nodes = container.querySelectorAll(
+        '.message-content, .message-note-rule, .message-note',
+      )
+      expect([...nodes].map(n => n.className)).toEqual([
+        'message-content',
+        'message-note-rule',
+        'message-note',
+      ])
+      expect(nodes[0].textContent).toBe('B')
+      expect(nodes[2].textContent).toBe('also rename the hook')
+    })
+
+    it('keeps a blank line inside a one-click reply note', () => {
+      const { container } = render(
+        <UserMessageContent message="Go" note={'  skip the docs\n\nand the tests\n'} />,
+      )
+
+      expect(container.querySelector('.message-note').textContent).toBe(
+        'skip the docs\n\nand the tests',
+      )
+    })
+
+    it('draws no rule for a one-click reply with a whitespace-only note', () => {
+      const { container } = render(<UserMessageContent message="Go" note={' \n '} />)
+
+      expect(container.querySelector('.message-note-rule')).toBeNull()
+      expect(container.querySelector('.message-note')).toBeNull()
+    })
+
+    it('puts the rule after a slash-command token', () => {
+      const { container } = render(
+        <UserMessageContent message="<command-name>/review</command-name>" note="the hook" />,
+      )
+
+      const token = container.querySelector('.slash-command')
+      const rule = container.querySelector('.message-note-rule')
+      expect(token.compareDocumentPosition(rule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
   })
 })

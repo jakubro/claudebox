@@ -1,9 +1,13 @@
 """Board YAML parser - read/write board.yaml with comment preservation."""
 
+from __future__ import annotations
+
 import contextlib
+import io
+import os
 import re
 import shutil
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -15,10 +19,12 @@ from .errors import (
     InvalidLabel,
     StateNotFound,
     SwimlaneNotFound,
+    TicketMoveRefused,
     TicketNotFound,
 )
 from .models import Board, BoardState, BoardSummary, BoardTicket, Swimlane
 from ...constants import FILE_LOCK_TIMEOUT_SECONDS
+from ...core.io import write_text
 from ...core.logging import get_logger
 
 
@@ -111,14 +117,17 @@ def move_ticket(
     yaml_path: Path,
     ticket_path: str,
     *,
+    root: Path,
     column: str | None = None,
     swimlane: str | None = None,
     index: int | None = None,
 ) -> dict:
     """Move a ticket between columns and/or swimlanes, optionally at a given index.
 
-    Updates board.yaml atomically under a file lock. Changing ``column`` also relocates the
-    ticket file; ``index`` is clamped to ``[0, len(target_list)]``.
+    A ``column`` change moves the file only between states whose folders - paths under the board's
+    directory, however written - name different directories, keeping its path below them.
+    It is refused before board.yaml changes for a file outside its folder, a path leaving ``root``
+    or a taken destination; ``index`` is clamped to the target list.
     """
 
     board_dir = yaml_path.parent
@@ -151,18 +160,16 @@ def move_ticket(
         if swimlane is not None:
             entry["swimlane"] = swimlane
 
-        if column and source_col and column != source_col:
-            old_abs = board_dir / ticket_path
+        if column and source_col and column != source_col and (board_dir / ticket_path).exists():
+            new_path = _move_file(
+                board_dir,
+                ticket_path,
+                folders[source_col],
+                folders[column],
+                root,
+            )
 
-            if old_abs.exists():
-                new_dir_name = folders[column]
-                old_dir_name = folders[source_col]
-                new_path = ticket_path.replace(f"/{old_dir_name}/", f"/{new_dir_name}/", 1)
-
-                new_abs = board_dir / new_path
-                new_abs.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(old_abs), str(new_abs))
-
+            if new_path != ticket_path:
                 entry["path"] = new_path
 
         if data.get(target_col) is None:
@@ -395,8 +402,8 @@ def _state_from_entry(entry: dict) -> BoardState:
         id=str(entry["id"]),
         label=str(entry["label"]),
         folder=str(entry["folder"]).rstrip("/"),
-        terminal=bool(entry.get("terminal", False)),
-        active=bool(entry.get("active", False)),
+        terminal=bool(entry.get("terminal")),
+        active=bool(entry.get("active")),
     )
 
 
@@ -423,7 +430,7 @@ def _folder_map(data: dict) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _locked(yaml_path: Path) -> Iterator[None]:
+def _locked(yaml_path: Path) -> Generator[None]:
     """Acquire board.yaml's lock within FILE_LOCK_TIMEOUT_SECONDS, else raise BoardLocked."""
 
     lock = FileLock(str(yaml_path) + ".lock", timeout=FILE_LOCK_TIMEOUT_SECONDS)
@@ -451,10 +458,13 @@ def _read_name_field(yaml_path: Path) -> str | None:
 
 
 def _write_yaml(yaml_path: Path, data: dict) -> None:
-    """Write YAML data to file, preserving comments and formatting."""
+    """Write YAML data to file, preserving comments and formatting - dumps to a string first,
+    then hands it to the shared atomic writer, since ruamel has no temp-file-and-rename mode of its own.
+    """
 
-    with open(yaml_path, "w") as f:
-        _yaml.dump(data, f)
+    buffer = io.StringIO()
+    _yaml.dump(data, buffer)
+    write_text(yaml_path, buffer.getvalue())
 
 
 def _resolve_title(ticket_path: Path) -> str | None:
@@ -464,7 +474,7 @@ def _resolve_title(ticket_path: Path) -> str | None:
         return None
 
     try:
-        with open(ticket_path) as f:
+        with open(ticket_path, encoding="utf-8") as f:
             for line in f:
                 match = re.match(r"^#\s+(.+)", line.strip())
 
@@ -485,3 +495,46 @@ def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
 
     return slug.strip("-")
+
+
+def _move_file(
+    board_dir: Path,
+    ticket_path: str,
+    old_folder: str,
+    new_folder: str,
+    root: Path,
+) -> str:
+    old_dir, new_dir = _normalized(board_dir, old_folder), _normalized(board_dir, new_folder)
+
+    if old_dir == new_dir:
+        return ticket_path
+
+    old_abs = _normalized(board_dir, ticket_path)
+
+    if old_dir not in old_abs.parents:
+        raise TicketMoveRefused(ticket_path=ticket_path, reason="not_in_column_folder")
+
+    new_abs = new_dir / old_abs.relative_to(old_dir)
+    _refuse_unsafe_move(old_abs, new_abs, root, ticket_path)
+    new_abs.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(old_abs), str(new_abs))
+
+    return Path(os.path.relpath(new_abs, _normalized(board_dir, "."))).as_posix()
+
+
+def _normalized(board_dir: Path, path: str) -> Path:
+    return Path(os.path.normpath(board_dir / path))
+
+
+def _refuse_unsafe_move(old_abs: Path, new_abs: Path, root: Path, ticket_path: str) -> None:
+    # board.yaml is writable from inside the container, so neither path it names is trusted.
+    resolved_root = root.resolve()
+
+    if not (
+        old_abs.resolve().is_relative_to(resolved_root)
+        and new_abs.resolve().is_relative_to(resolved_root)
+    ):
+        raise TicketMoveRefused(ticket_path=ticket_path, reason="outside_workspace")
+
+    if new_abs.exists() or new_abs.is_symlink():
+        raise TicketMoveRefused(ticket_path=ticket_path, reason="destination_exists")

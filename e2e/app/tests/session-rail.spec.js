@@ -1,15 +1,15 @@
 /** E2E tests for the session rail: an ancestor reads inline, the focused group live and split. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
 import {
-  DEFAULT_CONTAINER_ID,
-  DEFAULT_SESSION_ID,
-  DEFAULT_SESSION_URL,
-  loadFixture,
-  mockAPI,
-} from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+  openSession,
+  openSessionWithAPI,
+  resumeNamedSession,
+  sessionsHandler,
+  waitForAppReady,
+} from '../helpers.js'
+import { DEFAULT_CONTAINER_ID, DEFAULT_SESSION_ID, mockAPI } from '../mocks/api.js'
+import { loadEventsFromFixture, mockSSE } from '../mocks/sse.js'
 
 const ROOT_SESSION_ID = 'root-session'
 
@@ -46,30 +46,56 @@ const ROOT_EVENTS = [
   },
 ]
 
+const PROMOTED_THREAD_ID = 'promoted-thread'
+
+function promotedThreadHandlers() {
+  return {
+    getSessions: sessionsHandler([
+      {
+        session_id: ROOT_SESSION_ID,
+        name: 'research',
+        parent_session_id: null,
+        num_turns: 4,
+      },
+      {
+        session_id: PROMOTED_THREAD_ID,
+        name: 'a promoted thread',
+        parent_session_id: ROOT_SESSION_ID,
+        num_turns: 2,
+        is_side_thread: true,
+      },
+      {
+        session_id: DEFAULT_SESSION_ID,
+        name: 'branch-1',
+        parent_session_id: PROMOTED_THREAD_ID,
+        num_turns: 1,
+        container_id: 'test-cid',
+      },
+    ]),
+    getSessionEvents: async route => {
+      await route.fulfill({ json: { events: ROOT_EVENTS, running: false } })
+    },
+  }
+}
+
 function sessionsHandlers() {
   return {
-    getSessions: async route => {
-      await route.fulfill({
-        json: {
-          sessions: [
-            {
-              session_id: ROOT_SESSION_ID,
-              name: 'research',
-              parent_session_id: null,
-              num_turns: 4,
-            },
-            {
-              session_id: DEFAULT_SESSION_ID,
-              name: 'branch-1',
-              parent_session_id: ROOT_SESSION_ID,
-              num_turns: 1,
-              container_id: 'test-cid',
-              is_side_thread: true,
-            },
-          ],
-        },
-      })
-    },
+    getSessions: sessionsHandler([
+      {
+        session_id: ROOT_SESSION_ID,
+        name: 'research',
+        parent_session_id: null,
+        num_turns: 4,
+      },
+      {
+        session_id: DEFAULT_SESSION_ID,
+        name: 'branch-1',
+        parent_session_id: ROOT_SESSION_ID,
+        num_turns: 1,
+        container_id: 'test-cid',
+        is_side_thread: true,
+      },
+    ]),
     getSessionEvents: async route => {
       await route.fulfill({ json: { events: ROOT_EVENTS, running: false } })
     },
@@ -91,9 +117,7 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     await mockAPI(page, { handlers: sessionsHandlers() })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const rail = page.locator('[data-testid="chat-rail"]')
     await expect(rail).toBeVisible()
@@ -120,45 +144,8 @@ test.describe('Session Rail', () => {
   test('a fork made inside a promoted thread stands in its slot, keeping the ancestors above it', async ({
     page,
   }) => {
-    const THREAD_ID = 'promoted-thread'
-    await mockAPI(page, {
-      handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: ROOT_SESSION_ID,
-                  name: 'research',
-                  parent_session_id: null,
-                  num_turns: 4,
-                },
-                {
-                  session_id: THREAD_ID,
-                  name: 'a promoted thread',
-                  parent_session_id: ROOT_SESSION_ID,
-                  num_turns: 2,
-                  is_side_thread: true,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'branch-1',
-                  parent_session_id: THREAD_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                },
-              ],
-            },
-          })
-        },
-        getSessionEvents: async route => {
-          await route.fulfill({ json: { events: ROOT_EVENTS, running: false } })
-        },
-      },
-    })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await mockAPI(page, { handlers: promotedThreadHandlers() })
+    await openSession(page)
 
     // Exactly one ancestor - the root the thread drilled from - with the fork in the thread's
     // slot. The thread's id is absent from both the rail and the header path.
@@ -167,7 +154,7 @@ test.describe('Session Rail', () => {
       'data-session-id',
       ROOT_SESSION_ID,
     )
-    await expect(page.locator(`[data-session-id="${THREAD_ID}"]`)).toHaveCount(0)
+    await expect(page.locator(`[data-session-id="${PROMOTED_THREAD_ID}"]`)).toHaveCount(0)
 
     const entries = page.locator('[data-testid="session-header-path-entry"]')
     await expect(entries).toHaveCount(2)
@@ -181,9 +168,7 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     await mockAPI(page, { handlers: sessionsHandlers() })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const entries = page.locator('[data-testid="session-header-path-entry"]')
     await expect(entries).toHaveCount(2)
@@ -200,9 +185,7 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     await mockAPI(page, { handlers: sessionsHandlers() })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const rootName = page
       .locator('[data-testid="session-header-path-entry"]')
@@ -217,10 +200,7 @@ test.describe('Session Rail', () => {
   test('a session with no children renders a rail of one group - identical to a bare panel', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
 
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveCount(1)
     await expect(page.locator('[data-testid="rail-ancestor"]')).toHaveCount(0)
@@ -234,28 +214,22 @@ test.describe('Session Rail', () => {
     const chain = ['s0', 's1', 's2', 's3', 's4', DEFAULT_SESSION_ID] // s0 root, 6 groups total
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: chain.map((id, i) => ({
-                session_id: id,
-                name: id,
-                parent_session_id: i === 0 ? null : chain[i - 1],
-                num_turns: 1,
-                container_id: id === DEFAULT_SESSION_ID ? 'test-cid' : undefined,
-                is_side_thread: i !== 0,
-              })),
-            },
-          })
-        },
+        getSessions: sessionsHandler(
+          chain.map((id, i) => ({
+            session_id: id,
+            name: id,
+            parent_session_id: i === 0 ? null : chain[i - 1],
+            num_turns: 1,
+            container_id: id === DEFAULT_SESSION_ID ? 'test-cid' : undefined,
+            is_side_thread: i !== 0,
+          })),
+        ),
         getSessionEvents: async route => {
           await route.fulfill({ json: { events: [], running: false } })
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // Every group is in the header path, uncapped.
     await expect(page.locator('[data-testid="session-header-path-entry"]')).toHaveCount(6)
@@ -281,30 +255,24 @@ test.describe('Session Rail', () => {
     const UNREADABLE_ID = 'unreadable-ancestor'
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                { session_id: STOPPED_ID, name: 'stopped', parent_session_id: null, num_turns: 2 },
-                {
-                  session_id: UNREADABLE_ID,
-                  name: 'unreadable',
-                  parent_session_id: STOPPED_ID,
-                  num_turns: 1,
-                  is_side_thread: true,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'branch-1',
-                  parent_session_id: UNREADABLE_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                  is_side_thread: true,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          { session_id: STOPPED_ID, name: 'stopped', parent_session_id: null, num_turns: 2 },
+          {
+            session_id: UNREADABLE_ID,
+            name: 'unreadable',
+            parent_session_id: STOPPED_ID,
+            num_turns: 1,
+            is_side_thread: true,
+          },
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: 'branch-1',
+            parent_session_id: UNREADABLE_ID,
+            num_turns: 1,
+            container_id: 'test-cid',
+            is_side_thread: true,
+          },
+        ]),
         getSessionEvents: async route => {
           const url = route.request().url()
           if (url.includes(UNREADABLE_ID)) {
@@ -315,9 +283,7 @@ test.describe('Session Rail', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // Both ancestors keep their rail slot - the chain is not truncated at the unreadable one.
     await expect(
@@ -339,9 +305,7 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     await mockAPI(page, { handlers: sessionsHandlers() })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await expect(page.locator('[data-testid="rail-ancestor"]')).toHaveCount(1)
 
@@ -364,36 +328,28 @@ test.describe('Session Rail', () => {
   }) => {
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: ROOT_SESSION_ID,
-                  name: 'quiet',
-                  parent_session_id: null,
-                  num_turns: 0,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'branch-1',
-                  parent_session_id: ROOT_SESSION_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                  is_side_thread: true,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: ROOT_SESSION_ID,
+            name: 'quiet',
+            parent_session_id: null,
+            num_turns: 0,
+          },
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: 'branch-1',
+            parent_session_id: ROOT_SESSION_ID,
+            num_turns: 1,
+            container_id: 'test-cid',
+            is_side_thread: true,
+          },
+        ]),
         getSessionEvents: async route => {
           await route.fulfill({ json: { events: [], running: false } })
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // The Sessions panel's own tree would drop this session (no turns, no container); the rail
     // does not - it is on the rail as an ancestor and in the header path.
@@ -413,48 +369,38 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     const CHILD_B = 'child-b'
-    await mockAPI(page, {
+    // Start on the child, walk back to root - the child becomes the walked-back tail.
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: ROOT_SESSION_ID,
-                  name: 'research',
-                  parent_session_id: null,
-                  num_turns: 4,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'branch-1',
-                  parent_session_id: ROOT_SESSION_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                  is_side_thread: true,
-                },
-                {
-                  session_id: CHILD_B,
-                  name: 'branch-1-alt',
-                  parent_session_id: ROOT_SESSION_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                  is_side_thread: true,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          {
+            session_id: ROOT_SESSION_ID,
+            name: 'research',
+            parent_session_id: null,
+            num_turns: 4,
+          },
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: 'branch-1',
+            parent_session_id: ROOT_SESSION_ID,
+            num_turns: 1,
+            container_id: 'test-cid',
+            is_side_thread: true,
+          },
+          {
+            session_id: CHILD_B,
+            name: 'branch-1-alt',
+            parent_session_id: ROOT_SESSION_ID,
+            num_turns: 1,
+            container_id: 'test-cid',
+            is_side_thread: true,
+          },
+        ]),
         getSessionEvents: async route => {
           await route.fulfill({ json: { events: ROOT_EVENTS, running: false } })
         },
       },
     })
-    await mockSSE(page)
-
-    // Start on the child, walk back to root - the child becomes the walked-back tail.
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
     await page
       .locator('[data-testid="session-header-path-entry"]')
       .nth(0)
@@ -483,10 +429,7 @@ test.describe('Session Rail', () => {
   }) => {
     const contextA = await browser.newContext()
     const pageA = await contextA.newPage()
-    await mockAPI(pageA, { handlers: sessionsHandlers() })
-    await mockSSE(pageA)
-    await pageA.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(pageA)
+    await openSessionWithAPI(pageA, 'events/simple-chat.jsonl', { handlers: sessionsHandlers() })
 
     // Tab A walks back to root - the child becomes its own walked-back tail, rendered on the
     // rail as a non-focused group even though it is no longer an ancestor of the focused one.
@@ -528,9 +471,7 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     await mockAPI(page, { handlers: sessionsHandlers() })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // Assert on the focused path entry, not the URL: the address bar updates ahead of the app's
     // re-render, so only the DOM marker proves the rail has caught up.
@@ -557,46 +498,13 @@ test.describe('Session Rail', () => {
   }) => {
     // DEFAULT_SESSION_ID is an ordinary fork made inside the promoted thread, so it gets its own
     // Stop button; the thread drops out of the rendered chain, leaving root as its predecessor.
-    const THREAD_ID = 'promoted-thread'
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                {
-                  session_id: ROOT_SESSION_ID,
-                  name: 'research',
-                  parent_session_id: null,
-                  num_turns: 4,
-                },
-                {
-                  session_id: THREAD_ID,
-                  name: 'a promoted thread',
-                  parent_session_id: ROOT_SESSION_ID,
-                  num_turns: 2,
-                  is_side_thread: true,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'branch-1',
-                  parent_session_id: THREAD_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                },
-              ],
-            },
-          })
-        },
-        getSessionEvents: async route => {
-          await route.fulfill({ json: { events: ROOT_EVENTS, running: false } })
-        },
+        ...promotedThreadHandlers(),
         deleteContainer: async route => route.fulfill({ status: 200, json: {} }),
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const focusedEntry = page.locator(
       '[data-testid="session-header-path-entry"][data-focused="true"]',
@@ -616,9 +524,7 @@ test.describe('Session Rail', () => {
         deleteContainer: async route => route.fulfill({ status: 200, json: {} }),
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // The root ancestor has no container of its own in this fixture, so give it one to stop.
     await page.route(/\/sessions$/, async route => {
@@ -666,9 +572,7 @@ test.describe('Session Rail', () => {
     page,
   }) => {
     await mockAPI(page, { handlers: sessionsHandlers() })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page
       .locator('[data-testid="session-header-path-entry"]')
@@ -684,28 +588,11 @@ test.describe('Session Rail', () => {
   test('each group returns to its own persisted right-view choice once focused', async ({
     page,
   }) => {
-    // Make the otherwise-static /sessions/current reflect whichever session was most recently
-    // resumed, so focusing an ancestor genuinely changes useSessionData().sessionId.
-    let mockCurrentSessionId = DEFAULT_SESSION_ID
+    // Resume answers for the session it names, so focusing an ancestor addresses that session.
     await mockAPI(page, {
       handlers: {
         ...sessionsHandlers(),
-        resumeSession: async route => {
-          const [, sid] = route
-            .request()
-            .url()
-            .match(/\/sessions\/([^/]+)\/resume/)
-          mockCurrentSessionId = sid
-          await route.fulfill({
-            status: 200,
-            json: { session_id: mockCurrentSessionId, container_id: DEFAULT_CONTAINER_ID },
-          })
-        },
-        getSessionStatus: async route => {
-          await route.fulfill({
-            json: { ...loadFixture('status/default.json'), session_id: mockCurrentSessionId },
-          })
-        },
+        resumeSession: resumeNamedSession,
         getUIState: async route => {
           const url = new URL(route.request().url())
           const sessionId = url.searchParams.get('session_id')
@@ -719,9 +606,7 @@ test.describe('Session Rail', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // The focused group restores its persisted 'terminal' choice - the picker reflects the stored
     // preference even when the rail's width collapses the column itself.
@@ -754,30 +639,24 @@ test.describe('Session Rail', () => {
     const THREAD_ID = 'promoted-thread'
     await mockAPI(page, {
       handlers: {
-        getSessions: async route => {
-          await route.fulfill({
-            json: {
-              sessions: [
-                { session_id: ROOT_SESSION_ID, name: 'research', parent_session_id: null },
-                {
-                  session_id: THREAD_ID,
-                  name: 'a promoted thread',
-                  parent_session_id: ROOT_SESSION_ID,
-                  num_turns: 2,
-                  is_side_thread: true,
-                },
-                {
-                  session_id: DEFAULT_SESSION_ID,
-                  name: 'branch-1',
-                  parent_session_id: THREAD_ID,
-                  num_turns: 1,
-                  container_id: 'test-cid',
-                  is_side_thread: true,
-                },
-              ],
-            },
-          })
-        },
+        getSessions: sessionsHandler([
+          { session_id: ROOT_SESSION_ID, name: 'research', parent_session_id: null },
+          {
+            session_id: THREAD_ID,
+            name: 'a promoted thread',
+            parent_session_id: ROOT_SESSION_ID,
+            num_turns: 2,
+            is_side_thread: true,
+          },
+          {
+            session_id: DEFAULT_SESSION_ID,
+            name: 'branch-1',
+            parent_session_id: THREAD_ID,
+            num_turns: 1,
+            container_id: 'test-cid',
+            is_side_thread: true,
+          },
+        ]),
         // Only the promoted thread's inherited history carries the fold divider, so one shared
         // handler would double turn_002 onto both ancestors.
         getSessionEvents: async route => {
@@ -822,9 +701,7 @@ test.describe('Session Rail', () => {
         },
       },
     })
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     const ancestor = page.locator(`[data-testid="rail-ancestor"][data-session-id="${THREAD_ID}"]`)
     const foldRow = ancestor.getByTestId('thread-fold-row')
@@ -848,4 +725,300 @@ test.describe('Session Rail', () => {
     await foldRow.click()
     await expect(inheritedTurn).toHaveCount(0)
   })
+
+  // SPEC: chat:rail-promoted-thread-fold-per-group
+  test('a thread unfolded, left and returned to opens folded again', async ({ page }) => {
+    await openSessionWithAPI(
+      page,
+      [
+        { type: 'user', subtype: 'text', is_human: true, content: 'Hello', turn_id: 'turn_001' },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'context on this branch',
+          turn_id: 'turn_001',
+        },
+        { type: 'result', subtype: 'success', turn_id: 'turn_001' },
+        {
+          type: 'system',
+          subtype: 'container_restarted',
+          turn_id: 'turn_001',
+          message_data: { fork_parent_session_id: ROOT_SESSION_ID },
+        },
+        { type: 'user', is_human: true, content: 'why this branch?', turn_id: 'turn_002' },
+        { type: 'assistant', subtype: 'text', content: 'because', turn_id: 'turn_002' },
+        { type: 'result', subtype: 'success', turn_id: 'turn_002' },
+      ],
+      { handlers: sessionsHandlers() },
+    )
+    const focusedEntry = page.locator(
+      '[data-testid="session-header-path-entry"][data-focused="true"]',
+    )
+    const foldRow = page.locator('[data-testid="panel-chat"] [data-testid="thread-fold-row"]')
+    await foldRow.click()
+    await expect(foldRow).toHaveAttribute('aria-expanded', 'true')
+
+    await page.keyboard.press('Alt+Shift+ArrowLeft')
+    await expect(focusedEntry).toHaveAttribute('data-session-id', ROOT_SESSION_ID)
+    await page.keyboard.press('Alt+Shift+ArrowRight')
+    await expect(focusedEntry).toHaveAttribute('data-session-id', DEFAULT_SESSION_ID)
+
+    await expect(foldRow).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  // SPEC: layout:confirm-modal-dismissed-on-switch
+  test('a confirmation left open closes on a move to another group, acting on neither', async ({
+    page,
+  }) => {
+    const interrupts = []
+    await mockAPI(page, { handlers: sessionsHandlers() })
+    await page.route('**/api/interrupt*', async route => {
+      interrupts.push(route.request().url())
+      await route.fulfill({ json: {} })
+    })
+    await openSession(page, [
+      { type: 'user', subtype: 'text', is_human: true, content: 'Hello', turn_id: 'turn_001' },
+      { type: 'assistant', subtype: 'text', content: 'still working', turn_id: 'turn_001' },
+    ])
+    await page.locator('button[title="Reload session (picks up config changes)"]').click()
+    await expect(page.getByTestId('confirm-stop-modal')).toBeVisible()
+
+    await page.keyboard.press('Alt+Shift+ArrowLeft')
+
+    await expect(page.getByTestId('confirm-stop-modal')).toHaveCount(0)
+    expect(interrupts).toEqual([])
+  })
+
+  // SPEC: chat:inline-replies-restore-closed
+  test('reply boxes restored on a return to their group open closed', async ({ page }) => {
+    await page.addInitScript(sessionId => {
+      localStorage.setItem(
+        `inline-replies:${sessionId}`,
+        JSON.stringify([
+          {
+            id: 'r1',
+            quote: 'context on this branch',
+            from: 'assistant',
+            turnId: 'turn_001',
+            prefix: '',
+            suffix: '',
+            offset: 0,
+            response: 'my note',
+            threadSessionId: null,
+            promotedSessionId: null,
+            railPromoted: false,
+          },
+        ]),
+      )
+    }, DEFAULT_SESSION_ID)
+    await openSessionWithAPI(
+      page,
+      [
+        { type: 'user', subtype: 'text', is_human: true, content: 'Hello', turn_id: 'turn_001' },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'context on this branch',
+          turn_id: 'turn_001',
+        },
+        { type: 'result', subtype: 'success', turn_id: 'turn_001' },
+      ],
+      { handlers: sessionsHandlers() },
+    )
+    const focusedEntry = page.locator(
+      '[data-testid="session-header-path-entry"][data-focused="true"]',
+    )
+
+    await page.keyboard.press('Alt+Shift+ArrowLeft')
+    await expect(focusedEntry).toHaveAttribute('data-session-id', ROOT_SESSION_ID)
+    await page.keyboard.press('Alt+Shift+ArrowRight')
+    await expect(focusedEntry).toHaveAttribute('data-session-id', DEFAULT_SESSION_ID)
+    await expect(
+      page.locator('[data-testid="panel-chat"]').getByText('context on this branch'),
+    ).toBeVisible()
+
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+  })
+
+  // SPEC: layout:bottom-panels-follow-layout
+  test('the bottom strip stays as it is when another group is focused', async ({ page }) => {
+    await mockAPI(page, {
+      handlers: {
+        ...sessionsHandlers(),
+        resumeSession: route =>
+          route.fulfill({
+            json: { session_id: ROOT_SESSION_ID, container_id: DEFAULT_CONTAINER_ID },
+          }),
+        getUIState: async route => {
+          const id = new URL(route.request().url()).searchParams.get('session_id')
+          const session =
+            id === ROOT_SESSION_ID ? { bottomPanels: { openSet: [], height: 200 } } : {}
+          await route.fulfill({ json: { global: {}, session } })
+        },
+      },
+    })
+    await openSession(page)
+    await page.locator('[data-testid="icon-logs"]').click()
+    await expect(page.locator('[data-testid="bottom-panel-container"]')).toBeVisible()
+    const focusedEntry = page.locator(
+      '[data-testid="session-header-path-entry"][data-focused="true"]',
+    )
+
+    // The group's other settings reads answer alongside the one a per-session strip would make.
+    const rootSettings = page.waitForResponse(/ui-state\?session_id=root-session/)
+    await page.keyboard.press('Alt+Shift+ArrowLeft')
+    await expect(focusedEntry).toHaveAttribute('data-session-id', ROOT_SESSION_ID)
+    await rootSettings
+    await page.waitForTimeout(250)
+
+    await expect(page.locator('[data-testid="bottom-panel-container"]')).toBeVisible()
+  })
+
+  // SPEC: chat:inline-replies-close-focus
+  test("closing a reply box in the focused group puts the cursor in that group's message box", async ({
+    page,
+  }) => {
+    await mockAPI(page, { handlers: sessionsHandlers() })
+    await openSession(page, 'events/needs-user-replies.jsonl')
+    await expect(page.locator('[data-testid="rail-ancestor"]')).toBeVisible()
+
+    await quoteInFocusedGroup(page, 'file it now')
+    await page.locator('.inline-float [data-testid="inline-thread-input"]').press('Tab')
+
+    await expect(page.locator('.inline-float')).toHaveCount(0)
+    await expect(page.locator('[data-testid="chat-input"]')).toHaveCount(1)
+    await expect(page.locator('.chat-rail-focused [data-testid="chat-input"]')).toBeFocused()
+  })
+
+  // SPEC: tool:answer-focus
+  test("answering a question in the focused group puts the cursor in that group's message box", async ({
+    page,
+  }) => {
+    await mockAPI(page, { handlers: sessionsHandlers() })
+    await page.route('**/api/send*', route => route.fulfill({ status: 200, json: {} }))
+    await openSession(page, 'events/tool-ask-question.jsonl')
+    await expect(page.locator('[data-testid="rail-ancestor"]')).toBeVisible()
+
+    const form = page.locator('.chat-rail-focused .tool-questions-interactive')
+    await form.locator('.tool-question-option:not(.other)').first().click()
+    await form.locator('.tool-submit-btn').click()
+
+    await expect(page.locator('.chat-rail-focused [data-testid="chat-input"]')).toBeFocused()
+  })
+
+  // SPEC: tool:askuser-read-only
+  test("an ancestor's unanswered question shows disabled and cannot be answered", async ({
+    page,
+  }) => {
+    const sends = []
+    const handlers = sessionsHandlers()
+    await mockAPI(page, {
+      handlers: {
+        ...handlers,
+        getSessionEvents: async route => {
+          await route.fulfill({
+            json: {
+              events: loadEventsFromFixture('events/tool-ask-question.jsonl'),
+              running: false,
+            },
+          })
+        },
+      },
+    })
+    await page.route('**/api/send*', async route => {
+      sends.push(route.request().url())
+      await route.fulfill({ status: 200, json: {} })
+    })
+    await openSession(page)
+
+    const form = page.locator('[data-testid="rail-ancestor"] .tool-questions-interactive')
+    await expect(form).toBeVisible()
+    await expect(form).toHaveClass(/disabled/)
+    await expect(form.locator('.tool-submit-btn')).toHaveCount(0)
+
+    await form.locator('.tool-question-option:not(.other)').first().click({ force: true })
+    await expect(form.locator('.tool-question-option.selected')).toHaveCount(0)
+    expect(sends).toHaveLength(0)
+  })
+
+  // SPEC: chat:rail-promoted-thread-acts-on-itself
+  test("an ancestor's full tool output is read from the ancestor, not the focused session", async ({
+    page,
+  }) => {
+    const reads = []
+    await mockAPI(page, {
+      handlers: {
+        ...sessionsHandlers(),
+        getSessionEvents: async route => {
+          await route.fulfill({
+            json: {
+              events: loadEventsFromFixture('events/tool-bash-truncated.jsonl'),
+              running: false,
+            },
+          })
+        },
+        getToolOutput: async route => {
+          reads.push(new URL(route.request().url()).pathname)
+          await route.fulfill({ json: { content: 'the whole suite output', truncated: false } })
+        },
+      },
+    })
+    await openSession(page)
+
+    const ancestor = page.locator('[data-testid="rail-ancestor"]')
+    await ancestor.locator('[data-testid="tool-block"]').first().click()
+    await ancestor.locator('.tool-expand-btn').first().click()
+
+    await expect(ancestor).toContainText('the whole suite output')
+    expect(reads).toEqual([
+      expect.stringContaining(`/api/sessions/${ROOT_SESSION_ID}/tool-output/`),
+    ])
+  })
+
+  // SPEC: tool:askuser-read-only
+  test("an ancestor's unanswered plan approval shows disabled and cannot be answered", async ({
+    page,
+  }) => {
+    await mockAPI(page, {
+      handlers: {
+        ...sessionsHandlers(),
+        getSessionEvents: async route => {
+          await route.fulfill({
+            json: { events: loadEventsFromFixture('events/tool-exit-plan.jsonl'), running: false },
+          })
+        },
+      },
+    })
+    await openSession(page)
+
+    const form = page.locator('[data-testid="rail-ancestor"] .tool-questions-interactive')
+    await expect(form).toBeVisible()
+    await expect(form).toHaveClass(/disabled/)
+    await expect(form.locator('.tool-submit-btn')).toHaveCount(0)
+    await form.locator('.tool-question-option:not(.other)').first().click({ force: true })
+    await expect(form.locator('.tool-question-option.selected')).toHaveCount(0)
+  })
 })
+
+/** Select `substring` in the focused group's transcript and click the quote button. */
+async function quoteInFocusedGroup(page, substring) {
+  await expect(async () => {
+    await page.evaluate(sub => {
+      const scope = document.querySelector('.chat-rail-focused .chat-messages')
+      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const idx = node.textContent.indexOf(sub)
+        if (idx >= 0) {
+          const range = document.createRange()
+          range.setStart(node, idx)
+          range.setEnd(node, idx + sub.length)
+          window.getSelection().removeAllRanges()
+          window.getSelection().addRange(range)
+          document.dispatchEvent(new Event('selectionchange'))
+          return
+        }
+      }
+    }, substring)
+    await page.locator('[data-testid="quote-affordance"]').click({ timeout: 1500 })
+  }).toPass({ timeout: 10000 })
+}

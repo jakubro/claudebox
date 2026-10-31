@@ -1,9 +1,83 @@
 /** E2E tests for notification behavior. */
 
 import { expect, test } from '@playwright/test'
-import { resolveOpsPayload, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
+import {
+  openLiveSessionWithAPI,
+  openSession,
+  openSessionWithAPI,
+  resolveOpsPayload,
+  waitForAppReady,
+} from '../helpers.js'
+import { DEFAULT_SESSION_URL, loadFixture, mockAPI } from '../mocks/api.js'
 import { createSSEController, mockSSE } from '../mocks/sse.js'
+
+async function simulateTabHidden(page) {
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: true, writable: true })
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      writable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+}
+
+async function simulateTabVisible(page) {
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: false, writable: true })
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      writable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+}
+
+async function enableNotificationsAndHideTab(page) {
+  const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
+  await toggle.click()
+  await expect(toggle).toHaveClass(/enabled/)
+
+  await simulateTabHidden(page)
+}
+
+async function captureNormalFavicon(page) {
+  const href = () => page.evaluate(() => document.querySelector('link[rel="icon"]').href)
+  await expect.poll(href).toMatch(/^data:image\/png/)
+
+  return href()
+}
+
+async function startTurnThenHide(page, controller, turnId, reply) {
+  // No result event yet, so the turn stays in the processing state.
+  await controller.sendEvents([
+    {
+      type: 'user',
+      subtype: 'text',
+      is_human: true,
+      content: 'Hello',
+      timestamp: Date.now(),
+      ts: new Date().toISOString(),
+      turn_id: turnId,
+    },
+    {
+      type: 'assistant',
+      subtype: 'text',
+      content: reply,
+      timestamp: Date.now() + 100,
+      ts: new Date().toISOString(),
+    },
+  ])
+  await expect(page.getByText(reply).first()).toBeVisible()
+  await simulateTabHidden(page)
+}
+
+async function openLiveSessionInHiddenTab(page) {
+  const controller = await openLiveSessionWithAPI(page)
+  await enableNotificationsAndHideTab(page)
+
+  return controller
+}
 
 test.describe('Notifications', () => {
   test.beforeEach(async ({ page }) => {
@@ -115,20 +189,7 @@ test.describe('Notifications', () => {
         window.Notification = MockNotification
       })
 
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', { value: 'hidden', writable: true })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await controller.sendEvents([
         {
@@ -276,20 +337,7 @@ test.describe('Notifications', () => {
         window.Notification = MockNotification
       })
 
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', { value: 'hidden', writable: true })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await controller.sendEvents([
         {
@@ -382,19 +430,9 @@ test.describe('Notifications', () => {
     // SPEC: notify:tab-indicator
     // SPEC: notify:tab-indicator-prefix
     test('tab title gets * prefix when response completes while hidden', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'hidden',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      await simulateTabHidden(page)
 
       const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await toggle.click()
@@ -433,20 +471,7 @@ test.describe('Notifications', () => {
 
     // SPEC: notify:tab-indicator-clear
     test('tab title * prefix clears on user interaction', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', { value: 'hidden', writable: true })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await controller.sendEvents([
         {
@@ -550,17 +575,6 @@ test.describe('Notifications', () => {
       })
     }
 
-    async function simulateTabHidden(page) {
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'hidden',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
-    }
-
     async function sendCompleteTurn(controller, { resultSubtype = 'success' } = {}) {
       await controller.sendEvents([
         {
@@ -595,16 +609,7 @@ test.describe('Notifications', () => {
       page,
     }) => {
       await installAudioMock(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await sendCompleteTurn(controller)
 
@@ -618,10 +623,7 @@ test.describe('Notifications', () => {
     // SPEC: notify:sound-trigger
     test('does not play sound when tab is focused', async ({ page }) => {
       await installAudioMock(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await toggle.click()
@@ -640,16 +642,7 @@ test.describe('Notifications', () => {
     // SPEC: notify:sound-type
     test('uses same chime type for success and error completions', async ({ page }) => {
       await installAudioMock(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await sendCompleteTurn(controller, { resultSubtype: 'success' })
       await expect(page.getByText('Done with sound test').first()).toBeVisible()
@@ -702,16 +695,7 @@ test.describe('Notifications', () => {
     // SPEC: notify:sound-volume
     test('sound volume is quiet (less than 1.0)', async ({ page }) => {
       await installAudioMock(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await sendCompleteTurn(controller)
       await expect(page.getByText('Done with sound test').first()).toBeVisible()
@@ -726,10 +710,7 @@ test.describe('Notifications', () => {
     // SPEC: notify:sound-default
     test('sound is disabled by default on fresh session', async ({ page }) => {
       await installAudioMock(page)
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await expect(toggle).toBeVisible()
@@ -745,15 +726,9 @@ test.describe('Notifications', () => {
     test('favicon reflects session state - idle vs processing produce different icons', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await expect
-        .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]')?.href))
-        .toMatch(/^data:image\/png/)
-      const idleHref = await page.evaluate(() => document.querySelector('link[rel="icon"]').href)
+      const idleHref = await captureNormalFavicon(page)
 
       // No result event yet, so the turn stays in the processing state.
       await controller.sendEvents([
@@ -808,28 +783,6 @@ test.describe('Notifications', () => {
       })
     }
 
-    async function simulateTabHidden(page) {
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'hidden',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
-    }
-
-    async function simulateTabVisible(page) {
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: false, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'visible',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
-    }
-
     async function sendCompleteTurn(controller, assistantText, turnId = 'turn_desktop') {
       const now = Date.now()
       await controller.sendEvents([
@@ -864,16 +817,7 @@ test.describe('Notifications', () => {
       page,
     }) => {
       await mockNotificationAPI(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      const controller = await openLiveSessionInHiddenTab(page)
 
       await sendCompleteTurn(controller, 'Here is the response.')
 
@@ -888,10 +832,7 @@ test.describe('Notifications', () => {
     // SPEC: notify:desktop-trigger
     test('no notification fires when tab is focused', async ({ page }) => {
       await mockNotificationAPI(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
       await toggle.click()
@@ -911,16 +852,7 @@ test.describe('Notifications', () => {
     // SPEC: notify:desktop-body
     test('notification body shows first ~50 chars of assistant message', async ({ page }) => {
       await mockNotificationAPI(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      const controller = await openLiveSessionInHiddenTab(page)
 
       const longMessage =
         'This is a long assistant response that exceeds fifty characters in total length for testing.'
@@ -958,11 +890,7 @@ test.describe('Notifications', () => {
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      await enableNotificationsAndHideTab(page)
 
       await sendCompleteTurn(controller, 'Click me notification.')
 
@@ -991,17 +919,9 @@ test.describe('Notifications', () => {
       await mockNotificationAPI(page)
 
       // Events delivered on initial load via this fixture are a session resume, not a new response.
-      await mockAPI(page)
-      await mockSSE(page, 'events/simple-chat.jsonl')
+      await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      await enableNotificationsAndHideTab(page)
 
       await expect(page.getByText('Hello! How can I help you today?').first()).toBeVisible()
 
@@ -1012,18 +932,11 @@ test.describe('Notifications', () => {
     // SPEC: notify:desktop-title
     test('notification title matches browser tab title', async ({ page }) => {
       await mockNotificationAPI(page)
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const tabTitle = await page.title()
 
-      const toggle = page.locator('[data-testid="footer-notifications-toggle"]')
-      await toggle.click()
-      await expect(toggle).toHaveClass(/enabled/)
-
-      await simulateTabHidden(page)
+      await enableNotificationsAndHideTab(page)
 
       await sendCompleteTurn(controller, 'Title match test.', 'turn_title')
       await expect(page.getByText('Title match test.').first()).toBeVisible()
@@ -1040,10 +953,7 @@ test.describe('Notifications', () => {
   test.describe('Favicon Indicator', () => {
     // SPEC: notify:favicon-processing
     test('favicon updates to data URL during processing', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const _initialHref = await page.evaluate(
         () => document.querySelector('link[rel="icon"]').href,
@@ -1076,51 +986,70 @@ test.describe('Notifications', () => {
         .toMatch(/^data:image\/png/)
     })
 
-    // SPEC: notify:favicon-change
-    test('favicon changes to notification variant when response completes while hidden', async ({
-      page,
-    }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await expect
-        .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
-        .toMatch(/^data:image\/png/)
-
-      const normalHref = await page.evaluate(() => document.querySelector('link[rel="icon"]').href)
-
-      // No result event yet, so the turn stays in the processing state.
-      await controller.sendEvents([
+    // SPEC: notify:favicon-static
+    test('the favicon stays still while a session loads and responds', async ({ page }) => {
+      test.setTimeout(30_000)
+      const controller = await openLiveSessionWithAPI(page)
+      await page.evaluate(() => {
+        window.__iconSwaps = 0
+        new MutationObserver(() => {
+          window.__iconSwaps += 1
+        }).observe(document.querySelector('link[rel="icon"]'), {
+          attributes: true,
+          attributeFilter: ['href'],
+        })
+      })
+      const swapsOverOneSecond = async () => {
+        await page.evaluate(() => {
+          window.__iconSwaps = 0
+        })
+        await page.waitForTimeout(1000)
+        return page.evaluate(() => window.__iconSwaps)
+      }
+      const turn = [
         {
           type: 'user',
           subtype: 'text',
           is_human: true,
-          content: 'Hello',
+          content: 'Think about this',
           timestamp: Date.now(),
           ts: new Date().toISOString(),
-          turn_id: 'turn_favicon',
+          turn_id: 'turn_loading',
         },
         {
           type: 'assistant',
           subtype: 'text',
-          content: 'Working on it...',
+          content: 'Let me think...',
           timestamp: Date.now() + 100,
           ts: new Date().toISOString(),
         },
+      ]
+
+      // The session's history is still replaying while it responds.
+      await controller.sendEvents([
+        { type: 'system', subtype: 'replay_started', count: 2 },
+        ...turn,
       ])
+      await expect(page.getByTestId('footer-status')).toBeVisible()
+      await expect
+        .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
+        .toMatch(/^data:image\/png/)
+      expect(await swapsOverOneSecond()).toBe(0)
 
-      await expect(page.getByText('Working on it...').first()).toBeVisible()
+      await controller.sendEvents([{ type: 'system', subtype: 'replay_ended', count: 0 }])
+      await expect(page.getByText('Let me think...').first()).toBeVisible()
+      expect(await swapsOverOneSecond()).toBe(0)
+    })
 
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'hidden',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+    // SPEC: notify:favicon-change
+    test('favicon changes to notification variant when response completes while hidden', async ({
+      page,
+    }) => {
+      const controller = await openLiveSessionWithAPI(page)
+
+      const normalHref = await captureNormalFavicon(page)
+
+      await startTurnThenHide(page, controller, 'turn_favicon', 'Working on it...')
 
       // The result event alone (turn already in progress) completes the response while hidden.
       await controller.sendEvents([
@@ -1147,47 +1076,11 @@ test.describe('Notifications', () => {
     test('favicon restores to normal when tab regains focus after notification', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
-      await expect
-        .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
-        .toMatch(/^data:image\/png/)
+      const normalHref = await captureNormalFavicon(page)
 
-      const normalHref = await page.evaluate(() => document.querySelector('link[rel="icon"]').href)
-
-      // No result event yet, so the turn stays in the processing state.
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          is_human: true,
-          content: 'Hello',
-          timestamp: Date.now(),
-          ts: new Date().toISOString(),
-          turn_id: 'turn_restore',
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Here you go',
-          timestamp: Date.now() + 100,
-          ts: new Date().toISOString(),
-        },
-      ])
-
-      await expect(page.getByText('Here you go').first()).toBeVisible()
-
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'hidden',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      await startTurnThenHide(page, controller, 'turn_restore', 'Here you go')
 
       // The result event alone completes the response while hidden, triggering the notification favicon.
       await controller.sendEvents([
@@ -1204,14 +1097,7 @@ test.describe('Notifications', () => {
         .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
         .not.toBe(normalHref)
 
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: false, writable: true })
-        Object.defineProperty(document, 'visibilityState', {
-          value: 'visible',
-          writable: true,
-        })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      await simulateTabVisible(page)
 
       await expect
         .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
@@ -1277,9 +1163,7 @@ test.describe('Notifications', () => {
       // Deep red workspace color - distinguishable from arc gradient.
       const colorHex = '#c81818'
       await mockApiWithColor(page, colorHex)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect
         .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
@@ -1299,9 +1183,7 @@ test.describe('Notifications', () => {
       page,
     }) => {
       await mockApiWithColor(page, null)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect
         .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
@@ -1321,35 +1203,11 @@ test.describe('Notifications', () => {
 
       // Baseline must be captured before triggering; otherwise the post-trigger href is already the
       // notification variant and the poll-for-change below finds no delta.
-      await expect
-        .poll(() => page.evaluate(() => document.querySelector('link[rel="icon"]').href))
-        .toMatch(/^data:image\/png/)
-      const normalHref = await page.evaluate(() => document.querySelector('link[rel="icon"]').href)
+      const normalHref = await captureNormalFavicon(page)
       const normalPixel = await samplePixelInPage(page, { x: 22, y: 22, w: 3, h: 3 })
 
       // The notification favicon paints once the result arrives while hidden.
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          is_human: true,
-          content: 'Hi',
-          turn_id: 'turn_dim',
-          ts: new Date().toISOString(),
-        },
-        {
-          type: 'assistant',
-          subtype: 'text',
-          content: 'Working...',
-          ts: new Date().toISOString(),
-        },
-      ])
-      await expect(page.getByText('Working...').first()).toBeVisible()
-      await page.evaluate(() => {
-        Object.defineProperty(document, 'hidden', { value: true, writable: true })
-        Object.defineProperty(document, 'visibilityState', { value: 'hidden', writable: true })
-        document.dispatchEvent(new Event('visibilitychange'))
-      })
+      await startTurnThenHide(page, controller, 'turn_dim', 'Working...')
       await controller.sendEvents([
         {
           type: 'result',
@@ -1367,6 +1225,97 @@ test.describe('Notifications', () => {
       const notifPixel = await samplePixelInPage(page, { x: 22, y: 22, w: 3, h: 3 })
 
       expect(notifPixel.a).toBeLessThan(normalPixel.a * 0.7)
+    })
+  })
+
+  test.describe('Favicon Needs You', () => {
+    // Average colour of the C-arc's leftmost segment, where its 4px stroke sits at x 2-4 around y 16.
+    const arcColor = page =>
+      page.evaluate(async () => {
+        const img = new Image()
+        img.src = document.querySelector('link[rel="icon"]').href
+        await img.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const d = ctx.getImageData(2, 15, 2, 3).data
+        const avg = k => d.filter((_, i) => i % 4 === k).reduce((a, v) => a + v, 0) / (d.length / 4)
+        return { r: avg(0), g: avg(1), b: avg(2) }
+      })
+    const isRed = ({ r, g, b }) => r > 150 && g < 120 && Math.abs(g - b) < 30
+
+    // `needs_user` the open session reports; tests flip it to model the agent signalling or the reply.
+    let needsUser
+    const mockSession = page =>
+      page.route('**/api/sessions/current**', async route => {
+        if (route.request().method() !== 'GET') {
+          return route.fallback()
+        }
+        await route.fulfill({
+          json: { ...loadFixture('status/default.json'), needs_user: needsUser },
+        })
+      })
+    const turn = (id, { result }) => [
+      { type: 'user', subtype: 'text', is_human: true, content: 'Go', turn_id: id },
+      { type: 'assistant', subtype: 'text', content: `Reply ${id}`, turn_id: id },
+      ...(result ? [{ type: 'result', subtype: 'success', turn_id: id }] : []),
+    ]
+
+    test.beforeEach(() => {
+      needsUser = null
+    })
+
+    // SPEC: notify:favicon-needs-you
+    test('a session that needs you shows a red favicon in a visible tab', async ({ page }) => {
+      needsUser = 'Decide: where retry state lives'
+      await mockSession(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      await expect.poll(async () => isRed(await arcColor(page))).toBe(true)
+    })
+
+    // SPEC: notify:favicon-needs-you-clears
+    test('the red favicon survives focus and clears once you reply', async ({ page }) => {
+      needsUser = 'Decide: where retry state lives'
+      const controller = await createSSEController(page)
+      await mockSession(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await expect.poll(async () => isRed(await arcColor(page))).toBe(true)
+
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'hidden', { value: false, writable: true })
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      expect(isRed(await arcColor(page))).toBe(true)
+
+      needsUser = null
+      await controller.sendEvents(turn('turn_reply', { result: true }))
+      await expect(page.getByText('Reply turn_reply').first()).toBeVisible()
+
+      await expect.poll(async () => isRed(await arcColor(page))).toBe(false)
+    })
+
+    // SPEC: notify:favicon-needs-you-after-turn
+    test('while a response runs the favicon shows the arc, and turns red once it ends', async ({
+      page,
+    }) => {
+      const controller = await createSSEController(page)
+      await mockSession(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+
+      needsUser = 'Blocked: staging credentials missing'
+      await controller.sendEvents(turn('turn_signal', { result: false }))
+      await expect(page.getByText('Reply turn_signal').first()).toBeVisible()
+      expect(isRed(await arcColor(page))).toBe(false)
+
+      await controller.sendEvents([{ type: 'result', subtype: 'success', turn_id: 'turn_signal' }])
+
+      await expect.poll(async () => isRed(await arcColor(page))).toBe(true)
     })
   })
 })

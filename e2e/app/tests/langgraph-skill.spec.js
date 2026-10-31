@@ -1,19 +1,14 @@
 /** E2E test for LangGraph workspace skill tool invocation. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSessionWithAPI } from '../helpers.js'
 
 test.describe('LangGraph Skill', () => {
   // SPEC: langgraph:skill
   test('renders the skill tool block + completed tool_result for a LangGraph skill invocation', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/langgraph-tool-skill.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/langgraph-tool-skill.jsonl')
 
     // LangGraph skill blocks render identically to Claude's (TOOL_NAME_ALIASES normalises snake_case).
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
@@ -31,10 +26,7 @@ test.describe('LangGraph Skill', () => {
   test('a user-typed /<skill> command runs the skill directly, without a tool block', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/langgraph-skill-slash-command.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/langgraph-skill-slash-command.jsonl')
 
     // The typed command renders with the same slash-command styling Claude workspaces use.
     const slashToken = page.locator('.slash-command').first()

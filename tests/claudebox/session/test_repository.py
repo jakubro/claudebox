@@ -1,11 +1,18 @@
 """Tests for claudebox.session.repository - shared session disk I/O."""
 
+from __future__ import annotations
+
 import json
+import os
+import shutil
 from datetime import UTC, datetime
+from time import time_ns
+from unittest.mock import patch
 
 import pytest
 
-from claudebox.core.io import write_json
+import claudebox.session.repository as repository_module
+from claudebox.core.io import read_json, write_json
 from claudebox.session.models import SessionMetadata, SessionNotFound
 from claudebox.session.repository import SessionRepository
 from claudebox.workspace import Workspace
@@ -59,6 +66,19 @@ class TestListAll:
         assert len(result) == 2
         assert all(isinstance(r, SessionMetadata) for r in result)
 
+    def test_lists_the_automatic_name_beside_the_hand_given_one(self, repo, workspace):
+        _create_session_dir(workspace, "s1", {"session_id": "s1", "auto_name": "Tuning the parser"})
+        _create_session_dir(
+            workspace,
+            "s2",
+            {"session_id": "s2", "name": "Mine", "auto_name": "Other"},
+        )
+
+        by_id = {s.session_id: s for s in repo.list_all()}
+
+        assert (by_id["s1"].name, by_id["s1"].auto_name) == (None, "Tuning the parser")
+        assert (by_id["s2"].name, by_id["s2"].auto_name) == ("Mine", "Other")
+
     def test_skips_missing_session_json(self, repo, workspace):
         _create_session_dir(workspace, "sid1", {"session_id": "sid1"})
         _create_session_dir(workspace, "sid2")  # no session.json
@@ -66,6 +86,14 @@ class TestListAll:
         result = repo.list_all()
         assert len(result) == 1
         assert result[0].session_id == "sid1"
+
+    def test_skips_unreadable_session_json(self, repo, workspace):
+        _create_session_dir(workspace, "sid1", {"session_id": "sid1"})
+        corrupt = _create_session_dir(workspace, "sid2", {"session_id": "sid2"})
+        (corrupt / "session.json").write_text('{"session_id": "sid')
+
+        result = repo.list_all()
+        assert [r.session_id for r in result] == ["sid1"]
 
     def test_sorted_by_updated_at_desc(self, repo, workspace):
         _create_session_dir(
@@ -105,6 +133,106 @@ class TestListAll:
         result = repo.list_all()
         assert len(result) == 1
         assert result[0].session_id == "from-dir"
+
+
+class TestListAllRereadsOnlyChangedRecords:
+    """A listing re-reads a session.json only when its stat changed since the last listing."""
+
+    def test_an_unchanged_workspace_is_listed_without_reading_a_record(
+        self,
+        repo,
+        workspace,
+        monkeypatch,
+    ):
+        monkeypatch.setattr("claudebox.core.file_cache.time_ns", lambda: time_ns() + 3600 * 10**9)
+        _create_session_dir(workspace, "sid1", {"session_id": "sid1"})
+        _create_session_dir(workspace, "sid2", {"session_id": "sid2"})
+        repo.list_all()
+
+        with patch.object(repository_module, "read_json", wraps=read_json) as reads:
+            result = repo.list_all()
+
+        assert reads.call_count == 0
+        assert sorted(r.session_id for r in result) == ["sid1", "sid2"]
+
+    def test_a_same_size_rename_in_the_same_tick_shows_in_the_next_listing(
+        self,
+        repo,
+        workspace,
+        monkeypatch,
+    ):
+        monkeypatch.setattr("claudebox.core.file_cache.time_ns", lambda: time_ns() + 3600 * 10**9)
+        session_dir = _create_session_dir(
+            workspace,
+            "sid1",
+            {"session_id": "sid1", "fork_point_cost_usd": 0.0, "name": "alpha"},
+        )
+        record = session_dir / "session.json"
+        repo.list_all()
+        before = record.stat()
+
+        repo.update("sid1", name="omega")
+        os.utime(record, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+        assert [r.name for r in repo.list_all()] == ["omega"]
+
+    def test_a_rewritten_record_is_reread(self, repo, workspace, monkeypatch):
+        monkeypatch.setattr("claudebox.core.file_cache.time_ns", lambda: time_ns() + 3600 * 10**9)
+        session_dir = _create_session_dir(workspace, "sid1", {"session_id": "sid1", "num_turns": 1})
+        _create_session_dir(workspace, "sid2", {"session_id": "sid2"})
+        repo.list_all()
+        record = session_dir / "session.json"
+        write_json(record, {"session_id": "sid1", "fork_point_cost_usd": 0.0, "num_turns": 12})
+        os.utime(record, (record.stat().st_atime, record.stat().st_mtime + 2))
+
+        with patch.object(repository_module, "read_json", wraps=read_json) as reads:
+            result = repo.list_all()
+
+        assert reads.call_count == 1
+        assert {r.session_id: r.num_turns for r in result}["sid1"] == 12
+
+    def test_a_new_session_is_read(self, repo, workspace):
+        _create_session_dir(workspace, "sid1", {"session_id": "sid1"})
+        repo.list_all()
+        _create_session_dir(workspace, "sid2", {"session_id": "sid2"})
+
+        result = repo.list_all()
+
+        assert sorted(r.session_id for r in result) == ["sid1", "sid2"]
+
+    def test_a_deleted_session_disappears(self, repo, workspace):
+        _create_session_dir(workspace, "sid1", {"session_id": "sid1"})
+        doomed = _create_session_dir(workspace, "sid2", {"session_id": "sid2"})
+        repo.list_all()
+        shutil.rmtree(doomed)
+
+        assert [r.session_id for r in repo.list_all()] == ["sid1"]
+
+    def test_an_unreadable_record_is_retried_on_the_next_listing(self, repo, workspace):
+        corrupt = _create_session_dir(workspace, "sid1", {"session_id": "sid1"})
+        (corrupt / "session.json").write_text('{"session_id": "sid')
+        assert repo.list_all() == []
+
+        with patch.object(repository_module, "read_json", wraps=read_json) as reads:
+            repo.list_all()
+
+        assert reads.call_count == 1
+
+    def test_a_write_landing_during_the_read_is_picked_up_next_listing(self, repo, workspace):
+        session_dir = _create_session_dir(workspace, "sid1", {"session_id": "sid1", "num_turns": 1})
+        record = session_dir / "session.json"
+
+        def read_then_overwrite(path, **kwargs):
+            data = read_json(path, **kwargs)
+            write_json(record, {"session_id": "sid1", "fork_point_cost_usd": 0.0, "num_turns": 7})
+            os.utime(record, (record.stat().st_atime, record.stat().st_mtime + 2))
+
+            return data
+
+        with patch.object(repository_module, "read_json", side_effect=read_then_overwrite):
+            assert repo.list_all()[0].num_turns == 1
+
+        assert repo.list_all()[0].num_turns == 7
 
 
 class TestGet:

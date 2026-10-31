@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { TurnProvider } from '../../../../../TurnContext'
 import PersistedOutputContent from './PersistedOutputContent'
 
 // Mutable mock data for session context
@@ -14,9 +15,18 @@ vi.mock('../../../../../../../../../context/SessionDataContext', () => ({
 // Mutable mock for API calls
 let mockGetToolOutput = vi.fn()
 
-vi.mock('../../../../../../../../../api/sessions', () => ({
+// The container prefix needs an active workspace, which no test sets; the path is the subject.
+vi.mock('../../../../../../../../../api/apiClient', async importOriginal => ({
+  ...(await importOriginal()),
+  containerFetch: vi.fn(),
+  containerUrl: path => path,
+}))
+
+import { setAddress } from '../../../../../../../../../api/apiClient'
+
+vi.mock('../../../../../../../../../api/sessions', async importOriginal => ({
+  ...(await importOriginal()),
   getToolOutput: (...args) => mockGetToolOutput(...args),
-  getToolOutputDownloadUrl: toolUseId => `/api/sessions/current/tool-output/${toolUseId}/download`,
 }))
 
 // Mock CopyButton to avoid clipboard complexity
@@ -35,6 +45,7 @@ describe('PersistedOutputContent', () => {
   beforeEach(() => {
     mockSessionData = { sessionId: 'sess-123' }
     mockGetToolOutput = vi.fn()
+    setAddress('c-1', 'sess-123')
   })
 
   it('renders preview content', () => {
@@ -67,7 +78,7 @@ describe('PersistedOutputContent', () => {
     const downloadLink = screen.getByTitle('Download full output')
     expect(downloadLink).toHaveAttribute(
       'href',
-      '/api/sessions/current/tool-output/tool-456/download',
+      '/api/sessions/sess-123/tool-output/tool-456/download',
     )
   })
 
@@ -79,11 +90,31 @@ describe('PersistedOutputContent', () => {
     fireEvent.click(screen.getByTitle('Show full output'))
 
     await waitFor(() => {
-      expect(mockGetToolOutput).toHaveBeenCalledWith('tool-456')
+      expect(mockGetToolOutput).toHaveBeenCalledWith('tool-456', null)
     })
 
     await waitFor(() => {
       expect(screen.getByText('full content here')).toBeInTheDocument()
+    })
+  })
+
+  it("reads a turn's own session output when the turn names one", async () => {
+    mockGetToolOutput.mockResolvedValue({ content: 'side output' })
+
+    render(
+      <TurnProvider sessionId="side-1">
+        <PersistedOutputContent {...defaultProps} />
+      </TurnProvider>,
+    )
+
+    expect(screen.getByTitle('Download full output')).toHaveAttribute(
+      'href',
+      '/api/sessions/side-1/tool-output/tool-456/download',
+    )
+    fireEvent.click(screen.getByTitle('Show full output'))
+
+    await waitFor(() => {
+      expect(mockGetToolOutput).toHaveBeenCalledWith('tool-456', 'side-1')
     })
   })
 

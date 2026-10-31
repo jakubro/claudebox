@@ -1,11 +1,14 @@
 """Handler for the ``containers`` noun-group - list / stop / kill across workspaces."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 from datetime import UTC, datetime
 
 import httpx
 from rich.table import Table
+from rich.text import Text
 
 from claudebox import console
 from claudebox.constants import daemon_base_url
@@ -54,6 +57,15 @@ def register(parser: argparse.ArgumentParser) -> None:
 
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0)
+
+# The app's dot colours for a running container's own session.
+_SESSION_STATE_STYLES = {
+    "working": "#a855f7",
+    "waiting": "dim #a855f7",
+    "needs you": "#c2410c",
+    "idle": "#22c55e",
+}
+_NAME_MAX_WIDTH = 40
 
 
 def handle(args: argparse.Namespace) -> int:
@@ -124,45 +136,67 @@ async def _fetch_all(client: httpx.AsyncClient) -> tuple[list[dict], bool]:
 
         return [], False
 
-    async def _fetch_one(ws_id: str) -> tuple[str, list[dict] | None]:
-        try:
-            response = await client.get(f"{daemon_base_url()}/api/workspaces/{ws_id}/containers")
-            response.raise_for_status()
-        except (httpx.RequestError, httpx.HTTPStatusError):
-            return ws_id, None
+    async def _fetch_one(ws_id: str) -> tuple[str, list[dict] | None, list[dict] | None]:
+        base = f"{daemon_base_url()}/api/workspaces/{ws_id}"
+        ws_containers, sessions = await asyncio.gather(
+            _get_listing(client, f"{base}/containers", "containers"),
+            _get_listing(client, f"{base}/sessions", "sessions"),
+        )
 
-        return ws_id, response.json().get("containers", [])
+        return ws_id, ws_containers, sessions
 
     results = await asyncio.gather(*(_fetch_one(ws) for ws in workspace_ids))
 
-    if all(containers is None for _, containers in results):
+    if all(ws_containers is None for _, ws_containers, _ in results):
         console.print("[red]error: daemon not reachable[/red]")
 
         return [], True
 
     containers: list[dict] = []
 
-    for ws_id, ws_containers in results:
+    for ws_id, ws_containers, sessions in results:
         if ws_containers is None:
             console.print(f"[yellow]warning: workspace {ws_id} unreachable[/yellow]")
             continue
 
+        by_id = {s["session_id"]: s for s in sessions or []}
+
         for c in ws_containers:
             c["workspace_id"] = ws_id
+            # None hides the session columns: no session, or the workspace's sessions failed to load.
+            c["session"] = (
+                by_id.get(c["session_id"], {})
+                if sessions is not None and c.get("session_id")
+                else None
+            )
             containers.append(c)
 
     return containers, False
+
+
+async def _get_listing(client: httpx.AsyncClient, url: str, key: str) -> list[dict] | None:
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+    except (httpx.RequestError, httpx.HTTPStatusError):
+        return None
+
+    return response.json().get(key, [])
 
 
 def _render_list(containers: list[dict]) -> None:
     """Render the ``containers list`` table - 12-char short IDs, ~-shortened paths."""
 
     table = Table(header_style="bold")
-    table.add_column("ID")
+    # Rich narrows wrappable columns first, so on a narrow terminal only WORKSPACE and NAME give way.
+    table.add_column("ID", no_wrap=True)
     table.add_column("WORKSPACE")
-    table.add_column("STATE")
-    table.add_column("KIND")
-    table.add_column("AGE")
+    table.add_column("SESSION", no_wrap=True)
+    table.add_column("NAME", max_width=_NAME_MAX_WIDTH)
+    table.add_column("STATE", no_wrap=True)
+    table.add_column("SESSION STATE", no_wrap=True)
+    table.add_column("KIND", no_wrap=True)
+    table.add_column("AGE", no_wrap=True)
 
     for c in containers:
         full_id = c.get("id") or "?"
@@ -171,9 +205,40 @@ def _render_list(containers: list[dict]) -> None:
         state = c.get("status") or "?"
         kind = (c.get("labels") or {}).get("kind") or ""
         age = _format_age(c.get("created_at"))
-        table.add_row(short_id, workspace, state, kind, age)
+        session = c.get("session")
+
+        if session is None:
+            session_id, name, session_state = "", "", ""
+        else:
+            session_id = c["session_id"][:8]
+            name = session.get("name") or session.get("auto_name") or ""
+            session_state = _session_state(session) if state == "running" else ""
+
+        table.add_row(
+            short_id,
+            workspace,
+            session_id,
+            Text(name, no_wrap=True, overflow="ellipsis"),
+            state,
+            Text(session_state, style=_SESSION_STATE_STYLES.get(session_state, "")),
+            kind,
+            age,
+        )
 
     console.print(table)
+
+
+def _session_state(session: dict) -> str:
+    """What a running container's own session is doing, ranked as the app ranks its dot."""
+
+    if session.get("activity") == "working":
+        return "working"
+    elif session.get("needs_user"):
+        return "needs you"
+    elif session.get("activity") == "waiting":
+        return "waiting"
+    else:
+        return "idle"
 
 
 async def _stop_one_by_prefix(

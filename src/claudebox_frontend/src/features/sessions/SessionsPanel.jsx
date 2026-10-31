@@ -14,14 +14,19 @@ import { useSessionsList } from '../../context/SessionsContext'
 import { useStillRunningToast } from '../../context/StillRunningToastContext'
 import { useStreamingStatus } from '../../context/StreamingStatusContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useScrollElementRef } from '../../hooks/useVirtualListGeometry'
 import { openSessionInNewTab } from '../../utils/navigation'
+import { displayName } from '../../utils/sessionName'
+import { sessionRowDisplay } from '../../utils/sessionRow'
 import SessionsFilterStrip from './components/SessionsFilterStrip'
 import SessionTree, { SessionTreeProvider } from './components/session-tree'
-import SessionItem from './components/session-tree/components/SessionItem'
+import BoundSessionItem from './components/session-tree/components/BoundSessionItem'
+import WindowedSessionRows from './components/WindowedSessionRows'
 import {
   buildSearchResults,
   buildSessionTree,
   countTreeRows,
+  flattenSessionTree,
   isSessionInTree,
   matchesSessionFilter,
   ORIGIN_FILTERS,
@@ -31,25 +36,29 @@ import {
   SESSION_FILTERS,
 } from './utils/sessionTree'
 
+const sessionKey = session => session.session_id
+const treeRowKey = row => row.key
+
 export default function SessionsPanel() {
   const { sessionId: currentSessionId, sessionName: currentSessionName } = useSessionData()
   const { refreshSession } = useSessionActions()
 
   const { focusChatTab } = useAppActions()
-  const { containerMap, addStoppingSession } = useContainerMap()
+  const { containerMap, addStoppingSession, deriveSessionStatus } = useContainerMap()
 
   const { setError: setGlobalError } = useInteraction()
 
   const { navigateToSession } = useSessionRouting()
   const { workspaceId } = useWorkspace()
 
-  const { isResuming, isReplaying, isResponding } = useStreamingStatus()
+  const { isResponding } = useStreamingStatus()
   const {
     sessions,
     pinnedSessions,
     loading,
     error,
     refresh,
+    revalidate,
     togglePin,
     panelFilter,
     panelFilterPick,
@@ -61,8 +70,8 @@ export default function SessionsPanel() {
 
   // Trigger background refresh when panel mounts (may have stale data)
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    revalidate()
+  }, [revalidate])
 
   // Local, unpersisted - the chosen filter survives a reload, the query never does.
   const [searchOpen, setSearchOpen] = useState(false)
@@ -94,12 +103,18 @@ export default function SessionsPanel() {
     }
   }, [searchQuery])
 
+  // Read through a ref so the row callbacks keep their identity while these values change.
+  const latestRef = useRef(null)
+  latestRef.current = { currentSessionId, currentSessionName, isResponding, containerMap, sessions }
+
   const executeResume = useCallback(
     sessionId => {
       // Snapshot prior session before navigating so the toast can ask the user to return if still responding.
-      const prevId = currentSessionId
-      const prevName = currentSessionName
-      const prevWasResponding = isResponding
+      const {
+        currentSessionId: prevId,
+        currentSessionName: prevName,
+        isResponding: prevWasResponding,
+      } = latestRef.current
       if (workspaceId) {
         navigateToSession(workspaceId, sessionId)
       }
@@ -111,15 +126,7 @@ export default function SessionsPanel() {
         })
       }
     },
-    [
-      workspaceId,
-      navigateToSession,
-      focusChatTab,
-      currentSessionId,
-      currentSessionName,
-      isResponding,
-      showStillRunningToast,
-    ],
+    [workspaceId, navigateToSession, focusChatTab, showStillRunningToast],
   )
 
   const handleResume = useCallback(
@@ -140,8 +147,9 @@ export default function SessionsPanel() {
 
   const handleKillContainer = useCallback(
     sessionId => {
+      const { containerMap: map, sessions: listed } = latestRef.current
       const containerId =
-        containerMap[sessionId] ?? sessions.find(s => s.session_id === sessionId)?.container_id
+        map[sessionId] ?? listed.find(s => s.session_id === sessionId)?.container_id
       if (!containerId) {
         return
       }
@@ -153,7 +161,7 @@ export default function SessionsPanel() {
       // dropping it here breaks containerId->sessionId resolution and wedges the stopping indicator.
       refresh()
     },
-    [containerMap, sessions, addStoppingSession, refresh],
+    [addStoppingSession, refresh],
   )
 
   const handleRename = useCallback(
@@ -161,14 +169,14 @@ export default function SessionsPanel() {
       try {
         await updateSession(sessionId, { name })
         void refresh()
-        if (sessionId === currentSessionId) {
+        if (sessionId === latestRef.current.currentSessionId) {
           await refreshSession()
         }
       } catch (_err) {
         setGlobalError('Rename failed')
       }
     },
-    [refresh, refreshSession, currentSessionId, setGlobalError],
+    [refresh, refreshSession, setGlobalError],
   )
 
   const handleTogglePin = useCallback(
@@ -190,7 +198,7 @@ export default function SessionsPanel() {
   }, [sessions, pinnedSessions, pinnedSessionsSet, currentSessionId])
 
   const activeTree = treesByFilter[panelFilter]
-  const { rootSessions, childrenMap } = activeTree
+  const { rootSessions } = activeTree
 
   // Bypasses every filter's tree, not just the active one - the whole point is that a match is
   // found whether or not the chosen filter would have listed it.
@@ -224,6 +232,11 @@ export default function SessionsPanel() {
 
   const [expandedSessions, setExpandedSessions] = useState(new Set())
   const manuallyCollapsedRef = useRef(new Set())
+  const treeRows = useMemo(
+    () => flattenSessionTree(activeTree, expandedSessions),
+    [activeTree, expandedSessions],
+  )
+  const [listEl, attachListRef] = useScrollElementRef()
 
   // Auto-expand ancestor chain of active session (skip for pinned sessions)
   useEffect(() => {
@@ -271,6 +284,7 @@ export default function SessionsPanel() {
   // it sets is derived - the stored pick never moves, so returning to a listed session clears it.
   const filterCheckRef = useRef({ panelFilterPick, treesByFilter, setFallbackToAll })
   filterCheckRef.current = { panelFilterPick, treesByFilter, setFallbackToAll }
+  // audit-ignore: session-transition-guard - a filter baseline, not per-session state
   const lastCheckedSessionIdRef = useRef(undefined)
   const hasFilterBaselineRef = useRef(false)
 
@@ -303,14 +317,6 @@ export default function SessionsPanel() {
     setFallback(!present)
   }, [currentSessionId])
 
-  if (isResuming || isReplaying) {
-    return (
-      <div className="sessions-panel sessions-loading" data-testid="panel-sessions">
-        Resuming...
-      </div>
-    )
-  }
-
   if (loading && sessions.length === 0) {
     return (
       <div className="sessions-panel sessions-loading" data-testid="panel-sessions">
@@ -342,19 +348,17 @@ export default function SessionsPanel() {
 
   // Shared by the origin-filter branch and by search results - the two flat, non-tree row lists.
   const renderSessionRow = (session, originName) => (
-    <SessionItem
-      key={session.session_id}
+    <BoundSessionItem
       session={session}
+      {...sessionRowDisplay(session, deriveSessionStatus)}
       isCurrent={session.session_id === currentSessionId}
       isPinned={pinnedSessionsSet.has(session.session_id)}
       originName={originName}
-      onResume={() => handleResume(session.session_id)}
-      onRename={name => handleRename(session.session_id, name)}
-      actions={{
-        onTogglePin: () => handleTogglePin(session.session_id),
-        onKillContainer: () => handleKillContainer(session.session_id),
-        onOpenInNewTab: () => handleOpenInNewTab(session.session_id),
-      }}
+      onResume={handleResume}
+      onRename={handleRename}
+      onTogglePin={handleTogglePin}
+      onKillContainer={handleKillContainer}
+      onOpenInNewTab={handleOpenInNewTab}
     />
   )
 
@@ -402,44 +406,62 @@ export default function SessionsPanel() {
           </button>
         </div>
       </div>
-      <div className="sessions-list">
+      <div className="sessions-list" ref={attachListRef}>
         {isSearching ? (
           searchResults.length === 0 ? (
             <p className="sessions-filter-empty">No sessions match "{trimmedSearchQuery}"</p>
           ) : (
-            searchResults.map(session => renderSessionRow(session))
+            <WindowedSessionRows
+              scrollEl={listEl}
+              rows={searchResults}
+              getKey={sessionKey}
+              renderRow={session => renderSessionRow(session)}
+            />
           )
         ) : filterIsEmpty ? (
           <p className="sessions-filter-empty">
             No {SESSION_FILTER_LABELS[panelFilter].toLowerCase()} sessions
           </p>
         ) : isOriginFilter ? (
-          originSessions.map(session =>
-            renderSessionRow(
-              session,
-              sessionsById.get(originIdFor(panelFilter, session))?.name || null,
-            ),
-          )
+          <WindowedSessionRows
+            scrollEl={listEl}
+            rows={originSessions}
+            getKey={sessionKey}
+            withOrigin
+            renderRow={session =>
+              renderSessionRow(
+                session,
+                displayName(sessionsById.get(originIdFor(panelFilter, session))),
+              )
+            }
+          />
         ) : (
           <SessionTreeProvider
-            childrenMap={childrenMap}
-            expandedSessions={expandedSessions}
             currentSessionId={currentSessionId}
             pinnedSessions={pinnedSessionsSet}
+            deriveSessionStatus={deriveSessionStatus}
             onResume={handleResume}
             onRename={handleRename}
             onTogglePin={handleTogglePin}
             onToggleExpanded={toggleExpanded}
             onKillContainer={handleKillContainer}
             onOpenInNewTab={handleOpenInNewTab}>
-            {rootSessions.map((session, index) => (
-              <SessionTree
-                key={session.session_id}
-                session={session}
-                depth={0}
-                isLastChild={index === rootSessions.length - 1}
-              />
-            ))}
+            <WindowedSessionRows
+              scrollEl={listEl}
+              rows={treeRows}
+              getKey={treeRowKey}
+              renderRow={row => (
+                <SessionTree
+                  session={row.session}
+                  depth={row.depth}
+                  isLastChild={row.isLastChild}
+                  continuations={row.continuations}
+                  hasChildren={row.hasChildren}
+                  isExpanded={row.isExpanded}
+                  hiddenSessions={row.hiddenSessions}
+                />
+              )}
+            />
           </SessionTreeProvider>
         )}
       </div>

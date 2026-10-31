@@ -1,5 +1,7 @@
 """Shared test helpers for claudebox.agent_session.orchestration tests."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 
 from claudebox.agent_session.orchestration.models import PublishedEvent

@@ -1,17 +1,22 @@
 """Tests for the container API sessions handler - /current response shape."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from claudebox import SessionEntryNotFound
+from claudebox.agent_session.orchestration.errors import ToolOutputNotFound
 from claudebox.agent_session.orchestration.models import PublishedEvent, SessionSummary
 from claudebox.agent_session.orchestration.persistence import EventLog
 from claudebox.workspace import Workspace
 from claudebox_container_api.handlers.sessions import (
+    download_session_tool_output,
     get_current_session,
     get_session_events,
+    get_session_tool_output,
     stop_session,
 )
 
@@ -155,3 +160,41 @@ async def test_session_events_empty_for_a_session_with_no_persisted_log(tmp_work
     body = await get_session_events(registry, "never-started")
 
     assert body == {"events": [], "running": False}
+
+
+@pytest.fixture
+def _stopped_side_thread_output(tmp_workspace, monkeypatch):
+    """Plant tool output for a session no registry entry holds, as a stopped thread's is."""
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_workspace / ".claude"))
+    project = tmp_workspace / ".claude" / "projects" / "-home-dev-my-app"
+    (project / "side-1" / "tool-results").mkdir(parents=True)
+    (project / "side-1.jsonl").write_text("{}\n")
+    (project / "side-1" / "tool-results" / "toolu_1.txt").write_text("full listing")
+
+    registry = MagicMock(workspace=Workspace(start_dir=tmp_workspace))
+    registry.get.side_effect = AssertionError("must not resolve through a live session")
+
+    return registry
+
+
+@pytest.mark.anyio
+async def test_session_tool_output_reads_a_session_that_is_not_running(_stopped_side_thread_output):
+    body = await get_session_tool_output(_stopped_side_thread_output, "side-1", "toolu_1")
+
+    assert body == {"content": "full listing", "truncated": False, "total_size": 12}
+
+
+@pytest.mark.anyio
+async def test_session_tool_output_download_serves_the_named_session_file(
+    _stopped_side_thread_output,
+):
+    response = await download_session_tool_output(_stopped_side_thread_output, "side-1", "toolu_1")
+
+    assert response.path.read_text() == "full listing"
+
+
+@pytest.mark.anyio
+async def test_session_tool_output_missing_is_not_found(_stopped_side_thread_output):
+    with pytest.raises(ToolOutputNotFound):
+        await get_session_tool_output(_stopped_side_thread_output, "side-1", "toolu_missing")

@@ -5,6 +5,8 @@ events.jsonl -> messages -> checkpoints.sqlite, then a session.json runtime/prov
 Skips an already-migrated session: the reducer appends, so a rerun would double its history.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import sys

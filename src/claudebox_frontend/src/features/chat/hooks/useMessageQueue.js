@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MESSAGE_QUEUE_STORAGE_PREFIX as STORAGE_PREFIX } from '../../../config/storage'
-import MessageQueueManager from '../MessageQueueManager'
+import { updateStoredList } from '../../../utils/storedList'
+import MessageQueueManager, { failedMessageItem, withSendFailure } from '../MessageQueueManager'
 
 /**
  * @param {object} deps
@@ -10,17 +11,18 @@ import MessageQueueManager from '../MessageQueueManager'
  * @param {number} deps.compactionCount - Compaction completion counter from EventsContext.
  * @param {boolean} deps.isLoading - True while a stored conversation is still materializing.
  * @param {string|null} deps.interruptStatus - Current interrupt status.
- * @param {string|null} deps.errorMessage - Current error message.
  * @param {string|null} deps.sessionId - Active session ID.
- * @param {function} deps.sendFn - Callback to send a message (from useSendMessage).
+ * @param {string|null} deps.containerId - Container serving it; queued items are sent to the pair.
+ * @param {function} deps.sendFn - Callback to send a message (from useSendMessage); the hook returns
+ *   it wrapped as `send`, so a failed send pauses the queue of the session it was sent in.
  */
 export default function useMessageQueue({
   resultCount,
   compactionCount,
   isLoading,
   interruptStatus,
-  errorMessage,
   sessionId,
+  containerId,
   sendFn,
 }) {
   const [queueItems, setQueueItems] = useState([])
@@ -28,6 +30,10 @@ export default function useMessageQueue({
   // Ref tracks current storage key - avoids stale closures in onChange
   const storageKeyRef = useRef(null)
   storageKeyRef.current = sessionId ? `${STORAGE_PREFIX}${sessionId}` : null
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
+  const containerIdRef = useRef(containerId)
+  containerIdRef.current = containerId
 
   // Stable manager instance with persistence in onChange
   const managerRef = useRef(null)
@@ -36,12 +42,13 @@ export default function useMessageQueue({
       onChange: items => {
         setQueueItems(items)
         const key = storageKeyRef.current
+        const owned = items.filter(i => !i.owner)
         if (key) {
           try {
-            if (items.length === 0) {
+            if (owned.length === 0) {
               localStorage.removeItem(key)
             } else {
-              localStorage.setItem(key, JSON.stringify(items))
+              localStorage.setItem(key, JSON.stringify(owned))
             }
           } catch {}
         }
@@ -50,15 +57,55 @@ export default function useMessageQueue({
   }
   const manager = managerRef.current
 
-  const drain = useCallback(() => {
+  // A failed send pauses the queue of the session it was sent in - the one on screen in memory,
+  // one left since in its saved queue - returning its item, if any, to the front.
+  const settleSendFailure = useCallback(
+    (owner, failedItem) => {
+      if (!owner || owner === sessionIdRef.current) {
+        manager.handleSendFailure(failedItem)
+      } else {
+        updateStoredList(`${STORAGE_PREFIX}${owner}`, items => withSendFailure(items, failedItem))
+      }
+    },
+    [manager],
+  )
+
+  const sendItem = useCallback(
+    async (owner, item) => {
+      const sent = await sendFn(item.content, {
+        attachments: item.attachments,
+        target: { sessionId: owner, containerId: containerIdRef.current },
+      })
+      if (!sent) {
+        settleSendFailure(owner, item)
+      }
+    },
+    [sendFn, settleSendFailure],
+  )
+
+  const send = useCallback(
+    async (content, options) => {
+      const owner = sessionIdRef.current
+      const sent = await sendFn(content, options)
+      if (!sent) {
+        settleSendFailure(owner, null)
+      }
+
+      return sent
+    },
+    [sendFn, settleSendFailure],
+  )
+
+  const drain = useCallback(async () => {
     if (!manager.hasQueued()) {
       return
     }
+    const owner = sessionIdRef.current
     const item = manager.handleResponseCycleEnd()
     if (item) {
-      sendFn(item.content, { attachments: item.attachments })
+      await sendItem(owner, item)
     }
-  }, [manager, sendFn])
+  }, [manager, sendItem])
 
   // Drains when a LIVE response cycle ends. Both counters increment inside the EventsContext reducer
   // (not an effect), catching transitions that 50ms event batching would otherwise collapse.
@@ -95,16 +142,7 @@ export default function useMessageQueue({
     }
   }, [interruptStatus, manager])
 
-  // Pause on error
-  useEffect(() => {
-    if (errorMessage) {
-      manager.handleError()
-    }
-  }, [errorMessage, manager])
-
-  // Restores from localStorage on session change (or clears if nothing stored).
-  // On fresh-session init (null->value), merges stored items with orphans queued before sessionId existed.
-  const prevSessionIdRef = useRef(sessionId)
+  // Restores the attached session's stored queue on session change, or clears it if none is stored.
   useEffect(() => {
     let items = []
     if (sessionId) {
@@ -115,40 +153,45 @@ export default function useMessageQueue({
         }
       } catch {}
     }
-
-    const wasNull = prevSessionIdRef.current === null
-    if (wasNull && sessionId !== null && manager.items.length > 0) {
-      manager.mergeRestore(items)
-    } else {
-      manager.restore(items)
-    }
-    prevSessionIdRef.current = sessionId
+    manager.restore(items)
   }, [sessionId, manager])
 
   // Stable bound callbacks
   const enqueueMessage = useCallback(
-    (content, attachments) => manager.enqueue(content, attachments),
+    (content, attachments, owner) => manager.enqueue(content, attachments, { owner }),
     [manager],
+  )
+  const takeCreation = useCallback(seq => manager.takeCreation(seq), [manager])
+  const adoptCreation = useCallback(seq => manager.adoptCreation(seq), [manager])
+  const returnFailedMessage = useCallback(
+    (owner, content, attachments) =>
+      settleSendFailure(owner, failedMessageItem(content, attachments)),
+    [settleSendFailure],
   )
   const editQueuedItem = useCallback(id => manager.editItem(id), [manager])
   const cancelQueuedItem = useCallback(id => manager.cancelItem(id), [manager])
   const requeueItem = useCallback(id => manager.requeueItem(id), [manager])
   const sendNowItem = useCallback(
-    id => {
+    async id => {
+      const owner = sessionIdRef.current
       const item = manager.sendNowItem(id)
       if (item) {
-        sendFn(item.content, { attachments: item.attachments })
+        await sendItem(owner, item)
       }
     },
-    [manager, sendFn],
+    [manager, sendItem],
   )
 
   return {
     queueItems,
+    send,
     enqueueMessage,
+    returnFailedMessage,
     editQueuedItem,
     cancelQueuedItem,
     requeueItem,
     sendNowItem,
+    takeCreation,
+    adoptCreation,
   }
 }

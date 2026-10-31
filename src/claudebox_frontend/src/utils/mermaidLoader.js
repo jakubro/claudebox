@@ -17,6 +17,39 @@ const MERMAID_THEME_VARIABLES = {
   titleColor: '#cccccc',
   edgeLabelBackground: '#212122',
   nodeTextColor: '#cccccc',
+  gradientStart: '#3c3c3c',
+  gradientStop: '#3c3c3c',
+  dropShadow: 'none',
+}
+
+const FONT_FAMILY = 'var(--font-sans)'
+
+// Per-diagram font keys default to faces the app does not ship, and the global fontFamily does not reach them.
+const C4_FONT_KEYS = [
+  'person',
+  'system',
+  'system_db',
+  'system_queue',
+  'container',
+  'container_db',
+  'container_queue',
+  'component',
+  'component_db',
+  'component_queue',
+].flatMap(element => [`${element}FontFamily`, `external_${element}FontFamily`])
+
+const DIAGRAM_FONTS = {
+  sequence: {
+    actorFontFamily: FONT_FAMILY,
+    noteFontFamily: FONT_FAMILY,
+    messageFontFamily: FONT_FAMILY,
+  },
+  journey: { taskFontFamily: FONT_FAMILY, titleFontFamily: FONT_FAMILY },
+  timeline: { taskFontFamily: FONT_FAMILY },
+  usecase: { actorFontFamily: FONT_FAMILY, usecaseFontFamily: FONT_FAMILY },
+  c4: Object.fromEntries(
+    [...C4_FONT_KEYS, 'boundaryFontFamily', 'messageFontFamily'].map(key => [key, FONT_FAMILY]),
+  ),
 }
 
 let mermaidInstance = null
@@ -63,8 +96,8 @@ export async function renderMermaidChart(id, source) {
         securityLevel: 'strict',
         // Skip mermaid's own error graphic - the fallback is syntax-highlighted source.
         suppressErrorRendering: true,
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif',
+        fontFamily: FONT_FAMILY,
+        ...DIAGRAM_FONTS,
       })
       mermaidInitialized = true
     }

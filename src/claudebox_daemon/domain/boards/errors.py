@@ -1,5 +1,7 @@
 """Board domain exceptions - daemon-specific and re-exported from extension."""
 
+from __future__ import annotations
+
 from claudebox.extensions.tickets import (  # noqa: F401
     BoardParseError,
     InvalidLabel,

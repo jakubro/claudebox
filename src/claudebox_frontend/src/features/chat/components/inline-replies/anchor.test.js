@@ -26,7 +26,7 @@ describe('canonicalTurnText', () => {
   it('includes prose, tool output, and thinking text; excludes gutters and copy buttons', () => {
     const role = roleWith(
       '<div class="turn-text"><p>hello world</p>' +
-        '<button class="turn-text-copy-btn">copy</button></div>' +
+        '<button class="copy-btn">copy</button></div>' +
         '<div class="tool-block"><div class="tool-details">' +
         '<span class="code-block-gutter">12</span>ran a command</div></div>' +
         '<div class="thinking-block"><span class="thinking-content-inline"><p>a thought</p></span></div>' +

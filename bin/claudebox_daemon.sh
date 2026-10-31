@@ -26,12 +26,19 @@ kill_tree() {
 # Set by cleanup() so the main path can tell an intentional (signal) stop from a crash - only the former exits 0.
 SHUTDOWN_REQUESTED=0
 
-# Budget here (~5s: TERM then KILL) must stay within systemd's TimeoutStopSec=15 for this unit.
+# Grace between TERM and KILL - must stay within systemd's TimeoutStopSec=15 for this unit.
+STOP_GRACE_SECONDS=5
+
 cleanup() {
   SHUTDOWN_REQUESTED=1
   trap '' SIGTERM SIGINT
   kill_tree "$CHILD_PID"
-  sleep 5
+  # uv exits only after the daemon it forwarded TERM to, so its exit marks the daemon's.
+  local tick
+  for ((tick = 0; tick < STOP_GRACE_SECONDS * 10; tick++)); do
+    kill -0 "$CHILD_PID" 2>/dev/null || break
+    sleep 0.1
+  done
   kill_tree "$CHILD_PID" KILL
   # A signal-killed child makes wait return 128+N - || true keeps set -e from
   # aborting cleanup here so the main path runs the exit-status logic.

@@ -1,3 +1,7 @@
 [src]
+include = ["src", "tests", "e2e", "etc", "scripts", "container/run/fs/root/.local/bin/claudebox-trace"]
 respect-ignore-files = true
 exclude = ["scripts/test-ui/", "scripts/demo-gif.py"]
+
+[terminal]
+error-on-warning = true

@@ -65,6 +65,9 @@ export function AppActionsProvider({
   // the chat area pick the destination column, rather than resolving the active view itself.
   const jumpToTaskRef = useRef(null)
 
+  // Registered by ChatPanel; the Bookmarks panel and a reloaded link land on a bookmarked part here.
+  const jumpToBookmarkRef = useRef(null)
+
   const focusChatTab = useCallback(() => onFocusChat?.(), [onFocusChat])
 
   const value = useMemo(
@@ -80,6 +83,7 @@ export function AppActionsProvider({
       scrollToTurnRef,
       expandTurnRef,
       jumpToTaskRef,
+      jumpToBookmarkRef,
       jumpPrevRef,
       jumpNextRef,
       jumpTopRef,

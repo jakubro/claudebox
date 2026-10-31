@@ -1,17 +1,29 @@
 /** Element overrides react-markdown renders each markdown tag with. */
 
+import GeoMap from './components/GeoMap'
 import HighlightedText from './components/HighlightedText'
+import MarkdownBlockquote from './components/MarkdownBlockquote'
 import MarkdownCodeFence from './components/MarkdownCodeFence'
+import MarkdownImage from './components/MarkdownImage'
+import MarkdownLink from './components/MarkdownLink'
 import MermaidDiagram from './components/MermaidDiagram'
+import StlViewer from './components/StlViewer'
+import { colorValue } from './utils/colorValue'
 
 // react-markdown uses these functions as the JSX element type per tag.
 // A new identity per render forces a subtree remount, not a reconcile - built once at module scope, stays put.
 const MARKDOWN_COMPONENTS = {
-  a({ href, children, node, ...props }) {
+  a({ node, ...props }) {
+    return <MarkdownLink {...props} />
+  },
+  img({ node, ...props }) {
+    return <MarkdownImage {...props} />
+  },
+  blockquote({ children, node, className, ...props }) {
     return (
-      <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+      <MarkdownBlockquote {...props} node={node} className={className}>
         {children}
-      </a>
+      </MarkdownBlockquote>
     )
   },
   p({ children, node, ...props }) {
@@ -54,15 +66,25 @@ const MARKDOWN_COMPONENTS = {
     if (language === 'mermaid') {
       return <MermaidDiagram chart={code} />
     }
+    if (language === 'geojson' || language === 'topojson') {
+      return <GeoMap source={code} format={language} />
+    }
+    if (language === 'stl') {
+      return <StlViewer source={code} />
+    }
 
     // Block code - delegated to memoized child so finalized fences bail out of re-render during streaming flushes.
     if (isBlock) {
       return <MarkdownCodeFence code={code} language={language} />
     }
 
+    const color = colorValue(String(children))
     return (
       <code className={className} {...props}>
         <HighlightedText>{children}</HighlightedText>
+        {color && (
+          <span className="color-swatch" aria-hidden="true" style={{ backgroundColor: color }} />
+        )}
       </code>
     )
   },

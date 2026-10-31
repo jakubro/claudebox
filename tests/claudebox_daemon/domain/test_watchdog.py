@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.watchdog - event-loop lag detection."""
 
+from __future__ import annotations
+
 import asyncio
 import time
 
@@ -67,11 +69,13 @@ class TestWatchdogLifecycle:
     @pytest.mark.anyio
     async def test_start_anchors_baseline_to_start_time_not_construction_time(self):
         watchdog = DaemonWatchdog()
-        await asyncio.sleep(0.05)  # widen the construction-to-start gap
+        await asyncio.sleep(0.05)  # a construction-time baseline lands before the bracket below
 
+        before = time.monotonic()
         await watchdog.start()
+        after = time.monotonic()
 
-        assert abs(watchdog._next_wake - (time.monotonic() + watchdog._interval)) < 0.05
+        assert before + watchdog._interval <= watchdog._next_wake <= after + watchdog._interval
         assert watchdog._task is not None
 
         watchdog._task.cancel()

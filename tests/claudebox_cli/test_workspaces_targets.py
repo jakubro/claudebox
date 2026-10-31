@@ -1,5 +1,7 @@
 """Parser-level tests for ``claudebox workspaces`` action + arg parsing."""
 
+from __future__ import annotations
+
 import pytest
 
 from host_cli import app

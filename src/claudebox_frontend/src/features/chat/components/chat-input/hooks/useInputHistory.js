@@ -9,6 +9,7 @@ import {
 import useLocalStorage from '../../../../../hooks/useLocalStorage'
 import { isHumanEvent } from '../../../../../utils/eventPredicates'
 import { parseSlashCommand } from '../../../../../utils/parsers'
+import { updateStoredList } from '../../../../../utils/storedList'
 import InputHistoryManager from '../InputHistoryManager'
 import { capHistory } from '../utils/inputHistoryCap'
 
@@ -29,7 +30,9 @@ const HISTORY_LIMITS = { maxEntries: MAX_INPUT_HISTORY_ENTRIES, maxBytes: MAX_IN
  * @param {function} saveDrafts - Saves drafts.
  * @param {RefObject} textareaRef - Ref to the textarea element.
  * @param {function} resizeTextarea - Resizes the textarea.
- * @returns {{ inputHistory, addToHistory, navigateUp, navigateDown, resetIndex, getNavState, updateCurrentItem, prepareSubmit }}
+ * @param {object} ownership - `{ownerNow, resolveOwner}` from useSessionOwnership; an addition made
+ *   with no session attached lands in the session its owner resolves to.
+ * @returns {{ inputHistory, addToHistory, navigateUp, navigateDown, replaceCurrent, resetIndex, getNavState, updateCurrentItem, prepareSubmit }}
  */
 export default function useInputHistory(
   sessionId,
@@ -39,6 +42,7 @@ export default function useInputHistory(
   saveDrafts,
   textareaRef,
   resizeTextarea,
+  ownership,
 ) {
   const [inputHistory, setInputHistory] = useLocalStorage(
     sessionId ? `${INPUT_HISTORY_STORAGE_PREFIX}${sessionId}` : null,
@@ -51,10 +55,13 @@ export default function useInputHistory(
   }
   const manager = managerRef.current
 
+  // audit-ignore: session-transition-guard - resets navigation on any change of the attached session
   const prevSessionIdRef = useRef(null)
   const pendingAdditionsRef = useRef([])
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
+  const ownershipRef = useRef(ownership)
+  ownershipRef.current = ownership
 
   // Keeps manager in sync; drafts are read live via ref (not a render snapshot) because ChatInput's
   // persistDraftDirect bypasses React state, so `drafts` would otherwise lag behind the typed text.
@@ -68,9 +75,25 @@ export default function useInputHistory(
       manager.resetNavigation()
 
       if (sessionId && pendingAdditionsRef.current.length > 0) {
-        const pending = pendingAdditionsRef.current
-        pendingAdditionsRef.current = []
-        setInputHistory(prev => capHistory([...prev, ...pending], HISTORY_LIMITS))
+        const { resolveOwner } = ownershipRef.current
+        const own = []
+        const waiting = []
+        for (const addition of pendingAdditionsRef.current) {
+          const target = resolveOwner(addition.owner)
+          if (target === sessionId) {
+            own.push(addition.content)
+          } else if (target) {
+            updateStoredList(`${INPUT_HISTORY_STORAGE_PREFIX}${target}`, prev =>
+              capHistory([...prev, addition.content], HISTORY_LIMITS),
+            )
+          } else {
+            waiting.push(addition)
+          }
+        }
+        pendingAdditionsRef.current = waiting
+        if (own.length > 0) {
+          setInputHistory(prev => capHistory([...prev, ...own], HISTORY_LIMITS))
+        }
       }
     }
   }, [sessionId, setInputHistory, manager])
@@ -110,7 +133,7 @@ export default function useInputHistory(
       }
       manager.addRecentAddition(content)
       if (!sessionIdRef.current) {
-        pendingAdditionsRef.current.push(content)
+        pendingAdditionsRef.current.push({ owner: ownershipRef.current.ownerNow(), content })
       } else {
         setInputHistory(prev => capHistory([...prev, content], HISTORY_LIMITS))
       }
@@ -164,6 +187,23 @@ export default function useInputHistory(
     return result.handled
   }, [textareaRef, resizeTextarea, draftsRef, saveDrafts, manager])
 
+  const replaceCurrent = useCallback(
+    text => {
+      const textarea = textareaRef.current
+      if (textarea.value !== text) {
+        manager.setDrafts(draftsRef.current)
+        const aside = manager.setAside(textarea.value)
+        const stack = draftsRef.current.stack || []
+        saveDrafts({ current: text, stack: aside ? [...stack, aside] : stack })
+        textarea.value = text
+        resizeTextarea()
+      }
+      textarea.selectionStart = text.length
+      textarea.selectionEnd = text.length
+    },
+    [textareaRef, resizeTextarea, draftsRef, saveDrafts, manager],
+  )
+
   const updateCurrentItem = useCallback(
     newValue => {
       const target = manager.updateCurrentItem(newValue)
@@ -187,11 +227,11 @@ export default function useInputHistory(
   )
 
   const prepareSubmit = useCallback(
-    content => {
+    (content, kept = '') => {
       // Refresh draft snapshot - prepareSubmit reads stack to compute newStack.
       manager.setDrafts(draftsRef.current)
       const result = manager.prepareSubmit(content)
-      saveDrafts({ current: '', stack: result.newStack })
+      saveDrafts({ current: kept, stack: result.newStack })
       addToHistory(content)
       return { content: result.content, fromDraft: result.fromDraft, draftIndex: result.draftIndex }
     },
@@ -203,6 +243,7 @@ export default function useInputHistory(
     addToHistory,
     navigateUp,
     navigateDown,
+    replaceCurrent,
     resetIndex,
     getNavState,
     updateCurrentItem,

@@ -1,5 +1,7 @@
 """Projection sources skill metadata from the active runtime, not ClaudeRuntime."""
 
+from __future__ import annotations
+
 from typing import cast
 
 from claudebox.agent_session.catalogs import Skill

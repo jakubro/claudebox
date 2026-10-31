@@ -4,7 +4,10 @@ Composition, not inheritance: `_sdk` holds the SDK client, methods forward expli
 in claudebox/ importing `claude_agent_sdk`, enforced via ruff (see GUIDELINES, SDK Containment).
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
@@ -12,9 +15,9 @@ import shutil
 import time
 import uuid
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, NamedTuple, Protocol
 
 from claude_agent_sdk import (
     AssistantMessage as SdkAssistantMessage,
@@ -53,15 +56,27 @@ from claude_agent_sdk import (
     UserMessage as SdkUserMessage,
 )
 from claude_agent_sdk import (
+    query as sdk_query,
+)
+from claude_agent_sdk import (
     tool as sdk_tool,
 )
 
+from ._needs_user import (
+    NEEDS_USER_CLAUDE_TOOL_NAME,
+    NEEDS_USER_DESCRIPTION,
+    NEEDS_USER_REPLIES_DESCRIPTION,
+    NEEDS_USER_TOOL_NAME,
+    needs_user_replies,
+    needs_user_reply,
+)
 from ._sibling_sessions import (
-    SIBLING_MCP_SERVER_NAME,
+    CLAUDEBOX_MCP_SERVER_NAME,
     SiblingSessionClient,
     SiblingSessionError,
 )
 from ._skills import walk_skills
+from ._titles import TITLE_SYSTEM_PROMPT, clean_title, title_prompt
 from .catalogs import ContextUsage, EffortLevel, Model, PermissionMode, Skill, StreamHealth
 from .config import ClaudeAgentSessionConfig, RuntimeCapabilities
 from .events import (
@@ -87,10 +102,8 @@ from .hooks import (
     PostToolUsePayload,
     PreToolUsePayload,
 )
-from .orchestration.errors import McpServerProtected
-from ..constants import SDK_CONTROL_REQUEST_TIMEOUT, claude_settings_file
-from ..core.fs import touch_dir
-from ..core.io import read_json, write_json
+from .orchestration.errors import ChangeRefused, McpServerProtected, SessionNotReady
+from ..constants import QUEUED_CHANGE_TIMEOUT, SDK_CONTROL_REQUEST_TIMEOUT, claude_settings_file
 from ..core.logging import get_logger
 
 
@@ -107,11 +120,37 @@ KNOWN_INIT_FIELDS: frozenset[str] = frozenset(
     | {"type", "subtype", "session_id", "model"},
 )
 
+
+class _QueuedPrompt(NamedTuple):
+    prompt: str | list[dict]
+    message_uuid: str | None
+
+
+class _QueuedChange(NamedTuple):
+    apply: Callable[[], Awaitable[None]]
+    # None when the caller does not wait for the outcome.
+    future: asyncio.Future | None
+
+
 # Unknown init keys already warned about - dedups the warning to once per process.
 _SEEN_UNKNOWN_INIT_KEYS: set[str] = set()
 
 # Set once the health probe has failed - dedups the warning to once per process.
 _WARNED_STREAM_HEALTH_UNAVAILABLE = False
+
+# A full JSON schema, since the SDK's shorthand {name: type} form marks every key required.
+_NEEDS_USER_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reason": {"type": "string"},
+        "replies": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": NEEDS_USER_REPLIES_DESCRIPTION,
+        },
+    },
+    "required": ["reason"],
+}
 
 
 class ToolInputValidator(Protocol):
@@ -192,8 +231,7 @@ class ClaudeRuntime:
     """AgentSession adapter for the Claude Code SDK.
 
     Composes (does not subclass) `BaseClaudeSDKClient` via `self._sdk`. Owns the pre-connect query
-    buffer, the per-session settings.json symlink, the effort-level side-channel write, and the SDK
-    compact-trigger taxonomy translation.
+    buffer, the per-session settings.json symlink, and the SDK compact-trigger taxonomy translation.
     """
 
     runtime_name: str = "Claude"
@@ -211,7 +249,9 @@ class ClaudeRuntime:
         "stopped": "killed",
     }
 
-    DEFAULT_MODEL = "claude-opus-5"
+    DEFAULT_MODEL = "claude-opus-5-5"
+    # An alias, not a catalog id: the agent CLI resolves it to the newest small model it knows.
+    TITLE_MODEL = "haiku"
     DEFAULT_CONTEXT_WINDOW = 1_000_000
     DEFAULT_EFFORT_LEVEL = "xhigh"
     DEFAULT_PERMISSION_MODE = "default"
@@ -236,10 +276,9 @@ class ClaudeRuntime:
 
     AVAILABLE_MODELS: ClassVar[list[Model]] = [
         Model(id="claude-fable-5-1", name="Fable 5.1", context_window=1_000_000),
-        Model(id="claude-fable-5", name="Fable 5", context_window=1_000_000),
-        Model(id="claude-opus-5", name="Opus 5", context_window=1_000_000),
-        Model(id="claude-sonnet-5", name="Sonnet 5", context_window=1_000_000),
-        Model(id="claude-haiku-4-5-20251001", name="Haiku 4.5", context_window=200_000),
+        Model(id="claude-opus-5-5", name="Opus 5.5", context_window=1_000_000),
+        Model(id="claude-sonnet-5-5", name="Sonnet 5.5", context_window=1_000_000),
+        Model(id="claude-haiku-5-5", name="Haiku 5.5", context_window=1_000_000),
     ]
 
     AVAILABLE_EFFORT_LEVELS: ClassVar[list[EffortLevel]] = [
@@ -294,12 +333,20 @@ class ClaudeRuntime:
         # Gates `_fire_*_changed` callbacks against first-call baseline + no-op writes.
         self._last_known_model: str | None = None
         self._last_known_permission_mode: str | None = None
-        self._last_known_effort_level: str | None = None
+        # A new session runs at the default until told otherwise, so its first differing set is a
+        # change the projection must record; a resume adopts its recorded level silently instead.
+        self._last_known_effort_level: str | None = (
+            None if config.resume_session_id else self.get_default_effort_level()
+        )
 
-        # Queries and pending control-plane calls drain in `_flush_on_ready` once `connect()` returns.
+        # Prompts and changes drain in `_flush_on_ready`, in the order made, once `connect()` returns;
+        # calls made before `_drained` is set queue behind the drain so nothing overtakes an older one.
         self.ready = asyncio.Event()
-        self._buffer: deque[str | list[dict]] = deque()
-        self._pending_calls: deque[tuple[str, tuple, dict]] = deque()
+        self._drained = asyncio.Event()
+        # Set instead of `ready` when connect() raises - readiness alone can't tell "not yet" from
+        # "never will"; every ready-gated method below checks this first.
+        self.connect_error: str | None = None
+        self._queue: deque[_QueuedPrompt | _QueuedChange] = deque()
         self._flush_task: asyncio.Task | None = None
 
         # PreToolUse pushes `time.monotonic()`; PostToolUse/PostToolUseFailure pop it to compute
@@ -320,8 +367,15 @@ class ClaudeRuntime:
 
         self._isolate_settings_file()
         self._flush_task = asyncio.create_task(self._flush_on_ready())
-        await self._sdk.connect()
-        self.ready.set()
+
+        try:
+            await self._sdk.connect()
+        except Exception as exc:
+            self.connect_error = str(exc)
+
+            raise
+        finally:
+            self.ready.set()
 
     async def disconnect(self) -> None:
         """Close SDK connection and reset internal state."""
@@ -333,117 +387,120 @@ class ClaudeRuntime:
                 self._flush_task.cancel()
                 self._flush_task = None
 
-            self._buffer.clear()
-            self._pending_calls.clear()
+            self._drop_queue()
             self.ready.clear()
+            self._drained.clear()
+            self.connect_error = None
 
     # Queries
     # ----------------------------------------------------------------------------------------------
 
-    async def query(self, prompt: str | list[dict]) -> None:
-        """Send query to SDK or buffer if not ready.
+    async def query(self, prompt: str | list[dict], *, message_uuid: str | None = None) -> None:
+        """Send query to SDK, buffer it until queued work drains, or refuse if connect failed.
 
-        String prompts use the SDK's string path; structured content (list of dicts) is wrapped in
-        a transport message and sent via the SDK's async-iterable path.
+        A plain string uses the SDK's string path; blocks or a `message_uuid`, one transport message.
         """
 
-        if self.ready.is_set():
-            if isinstance(prompt, str):
-                await self._sdk.query(prompt)
-            else:
-                await self._sdk.query(self._content_blocks_stream(prompt))
+        if self.connect_error is not None:
+            raise RuntimeError(self.connect_error)
+
+        if self._drained.is_set():
+            await self._send(prompt, message_uuid)
         else:
-            self._buffer.append(prompt)
+            self._queue.append(_QueuedPrompt(prompt, message_uuid))
 
     async def interrupt(self) -> None:
-        """Interrupt SDK or clear pre-connect buffer."""
+        """Interrupt SDK and drop the prompts still queued for connect."""
 
+        if not self._drained.is_set():
+            self._queue = deque(e for e in self._queue if isinstance(e, _QueuedChange))
+
+        # Once connected, a prompt may already have gone out mid-drain.
         if self.ready.is_set():
             await self._sdk.interrupt()
-        else:
-            self._buffer.clear()
 
-    async def set_model(self, model: str | None = None) -> None:
-        """Set model for subsequent queries. Queued if not ready.
+    async def set_model(self, model: str | None = None, *, wait: bool = True) -> None:
+        """Set model for subsequent queries; queued until the agent connects.
 
-        Fires `_fire_model_changed` post-mutation, gating `on_model_changed` on the cached prior
-        value.
+        Raises ChangeRefused if refused or unanswered; `wait=False` returns at once and only logs it.
         """
 
-        if self.ready.is_set():
-            try:
-                await self._control_request("set_model", self._sdk.set_model(model))
-            except TimeoutError:
-                return
+        await self._change("model", model, lambda: self._apply_model(model), wait=wait)
 
-            if model is not None:
-                await self._fire_model_changed(model)
-        else:
-            self._pending_calls.append(("set_model", (model,), {}))
+    async def set_permission_mode(self, mode: str, *, wait: bool = True) -> None:
+        """Set permission mode for subsequent queries; queued until the agent connects.
 
-    async def set_permission_mode(self, mode: str) -> None:
-        """Set permission mode for subsequent queries. Queued if not ready.
-
-        Converges with the PostToolUse adapter on `_fire_permission_mode_changed` so setter and
-        SDK-detected paths share one delta filter.
+        Refusals as in set_model; shares `_fire_permission_mode_changed` with the PostToolUse adapter.
         """
 
-        if self.ready.is_set():
-            try:
-                await self._control_request(
-                    "set_permission_mode",
-                    self._sdk.set_permission_mode(mode),  # ty: ignore[invalid-argument-type]
-                )
-            except TimeoutError:
-                return
+        await self._change(
+            "permission_mode",
+            mode,
+            lambda: self._apply_permission_mode(mode),
+            wait=wait,
+        )
 
-            await self._fire_permission_mode_changed(mode)
-        else:
-            self._pending_calls.append(("set_permission_mode", (mode,), {}))
+    async def set_effort_level(self, level: str, *, wait: bool = True) -> None:
+        """Set this session's agent to `level` for subsequent turns; queued until it connects.
 
-    async def set_effort_level(self, level: str) -> None:
-        """Set effort level by writing effortLevel to ~/.claude/settings.json.
-
-        The SDK has no set_effort control-plane subtype; the CLI re-reads settings.json on every
-        query, so writing there propagates the change.
+        Refusals as in set_model; applied via the CLI's `apply_flag_settings`, kept across model switches.
         """
 
-        if self.ready.is_set():
-            self._write_effort_to_settings(level)
-            await self._fire_effort_level_changed(level)
-        else:
-            self._pending_calls.append(("set_effort_level", (level,), {}))
+        await self._change(
+            "effort_level",
+            level,
+            lambda: self._apply_effort_level(level),
+            wait=wait,
+        )
 
-    async def reconnect_mcp_server(self, server_name: str) -> None:
-        """Reconnect an MCP server. Queued if not ready.
+    async def reconnect_mcp_server(self, server_name: str, *, wait: bool = True) -> None:
+        """Reconnect an MCP server; queued until the agent connects.
 
-        Refuses claudebox's own sibling-session server, which the MCP panel also hides.
+        Refuses claudebox's own tool server, which the MCP panel also hides.
         """
 
-        if server_name == SIBLING_MCP_SERVER_NAME:
+        if server_name == CLAUDEBOX_MCP_SERVER_NAME:
             raise McpServerProtected(server_name)
 
-        if self.ready.is_set():
-            await self._sdk.reconnect_mcp_server(server_name)
-        else:
-            self._pending_calls.append(("reconnect_mcp_server", (server_name,), {}))
+        await self._change(
+            "mcp",
+            server_name,
+            lambda: self._agent_change(
+                "mcp",
+                server_name,
+                self._sdk.reconnect_mcp_server(server_name),
+            ),
+            wait=wait,
+        )
 
-    async def toggle_mcp_server(self, server_name: str, enabled: bool) -> None:
-        """Toggle an MCP server enabled/disabled. Queued if not ready.
+    async def toggle_mcp_server(
+        self,
+        server_name: str,
+        enabled: bool,
+        *,
+        wait: bool = True,
+    ) -> None:
+        """Toggle an MCP server enabled/disabled; queued until the agent connects.
 
-        Refuses claudebox's own sibling-session server by name - see reconnect_mcp_server.
+        Refuses claudebox's own tool server by name - see reconnect_mcp_server.
         """
 
-        if server_name == SIBLING_MCP_SERVER_NAME:
+        if server_name == CLAUDEBOX_MCP_SERVER_NAME:
             raise McpServerProtected(server_name)
 
-        if self.ready.is_set():
-            await self._sdk.toggle_mcp_server(server_name, enabled)
-        else:
-            self._pending_calls.append(("toggle_mcp_server", (server_name, enabled), {}))
+        await self._change(
+            "mcp",
+            server_name,
+            lambda: self._agent_change(
+                "mcp",
+                server_name,
+                self._sdk.toggle_mcp_server(server_name, enabled),
+            ),
+            wait=wait,
+        )
 
     async def get_mcp_status(self) -> dict:
-        """Return current MCP server status, minus claudebox's own sibling-session server.
+        """Return current MCP server status, minus claudebox's own tool server.
 
         Empty shape if not ready.
         """
@@ -456,7 +513,7 @@ class ClaudeRuntime:
 
         return {
             **status,
-            "mcpServers": [s for s in servers if s.get("name") != SIBLING_MCP_SERVER_NAME],
+            "mcpServers": [s for s in servers if s.get("name") != CLAUDEBOX_MCP_SERVER_NAME],
         }
 
     async def get_context_usage(self) -> ContextUsage | None:
@@ -480,6 +537,30 @@ class ClaudeRuntime:
             return None
 
         return ContextUsage(used_tokens=total, max_tokens=maximum)
+
+    async def generate_title(self, messages: list[str]) -> str | None:
+        """Title the conversation from its opening user messages, in a one-shot side process.
+
+        Runs without tools, settings or a saved transcript, so it leaves this session untouched.
+        """
+
+        options = ClaudeAgentOptions(
+            model=self.TITLE_MODEL,
+            system_prompt=TITLE_SYSTEM_PROMPT,
+            tools=[],
+            setting_sources=[],
+            max_turns=1,
+            cwd=self._config.cwd,
+            env=self._config.env,
+            extra_args={"no-session-persistence": None},
+        )
+        parts: list[str] = []
+
+        async for message in sdk_query(prompt=title_prompt(messages), options=options):
+            if isinstance(message, SdkAssistantMessage):
+                parts.extend(b.text for b in message.content if isinstance(b, SdkTextBlock))
+
+        return clean_title("".join(parts))
 
     def stream_health(self) -> StreamHealth | None:
         """Best-effort read of the SDK's own reader state. None when unavailable.
@@ -616,7 +697,7 @@ class ClaudeRuntime:
                 mcp_servers=[
                     McpServerInit(name=s.get("name", ""), status=s.get("status", ""))
                     for s in (data.get("mcp_servers") or [])
-                    if isinstance(s, dict) and s.get("name") != SIBLING_MCP_SERVER_NAME
+                    if isinstance(s, dict) and s.get("name") != CLAUDEBOX_MCP_SERVER_NAME
                 ],
                 memory_paths=data.get("memory_paths") or {},
                 output_style=data.get("output_style"),
@@ -663,6 +744,7 @@ class ClaudeRuntime:
                     content=blocks,
                     model=getattr(message, "model", None),
                     parent_tool_use_id=getattr(message, "parent_tool_use_id", None),
+                    error=getattr(message, "error", None),
                 ),
             )
 
@@ -850,23 +932,26 @@ class ClaudeRuntime:
         extra_args.update(cfg.sdk_passthrough)
 
         return ClaudeAgentOptions(
-            system_prompt=cfg.system_prompt,
+            system_prompt=(
+                {"type": "file", "path": str(cfg.system_prompt_file)}
+                if cfg.system_prompt_file
+                else None
+            ),
             permission_mode=cfg.permission_mode,  # ty: ignore[invalid-argument-type]
+            # It only acknowledges, and outside bypass mode a call is otherwise refused unasked.
+            allowed_tools=[NEEDS_USER_CLAUDE_TOOL_NAME],
             setting_sources=cfg.setting_sources,  # ty: ignore[invalid-argument-type]
-            env=cfg.env,
+            # The CLI's undocumented list of tools a turn may end on without being asked for text.
+            env={**cfg.env, "CLAUDE_CODE_TERMINAL_MCP_TOOLS": NEEDS_USER_CLAUDE_TOOL_NAME},
             cwd=cfg.cwd,
             extra_args=extra_args,
             max_buffer_size=cfg.max_buffer_size,
+            effort=cfg.effort_level or cls.DEFAULT_EFFORT_LEVEL,  # ty: ignore[invalid-argument-type]
         )
 
     def _isolate_settings_file(self) -> None:
-        """Symlink ~/.claude/settings.json to a per-session file.
-
-        Containers in the same workspace share the host mount of ~/.claude/, so without isolation
-        concurrent sessions would overwrite each other's settings. The symlink scopes SDK reads and
-        writes to {session_dir}/claude.json while the rest of ~/.claude/ (auth, history, MCP state)
-        stays shared; it seeds the per-session file from the current settings.json target when
-        missing, and preserves an existing one on resume.
+        """Seed this session's own settings file; only the primary re-points the shared symlink,
+        since concurrent sessions share one host mount and a member re-pointing it would steal it.
         """
 
         src = self._config.session_dir / "claude.json"
@@ -878,26 +963,18 @@ class ClaudeRuntime:
             else:
                 src.touch()
 
+        if not self._config.is_primary:
+            return
+
         if dst.is_symlink() or dst.exists():
             dst.unlink()
 
         dst.symlink_to(src)
 
-    @classmethod
-    def _write_effort_to_settings(cls, level: str) -> None:
-        """Write effortLevel to ~/.claude/settings.json."""
-
-        path = claude_settings_file()
-
-        try:
-            settings = read_json(path, default={})
-        except (ValueError, OSError):
-            settings = {}
-
-        settings["effortLevel"] = level
-
-        touch_dir(path.parent)
-        write_json(path, settings)
+    def _apply_flag_settings(self, settings: dict[str, Any]) -> Awaitable[dict[str, Any]]:
+        return self._sdk._query._send_control_request(  # ty: ignore[unresolved-attribute]
+            {"subtype": "apply_flag_settings", "settings": settings},
+        )
 
     def _stderr(self, line: str) -> None:
         """Parse SDK log line and route to the appropriate logger level, tagged as agent stderr.
@@ -917,28 +994,161 @@ class ClaudeRuntime:
             self._logger.log(level, message, source="agent", stream="stderr")
 
     @classmethod
-    async def _content_blocks_stream(cls, content_blocks: list[dict]) -> AsyncIterator[dict]:
-        """Yield a single transport message wrapping structured content blocks."""
+    async def _content_blocks_stream(
+        cls,
+        content: str | list[dict],
+        message_uuid: str | None = None,
+    ) -> AsyncIterator[dict]:
+        """Yield a single transport message; the CLI keeps a given `message_uuid` as its own."""
 
-        yield {
+        message = {
             "type": "user",
-            "message": {"role": "user", "content": content_blocks},
+            "message": {"role": "user", "content": content},
             "parent_tool_use_id": None,
         }
 
+        if message_uuid is not None:
+            message["uuid"] = message_uuid
+
+        yield message
+
     async def _flush_on_ready(self) -> None:
-        """Drain pending control-plane calls and buffered queries after connect."""
+        """Apply queued changes and send queued prompts in the order made, once connected.
+
+        A refused change or failed prompt is logged and skipped; entries landing mid-drain drain too.
+        """
 
         await self.ready.wait()
 
-        while self._pending_calls:
-            method, args, kwargs = self._pending_calls.popleft()
-            func = getattr(self, method)
-            await func(*args, **kwargs)
+        if self.connect_error is not None:
+            self._drop_queue()
+            self._drained.set()
 
-        while self._buffer:
-            prompt = self._buffer.popleft()
-            await self.query(prompt)
+            return
+
+        while self._queue:
+            entry = self._queue.popleft()
+
+            if isinstance(entry, _QueuedChange):
+                await self._apply_queued(entry)
+
+                continue
+
+            prompt, message_uuid = entry
+
+            try:
+                await self._send(prompt, message_uuid)
+            except Exception:
+                # One lost prompt must not strand the ones behind it.
+                self._logger.exception("Queued prompt failed", message_uuid=message_uuid)
+
+        self._drained.set()
+
+    async def _apply_queued(self, change: _QueuedChange) -> None:
+        apply, future = change
+
+        try:
+            await apply()
+        except ChangeRefused as exc:
+            if future is None:
+                self._log_refused(exc)
+            elif not future.done():
+                future.set_exception(exc)
+        else:
+            if future is not None and not future.done():
+                future.set_result(None)
+
+    async def _change(
+        self,
+        setting: str,
+        value: str | None,
+        apply: Callable[[], Awaitable[None]],
+        *,
+        wait: bool,
+    ) -> None:
+        if self._drained.is_set():
+            if wait:
+                await apply()
+            else:
+                await self._apply_queued(_QueuedChange(apply, None))
+
+            return
+
+        if not wait:
+            self._queue.append(_QueuedChange(apply, None))
+
+            return
+
+        future = asyncio.get_running_loop().create_future()
+        change = _QueuedChange(apply, future)
+        self._queue.append(change)
+
+        try:
+            async with asyncio.timeout(QUEUED_CHANGE_TIMEOUT.total_seconds()):
+                await future
+        except TimeoutError as exc:
+            # Withdrawn, so a change already reported as failed never applies later.
+            with contextlib.suppress(ValueError):
+                self._queue.remove(change)
+
+            raise ChangeRefused(setting, str(value), "timed out") from exc
+
+    async def _apply_model(self, model: str | None) -> None:
+        await self._agent_change(
+            "model",
+            model,
+            self._control_request("set_model", self._sdk.set_model(model)),
+        )
+
+        if model is not None:
+            await self._fire_model_changed(model)
+
+    async def _apply_permission_mode(self, mode: str) -> None:
+        await self._agent_change(
+            "permission_mode",
+            mode,
+            self._control_request(
+                "set_permission_mode",
+                self._sdk.set_permission_mode(mode),  # ty: ignore[invalid-argument-type]
+            ),
+        )
+        await self._fire_permission_mode_changed(mode)
+
+    async def _apply_effort_level(self, level: str) -> None:
+        await self._agent_change(
+            "effort_level",
+            level,
+            self._control_request(
+                "apply_flag_settings",
+                self._apply_flag_settings({"effortLevel": level}),
+            ),
+        )
+        await self._fire_effort_level_changed(level)
+
+    async def _agent_change(self, setting: str, value: str | None, request: Awaitable[Any]) -> None:
+        try:
+            await request
+        except TimeoutError as exc:
+            raise ChangeRefused(setting, str(value), "timed out") from exc
+        except Exception as exc:
+            # The SDK reports an agent's refusal as a bare Exception carrying the agent's text.
+            raise ChangeRefused(setting, str(value), str(exc)) from exc
+
+    def _drop_queue(self) -> None:
+        while self._queue:
+            entry = self._queue.popleft()
+
+            if isinstance(entry, _QueuedChange) and entry.future and not entry.future.done():
+                entry.future.set_exception(SessionNotReady())
+
+    def _log_refused(self, exc: ChangeRefused) -> None:
+        self._logger.error("Queued change refused", **exc.context)
+
+    async def _send(self, prompt: str | list[dict], message_uuid: str | None) -> None:
+        if isinstance(prompt, str) and message_uuid is None:
+            await self._sdk.query(prompt)
+        else:
+            await self._sdk.query(self._content_blocks_stream(prompt, message_uuid))
 
     # Delta-detection state machine
     # ----------------------------------------------------------------------------------------------
@@ -1102,7 +1312,7 @@ class ClaudeRuntime:
         )
 
     @classmethod
-    def _build_sdk_hooks(cls, runtime: "ClaudeRuntime") -> dict:
+    def _build_sdk_hooks(cls, runtime: ClaudeRuntime) -> dict:
         """Translate typed HookCallbacks into the SDK's hooks dict shape.
 
         SessionStart dual-wires the session-start adapter and the permission-mode-detector adapter,
@@ -1150,23 +1360,23 @@ class ClaudeRuntime:
 
         return hooks
 
-    # Sibling-session tools
+    # Claudebox's own tools
     # ----------------------------------------------------------------------------------------------
-    # In-process SDK MCP server wrapping SiblingSessionClient - see _sibling_sessions.py for
-    # the shared spawn/ask/read logic and why it lives outside both runtime adapters.
+    # In-process SDK MCP server binding the shared logic in _sibling_sessions.py and _needs_user.py,
+    # which lives outside both runtime adapters.
 
     def _build_mcp_servers(self) -> dict:
-        """Build the in-process MCP server carrying the sibling-session tools.
+        """Build the in-process MCP server carrying the sibling-session tools and needs_user.
 
         A workspace's own `.mcp.json` servers are unaffected: the SDK merges, never replaces.
         """
 
         server = create_sdk_mcp_server(
-            name=SIBLING_MCP_SERVER_NAME,
-            tools=self._sibling_sdk_tools(),
+            name=CLAUDEBOX_MCP_SERVER_NAME,
+            tools=[*self._sibling_sdk_tools(), self._needs_user_sdk_tool()],
         )
 
-        return {SIBLING_MCP_SERVER_NAME: server}
+        return {CLAUDEBOX_MCP_SERVER_NAME: server}
 
     def _sibling_sdk_tools(self) -> list[SdkMcpTool]:
         """Bind session_spawn/session_ask/session_read against this instance's client.
@@ -1223,3 +1433,16 @@ class ClaudeRuntime:
                 return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
 
         return [session_spawn, session_ask, session_read]
+
+    def _needs_user_sdk_tool(self) -> SdkMcpTool:
+        """Bind needs_user; same name, argument and result as `langgraph_tools/needs_user.py`."""
+
+        session_dir = self._config.session_dir
+
+        @sdk_tool(NEEDS_USER_TOOL_NAME, NEEDS_USER_DESCRIPTION, _NEEDS_USER_INPUT_SCHEMA)
+        async def needs_user(args: dict) -> dict:
+            _, dropped = needs_user_replies(args.get("replies"))
+
+            return {"content": [{"type": "text", "text": needs_user_reply(session_dir, dropped)}]}
+
+        return needs_user

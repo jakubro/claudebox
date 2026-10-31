@@ -1,6 +1,9 @@
 """JSON serialization utilities with extended type support."""
 
+from __future__ import annotations
+
 import dataclasses
+import functools
 import json
 import traceback
 import types
@@ -9,7 +12,11 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from _typeshed import DataclassInstance
 
 
 class JSONEncoder(json.JSONEncoder):
@@ -127,8 +134,7 @@ def deserialize(node: Any, cls: type | types.UnionType | None) -> Any:
 
         return {deserialize(k, args[0]): deserialize(v, args[1]) for k, v in node.items()}
     elif dataclasses.is_dataclass(origin) and isinstance(node, dict):
-        hints = typing.get_type_hints(origin)
-        fields = {f.name for f in dataclasses.fields(origin)}
+        hints, fields = _dataclass_shape(origin)
         kwargs = {k: deserialize(v, hints.get(k)) for k, v in node.items() if k in fields}
 
         return origin(**kwargs)
@@ -138,3 +144,8 @@ def deserialize(node: Any, cls: type | types.UnionType | None) -> Any:
         return node
     else:
         return origin(node)
+
+
+@functools.cache
+def _dataclass_shape(cls: type[DataclassInstance]) -> tuple[dict[str, Any], frozenset[str]]:
+    return typing.get_type_hints(cls), frozenset(f.name for f in dataclasses.fields(cls))

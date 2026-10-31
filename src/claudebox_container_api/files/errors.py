@@ -1,5 +1,7 @@
 """File domain exceptions - typed errors with HTTP status codes."""
 
+from __future__ import annotations
+
 from claudebox import ApiError
 
 

@@ -1,6 +1,6 @@
 /** Rewind / fork orchestration for ChatPanel - extracted to keep the panel below the complexity gate. */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { forkSession, stopSession } from '../../../api/sessions'
 import { openSessionInNewTab } from '../../../utils/navigation'
 
@@ -13,6 +13,8 @@ import { openSessionInNewTab } from '../../../utils/navigation'
  *
  * @param {object} args
  * @param {string|null} args.sessionId - Current session id (fork source).
+ * @param {string|null} args.routedSessionId - The session the modal is opened for; a move to
+ *   another one hides it and makes its confirm a no-op.
  * @param {string|null} args.workspaceId - Workspace id for routing the forked session.
  * @param {boolean} args.isResponding - True while the agent is mid-turn; gates the confirm modal.
  * @param {function} args.navigateToSession - Router callback for in-tab navigation.
@@ -24,6 +26,7 @@ import { openSessionInNewTab } from '../../../utils/navigation'
  */
 export default function useChatRewindFork({
   sessionId,
+  routedSessionId,
   workspaceId,
   isResponding,
   navigateToSession,
@@ -33,8 +36,15 @@ export default function useChatRewindFork({
   startForking,
   clearForking,
 }) {
-  const [rewindTurnId, setRewindTurnId] = useState(null)
-  const [rewindMode, setRewindMode] = useState(null)
+  const [request, setRequest] = useState(null)
+  const routedRef = useRef(routedSessionId)
+  routedRef.current = routedSessionId
+  const current = request && request.owner === routedSessionId ? request : null
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: routedSessionId is the reset trigger
+  useEffect(() => {
+    setRequest(null)
+  }, [routedSessionId])
   const [forkingTurnId, setForkingTurnId] = useState(null)
   // ChatControlBar forks pass turnId=null, leaving forkingTurnId untouched, so in-flight
   // control-bar forks are tracked separately here, mirroring RewindSplitButton's per-turn spinner.
@@ -112,8 +122,7 @@ export default function useChatRewindFork({
   const handleRewindRequest = useCallback(
     (turnId, mode = 'fork-here') => {
       if (mode === 'fork-here' && isResponding) {
-        setRewindTurnId(turnId)
-        setRewindMode(mode)
+        setRequest({ owner: routedRef.current, turnId, mode })
       } else {
         executeFork(turnId, mode)
       }
@@ -126,8 +135,7 @@ export default function useChatRewindFork({
     async (mode = 'fork-here') => {
       const turnId = null
       if (mode === 'fork-here' && isResponding) {
-        setRewindTurnId('__all__')
-        setRewindMode(mode)
+        setRequest({ owner: routedRef.current, turnId: '__all__', mode })
         return
       }
       setControlBarForking(true)
@@ -142,34 +150,32 @@ export default function useChatRewindFork({
 
   /** Confirm fork from the modal. */
   const handleRewindConfirm = useCallback(async () => {
-    if (rewindTurnId == null) {
+    if (!request || request.owner !== routedRef.current) {
       return
     }
-    const isControlBarFork = rewindTurnId === '__all__'
-    const turnId = isControlBarFork ? null : rewindTurnId
+    const isControlBarFork = request.turnId === '__all__'
+    const turnId = isControlBarFork ? null : request.turnId
     if (isControlBarFork) {
       setControlBarForking(true)
     }
     try {
-      await executeFork(turnId, rewindMode)
+      await executeFork(turnId, request.mode)
     } finally {
       if (isControlBarFork) {
         setControlBarForking(false)
       }
     }
-    setRewindTurnId(null)
-    setRewindMode(null)
-  }, [rewindTurnId, rewindMode, executeFork])
+    setRequest(null)
+  }, [request, executeFork])
 
   /** Close the rewind modal without forking. */
   const closeRewindModal = useCallback(() => {
-    setRewindTurnId(null)
-    setRewindMode(null)
+    setRequest(null)
   }, [])
 
   return {
-    rewindTurnId,
-    rewindMode,
+    rewindTurnId: current?.turnId ?? null,
+    rewindMode: current?.mode ?? null,
     forkingTurnId,
     controlBarForking,
     handleRewindRequest,

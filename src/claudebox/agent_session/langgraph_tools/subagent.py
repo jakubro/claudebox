@@ -14,6 +14,8 @@ Cost telemetry: sub-agent `AIMessage`s carry `usage_metadata`; totals fold into 
 counters via `ctx.record_subagent_usage(input, output)` after completion.
 """
 
+from __future__ import annotations
+
 from dataclasses import replace
 
 from langchain.agents import create_agent

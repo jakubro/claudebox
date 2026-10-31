@@ -1,11 +1,15 @@
 """Tests for the container API session registry - lifecycle, primary designation, addressing."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import ClassVar, cast
 
 import pytest
 
-from claudebox import SessionEntryNotFound, SessionNotReady, ValidationError
+from claudebox import SessionEntryNotFound, SessionNotReady, ValidationError, Workspace
+from claudebox.constants import SESSION_METADATA_FILE
+from claudebox.core.io import read_json, write_json
 from claudebox_container_api import session as session_module
 from claudebox_container_api.session import SessionRegistry
 
@@ -13,7 +17,7 @@ from claudebox_container_api.session import SessionRegistry
 class _FakeSession:
     """Stand-in for SessionService - records constructor kwargs and start/stop calls."""
 
-    instances: ClassVar[list["_FakeSession"]] = []
+    instances: ClassVar[list[_FakeSession]] = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -22,6 +26,7 @@ class _FakeSession:
         self.turn_complete_cancelled = False
         self.settle_turn_complete_called = False
         self.session_id: str | None = None
+        self.connect_failed = False
         # Test hook: a callable a test wires to run once settle_turn_complete is invoked, for
         # simulating the entry removing itself (its own auto-stop) mid-settle.
         self.on_settle: Callable[[], None] | None = None
@@ -54,8 +59,25 @@ def _fake_session_service(monkeypatch):
     monkeypatch.setattr(session_module, "SessionService", _FakeSession)
 
 
+@pytest.fixture(autouse=True)
+def _workspace(tmp_workspace):
+    """Mark every test's tmp_path a workspace - member starts read session records from it."""
+
+    return tmp_workspace
+
+
 def _registry(tmp_path) -> SessionRegistry:
-    return SessionRegistry(workspace=tmp_path, system_prompt=None, permission_mode=None)
+    return SessionRegistry(workspace=tmp_path, system_prompt_file=None, permission_mode=None)
+
+
+def _record_path(tmp_path, session_id: str):
+    return Workspace(tmp_path).ensure_session(session_id).path / SESSION_METADATA_FILE
+
+
+def _write_record(tmp_path, session_id: str, **fields) -> None:
+    """Write the session.json a fork leaves for a side thread before it first starts."""
+
+    write_json(_record_path(tmp_path, session_id), {"session_id": session_id, **fields})
 
 
 def _fake(registry: SessionRegistry, session_id: str | None = None) -> _FakeSession:
@@ -74,6 +96,19 @@ async def test_start_creates_entry_and_designates_primary(tmp_path):
 
     assert registry.primary_id == session_id
     assert registry.live_ids() == [session_id]
+
+
+@pytest.mark.anyio
+async def test_live_ids_excludes_a_connect_failed_entry(tmp_path):
+    """A session whose runtime never connected is registered but not reported live."""
+
+    registry = _registry(tmp_path)
+    primary_id = await registry.start(None, primary=True)
+    member_id = await registry.start("member-1", primary=False)
+
+    _fake(registry, member_id).connect_failed = True
+
+    assert registry.live_ids() == [primary_id]
 
 
 @pytest.mark.anyio
@@ -274,6 +309,7 @@ async def test_stop_session_unknown_id_raises_not_found(tmp_path):
 async def test_promote_session_cancels_turn_complete(tmp_path):
     """Promoting a member cancels its auto-stop disposition without touching the entry itself."""
 
+    _write_record(tmp_path, "joined-session", is_side_thread=True)
     registry = _registry(tmp_path)
     primary_id = await registry.start(None, primary=True)
     member_id = await registry.start("joined-session", primary=False)
@@ -286,8 +322,53 @@ async def test_promote_session_cancels_turn_complete(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_promote_session_records_the_promotion(tmp_path):
+    """Promotion is written to the session's record, keeping the fields already there."""
+
+    _write_record(tmp_path, "joined-session", is_side_thread=True, name="why this branch")
+    registry = _registry(tmp_path)
+
+    registry.promote_session("joined-session")
+
+    record = read_json(_record_path(tmp_path, "joined-session"))
+    assert record["is_promoted"] is True
+    assert record["is_side_thread"] is True
+    assert record["name"] == "why this branch"
+
+
+@pytest.mark.anyio
+async def test_promoting_a_stopped_member_keeps_it_running_when_it_rejoins(tmp_path):
+    """A member that already stopped can be promoted; its next start wires no auto-stop."""
+
+    _write_record(tmp_path, "finished-thread", is_side_thread=True)
+    registry = _registry(tmp_path)
+    await registry.start(None, primary=True)
+
+    registry.promote_session("finished-thread")
+    member_id = await registry.start("finished-thread", primary=False)
+
+    assert _fake(registry, member_id).kwargs["on_turn_complete"] is None
+
+
+@pytest.mark.anyio
+async def test_a_promoted_member_rejoins_without_auto_stop_after_it_was_stopped(tmp_path):
+    """Stopping a promoted member and starting it again keeps it promoted."""
+
+    _write_record(tmp_path, "joined-session", is_side_thread=True)
+    registry = _registry(tmp_path)
+    await registry.start(None, primary=True)
+    await registry.start("joined-session", primary=False)
+    registry.promote_session("joined-session")
+
+    await registry.stop_session("joined-session")
+    member_id = await registry.start("joined-session", primary=False)
+
+    assert _fake(registry, member_id).kwargs["on_turn_complete"] is None
+
+
+@pytest.mark.anyio
 async def test_promote_session_unknown_id_raises_not_found(tmp_path):
-    """Promoting an id with no registry entry is a 404, not a silent no-op."""
+    """Promoting an id with no session record is a 404, not a silent no-op."""
 
     registry = _registry(tmp_path)
     await registry.start(None, primary=True)

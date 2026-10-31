@@ -1,9 +1,69 @@
 /** E2E tests for chat display including turns, timestamps, collapsible content, and control bar. */
 
 import { expect, test } from '@playwright/test'
-import { assertRedColor, disableAutoCollapse, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import {
+  assertRedColor,
+  disableAutoCollapse,
+  openLiveSession,
+  openLiveSessionWithAPI,
+  openSession,
+  openSessionWithAPI,
+  openWithNoSession,
+  sendFinishedTurn,
+  waitForStableScrollHeight,
+} from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
+
+async function openFirstTurn(page) {
+  await openSession(page, 'events/simple-chat.jsonl')
+  const turn = page.locator('.turn-container').first()
+
+  return {
+    turn,
+    collapsible: turn.locator('.turn-meta-collapsible'),
+    turnContent: turn.locator('.turn-content'),
+  }
+}
+
+async function openFallbackTurns(page) {
+  await openSession(page, 'events/chat-collapsed-preview-fallback.jsonl')
+  await disableAutoCollapse(page)
+
+  return page.locator('.turn-container')
+}
+
+async function openAfterOneTurn(page, reply = 'Hi there') {
+  const controller = await openLiveSession(page)
+  await sendFinishedTurn(controller, reply)
+
+  return controller
+}
+
+async function startRename(page) {
+  await openSession(page, 'events/simple-chat.jsonl')
+  const controlBar = page.locator('.panel-control-bar')
+  await controlBar.locator('button[title="Rename session"]').click()
+
+  return controlBar
+}
+
+async function openStdoutBlock(page) {
+  await openSession(page, 'events/user-message-with-command-output.jsonl')
+  const stdoutBlock = page.locator('.local-command-stdout').first()
+  await expect(stdoutBlock).toBeVisible()
+
+  return stdoutBlock
+}
+
+async function openCollapsedPreview(page, fixture) {
+  await openSession(page, fixture)
+  const turn = page.locator('.turn-container').first()
+  await turn.locator('.turn-collapse-btn, .turn-meta-collapsible').first().click()
+  const preview = turn.locator('.turn-preview')
+  await expect(preview).toBeVisible()
+
+  return preview
+}
 
 test.describe('Chat Display', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,9 +73,7 @@ test.describe('Chat Display', () => {
   test.describe('Empty State', () => {
     // SPEC: chat:empty-state
     test('shows empty state when no messages', async ({ page }) => {
-      await mockSSE(page, 'events/empty.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/empty.jsonl')
 
       await expect(page.getByText('Waiting for messages...')).toBeVisible()
     })
@@ -24,9 +82,7 @@ test.describe('Chat Display', () => {
   test.describe('Turn Grouping', () => {
     // SPEC: chat:turns
     test('groups messages into turns', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const turn = page.locator('.turn-container').first()
       await expect(turn).toBeVisible()
@@ -39,9 +95,7 @@ test.describe('Chat Display', () => {
   test.describe('Windowed Rendering', () => {
     // SPEC: chat:virtualized-render
     test('only the turns near the viewport are present in the page', async ({ page }) => {
-      await mockSSE(page, 'events/long-conversation.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/long-conversation.jsonl')
       await expect(page.locator('.turn-container').first()).toBeVisible()
 
       const counts = await page.evaluate(() => ({
@@ -57,9 +111,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:virtualized-render
     test('the list keeps its full scroll height while windowed', async ({ page }) => {
-      await mockSSE(page, 'events/long-conversation.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/long-conversation.jsonl')
       await expect(page.locator('.turn-container').first()).toBeVisible()
 
       const { scrollHeight, clientHeight } = await page.evaluate(() => {
@@ -73,10 +125,11 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:offscreen-turns-absent
     test('scrolling to the top brings the earliest turn into the page', async ({ page }) => {
-      await mockSSE(page, 'events/long-conversation.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/long-conversation.jsonl')
       await expect(page.locator('.turn-container').first()).toBeVisible()
+      // Wait for streamed turns to finish rendering before scrolling - otherwise the settle
+      // loop's own scroll-to-bottom can undo the scrollTop=0 write below under load.
+      await waitForStableScrollHeight(page.locator('.chat-messages'))
 
       // The first turn starts out windowed away.
       await expect(page.getByText('Hello', { exact: true })).toHaveCount(0)
@@ -92,9 +145,7 @@ test.describe('Chat Display', () => {
   test.describe('Completion Indicators', () => {
     // SPEC: turn:progress-complete
     test('completed turn shows success indicator', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       await expect(page.locator('.turn-progress-complete').first()).toBeVisible()
       await expect(page.locator('.turn-progress-complete').first()).toContainText('✓')
@@ -102,9 +153,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:duration-badge
     test('completed turn shows duration badge', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       await expect(page.locator('.turn-duration').first()).toBeVisible()
     })
@@ -115,10 +164,7 @@ test.describe('Chat Display', () => {
     test('duration badge ticks live while a turn is responding', async ({ page }) => {
       // Drive SSE into the "responding" state (streaming assistant block, no result event);
       // the duration badge must render and tick over time.
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const baseTs = Date.now() - 2000
       await controller.sendEvents([
@@ -157,9 +203,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:duration-format
     test('duration formatted as seconds', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-duration.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-duration.jsonl')
 
       // 5200ms -> "5s"
       const durationText = await page.locator('.turn-duration').first().textContent()
@@ -168,9 +212,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:duration-format
     test('duration formatted as minutes and seconds', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-duration-minutes.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-duration-minutes.jsonl')
 
       // 83000ms -> "1m 23s"
       const durationText = await page.locator('.turn-duration').first().textContent()
@@ -179,9 +221,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:duration-format
     test('duration formatted as hours, minutes, and seconds', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-duration-hours.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-duration-hours.jsonl')
 
       // 3912000ms -> "1h 5m 12s"
       const durationText = await page.locator('.turn-duration').first().textContent()
@@ -190,9 +230,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:completed-duration
     test('completed turn shows static final duration', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-duration.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-duration.jsonl')
 
       await expect(page.locator('.turn-progress-complete').first()).toBeVisible()
 
@@ -208,10 +246,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:pending-opacity
     test('working turn rendered at reduced opacity', async ({ page }) => {
-      await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openLiveSessionWithAPI(page)
 
       // Submit a message to create an optimistic pending turn
       const input = page.locator('[data-testid="chat-input"]')
@@ -229,9 +264,7 @@ test.describe('Chat Display', () => {
   test.describe('Collapsible Turns', () => {
     // SPEC: turn:collapsible
     test('click chevron collapses turn', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const turn = page.locator('.turn-container').first()
       await expect(turn).toBeVisible()
@@ -249,13 +282,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: turn:collapsible
     test('click chevron again expands turn', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const turn = page.locator('.turn-container').first()
-      const collapsible = turn.locator('.turn-meta-collapsible')
-      const turnContent = turn.locator('.turn-content')
+      const { collapsible, turnContent } = await openFirstTurn(page)
 
       await collapsible.click()
       await expect(turnContent).not.toBeVisible()
@@ -266,9 +293,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: turn:collapsed-content
     test('collapsed turn shows preview', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const turn = page.locator('.turn-container').first()
       const collapsible = turn.locator('.turn-meta-collapsible')
@@ -287,13 +312,7 @@ test.describe('Chat Display', () => {
     test('collapsed content stays in DOM but is visually hidden (preserves Ctrl+F)', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const turn = page.locator('.turn-container').first()
-      const collapsible = turn.locator('.turn-meta-collapsible')
-      const turnContent = turn.locator('.turn-content')
+      const { collapsible, turnContent } = await openFirstTurn(page)
 
       await collapsible.click()
 
@@ -311,13 +330,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: turn:collapsible
     test('click preview expands turn', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const turn = page.locator('.turn-container').first()
-      const collapsible = turn.locator('.turn-meta-collapsible')
-      const turnContent = turn.locator('.turn-content')
+      const { turn, collapsible, turnContent } = await openFirstTurn(page)
 
       await collapsible.click()
       await expect(turnContent).not.toBeVisible()
@@ -332,9 +345,7 @@ test.describe('Chat Display', () => {
   test.describe('Message Timestamps', () => {
     // SPEC: chat:timestamp
     test('timestamp visible on turn', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const timestamp = page.locator('.turn-timestamp').first()
       await expect(timestamp).toBeVisible()
@@ -342,9 +353,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:timestamp-format
     test('timestamp shows relative or date format', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const timestamp = page.locator('.turn-timestamp').first()
       const timestampText = await timestamp.textContent()
@@ -355,11 +364,22 @@ test.describe('Chat Display', () => {
       expect(timestampText.trim()).toMatch(validPattern)
     })
 
+    // SPEC: chat:timestamp-live
+    test('a finished turn and its user message keep their times up', async ({ page }) => {
+      await page.clock.install({ time: Date.parse('2025-01-18T12:00:02Z') })
+      await openSession(page, 'events/simple-chat.jsonl')
+
+      await page.clock.fastForward('10:00')
+
+      await expect(page.locator('.turn-timestamp').first()).toHaveText('10m ago')
+      await expect(page.locator('[data-testid="message-user-timestamp"]').first()).toHaveText(
+        '10m ago',
+      )
+    })
+
     // SPEC: chat:timestamp
     test('timestamp positioned right of duration', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const duration = page.locator('.turn-duration').first()
       const timestamp = page.locator('.turn-timestamp').first()
@@ -375,9 +395,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:timestamp-no-hover
     test('no special hover effects on timestamp', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const timestamp = page.locator('.turn-timestamp').first()
       await expect(timestamp).toBeVisible()
@@ -396,12 +414,94 @@ test.describe('Chat Display', () => {
     })
   })
 
+  test.describe('User message timestamp', () => {
+    const userTimestamp = page =>
+      page.locator('[data-testid="message-user"] [data-testid="message-user-timestamp"]').first()
+
+    // SPEC: chat:user-timestamp
+    test('a sent message shows when it was sent, styled and placed like the turn timestamp', async ({
+      page,
+    }) => {
+      await openSession(page, 'events/simple-chat.jsonl')
+
+      const stamp = userTimestamp(page)
+      await expect(stamp).toBeVisible()
+      expect((await stamp.textContent()).trim()).toMatch(
+        /^(just now|\d+[mhd] ago|\d{1,2}\/\d{1,2}\/\d{4})$/,
+      )
+      const sent = await page.evaluate(() => new Date('2025-01-18T12:00:00Z').toLocaleString())
+      await expect(stamp).toHaveAttribute('title', sent)
+
+      const agent = page.locator('.turn-timestamp').first()
+      const style = el => {
+        const s = getComputedStyle(el)
+        return { fontSize: s.fontSize, color: s.color }
+      }
+      expect(await stamp.evaluate(style)).toEqual(await agent.evaluate(style))
+      const offset = (el, bubble) =>
+        el.getBoundingClientRect().top - el.closest(bubble).getBoundingClientRect().top
+      const userOffset = await stamp.evaluate(offset, '[data-testid="message-user"]')
+      const agentOffset = await agent.evaluate(offset, '[data-testid="message-assistant"]')
+      expect(Math.abs(userOffset - agentOffset)).toBeLessThanOrEqual(1)
+    })
+
+    // SPEC: chat:user-timestamp-layout
+    test('hover buttons sit left of the timestamp, in their usual order', async ({ page }) => {
+      await openSession(page, 'events/simple-chat.jsonl')
+
+      const bubble = page.locator('[data-testid="message-user"]').first()
+      await bubble.hover()
+      const stampBox = await userTimestamp(page).boundingBox()
+      const copyBox = await bubble.locator('.message-copy-btn').boundingBox()
+      const bookmarkBox = await bubble.locator('.message-bookmark-btn').boundingBox()
+      expect(copyBox.x + copyBox.width).toBeLessThanOrEqual(stampBox.x)
+      expect(bookmarkBox.x + bookmarkBox.width).toBeLessThanOrEqual(copyBox.x)
+    })
+
+    // SPEC: chat:user-timestamp-layout
+    test('a long first line wraps before the timestamp; a short message stays one line', async ({
+      page,
+    }) => {
+      await openSession(page, 'events/user-timestamp-long.jsonl')
+
+      const stampBox = await userTimestamp(page).boundingBox()
+      const overlaps = await page
+        .locator('[data-testid="message-user"] .message-content')
+        .first()
+        .evaluate((el, box) => {
+          const range = document.createRange()
+          range.selectNodeContents(el)
+          return [...range.getClientRects()].some(
+            r =>
+              r.width > 0 &&
+              r.left < box.x + box.width &&
+              r.right > box.x &&
+              r.top < box.y + box.height &&
+              r.bottom > box.y,
+          )
+        }, stampBox)
+      expect(overlaps).toBe(false)
+    })
+
+    // SPEC: chat:user-timestamp-pending
+    test('a message not yet confirmed shows no timestamp', async ({ page }) => {
+      await openSession(page, 'events/simple-chat.jsonl')
+      await expect(userTimestamp(page)).toBeVisible()
+
+      const input = page.locator('[data-testid="chat-input"]')
+      await input.fill('A second question')
+      await input.press('Enter')
+
+      const pending = page.locator('[data-testid="message-user"]', { hasText: 'A second question' })
+      await expect(pending).toBeVisible()
+      await expect(pending.locator('[data-testid="message-user-timestamp"]')).toHaveCount(0)
+    })
+  })
+
   test.describe('Chat Control Bar', () => {
     // SPEC: chat:control-bar
     test('control bar present at top of chat panel', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const controlBar = page.locator('.panel-control-bar')
       await expect(controlBar).toBeVisible()
@@ -412,9 +512,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-bar
     test('control bar contains expected buttons', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const controlBar = page.locator('.panel-control-bar')
 
@@ -434,9 +532,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-rename
     test('rename button visible in control bar', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const controlBar = page.locator('.panel-control-bar')
       const renameBtn = controlBar.locator('button[title="Rename session"]')
@@ -445,22 +541,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-rename
     test('rename button disabled when no session', async ({ page }) => {
-      await mockAPI(page, {
-        handlers: {
-          getSessionStatus: async route => {
-            // Minimal status: null session_id but valid workspace.
-            await route.fulfill({
-              json: {
-                session_id: null,
-                workspace: '/home/user/project',
-              },
-            })
-          },
-        },
-      })
-      await mockSSE(page, 'events/empty.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openWithNoSession(page, 'events/empty.jsonl')
 
       const controlBar = page.locator('.panel-control-bar')
       const renameBtn = controlBar.locator('button[title="Rename session"]')
@@ -469,13 +550,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-rename
     test('clicking rename button enters edit mode', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const controlBar = page.locator('.panel-control-bar')
-
-      await controlBar.locator('button[title="Rename session"]').click()
+      const controlBar = await startRename(page)
 
       const input = controlBar.locator('.chat-control-edit-input')
       await expect(input).toBeVisible()
@@ -486,13 +561,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-rename
     test('escape cancels edit mode', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const controlBar = page.locator('.panel-control-bar')
-
-      await controlBar.locator('button[title="Rename session"]').click()
+      const controlBar = await startRename(page)
       await expect(controlBar.locator('.chat-control-edit-input')).toBeVisible()
 
       await page.keyboard.press('Escape')
@@ -503,13 +572,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:control-rename
     test('cancel button exits edit mode', async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const controlBar = page.locator('.panel-control-bar')
-
-      await controlBar.locator('button[title="Rename session"]').click()
+      const controlBar = await startRename(page)
       await expect(controlBar.locator('.chat-control-edit-input')).toBeVisible()
 
       await controlBar.locator('button[title="Cancel"]').click()
@@ -531,13 +594,7 @@ test.describe('Chat Display', () => {
           },
         },
       })
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const controlBar = page.locator('.panel-control-bar')
-
-      await controlBar.locator('button[title="Rename session"]').click()
+      const controlBar = await startRename(page)
       const input = controlBar.locator('.chat-control-edit-input')
       await expect(input).toBeVisible()
 
@@ -553,9 +610,7 @@ test.describe('Chat Display', () => {
 
   test.describe('Chat Control Bar Fork', () => {
     test.beforeEach(async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
     })
 
     // SPEC: chat:control-fork
@@ -640,9 +695,7 @@ test.describe('Chat Display', () => {
           },
         },
       })
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
 
       const controlBar = page.locator('.panel-control-bar')
       await controlBar.locator('.chat-control-fork-split .panel-control-btn').first().click()
@@ -657,10 +710,7 @@ test.describe('Chat Display', () => {
   test.describe('Chat Control Bar Fork (agent responding)', () => {
     // SPEC: chat:fork-full
     test('control bar fork shows modal when agent responding', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/responding.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/responding.jsonl')
 
       const controlBar = page.locator('.panel-control-bar')
       await controlBar.locator('.chat-control-fork-split .panel-control-btn').first().click()
@@ -677,9 +727,7 @@ test.describe('Chat Display', () => {
   test.describe('Timestamp Source', () => {
     // SPEC: chat:timestamp-source
     test('timestamp corresponds to turn start time, not end', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-duration.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-duration.jsonl')
 
       // Fixture start time is 2025-01-18T12:00:00Z (1705600000000); end time is 12:00:05Z
       // (1705600005200).
@@ -698,9 +746,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: chat:timestamp-source
     test('duration title also reflects start time', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-duration.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-duration.jsonl')
 
       const duration = page.locator('.turn-duration').first()
       await expect(duration).toBeVisible()
@@ -714,17 +760,7 @@ test.describe('Chat Display', () => {
   test.describe('Collapsed Turn Preview Strips Markdown', () => {
     // SPEC: turn:preview-strip-markdown
     test('collapsed preview shows plain text without markdown syntax', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-markdown.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const turn = page.locator('.turn-container').first()
-      const collapseBtn = turn.locator('.turn-collapse-btn, .turn-meta-collapsible')
-
-      await collapseBtn.first().click()
-
-      const preview = turn.locator('.turn-preview')
-      await expect(preview).toBeVisible()
+      const preview = await openCollapsedPreview(page, 'events/chat-with-markdown.jsonl')
 
       const previewText = await preview.locator('.turn-preview-text').textContent()
       expect(previewText).not.toContain('**')
@@ -734,21 +770,18 @@ test.describe('Chat Display', () => {
 
     // SPEC: turn:preview-strip-markdown
     test('collapsed preview contains readable content from bold text', async ({ page }) => {
-      await mockSSE(page, 'events/chat-with-markdown.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const turn = page.locator('.turn-container').first()
-      const collapseBtn = turn.locator('.turn-collapse-btn, .turn-meta-collapsible')
-
-      await collapseBtn.first().click()
-
-      const preview = turn.locator('.turn-preview')
-      await expect(preview).toBeVisible()
+      const preview = await openCollapsedPreview(page, 'events/chat-with-markdown.jsonl')
 
       const previewText = await preview.locator('.turn-preview-text').textContent()
       expect(previewText).toContain('bold text')
       expect(previewText).toContain('inline code')
+    })
+
+    // SPEC: turn:preview-keeps-angle-brackets
+    test('collapsed preview keeps a comparison written with angle brackets', async ({ page }) => {
+      const preview = await openCollapsedPreview(page, 'events/chat-preview-angle-brackets.jsonl')
+
+      await expect(preview.locator('.turn-preview-text')).toHaveText('if a < b and c > d then')
     })
   })
 
@@ -769,12 +802,7 @@ test.describe('Chat Display', () => {
     test('a code-only reply stands the same height as a prose reply, preview non-empty', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await disableAutoCollapse(page)
-
-      const turns = page.locator('.turn-container')
+      const turns = await openFallbackTurns(page)
       const prose = await collapseAndMeasure(turns.nth(0))
       const codeOnly = await collapseAndMeasure(turns.nth(1))
 
@@ -790,12 +818,7 @@ test.describe('Chat Display', () => {
     test('a table-only reply stands the same height as a prose reply, preview non-empty', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await disableAutoCollapse(page)
-
-      const turns = page.locator('.turn-container')
+      const turns = await openFallbackTurns(page)
       const prose = await collapseAndMeasure(turns.nth(0))
       const tableOnly = await collapseAndMeasure(turns.nth(2))
 
@@ -810,12 +833,7 @@ test.describe('Chat Display', () => {
     test('an alt-less image-only reply stands the same height as a prose reply, preview non-empty', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await disableAutoCollapse(page)
-
-      const turns = page.locator('.turn-container')
+      const turns = await openFallbackTurns(page)
       const prose = await collapseAndMeasure(turns.nth(0))
       const imageOnly = await collapseAndMeasure(turns.nth(3))
 
@@ -828,12 +846,9 @@ test.describe('Chat Display', () => {
 
     // SPEC: turn:collapsed-preview-fallback
     test('an ordinary prose reply is unaffected by the fallback path', async ({ page }) => {
-      await mockSSE(page, 'events/chat-collapsed-preview-fallback.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-      await disableAutoCollapse(page)
+      const turns = await openFallbackTurns(page)
 
-      const prose = await collapseAndMeasure(page.locator('.turn-container').nth(0))
+      const prose = await collapseAndMeasure(turns.nth(0))
       expect(prose.previewText).toBe('Hello! How can I help you today?')
     })
   })
@@ -842,12 +857,7 @@ test.describe('Chat Display', () => {
     // SPEC: tool:localcmd
     // SPEC: tool:localcmd-expanded
     test('stdout renders as collapsible block expanded by default', async ({ page }) => {
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const stdoutBlock = page.locator('.local-command-stdout').first()
-      await expect(stdoutBlock).toBeVisible()
+      const stdoutBlock = await openStdoutBlock(page)
 
       await expect(stdoutBlock.locator('.local-command-content')).toBeVisible()
       await expect(stdoutBlock.locator('.local-command-content')).toContainText('Hello from stdout')
@@ -855,21 +865,14 @@ test.describe('Chat Display', () => {
 
     // SPEC: tool:localcmd-header
     test('stdout block shows terminal icon and label', async ({ page }) => {
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const stdoutBlock = page.locator('.local-command-stdout').first()
-      await expect(stdoutBlock).toBeVisible()
+      const stdoutBlock = await openStdoutBlock(page)
 
       await expect(stdoutBlock.locator('.local-command-header')).toContainText('stdout')
     })
 
     // SPEC: tool:localcmd-stderr
     test('stderr renders with red/warning styling', async ({ page }) => {
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-with-command-output.jsonl')
 
       const stderrBlock = page.locator('.local-command-stderr').first()
       await expect(stderrBlock).toBeVisible()
@@ -881,9 +884,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: tool:localcmd-strip-tags
     test('no raw XML tags visible', async ({ page }) => {
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-with-command-output.jsonl')
 
       const pageContent = await page.textContent('body')
       expect(pageContent).not.toContain('<local-command-stdout>')
@@ -894,12 +895,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: tool:localcmd
     test('click header collapses content', async ({ page }) => {
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const stdoutBlock = page.locator('.local-command-stdout').first()
-      await expect(stdoutBlock).toBeVisible()
+      const stdoutBlock = await openStdoutBlock(page)
 
       await expect(stdoutBlock.locator('.local-command-content')).toBeVisible()
 
@@ -913,9 +909,7 @@ test.describe('Chat Display', () => {
 
     // SPEC: tool:localcmd
     test('multiple command blocks render all segments', async ({ page }) => {
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-with-command-output.jsonl')
 
       // Third turn has consecutive stdout + stderr blocks
       const turns = page.locator('.turn-container')
@@ -934,9 +928,7 @@ test.describe('Chat Display', () => {
     test('non-human text blocks fully wrapped in command tags render as LocalCommandBlock', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/nonhuman-text-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/nonhuman-text-with-command-output.jsonl')
       await disableAutoCollapse(page)
 
       // First turn: non-human user text fully wrapped in stdout tag
@@ -965,9 +957,7 @@ test.describe('Chat Display', () => {
     test('renders image attachment as thumbnail and non-image with extension badge', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/chat-with-attachments.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/chat-with-attachments.jsonl')
 
       await expect(page.getByText('Check this image')).toBeVisible()
 
@@ -988,9 +978,7 @@ test.describe('Chat Display', () => {
 
   test.describe('Chat Control Bar Extras', () => {
     test.beforeEach(async ({ page }) => {
-      await mockSSE(page, 'events/simple-chat.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/simple-chat.jsonl')
     })
 
     // SPEC: chat:control-minimap
@@ -1039,23 +1027,8 @@ test.describe('Chat Display', () => {
   test.describe('Setting Change Dividers', () => {
     // SPEC: turn:setting-change-divider
     test('shows divider when model changes between turns', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // First turn with default model
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        { type: 'assistant', subtype: 'text', content: 'Hi there', timestamp: Date.now() + 100 },
-        { type: 'result', subtype: 'success', timestamp: Date.now() + 200 },
-      ])
+      const controller = await openAfterOneTurn(page)
 
       // Model change event (non-init: has previous_model)
       await controller.sendEvent({
@@ -1085,23 +1058,8 @@ test.describe('Chat Display', () => {
 
     // SPEC: turn:effort-change-divider
     test('shows divider when effort level changes between turns', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // First turn
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        { type: 'assistant', subtype: 'text', content: 'Hi', timestamp: Date.now() + 100 },
-        { type: 'result', subtype: 'success', timestamp: Date.now() + 200 },
-      ])
+      const controller = await openAfterOneTurn(page, 'Hi')
 
       // Effort level change event (non-init: has previous_effort_level)
       await controller.sendEvent({
@@ -1135,23 +1093,8 @@ test.describe('Chat Display', () => {
     test('shows "Restarted" divider when container_restarted event arrives mid-stream', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       // First turn (makes the session non-pristine)
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        { type: 'assistant', subtype: 'text', content: 'Hi there', timestamp: Date.now() + 100 },
-        { type: 'result', subtype: 'success', timestamp: Date.now() + 200 },
-      ])
+      const controller = await openAfterOneTurn(page)
 
       // Container restart event (no fork payload -> plain "Restarted")
       await controller.sendEvent({
@@ -1185,22 +1128,7 @@ test.describe('Chat Display', () => {
     test('shows a runtime-mismatch warning divider when the session was created under a different runtime', async ({
       page,
     }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await controller.sendEvents([
-        {
-          type: 'user',
-          subtype: 'text',
-          content: 'Hello',
-          is_human: true,
-          timestamp: Date.now(),
-          turn_id: 'turn_001',
-        },
-        { type: 'assistant', subtype: 'text', content: 'Hi there', timestamp: Date.now() + 100 },
-        { type: 'result', subtype: 'success', timestamp: Date.now() + 200 },
-      ])
+      const controller = await openAfterOneTurn(page)
 
       await controller.sendEvent({
         type: 'system',
@@ -1215,6 +1143,73 @@ test.describe('Chat Display', () => {
       await expect(divider).toContainText('Runtime mismatch')
       await expect(divider).toContainText('Claude')
       await expect(divider).toContainText('LangGraph')
+    })
+
+    /** Stream one turn, then `between` as system events, then a second turn. */
+    async function streamAround(page, between) {
+      const controller = await openLiveSession(page)
+      const at = Date.now()
+      const turn = (id, text, offset) => [
+        {
+          type: 'user',
+          subtype: 'text',
+          content: text,
+          is_human: true,
+          timestamp: at + offset,
+          turn_id: id,
+        },
+        { type: 'assistant', subtype: 'text', content: `re: ${text}`, timestamp: at + offset + 1 },
+        { type: 'result', subtype: 'success', timestamp: at + offset + 2 },
+      ]
+      await controller.sendEvents(turn('turn_001', 'first ask', 0))
+      await controller.sendEvents(
+        between.map((e, i) => ({
+          type: 'system',
+          timestamp: at + 10 + i,
+          turn_id: 'turn_001',
+          ...e,
+        })),
+      )
+      await controller.sendEvents(turn('turn_002', 'second ask', 100))
+      await expect(page.getByText('re: second ask')).toBeVisible()
+    }
+
+    // SPEC: turn:divider-run-merged
+    test('back-to-back dividers are merged into one line naming each change once', async ({
+      page,
+    }) => {
+      await streamAround(page, [
+        { subtype: 'container_restarted' },
+        { subtype: 'container_restarted' },
+        { subtype: 'model_changed', model: 'model-first-pick', previous_model: 'model-start' },
+        { subtype: 'model_changed', model: 'model-final-pick', previous_model: 'model-first-pick' },
+        { subtype: 'effort_level_changed', content: 'high', previous_effort_level: 'medium' },
+      ])
+
+      const dividers = page.locator('[data-testid="setting-change-divider"]')
+      await expect(dividers).toHaveCount(1)
+      const text = await dividers.textContent()
+      expect(text.match(/Restarted/g)).toHaveLength(1)
+      expect(text).toContain('model-final-pick')
+      expect(text).not.toContain('model-first-pick')
+      expect(text).toMatch(/Effort: high/i)
+    })
+
+    // SPEC: turn:divider-run-merged
+    test('a fork divider keeps its own line, apart from the change after it', async ({ page }) => {
+      await streamAround(page, [
+        {
+          subtype: 'container_restarted',
+          message_data: { fork_parent_session_id: 'parent-session' },
+        },
+        { subtype: 'model_changed', model: 'model-after-fork', previous_model: 'model-start' },
+      ])
+
+      const dividers = page.locator('[data-testid="setting-change-divider"]')
+      await expect(dividers).toHaveCount(2)
+      await expect(dividers.first()).toContainText('Forked from')
+      await expect(dividers.first()).not.toContainText('model-after-fork')
+      await expect(dividers.last()).toHaveText('model-after-fork')
     })
   })
 })

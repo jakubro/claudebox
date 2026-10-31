@@ -43,6 +43,26 @@ describe('HelpPanel', () => {
           "Dedent",
         ],
         [
+          "Tab",
+          "Quote selected text",
+        ],
+        [
+          "Tab",
+          "Open the reply under the mouse",
+        ],
+        [
+          "Tab",
+          "Close a reply box (cursor at its end)",
+        ],
+        [
+          "Enter",
+          "Send message from a reply box",
+        ],
+        [
+          "Ctrl+Enter",
+          "Ask a reply on its own",
+        ],
+        [
           "Ctrl+.",
           "Interrupt",
         ],

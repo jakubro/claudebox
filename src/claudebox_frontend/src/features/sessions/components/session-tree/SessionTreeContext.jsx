@@ -1,4 +1,4 @@
-/** Context for stable session tree state shared across recursive SessionTree nodes. */
+/** Context for stable session tree state shared across SessionTree nodes. */
 
 // audit-ignore-file: excessive-props
 
@@ -9,10 +9,9 @@ export const SessionTreeContext = createContext(null)
 /**
  * @param {object} props
  * @param {React.ReactNode} props.children
- * @param {Map} props.childrenMap - Map of parent session ID to child sessions.
- * @param {Set} props.expandedSessions - Set of expanded session IDs.
  * @param {string} props.currentSessionId - Currently active session ID.
  * @param {Set<string>} props.pinnedSessions - Set of pinned session IDs (O(1) lookup).
+ * @param {function} props.deriveSessionStatus - Container status for a session's dot.
  * @param {function} props.onResume - Callback when resuming a session.
  * @param {function} props.onRename - Callback when renaming a session.
  * @param {function} props.onTogglePin - Callback when toggling pin state.
@@ -22,10 +21,9 @@ export const SessionTreeContext = createContext(null)
  */
 export function SessionTreeProvider({
   children,
-  childrenMap,
-  expandedSessions,
   currentSessionId,
   pinnedSessions,
+  deriveSessionStatus,
   onResume,
   onRename,
   onTogglePin,
@@ -35,10 +33,9 @@ export function SessionTreeProvider({
 }) {
   const value = useMemo(
     () => ({
-      childrenMap,
-      expandedSessions,
       currentSessionId,
       pinnedSessions,
+      deriveSessionStatus,
       onResume,
       onRename,
       onTogglePin,
@@ -47,10 +44,9 @@ export function SessionTreeProvider({
       onOpenInNewTab,
     }),
     [
-      childrenMap,
-      expandedSessions,
       currentSessionId,
       pinnedSessions,
+      deriveSessionStatus,
       onResume,
       onRename,
       onTogglePin,

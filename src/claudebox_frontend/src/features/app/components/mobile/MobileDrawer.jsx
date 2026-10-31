@@ -11,8 +11,13 @@ import { useSessionRouting } from '../../../../context/SessionRoutingContext'
 import { useSessionsList } from '../../../../context/SessionsContext'
 import { useWorkspace } from '../../../../context/WorkspaceContext'
 import useNewSession from '../../../../hooks/useNewSession'
+import { useScrollElementRef } from '../../../../hooks/useVirtualListGeometry'
 import { resolveContainerId } from '../../../../utils/containerLookup'
-import SessionItem from '../../../sessions/components/session-tree/components/SessionItem'
+import { sessionRowDisplay } from '../../../../utils/sessionRow'
+import BoundSessionItem from '../../../sessions/components/session-tree/components/BoundSessionItem'
+import WindowedSessionRows from '../../../sessions/components/WindowedSessionRows'
+
+const sessionKey = session => session.session_id
 
 /**
  * @param {object} props
@@ -23,9 +28,11 @@ export default function MobileDrawer({ onClose }) {
   const { sessionId: currentSessionId } = useSessionData()
   const { workspaceId, workspaces, selectWorkspace } = useWorkspace()
   const { navigateToSession, navigateToWorkspace } = useSessionRouting()
-  const { containerMap, addStoppingSession, removeSessionContainer } = useContainerMap()
+  const { containerMap, addStoppingSession, removeSessionContainer, deriveSessionStatus } =
+    useContainerMap()
   const { isConnected } = useEvents()
   const { executeNewSession, isCreating } = useNewSession()
+  const [listEl, attachListRef] = useScrollElementRef()
 
   const handleSelectSession = useCallback(
     sessionId => {
@@ -117,19 +124,24 @@ export default function MobileDrawer({ onClose }) {
           New session
         </button>
         <div className="mobile-drawer-divider" />
-        <div className="mobile-drawer-sessions">
-          {sessions.map(s => (
-            <SessionItem
-              key={s.session_id}
-              isMobile
-              session={s}
-              isCurrent={s.session_id === currentSessionId}
-              isPinned={false}
-              onResume={() => handleSelectSession(s.session_id)}
-              onRename={name => handleRenameSession(s.session_id, name)}
-              onClose={onClose}
-            />
-          ))}
+        <div className="mobile-drawer-sessions" ref={attachListRef}>
+          <WindowedSessionRows
+            scrollEl={listEl}
+            rows={sessions}
+            getKey={sessionKey}
+            renderRow={s => (
+              <BoundSessionItem
+                isMobile
+                session={s}
+                {...sessionRowDisplay(s, deriveSessionStatus)}
+                isCurrent={s.session_id === currentSessionId}
+                isPinned={false}
+                onResume={handleSelectSession}
+                onRename={handleRenameSession}
+                onClose={onClose}
+              />
+            )}
+          />
         </div>
         <div className="mobile-drawer-divider" />
         <button

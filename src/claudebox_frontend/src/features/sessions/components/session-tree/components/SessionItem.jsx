@@ -1,23 +1,29 @@
 /** Individual session item with edit and resume functionality. */
 
+// audit-ignore-file: excessive-props
+
 import { Check, Loader2, Pencil, Pin, Square, X } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
-import { useContainerMap } from '../../../../../context/ContainerMapContext'
 import useCopyFlash from '../../../../../hooks/useCopyFlash'
+import useRelativeTime from '../../../../../hooks/useRelativeTime'
 import { flashStatus } from '../../../../../utils/flashStatus'
 import {
   formatAbsoluteTime,
   formatCost,
   formatMessagePreview,
-  formatRelativeTime,
   formatTurns,
 } from '../../../../../utils/formatters'
 import { formatSessionDirTooltip } from '../../../../../utils/session'
+import { displayName, isAutoNamed } from '../../../../../utils/sessionName'
+import { DOT_TITLES } from '../../../../../utils/sessionRow'
 import ResumeSplitButton from './ResumeSplitButton'
 
 /**
  * @param {object} props
  * @param {object} props.session - Session data with id, name, timestamps, messages.
+ * @param {'none'|'running'|'stopping'} [props.status='none'] - Container status.
+ * @param {string} [props.dot=status] - The dot's state: the container status or what the session is doing.
+ * @param {string|null} [props.reason] - Why the session needs you; shown in place of its last message.
  * @param {boolean} props.isCurrent - Whether this is the active session.
  * @param {boolean} props.isPinned - Whether this session is pinned.
  * @param {function} props.onResume - Resume callback.
@@ -33,6 +39,9 @@ import ResumeSplitButton from './ResumeSplitButton'
  */
 function SessionItem({
   session,
+  status = 'none',
+  dot = status,
+  reason = null,
   isCurrent,
   isPinned,
   onResume,
@@ -42,8 +51,6 @@ function SessionItem({
   isMobile = false,
   originName,
 }) {
-  const { deriveSessionStatus } = useContainerMap()
-  const status = deriveSessionStatus(session.session_id, undefined, session.container_id)
   const isStopping = status === 'stopping'
 
   const [isEditing, setIsEditing] = useState(false)
@@ -60,8 +67,8 @@ function SessionItem({
     action()
   }, [])
 
-  const startedTime = formatRelativeTime(session.started_at)
-  const updatedTime = session.updated_at ? formatRelativeTime(session.updated_at) : null
+  const startedTime = useRelativeTime(session.started_at)
+  const updatedTime = useRelativeTime(session.updated_at)
   // Memoize the two tooltip-only `toLocaleString` calls - sub-ms each but cumulative across rows x flush rate.
   const startedAbsolute = useMemo(
     () => formatAbsoluteTime(session.started_at),
@@ -73,6 +80,7 @@ function SessionItem({
   )
 
   const copySessionPath = () => copy(session.session_dir)
+  const shownName = displayName(session)
 
   const handleEditStart = () => {
     setIsEditing(true)
@@ -144,14 +152,8 @@ function SessionItem({
       ) : (
         <div className="sessions-row sessions-header">
           <span
-            className={`container-status-dot container-status-${status}`}
-            title={
-              status === 'stopping'
-                ? 'Stopping container...'
-                : status === 'running'
-                  ? 'Container running'
-                  : 'No container'
-            }
+            className={`container-status-dot container-status-${dot}`}
+            title={DOT_TITLES[dot]}
           />
           <span
             className="sessions-id sessions-id-clickable"
@@ -163,9 +165,11 @@ function SessionItem({
             </span>
             {copied && <span className="sessions-id-copied">Copied!</span>}
           </span>
-          {session.name && (
-            <span className="sessions-name" title={session.name}>
-              {session.name}
+          {shownName && (
+            <span
+              className={`sessions-name${isAutoNamed(session) ? ' auto-named' : ''}`}
+              title={shownName}>
+              {shownName}
             </span>
           )}
           <button
@@ -293,8 +297,10 @@ function SessionItem({
         </div>
       )}
 
-      <div className="sessions-row sessions-last">
-        {session.last_message && session.last_message !== session.first_message ? (
+      <div className={`sessions-row sessions-last${reason ? ' sessions-last-needs-you' : ''}`}>
+        {reason ? (
+          <span title={reason}>{reason}</span>
+        ) : session.last_message && session.last_message !== session.first_message ? (
           <span title={formatMessagePreview(session.last_message)}>
             "...{formatMessagePreview(session.last_message)}"
           </span>
@@ -306,7 +312,6 @@ function SessionItem({
   )
 }
 
-// Memo barrier: SessionTree re-renders ~20x/sec while streaming since its parent sources status from a
-// context that flushes at SSE batch cadence; shallow compare suffices once SessionTree stops creating
-// fresh callbacks per render (see useMemo there).
+// Memo barrier: every prop is a primitive or a callback bound once per row (BoundSessionItem), so a
+// list re-render redraws only rows whose own session, status, dot or highlight changed.
 export default memo(SessionItem)

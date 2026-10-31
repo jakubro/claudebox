@@ -1,9 +1,17 @@
 """Tests for claudebox.containers.runtime - facade behavior over backend."""
 
+from __future__ import annotations
+
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from claudebox import temp
 from claudebox.config import Config
 from claudebox.containers.runtime import ContainerRuntime
+from claudebox.temp import TmpRemapBlocked
 
 
 def _make_config(tmp_path):
@@ -147,3 +155,109 @@ class TestRunContainerConfigOverride:
 
         volumes = _volume_args(runtime._backend.run_container.call_args)
         assert any("snapshot_src" in v for v in volumes)
+
+
+# --- run_container() refuses a /tmp conflict ---
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+class TestRunContainerRefusesTmpConflicts:
+    """A detached daemon spawn refuses what the session would delete; the terminal run does not."""
+
+    def test_a_workspace_under_tmp_never_reaches_the_backend(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        config = _make_config(tmp_path)
+        config.work_dir = temp.TMP_PATH / "proj"
+        runtime = ContainerRuntime(config)
+        runtime._backend = MagicMock()
+
+        with pytest.raises(TmpRemapBlocked) as excinfo:
+            runtime.run_container(name="c", labels={}, env={}, detach=True)
+
+        assert excinfo.value.context == {"paths": str(temp.TMP_PATH / "proj"), "reason": "mounted"}
+        runtime._backend.run_container.assert_not_called()
+
+    def test_the_terminal_run_is_not_checked(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path)
+        config.work_dir = temp.TMP_PATH / "proj"
+        runtime = ContainerRuntime(config)
+        runtime._backend = MagicMock()
+        runtime._backend.run_container.return_value = 0
+
+        assert runtime.run() == 0
+
+
+# --- run_container() substitutes held fixed ports under one lock ---
+
+
+def _ported_config(tmp_path, ports):
+    config = _make_config(tmp_path)
+    config.ports = ports
+    config.env = {"CLAUDEBOX_NO_TMP_REMAP": "1"}
+
+    return config
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+class TestRunContainerFixedPorts:
+    def test_run_container_publishes_a_held_port_on_a_free_one(self, _tf, _td, tmp_path):
+        runtime = ContainerRuntime(_ported_config(tmp_path, {"8080": 80}))
+        runtime._backend = MagicMock()
+        runtime._backend.run_container.return_value = "b1"
+
+        with (
+            patch("claudebox.containers.run._port_in_use", {8080}.__contains__),
+            patch("claudebox.containers.run._free_port", lambda: 41000),
+        ):
+            runtime.run_container(name="c1", labels={}, env={}, detach=True)
+
+        args = list(runtime._backend.run_container.call_args.args)
+        assert "41000:80" in [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
+
+    def test_probe_and_run_are_serialised(self, _tf, _td, tmp_path):
+        runtime = ContainerRuntime(_ported_config(tmp_path, {"8080": 80}))
+        inside = threading.Semaphore(1)
+        overlaps = []
+
+        def slow_run(*_args, **_kwargs):
+            if not inside.acquire(blocking=False):
+                overlaps.append(True)
+
+            time.sleep(0.05)
+            inside.release()
+
+            return "b1"
+
+        runtime._backend = MagicMock()
+        runtime._backend.run_container.side_effect = slow_run
+
+        with patch("claudebox.containers.run._port_in_use", lambda _port: False):
+            threads = [
+                threading.Thread(
+                    target=runtime.run_container,
+                    kwargs={"name": f"c{n}", "labels": {}, "env": {}, "detach": True},
+                )
+                for n in range(2)
+            ]
+
+            for thread in threads:
+                thread.start()
+
+            for thread in threads:
+                thread.join()
+
+        assert overlaps == []
+
+    def test_no_fixed_ports_takes_no_lock(self, _tf, _td, tmp_path):
+        runtime = ContainerRuntime(_ported_config(tmp_path, None))
+        runtime._backend = MagicMock()
+        runtime._backend.run_container.return_value = "b1"
+
+        with patch("claudebox.containers.runtime._FIXED_PORT_LOCK", None):
+            assert runtime.run_container(name="c1", labels={}, env={}, detach=True) == "b1"

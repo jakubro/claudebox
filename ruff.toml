@@ -1,18 +1,29 @@
 line-length = 100
 indent-width = 4
 target-version = "py313"
+extend-include = ["container/run/fs/root/.local/bin/claudebox-trace"]
 
 [format]
 line-ending = "lf"
 
 [lint]
+preview = true
 extend-select = [
+  "B905",
   "COM812",
+  "DTZ001",
+  "DTZ005",
+  "DTZ006",
+  "DTZ007",
+  "DTZ011",
+  "DTZ012",
+  "DTZ901",
   "E4",
   "E7",
   "F4",
   "F7",
   "I",
+  "PLW1514",
   "RUF001",
   "RUF002",
   "RUF003",
@@ -26,6 +37,9 @@ case-sensitive = true
 no-lines-before = ["local-folder"]
 relative-imports-order = "closest-to-furthest"
 lines-after-imports = 2
+required-imports = [
+  "from __future__ import annotations",
+]
 known-first-party = [
   "claudebox",
   "claudebox_cli",

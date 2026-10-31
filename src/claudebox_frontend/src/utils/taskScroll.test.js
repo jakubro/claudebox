@@ -1,7 +1,12 @@
 /** Tests for taskScroll - task tool-block lookup and scroll/highlight orchestration. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { findVisibleToolBlock, jumpToTask, jumpToTaskInWorkColumn } from './taskScroll'
+import {
+  findVisibleToolBlock,
+  jumpToTask,
+  jumpToTaskInTerminalColumn,
+  jumpToTaskInWorkColumn,
+} from './taskScroll'
 
 vi.mock('./scroll', () => ({
   computeScrollDestination: vi.fn(() => 100),
@@ -62,14 +67,7 @@ describe('jumpToTask', () => {
   })
 
   it('disengages user-intent tracking when the landing spot is off-bottom', () => {
-    const container = document.createElement('div')
-    Object.defineProperties(container, {
-      scrollHeight: { value: 5000 },
-      clientHeight: { value: 500 },
-    })
-    document.body.appendChild(container)
-    const el = document.createElement('div')
-    container.appendChild(el)
+    const { container, el } = mountInScroller(5000)
     computeScrollDestination.mockReturnValue(0) // far from the bottom given a 5000-tall scroller
 
     const markUserIntent = vi.fn()
@@ -86,14 +84,7 @@ describe('jumpToTask', () => {
   })
 
   it('re-engages autoscroll when the landing spot is at the bottom and a callback is given', () => {
-    const container = document.createElement('div')
-    Object.defineProperties(container, {
-      scrollHeight: { value: 600 },
-      clientHeight: { value: 500 },
-    })
-    document.body.appendChild(container)
-    const el = document.createElement('div')
-    container.appendChild(el)
+    const { container, el } = mountInScroller(600)
     computeScrollDestination.mockReturnValue(100) // 600 - 100 - 500 = 0 <= threshold
 
     const markUserIntent = vi.fn()
@@ -105,14 +96,7 @@ describe('jumpToTask', () => {
   })
 
   it('does nothing extra at the bottom when no markReturnedToBottom callback is given (transcript path)', () => {
-    const container = document.createElement('div')
-    Object.defineProperties(container, {
-      scrollHeight: { value: 600 },
-      clientHeight: { value: 500 },
-    })
-    document.body.appendChild(container)
-    const el = document.createElement('div')
-    container.appendChild(el)
+    const { container, el } = mountInScroller(600)
     computeScrollDestination.mockReturnValue(100)
 
     const markUserIntent = vi.fn()
@@ -123,14 +107,7 @@ describe('jumpToTask', () => {
   })
 
   it('tolerates missing ref callbacks', () => {
-    const container = document.createElement('div')
-    Object.defineProperties(container, {
-      scrollHeight: { value: 5000 },
-      clientHeight: { value: 500 },
-    })
-    document.body.appendChild(container)
-    const el = document.createElement('div')
-    container.appendChild(el)
+    const { container, el } = mountInScroller(5000)
 
     expect(() => jumpToTask(el, container, {})).not.toThrow()
   })
@@ -226,3 +203,62 @@ describe('jumpToTaskInWorkColumn', () => {
     expect(scrollAndHighlight).not.toHaveBeenCalled()
   })
 })
+
+describe('jumpToTaskInTerminalColumn', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    scrollAndHighlight.mockClear()
+  })
+
+  it('lands directly on the entry when it is mounted', () => {
+    document.body.innerHTML =
+      '<div class="terminal-entry" data-tool-use-id="tu1"></div><div class="terminal-entry" data-tool-use-id="tu2"></div>'
+    const container = document.createElement('div')
+    const virtualizer = { scrollToIndex: vi.fn() }
+
+    jumpToTaskInTerminalColumn(1, 'tu2', { container, virtualizer })
+
+    expect(scrollAndHighlight).toHaveBeenCalledWith(
+      container,
+      document.querySelector('[data-tool-use-id="tu2"]'),
+      expect.objectContaining({ highlightClass: 'task-highlight' }),
+    )
+    expect(virtualizer.scrollToIndex).not.toHaveBeenCalled()
+  })
+
+  it('scrolls a windowed-out entry into the list before landing on it', () => {
+    const virtualizer = { scrollToIndex: vi.fn() }
+    const markProgrammaticScroll = vi.fn()
+
+    jumpToTaskInTerminalColumn(7, 'tu8', {
+      container: document.createElement('div'),
+      virtualizer,
+      markProgrammaticScroll,
+    })
+
+    expect(markProgrammaticScroll).toHaveBeenCalled()
+    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(7, { align: 'start' })
+  })
+
+  it('does nothing for a command the column does not list', () => {
+    const virtualizer = { scrollToIndex: vi.fn() }
+
+    jumpToTaskInTerminalColumn(-1, 'tu9', { container: document.createElement('div'), virtualizer })
+
+    expect(virtualizer.scrollToIndex).not.toHaveBeenCalled()
+    expect(scrollAndHighlight).not.toHaveBeenCalled()
+  })
+})
+
+function mountInScroller(scrollHeight) {
+  const container = document.createElement('div')
+  Object.defineProperties(container, {
+    scrollHeight: { value: scrollHeight },
+    clientHeight: { value: 500 },
+  })
+  document.body.appendChild(container)
+  const el = document.createElement('div')
+  container.appendChild(el)
+
+  return { container, el }
+}

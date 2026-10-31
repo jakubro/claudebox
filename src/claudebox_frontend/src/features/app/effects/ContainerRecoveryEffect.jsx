@@ -20,12 +20,16 @@ export default function ContainerRecoveryEffect() {
     disconnectSSE,
     closeSSE,
     startResume,
+    settleResumeRequest,
     clearResume,
-    notifyContainerChanged,
+    notifyAddressChanged,
   } = useEvents()
   const { setSessionContainer, stoppingSessions } = useContainerMap()
   const { clearSessionData } = useSessionActions()
   const { setError } = useInteraction()
+
+  const activeSessionIdRef = useRef(activeSessionId)
+  activeSessionIdRef.current = activeSessionId
 
   const prevRecoveryRef = useRef(containerRecoveryNeeded)
 
@@ -48,9 +52,11 @@ export default function ContainerRecoveryEffect() {
 
     resumeAndReconnect({
       activeSessionId,
+      isStillActive: () => activeSessionIdRef.current === activeSessionId,
       startResume,
+      settleResumeRequest,
       reconnectSSE,
-      notifyContainerChanged,
+      notifyAddressChanged,
       setSessionContainer,
       clearSessionData,
       onError: () => {
@@ -66,9 +72,10 @@ export default function ContainerRecoveryEffect() {
     disconnectSSE,
     closeSSE,
     startResume,
+    settleResumeRequest,
     clearResume,
     reconnectSSE,
-    notifyContainerChanged,
+    notifyAddressChanged,
     setSessionContainer,
     clearSessionData,
     setError,

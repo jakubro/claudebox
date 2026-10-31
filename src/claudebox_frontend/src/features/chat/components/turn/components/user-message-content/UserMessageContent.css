@@ -1,8 +1,16 @@
 /* User message content styles */
 
-/* Note typed alongside an AskUserQuestion/ExitPlanMode answer, above the answer card */
+/* Message box text sent with an answer: above a form answer's card, below a one-click reply's rule */
 .message-note {
   margin: 0 0 4px;
+}
+.message-note-rule {
+  border: none;
+  border-top: 1px solid var(--text-muted);
+  margin: 4px 0;
+}
+.message-note-rule + .message-note {
+  margin-bottom: 0;
 }
 
 /* Local command output blocks. Surface (background/padding/radius) lives on the message

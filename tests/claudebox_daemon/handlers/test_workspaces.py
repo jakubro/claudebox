@@ -1,9 +1,12 @@
 """Tests for claudebox_daemon.handlers.workspaces - HTTP adapter responses."""
 
+from __future__ import annotations
+
 import dataclasses
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -138,3 +141,104 @@ def test_session_defaults_resolves_per_workspace():
 
     assert response_a.json()["workspace"] == "/workspace/a"
     assert response_b.json()["workspace"] == "/workspace/b"
+
+
+def test_session_defaults_lists_bundles_in_order_with_only_what_each_declared(tmp_path):
+    (tmp_path / ".workspace").touch()
+    settings = tmp_path / ".claudebox" / "settings.toml"
+    settings.parent.mkdir()
+    settings.write_text(
+        "root = true\n"
+        '[bundles.zeta]\nmodel = "claude-sonnet-5"\n[bundles.zeta.env]\nKEY = "v"\n'
+        '[bundles.alpha]\neffort_level = "max"\nmessages = ["hi"]\n'
+        '[bundles.bare.mounts]\n"/srv/a" = "/a"\n',
+    )
+    app = _build_app(str(tmp_path))
+
+    body = TestClient(app).get("/api/workspaces/my-project/session-defaults").json()
+
+    assert body["bundle_names"] == ["zeta", "alpha", "bare"]
+    assert body["bundles"] == {
+        "zeta": {"declared": {"model": "claude-sonnet-5"}, "keys": ["env", "model"]},
+        "alpha": {"declared": {"effort_level": "max"}, "keys": ["effort_level", "messages"]},
+        "bare": {"declared": {}, "keys": ["mounts"]},
+    }
+
+
+def test_session_defaults_reads_bundles_fresh_on_every_request(tmp_path):
+    (tmp_path / ".workspace").touch()
+    settings = tmp_path / ".claudebox" / "settings.toml"
+    settings.parent.mkdir()
+    settings.write_text("root = true\n")
+    client = TestClient(_build_app(str(tmp_path)))
+
+    assert client.get("/api/workspaces/my-project/session-defaults").json()["bundle_names"] == []
+
+    settings.write_text('root = true\n[bundles.late]\nmodel = "m"\n')
+
+    assert client.get("/api/workspaces/my-project/session-defaults").json()["bundle_names"] == [
+        "late",
+    ]
+
+
+def _workspace(tmp_path, settings: str = ""):
+    (tmp_path / ".workspace").touch()
+    settings_file = tmp_path / ".claudebox" / "settings.toml"
+    settings_file.parent.mkdir(exist_ok=True)
+    settings_file.write_text("root = true\n" + settings)
+
+    return TestClient(_build_app(str(tmp_path)))
+
+
+def _logged_in(client: TestClient):
+    return client.get("/api/workspaces/my-project/session-defaults").json()["logged_in"]
+
+
+def test_session_defaults_reports_no_login_without_credentials(tmp_path):
+    assert _logged_in(_workspace(tmp_path)) is False
+
+
+def test_session_defaults_reports_a_login_once_the_workspace_holds_credentials(tmp_path):
+    client = _workspace(tmp_path)
+    credentials = tmp_path / ".claudebox" / "fs" / "root" / ".claude" / ".credentials.json"
+    credentials.parent.mkdir(parents=True)
+    credentials.write_text("{}")
+
+    assert _logged_in(client) is True
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+    ],
+)
+def test_session_defaults_counts_a_key_in_settings_as_a_login(tmp_path, key):
+    assert _logged_in(_workspace(tmp_path, f'[env]\n{key} = "1"\n')) is True
+
+
+def test_session_defaults_ignores_unrelated_settings_env(tmp_path):
+    assert _logged_in(_workspace(tmp_path, '[env]\nOTHER_TOKEN = "1"\n')) is False
+
+
+def test_session_defaults_has_no_login_state_for_a_langgraph_workspace(tmp_path):
+    assert _logged_in(_workspace(tmp_path, 'agent = "langgraph"\n')) is None
+
+
+def test_session_defaults_local_backend_reads_the_daemons_agent_config(tmp_path, monkeypatch):
+    agent_config = tmp_path / "agent-config"
+    agent_config.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(agent_config))
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    client = _workspace(workspace, 'backend = "local"\n')
+
+    assert _logged_in(client) is False
+
+    (agent_config / ".credentials.json").write_text("{}")
+
+    assert _logged_in(client) is True

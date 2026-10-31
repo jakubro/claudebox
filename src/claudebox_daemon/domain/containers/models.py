@@ -1,5 +1,7 @@
 """Container data models: status enum, tracked instance, and events."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum

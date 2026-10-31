@@ -1,5 +1,7 @@
 """CLI entry point and output utilities."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import subprocess

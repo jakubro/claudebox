@@ -10,6 +10,7 @@ import Markdown from '../../../../../../../../../components/Markdown'
  * @param {string} [props.content] - Text content to display as Markdown.
  * @param {boolean} [props.showCopy=false] - Show copy button when using content prop.
  * @param {React.ReactNode} [props.children] - Custom content (alternative to content prop).
+ * @param {string|null} [props.baseDir] - Directory the content's relative links resolve against.
  */
 export default function CollapsibleSection({
   label,
@@ -18,6 +19,7 @@ export default function CollapsibleSection({
   showCopy = false,
   className = '',
   children,
+  baseDir = null,
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
 
@@ -53,7 +55,7 @@ export default function CollapsibleSection({
                   size={12}
                 />
               )}
-              <Markdown>{content}</Markdown>
+              <Markdown baseDir={baseDir}>{content}</Markdown>
             </>
           ) : (
             children

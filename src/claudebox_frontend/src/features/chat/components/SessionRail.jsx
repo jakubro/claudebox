@@ -7,11 +7,8 @@ import useSessionRail from '../hooks/useSessionRail'
 import AncestorGroup from './AncestorGroup'
 
 /**
- * Drilling into a child pushes a new group to the right rather than replacing the view. Exactly
- * one group is a live `ChatPanel`; every other is `AncestorGroup`, a read-only transcript.
- *
- * The focused slot is a fixed, unkeyed position, so becoming routed never remounts `ChatPanel` and
- * loses a draft. Only a focus move between routed sessions remounts it, rehydrating its state.
+ * Drilling pushes a group to the right; one group is a live `ChatPanel`, the rest `AncestorGroup`s.
+ * The focused slot is fixed and unkeyed, so nothing remounts it; per-session state keys on its owner.
  */
 export default function SessionRail() {
   const { renderedGroups, focusedSessionId, focusPrev, focusNext } = useSessionRail()

@@ -1,5 +1,7 @@
 """Session orchestration domain exceptions - typed errors with HTTP status codes."""
 
+from __future__ import annotations
+
 from ...errors import ApiError
 
 
@@ -65,3 +67,13 @@ class McpServerProtected(ApiError):
 
     def __init__(self, server_name: str) -> None:
         super().__init__(server_name=server_name)
+
+
+class ChangeRefused(ApiError):
+    """The agent did not apply a model, permission mode, effort level or MCP change in time."""
+
+    status_code = 409
+    error_key = "change_refused"
+
+    def __init__(self, setting: str, value: str, reason: str) -> None:
+        super().__init__(setting=setting, value=value, reason=reason)

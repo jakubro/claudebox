@@ -29,15 +29,18 @@
   /* Interrupted-turn border - shared by the transcript's .turn-interrupted and the work panel's
      matching block border, so the two columns can never mean two different yellows. */
   --interrupt-border-color: #ffeb3b;
+  --block-strip-btn-width: 26px;
+  --block-strip-btn-height: 16px;
+  --block-strip-gap: 4px;
 
   /* Pinned webfonts - the OS-stack tail is a fallback for the brief window before the self-hosted
      font finishes loading, never the norm. */
   --font-sans:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
-    sans-serif;
+    "Inter", "DejaVu Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    Cantarell, sans-serif;
   --font-mono:
-    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+    "JetBrains Mono", "DejaVu Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 
   /* Disables the mono face's calt, which merges `--`, `->` and `!=` into one glyph. */
   font-variant-ligatures: no-contextual;
@@ -190,6 +193,14 @@ select,
 textarea {
   font-family: inherit;
   font-variant-ligatures: inherit;
+}
+
+/* The UA stylesheet gives these generic `monospace` - the machine's font, not the pinned one. */
+pre,
+code,
+kbd,
+samp {
+  font-family: var(--font-mono);
 }
 
 /* Dockview theme overrides */

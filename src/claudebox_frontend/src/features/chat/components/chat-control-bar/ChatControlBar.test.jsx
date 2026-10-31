@@ -16,7 +16,10 @@ vi.mock('lucide-react', () => ({
   ChevronDown: () => <span data-testid="icon-chevron-down">ChevronDown</span>,
   ChevronsDownUp: () => <span data-testid="icon-chevrons-down-up">ChevronsDownUp</span>,
   ChevronUp: () => <span data-testid="icon-chevron-up">ChevronUp</span>,
+  Eye: () => <span data-testid="icon-eye">Eye</span>,
   GitFork: () => <span data-testid="icon-git-fork">GitFork</span>,
+  Info: () => <span data-testid="icon-info">Info</span>,
+  Lightbulb: () => <span data-testid="icon-lightbulb">Lightbulb</span>,
   Loader2: ({ className }) => (
     <span data-testid="icon-loader" className={className}>
       Loader
@@ -24,11 +27,16 @@ vi.mock('lucide-react', () => ({
   ),
   Map: () => <span data-testid="icon-map">Map</span>,
   MessageSquareQuote: () => <span data-testid="icon-message-square-quote">MessageSquareQuote</span>,
+  MessageSquareWarning: () => (
+    <span data-testid="icon-message-square-warning">MessageSquareWarning</span>
+  ),
+  OctagonAlert: () => <span data-testid="icon-octagon-alert">OctagonAlert</span>,
   Package: () => <span data-testid="icon-package">Package</span>,
   Pencil: () => <span data-testid="icon-pencil">Pencil</span>,
   Pin: () => <span data-testid="icon-pin">Pin</span>,
   RefreshCw: () => <span data-testid="icon-refresh">Refresh</span>,
   SquareSplitHorizontal: () => <span data-testid="icon-split">SquareSplitHorizontal</span>,
+  TriangleAlert: () => <span data-testid="icon-triangle-alert">TriangleAlert</span>,
   StickyNote: () => <span data-testid="icon-sticky-note">StickyNote</span>,
   Wrench: () => <span data-testid="icon-wrench">Wrench</span>,
   X: () => <span data-testid="icon-x">X</span>,
@@ -316,7 +324,7 @@ describe('ChatControlBar', () => {
     })
   })
 
-  describe('right-slot view picker (off / terminal / work)', () => {
+  describe('view picker (Show everything / terminal / work)', () => {
     it('shows the terminal button pressed when the view is terminal', () => {
       render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.TERMINAL} />)
 
@@ -341,11 +349,16 @@ describe('ChatControlBar', () => {
       expect(terminalBtn).toHaveAttribute('aria-pressed', 'false')
     })
 
-    it('shows neither button pressed when the view is off', () => {
-      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.OFF} />)
+    it('shows no button pressed in the Focused view', () => {
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.FOCUSED} />)
 
-      expect(screen.getByTestId('right-slot-view-terminal')).not.toHaveClass('pressed')
-      expect(screen.getByTestId('right-slot-view-work')).not.toHaveClass('pressed')
+      for (const id of ['everything', 'terminal', 'work']) {
+        expect(screen.getByTestId(`right-slot-view-${id}`)).not.toHaveClass('pressed')
+      }
+      expect(screen.getByTestId('right-slot-view-everything')).toHaveAttribute(
+        'title',
+        'Show everything',
+      )
       expect(screen.getByTestId('right-slot-view-terminal')).toHaveAttribute(
         'title',
         "Show agent's terminal",
@@ -356,31 +369,42 @@ describe('ChatControlBar', () => {
       )
     })
 
-    it('selecting terminal from off calls onSelectRightSlotView with TERMINAL', async () => {
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.OFF} />)
+    it('leads the picker with the Show everything eye, pressed in the Everything view', () => {
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.EVERYTHING} />)
 
-      await user.click(screen.getByTestId('right-slot-view-terminal'))
-
-      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.TERMINAL)
+      const picker = screen.getByTestId('right-slot-view-picker')
+      const everything = screen.getByTestId('right-slot-view-everything')
+      expect(picker.querySelector('button')).toBe(everything)
+      expect(everything).toHaveClass('pressed')
+      expect(everything).toHaveAttribute('aria-pressed', 'true')
+      expect(everything).toHaveAttribute('title', 'Hide calls that only read')
+      expect(screen.getByTestId('icon-eye')).toBeInTheDocument()
     })
 
-    it('selecting work from off calls onSelectRightSlotView with WORK', async () => {
+    it.each([
+      ['everything', RightSlotView.EVERYTHING],
+      ['terminal', RightSlotView.TERMINAL],
+      ['work', RightSlotView.WORK],
+    ])('selecting %s from Focused selects its view', async (id, view) => {
       const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.OFF} />)
+      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.FOCUSED} />)
 
-      await user.click(screen.getByTestId('right-slot-view-work'))
+      await user.click(screen.getByTestId(`right-slot-view-${id}`))
 
-      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.WORK)
+      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(view)
     })
 
-    it('clicking the pressed terminal button turns the view off', async () => {
+    it.each([
+      ['everything', RightSlotView.EVERYTHING],
+      ['terminal', RightSlotView.TERMINAL],
+      ['work', RightSlotView.WORK],
+    ])('clicking the pressed %s button returns to Focused', async (id, view) => {
       const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} rightSlotView={RightSlotView.TERMINAL} />)
+      render(<ChatControlBar {...defaultProps} rightSlotView={view} />)
 
-      await user.click(screen.getByTestId('right-slot-view-terminal'))
+      await user.click(screen.getByTestId(`right-slot-view-${id}`))
 
-      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.OFF)
+      expect(defaultProps.onSelectRightSlotView).toHaveBeenCalledWith(RightSlotView.FOCUSED)
     })
 
     it('clicking work while terminal is pressed switches to work', async () => {
@@ -402,6 +426,14 @@ describe('ChatControlBar', () => {
   })
 
   describe('rename button', () => {
+    async function startRename() {
+      const user = userEvent.setup()
+      render(<ChatControlBar {...defaultProps} />)
+      await user.click(screen.getByTitle('Rename session'))
+
+      return user
+    }
+
     it('renders rename button in left group with canonical chrome', () => {
       render(<ChatControlBar {...defaultProps} />)
       const btn = screen.getByTitle('Rename session')
@@ -418,10 +450,7 @@ describe('ChatControlBar', () => {
     })
 
     it('enters edit mode when rename button clicked', async () => {
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      await startRename()
 
       expect(screen.getByPlaceholderText('Session name...')).toBeInTheDocument()
       const saveBtn = screen.getByTitle('Save')
@@ -438,19 +467,13 @@ describe('ChatControlBar', () => {
 
     it('pre-fills input with current session name', async () => {
       mockSessionName = 'My Session'
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      await startRename()
 
       expect(screen.getByPlaceholderText('Session name...')).toHaveValue('My Session')
     })
 
     it('saves on Enter key', async () => {
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       const input = screen.getByPlaceholderText('Session name...')
       await user.clear(input)
       await user.type(input, 'New Name{Enter}')
@@ -460,10 +483,7 @@ describe('ChatControlBar', () => {
     })
 
     it('cancels on Escape key', async () => {
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       await user.keyboard('{Escape}')
 
       expect(screen.getByTitle('Rename session')).toBeInTheDocument()
@@ -471,10 +491,7 @@ describe('ChatControlBar', () => {
     })
 
     it('cancels via cancel button', async () => {
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       await user.click(screen.getByTitle('Cancel'))
 
       expect(screen.getByTitle('Rename session')).toBeInTheDocument()
@@ -482,10 +499,7 @@ describe('ChatControlBar', () => {
     })
 
     it('unsets name when empty string submitted', async () => {
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       const input = screen.getByPlaceholderText('Session name...')
       await user.clear(input)
       await user.click(screen.getByTitle('Save'))
@@ -496,10 +510,7 @@ describe('ChatControlBar', () => {
 
     it('does not call API if name unchanged', async () => {
       mockSessionName = 'Same Name'
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       await user.click(screen.getByTitle('Save'))
 
       expect(mockUpdateSession).not.toHaveBeenCalled()
@@ -507,23 +518,17 @@ describe('ChatControlBar', () => {
 
     it('does not call API when name already unset and empty submitted', async () => {
       mockSessionName = null
-      const user = userEvent.setup()
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       await user.click(screen.getByTitle('Save'))
 
       expect(mockUpdateSession).not.toHaveBeenCalled()
     })
 
     it('handles API error gracefully', async () => {
-      const user = userEvent.setup()
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       mockUpdateSession = vi.fn(() => Promise.reject(new Error('fail')))
 
-      render(<ChatControlBar {...defaultProps} />)
-
-      await user.click(screen.getByTitle('Rename session'))
+      const user = await startRename()
       const input = screen.getByPlaceholderText('Session name...')
       await user.clear(input)
       await user.type(input, 'New Name{Enter}')

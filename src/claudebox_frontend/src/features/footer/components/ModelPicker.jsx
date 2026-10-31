@@ -8,7 +8,7 @@ import useDropdown from '../../../hooks/useDropdown'
 
 /**
  * Claude model dropdown: models load once from SessionDataContext on connect and update
- * optimistically on selection, confirmed next refresh. `defaultValue` previews inheritance pre-session.
+ * optimistically on selection until the change settles. `defaultValue` previews inheritance pre-session.
  *
  * @param {object} props
  * @param {string|null} props.currentModel - Currently active model name.
@@ -36,7 +36,10 @@ export default function ModelPicker({ currentModel, defaultValue, disabled }) {
       setIsOpen(false)
       if (modelId !== effectiveModel) {
         setOptimisticModel(modelId)
-        setModel(modelId)
+        // A refused change settles without the session reporting it; a newer pick keeps its own.
+        setModel(modelId)?.finally(() =>
+          setOptimisticModel(prev => (prev === modelId ? null : prev)),
+        )
       }
     },
     [effectiveModel, setModel, setIsOpen],

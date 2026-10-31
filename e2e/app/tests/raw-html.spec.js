@@ -1,9 +1,8 @@
 /** E2E tests for raw HTML rendering and sanitization in chat messages. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSession } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 test.describe('Raw HTML in messages', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,9 +11,7 @@ test.describe('Raw HTML in messages', () => {
 
   // SPEC: chat:html-content
   test('renders common HTML as formatted elements', async ({ page }) => {
-    await mockSSE(page, 'events/html-content.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/html-content.jsonl')
 
     await expect(page.locator('summary', { hasText: 'Build log' })).toBeVisible()
     await expect(page.locator('kbd')).toHaveText('Ctrl+S')
@@ -22,9 +19,7 @@ test.describe('Raw HTML in messages', () => {
 
   // SPEC: chat:html-details-toggle
   test('details block expands and collapses', async ({ page }) => {
-    await mockSSE(page, 'events/html-content.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/html-content.jsonl')
 
     const details = page.locator('details').first()
     await expect(details.locator('summary')).toBeVisible()
@@ -36,9 +31,7 @@ test.describe('Raw HTML in messages', () => {
 
   // SPEC: chat:html-safe
   test('scripts and iframes are stripped and inert', async ({ page }) => {
-    await mockSSE(page, 'events/html-content.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/html-content.jsonl')
 
     // Content rendered, proving the message was processed.
     await expect(page.locator('kbd')).toBeVisible()
@@ -49,9 +42,7 @@ test.describe('Raw HTML in messages', () => {
 
   // SPEC: chat:html-link-safe
   test('links open safely with rel and target', async ({ page }) => {
-    await mockSSE(page, 'events/html-content.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/html-content.jsonl')
 
     const link = page.locator('a', { hasText: 'external link' })
     await expect(link).toHaveAttribute('target', '_blank')

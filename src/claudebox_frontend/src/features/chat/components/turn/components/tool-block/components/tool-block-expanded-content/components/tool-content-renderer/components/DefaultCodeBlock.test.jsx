@@ -4,6 +4,10 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import DefaultCodeBlock from './DefaultCodeBlock'
 
+function MockMarkdown({ children }) {
+  return <div data-testid="markdown">{children}</div>
+}
+
 describe('DefaultCodeBlock', () => {
   it('returns null for empty content', () => {
     const { container } = render(<DefaultCodeBlock content="" />)
@@ -48,7 +52,6 @@ describe('DefaultCodeBlock', () => {
   })
 
   it('renders plain pre when markdown renderer provided but content is not markdown', () => {
-    const MockMarkdown = ({ children }) => <div data-testid="markdown">{children}</div>
     render(<DefaultCodeBlock content="# Hello" renderer={{ markdown: MockMarkdown }} />)
 
     const pre = screen.getByText('# Hello')

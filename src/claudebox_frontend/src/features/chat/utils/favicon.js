@@ -5,18 +5,19 @@ import { lerpColor } from '../../../utils/color'
 export const FAVICON_SIZE = 32 // audit-ignore: misplaced-constant
 
 // Colors matching footer status-working animation (darker for better contrast)
-const CYCLE_COLORS = ['#2563eb', '#7c3aed', '#a21caf']
+const WORKING_COLORS = ['#2563eb', '#7c3aed', '#a21caf']
 
 // Notification gradient colors (orange palette)
 export const NOTIFICATION_COLORS = ['#fbbf24', '#f97316', '#ea580c']
+
+// Needs-you gradient colors (red palette), drawn like the notification arc
+export const NEEDS_YOU_COLORS = ['#f87171', '#ef4444', '#b91c1c']
 
 // Normal state gradient colors (subtle gray tint at lower-left)
 export const NORMAL_COLORS = ['#ffffff', '#f3f4f6', '#9ca3af']
 
 // Solid white C-arc - used when a workspace color tints the favicon background.
 export const WHITE_GRADIENT = ['#ffffff', '#ffffff', '#ffffff']
-
-const BREATH_MIN_INTENSITY = 0.5 // never fade below this (avoids looking like idle state)
 
 // C-shape arc parameters (gap facing right)
 const GAP_SIZE = 0.8 // radians for gap on each side // audit-ignore: misplaced-constant
@@ -35,8 +36,10 @@ const BADGE_RADIUS = FAVICON_SIZE / 2 - BADGE_MARGIN
 
 /** Workspace bg alpha during notification state (constant dim). */
 export const NOTIFICATION_BG_ALPHA = 0.5
-/** Workspace bg alpha at peak breath during processing - multiplied by the breath intensity in [0.5, 1.0] so the effective range is [0.25, 0.5]. */
-export const BREATHING_BG_PEAK_ALPHA = 0.5
+/** Arc alpha while the session waits on background work - dimmer than the working arc. */
+export const WAITING_ARC_ALPHA = 0.5
+/** Workspace bg alpha under the working and waiting arcs. */
+export const WORKING_BG_ALPHA = 0.5
 
 export function getColorFromPalette(colors, progress) {
   const totalSegments = colors.length
@@ -84,29 +87,15 @@ export function drawGradientFavicon(ctx, colors, offset = 0) {
 }
 
 /**
- * Compute the breath-cycle intensity for a phase in [0, 1].
- *
- * Sine wave clamped at BREATH_MIN_INTENSITY so the favicon never fades to the idle look; returns
- * a value in [BREATH_MIN_INTENSITY, 1]. Exposed so callers can pulse other elements (workspace
- * bg alpha) in sync with the C-arc breath.
- *
- * @param {number} breathPhase - Phase of breath cycle (0-1).
- */
-export function computeBreathIntensity(breathPhase) {
-  const rawIntensity = (Math.sin(breathPhase * Math.PI * 2 - Math.PI / 2) + 1) / 2
-  return BREATH_MIN_INTENSITY + rawIntensity * (1 - BREATH_MIN_INTENSITY)
-}
-
-/**
- * Fades white to gradient on a sine wave, so timing jitter feels organic rather than broken.
+ * Draw the working C-arc in the working gradient.
  * @param {CanvasRenderingContext2D} ctx
- * @param {number} breathPhase - Phase of breath cycle (0-1).
+ * @param {{ alpha?: number }} [options] - Global alpha for the arc [0, 1]. Defaults to 1.
  */
-export function drawBreathingFavicon(ctx, breathPhase) {
-  const intensity = computeBreathIntensity(breathPhase)
-  // Interpolate each color in the gradient toward white
-  const breathColors = CYCLE_COLORS.map(color => lerpColor('#ffffff', color, intensity))
-  drawGradientFavicon(ctx, breathColors, NORMAL_OFFSET)
+export function drawWorkingFavicon(ctx, { alpha = 1 } = {}) {
+  ctx.save()
+  ctx.globalAlpha = alpha
+  drawGradientFavicon(ctx, WORKING_COLORS, NORMAL_OFFSET)
+  ctx.restore()
 }
 
 /**

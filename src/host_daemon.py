@@ -1,5 +1,7 @@
 """Claudebox Daemon entry point."""
 
+from __future__ import annotations
+
 from claudebox import HelpFormatter, LazyEpilogParser, cli, epilog
 from claudebox.constants import DAEMON_PORT
 from claudebox_daemon import run_daemon

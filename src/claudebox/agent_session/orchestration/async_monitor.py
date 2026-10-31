@@ -1,5 +1,7 @@
 """Async task monitor - tail output files and emit events."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
@@ -60,10 +62,11 @@ class AsyncTaskMonitor:
             while self._running:
                 line = await f.readline()
 
-                if line:
+                if line.endswith("\n"):
                     self._offset = await f.tell()
                     await self._process_line(line.strip())
                 else:
+                    await f.seek(self._offset)
                     await asyncio.sleep(0.1)
 
     def stop(self) -> None:
@@ -78,11 +81,15 @@ class AsyncTaskMonitor:
             return
 
         try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            self._logger.warning("Invalid JSON in async task output", line=line[:100])
+            events = list(dict_message_to_events(json.loads(line)))
+        except Exception as exc:  # noqa: BLE001 - one unparseable line must not stop the tail
+            self._logger.warning(
+                "Unparseable async task output line",
+                line=line[:100],
+                error=str(exc),
+            )
 
             return
 
-        for event in dict_message_to_events(data):
+        for event in events:
             await self.on_event(event, str(self.output_file), self._offset)

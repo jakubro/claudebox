@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.containers.models - container data models."""
 
+from __future__ import annotations
+
 from claudebox import serialization
 from claudebox_daemon.domain.containers.models import Container
 

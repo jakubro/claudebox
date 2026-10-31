@@ -81,6 +81,7 @@ describe('useSessionRouting', () => {
       result.current.navigateToSession('ws-1', 'sess-abc', {
         turnId: 'turn-1',
         messageType: 'user',
+        target: null,
       })
     })
 
@@ -94,6 +95,7 @@ describe('useSessionRouting', () => {
       result.current.navigateToSession('ws-1', 'sess-abc', {
         turnId: 'turn-2',
         messageType: 'assistant',
+        target: null,
       })
     })
 
@@ -341,6 +343,7 @@ describe('parseHash', () => {
       boardId: null,
       turnId: null,
       messageType: null,
+      target: null,
       density: 'comfortable',
       sendMessages: [],
     })
@@ -353,6 +356,7 @@ describe('parseHash', () => {
       boardId: null,
       turnId: null,
       messageType: null,
+      target: null,
       density: 'comfortable',
       sendMessages: [],
     })
@@ -365,6 +369,7 @@ describe('parseHash', () => {
       boardId: 'my-board',
       turnId: null,
       messageType: null,
+      target: null,
       density: 'comfortable',
       sendMessages: [],
     })
@@ -377,6 +382,7 @@ describe('parseHash', () => {
       boardId: null,
       turnId: 'tid-1',
       messageType: 'user',
+      target: null,
       density: 'comfortable',
       sendMessages: [],
     })
@@ -389,6 +395,7 @@ describe('parseHash', () => {
       boardId: null,
       turnId: 'tid-2',
       messageType: 'assistant',
+      target: null,
       density: 'comfortable',
       sendMessages: [],
     })

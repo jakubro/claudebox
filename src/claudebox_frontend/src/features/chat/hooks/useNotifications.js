@@ -1,4 +1,4 @@
-/** Desktop notifications when Claude finishes responding. */
+/** Desktop notifications when the session finishes - its turn ends with no background work left. */
 
 import { useCallback, useEffect, useRef } from 'react'
 import { NOTIFICATION_BATCH_DELAY_MS } from '../../../config/timing'
@@ -13,6 +13,7 @@ import {
 /**
  * @param {object} options - Hook options
  * @param {boolean} options.isResponding - Whether Claude is currently responding
+ * @param {boolean} [options.isWaiting] - Whether background work the session started is still running
  * @param {boolean} [options.isReplaying] - Whether SSE history replay is in progress
  * @param {Array} options.events - SSE events array
  * @param {string} options.sessionName - Current session name
@@ -21,6 +22,7 @@ import {
  */
 export default function useNotifications({
   isResponding,
+  isWaiting = false,
   isReplaying = false,
   events,
   sessionName,
@@ -78,6 +80,9 @@ export default function useNotifications({
       if (isInitialLoadRef.current || isReplaying) {
         return
       }
+      if (isWaiting) {
+        return
+      }
 
       // Reset user interaction flag - they need to interact again
       userInteractedRef.current = false
@@ -107,7 +112,7 @@ export default function useNotifications({
         }
       }
     }
-  }, [isResponding, isReplaying, sessionName, workspace, notificationsEnabled])
+  }, [isResponding, isWaiting, isReplaying, sessionName, workspace, notificationsEnabled])
 
   // Manual permission request
   const requestPermission = useCallback(async () => {

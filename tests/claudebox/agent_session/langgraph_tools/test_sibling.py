@@ -3,6 +3,8 @@
 Binding-layer only: delegation and SiblingSessionError -> ToolException translation.
 """
 
+from __future__ import annotations
+
 from dataclasses import replace
 
 import pytest

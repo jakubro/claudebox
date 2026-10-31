@@ -17,10 +17,13 @@ vi.mock('../../../context/SessionRoutingContext', () => ({
 const mockEvents = {
   reconnectSSE: vi.fn(),
   startResume: vi.fn(),
+  settleResumeRequest: vi.fn(),
   clearResume: vi.fn(),
-  notifyContainerChanged: vi.fn(),
+  notifyAddressChanged: vi.fn(),
   containerId: 'ctr-1',
   isConnected: true,
+  pending: { resume: null, create: null },
+  getPendingRequests: () => mockEvents.pending,
 }
 vi.mock('../../../context/EventsContext', () => ({
   useEvents: () => mockEvents,
@@ -41,9 +44,9 @@ vi.mock('../../../context/InteractionContext', () => ({
   useInteraction: () => mockInteraction,
 }))
 
-const mockSetContainerId = vi.fn()
+const mockSetAddress = vi.fn()
 vi.mock('../../../api/apiClient', () => ({
-  setContainerId: (...args) => mockSetContainerId(...args),
+  setAddress: (...args) => mockSetAddress(...args),
 }))
 
 const mockResumeSession = vi.fn()
@@ -58,6 +61,7 @@ describe('DaemonReconnectEffect', () => {
     mockRouting.activeSessionId = 'sess-1'
     mockEvents.containerId = 'ctr-1'
     mockEvents.isConnected = true
+    mockEvents.pending = { resume: null, create: null }
     mockContainerMap.stoppingSessions = new Set()
   })
 
@@ -92,8 +96,8 @@ describe('DaemonReconnectEffect', () => {
       expect(mockResumeSession).toHaveBeenCalledWith('sess-1')
     })
 
-    expect(mockSetContainerId).toHaveBeenCalledWith('fresh-ctr')
-    expect(mockEvents.notifyContainerChanged).toHaveBeenCalled()
+    expect(mockSetAddress).toHaveBeenCalledWith('fresh-ctr', 'sess-1')
+    expect(mockEvents.notifyAddressChanged).toHaveBeenCalled()
     expect(mockEvents.reconnectSSE).toHaveBeenCalled()
   })
 
@@ -149,11 +153,11 @@ describe('DaemonReconnectEffect', () => {
     })
 
     // Verify full recovery sequence
-    expect(mockEvents.clearResume).toHaveBeenCalled()
     expect(mockEvents.startResume).toHaveBeenCalled()
-    expect(mockSetContainerId).toHaveBeenCalledWith('new-ctr-42')
+    expect(mockEvents.settleResumeRequest).toHaveBeenCalled()
+    expect(mockSetAddress).toHaveBeenCalledWith('new-ctr-42', 'sess-1')
     expect(mockContainerMap.setSessionContainer).toHaveBeenCalledWith('sess-1', 'new-ctr-42')
-    expect(mockEvents.notifyContainerChanged).toHaveBeenCalled()
+    expect(mockEvents.notifyAddressChanged).toHaveBeenCalled()
     expect(mockSessionActions.clearSessionData).toHaveBeenCalled()
     expect(mockEvents.reconnectSSE).toHaveBeenCalled()
   })
@@ -171,6 +175,17 @@ describe('DaemonReconnectEffect', () => {
 
     expect(mockEvents.clearResume).toHaveBeenCalled()
     expect(mockEvents.reconnectSSE).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an open', { resume: 3, create: null }],
+    ['a create', { resume: null, create: 1 }],
+  ])('leaves the session alone while %s request is still in flight', (_name, pending) => {
+    renderAndReconnect({ events: { containerId: null, isConnected: false, pending } })
+
+    expect(mockResumeSession).not.toHaveBeenCalled()
+    expect(mockEvents.clearResume).not.toHaveBeenCalled()
+    expect(mockEvents.startResume).not.toHaveBeenCalled()
   })
 
   it('does not resume when no active session', () => {

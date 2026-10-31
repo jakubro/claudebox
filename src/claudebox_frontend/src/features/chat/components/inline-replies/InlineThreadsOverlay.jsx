@@ -5,11 +5,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveAnchor } from './anchor'
+import FloatResizeHandle from './FloatResizeHandle'
 import useHighlightPointerEvents from './hooks/useHighlightPointerEvents'
+import useInlineReplySizes from './hooks/useInlineReplySizes'
 import InlineThread from './InlineThread'
 import {
   clampHorizontal,
   isRangeVisible,
+  maxFloatWidth,
   positionsEqual,
   rangeContainsPoint,
   spanRect,
@@ -33,7 +36,9 @@ const EMPTY_THREADS = new Map() // audit-ignore: misplaced-constant
  * @param {function} props.onRemove - (id) delete callback (unsent only; clears the highlight).
  * @param {object} props.threadSessions - A reply's side-thread state and callbacks: { threads,
  *   onSubmit, onInterrupt, onPromote, onPromoteToRail, onFocusRailPromoted, workspaceId }.
- * @param {boolean} props.canInterrupt - Whether Ctrl+. is allowed, shared with the composer.
+ * @param {object} props.composer - The message box's side: { canInterrupt, focus, send, quoteShowingRef,
+ *   autocompleteOpenRef } - Ctrl+. gate, cursor hand-back, its own Enter, refs that keep Tab.
+ * @param {string|null} props.sessionId - Owner of these replies, where their box sizes live.
  */
 export default function InlineThreadsOverlay({
   messagesRef,
@@ -44,7 +49,8 @@ export default function InlineThreadsOverlay({
   onEditReply,
   onRemove,
   threadSessions = {},
-  canInterrupt,
+  composer = {},
+  sessionId,
 }) {
   // Destructured in the body, not the parameter list: the guidelines audit's props-count check
   // only reads top-level parameter names, so nesting here keeps the counted surface honest.
@@ -57,11 +63,22 @@ export default function InlineThreadsOverlay({
     onFocusRailPromoted,
     workspaceId,
   } = threadSessions
+  const {
+    canInterrupt,
+    focus: focusComposer,
+    send: sendChat,
+    quoteShowingRef,
+    autocompleteOpenRef,
+  } = composer
 
   const [hoveredId, setHoveredId] = useState(null)
   const [pinnedIds, setPinnedIds] = useState(() => new Set())
   const [positions, setPositions] = useState(() => new Map())
   const [tick, setTick] = useState(0)
+  const [boundsWidth, setBoundsWidth] = useState(null)
+  // { id, seq } - the box asked to take the cursor; seq lets a repeat Tab on one box re-ask.
+  const [focusRequest, setFocusRequest] = useState(null)
+  const { sizes, resize, commit, forget } = useInlineReplySizes(sessionId)
 
   const rangesByIdRef = useRef(new Map())
   const floatRefsRef = useRef(new Map())
@@ -69,7 +86,9 @@ export default function InlineThreadsOverlay({
   const pinnedIdsRef = useRef(pinnedIds)
   const unsentRef = useRef(unsent)
   const sentThreadsRef = useRef(sentThreads)
+  const threadsRef = useRef(threads)
   const seenUnsentIdsRef = useRef(null)
+  const prevUnsentIdsRef = useRef(new Set(unsent.map(r => r.id)))
   const focusIdRef = useRef(null)
   // Reply whose hover float a click just closed; cleared once the pointer moves off it
   const hoverSuppressedIdRef = useRef(null)
@@ -80,6 +99,7 @@ export default function InlineThreadsOverlay({
   pinnedIdsRef.current = pinnedIds
   unsentRef.current = unsent
   sentThreadsRef.current = sentThreads
+  threadsRef.current = threads
 
   // Live reply lookup by id (response text + sent flag), read at render so a controlled reply box
   // shows the just-typed value immediately, not the rAF-batched re-anchor cache.
@@ -223,6 +243,12 @@ export default function InlineThreadsOverlay({
     }
   }, [messagesRef])
 
+  // Reposition (not re-anchor) when a box is resized, so it re-stacks vs neighbours and re-clamps.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sizes is the reposition trigger
+  useEffect(() => {
+    setTick(t => t + 1)
+  }, [sizes])
+
   // Reposition (not re-anchor) when a reply's text changes, so a growing float re-stacks vs neighbours.
   // biome-ignore lint/correctness/useExhaustiveDependencies: replyById is the reposition trigger
   useEffect(() => {
@@ -311,18 +337,23 @@ export default function InlineThreadsOverlay({
     const next = stackFloats(boxes, FLOAT_GAP)
 
     setPositions(prev => (positionsEqual(prev, next) ? prev : next))
+    setBoundsWidth(maxFloatWidth(bounds))
   }, [openIds, anchorFor, messagesRef])
 
-  // Prune pinned / hover state for replies that no longer exist (deleted, or sent -> fresh id).
+  // Prune pinned / hover state for replies that no longer exist, and close a box whose reply was
+  // just sent - it keeps its id through the send, so nothing else would close it.
   useEffect(() => {
-    const live = new Set([...unsent.map(r => r.id), ...sentThreads.map(r => r.id)])
+    const unsentIds = new Set(unsent.map(r => r.id))
+    const live = new Set([...unsentIds, ...sentThreads.map(r => r.id)])
+    const wasUnsent = prevUnsentIdsRef.current
+    prevUnsentIdsRef.current = unsentIds
 
     setPinnedIds(prev => {
       let changed = false
       const next = new Set()
 
       for (const id of prev) {
-        if (live.has(id)) {
+        if (live.has(id) && !(wasUnsent.has(id) && !unsentIds.has(id))) {
           next.add(id)
         } else {
           changed = true
@@ -336,6 +367,13 @@ export default function InlineThreadsOverlay({
       setHoveredId(null)
     }
   }, [unsent, sentThreads])
+
+  // A request outlives its box otherwise, and a later hover preview of it would steal the cursor.
+  useEffect(() => {
+    if (focusRequest && !pinnedIds.has(focusRequest.id)) {
+      setFocusRequest(null)
+    }
+  }, [focusRequest, pinnedIds])
 
   // Auto-pin + focus a freshly-quoted reply; the restored buffer (first render) is adopted un-pinned.
   useEffect(() => {
@@ -443,16 +481,17 @@ export default function InlineThreadsOverlay({
     [onFocusRailPromoted],
   )
 
-  const { clearOpenTimer, clearCloseTimer, startCloseTimer } = useHighlightPointerEvents({
-    containerRef: messagesRef,
-    hitTest,
-    canArmHover,
-    canStartClose,
-    onHitChange: handleHitChange,
-    onHoverOpen: handleHoverOpen,
-    onHoverClose: handleHoverClose,
-    onHit: handleHit,
-  })
+  const { clearOpenTimer, clearCloseTimer, startCloseTimer, hitUnderPointer } =
+    useHighlightPointerEvents({
+      containerRef: messagesRef,
+      hitTest,
+      canArmHover,
+      canStartClose,
+      onHitChange: handleHitChange,
+      onHoverOpen: handleHoverOpen,
+      onHoverClose: handleHoverClose,
+      onHit: handleHit,
+    })
 
   // Hover bridge: moving onto the float keeps it open; leaving starts the dismiss timer.
   const handleFloatEnter = useCallback(
@@ -489,14 +528,56 @@ export default function InlineThreadsOverlay({
     })
   }, [])
 
+  const handleRemove = useCallback(
+    id => {
+      forget(id)
+      onRemove(id)
+    },
+    [forget, onRemove],
+  )
+
+  const measureFloat = useCallback(
+    id => {
+      const el = floatRefsRef.current.get(id)
+      const body = el?.querySelector(
+        '.inline-thread-history, .inline-thread-response, .inline-thread-input',
+      )
+
+      return {
+        width: el.getBoundingClientRect().width,
+        bodyHeight: body ? body.getBoundingClientRect().height : 0,
+        maxWidth: maxFloatWidth(messagesRef.current.getBoundingClientRect()),
+      }
+    },
+    [messagesRef],
+  )
+
+  // Pinning by drag must not replay a fresh quote's autofocus and pull the caret out of another box.
+  const handleResizeStart = useCallback(
+    id => {
+      if (focusIdRef.current === id) {
+        focusIdRef.current = null
+      }
+
+      pin(id)
+    },
+    [pin],
+  )
+
   const handleClose = useCallback(
     id => {
       const reply = unsentRef.current.find(r => r.id === id)
 
       // A thread's own field holds a follow-up draft, not the original ask - an empty one means
       // no follow-up typed, not an empty reply to discard. The thread's exchange stays readable.
-      if (reply && !reply.response.trim() && !reply.threadSessionId) {
-        onRemove(id) // closing an empty unsent reply discards the quote + its highlight
+      // An asked reply has its thread before its fork returns and links its session.
+      if (
+        reply &&
+        !reply.response.trim() &&
+        !reply.threadSessionId &&
+        !threadsRef.current.has(id)
+      ) {
+        handleRemove(id) // closing an empty unsent reply discards the quote + its highlight
       }
 
       setPinnedIds(prev => {
@@ -514,10 +595,80 @@ export default function InlineThreadsOverlay({
         setHoveredId(null)
       }
     },
-    [onRemove],
+    [handleRemove],
   )
 
   handleCloseRef.current = handleClose
+
+  // Tab over a highlight is the keyboard twin of its click, minus the toggle: it only ever opens.
+  const openFromKeyboard = useCallback(
+    id => {
+      const reply = rangesByIdRef.current.get(id).reply
+      clearOpenTimer()
+      clearCloseTimer()
+
+      if (reply.railPromoted) {
+        onFocusRailPromoted?.(reply.threadSessionId)
+        setHoveredId(null)
+        return
+      }
+
+      hoverSuppressedIdRef.current = null
+      pin(id)
+      if (hoveredIdRef.current === id) {
+        setHoveredId(null)
+      }
+      setFocusRequest(prev => ({ id, seq: (prev?.seq ?? 0) + 1 }))
+    },
+    [clearOpenTimer, clearCloseTimer, onFocusRailPromoted, pin],
+  )
+  const openFromKeyboardRef = useRef(openFromKeyboard)
+  openFromKeyboardRef.current = openFromKeyboard
+
+  // Capture phase, so the message box's own Tab (indent) never sees a key meant for a highlight.
+  useEffect(() => {
+    // :hover is re-evaluated on scroll, and a float unmounting under the pointer fires no mouseleave.
+    const hoveredPreviewId = () => {
+      for (const [id, el] of floatRefsRef.current) {
+        if (!pinnedIdsRef.current.has(id) && el.matches(':hover')) {
+          return id
+        }
+      }
+      return null
+    }
+
+    const onKeyDown = e => {
+      if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
+        return
+      }
+      if (quoteShowingRef?.current || autocompleteOpenRef?.current) {
+        return
+      }
+      const id = hitUnderPointer() ?? hoveredPreviewId()
+      if (!(id && rangesByIdRef.current.has(id))) {
+        return
+      }
+      if (floatRefsRef.current.get(id)?.contains(e.target)) {
+        return // already typing in that box; its own Tab indents or closes it
+      }
+      e.preventDefault()
+      e.stopPropagation()
+      openFromKeyboardRef.current(id)
+    }
+
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [hitUnderPointer, quoteShowingRef, autocompleteOpenRef])
+
+  // A box's own close (Tab or its button) hands the cursor back; a highlight click leaves it be.
+  // Focus moves before the box unmounts, so its removal cannot drop focus to the page.
+  const handleCloseToComposer = useCallback(
+    id => {
+      handleClose(id)
+      focusComposer?.()
+    },
+    [handleClose, focusComposer],
+  )
 
   const setFloatRef = useCallback(
     id => el => {
@@ -540,12 +691,18 @@ export default function InlineThreadsOverlay({
 
     const pos = positions.get(id) ?? { left: -9999, top: -9999 }
     const sourceMoved = !entry.range
+    const size = sizes.get(id)
+    const width = size && boundsWidth != null ? Math.min(size.width, boundsWidth) : size?.width
 
     return createPortal(
       <div
         ref={setFloatRef(id)}
         className={`inline-float${sourceMoved ? ' source-moved' : ''}`}
-        style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
+        style={{
+          left: `${pos.left}px`,
+          top: `${pos.top}px`,
+          ...(width != null && { width: `${width}px` }),
+        }}
         onMouseEnter={() => handleFloatEnter(id)}
         onMouseLeave={() => handleFloatLeave(id)}>
         {sourceMoved && <div className="inline-threads-moved">source moved</div>}
@@ -556,18 +713,30 @@ export default function InlineThreadsOverlay({
           maxHeight={maxHeight}
           pinned={pinnedIds.has(id)}
           autoFocus={pinnedIds.has(id) && id === focusIdRef.current}
+          focusSignal={focusRequest?.id === id ? focusRequest.seq : 0}
           onEdit={onEditReply}
-          onRemove={onRemove}
-          onClose={handleClose}
+          onRemove={handleRemove}
+          onClose={handleCloseToComposer}
           onFocus={pin}
           onSubmitThread={onSubmitThread}
+          onSendChat={sendChat}
           onInterruptThread={onInterruptThread}
           canInterrupt={canInterrupt}
           onPromote={onPromote}
           onPromoteToRail={onPromoteToRail}
           onFocusRailPromoted={onFocusRailPromoted}
           workspaceId={workspaceId}
+          bodyHeight={size?.height ?? null}
         />
+        {!live.reply.railPromoted && (
+          <FloatResizeHandle
+            id={id}
+            measure={() => measureFloat(id)}
+            onResize={resize}
+            onResizeStart={handleResizeStart}
+            onResizeEnd={commit}
+          />
+        )}
       </div>,
       document.body,
       id,

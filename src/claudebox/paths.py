@@ -1,12 +1,38 @@
 """Internal helpers for workspace discovery and session directory naming."""
 
+from __future__ import annotations
+
+import re
 from datetime import UTC, datetime
+from glob import escape as glob_escape
 from glob import glob
 from pathlib import Path
 
 from .constants import CONFIG_DIR_NAME, SESSIONS_DIR_NAME, WORKSPACE_MARKER
 from .core.fs import touch_dir, walk_up
 from .core.time import get_timestamp, parse_timestamp
+
+
+# Every id the product mints (uuid4, plus whatever an older version wrote) fits this; the bound is
+# defence against a pathological input, not a spec for the generator's own format.
+_SESSION_ID_PATTERN = re.compile(r"^(?!\.)[A-Za-z0-9_.-]{1,128}$")
+
+
+class InvalidSessionId(Exception):
+    """Session ID does not match the accepted shape - letters, digits, dash, underscore, dot."""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"Invalid session ID: {session_id!r}")
+        self.session_id = session_id
+
+
+def validate_session_id(session_id: str) -> None:
+    """Raise InvalidSessionId unless session_id is the accepted shape - the one check shared by
+    every path into find_session_dir/get_session_dir, so an id can't become a glob or a path escape.
+    """
+
+    if not isinstance(session_id, str) or not _SESSION_ID_PATTERN.match(session_id):
+        raise InvalidSessionId(session_id)
 
 
 def get_workspace_root(start_dir: str | Path | None = None) -> Path | None:
@@ -37,10 +63,15 @@ def get_sessions_root(start_dir: str | Path | None = None) -> Path:
 
 
 def find_session_dir(start_dir: str | Path, session_id: str) -> Path | None:
-    """Find existing session directory by session_id, or None if not found."""
+    """Find existing session directory by session_id, or None if not found.
+
+    Also raises InvalidSessionId here, so get_session_dir's creation path validates too.
+    """
+
+    validate_session_id(session_id)
 
     root = get_sessions_root(start_dir)
-    pattern = str(root / f"*--{session_id}")
+    pattern = str(root / f"*--{glob_escape(session_id)}")
 
     if matches := glob(pattern):
         for path in matches:

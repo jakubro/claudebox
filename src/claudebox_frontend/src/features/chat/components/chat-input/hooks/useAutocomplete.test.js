@@ -26,6 +26,24 @@ const dictCommands = {
 }
 
 describe('useAutocomplete', () => {
+  function renderAutocomplete(commands) {
+    const ref = createTextareaRef()
+    const textareaRef = { current: ref.current }
+    const { result } = renderHook(() => useAutocomplete(textareaRef, commands))
+
+    return { ref, textareaRef, result }
+  }
+
+  function renderWithCaret(value, caret) {
+    const ref = createTextareaRef()
+    const textareaRef = { current: ref.current }
+    ref.current.value = value
+    ref.current.setSelectionRange(caret, caret)
+    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+
+    return { ref, result }
+  }
+
   function createTextareaRef() {
     const textarea = document.createElement('textarea')
     document.body.appendChild(textarea)
@@ -44,10 +62,7 @@ describe('useAutocomplete', () => {
   })
 
   it('shows autocomplete when / is typed at position 0', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     act(() => {
       ref.current.value = '/'
@@ -60,10 +75,7 @@ describe('useAutocomplete', () => {
   })
 
   it('filters items by typed text', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     act(() => {
       ref.current.value = '/de'
@@ -77,10 +89,7 @@ describe('useAutocomplete', () => {
   })
 
   it('activates when textarea starts with / followed by trailing arguments', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     // Typing '/' at position 0 of 'hello world' gives '/hello world', cursor at 1 - picker must activate.
     act(() => {
@@ -95,10 +104,7 @@ describe('useAutocomplete', () => {
   })
 
   it('filters by leading token when cursor sits inside it on a non-empty textarea', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     // Cursor at end of '/hello' (pos 6) with trailing ' world' - filter reflects the prefix up to the cursor.
     act(() => {
@@ -113,10 +119,7 @@ describe('useAutocomplete', () => {
   })
 
   it('hides when text does not start with /', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     act(() => {
       ref.current.value = 'hello'
@@ -146,10 +149,7 @@ describe('useAutocomplete', () => {
   })
 
   it('handleKeyDown returns false when not visible', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     const handled = result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: () => {} })
     expect(handled).toBe(false)
@@ -157,10 +157,7 @@ describe('useAutocomplete', () => {
   })
 
   it('select inserts command into textarea', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     act(() => {
       result.current.select({ name: 'deploy' })
@@ -172,12 +169,7 @@ describe('useAutocomplete', () => {
   })
 
   it('select places caret immediately after the inserted command and trailing space', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/com'
-    ref.current.setSelectionRange(4, 4)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/com', 4)
 
     act(() => {
       result.current.select({ name: 'deploy' })
@@ -191,12 +183,7 @@ describe('useAutocomplete', () => {
   })
 
   it('select preserves trailing args and places caret between space and args', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/com some args'
-    ref.current.setSelectionRange(4, 4)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/com some args', 4)
 
     act(() => {
       result.current.select({ name: 'deploy' })
@@ -209,12 +196,7 @@ describe('useAutocomplete', () => {
   })
 
   it('select on a leading slug without whitespace consumes the slug', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/comX'
-    ref.current.setSelectionRange(5, 5)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/comX', 5)
 
     act(() => {
       result.current.select({ name: 'deploy' })
@@ -228,12 +210,7 @@ describe('useAutocomplete', () => {
   it('select preserves trailing text when command is typed in front without separating space', () => {
     // Typing `/deploy` at 0 of `foo bar baz` -> `/deployfoo bar baz`, caret 7; Tab keeps the
     // trailing text as the argument.
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/deployfoo bar baz'
-    ref.current.setSelectionRange(7, 7)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/deployfoo bar baz', 7)
 
     act(() => {
       result.current.select({ name: 'deploy' })
@@ -247,12 +224,7 @@ describe('useAutocomplete', () => {
   it('select with already-spaced inline command preserves single space between command and args', () => {
     // Typing `/deploy ` before `foo bar baz`, caret inside `/deploy`, then Tab: value is
     // unchanged, caret lands right after the space.
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/deploy foo bar baz'
-    ref.current.setSelectionRange(7, 7)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/deploy foo bar baz', 7)
 
     act(() => {
       result.current.select({ name: 'deploy' })
@@ -266,12 +238,7 @@ describe('useAutocomplete', () => {
   it('select with picked variant mid-token preserves text after caret as arg', () => {
     // Caret at 3 inside `/deploy` (`/de`|`ploy`), then picks `test`; since `test` doesn't
     // prefix `deploy`, the after-caret text `ploy` becomes the argument.
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/deploy'
-    ref.current.setSelectionRange(3, 3)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/deploy', 3)
 
     act(() => {
       result.current.select({ name: 'test' })
@@ -283,12 +250,7 @@ describe('useAutocomplete', () => {
   })
 
   it('Tab during IME composition does not commit selection', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-    ref.current.value = '/'
-    ref.current.setSelectionRange(1, 1)
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderWithCaret('/', 1)
 
     act(() => {
       ref.current.dispatchEvent(new Event('input', { bubbles: true }))
@@ -306,10 +268,7 @@ describe('useAutocomplete', () => {
   })
 
   it('dismiss hides autocomplete', () => {
-    const ref = createTextareaRef()
-    const textareaRef = { current: ref.current }
-
-    const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+    const { ref, result } = renderAutocomplete(dictCommands)
 
     act(() => {
       ref.current.value = '/'
@@ -341,10 +300,7 @@ describe('useAutocomplete', () => {
   describe('capability gating', () => {
     it('returns items during the capability race', () => {
       mockUseCapabilities = { capabilities: null, runtimeName: null }
-      const ref = createTextareaRef()
-      const textareaRef = { current: ref.current }
-
-      const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+      const { ref, result } = renderAutocomplete(dictCommands)
 
       expect(result.current.items).toHaveLength(4)
       ref.cleanup()
@@ -355,10 +311,7 @@ describe('useAutocomplete', () => {
         capabilities: mockCapabilities({ supports_skills: false }),
         runtimeName: 'Goose',
       }
-      const ref = createTextareaRef()
-      const textareaRef = { current: ref.current }
-
-      const { result } = renderHook(() => useAutocomplete(textareaRef, dictCommands))
+      const { ref, result } = renderAutocomplete(dictCommands)
 
       expect(result.current.items).toHaveLength(0)
       expect(result.current.visible).toBe(false)

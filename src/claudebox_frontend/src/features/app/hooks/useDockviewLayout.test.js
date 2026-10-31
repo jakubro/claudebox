@@ -3,6 +3,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { restoreFromServer } = vi.hoisted(() => ({ restoreFromServer: vi.fn() }))
+
 vi.mock('../../../api/uiState', () => ({
   patchSessionUiState: vi.fn(),
 }))
@@ -15,7 +17,7 @@ vi.mock('../../../managers/SidePanelManager', () => ({
   default: class MockSidePanelManager {
     state = { left: { order: [] }, right: { order: [] } }
     preMaximizeLayout = null
-    restoreFromServer = vi.fn().mockResolvedValue({ loaded: false })
+    restoreFromServer = restoreFromServer
     toggle = vi.fn()
     close = vi.fn()
     handlePanelMove = vi.fn()
@@ -31,6 +33,7 @@ vi.mock('../layout-config', () => ({
 }))
 
 vi.mock('../utils/default-layout', () => ({
+  applyMainGroupMarker: vi.fn(),
   buildDefaultLayout: vi.fn(),
 }))
 
@@ -42,6 +45,8 @@ vi.mock('../../../context/WorkspaceContext', () => ({
   useWorkspace: () => ({ workspaceId: 'test-workspace' }),
 }))
 
+import { patchSessionUiState } from '../../../api/uiState'
+import { LAYOUT_RESTORE_GRACE_MS, LAYOUT_SAVE_DEBOUNCE_MS } from '../../../config/timing'
 import { buildDefaultLayout } from '../utils/default-layout'
 import useDockviewLayout from './useDockviewLayout'
 
@@ -49,6 +54,8 @@ describe('useDockviewLayout', () => {
   let rafCallbacks
 
   beforeEach(() => {
+    restoreFromServer.mockReset().mockResolvedValue({ loaded: false })
+    buildDefaultLayout.mockClear()
     vi.useFakeTimers()
     rafCallbacks = []
     vi.stubGlobal('requestAnimationFrame', cb => {
@@ -84,6 +91,15 @@ describe('useDockviewLayout', () => {
       exitMaximizedGroup: vi.fn(),
       ...overrides,
     }
+  }
+
+  async function renderReady(mockApi) {
+    const hook = renderHook(() => useDockviewLayout())
+    await act(async () => {
+      hook.result.current.onReady({ api: mockApi })
+    })
+
+    return hook
   }
 
   describe('handleMaximizeToggle', () => {
@@ -126,11 +142,7 @@ describe('useDockviewLayout', () => {
         }),
       })
 
-      const { result } = renderHook(() => useDockviewLayout())
-
-      await act(async () => {
-        result.current.onReady({ api: mockApi })
-      })
+      const { result } = await renderReady(mockApi)
 
       expect(result.current.isMaximized).toBe(false)
 
@@ -154,11 +166,7 @@ describe('useDockviewLayout', () => {
     it('onReady clears and rebuilds even when a failed restore left panels behind', async () => {
       // Panels can survive a partial fromJSON failure despite `loaded: false` - rebuild anyway.
       const mockApi = createMockApi({ panels: [{ id: 'main' }, { id: 'sessions' }] })
-      const { result } = renderHook(() => useDockviewLayout())
-
-      await act(async () => {
-        result.current.onReady({ api: mockApi })
-      })
+      await renderReady(mockApi)
 
       expect(mockApi.clear).toHaveBeenCalled()
       expect(buildDefaultLayout).toHaveBeenCalled()
@@ -166,11 +174,7 @@ describe('useDockviewLayout', () => {
 
     it('onSessionAttach leaves the layout alone when the session has no restore of its own', async () => {
       const mockApi = createMockApi({ panels: [{ id: 'main' }, { id: 'sessions' }] })
-      const { result } = renderHook(() => useDockviewLayout())
-
-      await act(async () => {
-        result.current.onReady({ api: mockApi })
-      })
+      const { result } = await renderReady(mockApi)
       mockApi.clear.mockClear()
       buildDefaultLayout.mockClear()
 
@@ -180,6 +184,149 @@ describe('useDockviewLayout', () => {
 
       expect(mockApi.clear).not.toHaveBeenCalled()
       expect(buildDefaultLayout).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('a layout change that settles before the session attaches', () => {
+    async function settledBeforeAttach() {
+      const mockApi = createMockApi()
+      const { result } = await renderReady(mockApi)
+      patchSessionUiState.mockClear()
+      const [onLayoutChange] = mockApi.onDidLayoutChange.mock.calls[0]
+
+      act(() => {
+        onLayoutChange()
+        vi.advanceTimersByTime(LAYOUT_SAVE_DEBOUNCE_MS)
+      })
+
+      return result
+    }
+
+    it('is saved once the session attaches', async () => {
+      const result = await settledBeforeAttach()
+      expect(patchSessionUiState).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await result.current.onSessionAttach('session-1')
+      })
+
+      expect(patchSessionUiState).toHaveBeenCalledTimes(1)
+      expect(patchSessionUiState.mock.calls[0][0]).toBe('session-1')
+    })
+
+    it('is saved once, not again when a second session attaches', async () => {
+      const result = await settledBeforeAttach()
+
+      await act(async () => {
+        await result.current.onSessionAttach('session-1')
+        await result.current.onSessionAttach('session-2')
+      })
+
+      expect(patchSessionUiState).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('a session that attaches before the layout is ready', () => {
+    it('is the target of the layout saves that follow', async () => {
+      const mockApi = createMockApi()
+      const { result } = renderHook(() => useDockviewLayout())
+      await act(async () => {
+        await result.current.onSessionAttach('session-1')
+        result.current.onReady({ api: mockApi })
+      })
+      patchSessionUiState.mockClear()
+      const [onLayoutChange] = mockApi.onDidLayoutChange.mock.calls[0]
+
+      act(() => {
+        onLayoutChange()
+        vi.advanceTimersByTime(LAYOUT_SAVE_DEBOUNCE_MS)
+      })
+
+      expect(patchSessionUiState).toHaveBeenCalledTimes(1)
+      expect(patchSessionUiState.mock.calls[0][0]).toBe('session-1')
+    })
+  })
+
+  describe('initial layout on a session URL', () => {
+    afterEach(() => {
+      window.location.hash = ''
+    })
+
+    it('applies the session layout without building the default first, and never re-applies it', async () => {
+      window.location.hash = '#/workspaces/ws-1/sessions/session-1'
+      restoreFromServer.mockImplementation(async id => ({ loaded: id === 'session-1' }))
+      const { result } = renderHook(() => useDockviewLayout())
+
+      await act(async () => {
+        result.current.onReady({ api: createMockApi() })
+      })
+      await act(async () => {
+        await result.current.onSessionAttach('session-1')
+      })
+
+      expect(restoreFromServer.mock.calls).toEqual([['session-1']])
+      expect(buildDefaultLayout).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the inherited layout when the session saved none', async () => {
+      window.location.hash = '#/workspaces/ws-1/sessions/session-1'
+      restoreFromServer.mockImplementation(async id => ({ loaded: id === null }))
+      const { result } = renderHook(() => useDockviewLayout())
+
+      await act(async () => {
+        result.current.onReady({ api: createMockApi() })
+      })
+      await act(async () => {
+        await result.current.onSessionAttach('session-1')
+      })
+
+      expect(restoreFromServer.mock.calls).toEqual([['session-1'], [null]])
+      expect(buildDefaultLayout).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('a saved layout that is slow to arrive', () => {
+    it('builds the default meanwhile, then applies the saved layout over it', async () => {
+      let resolveRestore
+      restoreFromServer.mockReturnValue(
+        new Promise(resolve => {
+          resolveRestore = resolve
+        }),
+      )
+      const mockApi = createMockApi()
+      await renderReady(mockApi)
+      expect(buildDefaultLayout).not.toHaveBeenCalled()
+
+      await act(async () => {
+        vi.advanceTimersByTime(LAYOUT_RESTORE_GRACE_MS)
+      })
+      expect(buildDefaultLayout).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        resolveRestore({ loaded: true })
+      })
+      expect(buildDefaultLayout).toHaveBeenCalledTimes(1)
+      expect(mockApi.clear).not.toHaveBeenCalled()
+    })
+
+    it('keeps the default it built meanwhile when no saved layout exists', async () => {
+      let resolveRestore
+      restoreFromServer.mockReturnValue(
+        new Promise(resolve => {
+          resolveRestore = resolve
+        }),
+      )
+      const mockApi = createMockApi({ getPanel: vi.fn(id => (id === 'main' ? { id } : undefined)) })
+      await renderReady(mockApi)
+      await act(async () => {
+        vi.advanceTimersByTime(LAYOUT_RESTORE_GRACE_MS)
+      })
+      await act(async () => {
+        resolveRestore({ loaded: false })
+      })
+
+      expect(buildDefaultLayout).toHaveBeenCalledTimes(1)
+      expect(mockApi.clear).not.toHaveBeenCalled()
     })
   })
 

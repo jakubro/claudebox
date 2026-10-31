@@ -1,65 +1,82 @@
-"""File cache - mtime-based invalidation."""
+"""File cache - invalidated by a change in the file's stamp: inode, size, modification and change time."""
 
-from collections.abc import Callable
+from __future__ import annotations
+
+import os
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
+from time import time_ns
 from typing import TypeVar
 
 
 T = TypeVar("T")
 
-MISSING = object()
+# File timestamps move once per clock tick (once per second or two on some network mounts), so a
+# second same-size write in that tick leaves every stat field equal; only an older change is safe.
+SETTLE_WINDOW = timedelta(seconds=2)
+
+
+@dataclass(frozen=True)
+class FileStamp:
+    """A file's inode, size and change times as of one stat."""
+
+    ino: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+    settled: bool = field(compare=False)
 
 
 class FileCache[T]:
-    """Cache keyed by file path, invalidated when the file's mtime changes."""
+    """Cache keyed by file path, trusted only while the file's stamp is unchanged and was settled."""
 
     def __init__(self):
-        self._store: dict[str, tuple[float, T]] = {}
+        self._store: dict[str, tuple[FileStamp | None, T]] = {}
 
     def get(self, path: str | Path, callback: Callable[[], T]) -> T:
-        """Return cached value if mtime matches, otherwise invoke callback and cache."""
+        """Return the cached value while the file is unchanged, otherwise invoke callback and cache it.
+
+        The file is stamped before the callback runs, so a write landing during it is re-read next time.
+        """
 
         path = str(path)
+        stamp = file_stamp(path)
 
-        if (value := self._find(path)) is not MISSING:
-            return value
-        else:
-            value = callback()
+        entry = self._store.get(path)
 
-            return self._add(path, value)
+        if entry is not None and entry[0] == stamp and (stamp is None or stamp.settled):
+            return entry[1]
 
-    def _find(self, path: str) -> T:
-        """Return cached value if mtime is unchanged, otherwise MISSING."""
-
-        current_mtime = self._get_mtime(path)
-
-        if path in self._store:
-            mtime, value = self._store[path]
-
-            if mtime == current_mtime:
-                return value
-
-        return MISSING  # ty: ignore[invalid-return-type]
-
-    def _add(self, path: str, value: T) -> T:
-        """Store value with current mtime and return it."""
-
-        mtime = self._get_mtime(path)
-
-        self._store[path] = (mtime, value)
+        value = callback()
+        self._store[path] = (stamp, value)
 
         return value
 
-    @staticmethod
-    def _get_mtime(path: str) -> float:
-        """Return file modification time, or 0 if unavailable."""
+    def retain(self, paths: Iterable[str | Path]) -> None:
+        """Drop every entry whose path is not in `paths`."""
 
-        p = Path(path)
+        kept = {str(path) for path in paths}
 
-        if p.exists():
-            try:
-                return p.stat().st_mtime
-            except OSError:
-                pass
+        for path in self._store.keys() - kept:
+            del self._store[path]
 
-        return 0
+
+def file_stamp(path: str | Path) -> FileStamp | None:
+    """Stamp `path`, or None when it cannot be stat'ed."""
+
+    now = time_ns()
+
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+
+    return FileStamp(
+        ino=stat.st_ino,
+        size=stat.st_size,
+        mtime_ns=stat.st_mtime_ns,
+        ctime_ns=stat.st_ctime_ns,
+        settled=stat.st_ctime_ns < now - int(SETTLE_WINDOW.total_seconds() * 1e9),
+    )

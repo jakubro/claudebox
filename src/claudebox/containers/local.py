@@ -1,10 +1,13 @@
 """Local container runtime - subprocess-based, no podman/docker required."""
 
+from __future__ import annotations
+
 import os
 import signal as _signal
 import socket
 import subprocess
 import sys
+import threading
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -36,12 +39,14 @@ class LocalRuntime:
         self.config = config
         self.verbose = verbose
         self._registry: dict[str, _Process] = {}
+        # The daemon's container pool calls in from several threads at once.
+        self._lock = threading.Lock()
         self._logger = get_logger(__name__)
 
         # Suppresses ensure_tmp() here and in inherited-env children (hooks run in-process).
         os.environ["CLAUDEBOX_NO_TMP_REMAP"] = "1"
 
-    def build(self, mode: "ImageBuildMode | None" = None) -> None:
+    def build(self, mode: ImageBuildMode | None = None) -> None:
         """No-op - local runtime has no image to build."""
 
     def run(self, args: Iterable = (), *, kind: str = "agent") -> int:
@@ -61,7 +66,7 @@ class LocalRuntime:
         run_args: Iterable = (),
         cmd_args: Iterable = (),
         detach: bool = False,
-        config: "Config | None" = None,
+        config: Config | None = None,
     ) -> str | None:
         """Spawn container_api_server.py as a subprocess on a free port."""
 
@@ -77,9 +82,7 @@ class LocalRuntime:
         # Prevent subcontainer from remapping /tmp - it shares the host filesystem
         proc_env["CLAUDEBOX_NO_TMP_REMAP"] = "1"
 
-        # ty's overload resolution for Popen.__init__ doesn't settle on the generic (no
-        # text/encoding) overload here despite proc_env being a plain dict[str, str].
-        proc = subprocess.Popen(  # ty: ignore[no-matching-overload]
+        proc = subprocess.Popen(
             [sys.executable, str(server_script), "--port", str(port), "--host", "127.0.0.1"],
             env=proc_env,
             stdout=subprocess.DEVNULL,
@@ -87,12 +90,13 @@ class LocalRuntime:
             start_new_session=True,
         )
 
-        self._registry[backend_id] = _Process(
-            process=proc,
-            port=port,
-            labels=labels,
-            name=name,
-        )
+        with self._lock:
+            self._registry[backend_id] = _Process(
+                process=proc,
+                port=port,
+                labels=labels,
+                name=name,
+            )
 
         self._logger.info(
             "Started local container",
@@ -106,7 +110,7 @@ class LocalRuntime:
     def get_host_port(self, backend_id: str, container_port: int) -> int:
         """Return the port assigned during run_container."""
 
-        entry = self._registry.get(backend_id)
+        entry = self._entry(backend_id)
 
         if not entry:
             raise KeyError(f"Unknown backend_id: {backend_id}")
@@ -125,7 +129,7 @@ class LocalRuntime:
             return None
 
         for cid in candidate_ids:
-            entry = self._registry.get(cid)
+            entry = self._entry(cid)
 
             if entry and entry.process.pid == pgid:
                 return cid
@@ -137,7 +141,11 @@ class LocalRuntime:
 
         result = []
 
-        for backend_id, entry in self._registry.items():
+        # Polled outside the lock, so a slow wait never holds up a spawn or removal.
+        with self._lock:
+            entries = list(self._registry.items())
+
+        for backend_id, entry in entries:
             if entry.process.poll() is not None:
                 continue
 
@@ -158,7 +166,7 @@ class LocalRuntime:
     def stop_container(self, backend_id: str, *, grace_seconds: int) -> None:
         """Send SIGTERM and wait up to ``grace_seconds`` before escalating to SIGKILL."""
 
-        entry = self._registry.get(backend_id)
+        entry = self._entry(backend_id)
 
         if not entry or entry.process.poll() is not None:
             return
@@ -188,7 +196,7 @@ class LocalRuntime:
     def kill_container(self, backend_id: str) -> None:
         """Send SIGKILL to the tracked process group immediately."""
 
-        entry = self._registry.get(backend_id)
+        entry = self._entry(backend_id)
 
         if not entry or entry.process.poll() is not None:
             return
@@ -205,7 +213,8 @@ class LocalRuntime:
     def remove_container(self, backend_id: str) -> None:
         """SIGTERM with a 5s grace, then SIGKILL; drop the registry entry."""
 
-        entry = self._registry.pop(backend_id, None)
+        with self._lock:
+            entry = self._registry.pop(backend_id, None)
 
         if not entry:
             return
@@ -229,6 +238,10 @@ class LocalRuntime:
 
     def create_network(self, name: str) -> None:
         """No-op - local processes share the host network."""
+
+    def _entry(self, backend_id: str) -> _Process | None:
+        with self._lock:
+            return self._registry.get(backend_id)
 
     @staticmethod
     def _find_free_port() -> int:

@@ -3,7 +3,7 @@
   "name": "reports rollup",
   "workspace": "/home/user/project",
   "permission_mode": "default",
-  "model": "claude-sonnet-5",
+  "model": "claude-sonnet-5-5",
   "num_turns": 9,
   "total_cost_usd": 0.42,
   "total_duration_ms": 214000,

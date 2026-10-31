@@ -1,5 +1,7 @@
 """Handler for the ``doctor`` verb - diagnose environment readiness."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import shutil
@@ -10,7 +12,7 @@ from pathlib import Path
 import httpx
 from rich.console import Console
 
-from claudebox import Config
+from claudebox import Config, tmp_mount_conflicts
 from claudebox.constants import DAEMON_PORT, WORKSPACE_MARKER, daemon_base_url, global_config_dir
 
 
@@ -24,8 +26,8 @@ Examples:
 
 Checks (in order, one row each):
   runtime, runtime info, uv, daemon http, daemon unit, watchdog timer,
-  ~/.claudebox/lib, profile, workspace (.workspace marker), permissions,
-  disk (/tmp free)
+  ~/.claudebox/lib, profile, tmp mounts, workspace (.workspace marker),
+  permissions, disk (/tmp free)
 
 Icons:
   ✓  the check passed
@@ -41,6 +43,7 @@ _LABEL_WIDTH = 17  # padded to the longest label ('~/.claudebox/lib')
 _HTTP_TIMEOUT_SECONDS = 2.0
 _SUBPROCESS_TIMEOUT_SECONDS = 5
 _DISK_MIN_BYTES = 1 * 1024**3  # 1 GiB threshold for /tmp disk check
+_NO_PROBE = "none - the local backend runs sessions as host processes"
 
 
 # Doctor writes to stdout so it stays pipeable; the shared console targets stderr for status output.
@@ -58,20 +61,28 @@ class _CheckResult:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run the 11 ordered environment checks and aggregate exit code."""
+    """Run the ordered environment checks and aggregate exit code."""
 
     verbose: bool = args.verbose
     config = Config.load()
 
+    if config.backend == "local":
+        runtime = [
+            _CheckResult("✓", "runtime", "local backend - no container runtime needed", _NO_PROBE),
+            _CheckResult("✓", "runtime info", "not needed for the local backend", _NO_PROBE),
+        ]
+    else:
+        runtime = [_check_runtime_version(config.backend), _check_runtime_info(config.backend)]
+
     results = [
-        _check_runtime_version(config.backend),
-        _check_runtime_info(config.backend),
+        *runtime,
         _check_uv(),
         _check_daemon_http(),
         _check_daemon_unit(),
         _check_watchdog_timer(),
         _check_claudebox_lib(),
         _check_profile(config.profile),
+        _check_tmp_mounts(config),
         _check_workspace_marker(),
         _check_permissions(),
         _check_disk(),
@@ -225,6 +236,27 @@ def _check_profile(profile: Path | None) -> _CheckResult:
         return _CheckResult("✗", "profile", f"{profile} ({reason})", command)
 
     return _CheckResult("✓", "profile", str(profile), command)
+
+
+def _check_tmp_mounts(config: Config) -> _CheckResult:
+    """Sessions refuse to start while the workspace or a mount under /tmp would be lost to the remap."""
+
+    command = "compare work_dir and [mounts] targets with /tmp"
+
+    conflicts = [] if config.backend == "local" else tmp_mount_conflicts(config)
+
+    if conflicts:
+        paths = ", ".join(map(str, conflicts))
+        detail = f'{paths} under /tmp - move it, or set [env] CLAUDEBOX_NO_TMP_REMAP = "1"'
+
+        return _CheckResult("✗", "tmp mounts", detail, command)
+
+    return _CheckResult(
+        "✓",
+        "tmp mounts",
+        "nothing under /tmp that a session would delete",
+        command,
+    )
 
 
 def _check_workspace_marker() -> _CheckResult:

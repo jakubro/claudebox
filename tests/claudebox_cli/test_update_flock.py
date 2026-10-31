@@ -9,6 +9,8 @@ The real flock semantics (locking, race avoidance) are out of scope here - exerc
 the wrapper twice in parallel against a real install.sh.
 """
 
+from __future__ import annotations
+
 import argparse
 import subprocess
 from pathlib import Path

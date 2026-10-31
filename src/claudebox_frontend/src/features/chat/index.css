@@ -32,7 +32,7 @@
 @import "./components/turn/components/CompactionBlock.css";
 @import "./components/turn/components/ThinkingBlock.css";
 @import "./components/turn/components/LocalCommandBlock.css";
-@import "./components/turn/components/SystemReminders.css";
+@import "./components/turn/components/InjectedContext.css";
 
 /* User message content */
 @import "./components/turn/components/user-message-content/UserMessageContent.css";

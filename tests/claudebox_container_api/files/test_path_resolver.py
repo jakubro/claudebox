@@ -3,6 +3,8 @@
 os.walk follows symlinks by default; safe only because the container API's limited filesystem view blocks escape.
 """
 
+from __future__ import annotations
+
 import json
 import threading
 import time
@@ -16,6 +18,7 @@ from claudebox_container_api.constants import (
     PATH_INDEX_FILE,
     PATH_INDEX_LOAD_MAX_AGE,
 )
+from claudebox_container_api.files import path_resolver
 from claudebox_container_api.files.path_resolver import PathResolver
 
 
@@ -174,7 +177,7 @@ class TestPathResolverCaching:
 
         original = time.monotonic()
         monkeypatch.setattr(
-            time,
+            path_resolver,
             "monotonic",
             lambda: original + FILE_INDEX_CACHE_TTL.total_seconds() + 1,
         )
@@ -346,19 +349,19 @@ class TestPathResolverAdaptiveTtl:
 
         # A walk that cost the whole nominal TTL earns a TTL of N times that.
         now = time.monotonic()
-        monkeypatch.setattr(time, "monotonic", lambda: now)
+        monkeypatch.setattr(path_resolver, "monotonic", lambda: now)
         resolver.resolve(["app.py"], temp_dir=None)
         resolver._last_walk_seconds = nominal
 
         # Past the nominal TTL but well inside the earned one - still no rebuild.
-        monkeypatch.setattr(time, "monotonic", lambda: now + nominal * 2)
+        monkeypatch.setattr(path_resolver, "monotonic", lambda: now + nominal * 2)
         resolver.resolve(["app.py"], temp_dir=None)
 
         assert len(counter) == 1
 
         # Past the earned TTL - rebuilds.
         monkeypatch.setattr(
-            time,
+            path_resolver,
             "monotonic",
             lambda: now + nominal * FILE_INDEX_WALK_TTL_FACTOR + 1,
         )
@@ -461,7 +464,7 @@ class TestPathResolverPersistence:
         # Same eventual-consistency contract as an in-memory index: invisible until the next TTL-triggered rebuild.
         original = time.monotonic()
         monkeypatch.setattr(
-            time,
+            path_resolver,
             "monotonic",
             lambda: original + FILE_INDEX_CACHE_TTL.total_seconds() + 1,
         )

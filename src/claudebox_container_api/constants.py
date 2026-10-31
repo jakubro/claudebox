@@ -1,5 +1,7 @@
 """Shared container API constants."""
 
+from __future__ import annotations
+
 from datetime import timedelta
 
 
@@ -19,4 +21,6 @@ PATH_INDEX_LOAD_MAX_AGE = timedelta(hours=24)
 
 
 # Logging
-CONTAINER_API_LOG_FILENAME = "container_api.log"  # one per container, never per session
+CONTAINER_API_LOG_FILENAME = "container_api.log"  # one per workspace, appended by every container
+# A new log subscriber is replayed at most this many of the workspace log's latest records.
+CONTAINER_API_LOG_REPLAY_LIMIT = 1000

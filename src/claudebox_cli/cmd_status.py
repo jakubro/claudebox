@@ -1,5 +1,7 @@
 """Handler for the ``status`` verb - three-section state: daemon, containers, workspace."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json

@@ -1,9 +1,12 @@
 """Session context for managing Claude SDK session directories and paths."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..paths import get_session_dir, parse_session_dir_name
+from ..workspace import claude_projects_root, find_sdk_transcript
 
 
 if TYPE_CHECKING:
@@ -20,7 +23,7 @@ class Session:
         self,
         session_id: str,
         *,
-        workspace: "Workspace | None" = None,
+        workspace: Workspace | None = None,
         start_dir: str | Path | None = None,
         _session_dir: Path | None = None,
     ):
@@ -41,18 +44,9 @@ class Session:
         return self.path / "tmp"
 
     @property
-    def sdk_session_dir(self) -> Path:
-        """SDK session directory: ~/.claude/projects/{hash}/{session_id}/."""
+    def sdk_session_dir(self) -> Path | None:
+        """The SDK's folder for this session, beside its transcript; None without a transcript."""
 
-        return self.workspace.sdk_project_dir / self.id
+        transcript = find_sdk_transcript(claude_projects_root(), self.id)
 
-    @property
-    def sdk_tool_results_dir(self) -> Path:
-        """SDK tool results directory: ~/.claude/projects/{hash}/{session_id}/tool-results/."""
-
-        return self.sdk_session_dir / "tool-results"
-
-    def sdk_tool_output_path(self, tool_use_id: str) -> Path:
-        """Path to tool output file: {sdk_tool_results_dir}/{tool_use_id}.txt"""
-
-        return self.sdk_tool_results_dir / f"{tool_use_id}.txt"
+        return transcript.with_suffix("") if transcript else None

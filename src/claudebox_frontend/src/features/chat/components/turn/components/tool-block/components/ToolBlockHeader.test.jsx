@@ -193,6 +193,32 @@ describe('ToolBlockHeader', () => {
       expect(timing).toHaveTextContent('@ +5s')
     })
 
+    it('shows the moment the offset measures to on hover', () => {
+      const blockTime = Date.UTC(2025, 0, 18, 12, 1, 9)
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, blockRelativeTime: 68, blockTime }}
+        />,
+      )
+
+      expect(document.querySelector('.block-timing')).toHaveAttribute(
+        'title',
+        new Date('2025-01-18T12:01:09Z').toLocaleString(),
+      )
+    })
+
+    it('gives a live duration with no offset no tooltip', () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          toolStatus={{ ...defaultToolStatus, blockDuration: 40, blockTime: Date.now() }}
+        />,
+      )
+
+      expect(document.querySelector('.block-timing')).not.toHaveAttribute('title')
+    })
+
     it('does not render timing when both are null', () => {
       render(<ToolBlockHeader {...defaultProps} />)
 
@@ -340,6 +366,54 @@ describe('ToolBlockHeader', () => {
       )
 
       expect(document.querySelector('.tool-activity')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('hide-in-Focused button', () => {
+    const hideButton = () => screen.queryByTestId('tool-focus-hide-btn')
+
+    it('is absent without a control', () => {
+      render(<ToolBlockHeader {...defaultProps} />)
+      expect(hideButton()).toBeNull()
+    })
+
+    it('offers to hide, after the bookmark button', () => {
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          bookmark={{ active: false, onToggle: vi.fn() }}
+          hideInFocused={{ active: false, onToggle: vi.fn() }}
+        />,
+      )
+      const button = hideButton()
+      expect(button).toHaveAttribute('title', 'Hide in Focused')
+      expect(button).toHaveAttribute('aria-pressed', 'false')
+      expect(button).not.toHaveClass('active')
+      expect(button.previousElementSibling).toHaveClass('tool-bookmark-btn')
+    })
+
+    it('shows pressed once marked, offering to show again', () => {
+      render(
+        <ToolBlockHeader {...defaultProps} hideInFocused={{ active: true, onToggle: vi.fn() }} />,
+      )
+      expect(hideButton()).toHaveAttribute('title', 'Show in Focused')
+      expect(hideButton()).toHaveAttribute('aria-pressed', 'true')
+      expect(hideButton()).toHaveClass('active')
+    })
+
+    it('toggles without folding or opening the block', () => {
+      const onToggle = vi.fn()
+      const hide = vi.fn()
+      render(
+        <ToolBlockHeader
+          {...defaultProps}
+          onToggle={onToggle}
+          hideInFocused={{ active: false, onToggle: hide }}
+        />,
+      )
+      fireEvent.click(hideButton())
+      expect(hide).toHaveBeenCalledTimes(1)
+      expect(onToggle).not.toHaveBeenCalled()
     })
   })
 })

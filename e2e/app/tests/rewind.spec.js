@@ -1,17 +1,50 @@
 /** E2E tests for conversation rewind (fork). */
 
 import { expect, test } from '@playwright/test'
-import { openSessionsPanel, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSession, openSessionsPanel, openSessionWithAPI } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
+
+async function mockSlowFork(page) {
+  await mockAPI(page, {
+    handlers: {
+      forkSession: async route => {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
+      },
+    },
+  })
+}
+
+async function openWithRecordedFork(page) {
+  const fork = { called: false, payload: null, url: null }
+  await openSessionWithAPI(page, 'events/multi-turn.jsonl', {
+    handlers: {
+      forkSession: async route => {
+        fork.called = true
+        fork.url = route.request().url()
+        fork.payload = route.request().postDataJSON()
+        await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
+      },
+    },
+  })
+
+  return fork
+}
+
+async function openRewindModal(page) {
+  const userMessage = page.locator('[data-testid="message-user"]').first()
+  await userMessage.hover()
+  await userMessage.locator('.message-rewind-btn').click()
+  const modal = page.locator('.rewind-modal')
+  await expect(modal).toBeVisible()
+
+  return modal
+}
 
 test.describe('Conversation Rewind', () => {
   test.describe('Rewind Button', () => {
     test.beforeEach(async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/multi-turn.jsonl')
     })
 
     // SPEC: chat:rewind
@@ -50,11 +83,10 @@ test.describe('Conversation Rewind', () => {
       const rewindSplit = userMessage.locator('.message-rewind-split')
       await expect(rewindSplit).toBeVisible()
 
-      const position = await rewindSplit.evaluate(el => getComputedStyle(el).position)
-      expect(position).toBe('absolute')
-
-      const top = await rewindSplit.evaluate(el => getComputedStyle(el).top)
-      expect(parseInt(top, 10)).toBeLessThanOrEqual(8)
+      const bubble = await userMessage.boundingBox()
+      const rewind = await rewindSplit.boundingBox()
+      expect(rewind.y - bubble.y).toBeLessThanOrEqual(8)
+      expect(rewind.x).toBeGreaterThan(bubble.x + bubble.width / 2)
     })
   })
 
@@ -62,9 +94,7 @@ test.describe('Conversation Rewind', () => {
     test.beforeEach(async ({ page }) => {
       await mockAPI(page)
       // isResponding=true from this fixture is what makes the modal appear for fork-here.
-      await mockSSE(page, 'events/responding.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/responding.jsonl')
     })
 
     // SPEC: chat:rewind-modal
@@ -83,11 +113,7 @@ test.describe('Conversation Rewind', () => {
 
     // SPEC: chat:rewind-modal
     test('modal has cancel and confirm buttons', async ({ page }) => {
-      const userMessage = page.locator('[data-testid="message-user"]').first()
-      await userMessage.hover()
-      await userMessage.locator('.message-rewind-btn').click()
-
-      const modal = page.locator('.rewind-modal')
+      const modal = await openRewindModal(page)
       await expect(modal.locator('.rewind-modal-cancel')).toBeVisible()
       await expect(modal.locator('.rewind-modal-confirm')).toBeVisible()
     })
@@ -104,12 +130,7 @@ test.describe('Conversation Rewind', () => {
         },
       })
 
-      const userMessage = page.locator('[data-testid="message-user"]').first()
-      await userMessage.hover()
-      await userMessage.locator('.message-rewind-btn').click()
-
-      const modal = page.locator('.rewind-modal')
-      await expect(modal).toBeVisible()
+      const modal = await openRewindModal(page)
 
       await modal.locator('.rewind-modal-cancel').click()
 
@@ -119,13 +140,8 @@ test.describe('Conversation Rewind', () => {
 
     // SPEC: chat:rewind-modal
     test('clicking overlay closes modal', async ({ page }) => {
-      const userMessage = page.locator('[data-testid="message-user"]').first()
-      await userMessage.hover()
-      await userMessage.locator('.message-rewind-btn').click()
-
+      const modal = await openRewindModal(page)
       const overlay = page.locator('.rewind-overlay')
-      const modal = page.locator('.rewind-modal')
-      await expect(modal).toBeVisible()
 
       // Position targets the overlay backdrop, outside the modal content.
       await overlay.click({ position: { x: 10, y: 10 } })
@@ -135,22 +151,10 @@ test.describe('Conversation Rewind', () => {
 
     // SPEC: chat:rewind-modal-spinner
     test('modal confirm button shows spinner while forking', async ({ page }) => {
-      await mockAPI(page, {
-        handlers: {
-          forkSession: async route => {
-            // Delay keeps the spinner visible long enough to assert on.
-            await new Promise(resolve => setTimeout(resolve, 500))
-            await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
-          },
-        },
-      })
+      // Delay keeps the spinner visible long enough to assert on.
+      await mockSlowFork(page)
 
-      const userMessage = page.locator('[data-testid="message-user"]').first()
-      await userMessage.hover()
-      await userMessage.locator('.message-rewind-btn').click()
-
-      const modal = page.locator('.rewind-modal')
-      await expect(modal).toBeVisible()
+      const modal = await openRewindModal(page)
 
       await modal.locator('.rewind-modal-confirm').click()
 
@@ -166,44 +170,47 @@ test.describe('Conversation Rewind', () => {
     // SPEC: chat:fork-new-tab-fresh-container
     // SPEC: panel-session:fork-here-running-indicator
     test('fork-here executes immediately without modal when agent is idle', async ({ page }) => {
-      let forkCalled = false
-      let forkPayload = null
-      await mockAPI(page, {
-        handlers: {
-          forkSession: async route => {
-            forkCalled = true
-            forkPayload = route.request().postDataJSON()
-            await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
-          },
-        },
-      })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const fork = await openWithRecordedFork(page)
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await userMessage.hover()
       await userMessage.locator('.message-rewind-btn').click()
 
       await expect(page.locator('.rewind-modal')).not.toBeVisible()
-      await expect.poll(() => forkCalled).toBe(true)
+      await expect.poll(() => fork.called).toBe(true)
       // reuse_container=true moves the running-session indicator to the new fork; fork-in-new-tab omits it.
-      expect(forkPayload?.reuse_container).toBe(true)
+      expect(fork.payload?.reuse_container).toBe(true)
+    })
+
+    // SPEC: chat:fork-missing-history
+    test('a fork the daemon refuses leaves the current conversation open with its failure message', async ({
+      page,
+    }) => {
+      await mockAPI(page, {
+        handlers: {
+          forkSession: route =>
+            route.fulfill({
+              status: 409,
+              json: { error: 'session_transcript_missing', session_id: 'test-session-001' },
+            }),
+        },
+      })
+      await openSession(page, 'events/multi-turn.jsonl')
+      const urlBefore = page.url()
+
+      const userMessage = page.locator('[data-testid="message-user"]').first()
+      await userMessage.hover()
+      await userMessage.locator('.message-rewind-btn').click()
+
+      await expect(page.locator('[data-testid="footer"]')).toContainText('Rewind failed')
+      expect(page.url()).toBe(urlBefore)
+      await expect(page.locator('[data-testid="message-user"]').first()).toBeVisible()
     })
 
     // SPEC: chat:fork-spinner
     test('fork button shows spinner while forking', async ({ page }) => {
-      await mockAPI(page, {
-        handlers: {
-          forkSession: async route => {
-            await new Promise(resolve => setTimeout(resolve, 500))
-            await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
-          },
-        },
-      })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await mockSlowFork(page)
+      await openSession(page, 'events/multi-turn.jsonl')
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await userMessage.hover()
@@ -217,10 +224,7 @@ test.describe('Conversation Rewind', () => {
 
   test.describe('Rewind Split Button', () => {
     test.beforeEach(async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/multi-turn.jsonl')
     })
 
     // SPEC: chat:rewind-split
@@ -255,35 +259,16 @@ test.describe('Conversation Rewind', () => {
   test.describe('Fork Variants', () => {
     // SPEC: chat:fork-here
     test('fork-here modal shows correct text when agent responding', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/responding.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/responding.jsonl')
 
-      const userMessage = page.locator('[data-testid="message-user"]').first()
-      await userMessage.hover()
-      await userMessage.locator('.message-rewind-btn').click()
-
-      const modal = page.locator('.rewind-modal')
-      await expect(modal).toBeVisible()
+      const modal = await openRewindModal(page)
       await expect(modal.locator('.rewind-modal-title')).toHaveText('Rewind here?')
       await expect(modal.locator('.rewind-modal-detail')).toContainText('same container')
     })
 
     // SPEC: chat:fork-browser-tab
     test('fork-browser-tab executes directly without modal', async ({ page }) => {
-      let forkCalled = false
-      await mockAPI(page, {
-        handlers: {
-          forkSession: async route => {
-            forkCalled = true
-            await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
-          },
-        },
-      })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const fork = await openWithRecordedFork(page)
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await userMessage.hover()
@@ -291,27 +276,14 @@ test.describe('Conversation Rewind', () => {
       await page.locator('.dropdown-option', { hasText: 'Rewind in new browser tab' }).click()
 
       await expect(page.locator('.rewind-modal')).not.toBeVisible()
-      await expect.poll(() => forkCalled).toBe(true)
+      await expect.poll(() => fork.called).toBe(true)
     })
   })
 
   test.describe('Fork Action', () => {
     // SPEC: chat:rewind-fork
     test('fork-here sends correct API parameters', async ({ page }) => {
-      let forkPayload = null
-      let forkUrl = null
-      await mockAPI(page, {
-        handlers: {
-          forkSession: async route => {
-            forkUrl = route.request().url()
-            forkPayload = await route.request().postDataJSON()
-            await route.fulfill({ status: 200, json: { session_id: 'forked-session-001' } })
-          },
-        },
-      })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const fork = await openWithRecordedFork(page)
 
       // Second message (index 1) corresponds to turn_002.
       const userMessages = page.locator('[data-testid="message-user"]')
@@ -321,18 +293,15 @@ test.describe('Conversation Rewind', () => {
       await secondMessage.hover()
       await secondMessage.locator('.message-rewind-btn').click()
 
-      await expect.poll(() => forkPayload !== null).toBe(true)
-      expect(forkUrl).toContain('/sessions/')
-      expect(forkUrl).toContain('/fork')
-      expect(forkPayload).toHaveProperty('turn_id', 'turn_002')
+      await expect.poll(() => fork.payload !== null).toBe(true)
+      expect(fork.url).toContain('/sessions/')
+      expect(fork.url).toContain('/fork')
+      expect(fork.payload).toHaveProperty('turn_id', 'turn_002')
     })
 
     // SPEC: chat:rewind-fork
     test('successful fork navigates to new session', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/multi-turn.jsonl')
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await userMessage.hover()
@@ -346,9 +315,7 @@ test.describe('Conversation Rewind', () => {
     // SPEC: chat:rewind-tree
     test('forked sessions appear nested under parent', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/with-children.json' })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/multi-turn.jsonl')
 
       await openSessionsPanel(page)
 
@@ -365,9 +332,7 @@ test.describe('Conversation Rewind', () => {
     // SPEC: chat:rewind-tree
     test('parent sessions with children have expand button', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/with-children.json' })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/multi-turn.jsonl')
 
       await openSessionsPanel(page)
 
@@ -379,9 +344,7 @@ test.describe('Conversation Rewind', () => {
     // SPEC: chat:rewind-tree
     test('child sessions are indented', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/with-children.json' })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/multi-turn.jsonl')
 
       await openSessionsPanel(page)
 
@@ -405,9 +368,7 @@ test.describe('Conversation Rewind', () => {
     // SPEC: chat:rewind-tree
     test('clicking expand button toggles children visibility', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/with-children.json' })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/multi-turn.jsonl')
 
       await openSessionsPanel(page)
 
@@ -426,21 +387,9 @@ test.describe('Conversation Rewind', () => {
 
   test.describe('Button Visibility During Fork', () => {
     test.beforeEach(async ({ page }) => {
-      await mockAPI(page, {
-        handlers: {
-          forkSession: async route => {
-            // Delay keeps forking state visible before resolution.
-            await new Promise(resolve => setTimeout(resolve, 500))
-            await route.fulfill({
-              status: 200,
-              json: { session_id: 'forked-session-001' },
-            })
-          },
-        },
-      })
-      await mockSSE(page, 'events/multi-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      // Delay keeps forking state visible before resolution.
+      await mockSlowFork(page)
+      await openSession(page, 'events/multi-turn.jsonl')
     })
 
     // SPEC: chat:rewind-button

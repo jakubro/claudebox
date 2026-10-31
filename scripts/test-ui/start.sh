@@ -15,18 +15,38 @@ LOG_DIR="${TEST_DIR}"
 # Port 41930 -> Vite on 41930, uvicorn on 41931 (avoids host daemon on 41920/41921)
 DAEMON_PORT=41930
 
-# Stop running test environment (kill entire process group)
+# Stop running test environment (kill entire process group), then free the harness ports
 stop() {
     if [[ -f "$PID_FILE" ]]; then
         while read -r pid; do
             # Kill the process group to catch child processes (Vite, uvicorn reloader)
             kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.5
+            done
         done < "$PID_FILE"
         rm -f "$PID_FILE"
         echo "Test UI stopped."
     else
         echo "No running test UI found."
     fi
+
+    _reap_ports
+}
+
+# Vite has its own process group, so one an earlier daemon left behind survives the kill above.
+_reap_ports() {
+    local ports="( sport = :${DAEMON_PORT} or sport = :$((DAEMON_PORT + 1)) )"
+    local pid
+    for pid in $(ss -ltnpH "$ports" | grep -oP 'pid=\K[0-9]+' | sort -u); do
+        kill -- -"$(ps -o pgid= -p "$pid" | tr -d ' ')" 2>/dev/null || true
+    done
+
+    for _ in $(seq 1 20); do
+        ss -ltnH "$ports" | grep -q . || return 0
+        sleep 0.5
+    done
 }
 
 if [[ "${1:-}" == "stop" ]]; then
@@ -50,6 +70,8 @@ TOML
 echo "Syncing dependencies..."
 UV_PROJECT_ENVIRONMENT="$VENV_DIR" uv sync --directory "$LIB_DIR" --extra dev 2>&1 | tail -3
 uv pip install --python "${VENV_DIR}/bin/python" playwright 2>&1 | tail -3
+# Latest agent SDK, as the image resolves it at build: its bundled CLI decides which models work.
+uv pip install --python "${VENV_DIR}/bin/python" --upgrade-package claude-agent-sdk claude-agent-sdk 2>&1 | tail -3
 
 # Write a clean daemon config with only the test workspace. PYTHONPATH points at the workspace's
 # own src/ so this resolves the current edit, not the container's deployed /root/.claudebox copy.

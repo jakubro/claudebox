@@ -1,5 +1,7 @@
 """Tests for ClaudeRuntime._translate_sdk_message - SDK message -> typed AgentEvent."""
 
+from __future__ import annotations
+
 import dataclasses
 
 import pytest
@@ -15,7 +17,7 @@ from claude_agent_sdk.types import TextBlock as SdkTextBlock
 from claude_agent_sdk.types import ToolResultBlock as SdkToolResultBlock
 from claude_agent_sdk.types import ToolUseBlock as SdkToolUseBlock
 
-from claudebox.agent_session._sibling_sessions import SIBLING_MCP_SERVER_NAME
+from claudebox.agent_session._sibling_sessions import CLAUDEBOX_MCP_SERVER_NAME
 from claudebox.agent_session.events import (
     AgentEvent,
     AssistantMessagePayload,
@@ -190,7 +192,7 @@ def test_translate_result_message():
     assert evt.kind == "result"
     assert isinstance(evt.payload, ResultPayload)
     assert evt.payload.subtype == "success"
-    assert evt.payload.total_cost_usd == 0.01
+    assert evt.payload.total_cost_usd == pytest.approx(0.01)
     assert evt.payload.duration_ms == 100
     assert evt.payload.num_turns == 1
 
@@ -244,7 +246,7 @@ def test_translate_task_notification():
             "task_id": "agent_abc",
             "status": "completed",
             "output_file": "/tmp/agent_abc.jsonl",
-            "summary": "Absorb lens finished",
+            "summary": "Review finished",
         },
     )
     evt = _translate(msg)
@@ -253,7 +255,7 @@ def test_translate_task_notification():
     assert isinstance(evt.payload, TaskNotificationPayload)
     assert evt.payload.task_id == "agent_abc"
     assert evt.payload.status == "completed"
-    assert evt.payload.summary == "Absorb lens finished"
+    assert evt.payload.summary == "Review finished"
 
 
 def test_translate_task_notification_status_map():
@@ -431,7 +433,7 @@ def test_claude_init_hides_the_sibling_session_server():
             "session_id": "sess-1",
             "mcp_servers": [
                 {"name": "jina", "status": "connected"},
-                {"name": SIBLING_MCP_SERVER_NAME, "status": "connected"},
+                {"name": CLAUDEBOX_MCP_SERVER_NAME, "status": "connected"},
             ],
         },
     )
@@ -595,7 +597,7 @@ def test_translate_rate_limit_event():
     assert evt.payload.status == "allowed_warning"
     assert evt.payload.resets_at == 123
     assert evt.payload.rate_limit_type == "five_hour"
-    assert evt.payload.utilization == 0.5
+    assert evt.payload.utilization == pytest.approx(0.5)
 
 
 def test_rate_limit_event_projects_to_system_subtype():
@@ -671,3 +673,48 @@ def test_task_notification_projects_to_system_subtype():
     minimal_events = list(agent_event_to_events(minimal))
 
     assert minimal_events[0].raw["message"]["data"] == {"task_id": "a1", "status": "killed"}
+
+
+def test_translate_assistant_message_carries_the_agents_failure_label():
+    """An assistant message the agent labels with an error keeps the label on the payload."""
+
+    msg = AssistantMessage(
+        content=[SdkTextBlock(text="Not logged in · Please run /login")],
+        model="<synthetic>",
+        error="authentication_failed",
+    )
+
+    payload = _translate(msg).payload
+
+    assert isinstance(payload, AssistantMessagePayload)
+    assert payload.error == "authentication_failed"
+
+
+def test_translate_assistant_message_without_a_label_has_no_error():
+    msg = AssistantMessage(content=[SdkTextBlock(text="hi")], model="claude")
+
+    payload = _translate(msg).payload
+
+    assert isinstance(payload, AssistantMessagePayload)
+    assert payload.error is None
+
+
+def test_labelled_assistant_message_projects_to_one_failure_event():
+    """The live path replaces an unauthenticated reply with the login instruction."""
+
+    from claudebox.agent_session.orchestration.conversion import agent_event_to_events
+
+    msg = AssistantMessage(
+        content=[SdkTextBlock(text="Not logged in · Please run /login")],
+        model="<synthetic>",
+        error="authentication_failed",
+    )
+
+    events = list(agent_event_to_events(_translate(msg)))
+
+    assert [(e.type, e.subtype) for e in events] == [("system", "error")]
+    content = events[0].content
+
+    assert isinstance(content, str)
+    assert "Run `claudebox run` in a terminal in this workspace" in content
+    assert "/login" not in content

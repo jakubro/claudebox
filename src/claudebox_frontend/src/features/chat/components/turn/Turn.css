@@ -11,8 +11,34 @@
 
 /* This container's own padding stops the first child's top margin (attachment row,
    inline-replies placeholder) from collapsing through - reset it so the surface stays symmetric. */
-.chat-message-user > :first-child {
+.chat-message-user > :first-child,
+.chat-message-user > .user-message-meta + * {
   margin-top: 0;
+}
+
+/* Floated so the first line of the message wraps before the timestamp; the actions overhang its left. */
+.user-message-meta {
+  float: right;
+  position: relative;
+  margin-left: 12px;
+  font-size: 11px;
+  line-height: normal;
+  color: var(--text-muted);
+}
+
+.user-message-actions {
+  position: absolute;
+  top: -4px;
+  right: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-message-user .user-message-actions > *,
+.chat-message-user .user-message-actions .copy-btn {
+  position: relative;
+  inset: auto;
 }
 
 .message-copy-btn {
@@ -144,9 +170,17 @@
   border-radius: 6px;
 }
 
-/* Corner triangle indicator for bookmarked messages */
+/* Corner triangle indicator for bookmarked messages, parts and tool calls */
+.turn-text > .md-block-bookmarked,
+.tool-block.bookmarked {
+  position: relative;
+}
+
 .chat-message-user.bookmarked::after,
-.turn.bookmarked::after {
+.turn.bookmarked::after,
+.turn-text > .md-block-bookmarked::after,
+.tool-block.bookmarked::after,
+.terminal-entry.bookmarked::after {
   content: "";
   position: absolute;
   top: 0;
@@ -160,6 +194,12 @@
   border-radius: 0 3px 0 0;
   z-index: 0;
   pointer-events: none;
+}
+
+/* Highlight flash when jumping to a bookmarked part or tool call */
+.turn-text > [data-md-block].jump-highlight,
+.tool-block.jump-highlight {
+  animation: turn-jump-highlight-pulse 1.5s ease-out;
 }
 
 /* Highlight flash when jumping to an assistant turn */
@@ -176,14 +216,7 @@
   }
 }
 
-/* A live tool-only turn under the work view: no bubble to hold TurnProgress, so it renders bare
-   under the user message, keeping only .turn's horizontal inset - no background, no border. */
-.turn-progress-bare {
-  padding: 8px 12px;
-}
-
-/* A turn that has not started yet: same box as the assistant bubble it will become, so the
-   progress row reads as inside the turn rather than floating beside the user message. */
+/* Mirrors the assistant bubble's box, so a turn with nothing in the transcript still reads as a turn. */
 .turn-progress-pending {
   padding: 8px 12px;
   background: var(--bg-secondary);
@@ -192,6 +225,64 @@
 
 .turn-content {
   padding-top: 0;
+}
+
+.needs-user-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.needs-user-reply {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.needs-user-reply:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.needs-user-reply-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+.needs-user-reply-primary:hover:not(:disabled) {
+  color: #fff;
+  opacity: 0.9;
+}
+
+.needs-user-reply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.needs-user-reply-split {
+  display: flex;
+}
+
+.needs-user-reply-split > .needs-user-reply:first-child:not(:last-child) {
+  border-radius: 4px 0 0 4px;
+}
+
+.needs-user-reply-edit {
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+}
+
+.needs-user-reply-edit.needs-user-reply-primary {
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .turn-content-collapsed {
@@ -221,26 +312,69 @@
   position: relative;
   word-break: break-word;
   margin: 10px 0;
+  --block-strip-width: calc(2 * var(--block-strip-btn-width) + var(--block-strip-gap));
+  --cell-padding-x: 10px;
 }
 
-/* Individual message copy button (right edge, aligned with message top) */
-.turn-text-copy-btn {
+/* Local command output copy button (right edge, aligned with the block's top) */
+.local-command-copy-btn {
   top: 0;
   right: 0;
   background: var(--bg-tertiary);
 }
 
-.turn-text:hover .turn-text-copy-btn {
+.turn-text:hover .local-command-copy-btn {
   opacity: 1;
 }
 
-.turn-text-copy-btn:hover {
+.local-command-copy-btn:hover {
   background: var(--bg-secondary);
 }
 
-/* Hide text copy button when first child is a code block (buttons would overlap) */
-.turn-text:has(> pre:first-child) .turn-text-copy-btn {
-  display: none;
+.block-strip {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  gap: var(--block-strip-gap);
+}
+
+.turn-text .block-strip .copy-btn {
+  position: static;
+  opacity: 1;
+  background: var(--bg-tertiary);
+  width: var(--block-strip-btn-width);
+  height: var(--block-strip-btn-height);
+  padding: 0;
+}
+
+/* Capped at 1lh so the room never reaches a part's second line, nor grows a shorter h5/h6 line. */
+.turn-text:has(> .block-strip) > [data-md-start]:not(pre, hr, table, .katex-display)::before {
+  content: "";
+  float: right;
+  width: var(--block-strip-width);
+  height: min(var(--block-strip-btn-height), 1lh);
+}
+
+.turn-text:has(> .block-strip) > table[data-md-start] > thead > tr:first-child > :last-child,
+.turn-text:has(> .block-strip)
+  > table[data-md-start]:not(:has(> thead))
+  > tbody:nth-child(1 of tbody)
+  > tr:first-child
+  > :last-child {
+  padding-right: calc(var(--cell-padding-x) + var(--block-strip-width));
+}
+
+/* Padding, not the float: KaTeX positions an equation's \tag absolutely, past any float. */
+.turn-text:has(> .block-strip) > .katex-display[data-md-start] {
+  padding-right: var(--block-strip-width);
+}
+
+.turn-text .block-strip .block-bookmark-btn.active {
+  color: #e8b931;
+}
+
+.turn-text .block-strip .copy-btn:hover {
+  background: var(--bg-secondary);
 }
 
 .turn-text:last-child {
@@ -278,14 +412,19 @@
 .turn-text h1,
 .turn-text h2,
 .turn-text h3,
-.turn-text h4 {
+.turn-text h4,
+.turn-text h5,
+.turn-text h6 {
   margin: 1em 0 0.5em 0;
   font-weight: 600;
 }
 
 .turn-text h1:first-child,
 .turn-text h2:first-child,
-.turn-text h3:first-child {
+.turn-text h3:first-child,
+.turn-text h4:first-child,
+.turn-text h5:first-child,
+.turn-text h6:first-child {
   margin-top: 0;
 }
 
@@ -297,6 +436,13 @@
 }
 .turn-text h3 {
   font-size: 1.1em;
+}
+.turn-text h5 {
+  font-size: 0.875em;
+}
+.turn-text h6 {
+  font-size: 0.85em;
+  color: var(--text-secondary);
 }
 
 .turn-text ul,
@@ -325,7 +471,7 @@
 .turn-text th,
 .turn-text td {
   border: 1px solid var(--border);
-  padding: 6px 10px;
+  padding: 6px var(--cell-padding-x);
   text-align: left;
 }
 

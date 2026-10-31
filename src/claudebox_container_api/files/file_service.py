@@ -1,5 +1,7 @@
 """File service - orchestrates path resolution."""
 
+from __future__ import annotations
+
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path

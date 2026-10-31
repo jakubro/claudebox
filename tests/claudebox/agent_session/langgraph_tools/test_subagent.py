@@ -1,5 +1,7 @@
 """subagent.py @tool tests - task() sub-agent dispatcher + agent registry."""
 
+from __future__ import annotations
+
 from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock

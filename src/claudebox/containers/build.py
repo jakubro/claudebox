@@ -1,7 +1,11 @@
 """Build container images for claudebox."""
 
+from __future__ import annotations
+
+import contextlib
+import fcntl
 import shutil
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +16,7 @@ from ..constants import (
     LIB_BUILD_DIR,
     LIB_ROOT,
     PROFILE_BUILD_HOOK_PATH,
+    build_lock_path,
 )
 from ..core.fs import find_files, make_temp_dir, touch_dir
 from ..core.time import get_timestamp
@@ -26,8 +31,8 @@ if TYPE_CHECKING:
 def build_image(
     mode: ImageBuildMode | None = None,
     *,
-    config: "Config",
-    backend: "ContainerBackend",
+    config: Config,
+    backend: ContainerBackend,
 ) -> None:
     """Build a claudebox container image.
 
@@ -61,7 +66,36 @@ def build_image(
                 target_script.chmod(0o775)
 
         args = get_image_build_args(build_dir, mode)
-        backend.build_image(*args)
+
+        with holding_build_lock() as lock_fd:
+            backend.build_image(*args, pass_fds=(lock_fd,))
+
+
+@contextlib.contextmanager
+def holding_build_lock() -> Generator[int]:
+    """Hold the build lock shared, so concurrent builds still run; yield its fd for the build to inherit.
+
+    The build process must inherit it: a build that outlives a killed claudebox keeps the lock.
+    """
+
+    with _open_build_lock() as fd:
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        yield fd
+
+
+@contextlib.contextmanager
+def no_build_running() -> Generator[bool]:
+    """Hold the build lock exclusively when no build holds it; yield whether it was taken."""
+
+    with _open_build_lock() as fd:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+
+            return
+
+        yield True
 
 
 def get_image_build_args(path: Path, mode: ImageBuildMode | None) -> Iterable:
@@ -80,3 +114,12 @@ def get_image_build_args(path: Path, mode: ImageBuildMode | None) -> Iterable:
         yield "--no-cache"
 
     yield path
+
+
+@contextlib.contextmanager
+def _open_build_lock() -> Generator[int]:
+    path = build_lock_path()
+    touch_dir(path.parent)
+
+    with path.open("a") as lock_file:
+        yield lock_file.fileno()

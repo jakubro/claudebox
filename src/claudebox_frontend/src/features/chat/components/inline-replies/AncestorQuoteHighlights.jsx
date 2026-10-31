@@ -11,6 +11,8 @@ import useHighlightPointerEvents from './hooks/useHighlightPointerEvents'
 import { clampHorizontal, isRangeVisible, rangeContainsPoint, spanRect } from './overlayDom'
 import PromotedThreadCard from './PromotedThreadCard'
 
+const TAB_OWNERS = '[data-testid="quote-affordance"], [data-testid="command-autocomplete"]'
+
 /**
  * @param {object} props
  * @param {string} props.sessionId - This ancestor's own session id, the registry contribution key.
@@ -111,7 +113,7 @@ export default function AncestorQuoteHighlights({
     [onFocusThread],
   )
 
-  const { clearCloseTimer, startCloseTimer } = useHighlightPointerEvents({
+  const { clearCloseTimer, startCloseTimer, hitUnderPointer } = useHighlightPointerEvents({
     containerRef: messagesRef,
     hitTest,
     canArmHover,
@@ -120,6 +122,28 @@ export default function AncestorQuoteHighlights({
     onHoverClose: handleHoverClose,
     onHit: handleHit,
   })
+
+  // Tab over a rail-promoted span does what its click does. The quote button and slash autocomplete
+  // live in the focused group, out of reach here, so their presence on the page is what keeps Tab.
+  useEffect(() => {
+    const onKeyDown = e => {
+      if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
+        return
+      }
+      if (document.querySelector(TAB_OWNERS)) {
+        return
+      }
+      const hit = hitUnderPointer()
+      if (hit) {
+        e.preventDefault()
+        e.stopPropagation()
+        handleHit(hit)
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [hitUnderPointer, handleHit])
 
   // Position the hover card at the span's end, clamped inside this ancestor's fixed-width column.
   // No stacking: the column is narrow enough that only one card is ever open in it at a time.

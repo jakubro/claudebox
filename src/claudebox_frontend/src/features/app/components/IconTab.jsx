@@ -1,33 +1,9 @@
 /** Tab header with icon, title, and close button for dockview side panels. */
 
-import {
-  Archive,
-  Kanban as BoardIcon,
-  Bookmark,
-  Command,
-  HelpCircle,
-  History,
-  ListTodo,
-  Plug,
-  SquareKanban,
-  TrendingUp,
-} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import PANEL_CONFIGS from '../../../config/panel'
 import { useAppActions } from '../../../context/AppActionsContext'
 import TabShell from './tab-shell'
-
-const ICONS = {
-  todos: ListTodo,
-  stash: Archive,
-  sessions: History,
-  boards: BoardIcon,
-  help: HelpCircle,
-  mcp: Plug,
-  usage: TrendingUp,
-  tasks: SquareKanban,
-  commands: Command,
-  bookmarks: Bookmark,
-}
 
 /**
  * @param {Object} props
@@ -36,7 +12,7 @@ const ICONS = {
 export default function IconTab({ api }) {
   const { maximizeToggle, closePanel } = useAppActions()
 
-  const Icon = ICONS[api.id]
+  const Icon = PANEL_CONFIGS[api.id]?.Icon
 
   const [title, setTitle] = useState(api.title)
 

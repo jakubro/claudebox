@@ -1,5 +1,7 @@
 """Tests for claudebox.env - runtime environment checks."""
 
+from __future__ import annotations
+
 from claudebox.env import is_dev_mode, set_dev_mode
 
 

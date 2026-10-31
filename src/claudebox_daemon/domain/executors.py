@@ -1,5 +1,7 @@
 """Blocking-work pools, split by concern so one saturated class cannot starve the others."""
 
+from __future__ import annotations
+
 import threading
 import time
 from collections.abc import Callable
@@ -160,7 +162,7 @@ class DaemonExecutors:
     state: ObservedPool
 
     @classmethod
-    def create(cls) -> "DaemonExecutors":
+    def create(cls) -> DaemonExecutors:
         """Build the pools with their thread-name prefixes, so a stack dump names the concern."""
 
         return cls(

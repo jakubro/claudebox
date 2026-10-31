@@ -1,9 +1,48 @@
 /** E2E tests for interactive tools: AskUserQuestion forms, ExitPlanMode approve/reject. */
 
 import { expect, test } from '@playwright/test'
-import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
+import {
+  acceptSends,
+  captureLastSend,
+  disableAutoCollapse,
+  openLiveSession,
+  openSession,
+  openSessionWithAPI,
+  waitForAppReady,
+} from '../helpers.js'
 import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import { mockSSE } from '../mocks/sse.js'
+
+async function openUncollapsed(page, fixture) {
+  await openSessionWithAPI(page, fixture)
+  await disableAutoCollapse(page)
+}
+
+async function openQuestionForm(page) {
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForAppReady(page)
+  const form = page.locator('.tool-questions-interactive').first()
+  await expect(form).toBeVisible()
+
+  return form
+}
+
+async function pickFirstOption(page) {
+  const form = page.locator('.tool-questions-interactive').first()
+  await expect(form).toBeVisible()
+  await form.locator('.tool-question-option:not(.other)').first().click()
+
+  return form
+}
+
+async function openOtherInput(page) {
+  const form = await openQuestionForm(page)
+  await form.locator('.tool-question-option.other').click()
+  const textarea = form.locator('.tool-other-input')
+  await expect(textarea).toBeVisible()
+
+  return textarea
+}
 
 test.describe('AskUserQuestion', () => {
   test.beforeEach(async ({ page }) => {
@@ -39,11 +78,7 @@ test.describe('AskUserQuestion', () => {
 
   // SPEC: tool:askuser-other
   test('always includes Other option', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const otherOption = form.locator('.tool-question-option.other')
     await expect(otherOption).toBeVisible()
@@ -52,11 +87,7 @@ test.describe('AskUserQuestion', () => {
 
   // SPEC: tool:askuser-submit-disabled
   test('submit disabled until selection', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const submitBtn = form.locator('.tool-submit-btn')
     await expect(submitBtn).toBeDisabled()
@@ -69,11 +100,7 @@ test.describe('AskUserQuestion', () => {
 
   // SPEC: tool:askuser-other-focus
   test('Other option shows text input', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     await expect(form.locator('.tool-other-input')).not.toBeVisible()
 
@@ -86,21 +113,11 @@ test.describe('AskUserQuestion', () => {
   })
 
   // SPEC: tool:askuser-submit
+  // SPEC: tool:answer-focus
   test('submit sends answer via API', async ({ page }) => {
-    let sendCalled = false
-    let sendPayload = null
+    const sent = await captureLastSend(page)
 
-    await page.route('**/api/send', async route => {
-      sendCalled = true
-      sendPayload = await route.request().postDataJSON()
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const reactOption = form.locator('.tool-question-option:not(.other)').first()
     await reactOption.click()
@@ -108,24 +125,16 @@ test.describe('AskUserQuestion', () => {
     const submitBtn = form.locator('.tool-submit-btn')
     await submitBtn.click()
 
-    await expect.poll(() => sendCalled).toBe(true)
-    expect(sendPayload.prompt).toContain('<answer>React</answer>')
+    await expect.poll(() => sent.payload).not.toBeNull()
+    expect(sent.payload.prompt).toContain('<answer>React</answer>')
+    await expect(page.locator('[data-testid="chat-input"]')).toBeFocused()
   })
 
   // SPEC: tool:askuser-note
   test('submit sends composer text as a note alongside the answer', async ({ page }) => {
-    let sendPayload = null
+    const sent = await captureLastSend(page)
 
-    await page.route('**/api/send', async route => {
-      sendPayload = await route.request().postDataJSON()
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const reactOption = form.locator('.tool-question-option:not(.other)').first()
     await reactOption.click()
@@ -135,19 +144,34 @@ test.describe('AskUserQuestion', () => {
     const submitBtn = form.locator('.tool-submit-btn')
     await submitBtn.click()
 
-    await expect.poll(() => sendPayload).not.toBeNull()
-    expect(sendPayload.prompt).toContain('<answer>React</answer>')
-    expect(sendPayload.note).toBe('please also add TypeScript')
+    await expect.poll(() => sent.payload).not.toBeNull()
+    expect(sent.payload.prompt).toContain('<answer>React</answer>')
+    expect(sent.payload.note).toBe('please also add TypeScript')
+  })
+
+  // SPEC: input:failed-send-preserved
+  test('a failed submit returns the note to the composer box', async ({ page }) => {
+    await page.route('**/api/send*', route => route.fulfill({ status: 500 }))
+
+    const form = await openQuestionForm(page)
+
+    const reactOption = form.locator('.tool-question-option:not(.other)').first()
+    await reactOption.click()
+
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('please also add TypeScript')
+
+    const submitBtn = form.locator('.tool-submit-btn')
+    await submitBtn.click()
+
+    await expect(page.getByText('Send failed')).toBeVisible()
+    await expect(input).toHaveValue('please also add TypeScript')
+    await expect(input).toBeFocused()
   })
 
   // SPEC: tool:askuser-note
   test('submit sends the note together with a pending attachment', async ({ page }) => {
-    let sendPayload = null
-
-    await page.route('**/api/send', async route => {
-      sendPayload = await route.request().postDataJSON()
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    const sent = await captureLastSend(page)
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -167,117 +191,60 @@ test.describe('AskUserQuestion', () => {
     })
     await expect(page.locator('[data-testid="attachment-preview"]')).toBeVisible()
 
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
-    await form.locator('.tool-question-option:not(.other)').first().click()
+    const form = await pickFirstOption(page)
     await page.locator('[data-testid="chat-input"]').fill('and check this file')
     await form.locator('.tool-submit-btn').click()
 
-    await expect.poll(() => sendPayload).not.toBeNull()
-    expect(sendPayload.prompt).toContain('<answer>React</answer>')
-    expect(sendPayload.note).toBe('and check this file')
-    expect(sendPayload.attachments).toHaveLength(1)
-    expect(sendPayload.attachments[0].name).toBe('photo.png')
+    await expect.poll(() => sent.payload).not.toBeNull()
+    expect(sent.payload.prompt).toContain('<answer>React</answer>')
+    expect(sent.payload.note).toBe('and check this file')
+    expect(sent.payload.attachments).toHaveLength(1)
+    expect(sent.payload.attachments[0].name).toBe('photo.png')
   })
 
   // SPEC: tool:askuser-note
   test('submit sends the note together with a buffered inline reply', async ({ page }) => {
-    let sendPayload = null
+    const sent = await captureLastSend(page)
 
-    await page.route('**/api/send', async route => {
-      sendPayload = await route.request().postDataJSON()
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    await askWithBufferedReply(page)
 
-    const controller = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await controller.sendEvents([
-      {
-        type: 'user',
-        subtype: 'text',
-        is_human: true,
-        content: 'Help me set up the project',
-        timestamp: Date.now(),
-        ts: new Date().toISOString(),
-        turn_id: 'turn_001',
-      },
-      {
-        type: 'assistant',
-        subtype: 'text',
-        content: 'The framework choice affects the runtime bundle size.',
-        timestamp: Date.now() + 100,
-      },
-      { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: Date.now() + 200 },
-      {
-        type: 'assistant',
-        subtype: 'tool_use',
-        content: 'AskUserQuestion',
-        timestamp: Date.now() + 300,
-        tool_use_id: 'tool_001',
-        tool_name: 'AskUserQuestion',
-        tool_input: {
-          questions: [
-            {
-              question: 'Which framework would you like to use?',
-              header: 'Framework',
-              options: [{ label: 'React', description: 'Popular component-based UI library' }],
-              multiSelect: false,
-            },
-          ],
-        },
-      },
-    ])
-
-    const assistantMessage = page.locator('[data-testid="message-assistant"]').first()
-    await expect(assistantMessage).toContainText('runtime bundle size')
-
-    await page.evaluate(() => {
-      const msg = document.querySelector('[data-testid="message-assistant"]')
-      const walker = document.createTreeWalker(msg, NodeFilter.SHOW_TEXT)
-      let node = walker.nextNode()
-      while (node) {
-        const idx = node.textContent.indexOf('runtime bundle size')
-        if (idx >= 0) {
-          const range = document.createRange()
-          range.setStart(node, idx)
-          range.setEnd(node, idx + 'runtime bundle size'.length)
-          const sel = window.getSelection()
-          sel.removeAllRanges()
-          sel.addRange(range)
-          document.dispatchEvent(new Event('selectionchange'))
-          return
-        }
-        node = walker.nextNode()
-      }
-    })
-    await page.locator('[data-testid="quote-affordance"]').click()
-    await page.locator('[data-testid="inline-thread-input"]').first().fill('how much smaller?')
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
-    await form.locator('.tool-question-option:not(.other)').first().click()
+    const form = await pickFirstOption(page)
     await page.locator('[data-testid="chat-input"]').fill('going with this one')
     await form.locator('.tool-submit-btn').click()
 
-    await expect.poll(() => sendPayload).not.toBeNull()
-    expect(sendPayload.prompt).toContain('<answer>React</answer>')
-    expect(sendPayload.note).toBe('going with this one')
-    expect(sendPayload.inline_replies).toHaveLength(1)
-    expect(sendPayload.inline_replies[0]).toMatchObject({
+    await expect.poll(() => sent.payload).not.toBeNull()
+    expect(sent.payload.prompt).toContain('<answer>React</answer>')
+    expect(sent.payload.note).toBe('going with this one')
+    expect(sent.payload.inline_replies).toHaveLength(1)
+    expect(sent.payload.inline_replies[0]).toMatchObject({
       quote: 'runtime bundle size',
       response: 'how much smaller?',
     })
+  })
+
+  // SPEC: chat:inline-replies-enter-keys
+  test('Enter in a reply box answers a pending question with the note and the reply', async ({
+    page,
+  }) => {
+    const sent = await captureLastSend(page)
+    await askWithBufferedReply(page)
+
+    await pickFirstOption(page)
+    await page.locator('[data-testid="chat-input"]').fill('going with this one')
+    await page.locator('[data-testid="inline-thread-input"]').first().press('Enter')
+
+    await expect.poll(() => sent.payload).not.toBeNull()
+    expect(sent.payload.prompt).toContain('<answer>React</answer>')
+    expect(sent.payload.note).toBe('going with this one')
+    expect(sent.payload.inline_replies).toHaveLength(1)
+    expect(sent.payload.inline_replies[0].response).toBe('how much smaller?')
   })
 
   // SPEC: tool:askuser-form
   test('form disappears after submit', async ({ page }) => {
     // ToolBlock sets wasAnsweredLocally=true on submit, unmounting InteractiveQuestions before
     // it renders "waiting for reply...", so this test only checks the form disappears.
-    await page.route('**/api/send', async route => {
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    await acceptSends(page)
 
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -295,11 +262,7 @@ test.describe('AskUserQuestion', () => {
 
   // SPEC: tool:askuser-form
   test('radio button indicators for single select', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     // Unselected options show a hollow circle; selected shows filled.
     const firstOption = form.locator('.tool-question-option:not(.other)').first()
@@ -313,11 +276,7 @@ test.describe('AskUserQuestion', () => {
 
   // SPEC: tool:askuser-other
   test('selecting option deselects Other', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const otherOption = form.locator('.tool-question-option.other')
     await otherOption.click()
@@ -408,11 +367,7 @@ test.describe('ExitPlanMode - Approve/Reject', () => {
 
   // SPEC: tool:exitplan-submit-disabled
   test('submit disabled until selection', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const submitBtn = form.locator('.tool-submit-btn')
     await expect(submitBtn).toBeDisabled()
@@ -422,40 +377,27 @@ test.describe('ExitPlanMode - Approve/Reject', () => {
   })
 
   // SPEC: tool:exitplan-submit
+  // SPEC: tool:answer-focus
   test('approve sends response via API', async ({ page }) => {
-    let sendPayload = null
+    const sent = await captureLastSend(page)
 
-    await page.route('**/api/send', async route => {
-      sendPayload = await route.request().postDataJSON()
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     await form.locator('.tool-question-option:not(.other)').first().click()
     await form.locator('.tool-submit-btn').click()
 
-    await expect.poll(() => sendPayload !== null).toBe(true)
-    expect(sendPayload.prompt).toContain('<response:ExitPlanMode>')
-    expect(sendPayload.prompt).toContain('<answer>Approve</answer>')
+    await expect.poll(() => sent.payload !== null).toBe(true)
+    expect(sent.payload.prompt).toContain('<response:ExitPlanMode>')
+    expect(sent.payload.prompt).toContain('<answer>Approve</answer>')
+    await expect(page.locator('[data-testid="chat-input"]')).toBeFocused()
   })
 
   // SPEC: tool:exitplan-collapse-after-submit
   // SPEC: tool:exitplan-answer-label
   test('form collapses after submit', async ({ page }) => {
-    await page.route('**/api/send', async route => {
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    await acceptSends(page)
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     await form.locator('.tool-question-option:not(.other)').first().click()
     await form.locator('.tool-submit-btn').click()
@@ -471,12 +413,7 @@ test.describe('ExitPlanMode - Approve/Reject', () => {
 test.describe('ExitPlanMode - Answered State', () => {
   // SPEC: tool:exitplan-answer-label
   test('answered plan shows Approved status', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-exit-plan-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-exit-plan-answered.jsonl')
 
     // Fixture answer is Approve.
     const answeredBlock = page.locator('[data-testid="tool-block"]').filter({
@@ -489,12 +426,7 @@ test.describe('ExitPlanMode - Answered State', () => {
 
   // SPEC: tool:exitplan-stays-viewable
   test('plan content remains viewable after answering', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-exit-plan-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-exit-plan-answered.jsonl')
 
     // Unlike AskUserQuestion, an answered plan stays visible rather than collapsing.
     const planContent = page.locator('.tool-plan')
@@ -521,10 +453,7 @@ test.describe('ExitPlanMode - Answered State', () => {
         },
       },
     })
-    await mockSSE(page, 'events/tool-exit-plan.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-exit-plan.jsonl')
 
     const approveOption = page.locator('.tool-question-option:not(.other)').first()
     await approveOption.click()
@@ -541,12 +470,7 @@ test.describe('ExitPlanMode - Answered State', () => {
 test.describe('ExitPlanMode - Disable After Reply', () => {
   // SPEC: tool:exitplan-disable-after-reply
   test('form not shown when follow-up human message exists', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-exit-plan-with-followup.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-exit-plan-with-followup.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
@@ -559,12 +483,7 @@ test.describe('ExitPlanMode - Disable After Reply', () => {
 test.describe('AskUserQuestion - Answered State', () => {
   // SPEC: tool:askuser-answered
   test('answered questions show completed status with Answered text', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question-answered.jsonl')
 
     const _completedToolBlock = page.locator(
       '[data-testid="tool-block"][data-tool-status="completed"]',
@@ -582,12 +501,7 @@ test.describe('AskUserQuestion - Answered State', () => {
 
   // SPEC: tool:askuser-answered
   test('interactive form not shown when question already answered', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question-answered.jsonl')
 
     // Due to potential event duplication, just check that an answered state exists somewhere.
     const answeredSummary = page.locator('.tool-summary').filter({ hasText: 'Answered' })
@@ -600,10 +514,7 @@ test.describe('AskUserQuestion - Disable After Reply', () => {
   test('form disabled when follow-up human message exists', async ({ page }) => {
     await mockAPI(page)
     // Fixture: AskUserQuestion with a follow-up user message (not an answer)
-    await mockSSE(page, 'events/tool-ask-question-with-followup.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-ask-question-with-followup.jsonl')
     await disableAutoCollapse(page)
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
@@ -619,10 +530,7 @@ test.describe('AskUserQuestion - Disable After Reply', () => {
   }) => {
     await mockAPI(page)
     // Same fixture simulates resuming a session with an unanswered question plus later messages.
-    await mockSSE(page, 'events/tool-ask-question-with-followup.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-ask-question-with-followup.jsonl')
 
     const forms = page.locator('.tool-questions-interactive')
     await expect(forms).toHaveCount(0)
@@ -634,16 +542,9 @@ test.describe('AskUserQuestion - Disable On Send', () => {
   test('form retires to Skipped the instant a chat message is sent, before any reply', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question.jsonl')
+    await openUncollapsed(page, 'events/tool-ask-question.jsonl')
     // The SSE stream never echoes the message back, holding the pending window open.
-    await page.route('**/api/send', async route => {
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await acceptSends(page)
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     const form = page.locator('.tool-questions-interactive').first()
@@ -666,17 +567,7 @@ test.describe('AskUserQuestion - Other Input', () => {
 
   // SPEC: tool:askuser-other
   test('Other textarea supports Shift+Enter for newlines', async ({ page }) => {
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
-
-    const otherOption = form.locator('.tool-question-option.other')
-    await otherOption.click()
-
-    const textarea = form.locator('.tool-other-input')
-    await expect(textarea).toBeVisible()
+    const textarea = await openOtherInput(page)
 
     await textarea.fill('Line one')
     await textarea.press('Shift+Enter')
@@ -691,11 +582,7 @@ test.describe('AskUserQuestion - Other Input', () => {
 
 test.describe('AskUserQuestion - XML Response Rendering', () => {
   test('no raw AskUserQuestionResponse XML visible in answered display', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/tool-ask-question-answered.jsonl')
 
     const pageContent = await page.textContent('body')
     expect(pageContent).not.toContain('<AskUserQuestionResponse>')
@@ -704,12 +591,7 @@ test.describe('AskUserQuestion - XML Response Rendering', () => {
 
   // SPEC: tool:askuser-answered
   test('answered state shows selected option', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question-answered.jsonl')
 
     const answeredBlock = page.locator('[data-testid="tool-block"]').filter({
       hasText: 'Answered',
@@ -724,11 +606,7 @@ test.describe('AskUserQuestion - XML Response Rendering', () => {
 
   // SPEC: tool:askuser-note-shown
   test('answer and its note are both shown in the transcript', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/user-message-askuser-response-with-note.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/user-message-askuser-response-with-note.jsonl')
 
     const askUserResponse = page.locator('[data-testid="message-user"]').nth(1)
     await expect(askUserResponse).toBeVisible()
@@ -737,15 +615,18 @@ test.describe('AskUserQuestion - XML Response Rendering', () => {
       'Please also add TypeScript support',
     )
     await expect(askUserResponse.locator('.qa-answer')).toContainText('React')
+    await expect(askUserResponse.locator('.message-note-rule')).toHaveCount(0)
+    const noteFirst = await askUserResponse.evaluate(el => {
+      const note = el.querySelector('.message-note')
+      const answer = el.querySelector('.qa-answer')
+      return Boolean(note.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING)
+    })
+    expect(noteFirst).toBe(true)
   })
 
   // SPEC: tool:askuser-note-bubble
   test('note sent with an answer gets the same bubble as a plain message', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/user-message-askuser-response-with-note.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/user-message-askuser-response-with-note.jsonl')
 
     // turn_001's opening message is a plain send with no note - the ground truth here. The surface
     // lives on the message container; fontFamily and whiteSpace stay on the text child.
@@ -807,17 +688,7 @@ test.describe('AskUser Form Details', () => {
     await mockAPI(page)
     await mockSSE(page, 'events/tool-ask-question.jsonl')
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
-
-    const otherOption = form.locator('.tool-question-option.other')
-    await otherOption.click()
-
-    const textarea = form.locator('.tool-other-input')
-    await expect(textarea).toBeVisible()
+    const textarea = await openOtherInput(page)
 
     // Baseline single-row height, compared against the height after multi-line input below.
     const initialHeight = await textarea.evaluate(el => el.offsetHeight)
@@ -842,17 +713,7 @@ test.describe('AskUser Form Details', () => {
     await mockAPI(page)
     await mockSSE(page, 'events/tool-ask-question.jsonl')
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
-
-    const otherOption = form.locator('.tool-question-option.other')
-    await otherOption.click()
-
-    const textarea = form.locator('.tool-other-input')
-    await expect(textarea).toBeVisible()
+    const textarea = await openOtherInput(page)
 
     const placeholder = await textarea.getAttribute('placeholder')
     expect(placeholder === null || placeholder === '').toBeTruthy()
@@ -864,16 +725,12 @@ test.describe('AskUser Form Details', () => {
     await mockSSE(page, 'events/tool-ask-question.jsonl')
 
     // Delay the /api/send response so the optimistic UI can be observed before it resolves.
-    await page.route('**/api/send', async route => {
+    await page.route('**/api/send*', async route => {
       await new Promise(resolve => setTimeout(resolve, 500))
       await route.fulfill({ status: 200, json: { success: true } })
     })
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const reactOption = form.locator('.tool-question-option:not(.other)').first()
     await reactOption.click()
@@ -897,11 +754,7 @@ test.describe('AskUser Form Details', () => {
     })
     await mockSSE(page, 'events/tool-ask-question.jsonl')
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     // Label sits in a dedicated span, separate from the description text, which isn't part of the highlight.
     const reactOption = form.locator('.tool-question-option:not(.other)').first()
@@ -923,15 +776,9 @@ test.describe('AskUser Form Details', () => {
     await mockAPI(page)
     await mockSSE(page, 'events/tool-ask-question.jsonl')
 
-    await page.route('**/api/send', async route => {
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    await acceptSends(page)
 
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const form = page.locator('.tool-questions-interactive').first()
-    await expect(form).toBeVisible()
+    const form = await openQuestionForm(page)
 
     const reactOption = form.locator('.tool-question-option:not(.other)').first()
     await reactOption.click()
@@ -948,10 +795,7 @@ test.describe('AskUser Form Details', () => {
   test('questions and answers are visually distinct', async ({ page }) => {
     await mockAPI(page)
     // Use answered fixture which has both question tool block and user answer message
-    await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-ask-question-answered.jsonl')
     await disableAutoCollapse(page)
 
     // Question side.
@@ -976,12 +820,7 @@ test.describe('AskUserQuestion - Block Chrome', () => {
   test('a question awaiting an answer shows only the form, with no block header', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
@@ -1003,12 +842,7 @@ test.describe('AskUserQuestion - Block Chrome', () => {
 
   // SPEC: tool:askuser-form-only
   test('the block header returns once the question is answered', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock.locator('.tool-header-area')).toHaveCount(0)
@@ -1027,12 +861,7 @@ test.describe('AskUserQuestion - Block Chrome', () => {
   test('an answered question is not shown as failed when the tool call reported an error', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-answered-error.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question-answered-error.jsonl')
 
     const answeredBlock = page
       .locator('[data-testid="tool-block"]')
@@ -1052,12 +881,7 @@ test.describe('AskUserQuestion - Block Chrome', () => {
   test('a question awaiting an answer shows only the form even when the tool call reported an error', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-error.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question-error.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock).toBeVisible()
@@ -1076,12 +900,7 @@ test.describe('AskUserQuestion - Block Chrome', () => {
   test('answering an error-path question restores the header and Answered summary', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-ask-question-error.jsonl')
-
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-    await disableAutoCollapse(page)
+    await openUncollapsed(page, 'events/tool-ask-question-error.jsonl')
 
     const toolBlock = page.locator('[data-testid="tool-block"]').first()
     await expect(toolBlock.locator('.tool-header-area')).toHaveCount(0)
@@ -1096,3 +915,70 @@ test.describe('AskUserQuestion - Block Chrome', () => {
     await expect(toolBlock).not.toHaveClass(/tool-error/)
   })
 })
+
+/** Seed a turn asking a question, quote 'runtime bundle size' and buffer a reply to it. */
+async function askWithBufferedReply(page) {
+  const controller = await openLiveSession(page)
+
+  await controller.sendEvents([
+    {
+      type: 'user',
+      subtype: 'text',
+      is_human: true,
+      content: 'Help me set up the project',
+      timestamp: Date.now(),
+      ts: new Date().toISOString(),
+      turn_id: 'turn_001',
+    },
+    {
+      type: 'assistant',
+      subtype: 'text',
+      content: 'The framework choice affects the runtime bundle size.',
+      timestamp: Date.now() + 100,
+    },
+    { type: 'result', subtype: 'success', turn_id: 'turn_001', timestamp: Date.now() + 200 },
+    {
+      type: 'assistant',
+      subtype: 'tool_use',
+      content: 'AskUserQuestion',
+      timestamp: Date.now() + 300,
+      tool_use_id: 'tool_001',
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          {
+            question: 'Which framework would you like to use?',
+            header: 'Framework',
+            options: [{ label: 'React', description: 'Popular component-based UI library' }],
+            multiSelect: false,
+          },
+        ],
+      },
+    },
+  ])
+
+  const assistantMessage = page.locator('[data-testid="message-assistant"]').first()
+  await expect(assistantMessage).toContainText('runtime bundle size')
+
+  await page.evaluate(() => {
+    const msg = document.querySelector('[data-testid="message-assistant"]')
+    const walker = document.createTreeWalker(msg, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode()
+    while (node) {
+      const idx = node.textContent.indexOf('runtime bundle size')
+      if (idx >= 0) {
+        const range = document.createRange()
+        range.setStart(node, idx)
+        range.setEnd(node, idx + 'runtime bundle size'.length)
+        const sel = window.getSelection()
+        sel.removeAllRanges()
+        sel.addRange(range)
+        document.dispatchEvent(new Event('selectionchange'))
+        return
+      }
+      node = walker.nextNode()
+    }
+  })
+  await page.locator('[data-testid="quote-affordance"]').click()
+  await page.locator('[data-testid="inline-thread-input"]').first().fill('how much smaller?')
+}

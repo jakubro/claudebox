@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.broadcaster - daemon event delivery to subscribers."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox_daemon.domain.broadcaster import DaemonBroadcaster

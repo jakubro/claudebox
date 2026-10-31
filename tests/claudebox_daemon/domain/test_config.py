@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.config - DaemonConfig persistence and workspace management."""
 
+from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
@@ -91,6 +93,16 @@ class TestDaemonConfigWorkspaces:
         assert ws_b.id.startswith("myapp-")
         assert ws_a.path == path_a.resolve()
         assert ws_b.path == path_b.resolve()
+
+    def test_find_workspace_by_any_spelling_of_its_path(self, tmp_path):
+        config = _make_config(tmp_path)
+        (tmp_path / "team" / "myapp").mkdir(parents=True)
+
+        with patch.object(config, "save"):
+            ws = config.register_workspace(tmp_path / "team" / "myapp")
+
+        assert config.find_workspace(tmp_path / "team" / ".." / "team" / "myapp") is ws
+        assert config.find_workspace(tmp_path / "team") is None
 
 
 # --- Persistence ---

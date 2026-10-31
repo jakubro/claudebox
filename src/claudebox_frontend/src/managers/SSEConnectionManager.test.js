@@ -64,6 +64,26 @@ describe('SSEConnectionManager', () => {
 
   const latestES = () => MockEventSource.instances[MockEventSource.instances.length - 1]
 
+  const connectAndDrop = () => {
+    manager.connect()
+    latestES().simulateOpen()
+    latestES().simulateError()
+  }
+
+  const connectWithExhaustion = options => {
+    const onExhausted = vi.fn()
+    const mgr = new SSEConnectionManager({
+      url: '/api/stream',
+      ...options,
+      onStatusChange,
+      onReconnectExhausted: onExhausted,
+    })
+    mgr.connect()
+    latestES().simulateOpen()
+
+    return { mgr, onExhausted }
+  }
+
   describe('initial state', () => {
     it('starts disconnected with no error', () => {
       expect(manager.status).toBe('disconnected')
@@ -148,9 +168,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('cancels pending reconnect timer', () => {
-      manager.connect()
-      latestES().simulateOpen()
-      latestES().simulateError()
+      connectAndDrop()
 
       const countAfterError = MockEventSource.instances.length
 
@@ -214,9 +232,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('does not reconnect before delay elapses', () => {
-      manager.connect()
-      latestES().simulateOpen()
-      latestES().simulateError()
+      connectAndDrop()
 
       vi.advanceTimersByTime(999)
 
@@ -253,10 +269,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('resets attempt counter on successful connect', () => {
-      manager.connect()
-      latestES().simulateOpen()
-
-      latestES().simulateError()
+      connectAndDrop()
       vi.advanceTimersByTime(1000)
       expect(MockEventSource.instances).toHaveLength(2)
 
@@ -269,9 +282,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('clears error on successful reconnect', () => {
-      manager.connect()
-      latestES().simulateOpen()
-      latestES().simulateError()
+      connectAndDrop()
 
       vi.advanceTimersByTime(1000)
 
@@ -311,9 +322,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('cancels pending auto-reconnect', () => {
-      manager.connect()
-      latestES().simulateOpen()
-      latestES().simulateError()
+      connectAndDrop()
 
       const countAfterError = MockEventSource.instances.length
 
@@ -385,9 +394,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('cancels pending reconnect timer', () => {
-      manager.connect()
-      latestES().simulateOpen()
-      latestES().simulateError()
+      connectAndDrop()
 
       const countAfterError = MockEventSource.instances.length
 
@@ -399,9 +406,7 @@ describe('SSEConnectionManager', () => {
     })
 
     it('suppresses auto-reconnect after error when closed during reconnecting', () => {
-      manager.connect()
-      latestES().simulateOpen()
-      latestES().simulateError()
+      connectAndDrop()
 
       expect(manager.status).toBe('reconnecting')
 
@@ -417,18 +422,11 @@ describe('SSEConnectionManager', () => {
 
   describe('reconnect exhaustion', () => {
     it('stops reconnecting after maxAttempts and transitions to error', () => {
-      const onExhausted = vi.fn()
-      const limited = new SSEConnectionManager({
-        url: '/api/stream',
+      const { mgr: limited, onExhausted } = connectWithExhaustion({
         baseDelay: 1000,
         maxDelay: 10000,
         maxAttempts: 2,
-        onStatusChange,
-        onReconnectExhausted: onExhausted,
       })
-
-      limited.connect()
-      latestES().simulateOpen()
 
       latestES().simulateError()
       vi.advanceTimersByTime(1000)
@@ -451,17 +449,10 @@ describe('SSEConnectionManager', () => {
     })
 
     it('does not fire onReconnectExhausted when maxAttempts is null', () => {
-      const onExhausted = vi.fn()
-      const unlimited = new SSEConnectionManager({
-        url: '/api/stream',
+      const { mgr: unlimited, onExhausted } = connectWithExhaustion({
         baseDelay: 100,
         maxDelay: 200,
-        onStatusChange,
-        onReconnectExhausted: onExhausted,
       })
-
-      unlimited.connect()
-      latestES().simulateOpen()
 
       for (let i = 0; i < 5; i++) {
         latestES().simulateError()
@@ -475,18 +466,11 @@ describe('SSEConnectionManager', () => {
     })
 
     it('resets attempt counter on successful connect with maxAttempts', () => {
-      const onExhausted = vi.fn()
-      const limited = new SSEConnectionManager({
-        url: '/api/stream',
+      const { mgr: limited, onExhausted } = connectWithExhaustion({
         baseDelay: 1000,
         maxDelay: 10000,
         maxAttempts: 2,
-        onStatusChange,
-        onReconnectExhausted: onExhausted,
       })
-
-      limited.connect()
-      latestES().simulateOpen()
 
       latestES().simulateError()
       vi.advanceTimersByTime(1000)

@@ -1,5 +1,7 @@
 """Reverse proxy for forwarding HTTP and SSE requests to containers."""
 
+from __future__ import annotations
+
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 

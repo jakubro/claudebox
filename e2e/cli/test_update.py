@@ -5,6 +5,8 @@ traceback. The concurrent-blocked claim is anchored by tests/claudebox_cli/test_
 the flock mechanism lives in install.sh and isn't exercised at the e2e layer.
 """
 
+from __future__ import annotations
+
 import pytest
 
 

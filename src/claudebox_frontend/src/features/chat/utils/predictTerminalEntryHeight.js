@@ -22,15 +22,18 @@ export function predictTerminalEntryHeight(metrics) {
   const commentLines = metrics.hasComment ? 1 : 0
 
   if (metrics.pending) {
-    // 1 command line + 1 "Running..." line.
-    const predicted = TERMINAL_ENTRY_BASE_HEIGHT_PX + (commentLines + 2) * TERMINAL_LINE_HEIGHT_PX
+    // The command's lines + 1 "Running..." line.
+    const predicted =
+      TERMINAL_ENTRY_BASE_HEIGHT_PX +
+      (commentLines + metrics.commandLines + 1) * TERMINAL_LINE_HEIGHT_PX
 
     return Math.max(TERMINAL_ENTRY_MIN_PREDICTED_HEIGHT_PX, predicted)
   }
 
   const outputLines = hardLineCount(metrics.outputText) + (metrics.isPersisted ? 1 : 0)
   const predicted =
-    TERMINAL_ENTRY_BASE_HEIGHT_PX + (commentLines + 1 + outputLines) * TERMINAL_LINE_HEIGHT_PX
+    TERMINAL_ENTRY_BASE_HEIGHT_PX +
+    (commentLines + metrics.commandLines + outputLines) * TERMINAL_LINE_HEIGHT_PX
 
   return Math.max(TERMINAL_ENTRY_MIN_PREDICTED_HEIGHT_PX, predicted)
 }
@@ -41,9 +44,17 @@ export function predictTerminalEntryHeight(metrics) {
  */
 export function deriveEntryMetrics(entry) {
   const hasComment = !!entry.description
+  const commandLines = String(entry.commandLayout ?? entry.command).split('\n').length
 
   if (!entry.result) {
-    return { hasComment, pending: true, outputText: '', isPersisted: false, isFailed: false }
+    return {
+      hasComment,
+      commandLines,
+      pending: true,
+      outputText: '',
+      isPersisted: false,
+      isFailed: false,
+    }
   }
 
   const extracted = extractToolResult(
@@ -55,6 +66,7 @@ export function deriveEntryMetrics(entry) {
 
   return {
     hasComment,
+    commandLines,
     pending: false,
     outputText,
     isPersisted: !!extracted?.persistedOutput,

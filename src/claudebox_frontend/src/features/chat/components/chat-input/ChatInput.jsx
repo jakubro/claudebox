@@ -10,6 +10,8 @@ import { useSessionData } from '../../../../context/SessionDataContext'
 import { useStash } from '../../../../context/StashContext'
 import useInterruptHandler from '../../../../hooks/useInterruptHandler'
 import useIsMobile from '../../../../hooks/useIsMobile'
+import useSessionOwnership from '../../../../hooks/useSessionOwnership'
+import { clearPreservedInput, readPreservedInput } from '../../utils/preservedInput'
 import AttachmentPreview from './components/AttachmentPreview'
 import CommandAutocomplete from './components/CommandAutocomplete'
 import useAttachments from './hooks/useAttachments'
@@ -20,6 +22,8 @@ import useDrafts from './hooks/useDrafts'
 import useInputHistory from './hooks/useInputHistory'
 import useTextareaResize from './hooks/useTextareaResize'
 
+const LOADING_HINT = 'Wait for the session to load'
+
 /**
  * @param {boolean} props.isConnected - Whether the WebSocket is connected.
  * @param {boolean} props.canInterrupt - Whether interrupt is allowed.
@@ -29,9 +33,10 @@ import useTextareaResize from './hooks/useTextareaResize'
  * @param {object} props.refs.autoScrollEnabled - Ref tracking auto-scroll state.
  * @param {object} props.refs.events - Ref to the events array.
  * @param {object} props.refs.pendingForm - Ref to the active turn's live AskUserQuestion form, if any.
+ * @param {object} [props.refs.autocompleteOpen] - Ref this input keeps true while slash autocomplete shows.
  * @param {boolean} props.hasEvents - Stable: flips false->true on the first SSE event, then holds (no per-token churn).
  * @param {Function} props.send - Shared send callback (from useSendMessage).
- * @param {Function} props.enqueueMessage - Queue a message for later sending.
+ * @param {Function|null} props.enqueueMessage - Queue a message for later sending; null when none.
  * @param {Function} props.deferSend - Defers a message to auto-send once session creation completes.
  * @param {object} props.queueEdit - Queue editing state.
  * @param {object|null} props.queueEdit.item - Queue item being edited (loaded into the textarea).
@@ -41,7 +46,6 @@ import useTextareaResize from './hooks/useTextareaResize'
 function ChatInput({
   isConnected,
   canInterrupt,
-  isResponding,
   overlayMode,
   refs,
   hasEvents,
@@ -58,6 +62,7 @@ function ChatInput({
     events: eventsRef,
     composerHandle,
     pendingForm: pendingFormRef,
+    autocompleteOpen: autocompleteOpenRef,
   } = refs
   const { item: editingQueueItem, clear: clearEditingQueueItem } = queueEdit
 
@@ -81,19 +86,15 @@ function ChatInput({
 
   // Contexts (low/medium frequency - safe to consume directly)
   const { sessionId, commands } = useSessionData()
+  const ownership = useSessionOwnership()
+  const { ownerSessionId } = ownership
   const { stashPush, stashPop, pendingInsert, clearPendingInsert } = useStash()
-  const {
-    interruptStatus,
-    startInterrupt,
-    completeInterrupt,
-    setError,
-    isSubmitting,
-    isAwaitingResponse,
-  } = useInteraction()
+  const { interruptStatus, startInterrupt, completeInterrupt, setError, showHint } =
+    useInteraction()
 
-  // Mobile send button morphs into stop while responding; isResponding is a prop (not context) to
-  // avoid per-token re-renders on the keystroke-hot path.
-  const showStopButton = isMobile && (isResponding || isSubmitting || isAwaitingResponse)
+  // Mobile send button morphs into stop under the same gate as Ctrl+. - never for a session that is
+  // still opening or being created.
+  const showStopButton = isMobile && canInterrupt
   const stopButtonDisabled = !showStopButton || interruptStatus === 'stopping'
   const handleStopButtonInterrupt = useInterruptHandler({
     startInterrupt,
@@ -102,7 +103,11 @@ function ChatInput({
     disabled: stopButtonDisabled,
   })
 
-  const [sending, setSending] = useState(false)
+  // Gates the next key only, never renders, so a ref is current on the very next Enter.
+  const sendingRef = useRef(false)
+  const setSending = useCallback(v => {
+    sendingRef.current = v
+  }, [])
   const [hasContent, setHasContent] = useState(false)
 
   const { resizeTextarea } = useTextareaResize(
@@ -112,7 +117,11 @@ function ChatInput({
     autoScrollEnabledRef,
   )
 
-  const { drafts, saveDrafts, userHasTypedRef } = useDrafts(sessionId, textareaRef, resizeTextarea)
+  const { drafts, saveDrafts, userHasTypedRef } = useDrafts(
+    ownerSessionId,
+    textareaRef,
+    resizeTextarea,
+  )
 
   // draftsRef is InputHistoryManager's source of truth - React `drafts` lags since persistDraftDirect
   // bypasses setValue. Synced on identity change only, never per render (would clobber a fresher write).
@@ -136,6 +145,7 @@ function ChatInput({
     addToHistory,
     navigateUp,
     navigateDown,
+    replaceCurrent,
     resetIndex,
     getNavState,
     updateCurrentItem,
@@ -148,11 +158,18 @@ function ChatInput({
     saveDraftsAndRef,
     textareaRef,
     resizeTextarea,
+    ownership,
   )
 
   const { expandBeforeSubmit, resetCollapse, manager: collapseManager } = useBlockCollapse()
 
   const autocomplete = useAutocomplete(textareaRef, commands)
+
+  useEffect(() => {
+    if (autocompleteOpenRef) {
+      autocompleteOpenRef.current = autocomplete.visible
+    }
+  }, [autocompleteOpenRef, autocomplete.visible])
 
   const {
     attachments,
@@ -163,13 +180,19 @@ function ChatInput({
     handleDragOver,
     handleDragLeave,
     handleDrop,
-  } = useAttachments({ setError, textareaRef })
+  } = useAttachments({ setError, textareaRef, ownerSessionId })
 
-  // Read and validate textarea content without clearing - used by handleSubmit for safe send
-  const peekInput = useCallback(() => {
+  /** Why a composer submit cannot go now: 'loading' (shows the hint), 'sending', or null. */
+  const submitBlock = useCallback(() => {
     if (isSendBlocked) {
-      return null
+      showHint(LOADING_HINT)
+      return 'loading'
     }
+    return sendingRef.current ? 'sending' : null
+  }, [isSendBlocked, showHint])
+
+  // Read textarea content without clearing; null only when the box is empty.
+  const peekInput = useCallback(() => {
     if (textareaRef.current) {
       expandBeforeSubmit(textareaRef.current)
     }
@@ -177,66 +200,114 @@ function ChatInput({
     const hasText = rawPrompt?.trim()
     const hasAttachments = attachments.length > 0
 
-    if (!(hasText || hasAttachments) || sending) {
+    if (!(hasText || hasAttachments)) {
       return null
     }
 
     return { rawPrompt: rawPrompt || '', currentAttachments: [...attachments] }
-  }, [isSendBlocked, sending, attachments, expandBeforeSubmit])
+  }, [attachments, expandBeforeSubmit])
 
-  // Clear textarea and reset input state - called after successful send
   const commitInput = useCallback(
-    rawPrompt => {
+    ({ rawPrompt, currentAttachments }) => {
+      const box = textareaRef.current
+      const kept = box && box.value !== rawPrompt ? box.value : ''
       if (rawPrompt?.trim()) {
-        prepareSubmit(rawPrompt)
+        prepareSubmit(rawPrompt, kept)
+      }
+      setAttachments(prev => prev.filter(a => !currentAttachments.includes(a)))
+      if (kept) {
+        return
       }
 
-      if (textareaRef.current) {
-        textareaRef.current.value = ''
+      if (box) {
+        box.value = ''
         resizeTextarea()
       }
       userHasTypedRef.current = false
       setHasContent(false)
       resetCollapse()
-      setAttachments([])
     },
     [prepareSubmit, resizeTextarea, resetCollapse, userHasTypedRef, setAttachments],
   )
 
   // Extract textarea content, clear input, and return { rawPrompt, currentAttachments }
   const extractInput = useCallback(() => {
-    const input = peekInput()
+    const input = submitBlock() ? null : peekInput()
     if (!input) {
       return null
     }
-    commitInput(input.rawPrompt)
+    commitInput(input)
     return input
-  }, [peekInput, commitInput])
+  }, [submitBlock, peekInput, commitInput])
 
   // Imperative handle for an external submit (inline-replies bar Send): peek + clear, tolerating
   // an empty composer so a replies-only batch still sends.
   const extractOrEmpty = useCallback(() => {
-    const input = peekInput()
+    const input = submitBlock() ? null : peekInput()
     if (input) {
-      commitInput(input.rawPrompt)
+      commitInput(input)
       return input
     }
     return { rawPrompt: '', currentAttachments: [] }
-  }, [peekInput, commitInput])
+  }, [submitBlock, peekInput, commitInput])
 
-  useEffect(() => {
-    if (!composerHandle) {
-      return
-    }
-    composerHandle.current = { extractOrEmpty }
-    return () => {
-      composerHandle.current = null
-    }
-  }, [composerHandle, extractOrEmpty])
+  // Undoes extractOrEmpty - the note-with-answer path calls this when the send fails.
+  const restoreInput = useCallback(
+    ({ rawPrompt, currentAttachments }) => {
+      if (textareaRef.current) {
+        textareaRef.current.value = rawPrompt
+        resizeTextarea()
+      }
+      setAttachments(currentAttachments || [])
+      saveDraftsAndRef({ ...draftsRef.current, current: rawPrompt })
+    },
+    [resizeTextarea, setAttachments, saveDraftsAndRef],
+  )
 
-  const { handleKeyDown, handleSubmit } = useChatKeyboard({
+  // Input handed back by a failed creation: the saved draft the box would otherwise restore, then
+  // the returned text, then anything typed since, a blank line apart.
+  const returnInput = useCallback(
+    ({ rawPrompt, currentAttachments }) => {
+      const box = textareaRef.current?.value ?? ''
+      const draft = draftsRef.current?.current ?? ''
+      const leading = !box || box === draft ? draft : ''
+      const trailing = box === draft ? '' : box
+      const text = [leading, rawPrompt, trailing].filter(Boolean).join('\n\n')
+
+      if (textareaRef.current) {
+        textareaRef.current.value = text
+        resizeTextarea()
+      }
+      setHasContent(Boolean(text.trim()))
+      if (currentAttachments?.length) {
+        setAttachments(prev => [...prev, ...currentAttachments])
+      }
+      saveDraftsAndRef({ ...draftsRef.current, current: text })
+    },
+    [resizeTextarea, setAttachments, saveDraftsAndRef],
+  )
+
+  // Plain focus() keeps the textarea's last selection, so the caret returns where it was.
+  const focus = useCallback(() => {
+    if (!isMobile) {
+      textareaRef.current?.focus({ preventScroll: true })
+    }
+  }, [isMobile])
+
+  const replaceInput = useCallback(
+    text => {
+      replaceCurrent(text)
+      autocomplete.dismiss()
+      setHasContent(Boolean(text.trim()))
+      focus()
+    },
+    [replaceCurrent, autocomplete.dismiss, focus],
+  )
+
+  const { handleKeyDown, handleSubmit, submitOrAnswer } = useChatKeyboard({
     textareaRef,
     peekInput,
+    submitBlock,
     commitInput,
     extractInput,
     send,
@@ -260,6 +331,31 @@ function ChatInput({
     collapseManager,
     isMobile,
   })
+
+  useEffect(() => {
+    if (!composerHandle) {
+      return
+    }
+    composerHandle.current = {
+      extractOrEmpty,
+      restoreInput,
+      returnInput,
+      replaceInput,
+      focus,
+      submit: submitOrAnswer,
+    }
+    return () => {
+      composerHandle.current = null
+    }
+  }, [
+    composerHandle,
+    extractOrEmpty,
+    restoreInput,
+    returnInput,
+    replaceInput,
+    focus,
+    submitOrAnswer,
+  ])
 
   // Composer focus invariant: stays focused while the chat tab is active. Desktop autofocuses on
   // mount (mobile skips it to avoid an OS keyboard popup); never disabled - guards live in `peekInput`.
@@ -334,18 +430,20 @@ function ChatInput({
     }
   }, [])
 
-  // Restore preserved input after container-gone recovery
+  // Restore preserved input after container-gone recovery, only into the session it was typed in
+  const { isOwnerAttached, resolveOwner } = ownership
   useEffect(() => {
-    if (isConnected && textareaRef.current) {
-      const preserved = sessionStorage.getItem('_cb_preserved_input')
-      if (preserved) {
-        sessionStorage.removeItem('_cb_preserved_input')
-        textareaRef.current.value = preserved
-        // Trigger resize by dispatching input event
-        textareaRef.current.dispatchEvent(new Event('input', { bubbles: true }))
-      }
+    if (!(isConnected && isOwnerAttached && textareaRef.current)) {
+      return
     }
-  }, [isConnected])
+    const preserved = readPreservedInput()
+    if (preserved && resolveOwner(preserved.owner) === sessionId) {
+      clearPreservedInput()
+      textareaRef.current.value = preserved.content
+      // Trigger resize by dispatching input event
+      textareaRef.current.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  }, [isConnected, isOwnerAttached, resolveOwner, sessionId])
 
   // Restore focus after a session change or the create-overlay clears - deferred to a second rAF so
   // dockview's post-layout focus settles. Mobile skips this; deps below are reactive triggers only.
@@ -392,10 +490,10 @@ function ChatInput({
     value => {
       // Sync ref first - useInputHistory reads draftsRef on navigation and needs the typed value before Up/Down.
       draftsRef.current = value
-      if (!sessionId) {
+      if (!ownerSessionId) {
         return
       }
-      const key = `${DRAFT_STORAGE_PREFIX}${sessionId}`
+      const key = `${DRAFT_STORAGE_PREFIX}${ownerSessionId}`
       const isEmpty = !value.current && (!value.stack || value.stack.length === 0)
       try {
         if (isEmpty) {
@@ -407,7 +505,7 @@ function ChatInput({
         // ignore quota errors
       }
     },
-    [sessionId],
+    [ownerSessionId],
   )
 
   // Reads drafts.stack via ref so callback identity stays stable across keystrokes, persisting
@@ -455,8 +553,6 @@ function ChatInput({
         />
       )}
       <div className={`chat-input-row${isMobile ? ' mobile' : ''}`}>
-        {/* Decorative compositor-driven border shimmer (pure CSS, GPU-rotated); non-interactive, behind the textarea. */}
-        <div className="textarea-border-overlay" aria-hidden="true" />
         <textarea
           ref={textareaRef}
           data-testid="chat-input"

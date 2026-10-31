@@ -1,5 +1,7 @@
 """Handler for the ``version`` verb - print version and install metadata."""
 
+from __future__ import annotations
+
 import argparse
 
 from claudebox import get_install_info

@@ -3,6 +3,10 @@
 Real-binary surface: three-row render, degraded mode without a daemon, and unregistered-workspace state.
 """
 
+from __future__ import annotations
+
+import json
+
 import pytest
 from pytest_httpserver import HTTPServer
 
@@ -44,6 +48,49 @@ class TestStatusDegraded:
         combined = result.stdout + result.stderr
         assert "CONTAINERS" in combined
         assert "running" in combined and "stopped" in combined
+
+    @pytest.mark.parametrize(
+        ("states", "row"),
+        [
+            ([], "CONTAINERS 0 running, 0 stopped"),
+            (["running"], "CONTAINERS 1 running, 0 stopped"),
+            (["running", "exited"], "CONTAINERS 1 running, 1 stopped"),
+        ],
+    )
+    def test_degraded_counts_what_docker_lists(
+        self,
+        tmp_path,
+        hermetic_home,
+        run_claudebox,
+        states,
+        row,
+    ) -> None:
+        (tmp_path / ".workspace").touch()
+        (hermetic_home / ".claudebox").mkdir()
+        (hermetic_home / ".claudebox" / "settings.toml").write_text('backend = "docker"\n')
+        listing = "".join(
+            json.dumps(
+                {
+                    "ID": f"9c41e0d{i}",
+                    "Labels": f"app=claudebox,claudebox-id=cb-{i}",
+                    "Names": f"claudebox-{i}",
+                    "State": state,
+                },
+            )
+            + "\n"
+            for i, state in enumerate(states)
+        )
+
+        result = run_claudebox(
+            ["status"],
+            cwd=tmp_path,
+            env={"CLAUDEBOX_TEST_DOCKER_PS": listing},
+            timeout=15,
+        )
+
+        combined = result.stdout + result.stderr
+        assert result.returncode == 0, combined
+        assert row in combined
 
     def test_workspace_not_yet_registered(self, run_claudebox) -> None:
         # Hermetic HOME contains no daemon.json, so WORKSPACE row reports "not yet registered".

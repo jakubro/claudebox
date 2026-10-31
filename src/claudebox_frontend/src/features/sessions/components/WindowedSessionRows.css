@@ -1,0 +1,20 @@
+/* Windowed session list - spacer plus absolutely positioned rows. */
+
+/* Holds the scroll height of every row, measured or estimated, so the scrollbar spans the whole list. */
+.sessions-window {
+  position: relative;
+  width: 100%;
+}
+
+/* flow-root contains each row's bottom margin inside its measured height, or rows pack 6px tight. */
+.sessions-window-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flow-root;
+}
+
+.sessions-window-row-static {
+  display: flow-root;
+}

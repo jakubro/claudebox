@@ -27,8 +27,6 @@
   line-height: 1.4;
 }
 
-/* Static focus ring: no animation, so it never competes for the main thread during streaming;
-   the "working" cue is a separate compositor-driven overlay (transform-rotated conic gradient). */
 .chat-input input:focus,
 .chat-input textarea:focus {
   outline: none;
@@ -44,10 +42,9 @@
   cursor: not-allowed;
 }
 
-/* Working state drops the green focus glow so the color-sweep overlay is the sole "working" cue
-   over a solid border, not floating lines; working wins over focus. */
+/* An empty input while working shows the accent border in place of the focus glow. */
 .chat-input.status-working textarea:placeholder-shown {
-  border-color: var(--border);
+  border-color: rgba(139, 92, 246, 0.85);
   box-shadow: none;
 }
 
@@ -68,7 +65,6 @@
 
 /* Chat input row — wraps textarea and optional mobile send button */
 .chat-input-row {
-  position: relative; /* anchors the decorative border overlay */
   display: flex;
   align-items: flex-end;
   width: 100%;
@@ -79,92 +75,8 @@
 }
 
 .chat-input-row textarea {
-  position: relative;
-  z-index: 1; /* below the on-top border overlay (z-index 2) */
   flex: 1;
   min-width: 0;
-}
-
-/* Compositor-accelerated "working" accent: a conic gradient rotated via transform (GPU) stays
-   smooth under main-thread load; masked to a 1px ring so colour sweeps over the border, not replacing it. */
-.textarea-border-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: 4px;
-  padding: 1px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  overflow: hidden;
-  /* Size query container so the gleam's keyframes can use the input's own width/height (cqw/cqh),
-     keeping the transform path GPU-composited and adaptive. */
-  container-type: size;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-}
-
-.textarea-border-overlay::before {
-  content: "";
-  position: absolute;
-  /* Centres the gleam on the top-left corner; keyframes translate it around the perimeter (cqw/cqh).
-     Kept SHORTER than the input height so it touches only one edge - taller lights both rings at once. */
-  top: -19px;
-  left: -65px;
-  width: 130px;
-  height: 38px;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(205, 210, 220, 0.7), rgba(205, 210, 220, 0));
-  will-change: transform;
-  animation: border-travel 6s linear infinite;
-}
-
-/* Working: the travelling gleam picks up colour. */
-.chat-input.status-working .textarea-border-overlay::before {
-  background: radial-gradient(closest-side, rgba(139, 92, 246, 0.85), rgba(139, 92, 246, 0));
-}
-
-/* Reveals the overlay for an empty idle-unfocused input (subtle gleam) or while working (colour sweep);
-   the solid border stays visible underneath. */
-.chat-input:not(.status-working) .chat-input-row:has(textarea:placeholder-shown:not(:focus))
-  .textarea-border-overlay,
-.chat-input.status-working
-  .chat-input-row:has(textarea:placeholder-shown)
-  .textarea-border-overlay {
-  opacity: 1;
-}
-
-/* Moves the gleam clockwise around the border corners; long top/bottom edges get 47% of the timeline
-   each so a wide input still reads as near-uniform speed. cqw/cqh adapt to the input size. */
-@keyframes border-travel {
-  0% {
-    transform: translate(0, 0);
-  }
-  47% {
-    transform: translate(100cqw, 0);
-  }
-  50% {
-    transform: translate(100cqw, 100cqh);
-  }
-  97% {
-    transform: translate(0, 100cqh);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
-}
-
-/* Respect reduced-motion: keep the cue visible but stop the rotation. */
-@media (prefers-reduced-motion: reduce) {
-  .textarea-border-overlay::before {
-    animation: none;
-  }
 }
 
 /* Mobile send button */

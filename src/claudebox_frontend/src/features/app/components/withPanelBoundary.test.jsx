@@ -15,6 +15,10 @@ function Panel() {
   return <p>todos content</p>
 }
 
+function Bomb() {
+  throw new Error('boom')
+}
+
 describe('withPanelBoundary', () => {
   beforeEach(() => {
     mockUseSessionRouting.mockReturnValue({ activeSessionId: 'session-1' })
@@ -33,9 +37,6 @@ describe('withPanelBoundary', () => {
   })
 
   it('shows the boundary fallback labelled with the panel id when it throws', () => {
-    function Bomb() {
-      throw new Error('boom')
-    }
     const Wrapped = withPanelBoundary(Bomb, 'stash')
     render(<Wrapped />)
 

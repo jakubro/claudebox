@@ -119,6 +119,12 @@ describe('formatDurationClock', () => {
 })
 
 describe('formatRelativeTime', () => {
+  it('measures from a given time', () => {
+    expect(formatRelativeTime('2026-01-01T00:00:00Z', Date.parse('2026-01-01T00:05:00Z'))).toBe(
+      '5m ago',
+    )
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -455,10 +461,28 @@ describe('stripMarkdown', () => {
     expect(out).not.toContain('>')
   })
 
-  it('leaves no bracket fragment for nested angle brackets', () => {
-    const out = stripMarkdown('<<a>>text<<b>>')
-    expect(out).not.toContain('<')
-    expect(out).not.toContain('>')
+  it('keeps the brackets typed around a tag', () => {
+    expect(stripMarkdown('<<a>>text<<b>>')).toBe('<>text<>')
+  })
+
+  it('keeps a comparison written with angle brackets', () => {
+    expect(stripMarkdown('if a < b and c > d then')).toBe('if a < b and c > d then')
+  })
+
+  it('removes the tags around a word', () => {
+    expect(stripMarkdown('use <b>bold</b> here')).toBe('use bold here')
+  })
+
+  it('removes a script tag and keeps its text', () => {
+    expect(stripMarkdown('x <script>alert(1)</script> y')).toBe('x alert(1) y')
+  })
+
+  it('strips emphasis and keeps the words', () => {
+    expect(stripMarkdown('**bold** text')).toBe('bold text')
+  })
+
+  it('keeps the bracket typed before a tag', () => {
+    expect(stripMarkdown('<<b>b>bold')).toBe('\\<b>bold')
   })
 })
 
@@ -504,5 +528,28 @@ describe('formatFilePath', () => {
   it('handles single filename without directory', () => {
     expect(formatFilePath('app.tsx', false)).toBe('app.tsx')
     expect(formatFilePath('app.tsx', true)).toBe('app.tsx')
+  })
+})
+
+describe('formatUserMessageForCopy with a note', () => {
+  it('puts a one-click reply note after its choice, a blank line apart', () => {
+    expect(formatUserMessageForCopy('B', '  also rename the hook\n')).toBe(
+      'B\n\nalso rename the hook',
+    )
+  })
+
+  it('keeps a form answer note ahead of the answer', () => {
+    const message = `<response:AskUserQuestion>
+  <question header="Auth" text="Which method?">
+    <answer>OAuth</answer>
+  </question>
+</response:AskUserQuestion>`
+    expect(formatUserMessageForCopy(message, 'please also')).toBe(
+      'please also\n\nWhich method?: OAuth',
+    )
+  })
+
+  it('copies a whitespace-only note as nothing', () => {
+    expect(formatUserMessageForCopy('B', '   ')).toBe('B')
   })
 })

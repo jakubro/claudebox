@@ -8,6 +8,8 @@ routing is best-effort (see its own docstring). Both return empty/raise rather t
 MCP servers are configured (the runtime leaves `ctx.mcp_client` as None in that case).
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from langchain_core.tools import BaseTool, ToolException, tool

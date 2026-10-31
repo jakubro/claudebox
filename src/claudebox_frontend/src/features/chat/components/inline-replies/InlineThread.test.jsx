@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import ColumnScrollController from '../ColumnScrollController'
 import BlockCollapseManager from '../chat-input/BlockCollapseManager'
 import InlineThread from './InlineThread'
 
@@ -23,11 +24,46 @@ vi.mock('../../../../api/sessions', () => ({
   getSessionEvents: vi.fn(),
 }))
 
+// The turn component reads the session's capabilities and command list from SessionDataContext,
+// which this test does not mount.
+vi.mock('../../../../hooks/useCapabilities', () => ({
+  default: () => ({ capabilities: null, runtimeName: null }),
+}))
+vi.mock('../turn/components/user-message-content/SlashCommandToken', () => ({
+  default: ({ cmd }) => <span className="slash-command">{cmd}</span>,
+}))
+vi.mock('../turn/components/tool-block/components/interactive-questions', () => ({
+  default: props => (
+    <button type="button" data-testid="submit-answer" onClick={() => props.onSubmit('React')}>
+      Submit
+    </button>
+  ),
+}))
+
 // The id counter is shared across manager instances (BlockCollapseManager.js); rewind it so
 // each test's ids stay order-independent.
 beforeEach(() => {
   BlockCollapseManager.resetGlobalCounterForTests()
 })
+
+function makeThread(overrides = {}) {
+  return {
+    sessionId: 'side-1',
+    events: [
+      { type: 'user', subtype: 'text', is_human: true, content: 'why this branch?', turn_id: 't1' },
+      {
+        type: 'assistant',
+        subtype: 'text',
+        content: 'because it handles the edge case',
+        turn_id: 't1',
+      },
+    ],
+    pending: [],
+    running: false,
+    error: null,
+    ...overrides,
+  }
+}
 
 function makeReply(overrides = {}) {
   return {
@@ -90,48 +126,99 @@ describe('InlineThread - editing', () => {
   })
 })
 
-describe('InlineThread - Enter submits, Shift+Enter does not', () => {
-  it('Enter calls onSubmitThread with the reply id and current text', async () => {
-    const user = userEvent.setup()
-    const onSubmitThread = vi.fn()
+describe('InlineThread - Enter keys in an unsent box', () => {
+  function renderUnsent(props = {}) {
+    const callbacks = { onSubmitThread: vi.fn(), onSendChat: vi.fn(), onEdit: vi.fn() }
     render(
       <InlineThread
         reply={makeReply({ response: 'why this branch?' })}
         maxHeight={200}
-        onEdit={vi.fn()}
-        onSubmitThread={onSubmitThread}
+        {...callbacks}
+        {...props}
       />,
     )
+    screen.getByTestId('inline-thread-input').focus()
+    return callbacks
+  }
 
-    const input = screen.getByTestId('inline-thread-input')
-    input.focus()
-    await user.keyboard('{Enter}')
+  it('Enter sends the chat and does not ask on its own', async () => {
+    const { onSubmitThread, onSendChat, onEdit } = renderUnsent()
 
-    expect(onSubmitThread).toHaveBeenCalledTimes(1)
-    expect(onSubmitThread).toHaveBeenCalledWith('r1', 'why this branch?')
+    await userEvent.setup().keyboard('{Enter}')
+
+    expect(onSendChat).toHaveBeenCalledTimes(1)
+    expect(onSubmitThread).not.toHaveBeenCalled()
+    expect(onEdit).not.toHaveBeenCalled()
   })
 
-  it('Shift+Enter does not call onSubmitThread', async () => {
-    const user = userEvent.setup()
+  it('Ctrl+Enter asks on its own with the reply id and current text', async () => {
+    const { onSubmitThread, onSendChat } = renderUnsent()
+
+    await userEvent.setup().keyboard('{Control>}{Enter}{/Control}')
+
+    expect(onSubmitThread).toHaveBeenCalledWith('r1', 'why this branch?')
+    expect(onSendChat).not.toHaveBeenCalled()
+  })
+
+  it('Alt+Enter does nothing', async () => {
+    const { onSubmitThread, onSendChat, onEdit } = renderUnsent()
+
+    await userEvent.setup().keyboard('{Alt>}{Enter}{/Alt}')
+
+    expect(onSubmitThread).not.toHaveBeenCalled()
+    expect(onSendChat).not.toHaveBeenCalled()
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('inline-thread-input')).toHaveValue('why this branch?')
+  })
+
+  it('Enter in a box linked to a side thread whose history has not loaded asks, not sends', async () => {
     const onSubmitThread = vi.fn()
+    const onSendChat = vi.fn()
     render(
       <InlineThread
-        reply={makeReply()}
+        reply={makeReply({ response: 'and this one?', threadSessionId: 'side-1' })}
         maxHeight={200}
         onEdit={vi.fn()}
         onSubmitThread={onSubmitThread}
+        onSendChat={onSendChat}
       />,
     )
+    screen.getByTestId('inline-thread-input').focus()
 
-    const input = screen.getByTestId('inline-thread-input')
-    input.focus()
-    await user.keyboard('{Shift>}{Enter}{/Shift}')
+    await userEvent.setup().keyboard('{Enter}')
+
+    expect(onSubmitThread).toHaveBeenCalledWith('r1', 'and this one?')
+    expect(onSendChat).not.toHaveBeenCalled()
+  })
+
+  it('Shift+Enter neither sends nor asks', async () => {
+    const { onSubmitThread, onSendChat } = renderUnsent()
+
+    await userEvent.setup().keyboard('{Shift>}{Enter}{/Shift}')
 
     expect(onSubmitThread).not.toHaveBeenCalled()
+    expect(onSendChat).not.toHaveBeenCalled()
   })
 })
 
 describe('InlineThread - delete and close controls', () => {
+  function renderFocusedReply(replyOverrides = {}, onEdit = vi.fn()) {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(
+      <InlineThread
+        reply={makeReply(replyOverrides)}
+        maxHeight={200}
+        onClose={onClose}
+        onEdit={onEdit}
+      />,
+    )
+    const input = screen.getByTestId('inline-thread-input')
+    input.focus()
+
+    return { user, onClose, input }
+  }
+
   it('unsent with onRemove shows a delete button that calls onRemove(id)', async () => {
     const user = userEvent.setup()
     const onRemove = vi.fn()
@@ -156,6 +243,42 @@ describe('InlineThread - delete and close controls', () => {
     await user.click(screen.getByTestId('inline-thread-close'))
 
     expect(onClose).toHaveBeenCalledWith('r1')
+  })
+
+  it('Tab with the caret at the end of the reply closes the box', async () => {
+    const { user, onClose, input } = renderFocusedReply({ response: 'why' })
+    input.setSelectionRange(3, 3)
+
+    await user.keyboard('{Tab}')
+
+    expect(onClose).toHaveBeenCalledWith('r1')
+  })
+
+  it('Tab in an empty reply closes the box', async () => {
+    const { user, onClose } = renderFocusedReply()
+
+    await user.keyboard('{Tab}')
+
+    expect(onClose).toHaveBeenCalledWith('r1')
+  })
+
+  it('Tab before the end of the reply indents instead of closing', async () => {
+    const onEdit = vi.fn()
+    const { user, onClose, input } = renderFocusedReply({ response: 'why' }, onEdit)
+    input.setSelectionRange(0, 0)
+
+    await user.keyboard('{Tab}')
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onEdit).toHaveBeenCalledWith('r1', '  why')
+  })
+
+  it('Shift+Tab at the end of the reply does not close the box', async () => {
+    const { user, onClose } = renderFocusedReply()
+
+    await user.keyboard('{Shift>}{Tab}{/Shift}')
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('unpinned shows no close button', () => {
@@ -273,7 +396,28 @@ describe('InlineThread - shared text-editing keys', () => {
 })
 
 describe('InlineThread - collapsed block expands before send', () => {
-  it('sends the full expanded text, never the placeholder, then clears the field', () => {
+  it('Enter puts the expanded text in the reply before the chat is sent', () => {
+    let atSend = null
+    render(
+      <ControlledInlineThread
+        initialResponse="<div>hello</div>"
+        onSendChat={() => {
+          atSend = screen.getByTestId('inline-thread-input').value
+        }}
+      />,
+    )
+    const input = screen.getByTestId('inline-thread-input')
+    input.setSelectionRange(7, 7)
+
+    fireEvent.keyDown(input, { key: "'", ctrlKey: true })
+    expect(input.value).toMatch(/^<div\.\.\.\d+>$/)
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(atSend).toBe('<div>hello</div>')
+  })
+
+  it('Ctrl+Enter asks with the full expanded text, never the placeholder, then clears the field', () => {
     const onSubmitThread = vi.fn()
     render(
       <ControlledInlineThread initialResponse="<div>hello</div>" onSubmitThread={onSubmitThread} />,
@@ -284,10 +428,10 @@ describe('InlineThread - collapsed block expands before send', () => {
     fireEvent.keyDown(input, { key: "'", ctrlKey: true })
     expect(input.value).toBe('<div...1>')
 
-    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
 
     expect(onSubmitThread).toHaveBeenCalledWith('r1', '<div>hello</div>')
-    // The field clears after send - the sent text now lives in thread.history, not the composer.
+    // The field clears after send - the sent text now lives in the thread, not the composer.
     expect(input.value).toBe('')
   })
 })
@@ -326,12 +470,7 @@ describe('InlineThread - Ctrl+. interrupt', () => {
 })
 
 describe('InlineThread - thread mode (asked in its own float)', () => {
-  const thread = {
-    sessionId: 'side-1',
-    history: [{ question: 'why this branch?', answer: 'because it handles the edge case' }],
-    running: false,
-    error: null,
-  }
+  const thread = makeThread()
 
   it('renders the question/answer history instead of the composer or read-only div', () => {
     render(<InlineThread reply={makeReply()} thread={thread} maxHeight={200} onEdit={vi.fn()} />)
@@ -355,7 +494,7 @@ describe('InlineThread - thread mode (asked in its own float)', () => {
     expect(screen.queryByTestId('inline-thread-delete')).not.toBeInTheDocument()
   })
 
-  it('a running thread shows a working indicator, a stop button, and a field still open for a follow-up', () => {
+  it('a running thread shows the turn progress row, a stop button, and a field still open for a follow-up', () => {
     render(
       <InlineThread
         reply={makeReply()}
@@ -366,9 +505,30 @@ describe('InlineThread - thread mode (asked in its own float)', () => {
       />,
     )
 
-    expect(screen.getByTestId('inline-thread-working')).toBeInTheDocument()
+    expect(screen.getByTestId('turn-progress-working')).toBeInTheDocument()
     expect(screen.getByTestId('inline-thread-stop')).toBeInTheDocument()
     expect(screen.getByTestId('inline-thread-input')).toBeEnabled()
+  })
+
+  it('the field focused when the first question goes out keeps the cursor as the thread opens', () => {
+    const { rerender } = render(
+      <InlineThread reply={makeReply()} maxHeight={200} onEdit={vi.fn()} />,
+    )
+    const field = screen.getByTestId('inline-thread-input')
+    field.focus()
+
+    rerender(
+      <InlineThread
+        reply={makeReply()}
+        thread={makeThread({ events: [], pending: [{ content: 'q', at: 0 }], running: true })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+        onInterruptThread={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('inline-thread-input')).toBe(field)
+    expect(document.activeElement).toBe(field)
   })
 
   it('a finished thread shows no stop button and an enabled follow-up field', () => {
@@ -395,6 +555,30 @@ describe('InlineThread - thread mode (asked in its own float)', () => {
     await user.keyboard('{Enter}')
 
     expect(onSubmitThread).toHaveBeenCalledWith('r1', 'and this one?')
+  })
+
+  it.each([
+    ['Ctrl+Enter', '{Control>}{Enter}{/Control}'],
+    ['Alt+Enter', '{Alt>}{Enter}{/Alt}'],
+  ])('%s in the follow-up field asks the follow-up, never sending the chat', async (_n, keys) => {
+    const onSubmitThread = vi.fn()
+    const onSendChat = vi.fn()
+    render(
+      <InlineThread
+        reply={makeReply({ response: 'and this one?' })}
+        thread={thread}
+        maxHeight={200}
+        onEdit={vi.fn()}
+        onSubmitThread={onSubmitThread}
+        onSendChat={onSendChat}
+      />,
+    )
+
+    screen.getByTestId('inline-thread-input').focus()
+    await userEvent.setup().keyboard(keys)
+
+    expect(onSubmitThread).toHaveBeenCalledWith('r1', 'and this one?')
+    expect(onSendChat).not.toHaveBeenCalled()
   })
 
   it('clicking stop calls onInterruptThread with the reply id', async () => {
@@ -465,13 +649,204 @@ describe('InlineThread - thread mode (asked in its own float)', () => {
   })
 })
 
-describe('InlineThread - promoted (frozen after promotion)', () => {
-  const thread = {
-    sessionId: 'side-1',
-    history: [{ question: 'why this branch?', answer: 'because it handles the edge case' }],
-    running: false,
-    error: null,
+describe('InlineThread - exchanges render as the conversation renders a turn', () => {
+  const question = {
+    type: 'user',
+    subtype: 'text',
+    is_human: true,
+    content: 'show me',
+    turn_id: 't1',
   }
+
+  it('renders markdown in the answer - a table and a code block, not their syntax', () => {
+    const answer = '| a | b |\n|---|---|\n| 1 | 2 |\n\n```python\ndelay *= 2\n```'
+    const { container } = render(
+      <InlineThread
+        reply={makeReply()}
+        thread={makeThread({
+          events: [
+            question,
+            { type: 'assistant', subtype: 'text', content: answer, turn_id: 't1' },
+          ],
+        })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+      />,
+    )
+
+    expect(container.querySelector('table')).not.toBeNull()
+    expect(container.querySelector('pre')).not.toBeNull()
+    expect(container.textContent).not.toContain('|---|')
+    expect(container.textContent).not.toContain('```')
+  })
+
+  it('renders the tool calls and thinking the thread did, not only its text', () => {
+    const { container } = render(
+      <InlineThread
+        reply={makeReply()}
+        thread={makeThread({
+          events: [
+            question,
+            { type: 'assistant', subtype: 'thinking', content: 'weighing it', turn_id: 't1' },
+            {
+              type: 'assistant',
+              subtype: 'tool_use',
+              content: 'Bash',
+              tool_use_id: 'tool_1',
+              tool_name: 'Bash',
+              tool_input: { command: 'ls' },
+              turn_id: 't1',
+            },
+            {
+              type: 'user',
+              subtype: 'tool_result',
+              content: 'README.md',
+              tool_use_id: 'tool_1',
+              turn_id: 't1',
+            },
+            { type: 'assistant', subtype: 'text', content: 'one file', turn_id: 't1' },
+          ],
+        })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('tool-block')).toBeInTheDocument()
+    expect(container.querySelector('.thinking-block')).not.toBeNull()
+    expect(screen.getByText('one file')).toBeInTheDocument()
+  })
+
+  it('draws the first question as the reply alone beneath the quote its header shows', () => {
+    render(
+      <InlineThread
+        reply={makeReply({ quote: 'context window' })}
+        thread={makeThread({
+          events: [
+            { ...question, content: '> context window\n\nwhy this branch?' },
+            { type: 'assistant', subtype: 'text', content: 'it handles the edge', turn_id: 't1' },
+          ],
+        })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+      />,
+    )
+
+    expect(screen.getAllByTestId('message-user')[0]).toHaveTextContent(/^why this branch\?$/)
+    expect(document.querySelector('.inline-thread-quote-text')).toHaveTextContent('context window')
+  })
+
+  it('shows a question the moment it is asked, before the thread echoes it back', () => {
+    render(
+      <InlineThread
+        reply={makeReply()}
+        thread={makeThread({ pending: [{ content: 'and a follow-up?', at: 2 }], running: true })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('why this branch?')).toBeInTheDocument()
+    expect(screen.getByText('and a follow-up?')).toBeInTheDocument()
+  })
+
+  it('answers a question the thread asks inside the thread', async () => {
+    const user = userEvent.setup()
+    const onSubmitThread = vi.fn()
+    render(
+      <InlineThread
+        reply={makeReply()}
+        thread={makeThread({
+          events: [
+            question,
+            {
+              type: 'assistant',
+              subtype: 'tool_use',
+              content: 'AskUserQuestion',
+              tool_use_id: 'tool_q',
+              tool_name: 'AskUserQuestion',
+              tool_input: {
+                questions: [
+                  {
+                    question: 'Which framework?',
+                    header: 'Framework',
+                    options: [{ label: 'React' }, { label: 'Vue' }],
+                  },
+                ],
+              },
+              turn_id: 't1',
+            },
+            {
+              type: 'assistant',
+              subtype: 'tool_result',
+              content: 'Answer questions?',
+              tool_use_id: 'tool_q',
+              turn_id: 't1',
+            },
+          ],
+        })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+        onSubmitThread={onSubmitThread}
+      />,
+    )
+
+    await user.click(screen.getByTestId('submit-answer'))
+
+    expect(onSubmitThread).toHaveBeenCalledWith('r1', 'React')
+  })
+})
+
+describe('InlineThread - following its answer', () => {
+  it('a box asked on its own hands its history to a scroll owner', () => {
+    const attach = vi.spyOn(ColumnScrollController.prototype, 'attachInputListeners')
+    render(
+      <InlineThread reply={makeReply()} thread={makeThread()} maxHeight={200} onEdit={vi.fn()} />,
+    )
+
+    expect(attach).toHaveBeenCalledWith(screen.getByTestId('inline-thread-history'))
+  })
+
+  it('a promoted box, where nothing arrives, has no scroll owner', () => {
+    const attach = vi.spyOn(ColumnScrollController.prototype, 'attachInputListeners')
+    render(
+      <InlineThread
+        reply={makeReply({ promotedSessionId: 'promoted-1' })}
+        thread={makeThread()}
+        maxHeight={200}
+        onEdit={vi.fn()}
+      />,
+    )
+
+    expect(attach).not.toHaveBeenCalled()
+  })
+})
+
+describe('InlineThread - chosen body height', () => {
+  it('sizes the composer field when the reply is unsent', () => {
+    render(<InlineThread reply={makeReply()} maxHeight={200} onEdit={vi.fn()} bodyHeight={150} />)
+
+    expect(screen.getByTestId('inline-thread-input').style.height).toBe('150px')
+  })
+
+  it("sizes a thread's exchange, leaving its follow-up field to autoresize", () => {
+    render(
+      <InlineThread
+        reply={makeReply()}
+        thread={makeThread()}
+        maxHeight={200}
+        onEdit={vi.fn()}
+        bodyHeight={150}
+      />,
+    )
+
+    expect(screen.getByTestId('inline-thread-history').style.height).toBe('150px')
+    expect(screen.getByTestId('inline-thread-input').style.height).not.toBe('150px')
+  })
+})
+
+describe('InlineThread - promoted (frozen after promotion)', () => {
+  const thread = makeThread()
 
   it('renders the history read-only, with no reply field and no promote control', () => {
     render(
@@ -548,12 +923,7 @@ describe('InlineThread - promoted (frozen after promotion)', () => {
 })
 
 describe('InlineThread - promote to rail control', () => {
-  const thread = {
-    sessionId: 'side-1',
-    history: [{ question: 'why this branch?', answer: 'because it handles the edge case' }],
-    running: false,
-    error: null,
-  }
+  const thread = makeThread()
 
   it('shows the rail-promote control alongside the new-tab one, once a conversation exists', () => {
     const { rerender } = render(
@@ -644,5 +1014,40 @@ describe('InlineThread - rail-promoted (read-only card)', () => {
     await user.click(await screen.findByTestId('promoted-thread-focus'))
 
     expect(onFocusRailPromoted).toHaveBeenCalledWith('side-1')
+  })
+})
+
+describe('InlineThread - focus on request', () => {
+  it('focuses the field with the caret at the end when focusSignal rises', () => {
+    const { rerender } = render(
+      <InlineThread reply={makeReply({ response: 'draft' })} maxHeight={200} onEdit={vi.fn()} />,
+    )
+    const input = screen.getByTestId('inline-thread-input')
+    expect(document.activeElement).not.toBe(input)
+
+    rerender(
+      <InlineThread
+        reply={makeReply({ response: 'draft' })}
+        maxHeight={200}
+        onEdit={vi.fn()}
+        focusSignal={1}
+      />,
+    )
+
+    expect(document.activeElement).toBe(input)
+    expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5])
+  })
+
+  it('a read-only box ignores the request', () => {
+    render(
+      <InlineThread
+        reply={makeReply({ response: 'final' })}
+        sent
+        maxHeight={200}
+        focusSignal={1}
+      />,
+    )
+
+    expect(document.activeElement).toBe(document.body)
   })
 })

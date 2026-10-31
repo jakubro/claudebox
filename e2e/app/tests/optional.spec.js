@@ -1,43 +1,34 @@
 /** Optional E2E tests for advanced features. */
 
 import { expect, test } from '@playwright/test'
-import { openHelpPanel, openSessionsPanel, waitForAppReady } from '../helpers.js'
 import {
-  DEFAULT_CONTAINER_ID,
-  DEFAULT_SESSION_ID,
-  DEFAULT_SESSION_URL,
-  mockAPI,
-} from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+  openHelpPanel,
+  openLiveSessionWithAPI,
+  openSession,
+  openSessionsPanel,
+  openSessionWithAPI,
+} from '../helpers.js'
+import { DEFAULT_CONTAINER_ID, DEFAULT_SESSION_ID, mockAPI } from '../mocks/api.js'
 
 test.describe('Optional Features', () => {
   test.describe('Markdown Rendering', () => {
     // SPEC: chat:markdown
     test('renders markdown code blocks', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/with-code-block.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/with-code-block.jsonl')
 
       await expect(page.locator('pre code').first()).toBeVisible()
     })
 
     // SPEC: chat:markdown
     test('renders inline code', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/with-inline-code.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/with-inline-code.jsonl')
 
       await expect(page.locator('code').first()).toBeVisible()
     })
 
     // SPEC: chat:markdown
     test('renders markdown lists and links', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/markdown-features.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/markdown-features.jsonl')
 
       await expect(page.locator('ul').first()).toBeVisible()
       await expect(page.locator('li').first()).toBeVisible()
@@ -50,10 +41,7 @@ test.describe('Optional Features', () => {
     // SPEC: chat:markdown
     test('renders LaTeX math via KaTeX', async ({ page }) => {
       // Verifies KaTeX renders $-delimited math into DOM markup rather than raw text.
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const ts = Date.now()
       await controller.sendEvents([
@@ -83,15 +71,12 @@ test.describe('Optional Features', () => {
   test.describe('Help Panel', () => {
     // SPEC: panel-help:shortcuts-table
     test('help panel shows keyboard shortcuts', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       await openHelpPanel(page)
 
       const helpPanel = page.locator('[data-testid="panel-help"]')
-      await expect(helpPanel.getByText('Send message')).toBeVisible()
+      await expect(helpPanel.getByText('Send message', { exact: true })).toBeVisible()
 
       // SPEC says "tables" (plural) - verify more than one table exists
       const tables = helpPanel.locator('table')
@@ -110,9 +95,7 @@ test.describe('Optional Features', () => {
     // SPEC: footer:context
     test('context bar shows percentage', async ({ page }) => {
       await mockAPI(page, { statusFixture: 'status/with-context.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const contextBar = page.locator('[data-testid="footer-context"]')
       await expect(contextBar).toBeVisible()
@@ -134,15 +117,7 @@ test.describe('Optional Features', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
-
-      const renameBtn = page.locator('.sessions-edit-btn').first()
-      await expect(renameBtn).toBeVisible()
-      await renameBtn.click()
+      await startPanelRename(page)
 
       await page.keyboard.type('New Name')
       await page.keyboard.press('Enter')
@@ -153,14 +128,7 @@ test.describe('Optional Features', () => {
     // SPEC: panel-session:rename
     test('rename cancel button discards changes', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
-
-      const renameBtn = page.locator('.sessions-edit-btn').first()
-      await renameBtn.click()
+      await startPanelRename(page)
 
       await page.keyboard.type('Should not save')
 
@@ -174,14 +142,7 @@ test.describe('Optional Features', () => {
     // SPEC: panel-session:rename
     test('clicking away from rename input cancels', async ({ page }) => {
       await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openSessionsPanel(page)
-
-      const renameBtn = page.locator('.sessions-edit-btn').first()
-      await renameBtn.click()
+      await startPanelRename(page)
 
       await page.keyboard.type('Should not save')
 
@@ -204,9 +165,7 @@ test.describe('Optional Features', () => {
           },
         },
       })
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openSessionsPanel(page)
 
@@ -218,3 +177,11 @@ test.describe('Optional Features', () => {
     })
   })
 })
+
+async function startPanelRename(page) {
+  await openSession(page)
+  await openSessionsPanel(page)
+  const renameBtn = page.locator('.sessions-edit-btn').first()
+  await expect(renameBtn).toBeVisible()
+  await renameBtn.click()
+}

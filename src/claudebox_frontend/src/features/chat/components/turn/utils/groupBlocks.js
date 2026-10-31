@@ -2,10 +2,11 @@
 
 import { isLookupsGroupingEnabled } from '../../../../../config/features'
 import { BlockType, normalizeToolName, ToolName } from '../../../../../config/schema'
-import { getToolConfig } from '../../../../../config/toolRegistry'
+import { isReadOnlyCall } from '../../../../../config/toolRegistry'
 import {
   blockRoutesToRightSlot,
-  isHiddenToolSearch,
+  isToolBlockHidden,
+  NO_TOOL_MARKED,
   TurnRoutingMode,
 } from '../../../../../utils/eventProcessing'
 
@@ -26,19 +27,63 @@ const TASK_MUTATION_TOOLS = new Set([ToolName.TASK_CREATE, ToolName.TASK_UPDATE]
  * Split a turn's blocks into the transcript's segments and the right slot's, under `mode`. Only a
  * top-level `BlockType.TOOL` block can leave, and `gatherLookups` runs on the transcript side.
  */
-export function groupBlocks(blocks, mode = TurnRoutingMode.OFF) {
-  const transcript = buildSegments(blocks, tu => !(tu && blockRoutesToRightSlot(mode, tu)))
-  const panel = buildSegments(blocks, tu => !!(tu && blockRoutesToRightSlot(mode, tu)))
+export function groupBlocks(
+  blocks,
+  mode = TurnRoutingMode.OFF,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
+  const isHidden = block =>
+    block.type === BlockType.TOOL &&
+    isToolBlockHidden(mode, block.toolUse, block.toolResult, bookmarkedParts, isMarked)
+  const transcript = buildSegments(
+    blocks,
+    isHidden,
+    tu => !(tu && blockRoutesToRightSlot(mode, tu)),
+  )
+  const panel = buildSegments(blocks, isHidden, tu => !!(tu && blockRoutesToRightSlot(mode, tu)))
   return { transcript: gatherLookups(transcript), panel }
 }
 
+/**
+ * Move the added text of each block `mode` hides onto the nearest earlier block it keeps, or into
+ * the turn's own entries when none is kept; returns new arrays, leaving the inputs untouched.
+ */
+export function moveHiddenInjected(
+  blocks,
+  injected,
+  mode,
+  bookmarkedParts = null,
+  isMarked = NO_TOOL_MARKED,
+) {
+  const kept = []
+  let turnInjected = injected
+  for (const block of blocks) {
+    const hidden =
+      block.type === BlockType.TOOL &&
+      isToolBlockHidden(mode, block.toolUse, block.toolResult, bookmarkedParts, isMarked)
+    if (!hidden) {
+      kept.push(block)
+    } else if (block.injected?.length && kept.length > 0) {
+      const anchor = kept[kept.length - 1]
+      kept[kept.length - 1] = {
+        ...anchor,
+        injected: [...(anchor.injected ?? []), ...block.injected],
+      }
+    } else if (block.injected?.length) {
+      turnInjected = [...turnInjected, ...block.injected]
+    }
+  }
+  return { blocks: kept, injected: turnInjected }
+}
+
 /** One pass over `blocks` keeping what `belongsToThisSide` admits, with run detection. */
-function buildSegments(blocks, belongsToThisSide) {
+function buildSegments(blocks, isHidden, belongsToThisSide) {
   const segments = []
   let run = null
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
-    if (block.type === BlockType.TOOL && isHiddenToolSearch(block.toolUse, block.toolResult)) {
+    if (isHidden(block)) {
       continue
     }
     const tu = block.type === BlockType.TOOL ? block.toolUse : null
@@ -109,7 +154,7 @@ function gatherLookups(segments) {
     const isReadOnlySingle =
       segment.kind === 'single' &&
       segment.block.type === BlockType.TOOL &&
-      getToolConfig(segment.block.toolUse?.content).category === 'read-only'
+      isReadOnlyCall(segment.block.toolUse, segment.block.toolResult)
     if (isReadOnlySingle) {
       lookups.push(segment)
     } else {

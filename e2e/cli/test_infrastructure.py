@@ -4,6 +4,8 @@ Three checks: wrapper rejects unsafe invocation, fake daemon reachable under loo
 Behavior tests for individual CLI verbs live in the sibling test_*.py files.
 """
 
+from __future__ import annotations
+
 import subprocess
 from pathlib import Path
 

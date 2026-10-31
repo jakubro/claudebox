@@ -21,6 +21,34 @@
   border-radius: 6px;
 }
 
+/* Corner resize grip; touch-action stops a touch drag from scrolling the page instead. */
+.inline-float-resize {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 10px;
+  height: 10px;
+  cursor: nwse-resize;
+  touch-action: none;
+  user-select: none;
+  background: linear-gradient(
+    135deg,
+    transparent 45%,
+    var(--text-muted) 45%,
+    var(--text-muted) 55%,
+    transparent 55%,
+    transparent 70%,
+    var(--text-muted) 70%,
+    var(--text-muted) 80%,
+    transparent 80%
+  );
+  opacity: 0.6;
+}
+
+.inline-float-resize:hover {
+  opacity: 1;
+}
+
 .inline-threads-moved {
   color: var(--text-muted);
   font-size: 11px;
@@ -87,6 +115,7 @@
 }
 
 .inline-thread-response {
+  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 13px;
@@ -107,42 +136,6 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.inline-thread-question {
-  font-size: 12px;
-  font-style: italic;
-  color: var(--text-muted);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.inline-thread-answer {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-/* Trailing dot after the answer's last-arrived text - the float's stand-in for a spinner. */
-.inline-thread-working {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: inline-thread-working-pulse 1s ease-in-out infinite;
-}
-
-@keyframes inline-thread-working-pulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 .inline-thread-error {

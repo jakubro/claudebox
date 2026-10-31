@@ -1,7 +1,7 @@
 /** E2E tests for workspace discovery, switcher, and URL routing. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
+import { openSession, openSessionsPanel, startHeldRefresh, waitForAppReady } from '../helpers.js'
 import {
   DEFAULT_CONTAINER_ID,
   DEFAULT_SESSION_ID,
@@ -23,6 +23,27 @@ const TWO_WORKSPACES = [
   { id: DEFAULT_WORKSPACE_ID, path: '/home/user/project', name: 'project' },
   { id: 'project-b', path: '/home/user/project-b', name: 'project-b' },
 ]
+
+async function openSwitcher(page) {
+  await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
+  await waitForAppReady(page)
+  await page.locator('[data-testid="workspace-switcher"]').click()
+  const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
+  await expect(dropdown).toBeVisible()
+
+  return dropdown
+}
+
+async function openRegisterModal(page) {
+  await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
+  await waitForAppReady(page)
+  await page.locator('[data-testid="workspace-switcher"]').click()
+  await page.locator('[data-testid="workspace-switcher-register"]').click()
+  const modal = page.locator('[data-testid="register-workspace-modal"]')
+  await expect(modal).toBeVisible()
+
+  return modal
+}
 
 test.describe('Workspace Discovery', () => {
   // SPEC: workspace:discovery
@@ -178,12 +199,7 @@ test.describe('Workspace Switcher', () => {
 
   // SPEC: workspace:switcher-list
   test('dropdown lists all workspaces with paths and checkmark on active', async ({ page }) => {
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="workspace-switcher"]').click()
-    const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
-    await expect(dropdown).toBeVisible()
+    const dropdown = await openSwitcher(page)
 
     await expect(dropdown).toContainText(DEFAULT_WORKSPACE_ID)
     await expect(dropdown).toContainText('project-b')
@@ -196,12 +212,7 @@ test.describe('Workspace Switcher', () => {
 
   // SPEC: workspace:switcher-new-tab
   test('workspace rows have external link button for new browser tab', async ({ page }) => {
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="workspace-switcher"]').click()
-    const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
-    await expect(dropdown).toBeVisible()
+    const dropdown = await openSwitcher(page)
 
     const newTabBtns = dropdown.locator('.workspace-switcher-newtab')
     await expect(newTabBtns).toHaveCount(2)
@@ -210,12 +221,7 @@ test.describe('Workspace Switcher', () => {
 
   // SPEC: workspace:switcher-middle-click
   test('workspace option has onAuxClick handler for middle-click new tab', async ({ page }) => {
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
-    await waitForAppReady(page)
-
-    await page.locator('[data-testid="workspace-switcher"]').click()
-    const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
-    await expect(dropdown).toBeVisible()
+    const dropdown = await openSwitcher(page)
 
     // Verify the handler is wired by checking middle-click opens a new window
     const option = dropdown.locator('.workspace-switcher-option').first()
@@ -298,13 +304,7 @@ test.describe('Workspace Switcher', () => {
         await route.continue()
       }
     })
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="workspace-switcher"]').click()
-    await page.locator('[data-testid="workspace-switcher-register"]').click()
-
-    const modal = page.locator('[data-testid="register-workspace-modal"]')
-    await expect(modal).toBeVisible()
+    await openRegisterModal(page)
 
     await page.locator('[data-testid="register-workspace-input"]').fill('/home/user/new-ws')
     await page.locator('[data-testid="register-workspace-confirm"]').click()
@@ -326,19 +326,65 @@ test.describe('Workspace Switcher', () => {
         await route.continue()
       }
     })
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/${DEFAULT_SESSION_ID}`)
-    await waitForAppReady(page)
-    await page.locator('[data-testid="workspace-switcher"]').click()
-    await page.locator('[data-testid="workspace-switcher-register"]').click()
-
-    const modal = page.locator('[data-testid="register-workspace-modal"]')
-    await expect(modal).toBeVisible()
+    await openRegisterModal(page)
     await page.locator('[data-testid="register-workspace-input"]').fill('/home/user/project-a')
     await page.locator('[data-testid="register-workspace-confirm"]').click()
 
     const notice = page.locator('[data-testid="register-workspace-notice"]')
     await expect(notice).toBeVisible()
     await expect(notice).toContainText('Already registered as project-a')
+  })
+
+  // SPEC: workspace:register-invalid-path
+  test('a refused path keeps the modal open and says why', async ({ page }) => {
+    await page.route('**/api/workspaces', async route => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 400,
+          json: {
+            error: 'workspace_path_missing',
+            path: '/home/user/no-such-dir',
+            message: 'No directory at /home/user/no-such-dir',
+          },
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    const modal = await openRegisterModal(page)
+    await page.locator('[data-testid="register-workspace-input"]').fill('/home/user/no-such-dir')
+    await page.locator('[data-testid="register-workspace-confirm"]').click()
+
+    await expect(page.locator('[data-testid="register-workspace-error"]')).toHaveText(
+      'No directory at /home/user/no-such-dir',
+    )
+    await expect(modal).toBeVisible()
+  })
+})
+
+test.describe('Workspace Color', () => {
+  // SPEC: workspace:color-survives-refresh
+  test('a color picked while the sessions list refreshes stays as picked', async ({ page }) => {
+    const uiState = { global: {}, sessions: {} }
+    await mockAPI(page, { uiState })
+    await openSession(page)
+    await openSessionsPanel(page)
+    await page.locator('[data-testid="workspace-switcher"]').click()
+    const swatch = page
+      .locator('[data-testid="workspace-color-palette"] .workspace-color-swatch')
+      .nth(2)
+    const picked = await swatch.evaluate(el => getComputedStyle(el).backgroundColor)
+    const listing = loadFixture('sessions/default.json')
+    listing.sessions[0].name = 'Renamed by the refresh'
+
+    const landed = await startHeldRefresh(page, uiState, 1000, listing)
+    await swatch.click()
+    await landed()
+    await expect(page.getByText('Renamed by the refresh').first()).toBeVisible()
+
+    const dot = page.locator('.workspace-switcher-dot')
+    expect(await dot.count()).toBe(1)
+    expect(await dot.evaluate(el => el.style.background)).toBe(picked)
   })
 })
 

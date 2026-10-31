@@ -1,19 +1,14 @@
 /** E2E test for LangGraph workspace ask_user_question (HITL via interrupt). */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSessionWithAPI } from '../helpers.js'
 
 test.describe('LangGraph AskUserQuestion', () => {
   // SPEC: langgraph:ask-user-question
   test('renders the interactive Q&A form for a LangGraph ask_user_question tool_use', async ({
     page,
   }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/langgraph-tool-ask-user-question.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/langgraph-tool-ask-user-question.jsonl')
 
     // ask_user_question normalises to Claude's AskUserQuestion via the TOOL_NAME_ALIASES map.
     const toolBlock = page

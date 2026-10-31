@@ -11,6 +11,7 @@ Modules (extended as later subscopes ship):
 - task_mgmt                                    -- agentic task list
 - question                                     -- AskUserQuestion via interrupt
 - sibling                                      -- spawn/ask/read a sibling session
+- needs_user                                   -- mark the session as needing the user
 - worktree                                     -- git worktree manager
 - scheduling                                   -- daemon scheduler client
 - skill                                        -- workspace skill catalog
@@ -18,12 +19,15 @@ Modules (extended as later subscopes ship):
 - mcp                                          -- langchain-mcp-adapters bridge
 """
 
+from __future__ import annotations
+
 from langchain_core.tools import BaseTool
 
 from ._context import ToolCatalog, ToolContext
 from .filesystem import make_filesystem_tools
 from .mcp import make_mcp_tools
 from .meta import make_meta_tools
+from .needs_user import make_needs_user_tools
 from .notebook import make_notebook_tools
 from .question import make_question_tools
 from .search import make_search_tools
@@ -51,6 +55,7 @@ def make_tools(ctx: ToolContext) -> list[BaseTool]:
         *make_task_mgmt_tools(ctx),
         *make_question_tools(ctx),
         *make_sibling_tools(ctx),
+        *make_needs_user_tools(ctx),
         *make_skill_tools(ctx),
         *make_meta_tools(ctx),
         *make_mcp_tools(ctx),

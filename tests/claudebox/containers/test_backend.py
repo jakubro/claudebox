@@ -1,5 +1,7 @@
 """Tests for claudebox.containers.backend - subprocess abstraction."""
 
+from __future__ import annotations
+
 import json
 import subprocess
 from pathlib import Path
@@ -48,7 +50,7 @@ class TestExec:
         backend._logger.warning.assert_called_once()
         _, kwargs = backend._logger.warning.call_args
         assert kwargs["argv"] == ["podman", "ps"]
-        assert kwargs["timeout"] == 5.0
+        assert kwargs["timeout"] == pytest.approx(5.0)
         assert kwargs["duration_s"] >= 0
 
 
@@ -65,7 +67,14 @@ class TestBuildImage:
         mock_run.assert_called_once_with(
             ["podman", "build", "--file", "Containerfile", "."],
             check=True,
+            pass_fds=(),
         )
+
+    @patch("subprocess.run")
+    def test_build_image_hands_the_given_fds_to_the_build(self, mock_run):
+        ContainerBackend("podman").build_image("--file", "Containerfile", ".", pass_fds=(7,))
+
+        assert mock_run.call_args.kwargs["pass_fds"] == (7,)
 
 
 # --- run_container ---
@@ -198,6 +207,19 @@ class TestGetHostPort:
         assert backend.get_host_port("abc", 8080) == 32768
 
     @patch("subprocess.run")
+    def test_get_host_port_loopback_bound(self, mock_run):
+        data = [
+            {
+                "NetworkSettings": {
+                    "Ports": {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "32768"}]},
+                },
+            },
+        ]
+        mock_run.return_value = MagicMock(stdout=json.dumps(data).encode())
+        backend = ContainerBackend("podman")
+        assert backend.get_host_port("abc", 8080) == 32768
+
+    @patch("subprocess.run")
     def test_get_host_port_missing_raises(self, mock_run):
         data = [{"NetworkSettings": {"Ports": {}}}]
         mock_run.return_value = MagicMock(stdout=json.dumps(data).encode())
@@ -227,6 +249,79 @@ class TestListContainers:
         result = backend.list_containers()
         assert len(result) == 1
         assert result[0]["Id"] == "abc"
+
+    @patch("subprocess.run")
+    def test_docker_listing_nothing_is_an_empty_list(self, mock_run):
+        mock_run.return_value = MagicMock(stdout=b"")
+
+        assert ContainerBackend("docker").list_containers() == []
+
+    @patch("subprocess.run")
+    def test_docker_one_object_per_line_reads_as_podman_shape(self, mock_run):
+        mock_run.return_value = MagicMock(
+            stdout=(
+                b'{"ID":"3e9d07c4a5b1","Labels":"app=claudebox,claudebox-run=run-4b2e",'
+                b'"Names":"cb-one","State":"running"}\n'
+                b'{"ID":"c0f81b6e2d47","Labels":"app=claudebox,kind=shell",'
+                b'"Names":"cb-two","State":"exited"}\n'
+            ),
+        )
+
+        listed = ContainerBackend("docker").list_containers()
+
+        assert listed == [
+            {
+                "ID": "3e9d07c4a5b1",
+                "Id": "3e9d07c4a5b1",
+                "Labels": {"app": "claudebox", "claudebox-run": "run-4b2e"},
+                "Names": "cb-one",
+                "State": "running",
+            },
+            {
+                "ID": "c0f81b6e2d47",
+                "Id": "c0f81b6e2d47",
+                "Labels": {"app": "claudebox", "kind": "shell"},
+                "Names": "cb-two",
+                "State": "exited",
+            },
+        ]
+
+    @patch("subprocess.run")
+    def test_docker_single_container_is_still_a_list(self, mock_run):
+        mock_run.return_value = MagicMock(
+            stdout=b'{"ID":"c1","Labels":"app=claudebox","State":"running"}\n',
+        )
+
+        listed = ContainerBackend("docker").list_containers()
+
+        assert [(c["Id"], c["Labels"]) for c in listed] == [("c1", {"app": "claudebox"})]
+
+    @patch("subprocess.run")
+    def test_docker_labels_split_on_the_first_equals_and_an_empty_string_is_none(self, mock_run):
+        mock_run.return_value = MagicMock(
+            stdout=(
+                b'{"ID":"d1","Labels":"app=claudebox,note=x=y,empty=","State":"running"}\n'
+                b'{"ID":"d2","Labels":"","State":"created"}\n'
+            ),
+        )
+
+        listed = ContainerBackend("docker").list_containers()
+
+        assert [c["Labels"] for c in listed] == [
+            {"app": "claudebox", "note": "x=y", "empty": ""},
+            {},
+        ]
+
+    @patch("subprocess.run")
+    def test_docker_emulated_by_podman_prints_the_array_unchanged(self, mock_run):
+        mock_run.return_value = MagicMock(
+            stdout=b'[\n  {\n    "Id": "e1",\n    "Labels": {"app": "claudebox"},\n'
+            b'    "State": "running"\n  }\n]\n',
+        )
+
+        listed = ContainerBackend("docker").list_containers()
+
+        assert listed == [{"Id": "e1", "Labels": {"app": "claudebox"}, "State": "running"}]
 
     @patch("subprocess.run")
     def test_list_merges_default_labels(self, mock_run):
@@ -329,14 +424,18 @@ class TestIdentifyContainerFromPid:
         monkeypatch.setattr(
             Path,
             "read_text",
-            lambda self: "0::/machine.slice/libpod-abc123.scope\n",
+            lambda self, **_kwargs: "0::/machine.slice/libpod-abc123.scope\n",
         )
         backend = ContainerBackend("podman")
 
         assert backend.identify_container_from_pid(1234, ["xyz789", "abc123"]) == "abc123"
 
     def test_returns_none_when_no_candidate_matches(self, monkeypatch):
-        monkeypatch.setattr(Path, "read_text", lambda self: "0::/user.slice/session-1.scope\n")
+        monkeypatch.setattr(
+            Path,
+            "read_text",
+            lambda self, **_kwargs: "0::/user.slice/session-1.scope\n",
+        )
         backend = ContainerBackend("podman")
 
         assert backend.identify_container_from_pid(1234, ["abc123"]) is None
@@ -344,7 +443,7 @@ class TestIdentifyContainerFromPid:
     def test_returns_none_when_the_proc_entry_is_unreadable(self, monkeypatch):
         """The pid has already exited, or /proc is otherwise inaccessible - never a guess."""
 
-        def _raise(self):
+        def _raise(self, **_kwargs):
             raise OSError("no such process")
 
         monkeypatch.setattr(Path, "read_text", _raise)

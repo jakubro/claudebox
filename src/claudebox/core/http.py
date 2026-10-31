@@ -1,5 +1,7 @@
 """HTTP utilities - uvicorn server launcher and SSE streaming from broadcasters."""
 
+from __future__ import annotations
+
 import asyncio
 import os
 from collections.abc import AsyncIterator
@@ -104,7 +106,7 @@ class ProxyClient:
     def _request_headers(cls, request: Request) -> dict[str, str]:
         """Strip the Host header from an incoming request."""
 
-        return {key: val for key, val in request.headers.items() if key.lower() not in ("host",)}
+        return {key: val for key, val in request.headers.items() if key.lower() != "host"}
 
     @classmethod
     def _response_headers(cls, response: httpx.Response) -> dict[str, str]:

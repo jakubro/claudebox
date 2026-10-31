@@ -1,5 +1,7 @@
 """Ticket domain exceptions - typed errors with status codes for HTTP mapping."""
 
+from __future__ import annotations
+
 
 class TicketError(Exception):
     """Base exception for ticket domain errors.
@@ -21,6 +23,13 @@ class BoardParseError(TicketError):
 
     status_code = 422
     error_key = "board_parse_error"
+
+
+class TicketMoveRefused(TicketError):
+    """A ticket move would leave the workspace, overwrite a file, or start outside its folder."""
+
+    status_code = 409
+    error_key = "ticket_move_refused"
 
 
 class TicketNotFound(TicketError):

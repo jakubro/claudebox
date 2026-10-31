@@ -4,6 +4,8 @@ Shapes only; concrete values and the filesystem-walked skill loader live on the 
 `ClaudeRuntime.AVAILABLE_MODELS`, `ClaudeRuntime.get_skills`).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Literal
 

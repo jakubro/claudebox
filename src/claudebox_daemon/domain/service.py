@@ -1,13 +1,17 @@
 """Daemon service - top-level object owning all daemon dependencies."""
 
+from __future__ import annotations
+
 import asyncio
+from contextlib import suppress
 from pathlib import Path
 
-from claudebox import get_logger
+from claudebox import Workspace, get_logger, library_commit
+from claudebox.constants import CONFIG_DIR_NAME, SESSIONS_DIR_NAME, WORKSPACE_MARKER
 from .broadcaster import DaemonBroadcaster
 from .config import DaemonConfig
 from .containers import ContainerProxyClient, ContainerStatus
-from .errors import WorkspaceNotRegistered
+from .errors import ValidationError, WorkspaceNotRegistered
 from .executors import DaemonExecutors
 from .health import HealthMonitor
 from .mutation_observer import SessionMutationObserver
@@ -24,9 +28,11 @@ class DaemonService:
         self._logger = get_logger(__name__)
 
         self._daemon_config = DaemonConfig.load()
+        self._commit = library_commit()
         self._health_monitor = HealthMonitor(self)
         self._mutation_observer = SessionMutationObserver(self)
         self._workspaces: dict[str, WorkspaceService] = {}
+        self._loads: dict[str, asyncio.Future[WorkspaceService]] = {}
         self._executors = DaemonExecutors.create()
 
         self.proxy = ContainerProxyClient()
@@ -43,6 +49,7 @@ class DaemonService:
         self._logger.debug("Starting daemon service...")
 
         await self._sync_state()
+        await self._health_monitor.probe_once()
         await self._health_monitor.start()
         await self._mutation_observer.start()
         await self.watchdog.start()
@@ -72,14 +79,19 @@ class DaemonService:
     # ----------------------------------------------------------------------------------------------
 
     async def get_workspace(self, workspace_id: str) -> WorkspaceService:
-        """Return loaded workspace, lazy-loading from config if needed."""
+        """Return loaded workspace, lazy-loading from config if needed - a cached entry whose
+        directory has returned since being snapshotted unavailable is rebuilt here too.
+        """
 
-        try:
-            return self._workspaces[workspace_id]
-        except KeyError:
+        svc = self._workspaces.get(workspace_id)
+
+        if svc is not None and workspace_id not in self._loads and _is_current(svc):
+            return svc
+
+        if svc is None:
             self._reload_config()
 
-            return await self._load_workspace(workspace_id)
+        return await self._load_workspace(self._daemon_config.get_workspace(workspace_id))
 
     async def list_workspaces(self, sync: bool = True) -> list[WorkspaceService]:
         """Sync with config and return all loaded workspace services."""
@@ -89,30 +101,33 @@ class DaemonService:
 
         return list(self._workspaces.values())
 
-    async def register_workspace(self, path: str | Path) -> RegisteredWorkspace:
-        """Register a workspace; idempotent - re-register returns the existing entry.
+    async def register_workspace(self, path: str | Path) -> tuple[RegisteredWorkspace, bool]:
+        """Mark a directory as a workspace and register it; also say whether it already was.
 
         Newly-registered workspaces are eagerly loaded into the in-memory map so they
         are reachable via `get_workspace` without a subsequent sync.
         """
 
         loop = asyncio.get_running_loop()
-        workspace = await loop.run_in_executor(
+        workspace, already_registered, marked = await loop.run_in_executor(
             self._executors.state,
-            self._daemon_config.register_workspace,
+            self._register,
             path,
         )
 
-        if workspace.id not in self._workspaces:
-            try:
-                await self._load_workspace(workspace.id)
-            except Exception:
-                self._logger.exception(
-                    "Failed to load newly registered workspace",
-                    workspace={"id": workspace.id, "path": workspace.path},
-                )
+        # A service built before the marker existed reads its sessions from another directory.
+        if marked:
+            await self._evict(workspace.id)
 
-        return workspace
+        try:
+            await self._load_workspace(workspace)
+        except Exception:
+            self._logger.exception(
+                "Failed to load newly registered workspace",
+                workspace={"id": workspace.id, "path": workspace.path},
+            )
+
+        return workspace, already_registered
 
     async def deregister_workspace(self, workspace_id: str) -> None:
         """Remove a workspace from config and evict it from the map; raises WorkspaceNotRegistered if absent."""
@@ -127,16 +142,7 @@ class DaemonService:
         if not removed:
             raise WorkspaceNotRegistered(workspace_id=workspace_id)
 
-        svc = self._workspaces.pop(workspace_id, None)
-
-        if svc is not None:
-            try:
-                await svc.stop()
-            except Exception:
-                self._logger.exception(
-                    "Failed to stop workspace service during deregister",
-                    workspace={"id": workspace_id},
-                )
+        await self._evict(workspace_id)
 
     # Aggregation
     # ----------------------------------------------------------------------------------------------
@@ -152,8 +158,8 @@ class DaemonService:
             running = 0
             stopped = 0
 
-            if ws.workspace.available and ws.container_service is not None:
-                for container in ws.container_service.list_all():
+            if ws.available and ws._container_service is not None:
+                for container in ws._container_service.list_all():
                     if container.status == ContainerStatus.RUNNING:
                         running += 1
                     else:
@@ -184,6 +190,7 @@ class DaemonService:
         return {
             "mode": "daemon",
             "status": "degraded" if degraded else "ok",
+            "commit": self._commit,
             "degraded": degraded,
             "signals": signals,
             "serving": {
@@ -218,33 +225,150 @@ class DaemonService:
     # ----------------------------------------------------------------------------------------------
 
     async def _sync_state(self) -> None:
-        """Reload config and load any newly registered workspaces."""
+        """Reload config; load newly registered workspaces and rebuild ones whose directory returned."""
 
         self._reload_config()
 
         for workspace in self._daemon_config.workspaces:
-            if workspace.id not in self._workspaces:
-                try:
-                    await self._load_workspace(workspace.id)
-                except Exception:
-                    self._logger.exception(
-                        "Failed to load workspace",
-                        workspace={"id": workspace.id, "path": workspace.path},
-                    )
+            try:
+                await self._load_workspace(workspace)
+            except Exception:
+                self._logger.exception(
+                    "Failed to load workspace",
+                    workspace={"id": workspace.id, "path": workspace.path},
+                )
 
     def _reload_config(self) -> None:
         """Re-read daemon config from disk."""
 
         self._daemon_config = DaemonConfig.load()
 
-    async def _load_workspace(self, workspace_id: str) -> WorkspaceService:
-        """Load a registered workspace into the daemon runtime; raises WorkspaceNotRegistered if unregistered."""
+    def _register(self, path: str | Path) -> tuple[RegisteredWorkspace, bool, bool]:
+        directory, marked = _marked_directory(path)
 
-        workspace = self._daemon_config.get_workspace(workspace_id)
+        if (existing := self._daemon_config.find_workspace(directory)) is not None:
+            return existing, True, marked
+
+        return self._daemon_config.register_workspace(directory), False, marked
+
+    async def _evict(self, workspace_id: str) -> None:
+        # A load finishing after the pop would store the evicted service; its error is its callers'.
+        if (load := self._loads.get(workspace_id)) is not None:
+            with suppress(Exception):
+                await asyncio.shield(load)
+
+        svc = self._workspaces.pop(workspace_id, None)
+
+        if svc is not None:
+            try:
+                await svc.stop()
+            except Exception:
+                self._logger.exception(
+                    "Failed to stop evicted workspace service",
+                    workspace={"id": workspace_id},
+                )
+
+    def _repair_marker(self, workspace: RegisteredWorkspace) -> None:
+        if not workspace.available:
+            return
+
+        own_sessions = workspace.path / CONFIG_DIR_NAME / SESSIONS_DIR_NAME
+
+        try:
+            # Config uses the registered path, Workspace the nearest marker; a marker aligns them.
+            if Workspace(workspace.path).sessions_root.resolve() != own_sessions.resolve():
+                (workspace.path / WORKSPACE_MARKER).touch()
+        except OSError as exc:
+            self._logger.warning(
+                "Failed to write workspace marker",
+                workspace={"id": workspace.id, "path": workspace.path},
+                error=str(exc),
+            )
+
+    async def _load_workspace(self, workspace: RegisteredWorkspace) -> WorkspaceService:
+        """Return the workspace's current service, joining the load in flight or starting one.
+
+        A load is shielded so it always completes: a half-started one would leak its watcher and socket.
+        """
+
+        if (load := self._loads.get(workspace.id)) is not None:
+            return await asyncio.shield(load)
+
+        cached = self._workspaces.get(workspace.id)
+
+        if cached is not None and _is_current(cached):
+            return cached
+
+        load = asyncio.ensure_future(self._build_workspace(workspace))
+        self._loads[workspace.id] = load
+        load.add_done_callback(lambda done: self._finish_load(workspace.id, done))
+
+        return await asyncio.shield(load)
+
+    async def _build_workspace(self, workspace: RegisteredWorkspace) -> WorkspaceService:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(self._executors.state, self._repair_marker, workspace)
 
         svc = WorkspaceService(workspace, self.events, self.proxy, self._executors)
         await svc.start()
 
-        self._workspaces[workspace_id] = svc
+        self._workspaces[workspace.id] = svc
 
         return svc
+
+    def _finish_load(self, workspace_id: str, load: asyncio.Future) -> None:
+        if self._loads.get(workspace_id) is load:
+            del self._loads[workspace_id]
+
+        # Marks a failure retrieved when every caller has left, so it is not reported as unhandled.
+        if not load.cancelled():
+            load.exception()
+
+
+def _is_current(svc: WorkspaceService) -> bool:
+    # Stale: snapshotted unavailable while its directory has since come back.
+    return svc.available or not svc.workspace.available
+
+
+def _marked_directory(path: str | Path) -> tuple[Path, bool]:
+    # An unknown ~user raises rather than expanding; left as written, the path is not absolute.
+    try:
+        directory = Path(path).expanduser()
+    except RuntimeError:
+        directory = Path(path)
+
+    if not directory.is_absolute():
+        raise ValidationError(
+            "workspace_path_relative",
+            path=str(path),
+            message=f"Not an absolute path: {path}",
+        )
+
+    try:
+        if not directory.exists():
+            raise ValidationError(
+                "workspace_path_missing",
+                path=str(directory),
+                message=f"No directory at {directory}",
+            )
+        elif not directory.is_dir():
+            raise ValidationError(
+                "workspace_path_not_a_directory",
+                path=str(directory),
+                message=f"Not a directory: {directory}",
+            )
+
+        directory = directory.resolve()
+        marker = directory / WORKSPACE_MARKER
+        marked = not marker.exists()
+
+        if marked:
+            marker.touch()
+    except OSError as exc:
+        raise ValidationError(
+            "workspace_marker_unwritable",
+            path=str(directory),
+            message=f"Cannot create the {WORKSPACE_MARKER} marker in {directory}: {exc.strerror or exc}",
+        ) from exc
+
+    return directory, marked

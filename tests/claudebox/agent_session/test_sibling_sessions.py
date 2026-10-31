@@ -1,5 +1,7 @@
 """SiblingSessionClient tests - spawn/ask/read against a fake daemon socket and sibling endpoint."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 from datetime import UTC, datetime

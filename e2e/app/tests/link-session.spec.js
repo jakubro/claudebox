@@ -68,6 +68,21 @@ test.describe('New Session From a Link', () => {
     expect(requests[0]).toEqual(['/greet first', '/greet second'])
   })
 
+  // SPEC: url:link-allowlist-multiline
+  test('a link carrying a multi-line message sends it whole and submits it', async ({ page }) => {
+    const requests = []
+    await mockNewSessionAllowlist(page, { onRequest: m => requests.push(m) })
+
+    await page.goto(
+      `/#/workspaces/${DEFAULT_WORKSPACE_ID}?send=${encodeURIComponent('/greet ada\nand a second line')}`,
+    )
+    await waitForAppReady(page)
+
+    await expect.poll(() => requests.length).toBeGreaterThan(0)
+    expect(requests[0]).toEqual(['/greet ada\nand a second line'])
+    await expect(page.locator('[data-testid="chat-input"]')).toHaveValue('')
+  })
+
   // SPEC: url:link-allowlist
   // SPEC: url:link-blocked-to-input
   test('a link carrying a disallowed message creates the session but submits nothing', async ({
@@ -111,6 +126,7 @@ test.describe('New Session From a Link', () => {
     expect(getCallCount()).toBe(1)
   })
 
+  // SPEC: url:link-unregistered-workspace
   test('a link naming an unregistered workspace creates no session', async ({ page }) => {
     const getCallCount = await mockNewSessionAllowlist(page)
 

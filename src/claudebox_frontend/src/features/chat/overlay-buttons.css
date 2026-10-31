@@ -5,7 +5,8 @@
 .tool-expand-btn,
 .tool-download-btn,
 .terminal-copy-btn,
-.terminal-jump-btn {
+.terminal-jump-btn,
+.terminal-bookmark-btn {
   background: var(--bg-secondary);
   z-index: 1;
 }
@@ -15,6 +16,7 @@
 .tool-expand-btn:hover,
 .tool-download-btn:hover,
 .terminal-copy-btn:hover,
-.terminal-jump-btn:hover {
+.terminal-jump-btn:hover,
+.terminal-bookmark-btn:hover {
   background: var(--bg-tertiary);
 }

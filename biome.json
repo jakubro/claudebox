@@ -9,15 +9,45 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "useExhaustiveDependencies": "warn",
         "noUnusedImports": "warn",
-        "noUnusedVariables": "warn"
+        "noUnusedVariables": "warn",
+        "noUndeclaredVariables": "error"
       },
       "style": {
         "noNonNullAssertion": "off",
-        "useBlockStatements": "error"
+        "useBlockStatements": "error",
+        "noRestrictedGlobals": {
+          "level": "error",
+          "options": {
+            "deniedGlobals": {
+              "after": "Import it from the test framework that provides it.",
+              "afterAll": "Import it from the test framework that provides it.",
+              "afterEach": "Import it from the test framework that provides it.",
+              "before": "Import it from the test framework that provides it.",
+              "beforeAll": "Import it from the test framework that provides it.",
+              "beforeEach": "Import it from the test framework that provides it.",
+              "context": "Import it from the test framework that provides it.",
+              "describe": "Import it from the test framework that provides it.",
+              "expect": "Import it from the test framework that provides it.",
+              "it": "Import it from the test framework that provides it.",
+              "run": "Import it from the test framework that provides it.",
+              "setup": "Import it from the test framework that provides it.",
+              "specify": "Import it from the test framework that provides it.",
+              "suite": "Import it from the test framework that provides it.",
+              "suiteSetup": "Import it from the test framework that provides it.",
+              "suiteTeardown": "Import it from the test framework that provides it.",
+              "teardown": "Import it from the test framework that provides it.",
+              "test": "Import it from the test framework that provides it.",
+              "xcontext": "Import it from the test framework that provides it.",
+              "xdescribe": "Import it from the test framework that provides it.",
+              "xit": "Import it from the test framework that provides it.",
+              "xspecify": "Import it from the test framework that provides it."
+            }
+          }
+        }
       },
       "suspicious": {
         "noExplicitAny": "off",

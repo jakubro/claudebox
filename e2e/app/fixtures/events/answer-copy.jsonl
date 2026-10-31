@@ -1,0 +1,6 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Why does the parser drop the last field?","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Let me check the parser first.","ts":"2025-01-18T12:00:00Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Read","ts":"2025-01-18T12:00:30Z","tool_use_id":"tool_001","tool_name":"Read","tool_input":{"file_path":"/home/user/project/parser.py"},"id":"evt_003","primary":true,"is_human":false}
+{"type":"user","subtype":"tool_result","content":"def parse(line):\n    return line.split(',')[:-1]","ts":"2025-01-18T12:00:31Z","tool_use_id":"tool_001","id":"evt_004","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"Final answer with **bold**.","ts":"2025-01-18T12:03:00Z","id":"evt_005","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","duration_ms":180000,"ts":"2025-01-18T12:03:00Z","id":"evt_006","primary":false,"is_human":false}

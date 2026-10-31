@@ -1,9 +1,13 @@
 """Tests for claudebox.agent_session.orchestration.persistence - event log I/O."""
 
+from __future__ import annotations
+
 import pytest
 
 from claudebox.agent_session.orchestration.models import PublishedEvent
 from claudebox.agent_session.orchestration.persistence import EventLog
+from claudebox.constants import SESSION_EVENTS_FILE
+from claudebox.core import serialization
 from claudebox.workspace import Workspace
 from ._helpers import make_published_event
 
@@ -76,3 +80,46 @@ class TestEventLog:
         await log.close()
         await log.close()
         assert log._file is None
+
+
+class TestReopenAfterATornTail:
+    """A log a killed writer left mid-record is repaired on open, so the next record survives."""
+
+    @staticmethod
+    def _log_over(tmp_workspace, monkeypatch, content: bytes) -> EventLog:
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        ws = Workspace(start_dir=tmp_workspace)
+        (ws.ensure_session("test-session").path / SESSION_EVENTS_FILE).write_bytes(content)
+
+        return EventLog("test-session", ws)
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("tail", "expected_ids"),
+        [
+            (b'{"id": "e2", "content": "hal', ["e1", "e3"]),
+            (b"COMPLETE", ["e1", "e2", "e3"]),
+        ],
+        ids=["torn-record", "newline-lost"],
+    )
+    async def test_the_first_new_record_lands_on_its_own_line(
+        self,
+        tmp_workspace,
+        monkeypatch,
+        tail,
+        expected_ids,
+    ):
+        first = serialization.dumps(_make_event("e1", "first")).encode() + b"\n"
+
+        if tail == b"COMPLETE":
+            tail = serialization.dumps(_make_event("e2", "second")).encode()
+
+        log = self._log_over(tmp_workspace, monkeypatch, first + tail)
+
+        try:
+            await log.open()
+            await log.append(_make_event("e3", "after the restart"))
+        finally:
+            await log.close()
+
+        assert [event.id for event in log.read_all()] == expected_ids

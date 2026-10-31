@@ -1,9 +1,20 @@
 /** E2E tests for Tasks panel. */
 
 import { expect, test } from '@playwright/test'
-import { openTasksPanel, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE } from '../mocks/sse.js'
+import {
+  openLiveSession,
+  openLiveSessionWithAPI,
+  openResumingSession,
+  openSession,
+  openTasksPanel,
+} from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
+
+async function openAllTasks(page) {
+  await openSession(page, 'events/tool-task-background-nested.jsonl')
+  await openTasksPanel(page)
+  await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+}
 
 test.describe('Tasks Panel', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,9 +23,7 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: shortcut:alt4
   test('Alt+4 toggles tasks panel', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await expect(page.locator('[data-testid="panel-tasks"]')).toBeVisible()
 
@@ -27,9 +36,7 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: panel-task:panel
   test('shows empty state when no tasks', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await openTasksPanel(page)
 
@@ -38,9 +45,7 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: panel-task:description
   test('shows running task with description and duration', async ({ page }) => {
-    const controller = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const controller = await openLiveSession(page)
 
     // Send background task events (no completion yet = running)
     await controller.sendEvents([
@@ -103,14 +108,8 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: panel-task:description
   test('shows completed task', async ({ page }) => {
-    await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openTasksPanel(page)
-
     // Switch to "All" filter to see completed tasks
-    await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+    await openAllTasks(page)
 
     const taskEntry = page.locator('[data-testid="task-entry"]')
     await expect(taskEntry).toBeVisible()
@@ -119,13 +118,7 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: panel-task:click-tab
   test('clicking task scrolls to tool block in chat', async ({ page }) => {
-    await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    await openTasksPanel(page)
-
-    await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+    await openAllTasks(page)
 
     const taskEntry = page.locator('[data-testid="task-entry"]').first()
     await expect(taskEntry).toBeVisible()
@@ -138,9 +131,7 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: panel-task:click-opens-collapsed-turn
   test('clicking a task in a collapsed turn opens the turn and reveals it', async ({ page }) => {
-    await mockSSE(page, 'events/task-in-collapsed-turn.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/task-in-collapsed-turn.jsonl')
 
     await openTasksPanel(page)
     await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
@@ -156,9 +147,7 @@ test.describe('Tasks Panel', () => {
   test('clicking a task whose turn has scrolled out of view brings it into view', async ({
     page,
   }) => {
-    await mockSSE(page, 'events/task-in-collapsed-turn.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/task-in-collapsed-turn.jsonl')
 
     // Scroll to bottom: covers a windowed-out turn with no DOM element, not just a collapsed one.
     await page.locator('[data-testid="chat-messages"]').evaluate(el => {
@@ -179,9 +168,7 @@ test.describe('Tasks Panel', () => {
     page,
   }) => {
     await mockAPI(page, { sessionUiStateDefaults: { rightSlotView: 'work' } })
-    const controller = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const controller = await openLiveSession(page)
 
     // 15 turns of Bash calls window the work column; the Task sits early so its row starts
     // unmounted, matching the "windowed out" case the fix must also cover.
@@ -243,9 +230,7 @@ test.describe('Tasks Panel', () => {
 
   // SPEC: panel-task:status-indicator
   test('running task has running status class', async ({ page }) => {
-    const controller = await createSSEController(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const controller = await openLiveSession(page)
 
     await controller.sendEvents([
       {
@@ -297,9 +282,7 @@ test.describe('Tasks Panel', () => {
   test.describe('Panel Details', () => {
     // SPEC: layout:panel-order-right
     test('Tasks icon is between Stash and Usage in the right icon strip', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const stashIcon = page.locator('[data-testid="icon-stash"]')
       const tasksIcon = page.locator('[data-testid="icon-tasks"]')
@@ -320,9 +303,7 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: layout:icon-tooltip
     test('Tasks icon button uses SquareKanban icon', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const tasksIcon = page.locator('[data-testid="icon-tasks"]')
       await expect(tasksIcon).toBeVisible()
@@ -335,9 +316,7 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: panel-task:sort-chronological
     test('tasks are sorted chronologically (oldest first)', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-multiple.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-task-multiple.jsonl')
 
       await openTasksPanel(page)
 
@@ -355,14 +334,8 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: panel-task:description
     test('task entry displays description from Task invocation', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openTasksPanel(page)
-
       // Switch to "All" filter to see completed task
-      await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+      await openAllTasks(page)
 
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
@@ -375,9 +348,7 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: panel-task:duration
     test('running task shows live-ticking duration', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSession(page)
 
       // Send a running task (no completion notification)
       await controller.sendEvents([
@@ -437,14 +408,8 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: panel-task:duration
     test('completed task shows final duration', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openTasksPanel(page)
-
       // Switch to "All" filter to see completed task
-      await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+      await openAllTasks(page)
 
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
@@ -462,9 +427,7 @@ test.describe('Tasks Panel', () => {
   test.describe('Filter Tabs', () => {
     // SPEC: panel-task:filter-tabs
     test('Active filter shows only running tasks', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-task-background-nested.jsonl')
 
       await openTasksPanel(page)
 
@@ -474,13 +437,7 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: panel-task:filter-tabs
     test('All filter shows completed tasks', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openTasksPanel(page)
-
-      await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+      await openAllTasks(page)
 
       await expect(page.locator('[data-testid="task-entry"]')).toBeVisible()
     })
@@ -490,9 +447,7 @@ test.describe('Tasks Panel', () => {
     // SPEC: panel-task:staleness
     // SPEC: panel-task:staleness-fresh
     test('running task has colored left border', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-background-async.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-task-background-async.jsonl')
 
       await openTasksPanel(page)
 
@@ -514,14 +469,8 @@ test.describe('Tasks Panel', () => {
 
     // SPEC: panel-task:staleness-running-only
     test('completed task does not have staleness border color', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await openTasksPanel(page)
-
       // Switch to "All" filter to see completed task
-      await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+      await openAllTasks(page)
 
       const taskEntry = page.locator('[data-testid="task-entry"]')
       await expect(taskEntry).toBeVisible()
@@ -534,9 +483,7 @@ test.describe('Tasks Panel', () => {
   test.describe('Empty and Resume States', () => {
     // SPEC: panel-task:empty
     test('shows "No tasks" when no background tasks exist', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await openTasksPanel(page)
       await expect(page.getByText('No tasks')).toBeVisible()
@@ -546,11 +493,7 @@ test.describe('Tasks Panel', () => {
     test('shows "Resuming..." during session replay', async ({ page }) => {
       await mockAPI(page)
       // Use resuming fixture to trigger isReplaying state
-      await mockSSE(page, 'events/resuming.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-
-      // Wait for footer (app ready indicator that doesn't depend on chat input)
-      await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+      await openResumingSession(page)
 
       await openTasksPanel(page)
 
@@ -562,9 +505,7 @@ test.describe('Tasks Panel', () => {
     // SPEC: panel-task:filter-tabs
     // SPEC: panel-task:badge
     test('filter tabs show badge counts matching task counts', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-multiple.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-task-multiple.jsonl')
 
       await openTasksPanel(page)
 
@@ -585,9 +526,7 @@ test.describe('Tasks Panel', () => {
   test.describe('Killed Task Display', () => {
     // SPEC: panel-task:status-indicator
     test('killed task uses same visual indicator as failed', async ({ page }) => {
-      await mockSSE(page, 'events/tool-task-killed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-task-killed.jsonl')
 
       await openTasksPanel(page)
 
@@ -598,6 +537,213 @@ test.describe('Tasks Panel', () => {
       await expect(taskEntry).toBeVisible()
 
       await expect(taskEntry).toHaveClass(/task-failed|task-error/)
+    })
+  })
+
+  test.describe('Background commands', () => {
+    let clock = Date.now()
+    const at = () => {
+      clock += 100
+      return { timestamp: clock, ts: new Date(clock).toISOString() }
+    }
+    const human = (content, turnId) => ({
+      type: 'user',
+      subtype: 'text',
+      is_human: true,
+      content,
+      turn_id: turnId,
+      ...at(),
+    })
+    const command = (toolUseId, taskId, input) => [
+      {
+        type: 'assistant',
+        subtype: 'tool_use',
+        content: 'Bash',
+        tool_name: 'Bash',
+        tool_use_id: toolUseId,
+        tool_input: { run_in_background: true, ...input },
+        ...at(),
+      },
+      {
+        type: 'user',
+        subtype: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `Command running in background with ID: ${taskId}.`,
+        tool_use_result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: taskId },
+        ...at(),
+      },
+    ]
+    const notice = (taskId, status = 'completed', ts = at()) => ({
+      type: 'system',
+      subtype: 'task_notification',
+      message_data: { task_id: taskId, status, summary: 'done' },
+      ...ts,
+    })
+    const result = turnId => ({ type: 'result', subtype: 'success', turn_id: turnId, ...at() })
+
+    test.beforeEach(() => {
+      clock = Date.now()
+    })
+
+    // SPEC: panel-task:lists-commands
+    // SPEC: panel-task:command-icon
+    // SPEC: panel-task:description
+    // SPEC: panel-task:badge
+    test('a background command gets a row with a terminal icon, named by its description or command', async ({
+      page,
+    }) => {
+      const controller = await openLiveSession(page)
+
+      await controller.sendEvents([
+        human('Start them', 't1'),
+        ...command('tu1', 'b1', { command: 'sleep 60', description: 'Wait a minute' }),
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          tool_use_id: 'task1',
+          tool_input: { description: 'Review the diff', prompt: 'Go', run_in_background: true },
+          ...at(),
+        },
+        {
+          type: 'user',
+          subtype: 'tool_result',
+          tool_use_id: 'task1',
+          content: 'Async agent launched.',
+          tool_use_result: { isAsync: true, status: 'async_launched', agentId: 'a1' },
+          ...at(),
+        },
+        ...command('tu2', 'b2', { command: 'npm run dev' }),
+        result('t1'),
+      ])
+
+      await openTasksPanel(page)
+      const entries = page.locator('[data-testid="task-entry"]')
+      await expect(entries).toHaveCount(3)
+      await expect(entries.locator('.task-description')).toHaveText([
+        'Wait a minute',
+        'Review the diff',
+        'npm run dev',
+      ])
+      await expect(entries.nth(0).locator('[data-testid="task-kind-icon"]')).toBeVisible()
+      await expect(entries.nth(1).locator('[data-testid="task-kind-icon"]')).toHaveCount(0)
+      await expect(entries.nth(2).locator('[data-testid="task-kind-icon"]')).toBeVisible()
+      await expect(page.locator('[data-testid="icon-tasks"] .icon-badge')).toHaveText('3')
+    })
+
+    // SPEC: panel-task:status-indicator
+    // SPEC: panel-task:filter-tabs
+    test('a finished command leaves Active and stays in All; a killed one reads as failed', async ({
+      page,
+    }) => {
+      const controller = await openLiveSession(page)
+
+      await controller.sendEvents([
+        human('Start them', 't1'),
+        ...command('tu1', 'b1', { command: 'sleep 1', description: 'Short' }),
+        ...command('tu2', 'b2', { command: 'sleep 900', description: 'Long' }),
+        result('t1'),
+        notice('b1'),
+        notice('b2', 'killed'),
+      ])
+
+      await openTasksPanel(page)
+      await expect(page.getByText('No tasks')).toBeVisible()
+
+      await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+      const entries = page.locator('[data-testid="task-entry"]')
+      await expect(entries.nth(0)).toHaveClass(/task-completed/)
+      await expect(entries.nth(1)).toHaveClass(/task-failed/)
+    })
+
+    // SPEC: panel-task:duration
+    test('a finished background subagent shows how long it actually ran', async ({ page }) => {
+      const controller = await openLiveSession(page)
+
+      const start = Date.now() - 600_000
+      await controller.sendEvents([
+        human('Review it', 't1'),
+        {
+          type: 'assistant',
+          subtype: 'tool_use',
+          content: 'Task',
+          tool_use_id: 'task1',
+          tool_input: { description: 'Review', prompt: 'Go', run_in_background: true },
+          timestamp: start,
+          ts: new Date(start).toISOString(),
+        },
+        {
+          type: 'user',
+          subtype: 'tool_result',
+          tool_use_id: 'task1',
+          content: 'Async agent launched.',
+          tool_use_result: { isAsync: true, status: 'async_launched', agentId: 'a1' },
+          timestamp: start + 500,
+          ts: new Date(start + 500).toISOString(),
+        },
+        notice('a1', 'completed', {
+          timestamp: start + 180_000,
+          ts: new Date(start + 180_000).toISOString(),
+        }),
+      ])
+
+      await openTasksPanel(page)
+      await page.locator('.tasks-filter-btn', { hasText: 'All' }).click()
+      await expect(page.locator('[data-testid="task-entry"] .task-duration')).toHaveText('3m 0s')
+    })
+
+    // SPEC: panel-task:staleness-running-only
+    test('a quiet running command keeps the plain running colour', async ({ page }) => {
+      const controller = await openLiveSession(page)
+
+      clock = Date.now() - 180_000
+      await controller.sendEvents([
+        human('Start it', 't1'),
+        ...command('tu1', 'b1', { command: 'sleep 900', description: 'Quiet' }),
+      ])
+
+      await openTasksPanel(page)
+      const entry = page.locator('[data-testid="task-entry"]')
+      await expect(entry).toHaveClass(/task-running/)
+      await expect(entry).toHaveCSS('border-left-color', 'rgb(59, 130, 246)')
+    })
+
+    // SPEC: panel-task:click-tab
+    test('clicking a command row scrolls the chat to its block', async ({ page }) => {
+      const controller = await openLiveSessionWithAPI(page, {
+        sessionUiStateDefaults: { terminalSplitEnabled: false },
+      })
+
+      await controller.sendEvents([
+        human('Start it', 't1'),
+        ...command('tu1', 'b1', { command: 'sleep 60', description: 'Wait a minute' }),
+        result('t1'),
+      ])
+
+      await openTasksPanel(page)
+      await page.locator('[data-testid="task-entry"]').click()
+      await expect(page.locator('[data-tool-use-id="tu1"].task-highlight')).toBeVisible()
+    })
+
+    // SPEC: panel-task:click-terminal-column
+    test('with the terminal shown, clicking a command row lands on its terminal entry', async ({
+      page,
+    }) => {
+      const controller = await openLiveSessionWithAPI(page, {
+        sessionUiStateDefaults: { terminalSplitEnabled: true },
+      })
+
+      await controller.sendEvents([
+        human('Start it', 't1'),
+        ...command('tu1', 'b1', { command: 'sleep 60', description: 'Wait a minute' }),
+        result('t1'),
+      ])
+
+      await openTasksPanel(page)
+      await page.locator('[data-testid="task-entry"]').click()
+      const entry = page.locator('.terminal-entry[data-tool-use-id="tu1"].task-highlight')
+      await expect(entry).toBeVisible()
+      await expect(entry).toHaveCSS('animation-name', 'task-highlight-pulse')
     })
   })
 })

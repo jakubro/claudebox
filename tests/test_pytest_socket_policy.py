@@ -1,5 +1,7 @@
 """Sentinel - pytest-socket deny-by-default policy is active."""
 
+from __future__ import annotations
+
 import socket
 
 import pytest

@@ -1,5 +1,7 @@
 """Workspace defaults endpoint keys off `agent`: LangGraph gets its own matrix; unknown agents get HTTP 422."""
 
+from __future__ import annotations
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 

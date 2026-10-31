@@ -85,6 +85,18 @@ describe('deriveTerminalEntries', () => {
     expect(entries[0].description).toBe('Run the suite')
   })
 
+  it('carries the laid-out command when the call has one, null otherwise', () => {
+    const entries = deriveTerminalEntries([
+      { ...bashCall('b-1', { command: 'cd /srv; ls' }), command_layout: 'cd /srv\nls' },
+      bashCall('b-2', { command: 'ls' }),
+    ])
+
+    expect(entries.map(e => [e.command, e.commandLayout])).toEqual([
+      ['cd /srv; ls', 'cd /srv\nls'],
+      ['ls', null],
+    ])
+  })
+
   it('treats an empty-string description (LangGraph) as no description', () => {
     const entries = deriveTerminalEntries([bashCall('b-1', { description: '' })])
 

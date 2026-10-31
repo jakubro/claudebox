@@ -1,5 +1,7 @@
 """Link-carried message allowlist matching - pure, no I/O beyond logging a bad pattern."""
 
+from __future__ import annotations
+
 import re
 
 from claudebox import get_logger
@@ -26,7 +28,7 @@ def resolve_link_messages(
 
     for pattern in patterns:
         try:
-            compiled.append(re.compile(pattern))
+            compiled.append(re.compile(pattern, re.DOTALL))
         except re.error:
             logger.warning("Invalid link allowlist pattern - skipping", pattern=pattern)
 

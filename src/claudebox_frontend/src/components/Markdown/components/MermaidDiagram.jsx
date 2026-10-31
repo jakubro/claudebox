@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import SyntaxHighlighter from 'react-syntax-highlighter'
 import { vs2015 } from 'react-syntax-highlighter/dist/esm/styles/hljs'
-import { MERMAID_FAILURE_NOTICE_DELAY_MS } from '../../../config/timing'
+import { RENDER_FAILURE_NOTICE_DELAY_MS } from '../../../config/timing'
 import {
   getCachedMermaidSvg,
   removeMermaidRenderArtifacts,
@@ -74,7 +74,7 @@ function MermaidDiagram({ chart }) {
             if (!cancelled) {
               setNoticeVisible(true)
             }
-          }, MERMAID_FAILURE_NOTICE_DELAY_MS)
+          }, RENDER_FAILURE_NOTICE_DELAY_MS)
         }
         removeMermaidRenderArtifacts(renderId)
       }

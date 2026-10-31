@@ -10,6 +10,15 @@ vi.mock('../../../../api/sessions', () => ({
   getSessionEvents: vi.fn(),
 }))
 
+// The turn component reads the session's capabilities and command list from SessionDataContext,
+// which this test does not mount.
+vi.mock('../../../../hooks/useCapabilities', () => ({
+  default: () => ({ capabilities: null, runtimeName: null }),
+}))
+vi.mock('../turn/components/user-message-content/SlashCommandToken', () => ({
+  default: ({ cmd }) => <span className="slash-command">{cmd}</span>,
+}))
+
 describe('PromotedThreadCard', () => {
   beforeEach(() => {
     vi.mocked(getSessionEvents).mockReset()

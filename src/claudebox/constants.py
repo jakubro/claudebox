@@ -1,5 +1,7 @@
 """Constants and paths for the claudebox runtime."""
 
+from __future__ import annotations
+
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -54,6 +56,12 @@ def caddy_binary_path() -> Path:
     """Caddy reverse-proxy binary: ~/.claudebox/bin/caddy"""
 
     return global_config_dir() / "bin" / "caddy"
+
+
+def build_lock_path() -> Path:
+    """Lock an image build holds while it runs: ~/.claudebox/build.lock"""
+
+    return global_config_dir() / "build.lock"
 
 
 # Paths: SDK
@@ -126,6 +134,8 @@ CONTAINER_PROFILE_MOUNT = CONTAINER_CLAUDEBOX_ROOT / "profile"
 CONTAINER_SESSIONS_MOUNT = CONTAINER_CLAUDEBOX_ROOT / "sessions"
 CONTAINER_CLAUDE_DIR_MOUNT = Path("/root/.claude")
 CONTAINER_CLAUDE_JSON_MOUNT = Path("/root/.claude.json")
+# Must match claudebox-trace's SOCKET - the supervisor imports nothing, so kept in sync by hand.
+CONTAINER_TRACE_SOCKET = Path("/run/claudebox/trace.sock")
 
 
 # Container image
@@ -144,6 +154,7 @@ CONTAINER_NESTED_GRAPHROOT_TMPFS_SIZE = "8g"
 DEFAULT_LABELS = {"app": "claudebox"}
 LABEL_DAEMON_MANAGED = "claudebox-daemon-managed"
 LABEL_ID = "claudebox-id"
+LABEL_RUN = "claudebox-run"
 LABEL_WORKSPACE = "claudebox-workspace"
 
 NETWORK_NAME_TEMPLATE = "claudebox-{workspace_id}-net"
@@ -154,11 +165,13 @@ NETWORK_NAME_TEMPLATE = "claudebox-{workspace_id}-net"
 
 DEFAULT_AGENT = "claude"
 DEFAULT_BACKEND = "podman"
+ACCEPTED_BACKENDS = frozenset({"podman", "docker", "local"})
 WEB_CONTAINER_PORT = 8080
 DAEMON_PORT = 41820
 DAEMON_DEV_PORT = 41920
 GIT_SUBPROCESS_TIMEOUT = timedelta(seconds=5)
 SDK_CONTROL_REQUEST_TIMEOUT = timedelta(seconds=30)  # ceiling on a single SDK control round-trip
+QUEUED_CHANGE_TIMEOUT = timedelta(seconds=35)  # above the control timeout, below the UI's 40s bound
 SPAWN_SOCKET_CONNECT_TIMEOUT_SECONDS = 5.0  # bound on dialing the daemon's spawn socket
 
 
@@ -174,12 +187,15 @@ def daemon_base_url() -> str:
 # Session
 # -------------------------------------
 
-SESSION_MAX_AGE = timedelta(days=365)  # stale threshold for cleanup
+SESSION_MAX_AGE = timedelta(days=365)  # default [prune] session_days; build/run temp dir limit
+SESSION_TMP_MAX_AGE = timedelta(days=14)  # default [prune] tmp_days
 SESSION_STALL_TIMEOUT = timedelta(minutes=15)  # runtime silence mid-turn before it is reported
 SESSION_STALL_CHECK_INTERVAL = timedelta(seconds=15)  # how often the stall watchdog samples
+SESSION_TITLE_AFTER_MESSAGES = (3, 6, 10)  # user-message counts that (re)title an unnamed session
 SESSIONS_DIR_NAME = "sessions"  # subdirectory under config_dir
 SPAWN_SOCKET_NAME = "spawn.sock"  # unix socket in {config_dir}/sessions/, one per workspace
 SESSION_METADATA_FILE = "session.json"  # per-session metadata file
+SESSION_RUN_ID_FILE = "run-id"  # in a session started by `claudebox run`: its container's run label
 SESSION_EVENTS_FILE = "events.jsonl"  # per-session event log
 SESSION_COMPACTION_FILE = "compaction.json"
 SESSION_CHECKPOINT_TURNS_FILE = (
@@ -187,6 +203,8 @@ SESSION_CHECKPOINT_TURNS_FILE = (
 )
 SESSION_ATTACHMENTS_DIR = "attachments"  # per-session attachment files
 RATE_LIMITS_FILE = "rate-limits.json"  # per-workspace plan-limit state, under config_dir
+UI_STATE_FILE = "ui-state.json"  # per-workspace UI state, under config_dir
+UI_STATE_VERSION = 3  # a UI-state file of a lower version is discarded whole
 
 # Size limits
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024  # 10 MB per attachment

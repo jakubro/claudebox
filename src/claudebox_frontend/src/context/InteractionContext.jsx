@@ -1,11 +1,12 @@
 /** Interaction context - request lifecycle and error state. */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { sendMessage } from '../api/chat'
 import { InterruptStatus } from '../config/schema'
 import { ERROR_AUTO_CLEAR_MS, INTERRUPT_STOPPED_CLEAR_MS } from '../config/timing'
 import { isDoneRespondingEvent, isRespondingEvent } from '../utils/eventPredicates'
 import { useEvents } from './EventsContext'
+import { useSessionRouting } from './SessionRoutingContext'
 
 const InteractionContext = createContext(null)
 
@@ -17,6 +18,12 @@ const InteractionContext = createContext(null)
  */
 export function InteractionProvider({ children }) {
   const { events } = useEvents()
+  const { activeSessionId } = useSessionRouting()
+  const routedRef = useRef(activeSessionId ?? null)
+  routedRef.current = activeSessionId ?? null
+  // The session the submitting / awaiting / interrupt flags were raised in; others read them idle.
+  const [flagsSessionId, setFlagsSessionId] = useState(null)
+  const flagsAreOwn = flagsSessionId === (activeSessionId ?? null)
 
   // Interaction state
   const [isSubmitting, setIsSubmitting] = useState(false) // POST in flight
@@ -24,6 +31,8 @@ export function InteractionProvider({ children }) {
   const [awaitingResponseSince, setAwaitingResponseSince] = useState(null)
   const [interruptStatus, setInterruptStatus] = useState(null) // null | "stopping" | "stopped"
   const [errorMessage, setErrorMessage] = useState(null)
+  // A transient, non-error status line; never touches the submitting or awaiting state.
+  const [hintMessage, setHintMessage] = useState(null)
 
   // Set error message (clears other transient states)
   const setError = useCallback(message => {
@@ -35,7 +44,7 @@ export function InteractionProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    if (isAwaitingResponse && awaitingResponseSince && events.length > 0) {
+    if (flagsAreOwn && isAwaitingResponse && awaitingResponseSince && events.length > 0) {
       const lastEvent = events[events.length - 1]
       if (
         lastEvent.timestamp > awaitingResponseSince &&
@@ -45,7 +54,7 @@ export function InteractionProvider({ children }) {
         setAwaitingResponseSince(null)
       }
     }
-  }, [events, isAwaitingResponse, awaitingResponseSince])
+  }, [events, flagsAreOwn, isAwaitingResponse, awaitingResponseSince])
 
   // Track the last result event to detect turn completion
   const [lastResultTimestamp, setLastResultTimestamp] = useState(null)
@@ -84,8 +93,21 @@ export function InteractionProvider({ children }) {
     }
   }, [errorMessage])
 
+  // The hint lasts as long as a transient error; a repeat restarts its interval.
+  useEffect(() => {
+    if (hintMessage) {
+      const timeout = setTimeout(() => setHintMessage(null), ERROR_AUTO_CLEAR_MS)
+      return () => clearTimeout(timeout)
+    }
+  }, [hintMessage])
+
+  const showHint = useCallback(message => {
+    setHintMessage(message ? { text: message } : null)
+  }, [])
+
   // Interaction actions
   const startSubmitting = useCallback(() => {
+    setFlagsSessionId(routedRef.current)
     setIsSubmitting(true)
     setInterruptStatus(null)
     setAwaitingResponseSince(Date.now())
@@ -101,6 +123,7 @@ export function InteractionProvider({ children }) {
   }, [])
 
   const startInterrupt = useCallback(() => {
+    setFlagsSessionId(routedRef.current)
     setInterruptStatus(InterruptStatus.STOPPING)
   }, [])
 
@@ -109,19 +132,22 @@ export function InteractionProvider({ children }) {
     setIsSubmitting(false)
   }, [])
 
-  // Submit a prompt programmatically (used by interactive tool responses)
+  // Submit a prompt programmatically (used by interactive tool responses). Resolves true only
+  // once the message has arrived, matching useSendMessage's contract.
   const submitPrompt = useCallback(
     async prompt => {
       if (!prompt?.trim()) {
-        return
+        return false
       }
       startSubmitting()
       try {
         await sendMessage(prompt)
         submitSucceeded()
+        return true
       } catch (_err) {
         setIsSubmitting(false)
         setErrorMessage('Send failed')
+        return false
       }
     },
     [startSubmitting, submitSucceeded],
@@ -129,10 +155,12 @@ export function InteractionProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      isSubmitting,
-      isAwaitingResponse,
-      interruptStatus,
+      isSubmitting: flagsAreOwn && isSubmitting,
+      isAwaitingResponse: flagsAreOwn && isAwaitingResponse,
+      interruptStatus: flagsAreOwn ? interruptStatus : null,
       errorMessage,
+      hintMessage: hintMessage?.text ?? null,
+      showHint,
       startSubmitting,
       submitSucceeded,
       submitFailed,
@@ -142,10 +170,13 @@ export function InteractionProvider({ children }) {
       submitPrompt,
     }),
     [
+      flagsAreOwn,
       isSubmitting,
       isAwaitingResponse,
       interruptStatus,
       errorMessage,
+      hintMessage,
+      showHint,
       startSubmitting,
       submitSucceeded,
       submitFailed,

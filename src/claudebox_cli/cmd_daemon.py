@@ -1,5 +1,7 @@
 """Handler for the ``daemon`` noun-group - wrap systemctl --user lifecycle commands."""
 
+from __future__ import annotations
+
 import argparse
 import subprocess
 from datetime import UTC, datetime, timedelta

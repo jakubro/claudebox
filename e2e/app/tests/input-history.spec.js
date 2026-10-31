@@ -2,16 +2,13 @@
 
 import { expect, test } from '@playwright/test'
 import { MAX_INPUT_HISTORY_ENTRIES } from '../../../src/claudebox_frontend/src/config/thresholds.js'
-import { waitForAppReady } from '../helpers.js'
+import { openSession, openSessionWithAPI, sessionsHandler, waitForAppReady } from '../helpers.js'
 import { DEFAULT_SESSION_ID, DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
 test.describe('Input History', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page)
   })
 
   test.describe('Arrow Navigation', () => {
@@ -20,13 +17,9 @@ test.describe('Input History', () => {
     test('Up arrow at position 0 navigates to previous message', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('First message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'First message')
 
-      await input.fill('Second message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Second message')
 
       await input.press('Home')
       await input.press('ArrowUp')
@@ -41,9 +34,7 @@ test.describe('Input History', () => {
     test('Up arrow mid-text does not navigate', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       await input.fill('Current text')
 
@@ -58,13 +49,9 @@ test.describe('Input History', () => {
     test('Down arrow at end navigates to next message', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('Old message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Old message')
 
-      await input.fill('New message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'New message')
 
       await input.press('Home')
       await input.press('ArrowUp')
@@ -81,9 +68,7 @@ test.describe('Input History', () => {
     test('Down arrow mid-text does not navigate', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       await input.press('Home')
       await input.press('ArrowUp')
@@ -103,9 +88,7 @@ test.describe('Input History', () => {
     test('current draft preserved on Up navigation', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       await input.fill('My draft text')
 
@@ -122,9 +105,7 @@ test.describe('Input History', () => {
     test('draft saved to localStorage', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       await input.fill('Draft to save')
 
@@ -155,9 +136,7 @@ test.describe('Input History', () => {
     test('cursor at beginning after Up navigation', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       await input.press('ArrowUp')
       await expect(input).toHaveValue('History item')
@@ -172,9 +151,7 @@ test.describe('Input History', () => {
 
       await input.fill('First')
       await input.press('Enter')
-      await input.fill('Second')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Second')
 
       await input.press('ArrowUp')
       await input.press('Home')
@@ -194,9 +171,7 @@ test.describe('Input History', () => {
     test('Up arrow at END of text also navigates', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       // After fill(''), End leaves the cursor at position 0 (empty string).
       await input.fill('')
@@ -211,9 +186,7 @@ test.describe('Input History', () => {
 
       await input.fill('First')
       await input.press('Enter')
-      await input.fill('Second')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Second')
 
       await input.press('ArrowUp')
       await expect(input).toHaveValue('Second')
@@ -280,9 +253,7 @@ test.describe('Input History', () => {
     test('draft preserved through Up into history then Down', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('History item')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'History item')
 
       await input.fill('My preserved draft')
 
@@ -303,13 +274,9 @@ test.describe('Input History', () => {
     }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('Original message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Original message')
 
-      await input.fill('Second message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Second message')
 
       await input.press('Home')
       await input.press('ArrowUp')
@@ -332,9 +299,7 @@ test.describe('Input History', () => {
     test('history persists across page reload', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('Persisted message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Persisted message')
 
       // Message is saved to localStorage under key inputHistory:{sessionId}.
       await expect
@@ -374,9 +339,7 @@ test.describe('Input History', () => {
     test('history cleared on session switch via localStorage', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('Session A message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'Session A message')
 
       await input.press('Home')
       await input.press('ArrowUp')
@@ -418,9 +381,7 @@ test.describe('Input History', () => {
       const input = page.locator('[data-testid="chat-input"]')
 
       // Push one more entry past the cap.
-      await input.fill('newest message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'newest message')
 
       // The write evicts the oldest entry and keeps the count at the cap.
       await expect
@@ -445,13 +406,9 @@ test.describe('Input History', () => {
   test.describe('Selection Guard', () => {
     // SPEC: shortcut:arrow-up
     test('ArrowUp does not activate history when text is selected', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      const input = await waitForAppReady(page)
+      const input = await openSession(page)
 
-      await input.fill('First message')
-      await input.press('Enter')
-      await expect(input).toHaveValue('')
+      await sendFromComposer(input, 'First message')
 
       await input.fill('new text')
       await page.keyboard.press('Control+a')
@@ -462,4 +419,165 @@ test.describe('Input History', () => {
       await expect(input).toHaveValue('new text')
     })
   })
+
+  test.describe('While a message sends', () => {
+    // SPEC: input:typed-while-sending-kept
+    test('text and an attachment added while sending stay in the box', async ({ page }) => {
+      const { sends, input } = await sendAndHold(page, 'FIRST')
+      await input.fill('notes')
+      await dropFile(page, 'kept.txt')
+      sends.release(0)
+
+      await expect(page.locator('[data-testid="message-user"]', { hasText: 'FIRST' })).toBeVisible()
+      await expect(input).toHaveValue('notes')
+      await expect(page.locator('.attachment-name', { hasText: 'kept.txt' })).toBeVisible()
+      expect(sends.prompts).toEqual(['FIRST'])
+    })
+
+    // SPEC: input:enter-while-sending
+    // SPEC: input:history-nav
+    test('Enter while sending sends right after, in order', async ({ page }) => {
+      const { sends, input } = await sendAndHold(page, 'FIRST')
+      await input.fill('SECOND')
+      await input.press('Enter')
+      expect(sends.prompts).toEqual(['FIRST'])
+
+      sends.release(0)
+      await expect.poll(() => sends.prompts).toEqual(['FIRST', 'SECOND'])
+      sends.release(1)
+      await expect(input).toHaveValue('')
+      await expect(page.locator('[data-testid="message-user"]')).toHaveText([
+        /Hello Claude/,
+        'FIRST',
+        'SECOND',
+      ])
+
+      await input.press('ArrowUp')
+      await expect(input).toHaveValue('SECOND')
+      await input.press('Home')
+      await input.press('ArrowUp')
+      await expect(input).toHaveValue('FIRST')
+    })
+
+    // SPEC: input:enter-while-sending
+    test('Enter twice on the same text sends it once', async ({ page }) => {
+      const { sends, input } = await sendAndHold(page, 'TWICE')
+      await input.press('Enter')
+      sends.release(0)
+
+      await expect(input).toHaveValue('')
+      await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)))
+      expect(sends.prompts).toEqual(['TWICE'])
+    })
+
+    // SPEC: input:enter-while-sending
+    test('when the first send fails, the waiting text stays in the box unsent', async ({
+      page,
+    }) => {
+      const { sends, input } = await sendAndHold(page, 'FIRST')
+      await input.fill('SECOND')
+      await input.press('Enter')
+      sends.release(0, 500)
+
+      await expect(page.getByText('Send failed')).toBeVisible()
+      await expect(input).toHaveValue('SECOND')
+      expect(sends.prompts).toEqual(['FIRST'])
+    })
+  })
 })
+
+test.describe('Stored drafts of other workspaces', () => {
+  const OTHER_WORKSPACE = { id: 'other-ws', path: '/home/user/other', name: 'other' }
+  const OTHER_SESSION_ID = 'other-ws-session-001'
+
+  async function loadWithDrafts(page, otherSessionsRoute) {
+    await mockAPI(page, {
+      workspaces: [{ id: 'test-ws', path: '/home/user/project', name: 'project' }, OTHER_WORKSPACE],
+    })
+    await mockSSE(page)
+    await page.route(`**/api/workspaces/${OTHER_WORKSPACE.id}/sessions`, otherSessionsRoute)
+    await page.addInitScript(sid => {
+      localStorage.setItem(`draft:${sid}`, JSON.stringify({ current: 'unsent text' }))
+      localStorage.setItem('draft:long-gone-session', JSON.stringify({ current: 'stale' }))
+    }, OTHER_SESSION_ID)
+    const listed = page.waitForResponse(`**/api/workspaces/${OTHER_WORKSPACE.id}/sessions`)
+    await page.goto(DEFAULT_SESSION_URL)
+    await waitForAppReady(page)
+    await listed
+  }
+
+  // SPEC: input:draft-kept-while-live
+  test("another workspace's failing listing leaves its session's draft in place", async ({
+    page,
+  }) => {
+    await loadWithDrafts(page, route => route.fulfill({ status: 500, body: 'unavailable' }))
+
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 250)))
+    const drafts = await page.evaluate(
+      sid => [
+        localStorage.getItem(`draft:${sid}`),
+        localStorage.getItem('draft:long-gone-session'),
+      ],
+      OTHER_SESSION_ID,
+    )
+
+    expect(drafts[0]).toContain('unsent text')
+    expect(drafts[1]).toContain('stale')
+  })
+
+  // SPEC: input:draft-kept-while-live
+  test('with every listing answering, only the vanished session loses its draft', async ({
+    page,
+  }) => {
+    await loadWithDrafts(page, sessionsHandler([{ session_id: OTHER_SESSION_ID }]))
+
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('draft:long-gone-session')))
+      .toBeNull()
+    const kept = await page.evaluate(sid => localStorage.getItem(`draft:${sid}`), OTHER_SESSION_ID)
+    expect(kept).toContain('unsent text')
+  })
+})
+
+async function sendFromComposer(input, text) {
+  await input.fill(text)
+  await input.press('Enter')
+  await expect(input).toHaveValue('')
+}
+
+async function sendAndHold(page, text) {
+  const sends = await holdSends(page)
+  const input = page.locator('[data-testid="chat-input"]')
+  await input.fill(text)
+  await input.press('Enter')
+  await expect.poll(() => sends.prompts).toEqual([text])
+
+  return { sends, input }
+}
+
+async function holdSends(page) {
+  const prompts = []
+  const releases = []
+  await page.route('**/api/send*', async route => {
+    prompts.push((await route.request().postDataJSON()).prompt)
+    const status = await new Promise(resolve => releases.push(resolve))
+    await (status === 200 ? route.fallback() : route.fulfill({ status }))
+  })
+  return {
+    prompts,
+    release: async (i, status = 200) => {
+      await expect.poll(() => releases.length).toBeGreaterThan(i)
+      releases[i](status)
+    },
+  }
+}
+
+async function dropFile(page, name) {
+  await page.evaluate(fileName => {
+    const dataTransfer = new DataTransfer()
+    dataTransfer.items.add(new File(['kept'], fileName, { type: 'text/plain' }))
+    document
+      .querySelector('.chat-input-wrapper')
+      .dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer }))
+  }, name)
+}

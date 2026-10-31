@@ -1,12 +1,12 @@
 /** Tool result formatters - result extraction, header building, status, and display logic. */
 
-import { SdkProtocol, TaskOutputStatus } from '../../../../../../../config/schema'
+import { SdkProtocol, TaskOutputStatus, ToolName } from '../../../../../../../config/schema'
 import { getToolConfig, TOOL_REGISTRY } from '../../../../../../../config/toolRegistry'
 import { generateDiff } from '../../../../../../../utils/diff'
 import { isInteractiveTool } from '../../../../../../../utils/eventPredicates'
 import { formatFilePath } from '../../../../../../../utils/formatters'
 import { looksLikeJson } from '../../../../../../../utils/languageDetection'
-import { parsePersistedOutput } from '../../../../../../../utils/parsers'
+import { extractSystemReminders, parsePersistedOutput } from '../../../../../../../utils/parsers'
 import { PAIR_GAP } from '../components/tool-block-expanded-content/components/utils/formatCounts'
 
 // ####################################################################################################
@@ -153,18 +153,6 @@ export function getToolTooltip(toolName, input) {
   return typeof firstVal === 'string' ? firstVal : null
 }
 
-/** Returns { content: cleanedContent, reminders: string[] } */
-export function extractSystemReminders(content) {
-  const reminders = []
-  const pattern = /<system-reminder>([\s\S]*?)<\/system-reminder>/g
-  let match
-  while ((match = pattern.exec(content)) !== null) {
-    reminders.push(match[1].trim())
-  }
-  const cleanedContent = content.replace(pattern, '').replace(/^\n+|\n+$/g, '')
-  return { content: cleanedContent, reminders }
-}
-
 /** Check whether a tool has a specialized result formatter. */
 export function hasSpecializedFormatter(toolName) {
   const entry = TOOL_REGISTRY[toolName]
@@ -175,7 +163,7 @@ export function hasSpecializedFormatter(toolName) {
 export function generateJsonSummary(parsed) {
   if (Array.isArray(parsed)) {
     // If array of {type: "text", text: "..."}, extract first text (CSS handles truncation via ellipsis)
-    if (parsed[0]?.type === 'text' && parsed[0]?.text) {
+    if (parsed[0]?.type === 'text' && typeof parsed[0]?.text === 'string' && parsed[0].text) {
       return parsed[0].text
     }
     return `${parsed.length} item${parsed.length !== 1 ? 's' : ''}`
@@ -393,6 +381,17 @@ export function formatSkillResult(input, content) {
   return { summary: `Launching skill: ${skill}`, isError: false, details: content }
 }
 
+/** The folder a skill body's first line names (`Base directory for this skill: <dir>`), or null. */
+export function skillBaseDir(skillContent) {
+  const dir = skillContent?.match(/^Base directory for this skill: (.+)/)?.[1]?.trim()
+  return dir?.startsWith('/') ? dir : null
+}
+
+/** The page a WebFetch call fetched, or null for any other tool. */
+export function fetchedPageUrl(toolName, input) {
+  return toolName === ToolName.WEB_FETCH && typeof input?.url === 'string' ? input.url : null
+}
+
 /** Extract AskUserQuestion tool result summary. */
 export function formatAskUserQuestionResult(input, content) {
   const count = input?.questions?.length || 0
@@ -506,7 +505,7 @@ export function formatTaskHeader(name, input) {
 
 /** Format WebFetch tool header with URL (protocol stripped). */
 export function formatWebFetchHeader(name, input) {
-  const url = input?.url?.replace(/^https?:\/\//, '') || 'url'
+  const url = (typeof input?.url === 'string' && input.url.replace(/^https?:\/\//, '')) || 'url'
   return `${name}(${url})`
 }
 
@@ -553,6 +552,51 @@ export function defaultHeaderFormatter(name, input) {
     return `${name}(${firstVal})`
   }
   return name
+}
+
+/** Working-line phrase for a hidden Read; LangGraph's `read_file` names its file `path`. */
+export function readProgressLabel(_name, input) {
+  const path = input?.file_path ?? input?.path
+  return progressPhrase('Reading ', typeof path === 'string' ? formatFilePath(path, false) : null)
+}
+
+/** Working-line phrase for a hidden Grep or Glob. */
+export function searchProgressLabel(_name, input) {
+  return progressPhrase('Searching for ', input?.pattern)
+}
+
+/** Working-line phrase for a hidden WebSearch. */
+export function webSearchProgressLabel(_name, input) {
+  return progressPhrase('Searching the web for ', input?.query)
+}
+
+/** Working-line phrase for a hidden WebFetch: the site alone, its scheme and path dropped. */
+export function webFetchProgressLabel(_name, input) {
+  const url = typeof input?.url === 'string' ? input.url : ''
+  return progressPhrase('Fetching ', url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split(/[/?#]/)[0])
+}
+
+/** Working-line phrase for a hidden Skill load; LangGraph's `skill` names it `name`. */
+export function skillProgressLabel(_name, input) {
+  const skill = progressPhrase('Loading ', input?.skill ?? input?.name)
+  return skill && `${skill} skill`
+}
+
+/** Working-line phrase for a pure command: its description, else its first command. */
+export function bashProgressLabel(_name, input) {
+  const command = typeof input?.command === 'string' ? input.command : ''
+  return (
+    progressPhrase('', input?.description) ??
+    progressPhrase('Running ', command.split(/;|&&|\|\|?|\n/)[0].trim())
+  )
+}
+
+/** Working-line phrase for a tool-server call: the tool's own name, after `mcp__<server>__`. */
+export function toolServerProgressLabel(name) {
+  const tool = name?.startsWith(SdkProtocol.MCP_TOOL_PREFIX)
+    ? name.slice(SdkProtocol.MCP_TOOL_PREFIX.length).split('__').slice(1).join('__')
+    : name
+  return progressPhrase('Running ', tool)
 }
 
 /** Default result formatter - parse JSON or show text preview. */
@@ -603,6 +647,11 @@ function isContentBlock(entry) {
 
 // Private helpers
 // ####################################################################################################
+
+function progressPhrase(prefix, argument) {
+  const line = typeof argument === 'string' ? argument.split('\n')[0].trim() : ''
+  return line ? `${prefix}${line}` : null
+}
 
 /** Extract text from JSON array format: [{"type": "text", "text": "..."}] */
 function extractTextFromJsonArray(content) {

@@ -1,6 +1,8 @@
 #!/opt/claudebox/.venv/bin/python
 """Container API server entry point."""
 
+from __future__ import annotations
+
 import argparse
 
 from claudebox import HelpFormatter, cli
@@ -27,8 +29,8 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--system-prompt",
-    help="System prompt",
+    "--system-prompt-file",
+    help="System prompt file",
 )
 
 parser.add_argument(

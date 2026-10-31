@@ -5,7 +5,8 @@
  * (pytest); unit tests (`*.test.js` / `*.test.jsx` / `*_test.py`) MUST NOT carry SPEC markers
  * (GUIDELINES.md section 8) and are reported as violations if they do.
  *
- * Marker syntax: `// SPEC: scope:name` (JS Playwright) or `# SPEC: scope:name` (Python pytest).
+ * Marker syntax: `// SPEC: scope:name` (JS Playwright) or `# SPEC: scope:name` (Python pytest). An id is two
+ * or more colon-separated segments, and a marker covers exactly the id it names, never a prefix of it.
  *
  * Limitation: coverage is documentary (comment presence, not behavior) - a marker near any E2E
  * test counts as covered regardless of whether the test verifies the claimed behavior.
@@ -30,12 +31,12 @@ const UNIT_DIRS = [
 const verbose = process.argv.includes('--verbose')
 
 // Single regex matches both `// SPEC:` (JS) and `# SPEC:` (Python).
-const SPEC_REGEX = /(?:\/\/|#)\s*SPEC:\s*([a-z0-9-]+:[a-z0-9-]+)/g
+const SPEC_REGEX = /(?:\/\/|#)\s*SPEC:\s*([a-z0-9-]+(?::[a-z0-9-]+)+)/g
 
 /** Extract claim IDs from SPEC.md. */
 function extractSpecClaims(specContent) {
-  const claimRegex = /<!-- claim:([a-z0-9-]+:[a-z0-9-]+) -->/g
-  const skipRegex = /<!-- skip:claim:([a-z0-9-]+:[a-z0-9-]+) -->/g
+  const claimRegex = /<!-- claim:([a-z0-9-]+(?::[a-z0-9-]+)+) -->/g
+  const skipRegex = /<!-- skip:claim:([a-z0-9-]+(?::[a-z0-9-]+)+) -->/g
   const claims = new Map()
   const skipped = new Map()
   let match

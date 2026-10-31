@@ -2,8 +2,10 @@
 
 Fake podman records every arg it receives, proving the opt-in flag reaches the container
 launch command through real config parsing and CLI dispatch - not that nested podman-in-podman
-works, which needs a real kernel and is covered by a separate host-level reproduction script.
+works, which needs a real kernel.
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -56,8 +58,7 @@ class TestNestedIsolationDefault:
     """Nesting off means no capability is ever granted - inner containers cannot even start.
 
     The deeper guarantee (a running inner container stays invisible to the host and disappears
-    with the session) needs real kernel namespaces fake podman can't exercise here; verified
-    separately by a host-level reproduction script.
+    with the session) needs real kernel namespaces, which fake podman cannot exercise.
     """
 
     def test_nested_false_omits_fuse_device(self, tmp_path, record_dir, run_claudebox) -> None:

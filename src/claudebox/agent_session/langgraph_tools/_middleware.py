@@ -12,6 +12,8 @@ re-raises everything by default (ending the turn instead of letting the model re
 the Claude runtime). Any other exception - a genuine bug, or a `GraphInterrupt` - still re-raises.
 """
 
+from __future__ import annotations
+
 import json
 import time
 from typing import Any

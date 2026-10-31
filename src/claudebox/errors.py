@@ -1,5 +1,7 @@
 """Generic API error hierarchy - typed exceptions with HTTP status codes."""
 
+from __future__ import annotations
+
 
 class ApiError(Exception):
     """Base for typed API errors; subclasses set status_code and error_key."""

@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockCapabilities } from '../../../test-utils/mockCapabilities'
+import { createDeferred } from '../../../utils/deferred'
 import ModelPicker from './ModelPicker'
 
 const mockModels = [
@@ -33,6 +34,14 @@ beforeEach(() => {
   mockUseCapabilities = { capabilities: mockCapabilities(), runtimeName: 'Claude' }
 })
 
+async function openModelPicker() {
+  const user = userEvent.setup()
+  render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
+  await user.click(screen.getByTestId('footer-model'))
+
+  return user
+}
+
 describe('ModelPicker', () => {
   it('renders current model name', () => {
     render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
@@ -45,18 +54,12 @@ describe('ModelPicker', () => {
   })
 
   it('opens dropdown on click', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    await openModelPicker()
     expect(screen.getByTestId('model-dropdown')).toBeInTheDocument()
   })
 
   it('shows models from context', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    await openModelPicker()
 
     const dropdown = screen.getByTestId('model-dropdown')
     expect(dropdown).toHaveTextContent('Opus 5')
@@ -64,10 +67,7 @@ describe('ModelPicker', () => {
   })
 
   it('highlights current model with checkmark', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    await openModelPicker()
 
     const checkmarks = screen.getAllByTestId('icon-check')
     expect(checkmarks).toHaveLength(1)
@@ -79,28 +79,19 @@ describe('ModelPicker', () => {
   })
 
   it('calls setModel on selection', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    const user = await openModelPicker()
     await user.click(screen.getByText('Sonnet 5'))
     expect(mockSetModel).toHaveBeenCalledWith('claude-sonnet-5')
   })
 
   it('closes dropdown on selection', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    const user = await openModelPicker()
     await user.click(screen.getByText('Sonnet 5'))
     expect(screen.queryByTestId('model-dropdown')).not.toBeInTheDocument()
   })
 
   it('closes dropdown on Escape', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    const user = await openModelPicker()
 
     await waitFor(() => {
       expect(screen.getByTestId('model-dropdown')).toBeInTheDocument()
@@ -138,10 +129,7 @@ describe('ModelPicker', () => {
   })
 
   it('does not call setModel when selecting current model', async () => {
-    const user = userEvent.setup()
-    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
-
-    await user.click(screen.getByTestId('footer-model'))
+    const user = await openModelPicker()
     const dropdown = screen.getByTestId('model-dropdown')
     await user.click(within(dropdown).getByText('Opus 5'))
     expect(mockSetModel).not.toHaveBeenCalled()
@@ -171,5 +159,25 @@ describe('ModelPicker', () => {
       render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
       expect(screen.queryByTestId('footer-model')).toBeNull()
     })
+  })
+})
+
+describe('ModelPicker settling', () => {
+  async function choose(user, name) {
+    await user.click(screen.getByTestId('footer-model'))
+    await user.click(within(screen.getByTestId('model-dropdown')).getByText(name))
+  }
+
+  it('shows the session value again once a refused change settles', async () => {
+    const user = userEvent.setup()
+    const change = createDeferred()
+    mockSetModel.mockReturnValueOnce(change.promise)
+    render(<ModelPicker currentModel="claude-opus-5" disabled={false} />)
+
+    await choose(user, 'Sonnet 5')
+    expect(screen.getByTestId('footer-model')).toHaveTextContent('Sonnet 5')
+    change.resolve()
+
+    await waitFor(() => expect(screen.getByTestId('footer-model')).toHaveTextContent('Opus 5'))
   })
 })

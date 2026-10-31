@@ -1,0 +1,3 @@
+{"type": "user", "subtype": "text", "is_human": true, "content": "Colours", "ts": "2025-01-18T12:00:00Z", "turn_id": "turn_001", "id": "evt_001", "primary": true}
+{"type": "assistant", "subtype": "text", "content": "Colours: `#0969DA`, `rgb(9, 105, 218)`, `rgb(9,105,218)` and `hsl(212, 92%, 45%)` and `#0969da`.\n\nNot swatches: `#fff`, `#0969DA80`, `rgba(9, 105, 218, 0.5)`, `red`, `color: #0969DA`, `#0969DAX`, `rgb(300, 0, 0)`, `hsl(400, 50%, 50%)`.\n\nProse #0969DA stays prose.\n\n```css\na { color: #0969DA; }\n```", "ts": "2025-01-18T12:00:01Z", "id": "evt_002", "primary": true, "is_human": false}
+{"type": "result", "subtype": "success", "turn_id": "turn_001", "ts": "2025-01-18T12:00:02Z", "id": "evt_003", "primary": false, "is_human": false}

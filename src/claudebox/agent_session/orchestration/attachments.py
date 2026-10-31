@@ -1,5 +1,7 @@
 """Attachment service - path resolution and MIME inference for session attachments."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 

@@ -1,5 +1,7 @@
 """shell.py @tool tests - bash."""
 
+from __future__ import annotations
+
 import subprocess
 from unittest.mock import patch
 
@@ -35,6 +37,14 @@ class TestBash:
         result = bash.invoke({"command": "pwd"})
 
         assert result["stdout"].strip() == str(tmp_path)
+
+    def test_the_command_leads_its_own_session(self, tool_ctx):
+        bash = _bash(tool_ctx)
+
+        result = bash.invoke({"command": "echo $$ $(cut -d' ' -f6 /proc/$$/stat)"})
+
+        shell, session = result["stdout"].split()
+        assert shell == session
 
     def test_timeout_raises_tool_exception(self, tool_ctx):
         bash = _bash(tool_ctx)

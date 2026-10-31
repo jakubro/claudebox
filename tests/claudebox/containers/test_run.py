@@ -1,11 +1,37 @@
 """Tests for claudebox.containers.run - container CLI argument generation."""
 
+from __future__ import annotations
+
+import json
+import socket
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from claudebox.config import Config
-from claudebox.constants import CONTAINER_IMAGE_NAME, DEFAULT_LABELS
-from claudebox.containers.run import get_container_run_args, prepare_volume, run_container
+from claudebox.constants import (
+    CLAUDEBOX_SETTINGS_FILE,
+    CONFIG_DIR_NAME,
+    CONTAINER_IMAGE_NAME,
+    CONTAINER_LIB_MOUNT,
+    CONTAINER_PROFILE_MOUNT,
+    CONTAINER_SESSIONS_MOUNT,
+    DEFAULT_LABELS,
+    LIB_RUN_DIR,
+    WEB_CONTAINER_PORT,
+)
+from claudebox.containers.backend import ContainerBackend
+from claudebox.containers.run import (
+    _port_in_use,
+    get_container_run_args,
+    network_mode_publishes,
+    prepare_volume,
+    run_container,
+    substitute_held_ports,
+    tmp_mount_conflicts,
+)
+from ...fake_podman import FakePodman, on_fake_podman, publishes
 
 
 # --- Helpers ---
@@ -29,6 +55,19 @@ def _make_config(tmp_path, **overrides):
     defaults.update(overrides)
 
     return Config(**defaults)  # ty: ignore[invalid-argument-type]
+
+
+def _make_workspace_config(tmp_path, **overrides):
+    """Create a Config whose config dir sits inside the workspace, as a `.workspace` marker does."""
+
+    work_dir = tmp_path / "workspace"
+
+    return _make_config(
+        tmp_path,
+        work_dir=work_dir,
+        config_dir=work_dir / CONFIG_DIR_NAME,
+        **overrides,
+    )
 
 
 # --- get_run_args ---
@@ -95,10 +134,30 @@ class TestGetContainerArgs:
         env_args = [args[i + 1] for i, a in enumerate(args) if a == "--env"]
         assert "CALLER=yes" in env_args
 
+    def test_bundle_name_reaches_the_container(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path, bundle="research")
+        args = list(get_container_run_args(config))
+
+        env_args = [args[i + 1] for i, a in enumerate(args) if a == "--env"]
+        assert "CLAUDEBOX_BUNDLE=research" in env_args
+
+    def test_unbundled_container_carries_no_bundle_variable(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config))
+
+        assert not any(str(a).startswith("CLAUDEBOX_BUNDLE=") for a in args)
+
     def test_publish_all(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path)
         args = list(get_container_run_args(config, publish_all=True))
-        assert "--publish-all" in args
+        assert "--publish-all" not in args
+        idx = args.index("--publish")
+        assert args[idx + 1] == f"127.0.0.1::{WEB_CONTAINER_PORT}"
 
     def test_explicit_ports(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path, ports={8080: 80})
@@ -106,6 +165,18 @@ class TestGetContainerArgs:
 
         publish_args = [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
         assert "8080:80" in publish_args
+
+    def test_publish_all_and_config_ports_are_emitted_together(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        config = _make_config(tmp_path, ports={8080: 80, 9000: 90})
+        args = list(get_container_run_args(config, publish_all=True))
+
+        publish_args = [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
+        assert publish_args == [f"127.0.0.1::{WEB_CONTAINER_PORT}", "8080:80", "9000:90"]
 
     def test_no_ports(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path)
@@ -127,12 +198,19 @@ class TestGetContainerArgs:
         idx = args.index("--network")
         assert args[idx + 1] == "host"
 
-    def test_network_param_overrides_config(self, _touch_file, _touch_dir, tmp_path):
+    def test_config_network_overrides_param(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path, network_mode="host")
         args = list(get_container_run_args(config, network="custom"))
 
-        idx = args.index("--network")
-        assert args[idx + 1] == "custom"
+        network_args = [args[i + 1] for i, a in enumerate(args) if a == "--network"]
+        assert network_args == ["host"]
+
+    def test_param_network_applies_when_config_names_none(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config, network="custom"))
+
+        network_args = [args[i + 1] for i, a in enumerate(args) if a == "--network"]
+        assert network_args == ["custom"]
 
     def test_no_network(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path)
@@ -227,6 +305,167 @@ class TestGetContainerArgs:
         assert mock_touch_file.called, "touch_file should be called to create mount files"
 
 
+# --- mount modes ---
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+class TestMountModes:
+    """Which mounts a container may write, and which it may only read."""
+
+    @staticmethod
+    def _mode(args, container_path):
+        """Report 'ro', 'rw' or None for the mount whose destination is container_path."""
+
+        for i, arg in enumerate(args):
+            if arg != "--volume":
+                continue
+
+            parts = args[i + 1].split(":")
+
+            if parts[1] == str(container_path):
+                return parts[2] if len(parts) > 2 else "rw"
+
+        return None
+
+    def test_the_library_is_read_only(self, _touch_file, _touch_dir, tmp_path):
+        args = list(get_container_run_args(_make_config(tmp_path)))
+
+        assert self._mode(args, CONTAINER_LIB_MOUNT) == "ro"
+
+    def test_the_runtime_overlay_is_read_only(self, _touch_file, _touch_dir, tmp_path):
+        args = list(get_container_run_args(_make_config(tmp_path)))
+        overlay_root = LIB_RUN_DIR / "fs"
+        overlay = [
+            Path("/") / f.relative_to(overlay_root)
+            for f in overlay_root.glob("**/*")
+            if f.is_file()
+        ]
+
+        assert overlay, "the runtime overlay ships no files"
+        assert [self._mode(args, dst) for dst in overlay] == ["ro"] * len(overlay)
+
+    def test_the_profile_is_read_only(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path, profile=tmp_path / "profile")
+        args = list(get_container_run_args(config))
+
+        assert self._mode(args, CONTAINER_PROFILE_MOUNT) == "ro"
+
+    def test_the_workspace_stays_writable(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config))
+
+        assert self._mode(args, config.work_dir) == "rw"
+
+    def test_the_sessions_tree_stays_writable(self, _touch_file, _touch_dir, tmp_path):
+        args = list(get_container_run_args(_make_config(tmp_path)))
+
+        assert self._mode(args, CONTAINER_SESSIONS_MOUNT) == "rw"
+
+    def test_the_workspace_settings_file_is_read_only(self, _touch_file, _touch_dir, tmp_path):
+        config = _make_workspace_config(tmp_path)
+        args = list(get_container_run_args(config))
+
+        assert self._mode(args, config.work_dir / CLAUDEBOX_SETTINGS_FILE) == "ro"
+
+    def test_the_workspace_config_dir_is_mounted_and_stays_writable(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        """Being a mount point is the point - it cannot be renamed around the read-only file."""
+
+        config = _make_workspace_config(tmp_path)
+        args = list(get_container_run_args(config))
+
+        assert self._mode(args, config.config_dir) == "rw"
+
+    def test_a_config_dir_outside_the_workspace_is_left_alone(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        """With no workspace marker the config dir is under home, out of the container's reach."""
+
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config))
+
+        assert self._mode(args, config.config_dir) is None
+
+    def test_an_unregistered_directorys_own_settings_file_is_read_only(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        """No marker: config_dir sits under home, but the loader reads work_dir/.claudebox -
+        that is the file that must be protected, regardless of where config_dir points."""
+
+        config = _make_config(tmp_path)
+        args = list(get_container_run_args(config))
+
+        assert self._mode(args, config.work_dir / CLAUDEBOX_SETTINGS_FILE) == "ro"
+        assert self._mode(args, (config.work_dir / CLAUDEBOX_SETTINGS_FILE).parent) == "rw"
+        assert self._mode(args, config.config_dir / "settings.toml") is None
+
+
+# Unmocked touch_file is the point here, so the overlay glob is pointed away from the real repo
+# files it would otherwise touch - the test sandbox mounts the tree read-only and touch() raises.
+@patch("claudebox.containers.run.LIB_RUN_DIR", Path("/nonexistent"))
+def test_the_settings_file_is_created_when_the_workspace_has_none(tmp_path):
+    """An absent file cannot be mounted, and an unmounted one is what the next spawn would read."""
+
+    config = _make_workspace_config(tmp_path)
+
+    list(get_container_run_args(config))
+
+    assert (config.work_dir / CLAUDEBOX_SETTINGS_FILE).is_file()
+
+
+@patch("claudebox.containers.run.LIB_RUN_DIR", Path("/nonexistent"))
+class TestAgentConfigFile:
+    """The agent refuses to start on a config file that is not JSON, and an empty file is not."""
+
+    @staticmethod
+    def _agent_config(config):
+        return config.config_dir / "fs" / "root" / ".claude.json"
+
+    def test_a_fresh_config_dir_gets_an_empty_object(self, tmp_path):
+        config = _make_workspace_config(tmp_path)
+
+        list(get_container_run_args(config))
+
+        assert json.loads(self._agent_config(config).read_text()) == {}
+
+    def test_an_empty_file_gets_an_empty_object(self, tmp_path):
+        config = _make_workspace_config(tmp_path)
+        self._agent_config(config).parent.mkdir(parents=True)
+        self._agent_config(config).touch()
+
+        list(get_container_run_args(config))
+
+        assert json.loads(self._agent_config(config).read_text()) == {}
+
+    def test_a_file_with_content_is_left_alone(self, tmp_path):
+        config = _make_workspace_config(tmp_path)
+        signed_in = b'{"oauthAccount": {"emailAddress": "user@example.com"}}'
+        self._agent_config(config).parent.mkdir(parents=True)
+        self._agent_config(config).write_bytes(signed_in)
+
+        list(get_container_run_args(config))
+
+        assert self._agent_config(config).read_bytes() == signed_in
+
+    def test_another_runtime_gets_no_file(self, tmp_path):
+        config = _make_workspace_config(tmp_path, agent="langgraph")
+
+        list(get_container_run_args(config))
+
+        assert not self._agent_config(config).exists()
+
+
 # --- prepare_volume ---
 
 
@@ -313,3 +552,163 @@ class TestRunContainerKindLabel:
         labels = _label_args(backend.run_container.call_args)
         assert "kind=shell" in labels
         assert "kind=agent" not in labels
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+class TestRunContainerRunId:
+    """Each `run_container` labels its container with a fresh run id and hands the agent the same id."""
+
+    def _run_id(self, tmp_path) -> tuple[str, str]:
+        backend = MagicMock()
+        backend.run_container.return_value = 0
+
+        run_container((), config=_make_config(tmp_path), backend=backend)
+
+        args = list(backend.run_container.call_args.args)
+        env = [args[i + 1] for i, a in enumerate(args) if a == "--env"]
+        label = next(
+            v
+            for v in _label_args(backend.run_container.call_args)
+            if v.startswith("claudebox-run=")
+        )
+        variable = next(v for v in env if v.startswith("CLAUDEBOX_RUN_ID="))
+
+        return label.split("=", 1)[1], variable.split("=", 1)[1]
+
+    def test_the_label_and_the_variable_carry_one_id(self, _touch_file, _touch_dir, tmp_path):
+        label, variable = self._run_id(tmp_path)
+
+        assert label
+        assert label == variable
+
+    def test_every_run_gets_its_own_id(self, _touch_file, _touch_dir, tmp_path):
+        assert self._run_id(tmp_path)[0] != self._run_id(tmp_path)[0]
+
+
+class TestTmpMountConflicts:
+    """What a daemon spawn would have to delete to remap /tmp."""
+
+    @pytest.fixture(autouse=True)
+    def _real_tmp(self, monkeypatch):
+        monkeypatch.setattr("claudebox.temp.TMP_PATH", Path("/tmp"))
+
+    def test_a_workspace_under_tmp(self, tmp_path):
+        config = _make_config(tmp_path, work_dir=Path("/tmp/proj"))
+
+        assert tmp_mount_conflicts(config) == [Path("/tmp/proj")]
+
+    def test_tmp_itself(self, tmp_path):
+        config = _make_config(tmp_path, work_dir=Path("/tmp"))
+
+        assert tmp_mount_conflicts(config) == [Path("/tmp")]
+
+    def test_a_mount_target_under_tmp(self, tmp_path):
+        config = _make_config(
+            tmp_path,
+            work_dir=Path("/srv/proj"),
+            mounts={Path("/home/u/.ssh-agent"): Path("/tmp/ssh-agent")},
+        )
+
+        assert tmp_mount_conflicts(config) == [Path("/tmp/ssh-agent")]
+
+    def test_a_sibling_sharing_the_prefix(self, tmp_path):
+        config = _make_config(tmp_path, work_dir=Path("/tmpfoo"))
+
+        assert tmp_mount_conflicts(config) == []
+
+    def test_the_opt_out(self, tmp_path):
+        config = _make_config(
+            tmp_path,
+            work_dir=Path("/tmp/proj"),
+            env={"CLAUDEBOX_NO_TMP_REMAP": "1"},
+        )
+
+        assert tmp_mount_conflicts(config) == []
+
+
+# --- Fixed host ports and network modes ---
+
+
+@pytest.mark.parametrize(
+    ("mode", "publishes_ports"),
+    [
+        (None, True),
+        ("mynet", True),
+        ("bridge", True),
+        ("pasta", True),
+        ("slirp4netns:allow_host_loopback=true", True),
+        ("host", False),
+        ("none", False),
+        ("container:abc", False),
+        ("ns:/run/netns/x", False),
+    ],
+)
+def test_network_mode_publishes(mode, publishes_ports):
+    assert network_mode_publishes(mode) is publishes_ports
+
+
+@pytest.mark.allow_hosts(["127.0.0.1"])
+def test_port_in_use_sees_a_loopback_listener():
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+
+    assert _port_in_use(port) is True
+    listener.close()
+    assert _port_in_use(port) is False
+
+
+def test_substitute_held_ports():
+    with (
+        patch("claudebox.containers.run._port_in_use", {8080}.__contains__),
+        patch("claudebox.containers.run._free_port", lambda: 41000),
+    ):
+        # TOML table keys arrive as strings.
+        ports = {"8080": 80, "9000": 90, "0": 70}
+        assert substitute_held_ports(ports) == {8080: 41000}  # ty: ignore[invalid-argument-type]
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+def test_port_substitutes_reshape_only_the_named_entry(_tf, _td, tmp_path):
+    config = _make_config(tmp_path, ports={"8080": 80, "9000": 90})
+
+    args = list(get_container_run_args(config, publish_all=True, port_substitutes={8080: 41000}))
+
+    assert [args[i + 1] for i, a in enumerate(args) if a == "--publish"] == [
+        f"127.0.0.1::{WEB_CONTAINER_PORT}",
+        "41000:80",
+        "9000:90",
+    ]
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+def test_cli_substitutes_a_held_port_and_prints_it(_tf, _td, tmp_path, capsys):
+    podman = FakePodman()
+    podman.held.add(8080)
+    config = _make_config(tmp_path, ports={"8080": 80}, env={"CLAUDEBOX_NO_TMP_REMAP": "1"})
+
+    with on_fake_podman(podman):
+        run_container(("bash",), config=config, backend=ContainerBackend("podman"), kind="shell")
+
+    assert publishes(podman.runs[0]) == ["40001:80"]
+    assert capsys.readouterr().err == (
+        "claudebox: host port 8080 is in use; container port 80 is published on host port 40001 instead\n"
+    )
+
+
+@patch("claudebox.containers.run.touch_dir")
+@patch("claudebox.containers.run.touch_file")
+def test_cli_probes_nothing_under_host_network(_tf, _td, tmp_path):
+    backend = MagicMock()
+    backend.run_container.return_value = 0
+    config = _make_config(tmp_path, ports={"8080": 80}, network_mode="host")
+
+    def _never(_port):
+        raise AssertionError("probed a port under host networking")
+
+    with patch("claudebox.containers.run._port_in_use", _never):
+        assert run_container((), config=config, backend=backend) == 0

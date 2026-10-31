@@ -1,14 +1,18 @@
 """Tests for claudebox.serialization - JSON encoding and deserialization."""
 
+from __future__ import annotations
+
 import dataclasses
 import json
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from claudebox.core import serialization
 from claudebox.core.serialization import deserialize, dump, dumps, load, loads, serialize
 
 
@@ -58,7 +62,7 @@ class TestJSONEncoder:
         assert json.loads(dumps(t)) == "12:30:00"
 
     def test_decimal(self):
-        assert json.loads(dumps(Decimal("3.14"))) == 3.14
+        assert json.loads(dumps(Decimal("0.1"))) == pytest.approx(0.1)
 
     def test_path(self):
         assert json.loads(dumps(Path("/fake/test"))) == "/fake/test"
@@ -67,9 +71,9 @@ class TestJSONEncoder:
         assert json.loads(dumps(Color.RED)) == "red"
 
     def test_stdlib_dataclass(self):
-        addr = Address(city="Prague", zip_code="10000")
+        addr = Address(city="Lisbon", zip_code="1100-148")
         result = json.loads(dumps(addr))
-        assert result == {"city": "Prague", "zip_code": "10000"}
+        assert result == {"city": "Lisbon", "zip_code": "1100-148"}
 
     def test_object_with_asdict(self):
         obj = HasAsdict()
@@ -101,7 +105,7 @@ class TestDeserialize:
         assert deserialize(42, int) == 42
 
     def test_primitive_passthrough_float(self):
-        assert deserialize(3.14, float) == 3.14
+        assert deserialize(2.5, float) == pytest.approx(2.5)
 
     def test_primitive_passthrough_bool(self):
         assert deserialize(True, bool) is True
@@ -128,15 +132,15 @@ class TestDeserialize:
         assert deserialize({"a": 1, "b": 2}, dict[str, int]) == {"a": 1, "b": 2}
 
     def test_dataclass_from_dict(self):
-        data = {"city": "Prague", "zip_code": "10000"}
+        data = {"city": "Lisbon", "zip_code": "1100-148"}
         result = deserialize(data, Address)
-        assert result == Address(city="Prague", zip_code="10000")
+        assert result == Address(city="Lisbon", zip_code="1100-148")
 
     def test_nested_dataclass(self):
-        data = {"name": "Alice", "age": 30, "address": {"city": "Prague", "zip_code": "10000"}}
+        data = {"name": "Alice", "age": 30, "address": {"city": "Lisbon", "zip_code": "1100-148"}}
         result = deserialize(data, Person)
         assert result.name == "Alice"
-        assert result.address == Address(city="Prague", zip_code="10000")
+        assert result.address == Address(city="Lisbon", zip_code="1100-148")
 
     def test_dataclass_with_list_field(self):
         data = {"name": "Bob", "age": 25, "tags": ["dev", "test"]}
@@ -144,9 +148,9 @@ class TestDeserialize:
         assert result.tags == ["dev", "test"]
 
     def test_extra_keys_ignored(self):
-        data = {"city": "Prague", "zip_code": "10000", "country": "CZ"}
+        data = {"city": "Lisbon", "zip_code": "1100-148", "country": "PT"}
         result = deserialize(data, Address)
-        assert result == Address(city="Prague", zip_code="10000")
+        assert result == Address(city="Lisbon", zip_code="1100-148")
 
     def test_datetime_from_iso_string(self):
         result = deserialize("2026-03-06T12:30:00", datetime)
@@ -159,6 +163,24 @@ class TestDeserialize:
     def test_time_from_iso_string(self):
         result = deserialize("12:30:00", time)
         assert result == time(12, 30, 0)
+
+    def test_type_hints_resolve_once_per_class(self):
+        @dataclasses.dataclass
+        class Reading:
+            taken_at: datetime
+            value: int
+
+        with patch.object(
+            serialization.typing,
+            "get_type_hints",
+            wraps=serialization.typing.get_type_hints,
+        ) as hints:
+            first = deserialize({"taken_at": "2026-03-06T12:30:00", "value": 1}, Reading)
+            second = deserialize({"taken_at": "2026-03-07T08:00:00", "value": 2}, Reading)
+
+        assert hints.call_count == 1
+        assert first == Reading(taken_at=datetime(2026, 3, 6, 12, 30), value=1)  # noqa: DTZ001
+        assert second == Reading(taken_at=datetime(2026, 3, 7, 8, 0), value=2)  # noqa: DTZ001
 
 
 # --- dumps/loads roundtrip ---
@@ -187,10 +209,10 @@ class TestDumpLoad:
         path = tmp_path / "data.json"
         data = {"key": "value", "num": 42}
 
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             dump(data, f)
 
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             result = load(f)
 
         assert result == data
@@ -198,10 +220,10 @@ class TestDumpLoad:
     def test_dump_extended_types(self, tmp_path):
         path = tmp_path / "data.json"
 
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             dump({"path": Path("/fake"), "dt": datetime(2026, 1, 1)}, f)  # noqa: DTZ001 - naive-datetime serialization
 
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             result = load(f)
 
         assert result["path"] == "/fake"
@@ -248,7 +270,7 @@ class TestSerialize:
     def test_primitive_passthrough(self):
         assert serialize("hello") == "hello"
         assert serialize(42) == 42
-        assert serialize(3.14) == 3.14
+        assert serialize(2.5) == pytest.approx(2.5)
         assert serialize(True) is True
 
     def test_datetime(self):
@@ -261,7 +283,7 @@ class TestSerialize:
         assert serialize(time(12, 30)) == "12:30:00"
 
     def test_decimal(self):
-        assert serialize(Decimal("3.14")) == 3.14
+        assert serialize(Decimal("0.1")) == pytest.approx(0.1)
 
     def test_path(self):
         assert serialize(Path("/fake/test")) == "/fake/test"
@@ -270,16 +292,16 @@ class TestSerialize:
         assert serialize(Color.RED) == "red"
 
     def test_dataclass(self):
-        addr = Address(city="Prague", zip_code="10000")
-        assert serialize(addr) == {"city": "Prague", "zip_code": "10000"}
+        addr = Address(city="Lisbon", zip_code="1100-148")
+        assert serialize(addr) == {"city": "Lisbon", "zip_code": "1100-148"}
 
     def test_nested_dataclass(self):
-        person = Person(name="Alice", age=30, address=Address("Prague", "10000"))
+        person = Person(name="Alice", age=30, address=Address("Lisbon", "1100-148"))
         result = serialize(person)
         assert result == {
             "name": "Alice",
             "age": 30,
-            "address": {"city": "Prague", "zip_code": "10000"},
+            "address": {"city": "Lisbon", "zip_code": "1100-148"},
             "tags": [],
         }
 

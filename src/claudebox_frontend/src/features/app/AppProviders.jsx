@@ -6,6 +6,7 @@ import { BottomPanelsProvider } from '../../context/BottomPanelsContext'
 import { ContainerMapProvider } from '../../context/ContainerMapContext'
 import { DaemonStreamProvider } from '../../context/DaemonStreamContext'
 import { EventsProvider } from '../../context/EventsContext'
+import { FocusedHiddenToolsProvider } from '../../context/FocusedHiddenToolsContext'
 import { InteractionProvider } from '../../context/InteractionContext'
 import { LogsStreamProvider } from '../../context/LogsStreamContext'
 import { SessionRoutingProvider } from '../../context/SessionRoutingContext'
@@ -106,18 +107,20 @@ export default function AppProviders({
                         <StillRunningToastProvider>
                           <NewSessionBridge refs={newSessionRefs} />
                           <BookmarksProvider>
-                            <StashProvider>
-                              <BottomPanelsProvider>
-                                <ContainerRecoveryEffect />
-                                <ContainerStatusEffect />
-                                <ContainerStopEffect />
-                                <DaemonReconnectEffect />
-                                <WorkspaceResetEffect />
-                                <SessionRoutingEffect />
-                                <LinkSessionEffect />
-                                {children}
-                              </BottomPanelsProvider>
-                            </StashProvider>
+                            <FocusedHiddenToolsProvider>
+                              <StashProvider>
+                                <BottomPanelsProvider>
+                                  <ContainerRecoveryEffect />
+                                  <ContainerStatusEffect />
+                                  <ContainerStopEffect />
+                                  <DaemonReconnectEffect />
+                                  <WorkspaceResetEffect />
+                                  <SessionRoutingEffect />
+                                  <LinkSessionEffect />
+                                  {children}
+                                </BottomPanelsProvider>
+                              </StashProvider>
+                            </FocusedHiddenToolsProvider>
                           </BookmarksProvider>
                         </StillRunningToastProvider>
                       </SessionDataBridge>

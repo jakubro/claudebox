@@ -9,6 +9,9 @@ const EMPTY_EVENTS_REF = { current: [] }
 const DEFAULT_DRAFTS = { current: '', stack: [] }
 const STORAGE_KEY = 'inputHistory:test-session'
 
+// Ownership of a tab with no creation: a detached addition names creation 1, which never binds.
+const NO_CREATION = { ownerNow: () => ({ creation: 1 }), resolveOwner: () => null }
+
 /** Seed localStorage with history items before rendering. */
 const seedHistory = items => localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
 
@@ -30,10 +33,21 @@ describe('useInputHistory', () => {
     localStorage.clear()
   })
 
+  const renderNavigatedUp = (ups, opts) => {
+    const view = renderInputHistory(opts)
+    for (let i = 0; i < ups; i++) {
+      act(() => {
+        view.result.current.navigateUp()
+      })
+    }
+
+    return view
+  }
+
   /** Render the useInputHistory hook with default or custom options. */
   const renderInputHistory = (opts = {}) =>
     renderHook(
-      ({ sessionId, eventsRef, eventsLength, drafts }) =>
+      ({ sessionId, eventsRef, eventsLength, drafts, ownership }) =>
         // useInputHistory consumes drafts via a ref (kept live by ChatInput's direct-write path).
         // Tests pass a static object; wrap it so the hook reads `.current` on every navigation call.
         useInputHistory(
@@ -44,6 +58,7 @@ describe('useInputHistory', () => {
           saveDrafts,
           textareaRef,
           resizeTextarea,
+          ownership,
         ),
       {
         initialProps: {
@@ -51,6 +66,7 @@ describe('useInputHistory', () => {
           eventsRef: opts.eventsRef ?? EMPTY_EVENTS_REF,
           eventsLength: opts.eventsLength ?? opts.eventsRef?.current?.length ?? 0,
           drafts: opts.drafts ?? DEFAULT_DRAFTS,
+          ownership: opts.ownership ?? NO_CREATION,
         },
       },
     )
@@ -288,15 +304,8 @@ describe('useInputHistory', () => {
     it('moves to newer message when in history', () => {
       seedHistory(['old', 'new'])
 
-      const { result } = renderInputHistory()
-
       // Navigate up twice to get to 'old'
-      act(() => {
-        result.current.navigateUp()
-      })
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(2)
       expect(mockTextarea.value).toBe('old')
 
       // Set cursor at end for Down navigation
@@ -315,15 +324,8 @@ describe('useInputHistory', () => {
     it('places cursor at end after navigation', () => {
       seedHistory(['old', 'new'])
 
-      const { result } = renderInputHistory()
-
       // Navigate up twice to get to 'old'
-      act(() => {
-        result.current.navigateUp()
-      })
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(2)
       expect(mockTextarea.value).toBe('old')
 
       // Set cursor at end for Down navigation
@@ -341,12 +343,8 @@ describe('useInputHistory', () => {
     it('returns to empty when past newest history', () => {
       seedHistory(['old'])
 
-      const { result } = renderInputHistory()
-
       // Navigate up to history
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(1)
       expect(mockTextarea.value).toBe('old')
 
       // Set cursor at end
@@ -363,12 +361,8 @@ describe('useInputHistory', () => {
     it('calls resizeTextarea after navigation', () => {
       seedHistory(['old', 'new'])
 
-      const { result } = renderInputHistory()
-
       // Get into history
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(1)
       resizeTextarea.mockClear()
 
       mockTextarea.selectionStart = mockTextarea.value.length
@@ -378,6 +372,87 @@ describe('useInputHistory', () => {
       })
 
       expect(resizeTextarea).toHaveBeenCalled()
+    })
+  })
+
+  describe('replaceCurrent', () => {
+    it('fills an empty box with the caret at the end and pushes nothing', () => {
+      const { result } = renderInputHistory()
+
+      act(() => {
+        result.current.replaceCurrent('Hold')
+      })
+
+      expect(mockTextarea.value).toBe('Hold')
+      expect([mockTextarea.selectionStart, mockTextarea.selectionEnd]).toEqual([4, 4])
+      expect(saveDrafts).toHaveBeenCalledWith({ current: 'Hold', stack: [] })
+      expect(resizeTextarea).toHaveBeenCalled()
+    })
+
+    it("moves the box's text onto the draft stack", () => {
+      mockTextarea.value = 'also check the logs'
+      const { result } = renderInputHistory({
+        drafts: { current: 'also check the logs', stack: ['older draft'] },
+      })
+
+      act(() => {
+        result.current.replaceCurrent('Go')
+      })
+
+      expect(mockTextarea.value).toBe('Go')
+      expect(saveDrafts).toHaveBeenCalledWith({
+        current: 'Go',
+        stack: ['older draft', 'also check the logs'],
+      })
+    })
+
+    it('leaves a box already holding the text as it is', () => {
+      mockTextarea.value = 'Go'
+      mockTextarea.selectionStart = 0
+      mockTextarea.selectionEnd = 0
+      const { result } = renderInputHistory({ drafts: { current: 'Go', stack: ['older draft'] } })
+
+      act(() => {
+        result.current.replaceCurrent('Go')
+      })
+
+      expect(saveDrafts).not.toHaveBeenCalled()
+      expect([mockTextarea.selectionStart, mockTextarea.selectionEnd]).toEqual([2, 2])
+    })
+
+    it('while history shows, pushes the text typed before and Up then starts from it', () => {
+      seedHistory(['first prompt'])
+      mockTextarea.value = 'fresh words'
+      const drafts = { current: 'fresh words', stack: ['older draft'] }
+      mockTextarea.selectionStart = 0
+      mockTextarea.selectionEnd = 0
+      const { result, rerender } = renderNavigatedUp(2, { drafts })
+      expect(mockTextarea.value).toBe('first prompt')
+
+      act(() => {
+        result.current.replaceCurrent('Hold')
+      })
+      const saved = { current: 'Hold', stack: ['older draft', 'fresh words'] }
+      expect(saveDrafts).toHaveBeenLastCalledWith(saved)
+      expect(result.current.getNavState()).toEqual({ source: null, index: -1 })
+
+      rerender({
+        sessionId: 'test-session',
+        eventsRef: EMPTY_EVENTS_REF,
+        eventsLength: 0,
+        drafts: saved,
+        ownership: NO_CREATION,
+      })
+      const walked = []
+      for (let i = 0; i < 3; i++) {
+        mockTextarea.selectionStart = 0
+        mockTextarea.selectionEnd = 0
+        act(() => {
+          result.current.navigateUp()
+        })
+        walked.push(mockTextarea.value)
+      }
+      expect(walked).toEqual(['fresh words', 'older draft', 'first prompt'])
     })
   })
 
@@ -427,18 +502,8 @@ describe('useInputHistory', () => {
     it('navigates back through drafts with Down', () => {
       seedHistory(['history'])
       const drafts = { current: '', stack: ['draft1', 'draft2'] }
-      const { result } = renderInputHistory({ drafts })
-
-      // Navigate up through drafts and into history
-      act(() => {
-        result.current.navigateUp() // draft2
-      })
-      act(() => {
-        result.current.navigateUp() // draft1
-      })
-      act(() => {
-        result.current.navigateUp() // history
-      })
+      // Navigate up through drafts (draft2, draft1) and into history
+      const { result } = renderNavigatedUp(3, { drafts })
       expect(mockTextarea.value).toBe('history')
 
       // Set cursor at end for Down navigation
@@ -468,12 +533,8 @@ describe('useInputHistory', () => {
     it('resets navigation state so Down pushes to stack instead of navigating', () => {
       seedHistory(['old'])
 
-      const { result } = renderInputHistory()
-
       // Navigate into history
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(1)
       expect(mockTextarea.value).toBe('old')
 
       // Reset
@@ -578,12 +639,8 @@ describe('useInputHistory', () => {
   describe('updateCurrentItem', () => {
     it('updates draft item in-place', () => {
       const drafts = { current: '', stack: ['original'] }
-      const { result } = renderInputHistory({ drafts })
-
       // Navigate to draft
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(1, { drafts })
       expect(mockTextarea.value).toBe('original')
 
       // Update in place
@@ -596,12 +653,8 @@ describe('useInputHistory', () => {
 
     it('updates history item in-place', () => {
       seedHistory(['original'])
-      const { result } = renderInputHistory()
-
       // Navigate to history
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(1)
       expect(mockTextarea.value).toBe('original')
 
       // Update in place
@@ -630,12 +683,8 @@ describe('useInputHistory', () => {
   describe('prepareSubmit', () => {
     it('removes draft from stack when submitting from draft', () => {
       const drafts = { current: '', stack: ['draft1', 'draft2'] }
-      const { result } = renderInputHistory({ drafts })
-
       // Navigate to newest draft
-      act(() => {
-        result.current.navigateUp()
-      })
+      const { result } = renderNavigatedUp(1, { drafts })
       expect(mockTextarea.value).toBe('draft2')
 
       // Submit
@@ -655,15 +704,8 @@ describe('useInputHistory', () => {
     it('keeps draft stack when submitting from history', () => {
       seedHistory(['history1'])
       const drafts = { current: '', stack: ['draft1'] }
-      const { result } = renderInputHistory({ drafts })
-
-      // Navigate past drafts into history
-      act(() => {
-        result.current.navigateUp() // draft1
-      })
-      act(() => {
-        result.current.navigateUp() // history1
-      })
+      // Navigate past drafts (draft1) into history1
+      const { result } = renderNavigatedUp(2, { drafts })
       expect(mockTextarea.value).toBe('history1')
 
       // Submit (re-send from history)
@@ -690,6 +732,18 @@ describe('useInputHistory', () => {
       expect(saveDrafts).toHaveBeenCalledWith({ current: '', stack: ['parked'] })
       // Should add to history
       expect(result.current.inputHistory).toEqual(['new message'])
+    })
+
+    it('saves text the box kept as its draft', () => {
+      const drafts = { current: 'typed since', stack: ['parked'] }
+      const { result } = renderInputHistory({ drafts })
+
+      act(() => {
+        result.current.prepareSubmit('sent message', 'typed since')
+      })
+
+      expect(saveDrafts).toHaveBeenCalledWith({ current: 'typed since', stack: ['parked'] })
+      expect(result.current.inputHistory).toEqual(['sent message'])
     })
 
     it('resets navigation state after submit', () => {
@@ -813,6 +867,32 @@ describe('useInputHistory', () => {
       })
 
       expect(result.current.inputHistory).toEqual(['first message', 'second message'])
+    })
+  })
+
+  describe('an addition made with no session attached', () => {
+    it("lands in the created session's history, not in a session opened meanwhile", () => {
+      let bound = null
+      const ownership = {
+        ownerNow: () => ({ creation: 1 }),
+        resolveOwner: tag => (tag.creation === 1 ? bound : null),
+      }
+      const props = {
+        eventsRef: EMPTY_EVENTS_REF,
+        eventsLength: 0,
+        drafts: DEFAULT_DRAFTS,
+        ownership,
+      }
+      const { result, rerender } = renderInputHistory({ ownership })
+      rerender({ ...props, sessionId: null })
+      act(() => result.current.addToHistory('first for C'))
+
+      // Creation 1 produced C, but the reader opened B, which attaches first.
+      bound = 'C'
+      rerender({ ...props, sessionId: 'B' })
+
+      expect(localStorage.getItem('inputHistory:B')).toBe(null)
+      expect(JSON.parse(localStorage.getItem('inputHistory:C'))).toEqual(['first for C'])
     })
   })
 })

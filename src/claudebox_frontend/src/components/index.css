@@ -4,7 +4,10 @@
 @import "./ErrorBoundary.css";
 @import "./Markdown/Markdown.css";
 @import "./Markdown/components/MermaidDiagram.css";
+@import "./Markdown/components/GeoMap.css";
+@import "./Markdown/components/StlViewer.css";
 @import "./NewSessionSplitButton.css";
 @import "./PanelControlBar/PanelControlBar.css";
 @import "./PanelListItem.css";
 @import "./PathHighlighter.css";
+@import "./SessionScopeTabs.css";

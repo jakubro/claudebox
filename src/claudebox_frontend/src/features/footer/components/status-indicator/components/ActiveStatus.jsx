@@ -43,8 +43,6 @@ export default function ActiveStatus({ label, status, respondingSince, lastEvent
     }
   }, [anchorTimestamp, lastEventTimestamp])
 
-  const displayLabel = isSilent ? 'Waiting' : label
-
   return (
     <>
       <span
@@ -52,8 +50,8 @@ export default function ActiveStatus({ label, status, respondingSince, lastEvent
         data-testid="footer-status"
         data-status={status}
       />
-      <span className={`footer-item footer-status-text${isSilent ? ' status-silent' : ''}`}>
-        {displayLabel}
+      <span className="footer-item footer-status-text">
+        {label}
         <span className="dot dot-1">.</span>
         <span className="dot dot-2">.</span>
         <span className="dot dot-3">.</span>

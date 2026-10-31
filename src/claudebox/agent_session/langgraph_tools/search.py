@@ -4,6 +4,8 @@ glob walks the workspace path; grep wraps a ripgrep subprocess so the Claude -> 
 habit transfer keeps the same flag surface. Output capped at 100 KB; results capped at 1 000.
 """
 
+from __future__ import annotations
+
 import subprocess
 
 from langchain_core.tools import BaseTool, ToolException, tool

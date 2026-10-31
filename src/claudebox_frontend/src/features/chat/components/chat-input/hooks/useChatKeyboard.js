@@ -1,17 +1,19 @@
 /** Keyboard shortcut dispatch and chat action handlers. */
 
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import useInterruptHandler from '../../../../../hooks/useInterruptHandler'
+import { applyUndoableEdit } from '../utils/undoableEdit'
 import useTextEditingKeys from './useTextEditingKeys'
 
 /**
  * @param {object} params.textareaRef - Ref to the textarea element.
- * @param {Function} params.peekInput - Reads textarea content without clearing it.
- * @param {Function} params.commitInput - Clears the textarea after a successful send.
+ * @param {Function} params.peekInput - Reads textarea content without clearing it; null means empty.
+ * @param {Function} params.submitBlock - Why a submit cannot go now ('loading', 'sending'), or null.
+ * @param {Function} params.commitInput - Takes a sent input out of the box; text typed since stays.
  * @param {Function} params.extractInput - Extracts and clears textarea content (used by the queue).
  * @param {Function} params.send - Send-message callback.
  * @param {Function} params.setSending - Toggles the sending state.
- * @param {Function} params.enqueueMessage - Queues a message for later sending.
+ * @param {Function|null} params.enqueueMessage - Queues a message for later sending; null when none.
  * @param {Function} params.deferSend - Defers a message to auto-send once session creation completes.
  * @param {object} [params.pendingFormRef] - Ref to the active turn's live AskUserQuestion form, if any.
  * @param {boolean} params.isCreating - Whether the session is being created (routes submit to defer/queue).
@@ -28,11 +30,12 @@ import useTextEditingKeys from './useTextEditingKeys'
  * @param {Function} params.navigateDown - Navigates history down.
  * @param {import('../BlockCollapseManager').default} params.collapseManager - Block collapse/expand state.
  * @param {boolean} params.isMobile - Whether in a mobile viewport (skips Enter-to-submit).
- * @returns {{ handleKeyDown, handleSubmit, handleInterrupt, handleQueue }}
+ * @returns {{ handleKeyDown, handleSubmit, handleInterrupt, handleQueue, submitOrAnswer }}
  */
 export default function useChatKeyboard({
   textareaRef,
   peekInput,
+  submitBlock,
   commitInput,
   extractInput,
   send,
@@ -56,44 +59,89 @@ export default function useChatKeyboard({
   collapseManager,
   isMobile = false,
 }) {
+  const inFlightRef = useRef(null)
+  const submitWantedRef = useRef(false)
+  const [followUpCount, setFollowUpCount] = useState(0)
+
   // Peek, send, and commit only on success - text is preserved on failure.
   // During session creation, the first message defers; later ones route to the queue.
   const handleSubmit = useCallback(async () => {
-    const input = peekInput()
-    if (!input) {
-      // Composer is empty, but a reply-only inline batch still sends (no side bar).
-      if (hasBufferedReplies?.()) {
-        setSending(true)
-        try {
-          await send('', { attachments: [] })
-        } catch {
-          // nothing to restore
-        } finally {
-          setSending(false)
-        }
+    const block = submitBlock()
+    if (block === 'sending') {
+      if ((textareaRef.current?.value ?? '') !== inFlightRef.current) {
+        submitWantedRef.current = true
       }
       return
     }
+    if (block) {
+      return
+    }
+    const input = peekInput()
+    // Composer is empty, but a reply-only inline batch still sends (no side bar).
+    if (!(input || hasBufferedReplies?.())) {
+      return
+    }
 
-    if (isCreating) {
-      commitInput(input.rawPrompt)
+    if (input && isCreating) {
+      commitInput(input)
       deferSend(input.rawPrompt, input.currentAttachments)
       return
     }
 
+    const rawPrompt = input?.rawPrompt ?? ''
+    inFlightRef.current = rawPrompt
     setSending(true)
+    let sent = false
     try {
-      await send(input.rawPrompt, { attachments: input.currentAttachments })
-      commitInput(input.rawPrompt)
-    } catch {
-      // Text remains in textarea - nothing to restore
+      sent = await send(rawPrompt, { attachments: input?.currentAttachments ?? [] })
+      if (sent && input) {
+        commitInput(input)
+      }
     } finally {
+      inFlightRef.current = null
       setSending(false)
+      const wanted = submitWantedRef.current
+      submitWantedRef.current = false
+      if (wanted && sent) {
+        setFollowUpCount(count => count + 1)
+      }
     }
-  }, [peekInput, commitInput, send, setSending, isCreating, deferSend, hasBufferedReplies])
+  }, [
+    textareaRef,
+    submitBlock,
+    peekInput,
+    commitInput,
+    send,
+    setSending,
+    isCreating,
+    deferSend,
+    hasBufferedReplies,
+  ])
 
-  // Alt+Enter queues message for later sending.
+  // After the commit renders: called at once, it would peek this closure's stale attachments.
+  const latestSubmitRef = useRef(handleSubmit)
+  latestSubmitRef.current = handleSubmit
+  useEffect(() => {
+    if (followUpCount > 0) {
+      void latestSubmitRef.current()
+    }
+  }, [followUpCount])
+
+  // Enter's action, shared with a reply box: a pending form with a choice made takes priority over
+  // the composer's empty-check, so the note rides with the answer instead of skipping the question.
+  const submitOrAnswer = useCallback(() => {
+    if (pendingFormRef?.current?.hasSelection()) {
+      pendingFormRef.current.submit()
+      return
+    }
+    void handleSubmit()
+  }, [pendingFormRef, handleSubmit])
+
+  // Alt+Enter queues message for later sending; with no queue (the welcome screen) the text stays.
   const handleQueue = useCallback(() => {
+    if (!enqueueMessage) {
+      return
+    }
     const input = extractInput()
     if (!input) {
       return
@@ -125,9 +173,6 @@ export default function useChatKeyboard({
     stashPop()
   }, [stashPop])
 
-  // Writes to the textarea and dispatches the input event typing produces, so drafts/autocomplete/
-  // resize observers see it.
-  // Omitted selStart leaves selection unmanaged.
   const getEditingState = useCallback(() => {
     const ta = textareaRef.current
     return {
@@ -137,19 +182,9 @@ export default function useChatKeyboard({
     }
   }, [textareaRef])
 
+  // The edit fires the input event typing produces, so drafts/autocomplete/resize observers see it.
   const applyEditingResult = useCallback(
-    result => {
-      const ta = textareaRef.current
-      if (!ta) {
-        return
-      }
-      ta.value = result.value
-      if (result.selStart !== undefined) {
-        ta.selectionStart = result.selStart
-        ta.selectionEnd = result.selEnd
-      }
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-    },
+    result => applyUndoableEdit(textareaRef.current, result),
     [textareaRef],
   )
 
@@ -169,15 +204,10 @@ export default function useChatKeyboard({
         return
       }
 
-      // Enter submits (desktop only - mobile uses the send button). A pending form takes priority
-      // over the composer's empty-check, so the note rides with the answer instead of skipping the question.
+      // Enter submits (desktop only - mobile uses the send button).
       if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
-        if (pendingFormRef?.current?.hasSelection()) {
-          pendingFormRef.current.submit()
-          return
-        }
-        void handleSubmit()
+        submitOrAnswer()
         return
       }
 
@@ -211,16 +241,15 @@ export default function useChatKeyboard({
     },
     [
       handleQueue,
-      handleSubmit,
+      submitOrAnswer,
       navigateUp,
       navigateDown,
       handleStash,
       handleStashPop,
       handleSharedKeyDown,
       isMobile,
-      pendingFormRef,
     ],
   )
 
-  return { handleKeyDown, handleSubmit, handleInterrupt, handleQueue }
+  return { handleKeyDown, handleSubmit, handleInterrupt, handleQueue, submitOrAnswer }
 }

@@ -1,11 +1,14 @@
 """Per-workspace service - isolated container and session orchestration."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from claudebox import (
     Broadcaster,
     Config,
     RateLimitStore,
+    claude_projects_root,
     get_logger,
     resolve_runtime_class,
     serialization,
@@ -18,6 +21,7 @@ from ..executors import DaemonExecutors
 if TYPE_CHECKING:
     from ..boards import BoardService
     from ..containers import ContainerProxyClient, ContainerService
+    from ..files import FileService
     from ..sessions import SessionService
     from ..ui_state import UIStateService
 
@@ -29,13 +33,14 @@ class WorkspaceService:
         self,
         workspace: RegisteredWorkspace,
         events: Broadcaster,
-        proxy: "ContainerProxyClient",
+        proxy: ContainerProxyClient,
         executors: DaemonExecutors,
     ):
         """Load workspace config and initialize sub-services when the workspace dir exists."""
 
         from ..boards import BoardService
         from ..containers import ContainerService
+        from ..files import FileService
         from ..sessions import SessionService, SpawnListener
         from ..ui_state import UIStateService
 
@@ -44,19 +49,27 @@ class WorkspaceService:
         self._rate_limit_store = RateLimitStore(workspace.path)
 
         self.workspace: RegisteredWorkspace = workspace
+        # Snapshotted once with the sub-services built from it, so the two never disagree like a
+        # live workspace.available check could; a returned directory gets a fresh instance instead.
+        self.available: bool = workspace.available
 
         self._ui_state: UIStateService | None = None
         self._container_service: ContainerService | None = None
         self._session_service: SessionService | None = None
         self._board_service: BoardService | None = None
+        self._file_service: FileService | None = None
         self._spawn_listener: SpawnListener | None = None
 
-        if not self.workspace.available:
+        if not self.available:
             self._logger.warning("Workspace directory unavailable", **self._log_context)
 
             return
 
-        self._ui_state = UIStateService(workspace, executor=executors.state)
+        self._ui_state = UIStateService(
+            workspace,
+            executor=executors.state,
+            session_days=self._config.prune_session_days,
+        )
 
         self._container_service = ContainerService(
             workspace=workspace,
@@ -73,6 +86,7 @@ class WorkspaceService:
             events=events,
             agent=self._config.agent,
             executor=executors.listing,
+            projects_root=claude_projects_root() if self._config.backend == "local" else None,
         )
 
         self._board_service = BoardService(
@@ -82,6 +96,8 @@ class WorkspaceService:
             events=events,
             executor=executors.listing,
         )
+
+        self._file_service = FileService(workspace, executor=executors.listing)
 
         self._spawn_listener = SpawnListener(
             workspace=workspace,
@@ -94,35 +110,42 @@ class WorkspaceService:
     # ----------------------------------------------------------------------------------------------
 
     @property
-    def ui_state(self) -> "UIStateService":
+    def ui_state(self) -> UIStateService:
         self._require_available("ui_state")
         assert self._ui_state is not None
 
         return self._ui_state
 
     @property
-    def container_service(self) -> "ContainerService":
+    def container_service(self) -> ContainerService:
         self._require_available("container_service")
         assert self._container_service is not None
 
         return self._container_service
 
     @property
-    def session_service(self) -> "SessionService":
+    def session_service(self) -> SessionService:
         self._require_available("session_service")
         assert self._session_service is not None
 
         return self._session_service
 
     @property
-    def board_service(self) -> "BoardService":
+    def board_service(self) -> BoardService:
         self._require_available("board_service")
         assert self._board_service is not None
 
         return self._board_service
 
+    @property
+    def file_service(self) -> FileService:
+        self._require_available("file_service")
+        assert self._file_service is not None
+
+        return self._file_service
+
     def _require_available(self, accessor: str) -> None:
-        if not self.workspace.available:
+        if not self.available:
             raise RuntimeError(
                 f"workspace {self.workspace.id!r} is unavailable; .{accessor} cannot be used",
             )
@@ -135,7 +158,7 @@ class WorkspaceService:
 
         self._logger.debug("Starting workspace service...", **self._log_context)
 
-        if self.workspace.available:
+        if self.available:
             await self.container_service.start()
             await self.session_service.start()
             await self.board_service.start()
@@ -166,7 +189,7 @@ class WorkspaceService:
 
         self._logger.debug("Stopping workspace service...", **self._log_context)
 
-        if self.workspace.available:
+        if self.available:
             assert self._spawn_listener is not None
             await self._spawn_listener.stop()
             await self.board_service.stop()
@@ -183,8 +206,7 @@ class WorkspaceService:
 
         cls = resolve_runtime_class(self._config.agent)
 
-        # Protocol declares CAPABILITIES for instances; ty can't resolve it via type[AgentSession].
-        if not cls.CAPABILITIES.supports_skills:  # ty: ignore[unresolved-attribute]
+        if not cls.CAPABILITIES.supports_skills:
             return None
 
         profile = self._config.profile

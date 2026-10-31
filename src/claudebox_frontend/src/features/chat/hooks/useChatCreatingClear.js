@@ -4,20 +4,14 @@ import { useEffect, useRef } from 'react'
 import { CREATING_OVERLAY_TIMEOUT_MS } from '../../../config/timing'
 
 /**
- * Drive the auto-clear state machine for the creating overlay.
- *
- * Transitions: `idle -> waiting-disconnect (if connected) -> waiting-connect -> clear`. Skips to
- * `waiting-connect` directly if SSE was already disconnected at creation. Once `waiting-connect` sees a
- * reconnect, the overlay clears once no first message is buffered, or that message is now visible.
- *
- * Also installs a {@link CREATING_OVERLAY_TIMEOUT_MS} safety timeout: if SSE never reconnects, the overlay
- * clears anyway so the panel doesn't lock up.
+ * Clear "Creating" once the new session's stream reconnects and its first message is visible, or on
+ * the {@link CREATING_OVERLAY_TIMEOUT_MS} timeout - both armed only after the create request settles.
  */
 export default function useChatCreatingClear({
   isCreating,
+  isCreateRequestPending,
   isConnected,
   deferredSend,
-  deferredHold,
   showPendingMessagesLength,
   turnsLength,
   clearCreating,
@@ -25,7 +19,7 @@ export default function useChatCreatingClear({
   const phaseRef = useRef('idle')
 
   useEffect(() => {
-    if (!isCreating) {
+    if (!isCreating || isCreateRequestPending) {
       phaseRef.current = 'idle'
       return
     }
@@ -41,7 +35,7 @@ export default function useChatCreatingClear({
     }
 
     if (phaseRef.current === 'waiting-connect' && isConnected) {
-      const hasBufferedFirstMessage = deferredSend || deferredHold
+      const hasBufferedFirstMessage = deferredSend
       const firstMessageVisible = showPendingMessagesLength > 0 || turnsLength > 0
       if (!hasBufferedFirstMessage || firstMessageVisible) {
         clearCreating()
@@ -49,19 +43,19 @@ export default function useChatCreatingClear({
     }
   }, [
     isCreating,
+    isCreateRequestPending,
     isConnected,
     turnsLength,
     deferredSend,
-    deferredHold,
     showPendingMessagesLength,
     clearCreating,
   ])
 
   useEffect(() => {
-    if (!isCreating) {
+    if (!isCreating || isCreateRequestPending) {
       return
     }
     const timer = setTimeout(clearCreating, CREATING_OVERLAY_TIMEOUT_MS)
     return () => clearTimeout(timer)
-  }, [isCreating, clearCreating])
+  }, [isCreating, isCreateRequestPending, clearCreating])
 }

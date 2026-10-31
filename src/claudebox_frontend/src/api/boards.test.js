@@ -348,3 +348,44 @@ describe('reorderSwimlanes', () => {
     await expect(reorderSwimlanes('b1', ['a'])).rejects.toThrow('Failed to reorder swimlanes')
   })
 })
+
+describe('moveTicket refusals', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('names a same-name collision', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ error: 'ticket_move_refused', reason: 'destination_exists' }),
+    })
+
+    const error = await moveTicket('b1', 'tickets/todo/x.md', { column: 'done' }).catch(e => e)
+
+    expect(error.userFacing).toBe(true)
+    expect(error.message).toBe('The target column already holds a ticket named x.md')
+  })
+
+  it('names a ticket file outside its column folder', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ error: 'ticket_move_refused', reason: 'not_in_column_folder' }),
+    })
+
+    const error = await moveTicket('b1', 'tickets/active/x.md', { column: 'done' }).catch(e => e)
+
+    expect(error.userFacing).toBe(true)
+    expect(error.message).toBe('x.md is not in the folder its column keeps tickets in')
+  })
+
+  it('keeps the generic message for other failures', async () => {
+    workspaceFetch.mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) })
+
+    const error = await moveTicket('b1', 'tickets/todo/x.md', { column: 'done' }).catch(e => e)
+
+    expect(error.userFacing).toBeUndefined()
+    expect(error.message).toBe('Failed to move ticket')
+  })
+})

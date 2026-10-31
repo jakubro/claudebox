@@ -10,6 +10,7 @@ import {
 
 let _workspaceId = null
 let _containerId = null
+let _sessionId = null
 
 /** Called by WorkspaceContext on discovery. */
 export function setWorkspaceId(id) {
@@ -20,13 +21,33 @@ export function getWorkspaceId() {
   return _workspaceId
 }
 
-/** Called after session new/resume returns container_id. */
-export function setContainerId(id) {
-  _containerId = id
+/** Called after session new/resume: the session this tab addresses and the container running it. */
+export function setAddress(containerId, sessionId) {
+  _containerId = containerId
+  _sessionId = sessionId
 }
 
 export function getContainerId() {
   return _containerId
+}
+
+export function getAddressedSessionId() {
+  return _sessionId
+}
+
+/**
+ * Name a session on a session-scoped container path, the addressed one by default. Unnamed, the
+ * container resolves its primary - another session whenever the addressed one shares its container.
+ * @param {string} path - Path including /api prefix, with or without a query.
+ * @param {string} [sessionId] - Session to name instead of the addressed one.
+ * @returns {string}
+ */
+export function sessionPath(path, sessionId = _sessionId) {
+  if (!sessionId) {
+    throw new Error('Session ID not set')
+  }
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}session_id=${encodeURIComponent(sessionId)}`
 }
 
 /**
@@ -127,6 +148,18 @@ export function containerUrl(path, containerId = _containerId) {
     throw new Error('Container ID not set')
   }
   return `/api/workspaces/${_workspaceId}/containers/${containerId}${path}`
+}
+
+/**
+ * Workspace-scoped URL for a resource an element loads itself, such as an image's `src`.
+ * @param {string} path - Path below the workspace, starting with `/`
+ * @returns {string}
+ */
+export function workspaceUrl(path) {
+  if (!_workspaceId) {
+    throw new Error('Workspace ID not set')
+  }
+  return `/api/workspaces/${_workspaceId}${path}`
 }
 
 /**

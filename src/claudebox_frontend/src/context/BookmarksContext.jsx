@@ -25,6 +25,7 @@ export function BookmarksProvider({ children }) {
     error,
     isBookmarked,
     isTurnBookmarked,
+    bookmarkedPartsOf,
     toggleBookmark,
     removeBookmark,
     refresh,
@@ -39,6 +40,7 @@ export function BookmarksProvider({ children }) {
       error,
       isBookmarked,
       isTurnBookmarked,
+      bookmarkedPartsOf,
       toggleBookmark,
       removeBookmark,
       refresh,
@@ -51,6 +53,7 @@ export function BookmarksProvider({ children }) {
       error,
       isBookmarked,
       isTurnBookmarked,
+      bookmarkedPartsOf,
       toggleBookmark,
       removeBookmark,
       refresh,
@@ -62,7 +65,7 @@ export function BookmarksProvider({ children }) {
 
 /**
  * Access shared bookmark state.
- * @returns {{ bookmarkedMessageIds: Set, allBookmarks: object, bookmarkMeta: object, loading: boolean, error: string|null, isBookmarked: function, isTurnBookmarked: function, toggleBookmark: function, removeBookmark: function, refresh: function }}
+ * @returns {{ bookmarkedMessageIds: Set, allBookmarks: object, bookmarkMeta: object, loading: boolean, error: string|null, isBookmarked: function, isTurnBookmarked: function, bookmarkedPartsOf: function, toggleBookmark: function, removeBookmark: function, refresh: function }}
  */
 export function useBookmarksContext() {
   const context = useContext(BookmarksContext)
@@ -70,4 +73,9 @@ export function useBookmarksContext() {
     throw new Error('useBookmarksContext must be used within BookmarksProvider')
   }
   return context
+}
+
+/** Shared bookmark state, or null outside a BookmarksProvider - for views also rendered standalone. */
+export function useOptionalBookmarks() {
+  return useContext(BookmarksContext)
 }

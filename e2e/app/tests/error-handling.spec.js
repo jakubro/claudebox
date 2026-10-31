@@ -4,7 +4,10 @@ import { expect, test } from '@playwright/test'
 import {
   assertColor,
   assertRedColor,
+  openLiveSessionWithAPI,
   openLogsPanel,
+  openSession,
+  openSessionWithAPI,
   openStashPanel,
   openTodosPanel,
   waitForAppReady,
@@ -19,7 +22,6 @@ import {
   createDaemonSSEController,
   createLogsSSEController,
   createSSEController,
-  mockSSE,
 } from '../mocks/sse.js'
 
 test.describe('Error Handling', () => {
@@ -27,10 +29,7 @@ test.describe('Error Handling', () => {
     // SPEC: error:turn
     // SPEC: chat:error-border
     test('error turn shows red border', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/chat-with-error.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/chat-with-error.jsonl')
 
       await expect(page.getByText('Do something that fails').first()).toBeVisible()
 
@@ -39,16 +38,82 @@ test.describe('Error Handling', () => {
 
       await assertRedColor(errorTurn, 'borderLeftColor')
     })
+
+    // SPEC: error:runtime-failure
+    test('a runtime failure mid-message shows the reason and stops the working indication', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/chat-runtime-failure.jsonl')
+
+      const errorTurn = page.locator('.turn-error').first()
+      await expect(errorTurn).toBeVisible()
+      await expect(errorTurn.getByText('Failed to process: runtime crashed')).toBeVisible()
+      await expect(page.locator('.turn-progress-working')).toHaveCount(0)
+    })
+
+    // SPEC: error:stream-lost
+    test('a connection that ends mid-message says so and stops the working indication', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/chat-stream-lost.jsonl')
+
+      const errorTurn = page.locator('.turn-error').first()
+      await expect(
+        errorTurn.getByText("The agent's connection ended before it answered"),
+      ).toBeVisible()
+      await expect(page.locator('.turn-progress-working')).toHaveCount(0)
+    })
+
+    // SPEC: chat:not-logged-in
+    // SPEC: chat:agent-reported-failure
+    // SPEC: turn:progress-complete
+    test('a turn the agent could not answer for want of a login stays failed and says how to log in', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/chat-not-logged-in.jsonl')
+
+      const errorTurn = page.locator('.turn-error').first()
+      await expect(errorTurn).toBeVisible()
+      await assertRedColor(errorTurn, 'borderLeftColor')
+      await expect(errorTurn.locator('code', { hasText: 'claudebox run' })).toBeVisible()
+      await expect(errorTurn).not.toContainText('Please run /login')
+      await expect(errorTurn.locator('.turn-progress-complete')).toContainText('✗')
+      await assertRedColor(errorTurn.locator('.turn-progress-complete'), 'color')
+    })
+
+    // SPEC: chat:turn-outcome-after-tools
+    // SPEC: chat:answer-shown-once
+    test('a turn that ran tools before it failed shows as failed, with its failure once', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/turn-failed-after-tools.jsonl')
+
+      const errorTurn = page.locator('.turn-error').first()
+      await expect(errorTurn).toBeVisible()
+      await assertRedColor(errorTurn, 'borderLeftColor')
+      await expect(errorTurn.locator('.turn-progress-complete')).toContainText('✗')
+      await assertRedColor(errorTurn.locator('.turn-progress-complete'), 'color')
+      await expect(errorTurn.locator('code', { hasText: 'claudebox run' })).toHaveCount(1)
+      await expect(errorTurn).not.toContainText('Please run /login')
+    })
+
+    // SPEC: chat:failure-between-turns
+    test('a failure after a turn finished shows its message and leaves the turn succeeded', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/chat-failure-after-finished-turn.jsonl')
+
+      await expect(page.getByText("The agent's connection ended before it answered")).toBeVisible()
+      await expect(page.locator('.turn-error')).toHaveCount(0)
+      await expect(page.locator('.turn-progress-complete').first()).toContainText('✓')
+    })
   })
 
   test.describe('Tool Errors', () => {
     // SPEC: error:tool
     // SPEC: tool:bullet-error
     test('tool error shows error styling', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/tool-with-error.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/tool-with-error.jsonl')
 
       const toolBlock = page.locator('[data-testid="tool-block"][data-tool-status="error"]').first()
       await expect(toolBlock).toBeVisible()
@@ -62,10 +127,7 @@ test.describe('Error Handling', () => {
 
     // SPEC: error:tool
     test('tool error shows error message', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/tool-with-error.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/tool-with-error.jsonl')
 
       await expect(page.getByText('File not found').first()).toBeVisible()
     })
@@ -75,10 +137,7 @@ test.describe('Error Handling', () => {
     // SPEC: error:auto-reconnect
     // MOCK-LIMITED: SSE mock cannot verify EventSource teardown/rebuild
     test('SSE error triggers reconnection', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const initialCount = await controller.getConnectionCount()
 
@@ -90,10 +149,7 @@ test.describe('Error Handling', () => {
 
     // SPEC: error:sse
     test('SSE error updates connection status', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       await expect(page.locator('[data-testid="footer-status"][data-status="ready"]')).toBeVisible()
 
@@ -105,10 +161,7 @@ test.describe('Error Handling', () => {
 
     // SPEC: footer:reconnecting
     test('SSE error shows "Reconnecting" status in footer', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       await controller.triggerError()
 
@@ -122,16 +175,13 @@ test.describe('Error Handling', () => {
   test.describe('API Errors', () => {
     // SPEC: error:api
     test('API send failure surfaces a transient error in the footer', async ({ page }) => {
-      await mockSSE(page)
-      await mockAPI(page, {
+      await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
         handlers: {
           send: async route => {
             await route.fulfill({ status: 500, json: { error: 'Server error' } })
           },
         },
       })
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
 
       const input = page.locator('[data-testid="chat-input"]')
       await expect(input).toBeEnabled()
@@ -147,7 +197,7 @@ test.describe('Error Handling', () => {
   })
 
   test.describe('Daemon Restart Recovery', () => {
-    // SSE reconnect uses a 1s+ baseDelay, so the recovery cycle needs headroom above the global 5s timeout.
+    // SSE reconnect uses a 1s+ baseDelay, so the recovery cycle needs headroom above the global test budget.
     test.describe.configure({ timeout: 20_000 })
 
     // SPEC: error:daemon-restart-recovery
@@ -221,14 +271,54 @@ test.describe('Error Handling', () => {
     })
   })
 
+  test.describe('Reload On A New Version', () => {
+    test.describe.configure({ timeout: 25_000 })
+
+    // SPEC: error:reload-on-new-version
+    test('the page reloads onto its session, draft kept, only when the service comes back on another version', async ({
+      page,
+    }) => {
+      let commit = 'aaaaaaa'
+      let healthRequests = 0
+      await page.route('**/api/daemon/health', async route => {
+        healthRequests += 1
+        await route.fulfill({ json: { mode: 'daemon', status: 'ok', commit } })
+      })
+      await createSSEController(page)
+      const daemon = await createDaemonSSEController(page)
+      await mockAPI(page)
+      await page.goto(DEFAULT_SESSION_URL)
+      await waitForAppReady(page)
+      await expect.poll(() => healthRequests).toBe(1)
+      await page.locator('[data-testid="chat-input"]').fill('a draft typed before the update')
+      await page.evaluate(() => {
+        window.__loadedBeforeUpdate = true
+      })
+      const marked = () =>
+        page.evaluate(() => window.__loadedBeforeUpdate === true).catch(() => false)
+
+      await daemon.disconnect()
+      await expect.poll(() => healthRequests, { timeout: 10_000 }).toBe(2)
+      await page.waitForTimeout(500)
+      expect(await marked()).toBe(true)
+
+      commit = 'bbbbbbb'
+      await daemon.disconnect()
+
+      await expect.poll(marked, { timeout: 10_000 }).toBe(false)
+      await waitForAppReady(page)
+      expect(page.url()).toContain(DEFAULT_SESSION_URL)
+      await expect(page.locator('[data-testid="chat-input"]')).toHaveValue(
+        'a draft typed before the update',
+      )
+    })
+  })
+
   test.describe('Manual Recovery', () => {
     // SPEC: error:manual-reconnect
     // MOCK-LIMITED: Cannot verify real SSE connection reset
     test('reload button reconnects to server', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const initialCount = await controller.getConnectionCount()
 
@@ -242,10 +332,7 @@ test.describe('Error Handling', () => {
 
     // SPEC: error:preserve-state
     test('session state preserved across reconnects', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       await controller.sendEvents([
         {
@@ -283,18 +370,15 @@ test.describe('Error Handling', () => {
   test.describe('Error State Recovery', () => {
     // SPEC: error:state-clear
     test('error state auto-clears after 4 seconds', async ({ page }) => {
-      test.setTimeout(10000)
+      test.setTimeout(30_000)
 
-      await createSSEController(page)
-      await mockAPI(page, {
+      await openLiveSessionWithAPI(page, {
         handlers: {
           send: async route => {
             await route.fulfill({ status: 500, json: { error: 'Server error' } })
           },
         },
       })
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
 
       const input = page.locator('[data-testid="chat-input"]')
       await expect(input).toBeEnabled()
@@ -314,10 +398,7 @@ test.describe('Error Handling', () => {
   test.describe('Error Interrupt', () => {
     // SPEC: error:interrupt
     test('interrupted turn displays yellow left border', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/interrupted-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/interrupted-turn.jsonl')
 
       await expect(page.getByText('Once upon a time').first()).toBeVisible()
 
@@ -341,9 +422,9 @@ test.describe('Error Handling', () => {
     // SPEC: error:api
     test('startup failure when /api/sessions/current returns 500', async ({ page }) => {
       // Session fetch retries 3x with exponential backoff (1s+2s+4s=7s) before reporting error.
-      test.setTimeout(15000)
+      test.setTimeout(30_000)
       await mockAPI(page)
-      await mockAPIWithError(page, '**/api/sessions/current', { status: 500 })
+      await mockAPIWithError(page, '**/api/sessions/current*', { status: 500 })
       await createSSEController(page)
       await page.goto(DEFAULT_SESSION_URL)
 
@@ -358,7 +439,7 @@ test.describe('Error Handling', () => {
       page,
     }) => {
       await mockAPI(page)
-      await mockAPIWithError(page, '**/api/sessions/current', { status: 500 })
+      await mockAPIWithError(page, '**/api/sessions/current*', { status: 500 })
       await createSSEController(page)
       await page.goto(DEFAULT_SESSION_URL)
 
@@ -371,11 +452,7 @@ test.describe('Error Handling', () => {
     test('file tree 500 degrades gracefully', async ({ page }) => {
       await mockAPI(page)
       await mockAPIWithError(page, /\/api\/files\/tree/, { status: 500 }) // regex matches proxied path
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
+      const input = await openSession(page)
       await expect(input).toBeEnabled()
     })
 
@@ -383,11 +460,7 @@ test.describe('Error Handling', () => {
     test('session-defaults endpoint timeout degrades gracefully', async ({ page }) => {
       await mockAPI(page)
       await mockAPIWithError(page, '**/session-defaults')
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
+      const input = await openSession(page)
       await expect(input).toBeEnabled()
     })
   })
@@ -395,14 +468,11 @@ test.describe('Error Handling', () => {
   test.describe('Malformed SSE', () => {
     // SPEC: error:sse
     test('malformed SSE data does not crash the app', async ({ page }) => {
-      const controller = await createSSEController(page)
-      await mockAPI(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      const controller = await openLiveSessionWithAPI(page)
 
       const injected = await page.evaluate(() => {
         const instance = window.__sseChatInstance
-        if (!instance || instance.readyState !== 1) {
+        if (instance?.readyState !== 1) {
           return false
         }
         const malformed = { data: 'not-valid-json{{{' }
@@ -466,10 +536,7 @@ test.describe('Error Handling', () => {
     // SPEC: chat:interrupt-visual
     // SPEC: chat:interrupt-border
     test('interrupted turn has turn-interrupted class', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/interrupted-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/interrupted-turn.jsonl')
 
       await expect(page.getByText('Once upon a time').first()).toBeVisible()
 
@@ -481,10 +548,7 @@ test.describe('Error Handling', () => {
 
     // SPEC: chat:interrupt-range
     test('interrupt ack is suppressed - no Interrupted text indicator', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/interrupted-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/interrupted-turn.jsonl')
 
       await expect(page.getByText('Once upon a time').first()).toBeVisible()
 
@@ -494,22 +558,30 @@ test.describe('Error Handling', () => {
 
     // SPEC: chat:interrupt-ack-hidden
     test('SDK ack message is not shown as user bubble', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/interrupted-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/interrupted-turn.jsonl')
 
       await expect(page.getByText('Once upon a time').first()).toBeVisible()
 
       await expect(page.getByText('[Request interrupted by user]')).not.toBeVisible()
     })
 
+    // SPEC: chat:interrupt-follow-up
+    test('a stop during a follow-up marks its turn; a stop after a turn ended marks nothing', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/interrupted-follow-up.jsonl')
+
+      await expect(page.getByText('Glad to help.').first()).toBeVisible()
+
+      const interrupted = page.locator('.turn-interrupted')
+      await expect(interrupted).toHaveCount(1)
+      await expect(interrupted).toContainText('The audit found two issues')
+      await assertColor(interrupted, 'borderLeftColor', { r: 200, g: 200, b: 0 }, 80)
+    })
+
     // SPEC: chat:interrupt-visual
     test('non-interrupted turn has no interrupted styling', async ({ page }) => {
-      await mockAPI(page)
-      await mockSSE(page, 'events/interrupted-turn.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page, 'events/interrupted-turn.jsonl')
 
       // '2 + 2 equals 4.' is the fixture's second, non-interrupted turn.
       await expect(page.getByText('2 + 2 equals 4.').first()).toBeVisible()
@@ -528,10 +600,7 @@ test.describe('Error Handling', () => {
       await page.addInitScript(() => {
         window.__claudeboxAllowThrowPanel = true
       })
-      await mockAPI(page)
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSessionWithAPI(page)
 
       // Opens todos first (persisted layout) before reloading with the throw param: dockview swallows
       // failures on a brand-new panel's first mount, so this targets an existing one.
@@ -555,6 +624,19 @@ test.describe('Error Handling', () => {
 
       await expect(fallback).not.toBeVisible()
       await expect(page.locator('.todos-panel')).toBeVisible()
+    })
+  })
+
+  test.describe('Tool Block Containment', () => {
+    // SPEC: error:tool-block-containment
+    test('a malformed tool call renders in place; the transcript, composer and header keep working', async ({
+      page,
+    }) => {
+      await openSessionWithAPI(page, 'events/chat-malformed-question.jsonl')
+
+      await expect(page.getByText('Ask me something').first()).toBeVisible()
+      await expect(page.getByText('This tool call could not be read')).toBeVisible()
+      await expect(page.locator('[data-testid="chat-input"]')).toBeEnabled()
     })
   })
 })

@@ -1,5 +1,7 @@
 """web.py @tool tests - web_fetch, web_search."""
 
+from __future__ import annotations
+
 import socket
 from unittest.mock import MagicMock, patch
 

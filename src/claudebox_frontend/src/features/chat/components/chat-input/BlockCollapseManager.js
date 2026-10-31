@@ -9,15 +9,11 @@ import {
 // Shared (not per-instance) so ids stay unique if collapsed text is copy-pasted between boxes.
 let globalCounter = 0
 
-/** Pure text transforms - value + cursor in, new value + cursor out. No React or DOM deps. */
+/** Pure text transforms - value + cursor in, new value + cursor out. No React or DOM deps.
+ * Expanding keeps a placeholder's text until reset(), so one undo or redo brings back still expands. */
 export default class BlockCollapseManager {
   constructor() {
     this._collapsed = new Map()
-  }
-
-  /** Whether any blocks are currently collapsed. */
-  get hasCollapsed() {
-    return this._collapsed.size > 0
   }
 
   /**
@@ -85,7 +81,6 @@ export default class BlockCollapseManager {
       return null
     }
 
-    this._collapsed.delete(collapsed.placeholder)
     const before = value.slice(0, collapsed.start)
     const after = value.slice(collapsed.end)
     return { value: before + original + after, cursor: collapsed.start + original.length }
@@ -101,7 +96,6 @@ export default class BlockCollapseManager {
     for (const [placeholder, original] of entries) {
       value = value.replaceAll(placeholder, original)
     }
-    this._collapsed.clear()
     return { value }
   }
 

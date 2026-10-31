@@ -34,6 +34,11 @@ main() {
   if [[ $# == 0 ]] || [[ $1 == "--" ]]; then
     shift || true
     cmd+=(~/.local/bin/claudebox-agent "$CLAUDEBOX_AGENT")
+
+    # Web mode measures what each Bash call did; a terminal session never reads a measurement
+    if [[ ${CLAUDEBOX_WEB:-0} == 1 ]]; then
+      cmd=(~/.local/bin/claudebox-trace -- "${cmd[@]}")
+    fi
   fi
 
   # Verbose mode

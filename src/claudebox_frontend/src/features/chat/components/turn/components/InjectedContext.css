@@ -1,0 +1,88 @@
+/* Corner triangle for text the agent received that no one wrote: the bookmark marker mirrored to
+   the bottom-right and muted. The button around it is the hit area. */
+.injected-context-toggle {
+  position: relative;
+  flex-shrink: 0;
+  align-self: flex-end;
+  width: 20px;
+  height: 16px;
+  margin-left: auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.injected-context-toggle::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-left: 6px solid transparent;
+  border-bottom: 6px solid var(--text-muted);
+  border-right: 6px solid var(--text-muted);
+  border-radius: 0 0 3px 0;
+  opacity: 0.6;
+}
+
+.injected-context-toggle:hover::after,
+.injected-context-toggle.open::after {
+  opacity: 1;
+}
+
+/* A text block's triangle takes a row of its own at the block's foot, never covering a line. */
+.injected-context-corner {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Rows carrying the triangle let its open box wrap onto a full-width line of its own. */
+.injected-context-corner:has(> .injected-context-box),
+.tool-result:has(> .injected-context-box),
+.thinking-preview:has(> .injected-context-box),
+.compaction-result:has(> .injected-context-box) {
+  flex-wrap: wrap;
+}
+
+.chat-message-user > .injected-context-corner {
+  margin: 0 -12px -8px 0;
+}
+
+/* The box behind the corner triangle, styled as an open markdown details block. Unselectable, so a
+   selection running through it into the message around it never quotes or copies its text. */
+.injected-context-box {
+  flex-basis: 100%;
+  cursor: auto;
+  user-select: none;
+  margin: 0.5em 0;
+  padding: 0.4em 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.injected-context-entry + .injected-context-entry {
+  margin-top: 0.6em;
+}
+
+.injected-context-source {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.injected-context-count {
+  margin-left: 6px;
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.injected-context-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+}

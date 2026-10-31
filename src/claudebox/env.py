@@ -1,5 +1,7 @@
 """Environment utilities for checking runtime configuration."""
 
+from __future__ import annotations
+
 import os
 
 

@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.domain.containers.proxy - ContainerProxyClient timeout/pool bounds."""
 
+from __future__ import annotations
+
 import asyncio
 import socket
 import threading

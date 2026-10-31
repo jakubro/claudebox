@@ -16,6 +16,11 @@ file is generated - run `just docs` to bring it back in step after changing a bi
 | `Shift+Enter` | New line |
 | `Tab` | Indent |
 | `Shift+Tab` | Dedent |
+| `Tab` | Quote selected text |
+| `Tab` | Open the reply under the mouse |
+| `Tab` | Close a reply box (cursor at its end) |
+| `Enter` | Send message from a reply box |
+| `Ctrl+Enter` | Ask a reply on its own |
 | `Ctrl+.` | Interrupt |
 | `↑ / ↓` | History navigation |
 | `Ctrl+S` | Stash input |

@@ -16,6 +16,11 @@
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/600.css";
 @import "@fontsource/jetbrains-mono/700.css";
+/* Symbol fallback - check marks, arrows, circles and box drawing sit outside both subsets. */
+@import "@fontsource/dejavu-sans/400.css";
+@import "@fontsource/dejavu-sans/700.css";
+@import "@fontsource/dejavu-mono/400.css";
+@import "@fontsource/dejavu-mono/700.css";
 
 /* App foundation — variables, resets, layout, theme */
 @import "./features/app/index.css";
@@ -38,6 +43,7 @@
 @import "./features/help/index.css";
 @import "./features/usage/index.css";
 @import "./features/tasks/index.css";
+@import "./features/crons/index.css";
 @import "./features/icon-strip/index.css";
 @import "./features/layout/index.css";
 @import "./features/logs/index.css";

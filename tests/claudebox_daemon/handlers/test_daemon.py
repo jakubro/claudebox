@@ -1,5 +1,7 @@
 """Tests for claudebox_daemon.handlers.daemon - HTTP adapter responses."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI

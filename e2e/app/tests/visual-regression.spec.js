@@ -6,8 +6,12 @@ import {
   disableAutoCollapse,
   openBookmarksPanel,
   openHelpPanel,
+  openLiveSessionWithAPI,
   openLogsPanel,
+  openResumingSession,
+  openSession,
   openSessionsPanel,
+  openSessionWithAPI,
   openSkillsPanel,
   openStashPanel,
   openTasksPanel,
@@ -17,12 +21,7 @@ import {
   waitForMobileReady,
 } from '../helpers.js'
 import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI, mockBoards } from '../mocks/api.js'
-import {
-  createDaemonSSEController,
-  createLogsSSEController,
-  createSSEController,
-  mockSSE,
-} from '../mocks/sse.js'
+import { createDaemonSSEController, createLogsSSEController, mockSSE } from '../mocks/sse.js'
 
 /** Shared screenshot options: tolerate minor anti-aliasing differences. */
 const OPTS = { maxDiffPixelRatio: 0.01 }
@@ -40,21 +39,22 @@ async function waitForToolBlock(page) {
 
 // --- Layout & Golden States ---
 
+async function openMobileSession(page, fixture) {
+  await mockSSE(page, fixture)
+  await mockAPI(page)
+  await page.goto(DEFAULT_SESSION_URL)
+  await waitForMobileReady(page)
+}
+
 test.describe('Visual Regression - Layout', () => {
   test('default layout with all panels', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await expect(page).toHaveScreenshot('layout-default.png', OPTS)
   })
 
   test('all panels closed - chat fills viewport', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     // State-aware close: only clicks currently-visible panels; blind Alt+N would flip state, not force it closed.
     // End state therefore depends on which panels default to open.
@@ -66,19 +66,15 @@ test.describe('Visual Regression - Layout', () => {
   })
 
   test('footer in ready state', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await expect(page.locator('[data-testid="footer"]')).toHaveScreenshot('footer-ready.png', OPTS)
   })
 
   test('sessions panel with session list', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
+      sessionsFixture: 'sessions/multiple.json',
+    })
 
     await openSessionsPanel(page)
     await expect(page.locator('[data-testid="panel-sessions"]')).toHaveScreenshot(
@@ -88,11 +84,10 @@ test.describe('Visual Regression - Layout', () => {
   })
 
   test('sessions panel filter strip overflowing shows a chevron', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, { sessionsFixture: 'sessions/multiple.json' })
     await page.setViewportSize({ width: 1800, height: 800 })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
+      sessionsFixture: 'sessions/multiple.json',
+    })
 
     await openSessionsPanel(page)
     const strip = page.getByTestId('sessions-tabs')
@@ -112,10 +107,7 @@ test.describe('Visual Regression - Layout', () => {
 
 test.describe('Visual Regression - Turns', () => {
   test('empty chat state', async ({ page }) => {
-    await mockSSE(page, 'events/empty.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/empty.jsonl')
 
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
       'empty-chat.png',
@@ -124,10 +116,7 @@ test.describe('Visual Regression - Turns', () => {
   })
 
   test('simple conversation', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
       'simple-chat.png',
@@ -136,10 +125,7 @@ test.describe('Visual Regression - Turns', () => {
   })
 
   test('active response with spinner', async ({ page }) => {
-    const controller = await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const controller = await openLiveSessionWithAPI(page)
 
     await controller.sendEvents([
       {
@@ -170,10 +156,7 @@ test.describe('Visual Regression - Turns', () => {
   })
 
   test('error turn with red border', async ({ page }) => {
-    await mockSSE(page, 'events/chat-with-error.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/chat-with-error.jsonl')
 
     await expect(page.getByText('Do something that fails').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -183,10 +166,7 @@ test.describe('Visual Regression - Turns', () => {
   })
 
   test('interrupted turn with yellow border', async ({ page }) => {
-    await mockSSE(page, 'events/interrupted-turn.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/interrupted-turn.jsonl')
 
     await expect(page.getByText('Once upon a time').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -196,10 +176,7 @@ test.describe('Visual Regression - Turns', () => {
   })
 
   test('multi-turn conversation', async ({ page }) => {
-    await mockSSE(page, 'events/multi-turn.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/multi-turn.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -217,18 +194,14 @@ test.describe('Visual Regression - File Tools', () => {
   })
 
   test('Read tool (collapsed)', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-read-collapsed.png', OPTS)
   })
 
   test('Read tool (expanded with line numbers)', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read-lined.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read-lined.jsonl')
 
     const block = await waitForToolBlock(page)
     await block.locator('.tool-header-area').click()
@@ -237,18 +210,14 @@ test.describe('Visual Regression - File Tools', () => {
   })
 
   test('Read tool with large content (collapsible)', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read-large.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read-large.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-read-large.png', OPTS)
   })
 
   test('Read tool with wide content (horizontal scroll)', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read-wide.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read-wide.jsonl')
 
     const block = await waitForToolBlock(page)
     await block.locator('.tool-header-area').click()
@@ -257,18 +226,14 @@ test.describe('Visual Regression - File Tools', () => {
   })
 
   test('Edit tool with diff', async ({ page }) => {
-    await mockSSE(page, 'events/tool-edit.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-edit.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-edit-collapsed.png', OPTS)
   })
 
   test('Edit tool with character-level diff highlighting', async ({ page }) => {
-    await mockSSE(page, 'events/tool-edit-char-highlight.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-edit-char-highlight.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block.locator('.tool-expanded-content')).toBeVisible()
@@ -276,18 +241,14 @@ test.describe('Visual Regression - File Tools', () => {
   })
 
   test('Write tool with syntax highlighting', async ({ page }) => {
-    await mockSSE(page, 'events/tool-write-python.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-write-python.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-write-python.png', OPTS)
   })
 
   test('Read markdown file renders as formatted preview', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read-markdown.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read-markdown.jsonl')
 
     // Read is collapsed by default - click to expand
     const block = await waitForToolBlock(page)
@@ -298,9 +259,7 @@ test.describe('Visual Regression - File Tools', () => {
   })
 
   test('Glob tool', async ({ page }) => {
-    await mockSSE(page, 'events/tool-glob.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-glob.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-glob.png', OPTS)
@@ -315,45 +274,35 @@ test.describe('Visual Regression - Bash Tool', () => {
   })
 
   test('Bash tool expanded with output', async ({ page }) => {
-    await mockSSE(page, 'events/tool-bash.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-bash.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-bash-expanded.png', OPTS)
   })
 
   test('Bash tool with error', async ({ page }) => {
-    await mockSSE(page, 'events/tool-with-error.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-with-error.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-bash-error.png', OPTS)
   })
 
   test('Bash tool with truncated output', async ({ page }) => {
-    await mockSSE(page, 'events/tool-bash-truncated.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-bash-truncated.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-bash-truncated.png', OPTS)
   })
 
   test('Bash tool with persisted output', async ({ page }) => {
-    await mockSSE(page, 'events/tool-bash-persisted.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-bash-persisted.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-bash-persisted.png', OPTS)
   })
 
   test('Bash tool multiline error', async ({ page }) => {
-    await mockSSE(page, 'events/tool-error-multiline.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-error-multiline.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-error-multiline.png', OPTS)
@@ -368,9 +317,7 @@ test.describe('Visual Regression - Grep Tool', () => {
   })
 
   test('Grep with match context', async ({ page }) => {
-    await mockSSE(page, 'events/tool-grep-context.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-grep-context.jsonl')
 
     const block = await waitForToolBlock(page)
     await block.locator('.tool-header-area').click()
@@ -379,9 +326,7 @@ test.describe('Visual Regression - Grep Tool', () => {
   })
 
   test('Grep multifile with context', async ({ page }) => {
-    await mockSSE(page, 'events/tool-grep-multifile-context.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-grep-multifile-context.jsonl')
 
     const block = await waitForToolBlock(page)
     await block.locator('.tool-header-area').click()
@@ -390,9 +335,7 @@ test.describe('Visual Regression - Grep Tool', () => {
   })
 
   test('Grep single file with line numbers', async ({ page }) => {
-    await mockSSE(page, 'events/tool-grep-singlefile.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-grep-singlefile.jsonl')
 
     const block = await waitForToolBlock(page)
     await block.locator('.tool-header-area').click()
@@ -409,9 +352,7 @@ test.describe('Visual Regression - Interactive Tools', () => {
   })
 
   test('AskUserQuestion form', async ({ page }) => {
-    await mockSSE(page, 'events/tool-ask-question.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-ask-question.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block.locator('.tool-questions-interactive')).toBeVisible()
@@ -419,9 +360,7 @@ test.describe('Visual Regression - Interactive Tools', () => {
   })
 
   test('AskUserQuestion answered state', async ({ page }) => {
-    await mockSSE(page, 'events/tool-ask-question-answered.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-ask-question-answered.jsonl')
     // Answered fixture spans two turns; auto-collapse (default on) hides the earlier turn's block - expand first.
     await disableAutoCollapse(page)
 
@@ -430,18 +369,14 @@ test.describe('Visual Regression - Interactive Tools', () => {
   })
 
   test('ExitPlanMode with plan content', async ({ page }) => {
-    await mockSSE(page, 'events/tool-exit-plan.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-exit-plan.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-exitplan.png', OPTS)
   })
 
   test('ExitPlanMode answered', async ({ page }) => {
-    await mockSSE(page, 'events/tool-exit-plan-answered.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-exit-plan-answered.jsonl')
     // Answered fixture spans two turns; auto-collapse (default on) hides the earlier turn's block - expand first.
     await disableAutoCollapse(page)
 
@@ -458,45 +393,35 @@ test.describe('Visual Regression - Task Tools', () => {
   })
 
   test('Task with nested tools', async ({ page }) => {
-    await mockSSE(page, 'events/tool-task-nested.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-task-nested.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-task-nested.png', OPTS)
   })
 
   test('Background task consolidated', async ({ page }) => {
-    await mockSSE(page, 'events/bg-task-consolidated.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/bg-task-consolidated.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-bgtask-consolidated.png', OPTS)
   })
 
   test('Background task with nested tools', async ({ page }) => {
-    await mockSSE(page, 'events/tool-task-background-nested.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-task-background-nested.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-bgtask-nested.png', OPTS)
   })
 
   test('TaskOutput completed', async ({ page }) => {
-    await mockSSE(page, 'events/tool-taskoutput.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-taskoutput.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-taskoutput-completed.png', OPTS)
   })
 
   test('TaskOutput running', async ({ page }) => {
-    await mockSSE(page, 'events/tool-taskoutput-running.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-taskoutput-running.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-taskoutput-running.png', {
@@ -506,36 +431,28 @@ test.describe('Visual Regression - Task Tools', () => {
   })
 
   test('TaskOutput failed', async ({ page }) => {
-    await mockSSE(page, 'events/tool-taskoutput-failed.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-taskoutput-failed.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-taskoutput-failed.png', OPTS)
   })
 
   test('TaskOutput killed', async ({ page }) => {
-    await mockSSE(page, 'events/tool-taskoutput-killed.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-taskoutput-killed.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-taskoutput-killed.png', OPTS)
   })
 
   test('TodoWrite with diff', async ({ page }) => {
-    await mockSSE(page, 'events/tool-todowrite-diff.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-todowrite-diff.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-todowrite-diff.png', OPTS)
   })
 
   test('TodoWrite collapsed with status counts', async ({ page }) => {
-    await mockSSE(page, 'events/tool-todowrite.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-todowrite.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-todowrite-collapsed.png', OPTS)
@@ -550,45 +467,35 @@ test.describe('Visual Regression - Web & MCP Tools', () => {
   })
 
   test('WebSearch tool', async ({ page }) => {
-    await mockSSE(page, 'events/tool-websearch.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-websearch.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-websearch.png', OPTS)
   })
 
   test('WebFetch tool', async ({ page }) => {
-    await mockSSE(page, 'events/tool-webfetch.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-webfetch.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-webfetch.png', OPTS)
   })
 
   test('Skill tool', async ({ page }) => {
-    await mockSSE(page, 'events/tool-skill.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-skill.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-skill.png', OPTS)
   })
 
   test('MCPSearch tool', async ({ page }) => {
-    await mockSSE(page, 'events/tool-mcpsearch.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-mcpsearch.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-mcpsearch.png', OPTS)
   })
 
   test('Unhandled MCP tool with Input/Output sections', async ({ page }) => {
-    await mockSSE(page, 'events/tool-mcp-unhandled.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-mcp-unhandled.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-mcp-unhandled.png', OPTS)
@@ -603,9 +510,7 @@ test.describe('Visual Regression - Special Blocks', () => {
   })
 
   test('Thinking block', async ({ page }) => {
-    await mockSSE(page, 'events/thinking.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/thinking.jsonl')
 
     await expect(page.locator('.thinking-block').first()).toBeVisible()
     const turn = page.locator('.turn-container').first()
@@ -613,9 +518,7 @@ test.describe('Visual Regression - Special Blocks', () => {
   })
 
   test('Compaction block', async ({ page }) => {
-    await mockSSE(page, 'events/compaction.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/compaction.jsonl')
 
     await expect(page.locator('.compaction-block').first()).toBeVisible()
     await expect(page.locator('.compaction-block').first()).toHaveScreenshot(
@@ -625,9 +528,7 @@ test.describe('Visual Regression - Special Blocks', () => {
   })
 
   test('Compaction in progress', async ({ page }) => {
-    await mockSSE(page, 'events/compaction-in-progress.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/compaction-in-progress.jsonl')
 
     await expect(page.locator('.compaction-block').first()).toBeVisible()
     await expect(page.locator('.compaction-block').first()).toHaveScreenshot(
@@ -640,9 +541,7 @@ test.describe('Visual Regression - Special Blocks', () => {
   })
 
   test('Mermaid diagram', async ({ page }) => {
-    await mockSSE(page, 'events/mermaid-diagram.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/mermaid-diagram.jsonl')
 
     await expect(page.locator('.mermaid-container').first()).toBeVisible()
     // Wait for async mermaid render to swap the placeholder for SVG (.mermaid-diagram appears once svg is set).
@@ -655,27 +554,21 @@ test.describe('Visual Regression - Special Blocks', () => {
   })
 
   test('System reminders in tool output', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read-with-reminders.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read-with-reminders.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-with-reminders.png', OPTS)
   })
 
   test('Duplicate system reminders with count badge', async ({ page }) => {
-    await mockSSE(page, 'events/tool-read-with-duplicate-reminders.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/tool-read-with-duplicate-reminders.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-with-duplicate-reminders.png', OPTS)
   })
 
   test('Markdown rendering (code, lists, links)', async ({ page }) => {
-    await mockSSE(page, 'events/chat-with-markdown.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/chat-with-markdown.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -689,10 +582,7 @@ test.describe('Visual Regression - Special Blocks', () => {
 
 test.describe('Visual Regression - Pending States', () => {
   test('pending tool with spinner', async ({ page }) => {
-    await mockAPI(page)
-    await mockSSE(page, 'events/tool-pending.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/tool-pending.jsonl')
 
     const block = await waitForToolBlock(page)
     await expect(block).toHaveScreenshot('tool-pending.png', {
@@ -710,9 +600,7 @@ test.describe('Visual Regression - User Messages', () => {
   })
 
   test('user message with command output (stdout/stderr)', async ({ page }) => {
-    await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/user-message-with-command-output.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -722,9 +610,7 @@ test.describe('Visual Regression - User Messages', () => {
   })
 
   test('user message with AskUser Q/A response', async ({ page }) => {
-    await mockSSE(page, 'events/user-message-askuser-response.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/user-message-askuser-response.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -734,9 +620,7 @@ test.describe('Visual Regression - User Messages', () => {
   })
 
   test('user message with AskUser Q/A response and a note', async ({ page }) => {
-    await mockSSE(page, 'events/user-message-askuser-response-with-note.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/user-message-askuser-response-with-note.jsonl')
 
     await expect(
       page.locator('[data-testid="message-user"]').nth(1).locator('.message-note'),
@@ -748,9 +632,7 @@ test.describe('Visual Regression - User Messages', () => {
   })
 
   test('slash command in user message', async ({ page }) => {
-    await mockSSE(page, 'events/slash-command-message.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/slash-command-message.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -760,9 +642,7 @@ test.describe('Visual Regression - User Messages', () => {
   })
 
   test('chat with image attachments', async ({ page }) => {
-    await mockSSE(page, 'events/chat-with-attachments.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/chat-with-attachments.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -772,9 +652,7 @@ test.describe('Visual Regression - User Messages', () => {
   })
 
   test('non-human text with local command output', async ({ page }) => {
-    await mockSSE(page, 'events/nonhuman-text-with-command-output.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/nonhuman-text-with-command-output.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -788,10 +666,7 @@ test.describe('Visual Regression - User Messages', () => {
 
 test.describe('Visual Regression - Side Panels', () => {
   test('todos panel with subagent sections', async ({ page }) => {
-    await mockSSE(page, 'events/todos-subagent.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/todos-subagent.jsonl')
 
     await openTodosPanel(page)
     await expect(page.locator('[data-testid="panel-todos"]')).toHaveScreenshot(
@@ -801,20 +676,14 @@ test.describe('Visual Regression - Side Panels', () => {
   })
 
   test('commands panel with Custom tab', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await openSkillsPanel(page)
     await expect(page.locator('.skills-panel')).toHaveScreenshot('panel-skills.png', OPTS)
   })
 
   test('MCP panel with servers', async ({ page }) => {
-    await mockSSE(page, 'events/with-mcp-servers.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/with-mcp-servers.jsonl')
 
     await page.keyboard.press('Alt+8')
     await expect(page.locator('.mcp-panel')).toBeVisible()
@@ -855,10 +724,7 @@ test.describe('Visual Regression - Side Panels', () => {
   })
 
   test('stash panel with items', async ({ page }) => {
-    await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openLiveSessionWithAPI(page)
 
     // Stash some items via keyboard
     const input = page.locator('[data-testid="chat-input"]')
@@ -874,10 +740,9 @@ test.describe('Visual Regression - Side Panels', () => {
   test('sessions panel with forked tree (parent + child)', async ({ page }) => {
     // with-children fixture forks session-002 from session-001; SessionsPanel renders it nested under the parent.
     // Snapshot guards the indentation and connector chrome.
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, { sessionsFixture: 'sessions/with-children.json' })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
+      sessionsFixture: 'sessions/with-children.json',
+    })
 
     await openSessionsPanel(page)
     await expect(page.locator('[data-testid="panel-sessions"]')).toHaveScreenshot(
@@ -891,10 +756,8 @@ test.describe('Visual Regression - Side Panels', () => {
 
 test.describe('Visual Regression - Overlays', () => {
   test('resume replay overlay', async ({ page }) => {
-    await mockSSE(page, 'events/resuming.jsonl')
     await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await expect(page.locator('[data-testid="footer"]')).toBeVisible()
+    await openResumingSession(page)
 
     await expect(page.locator('.chat-replay-overlay')).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -953,10 +816,7 @@ test.describe('Visual Regression - Overlays', () => {
 
 test.describe('Visual Regression - Header & Tab Bar', () => {
   test('header bar default state', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await expect(page.locator('.dv-tabs-and-actions-container').first()).toHaveScreenshot(
       'header-default.png',
@@ -965,10 +825,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
   })
 
   test('session header strip - active session with running container', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     const strip = page.locator('[data-testid="session-header-strip"]')
     await expect(strip.locator('[data-testid="session-header-status-dot"]')).toBeVisible()
@@ -1023,10 +880,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
   })
 
   test('new session split button chevron menu open', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     // Header-strip chevron is the second button after the +.
     const strip = page.locator('[data-testid="session-header-strip"]')
@@ -1037,10 +891,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
   })
 
   test('confirm stop modal - stop variant', async ({ page }) => {
-    await mockSSE(page, 'events/responding.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/responding.jsonl')
 
     // Click Stop to try opening the modal; skip the screenshot below if it isn't reachable in the mock.
     const stopBtn = page.locator('[data-testid="session-header-stop-btn"]')
@@ -1054,10 +905,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
   })
 
   test('confirm stop modal - reload variant', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     // Inject the reload-variant chrome directly so the detail text is deterministic.
     // Data-testids are the real contract here; the rest just follows the variant prop.
@@ -1081,10 +929,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
 
   test('rewind split-button chevron menu shows two options', async ({ page }) => {
     // Regression guard: the chevron lists "Rewind here" and "Rewind in new browser tab" - no third option.
-    await mockSSE(page, 'events/rewind-point.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/rewind-point.jsonl')
 
     const firstTurn = page.locator('.turn-container').first()
     await firstTurn.hover()
@@ -1096,10 +941,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
 
   test('chat-control-bar fork chevron menu shows two options', async ({ page }) => {
     // Regression guard: fork dropdown lists "Fork here" and "Fork in new browser tab" - no third option.
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await page.locator('.chat-control-fork-chevron').click()
     const dropdown = page.locator('.chat-control-fork-dropdown')
@@ -1109,10 +951,7 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
   })
 
   test('still running toast', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     // Force the toast via context (mocked path) so the snapshot reflects toast chrome regardless of emit timing.
     await page.evaluate(() => {
@@ -1131,16 +970,13 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
   })
 
   test('workspace switcher with multiple workspaces', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, {
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
       workspaces: [
         { id: DEFAULT_WORKSPACE_ID, path: '/home/user/project', name: 'project' },
         { id: 'ws-docs', path: '/home/user/docs', name: 'docs' },
         { id: 'ws-infra', path: '/home/user/infrastructure', name: 'infrastructure' },
       ],
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await page.locator('[data-testid="workspace-switcher"]').click()
     const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
@@ -1156,19 +992,13 @@ test.describe('Visual Regression - Header & Tab Bar', () => {
 
 test.describe('Visual Regression - Input Area', () => {
   test('input area empty', async ({ page }) => {
-    await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openLiveSessionWithAPI(page)
 
     await expect(page.locator('.chat-input-wrapper')).toHaveScreenshot('input-empty.png', OPTS_ANIM)
   })
 
   test('input area with text', async ({ page }) => {
-    await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openLiveSessionWithAPI(page)
 
     const input = page.locator('[data-testid="chat-input"]')
     await input.fill(
@@ -1182,10 +1012,7 @@ test.describe('Visual Regression - Input Area', () => {
   })
 
   test('input area with attachment chips', async ({ page }) => {
-    await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openLiveSessionWithAPI(page)
 
     // Simulate pasting a file via DataTransfer
     const input = page.locator('[data-testid="chat-input"]')
@@ -1206,10 +1033,7 @@ test.describe('Visual Regression - Input Area', () => {
   })
 
   test('input area disabled during active response', async ({ page }) => {
-    await mockSSE(page, 'events/responding.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/responding.jsonl')
 
     await expect(page.locator('.chat-input-wrapper')).toHaveScreenshot('input-disabled.png', {
       ...OPTS_ANIM,
@@ -1222,10 +1046,7 @@ test.describe('Visual Regression - Input Area', () => {
 
 test.describe('Visual Regression - Additional Panels', () => {
   test('bookmarks panel empty', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await openBookmarksPanel(page)
     await expect(page.locator('.bookmarks-panel')).toHaveScreenshot(
@@ -1235,8 +1056,7 @@ test.describe('Visual Regression - Additional Panels', () => {
   })
 
   test('bookmarks panel with items', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, {
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
       handlers: {
         getUIState: async route => {
           await route.fulfill({
@@ -1256,8 +1076,6 @@ test.describe('Visual Regression - Additional Panels', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await openBookmarksPanel(page)
     await expect(page.locator('.bookmarks-panel')).toHaveScreenshot(
@@ -1267,8 +1085,7 @@ test.describe('Visual Regression - Additional Panels', () => {
   })
 
   test('bookmarks panel all sessions tab', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, {
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
       sessionsFixture: 'sessions/multiple.json',
       handlers: {
         getUIState: async route => {
@@ -1296,40 +1113,31 @@ test.describe('Visual Regression - Additional Panels', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await openBookmarksPanel(page)
-    await page.getByText('All sessions').click()
+    await page.getByTestId('panel-bookmarks').getByText('All sessions').click()
     await page.waitForTimeout(200)
     await expect(page.locator('.bookmarks-panel')).toHaveScreenshot('panel-bookmarks-all.png', OPTS)
   })
 
   test('usage panel with session costs', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page, { sessionsFixture: 'sessions/with-costs.json' })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl', {
+      sessionsFixture: 'sessions/with-costs.json',
+    })
 
     await openUsagePanel(page)
     await expect(page.locator('.usage-panel')).toHaveScreenshot('panel-usage.png', OPTS)
   })
 
   test('tasks panel empty', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await openTasksPanel(page)
     await expect(page.locator('.tasks-panel')).toHaveScreenshot('panel-tasks-empty.png', OPTS)
   })
 
   test('tasks panel with running task', async ({ page }) => {
-    await mockSSE(page, 'events/tool-task-running.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/tool-task-running.jsonl')
 
     await openTasksPanel(page)
     await expect(page.locator('.tasks-panel')).toHaveScreenshot('panel-tasks-running.png', {
@@ -1339,10 +1147,7 @@ test.describe('Visual Regression - Additional Panels', () => {
   })
 
   test('help panel', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     await openHelpPanel(page)
     await expect(page.locator('.help-panel')).toHaveScreenshot('panel-help.png', OPTS)
@@ -1353,10 +1158,7 @@ test.describe('Visual Regression - Additional Panels', () => {
 
 test.describe('Visual Regression - Minimap & Controls', () => {
   test('minimap with long conversation', async ({ page }) => {
-    await mockSSE(page, 'events/long-conversation.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/long-conversation.jsonl')
 
     // Ensure minimap is visible (pinned by default)
     await page.waitForTimeout(300)
@@ -1366,8 +1168,7 @@ test.describe('Visual Regression - Minimap & Controls', () => {
   })
 
   test('minimap with bookmarked turns', async ({ page }) => {
-    await mockSSE(page, 'events/long-conversation.jsonl')
-    await mockAPI(page, {
+    await openSessionWithAPI(page, 'events/long-conversation.jsonl', {
       handlers: {
         getUIState: async route => {
           await route.fulfill({
@@ -1398,8 +1199,6 @@ test.describe('Visual Regression - Minimap & Controls', () => {
         },
       },
     })
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
 
     await page.waitForTimeout(300)
     const minimap = page.locator('[data-testid="minimap"]')
@@ -1408,10 +1207,7 @@ test.describe('Visual Regression - Minimap & Controls', () => {
   })
 
   test('effort picker dropdown open', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     const effortLabel = page.locator('[data-testid="footer-effort"]')
     await effortLabel.click()
@@ -1424,10 +1220,7 @@ test.describe('Visual Regression - Minimap & Controls', () => {
   })
 
   test('model picker dropdown open', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     const modelBtn = page.locator('[data-testid="footer-model"]')
     await modelBtn.click()
@@ -1440,10 +1233,7 @@ test.describe('Visual Regression - Minimap & Controls', () => {
   })
 
   test('permission-mode picker dropdown open', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/simple-chat.jsonl')
 
     const permBtn = page.locator('[data-testid="footer-permission-mode-picker"]')
     await permBtn.click()
@@ -1456,10 +1246,7 @@ test.describe('Visual Regression - Minimap & Controls', () => {
   })
 
   test('control bar during active response', async ({ page }) => {
-    const controller = await createSSEController(page)
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    const controller = await openLiveSessionWithAPI(page)
 
     await controller.sendEvents([
       {
@@ -1493,10 +1280,7 @@ test.describe('Visual Regression - Minimap & Controls', () => {
 
 test.describe('Visual Regression - Special States', () => {
   test('permission plan mode divider', async ({ page }) => {
-    await mockSSE(page, 'events/permission-plan-mode.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/permission-plan-mode.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -1506,10 +1290,7 @@ test.describe('Visual Regression - Special States', () => {
   })
 
   test('rewind button on human message', async ({ page }) => {
-    await mockSSE(page, 'events/rewind-point.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/rewind-point.jsonl')
 
     // Hover over the first user message to reveal rewind button
     const firstTurn = page.locator('.turn-container').first()
@@ -1520,10 +1301,7 @@ test.describe('Visual Regression - Special States', () => {
   })
 
   test('block timings visible', async ({ page }) => {
-    await mockSSE(page, 'events/block-timings.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/block-timings.jsonl')
 
     await expect(page.locator('.turn-container').first()).toBeVisible()
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -1535,10 +1313,7 @@ test.describe('Visual Regression - Special States', () => {
   test('setting change dividers - model + effort + bypass', async ({ page }) => {
     // Combined fixture covers three divider variants: model_changed, effort_level_changed, bypass mode change.
     // 'permission plan mode divider' already covers Plan; this test fills the rest.
-    await mockSSE(page, 'events/model-mode-effort-changes.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSessionWithAPI(page, 'events/model-mode-effort-changes.jsonl')
 
     await expect(page.locator('.turn-container')).toHaveCount(2)
     await expect(page.locator('[data-testid="panel-chat"]')).toHaveScreenshot(
@@ -1600,37 +1375,25 @@ test.describe('Visual Regression - Mobile', () => {
   test.use({ ...PIXEL_5, hasTouch: true })
 
   test('mobile layout - default', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/simple-chat.jsonl')
 
     await expect(page).toHaveScreenshot('mobile-layout-default.png', OPTS)
   })
 
   test('mobile top bar', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/simple-chat.jsonl')
 
     await expect(page.locator('.mobile-top-bar')).toHaveScreenshot('mobile-topbar.png', OPTS)
   })
 
   test('mobile status strip', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/simple-chat.jsonl')
 
     await expect(page.locator('.status-strip')).toHaveScreenshot('mobile-status-strip.png', OPTS)
   })
 
   test('mobile input area - empty', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/simple-chat.jsonl')
 
     await expect(page.locator('.chat-input-row')).toHaveScreenshot('mobile-input-empty.png', OPTS)
   })
@@ -1649,10 +1412,7 @@ test.describe('Visual Regression - Mobile', () => {
   })
 
   test('mobile drawer - open', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/simple-chat.jsonl')
 
     await page.locator('button[title="Menu"]').click()
     await expect(page.locator('.mobile-drawer')).toBeVisible()
@@ -1675,10 +1435,7 @@ test.describe('Visual Regression - Mobile', () => {
   })
 
   test('details sheet - open', async ({ page }) => {
-    await mockSSE(page, 'events/simple-chat.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/simple-chat.jsonl')
 
     await page.locator('button[title="Session details"]').click()
     await expect(page.locator('.details-sheet')).toBeVisible()
@@ -1688,19 +1445,13 @@ test.describe('Visual Regression - Mobile', () => {
   })
 
   test('mobile - active response', async ({ page }) => {
-    await mockSSE(page, 'events/responding.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/responding.jsonl')
 
     await expect(page).toHaveScreenshot('mobile-active-response.png', OPTS_ANIM)
   })
 
   test('mobile - empty chat', async ({ page }) => {
-    await mockSSE(page, 'events/empty.jsonl')
-    await mockAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForMobileReady(page)
+    await openMobileSession(page, 'events/empty.jsonl')
 
     await expect(page).toHaveScreenshot('mobile-empty-chat.png', OPTS)
   })

@@ -1,12 +1,14 @@
 """Session handlers - CRUD, restart, attachments."""
 
+from __future__ import annotations
+
 import contextlib
 import dataclasses
 
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-from claudebox import EventLog, SessionEntryNotFound, serialize_event
+from claudebox import EventLog, SessionEntryNotFound, ToolOutput, serialize_event
 from ._models import UpdateSessionPromptRequest
 from ._shared import RegistryDep, SessionDep
 
@@ -52,9 +54,9 @@ async def stop_session(registry: RegistryDep, session_id: str):
 
 @router.post("/{session_id}/promote")
 async def promote_session(registry: RegistryDep, session_id: str):
-    """Cancel a member session's turn-complete auto-stop - it runs until stopped like any other.
+    """Promote a member session - it outlives every answer, running or not when promoted.
 
-    Unlike stop, a missing session id is a 404: promotion has nothing to cancel and must say so.
+    Unlike stop, a session with no record is a 404: there is nothing to promote.
     """
 
     registry.promote_session(session_id)
@@ -124,6 +126,7 @@ async def update_session_prompt(svc: SessionDep, body: UpdateSessionPromptReques
     if isinstance(prompt, str) and not prompt.strip():
         prompt = None
 
+    await svc.ensure_storage()
     session_id = svc.current_session_id
     assert session_id is not None, "no active session"
 
@@ -145,14 +148,11 @@ async def get_attachment(svc: SessionDep, filename: str):
     return FileResponse(path=info.path, media_type=info.media_type)
 
 
-@router.get("/current/tool-output/{tool_use_id}")
-async def get_tool_output(svc: SessionDep, tool_use_id: str):
-    """Get the content of a tool's output from the current session."""
+@router.get("/{session_id}/tool-output/{tool_use_id}")
+async def get_session_tool_output(registry: RegistryDep, session_id: str, tool_use_id: str):
+    """Get a named session's tool output, whether or not that session is running."""
 
-    session_id = svc.current_session_id
-    assert session_id is not None, "no active session"
-
-    result = svc.get_tool_output(session_id, tool_use_id)
+    result = ToolOutput(registry.workspace).get_content(session_id, tool_use_id)
 
     return {
         "content": result.content,
@@ -161,13 +161,10 @@ async def get_tool_output(svc: SessionDep, tool_use_id: str):
     }
 
 
-@router.get("/current/tool-output/{tool_use_id}/download")
-async def download_tool_output(svc: SessionDep, tool_use_id: str):
-    """Download a tool's output as a file from the current session."""
+@router.get("/{session_id}/tool-output/{tool_use_id}/download")
+async def download_session_tool_output(registry: RegistryDep, session_id: str, tool_use_id: str):
+    """Download a named session's tool output as a file, whether or not that session is running."""
 
-    session_id = svc.current_session_id
-    assert session_id is not None, "no active session"
-
-    path = svc.get_tool_output_path(session_id, tool_use_id)
+    path = ToolOutput(registry.workspace).get_path(session_id, tool_use_id)
 
     return FileResponse(path=path, filename=path.name, media_type="text/plain")

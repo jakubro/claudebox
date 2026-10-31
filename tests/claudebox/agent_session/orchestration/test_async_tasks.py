@@ -1,5 +1,7 @@
 """Tests for claudebox.agent_session.orchestration.async_tasks - background task lifecycle."""
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 

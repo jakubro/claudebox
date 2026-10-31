@@ -1,11 +1,13 @@
 """Tests for claudebox.time - timestamp generation and parsing."""
 
+from __future__ import annotations
+
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
-from claudebox.core.time import TIMESTAMP_FORMAT, get_timestamp, parse_timestamp
+from claudebox.core.time import TIMESTAMP_FORMAT, days_before, get_timestamp, parse_timestamp
 
 
 class TestGetTimestamp:
@@ -56,3 +58,19 @@ class TestParseTimestamp:
 
         with pytest.raises(ValueError):
             parse_timestamp("not-a-timestamp")
+
+
+class TestDaysBefore:
+    """A lifetime longer than the calendar reaches back to its first day instead of failing."""
+
+    NOW = datetime(2026, 10, 24, tzinfo=UTC)
+
+    def test_a_lifetime_inside_the_calendar(self):
+        assert days_before(self.NOW, 14) == datetime(2026, 10, 10, tzinfo=UTC)
+
+    @pytest.mark.parametrize("days", [800_000, 10**12])
+    def test_a_lifetime_past_the_calendar_reaches_its_first_day(self, days):
+        assert days_before(self.NOW, days) == datetime(1, 1, 1, tzinfo=UTC)
+
+    def test_a_naive_moment_stays_naive(self):
+        assert days_before(self.NOW.replace(tzinfo=None), 10**12).tzinfo is None

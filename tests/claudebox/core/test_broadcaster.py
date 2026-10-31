@@ -1,5 +1,7 @@
 """Tests for claudebox.broadcaster - async pub-sub with replay support."""
 
+from __future__ import annotations
+
 import asyncio
 
 import pytest

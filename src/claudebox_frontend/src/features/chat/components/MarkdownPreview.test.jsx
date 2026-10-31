@@ -6,7 +6,15 @@ import MarkdownPreview from './MarkdownPreview'
 
 // Mock Markdown to avoid pulling in full markdown pipeline
 vi.mock('../../../components/Markdown', () => ({
-  default: ({ children }) => <div data-testid="markdown-rendered">{children}</div>,
+  default: ({ children, baseDir }) => (
+    <div data-testid="markdown-rendered" data-base-dir={baseDir ?? ''}>
+      {children}
+    </div>
+  ),
+}))
+
+vi.mock('../../../context/SessionDataContext', () => ({
+  useSessionWorkspace: () => '/ws',
 }))
 
 // Mock SyntaxHighlightedCodeBlock - source view uses the real code block component
@@ -86,5 +94,14 @@ describe('MarkdownPreview', () => {
 
     fireEvent.click(screen.getByTitle('Show source'))
     expect(screen.getByTestId('syntax-highlighter')).toHaveAttribute('data-start', '42')
+  })
+
+  it.each([
+    [{ filePath: '/app/docs/a.md' }, '/app/docs'],
+    [{ filePath: 'a.md' }, '/ws'],
+    [{ baseDir: '/x' }, '/x'],
+  ])('resolves relative links against %o', (props, expected) => {
+    render(<MarkdownPreview content="# Title" {...props} />)
+    expect(screen.getByTestId('markdown-rendered')).toHaveAttribute('data-base-dir', expected)
   })
 })

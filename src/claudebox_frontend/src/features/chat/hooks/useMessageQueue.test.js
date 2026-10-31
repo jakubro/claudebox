@@ -4,16 +4,22 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import useMessageQueue from './useMessageQueue'
 
+const OWN = { sessionId: 'session-1', containerId: 'container-1' }
+
 describe('useMessageQueue', () => {
   let sendFn
 
   beforeEach(() => {
-    sendFn = vi.fn()
+    sendFn = vi.fn(() => Promise.resolve(true))
     localStorage.clear()
     vi.stubGlobal('crypto', {
       randomUUID: vi.fn(() => `test-uuid-${Math.random().toString(36).slice(2)}`),
     })
   })
+
+  function renderQueue(overrides) {
+    return renderHook(props => useMessageQueue(props), { initialProps: defaultProps(overrides) })
+  }
 
   function defaultProps(overrides = {}) {
     return {
@@ -21,8 +27,8 @@ describe('useMessageQueue', () => {
       compactionCount: 0,
       isLoading: false,
       interruptStatus: null,
-      errorMessage: null,
       sessionId: 'session-1',
+      containerId: 'container-1',
       sendFn,
       ...overrides,
     }
@@ -30,17 +36,13 @@ describe('useMessageQueue', () => {
 
   describe('enqueue and queue state', () => {
     it('starts with empty queue', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       expect(result.current.queueItems).toEqual([])
     })
 
     it('enqueueMessage adds item to queue', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       act(() => {
         result.current.enqueueMessage('hello')
@@ -52,9 +54,7 @@ describe('useMessageQueue', () => {
     })
 
     it('enqueueMessage stores attachments', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       const attachments = [{ id: 'a1', name: 'file.txt' }]
       act(() => {
@@ -65,9 +65,7 @@ describe('useMessageQueue', () => {
     })
 
     it('enqueueMessage sets attachments to null for empty array', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       act(() => {
         result.current.enqueueMessage('no files', [])
@@ -76,10 +74,20 @@ describe('useMessageQueue', () => {
       expect(result.current.queueItems[0].attachments).toBeNull()
     })
 
-    it('enqueues multiple items in order', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
+    it('returnFailedMessage adds item already paused', () => {
+      const { result } = renderQueue()
+
+      act(() => {
+        result.current.returnFailedMessage('session-1', 'hello')
       })
+
+      expect(result.current.queueItems).toHaveLength(1)
+      expect(result.current.queueItems[0].content).toBe('hello')
+      expect(result.current.queueItems[0].status).toBe('paused')
+    })
+
+    it('enqueues multiple items in order', () => {
+      const { result } = renderQueue()
 
       act(() => {
         result.current.enqueueMessage('first')
@@ -96,9 +104,7 @@ describe('useMessageQueue', () => {
 
   describe('drain on resultCount increment', () => {
     it('drains first queued item when resultCount increments', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('queued msg')
@@ -109,15 +115,13 @@ describe('useMessageQueue', () => {
       // Increment resultCount to trigger drain
       rerender(defaultProps({ resultCount: 1 }))
 
-      expect(sendFn).toHaveBeenCalledWith('queued msg', { attachments: null })
+      expect(sendFn).toHaveBeenCalledWith('queued msg', { attachments: null, target: OWN })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
     it('drains with attachments when resultCount increments', () => {
       const attachments = [{ id: 'a1', name: 'img.png' }]
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('with attachment', attachments)
@@ -125,13 +129,11 @@ describe('useMessageQueue', () => {
 
       rerender(defaultProps({ resultCount: 1 }))
 
-      expect(sendFn).toHaveBeenCalledWith('with attachment', { attachments })
+      expect(sendFn).toHaveBeenCalledWith('with attachment', { attachments, target: OWN })
     })
 
     it('drains one item per resultCount increment', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('first')
@@ -144,7 +146,7 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ resultCount: 1 }))
 
       expect(sendFn).toHaveBeenCalledTimes(1)
-      expect(sendFn).toHaveBeenCalledWith('first', { attachments: null })
+      expect(sendFn).toHaveBeenCalledWith('first', { attachments: null, target: OWN })
       expect(result.current.queueItems).toHaveLength(1)
       expect(result.current.queueItems[0].content).toBe('second')
 
@@ -152,14 +154,12 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ resultCount: 2 }))
 
       expect(sendFn).toHaveBeenCalledTimes(2)
-      expect(sendFn).toHaveBeenLastCalledWith('second', { attachments: null })
+      expect(sendFn).toHaveBeenLastCalledWith('second', { attachments: null, target: OWN })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
     it('does not drain when resultCount stays the same', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('stay queued')
@@ -184,9 +184,7 @@ describe('useMessageQueue', () => {
     })
 
     it('handles multiple resultCount increments at once', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('msg')
@@ -196,15 +194,13 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ resultCount: 5 }))
 
       expect(sendFn).toHaveBeenCalledTimes(1)
-      expect(sendFn).toHaveBeenCalledWith('msg', { attachments: null })
+      expect(sendFn).toHaveBeenCalledWith('msg', { attachments: null, target: OWN })
     })
   })
 
   describe('drain is held while a stored conversation loads', () => {
     it('does not send while loading, however far the counter climbs', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ isLoading: true, resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ isLoading: true, resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('typed during load')
@@ -219,9 +215,7 @@ describe('useMessageQueue', () => {
     })
 
     it('does not send on the commit that ends the load', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ isLoading: true, resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ isLoading: true, resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('queued before the load ended')
@@ -236,9 +230,7 @@ describe('useMessageQueue', () => {
     })
 
     it('drains on the first live completion after the load, one item at a time', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ isLoading: true, resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ isLoading: true, resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('first')
@@ -254,18 +246,16 @@ describe('useMessageQueue', () => {
       rerender(defaultProps({ isLoading: false, resultCount: 41 }))
 
       expect(sendFn).toHaveBeenCalledTimes(1)
-      expect(sendFn).toHaveBeenCalledWith('first', { attachments: null })
+      expect(sendFn).toHaveBeenCalledWith('first', { attachments: null, target: OWN })
 
       rerender(defaultProps({ isLoading: false, resultCount: 42 }))
 
       expect(sendFn).toHaveBeenCalledTimes(2)
-      expect(sendFn).toHaveBeenLastCalledWith('second', { attachments: null })
+      expect(sendFn).toHaveBeenLastCalledWith('second', { attachments: null, target: OWN })
     })
 
     it('holds the compaction-driven drain too', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ isLoading: true, compactionCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ isLoading: true, compactionCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('queued before the load ended')
@@ -285,9 +275,7 @@ describe('useMessageQueue', () => {
 
   describe('drain on compactionCount increment', () => {
     it('drains queued item when compactionCount increments', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ compactionCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ compactionCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('queued during compaction')
@@ -297,14 +285,15 @@ describe('useMessageQueue', () => {
 
       rerender(defaultProps({ compactionCount: 1 }))
 
-      expect(sendFn).toHaveBeenCalledWith('queued during compaction', { attachments: null })
+      expect(sendFn).toHaveBeenCalledWith('queued during compaction', {
+        attachments: null,
+        target: OWN,
+      })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
     it('does not drain when compactionCount stays the same', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ compactionCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ compactionCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('msg')
@@ -329,9 +318,7 @@ describe('useMessageQueue', () => {
 
   describe('interrupt handling', () => {
     it('pauses queued items on interrupt stopping', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('to pause')
@@ -344,9 +331,7 @@ describe('useMessageQueue', () => {
     })
 
     it('pauses queued items on interrupt stopped', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('to pause')
@@ -359,9 +344,7 @@ describe('useMessageQueue', () => {
     })
 
     it('does not pause on unrelated interrupt status', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('stay queued')
@@ -373,42 +356,85 @@ describe('useMessageQueue', () => {
     })
   })
 
-  describe('error handling', () => {
-    it('pauses queued items on error', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+  describe('a failed send', () => {
+    const stored = id =>
+      JSON.parse(localStorage.getItem(`queue:${id}`)).map(i => [i.content, i.status])
 
+    function seed(id, contents) {
+      localStorage.setItem(
+        `queue:${id}`,
+        JSON.stringify(
+          contents.map((content, n) => ({
+            id: `${id}-${n}`,
+            content,
+            attachments: null,
+            status: 'queued',
+            addedAt: n,
+          })),
+        ),
+      )
+    }
+
+    it.each([
+      ['on another session', ['A', null, 'B']],
+      ['while nothing is attached', ['A', null]],
+    ])(
+      'pauses and returns to the queue it was sent from when it lands %s',
+      async (_label, route) => {
+        seed('A', ['a one', 'a two'])
+        seed('B', ['b one'])
+        let fail
+        sendFn = vi.fn(
+          () =>
+            new Promise(resolve => {
+              fail = () => resolve(false)
+            }),
+        )
+        const { rerender } = renderHook(props => useMessageQueue(props), {
+          initialProps: defaultProps({ sessionId: 'A' }),
+        })
+        rerender(defaultProps({ sessionId: 'A', resultCount: 1 }))
+        for (const id of route.slice(1)) {
+          rerender(defaultProps({ sessionId: id, resultCount: 1 }))
+        }
+
+        await act(async () => {
+          fail()
+        })
+
+        expect(stored('A')).toEqual([
+          ['a one', 'paused'],
+          ['a two', 'paused'],
+        ])
+        expect(stored('B')).toEqual([['b one', 'queued']])
+      },
+    )
+
+    it('pauses the open session when its own send fails, every time', async () => {
+      sendFn = vi.fn(() => Promise.resolve(false))
+      const { result } = renderQueue()
       act(() => {
-        result.current.enqueueMessage('to pause')
+        result.current.enqueueMessage('b one')
       })
 
-      rerender(defaultProps({ resultCount: 0, errorMessage: 'something broke' }))
-
-      expect(result.current.queueItems).toHaveLength(1)
+      await act(async () => {
+        await result.current.send('typed', {})
+      })
       expect(result.current.queueItems[0].status).toBe('paused')
-    })
-
-    it('does not pause when errorMessage is null', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
 
       act(() => {
-        result.current.enqueueMessage('stay queued')
+        result.current.requeueItem(result.current.queueItems[0].id)
       })
-
-      rerender(defaultProps({ resultCount: 0, errorMessage: null }))
-
-      expect(result.current.queueItems[0].status).toBe('queued')
+      await act(async () => {
+        await result.current.send('typed again', {})
+      })
+      expect(result.current.queueItems[0].status).toBe('paused')
     })
   })
 
   describe('session change', () => {
     it('clears queue on session change when new session has no stored data', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0, sessionId: 'session-1' }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0, sessionId: 'session-1' })
 
       act(() => {
         result.current.enqueueMessage('will be cleared')
@@ -427,9 +453,7 @@ describe('useMessageQueue', () => {
       ]
       localStorage.setItem('queue:session-2', JSON.stringify(storedItems))
 
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0, sessionId: 'session-1' }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0, sessionId: 'session-1' })
 
       rerender(defaultProps({ resultCount: 0, sessionId: 'session-2' }))
 
@@ -438,54 +462,67 @@ describe('useMessageQueue', () => {
     })
   })
 
-  describe('fresh session orphan preservation', () => {
-    it('preserves in-memory items when sessionId transitions null to value', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ sessionId: null }),
-      })
+  describe('items held for a creation', () => {
+    const HELD = { creation: 1 }
 
-      // Enqueue while sessionId is null (orphan - can't persist)
+    it('survive the session left coming back, and are never saved under it', () => {
+      const { result, rerender } = renderQueue({ sessionId: 'A' })
+      rerender(defaultProps({ sessionId: null }))
+
       act(() => {
-        result.current.enqueueMessage('orphan msg')
+        result.current.enqueueMessage('queued for new', null, HELD)
       })
+      rerender(defaultProps({ sessionId: 'A' }))
 
-      expect(result.current.queueItems).toHaveLength(1)
+      expect(result.current.queueItems.map(i => i.content)).toEqual(['queued for new'])
+      expect(localStorage.getItem('queue:A')).toBeNull()
+    })
 
-      // Session init: null -> value
+    it('are saved under the session that adopts them', () => {
+      const { result, rerender } = renderQueue({ sessionId: null })
+      act(() => {
+        result.current.enqueueMessage('queued for new', null, HELD)
+      })
       rerender(defaultProps({ sessionId: 'new-session' }))
 
-      // Orphan survives the transition
-      expect(result.current.queueItems).toHaveLength(1)
-      expect(result.current.queueItems[0].content).toBe('orphan msg')
+      act(() => {
+        result.current.adoptCreation(1)
+      })
+
+      expect(JSON.parse(localStorage.getItem('queue:new-session'))[0].content).toBe(
+        'queued for new',
+      )
+    })
+
+    it('do not keep an item queued with no session once one attaches', () => {
+      const { result, rerender } = renderQueue({ sessionId: null })
+      act(() => {
+        result.current.enqueueMessage('no owner')
+      })
+
+      rerender(defaultProps({ sessionId: 'A' }))
+
+      expect(result.current.queueItems).toHaveLength(0)
     })
 
     it('clears queue on explicit session switch (value -> null -> value)', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ sessionId: 'session-1' }),
-      })
+      const { result, rerender } = renderQueue({ sessionId: 'session-1' })
 
       act(() => {
         result.current.enqueueMessage('session-1 msg')
       })
 
-      // Explicit switch: value -> null (clearSessionData)
       rerender(defaultProps({ sessionId: null }))
-
       expect(result.current.queueItems).toHaveLength(0)
 
-      // Then null -> value (new session connects)
       rerender(defaultProps({ sessionId: 'session-2' }))
-
-      // No items carried over - queue was cleared at value->null step
       expect(result.current.queueItems).toHaveLength(0)
     })
   })
 
   describe('localStorage persistence', () => {
     it('persists queue to localStorage on enqueue', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ sessionId: 'session-1' }),
-      })
+      const { result } = renderQueue({ sessionId: 'session-1' })
 
       act(() => {
         result.current.enqueueMessage('persist me')
@@ -497,9 +534,7 @@ describe('useMessageQueue', () => {
     })
 
     it('removes localStorage key when queue is emptied', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ sessionId: 'session-1' }),
-      })
+      const { result } = renderQueue({ sessionId: 'session-1' })
 
       act(() => {
         result.current.enqueueMessage('temp')
@@ -518,9 +553,7 @@ describe('useMessageQueue', () => {
     it('ignores corrupt localStorage data', () => {
       localStorage.setItem('queue:session-1', 'not-json{{{')
 
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ sessionId: 'session-1' }),
-      })
+      const { result } = renderQueue({ sessionId: 'session-1' })
 
       expect(result.current.queueItems).toEqual([])
     })
@@ -528,9 +561,7 @@ describe('useMessageQueue', () => {
 
   describe('cancelQueuedItem', () => {
     it('removes item by id', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       let id
       act(() => {
@@ -549,9 +580,7 @@ describe('useMessageQueue', () => {
 
   describe('editQueuedItem', () => {
     it('removes and returns item for editing', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       let id
       act(() => {
@@ -571,9 +600,7 @@ describe('useMessageQueue', () => {
 
   describe('sendNowItem', () => {
     it('removes item and calls sendFn immediately', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       act(() => {
         result.current.enqueueMessage('first')
@@ -587,7 +614,7 @@ describe('useMessageQueue', () => {
         result.current.sendNowItem(secondId)
       })
 
-      expect(sendFn).toHaveBeenCalledWith('second', { attachments: null })
+      expect(sendFn).toHaveBeenCalledWith('second', { attachments: null, target: OWN })
       expect(result.current.queueItems).toHaveLength(2)
       expect(result.current.queueItems[0].content).toBe('first')
       expect(result.current.queueItems[1].content).toBe('third')
@@ -595,9 +622,7 @@ describe('useMessageQueue', () => {
 
     it('sends with attachments', () => {
       const attachments = [{ id: 'a1', name: 'file.txt' }]
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       act(() => {
         result.current.enqueueMessage('with file', attachments)
@@ -609,14 +634,12 @@ describe('useMessageQueue', () => {
         result.current.sendNowItem(id)
       })
 
-      expect(sendFn).toHaveBeenCalledWith('with file', { attachments })
+      expect(sendFn).toHaveBeenCalledWith('with file', { attachments, target: OWN })
       expect(result.current.queueItems).toHaveLength(0)
     })
 
     it('does not call sendFn for unknown id', () => {
-      const { result } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps(),
-      })
+      const { result } = renderQueue()
 
       act(() => {
         result.current.enqueueMessage('msg')
@@ -633,9 +656,7 @@ describe('useMessageQueue', () => {
 
   describe('requeueItem', () => {
     it('transitions paused item back to queued', () => {
-      const { result, rerender } = renderHook(props => useMessageQueue(props), {
-        initialProps: defaultProps({ resultCount: 0 }),
-      })
+      const { result, rerender } = renderQueue({ resultCount: 0 })
 
       act(() => {
         result.current.enqueueMessage('will pause')
@@ -653,6 +674,43 @@ describe('useMessageQueue', () => {
       })
 
       expect(result.current.queueItems[0].status).toBe('queued')
+    })
+  })
+
+  describe('a failed drain returns the item to the queue', () => {
+    it('reinserts as paused rather than dropping it', async () => {
+      sendFn.mockResolvedValueOnce(false)
+      const { result, rerender } = renderQueue({ resultCount: 0 })
+
+      act(() => {
+        result.current.enqueueMessage('will fail')
+      })
+
+      await act(async () => {
+        rerender(defaultProps({ resultCount: 1 }))
+      })
+
+      expect(sendFn).toHaveBeenCalledWith('will fail', { attachments: null, target: OWN })
+      expect(result.current.queueItems).toHaveLength(1)
+      expect(result.current.queueItems[0].content).toBe('will fail')
+      expect(result.current.queueItems[0].status).toBe('paused')
+    })
+
+    it('sendNowItem does the same', async () => {
+      sendFn.mockResolvedValueOnce(false)
+      const { result } = renderQueue()
+
+      let id
+      act(() => {
+        id = result.current.enqueueMessage('send now, but fails')
+      })
+
+      await act(async () => {
+        await result.current.sendNowItem(id)
+      })
+
+      expect(result.current.queueItems).toHaveLength(1)
+      expect(result.current.queueItems[0].status).toBe('paused')
     })
   })
 })

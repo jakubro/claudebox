@@ -1,0 +1,9 @@
+{"type": "user", "subtype": "text", "is_human": true, "content": "Read the notes page", "turn_id": "turn_001", "primary": true, "id": "evt_001", "ts": "2025-01-18T12:00:01Z"}
+{"type": "assistant", "subtype": "tool_use", "content": "read_url", "tool_name": "read_url", "tool_use_id": "lg_url", "tool_input": {"url": "https://example.com/notes"}, "primary": false, "is_human": false, "id": "evt_002", "ts": "2025-01-18T12:00:02Z"}
+{"type": "user", "subtype": "tool_result", "content": "Release notes", "tool_use_id": "lg_url", "primary": false, "is_human": false, "id": "evt_003", "ts": "2025-01-18T12:00:03Z"}
+{"type": "assistant", "subtype": "tool_use", "content": "search_web", "tool_name": "search_web", "tool_use_id": "lg_search", "tool_input": {"query": "notes"}, "primary": false, "is_human": false, "id": "evt_004", "ts": "2025-01-18T12:00:04Z"}
+{"type": "user", "subtype": "tool_result", "content": "Three results", "tool_use_id": "lg_search", "primary": false, "is_human": false, "id": "evt_005", "ts": "2025-01-18T12:00:05Z"}
+{"type": "assistant", "subtype": "tool_use", "content": "read_file", "tool_name": "read_file", "tool_use_id": "lg_read", "tool_input": {"path": "/workspace/notes.md"}, "primary": false, "is_human": false, "id": "evt_006", "ts": "2025-01-18T12:00:06Z"}
+{"type": "user", "subtype": "tool_result", "content": "notes", "tool_use_id": "lg_read", "primary": false, "is_human": false, "id": "evt_007", "ts": "2025-01-18T12:00:07Z"}
+{"type": "assistant", "subtype": "text", "content": "Done.", "primary": true, "is_human": false, "id": "evt_008", "ts": "2025-01-18T12:00:08Z"}
+{"type": "result", "subtype": "success", "turn_id": "turn_001", "primary": false, "is_human": false, "id": "evt_009", "ts": "2025-01-18T12:00:09Z"}

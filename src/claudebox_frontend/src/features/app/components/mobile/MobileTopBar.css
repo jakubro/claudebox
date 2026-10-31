@@ -47,6 +47,11 @@
   padding: 0 4px;
 }
 
+.mobile-top-session-name.auto-named {
+  font-style: italic;
+  opacity: 0.7;
+}
+
 .mobile-top-actions {
   display: flex;
   align-items: center;

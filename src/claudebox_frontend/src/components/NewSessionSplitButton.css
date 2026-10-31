@@ -22,6 +22,12 @@
   border-radius: 3px;
 }
 
+/* Symmetric horizontal padding keeps the icon centered in the hover-bg rectangle. */
+.new-session-split-chevron {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
 .new-session-split--accent .new-session-split-btn,
 .new-session-split--accent .new-session-split-chevron {
   color: var(--header-icon-color);
@@ -50,16 +56,16 @@
   opacity: 0.5;
 }
 
-/* Symmetric horizontal padding keeps the icon centered in the hover-bg rectangle. */
-.new-session-split-chevron {
-  padding-left: 3px;
-  padding-right: 3px;
-}
-
 .new-session-dropdown {
   z-index: 200;
 }
 
 .new-session-dropdown-portal {
   position: fixed;
+}
+
+.new-session-dropdown-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
 }

@@ -9,6 +9,8 @@ runtimes), so the UI lights up with no frontend changes.
 `/<name>` never reaches this tool. `allowed-tools`/`model`/`effort` are unenforced.
 """
 
+from __future__ import annotations
+
 from langchain_core.tools import BaseTool, ToolException, tool
 
 from ._context import ToolContext

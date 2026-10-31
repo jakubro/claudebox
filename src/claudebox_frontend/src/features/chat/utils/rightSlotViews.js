@@ -6,11 +6,12 @@ import TerminalColumn from '../components/terminal'
 import WorkColumn from '../components/work'
 
 /**
- * View ids, stable across sessions - used as the slot's own resolution key, never persisted raw.
- * `OFF` is the persisted preference's third value (see `useTerminalSplit`), not a registered view.
+ * The chat's views, persisted per session as `rightSlotView`. Only Terminal and Work mount a right
+ * column, so only they are registered below; Focused and Everything keep the transcript whole.
  */
 export const RightSlotView = Object.freeze({
-  OFF: 'off',
+  FOCUSED: 'focused',
+  EVERYTHING: 'everything',
   TERMINAL: 'terminal',
   WORK: 'work',
 })
@@ -38,15 +39,31 @@ export const RIGHT_SLOT_VIEWS = Object.freeze({
   },
 })
 
-/** The routing mode a resolved view implies - OFF when no view is currently showing. */
-export function resolveRightSlotRoutingMode(activeView) {
+/**
+ * The routing mode the picked `view` implies: FOCUSED on a phone or for the Focused view, the
+ * mounted column's own mode when one shows, OFF otherwise - Everything, or a column too wide to fit.
+ */
+export function resolveRightSlotRoutingMode(view, activeView, isMobile = false) {
+  if (isMobile || view === RightSlotView.FOCUSED) {
+    return TurnRoutingMode.FOCUSED
+  }
   return activeView?.routingMode ?? TurnRoutingMode.OFF
 }
 
-/** Read the persisted view: `rightSlotView` when present, else the older boolean key. */
+/**
+ * Read the persisted view: a session that never picked one is Focused; the older `off` and
+ * `terminalSplitEnabled: false` were the whole transcript, now Everything.
+ */
 export function resolveStoredRightSlotView(session) {
-  if (session?.rightSlotView) {
-    return session.rightSlotView
+  const stored = session?.rightSlotView
+  if (stored === 'off') {
+    return RightSlotView.EVERYTHING
   }
-  return session?.terminalSplitEnabled ? RightSlotView.TERMINAL : RightSlotView.OFF
+  if (stored) {
+    return stored
+  }
+  if (session?.terminalSplitEnabled === undefined) {
+    return RightSlotView.FOCUSED
+  }
+  return session.terminalSplitEnabled ? RightSlotView.TERMINAL : RightSlotView.EVERYTHING
 }

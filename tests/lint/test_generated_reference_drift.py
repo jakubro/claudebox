@@ -1,6 +1,8 @@
 """Both generated reference pages against the sources that produce them - neither can be
 hand-edited or left behind, and shortcuts is checked against hand-maintained SPEC.md as well."""
 
+from __future__ import annotations
+
 import importlib.util
 import re
 import subprocess
@@ -40,7 +42,7 @@ def _canonical(binding: str) -> set[str]:
     """Expand one displayed binding into the atomic combos it stands for.
     `Alt+PageUp / PageDown` is two sharing a prefix; `Alt+? (or Alt+/)` is one with an aside."""
 
-    text = binding.split(" (or ")[0].strip()
+    text = binding.split(" (or ", maxsplit=1)[0].strip()
 
     for symbol, word in _SYMBOLS.items():
         text = text.replace(symbol, word)

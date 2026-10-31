@@ -1,0 +1,1046 @@
+#!/usr/bin/env python3
+"""Seccomp notification supervisor: runs a session and serves what each of its Bash calls did."""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+import fcntl
+import json
+import os
+import platform
+import re
+import selectors
+import shlex
+import signal
+import socket
+import struct
+import sys
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Self
+
+
+SOCKET = Path("/run/claudebox/trace.sock")
+
+CHANGED = "changed"
+UNCHANGED = "unchanged"
+UNKNOWN = "unknown"
+
+SHELLS = frozenset({"bash", "sh", "dash", "zsh", "ksh"})
+
+X86_64_SYSCALLS = {
+    "open": 2,
+    "openat": 257,
+    "openat2": 437,
+    "creat": 85,
+    "open_by_handle_at": 304,
+    "unlink": 87,
+    "unlinkat": 263,
+    "rename": 82,
+    "renameat": 264,
+    "renameat2": 316,
+    "truncate": 76,
+    "ftruncate": 77,
+    "fallocate": 285,
+    "mkdir": 83,
+    "mkdirat": 258,
+    "rmdir": 84,
+    "link": 86,
+    "linkat": 265,
+    "symlink": 88,
+    "symlinkat": 266,
+    "mknod": 133,
+    "mknodat": 259,
+    "chmod": 90,
+    "fchmod": 91,
+    "fchmodat": 268,
+    "fchmodat2": 452,
+    "chown": 92,
+    "fchown": 93,
+    "lchown": 94,
+    "fchownat": 260,
+    "utime": 132,
+    "utimes": 235,
+    "futimesat": 261,
+    "utimensat": 280,
+    "setxattr": 188,
+    "lsetxattr": 189,
+    "fsetxattr": 190,
+    "setxattrat": 463,
+    "removexattr": 197,
+    "lremovexattr": 198,
+    "fremovexattr": 199,
+    "removexattrat": 466,
+    "io_uring_setup": 425,
+    "execve": 59,
+    "execveat": 322,
+    "socket": 41,
+    "connect": 42,
+    "bind": 49,
+    "setsid": 112,
+    "kill": 62,
+    "tkill": 200,
+    "tgkill": 234,
+    "rt_sigqueueinfo": 129,
+    "rt_tgsigqueueinfo": 297,
+    "pidfd_send_signal": 424,
+    "ptrace": 101,
+    "process_vm_writev": 311,
+    "settimeofday": 164,
+    "clock_settime": 227,
+    "adjtimex": 159,
+    "clock_adjtime": 305,
+    "sethostname": 170,
+    "setdomainname": 171,
+    "mount": 165,
+    "umount2": 166,
+    "move_mount": 429,
+    "mount_setattr": 442,
+    "pivot_root": 155,
+}
+
+# O_TMPFILE includes O_DIRECTORY, which every directory open sets.
+WRITE_FLAGS = (
+    os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND | os.O_TMPFILE & ~os.O_DIRECTORY
+)
+
+NAME_SERVICE_SOCKETS = frozenset(
+    {"/run/nscd/socket", "/var/run/nscd/socket", "/var/lib/sss/pipes/nss"},
+)
+NAME_SERVICE_SOCKET_DIRS = ("/run/systemd/userdb/",)
+
+AUDIT_ARCH_X86_64 = 0xC000003E
+X32_SYSCALL_BIT = 0x40000000
+
+
+@dataclass(frozen=True)
+class Proc:
+    """One process as /proc showed it: identity is pid plus start time, since pids are reused."""
+
+    pid: int
+    start: int
+    ppid: int
+    pgrp: int
+    sid: int
+    state: str
+
+    @property
+    def key(self) -> tuple[int, int]:
+        return (self.pid, self.start)
+
+
+@dataclass(frozen=True)
+class Effect:
+    """What one notified syscall does: exec, write, signal, setsid, change, or none."""
+
+    kind: str
+    path: str | None = None
+    script: str | None = None
+    target: int | None = None
+    reopened: bool = False
+
+
+NONE = Effect("none")
+CHANGE = Effect("change")
+
+
+class ProcessTable:
+    """Process facts from /proc, read when they are asked for."""
+
+    def __init__(self, proc_dir: Path = Path("/proc")):
+        self._dir = proc_dir
+
+    def stat(self, pid: int) -> Proc | None:
+        """Return `pid` as /proc shows it now, None when it is gone."""
+
+        try:
+            raw = (self._dir / str(pid) / "stat").read_text()
+        except OSError:
+            return None
+
+        fields = raw.rsplit(")", 1)[1].split()
+
+        return Proc(
+            pid=pid,
+            start=int(fields[19]),
+            ppid=int(fields[1]),
+            pgrp=int(fields[2]),
+            sid=int(fields[3]),
+            state=fields[0],
+        )
+
+    def alive(self, key: tuple[int, int]) -> bool:
+        proc = self.stat(key[0])
+
+        return proc is not None and proc.start == key[1] and proc.state not in "ZX"
+
+    def descriptors(self, pid: int) -> frozenset[str]:
+        """Return what `pid`'s standard input, output and error refer to, as /proc names them."""
+
+        targets = set()
+
+        for fd in (0, 1, 2):
+            try:
+                targets.add(os.readlink(self._dir / str(pid) / "fd" / str(fd)))
+            except OSError:
+                pass
+
+        return frozenset(targets)
+
+    def sessions_alive(self, sids: set[int], since: int) -> bool:
+        """Whether a process of any session in `sids` started at or after `since` still runs."""
+
+        for entry in os.listdir(self._dir):
+            if not entry.isdigit():
+                continue
+
+            proc = self.stat(int(entry))
+
+            if proc and proc.sid in sids and proc.start >= since and proc.state not in "ZX":
+                return True
+
+        return False
+
+
+@dataclass
+class Root:
+    """A shell run with a script - possibly a Bash call - and what the processes under it did."""
+
+    key: tuple[int, int]
+    script: str
+    cwd_file: str | None
+    given: frozenset[str] = frozenset()
+    sessions: set[int] = field(default_factory=set)
+    changed: bool = False
+    wrote_cwd_file: bool = False
+    wrapped: bool = False
+    members: set[tuple[int, int]] = field(default_factory=set)
+    overflowed: bool = False
+
+    def see(self, key: tuple[int, int]) -> None:
+        """Count process `key` as one that ran under this shell."""
+
+        if len(self.members) < Tracker.MAX_MEMBERS:
+            self.members.add(key)
+        elif key not in self.members:
+            self.overflowed = True
+
+
+class Tracker:
+    """Credits notified syscalls to the shells they ran under; keeps one verdict per Bash call."""
+
+    MAX_UNCLAIMED = 1024
+    MAX_CLAIMED = 4096
+    MAX_PENDING = 1024
+    MAX_MEMBERS = 4096
+    MAX_CACHED = 16384
+
+    def __init__(self, procs: ProcessTable):
+        self._procs = procs
+        self._unclaimed: OrderedDict[tuple[int, int], Root] = OrderedDict()
+        self._claimed: OrderedDict[str, Root] = OrderedDict()
+        self._pending: OrderedDict[str, str] = OrderedDict()
+        self._live: dict[tuple[int, int], Root] = {}
+        self._sessions: dict[int, set[tuple[int, int]]] = {}
+        self._membership: dict[tuple[int, int], set[tuple[int, int]]] = {}
+
+    def register(self, call_id: str, command: str) -> None:
+        """Bind Bash call `call_id` to the oldest shell running `command`, now or once it starts."""
+
+        if call_id in self._claimed or call_id in self._pending:
+            return
+
+        for key, root in self._unclaimed.items():
+            if match := _match(root.script, command):
+                del self._unclaimed[key]
+                self._claim(call_id, root, match)
+
+                return
+
+        self._pending[call_id] = command
+        _bound(self._pending, self.MAX_PENDING)
+
+    def verdict(self, call_id: str) -> str:
+        """Return what call `call_id` did and forget it; unknown while it may still act."""
+
+        self._pending.pop(call_id, None)
+        root = self._claimed.pop(call_id, None)
+
+        if root is None:
+            return UNKNOWN
+
+        self._forget(root)
+
+        # Only the agent CLI's wrapper writes a cwd file; anywhere else it is the command's write.
+        if root.changed or (root.wrote_cwd_file and not root.wrapped):
+            return CHANGED
+
+        return UNKNOWN if self._running(root) else UNCHANGED
+
+    def apply(self, proc: Proc, effect: Effect) -> None:
+        """Credit `effect`, done by `proc`, to every shell `proc` runs under."""
+
+        roots = self._roots_of(proc)
+
+        for root in roots:
+            root.see(proc.key)
+
+        if effect.kind == "exec":
+            self._exec(proc, effect.script, inside_a_call=bool(roots))
+
+            return
+
+        if effect.kind == "setsid":
+            for root in roots:
+                root.sessions.add(proc.pid)
+
+            self._sessions.setdefault(proc.pid, set()).update(root.key for root in roots)
+
+            return
+
+        if effect.kind == "none" or (effect.kind == "write" and _harmless_write(effect.path)):
+            return
+
+        if effect.kind == "signal":
+            target = self._procs.stat(proc.pgrp if effect.target == 0 else effect.target or 0)
+            inside = {r.key for r in self._roots_of(target)} if target else set()
+            roots = [r for r in roots if r.key not in inside]
+
+        for root in roots:
+            if effect.kind == "write" and effect.reopened and effect.path in root.given:
+                continue
+
+            if effect.kind == "write" and proc.key == root.key and effect.path == root.cwd_file:
+                root.wrote_cwd_file = True
+            else:
+                root.changed = True
+
+    def _exec(self, proc: Proc, script: str | None, *, inside_a_call: bool) -> None:
+        # Both runtimes start a call's shell in a session of its own, outside every other call.
+        if script is None or proc.pid != proc.sid or inside_a_call or proc.key in self._live:
+            return
+
+        root = Root(proc.key, script, _cwd_file(script), self._procs.descriptors(proc.pid))
+        root.sessions.add(proc.pid)
+        self._live[root.key] = root
+        self._membership.setdefault(proc.key, set()).add(root.key)
+        self._sessions.setdefault(proc.pid, set()).add(root.key)
+
+        for call_id, command in self._pending.items():
+            if match := _match(script, command):
+                del self._pending[call_id]
+                self._claim(call_id, root, match)
+
+                return
+
+        self._unclaimed[root.key] = root
+
+        while len(self._unclaimed) > self.MAX_UNCLAIMED:
+            self._forget(self._unclaimed.popitem(last=False)[1])
+
+    def _claim(self, call_id: str, root: Root, match: str) -> None:
+        root.wrapped = match == "wrapper"
+        self._claimed[call_id] = root
+
+        while len(self._claimed) > self.MAX_CLAIMED:
+            self._forget(self._claimed.popitem(last=False)[1])
+
+    def _forget(self, root: Root) -> None:
+        self._live.pop(root.key, None)
+
+        for sid in root.sessions:
+            self._sessions.get(sid, set()).discard(root.key)
+
+    def _running(self, root: Root) -> bool:
+        return (
+            root.overflowed
+            or self._procs.alive(root.key)
+            or any(self._procs.alive(member) for member in root.members)
+            or self._procs.sessions_alive(root.sessions, root.key[1])
+        )
+
+    def _roots_of(self, proc: Proc) -> list[Root]:
+        keys = self._membership.get(proc.key)
+
+        if keys is None:
+            keys = self._ancestry_roots(proc)
+
+            if len(self._membership) >= self.MAX_CACHED:
+                self._membership.clear()
+
+            self._membership[proc.key] = keys
+
+        return [self._live[k] for k in keys if k in self._live]
+
+    def _ancestry_roots(self, proc: Proc) -> set[tuple[int, int]]:
+        keys = set(self._sessions.get(proc.sid, ()))
+
+        current: Proc | None = proc
+
+        while current is not None and current.pid > 1:
+            cached = self._membership.get(current.key)
+
+            if cached is not None:
+                return keys | cached
+
+            if current.key in self._live:
+                keys.add(current.key)
+
+            parent = self._procs.stat(current.ppid)
+            current = parent if parent and parent.start <= current.start else None
+
+        return keys
+
+
+class Caller:
+    """A notified syscall's stopped caller: its memory and descriptors; a failed read is None."""
+
+    def __init__(self, pid: int, proc_dir: Path = Path("/proc")):
+        self._dir = proc_dir / str(pid)
+        self._path = self._dir / "mem"
+        self._fd: int | None = None
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        if self._fd is not None:
+            os.close(self._fd)
+
+    def read(self, address: int, size: int) -> bytes | None:
+        """Return `size` bytes at `address`, None when unreadable or short."""
+
+        try:
+            if self._fd is None:
+                self._fd = os.open(self._path, os.O_RDONLY)
+
+            data = os.pread(self._fd, size, address)
+        except (OSError, OverflowError):
+            return None
+
+        return data if len(data) == size else None
+
+    def string(self, address: int, limit: int = 4096) -> str | None:
+        """Return the NUL-terminated string at `address`; None if unreadable or past `limit`."""
+
+        chunks = []
+        total = 0
+
+        while total < limit:
+            size = 4096 - (address + total) % 4096
+            chunk = self.read(address + total, size)
+
+            if chunk is None:
+                return None
+
+            end = chunk.find(b"\0")
+
+            if end >= 0:
+                chunks.append(chunk[:end])
+
+                return b"".join(chunks).decode(errors="surrogateescape")
+
+            chunks.append(chunk)
+            total += size
+
+        return None
+
+    def pointer(self, address: int) -> int | None:
+        """Return the 64-bit word at `address`."""
+
+        data = self.read(address, 8)
+
+        return struct.unpack("<Q", data)[0] if data else None
+
+    def descriptor(self, fd: int) -> str | None:
+        """Return what descriptor `fd` refers to, as /proc names it."""
+
+        try:
+            return os.readlink(self._dir / "fd" / str(fd))
+        except OSError:
+            return None
+
+
+def decode(nr: int, arch: int, args: tuple[int, ...], caller: Caller) -> Effect:
+    """Read what syscall `nr` would do from its arguments and the caller's memory."""
+
+    if arch != AUDIT_ARCH_X86_64 or nr & X32_SYSCALL_BIT:
+        return CHANGE
+
+    name = _NAMES.get(nr)
+
+    if name in ("open", "creat"):
+        return _write(caller, caller.string(args[0]))
+
+    if name == "openat":
+        return _write(caller, caller.string(args[1]))
+
+    if name == "openat2":
+        flags = caller.pointer(args[2])
+
+        if flags is not None and not flags & WRITE_FLAGS:
+            return NONE
+
+        return _write(caller, caller.string(args[1]))
+
+    if name in ("execve", "execveat"):
+        path_arg, argv_arg = (0, 1) if name == "execve" else (1, 2)
+
+        return Effect("exec", script=_shell_script(caller, args[path_arg], args[argv_arg]))
+
+    if name == "connect":
+        return _connect(caller.read(args[1], min(args[2], 110)))
+
+    if name == "socket":
+        return NONE if args[0] == socket.AF_UNIX else CHANGE
+
+    if name == "setsid":
+        return Effect("setsid")
+
+    if name in _SIGNAL_ARG_INDEXES:
+        target_arg, signal_arg = _SIGNAL_ARG_INDEXES[name]
+
+        if _int32(args[signal_arg]) == 0:
+            return NONE
+
+        if target_arg is None:
+            return CHANGE
+
+        target = _int32(args[target_arg])
+
+        if name == "kill" and target == -1:
+            return CHANGE
+
+        return Effect("signal", target=-target if target < -1 else target)
+
+    return CHANGE
+
+
+def filter_program() -> bytes:
+    """Build the BPF program notifying the watched syscalls, write-intent opens and foreign ABIs."""
+
+    filtered = ("open", "openat", "socket")
+    always = sorted(nr for name, nr in X86_64_SYSCALLS.items() if name not in filtered)
+    lines: list = [
+        _ld(4),
+        (_JEQ, "native", "notify", AUDIT_ARCH_X86_64),
+        ("label", "native"),
+        _ld(0),
+        (_JGE, "notify", 0, X32_SYSCALL_BIT),
+        (_JEQ, "open", 0, X86_64_SYSCALLS["open"]),
+        (_JEQ, "openat", 0, X86_64_SYSCALLS["openat"]),
+        (_JEQ, "socket", 0, X86_64_SYSCALLS["socket"]),
+        *[(_JEQ, "notify", 0, nr) for nr in always],
+        (_RET, 0, 0, _RET_ALLOW),
+        ("label", "open"),
+        _ld(_ARGS_OFFSET + 8 * 1),
+        (_JSET, "notify", "allow", WRITE_FLAGS),
+        ("label", "openat"),
+        _ld(_ARGS_OFFSET + 8 * 2),
+        (_JSET, "notify", "allow", WRITE_FLAGS),
+        ("label", "socket"),
+        _ld(_ARGS_OFFSET),
+        (_JEQ, "allow", "notify", socket.AF_UNIX),
+        ("label", "notify"),
+        (_RET, 0, 0, _RET_USER_NOTIF),
+        ("label", "allow"),
+        (_RET, 0, 0, _RET_ALLOW),
+    ]
+
+    return _assemble(lines)
+
+
+def answer(tracker: Tracker | None, line: bytes) -> dict:
+    """Answer one protocol request; a supervisor without a filter answers every verdict unknown."""
+
+    try:
+        request = json.loads(line)
+        op = request["op"]
+
+        if op == "register":
+            if tracker is not None:
+                tracker.register(str(request["id"]), str(request["command"]))
+
+            return {"ok": True}
+
+        if op == "verdict":
+            return {"verdict": tracker.verdict(str(request["id"])) if tracker else UNKNOWN}
+    except (ValueError, KeyError, TypeError) as exc:
+        return {"error": f"unreadable request: {exc}"}
+
+    return {"error": f"unknown op: {op!r}"}
+
+
+def install_filter() -> int:
+    """Install the filter on this process with a notification listener; return the listener's fd."""
+
+    if platform.machine() != "x86_64":
+        raise RuntimeError(f"the filter covers x86-64 only, not {platform.machine()}")
+
+    if _kernel_version() < (5, 5):
+        raise RuntimeError(f"kernel {platform.release()} predates continuing a notified syscall")
+
+    libc = ctypes.CDLL(None, use_errno=True)
+
+    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS)")
+
+    program = filter_program()
+    buffer = ctypes.create_string_buffer(program, len(program))
+    fprog = _SockFprog(len(program) // 8, ctypes.cast(buffer, ctypes.c_void_p))
+    fd = libc.syscall(
+        _SYS_SECCOMP,
+        _SECCOMP_SET_MODE_FILTER,
+        _SECCOMP_FILTER_FLAG_NEW_LISTENER,
+        ctypes.byref(fprog),
+    )
+
+    if fd < 0:
+        errno = ctypes.get_errno()
+
+        raise OSError(errno, f"seccomp: {os.strerror(errno)}")
+
+    return fd
+
+
+def serve(socket_path: Path, listener: int | None, child: int, tracker: Tracker | None) -> int:
+    """Answer notifications and requests until `child` exits; return its exit status."""
+
+    selector = selectors.DefaultSelector()
+    server = _listen(socket_path)
+    exited = _exit_fd(child)
+
+    for fileobj, data in ((server, _ACCEPT), (exited, _EXIT), (listener, _NOTIFY)):
+        if fileobj is not None:
+            selector.register(fileobj, selectors.EVENT_READ, data)
+
+    while True:
+        events = selector.select(None if exited is not None else _EXIT_POLL_S)
+        pid, status = os.waitpid(child, os.WNOHANG)
+
+        if pid:
+            if server is not None:
+                server.close()
+                socket_path.unlink(missing_ok=True)
+
+            return _exit_status(status)
+
+        for key, _ in events:
+            try:
+                if key.data is _EXIT:
+                    continue
+
+                if key.data is _NOTIFY:
+                    _handle_notification(key.fd, tracker)
+                elif key.data is _ACCEPT and server is not None:
+                    conn, _ = server.accept()
+                    conn.setblocking(False)
+                    selector.register(conn, selectors.EVENT_READ, (conn, bytearray()))
+                else:
+                    conn, buffer = key.data
+                    _read_request(selector, conn, buffer, tracker)
+            except Exception as exc:  # noqa: BLE001
+                # Exiting closes the listener, and the kernel then fails every watched syscall.
+                _log(f"skipped an event: {exc!r}")
+
+
+def main() -> None:
+    """Run the command under the filter, serve verdicts, and exit with the command's status."""
+
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--socket", type=Path, default=SOCKET, help="where verdicts are served")
+    parser.add_argument("command", nargs="+", help="the command to run under the filter")
+    args = parser.parse_args()
+
+    ours, theirs = socket.socketpair()
+    child = os.fork()
+
+    if child == 0:
+        ours.close()
+        _run_child(theirs, args.command)
+
+    theirs.close()
+
+    for signum in (signal.SIGINT, signal.SIGQUIT):
+        signal.signal(signum, signal.SIG_IGN)
+
+    for signum in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, lambda sig, _frame: _forward(child, sig))
+
+    listener = _receive_listener(ours)
+    tracker = Tracker(ProcessTable()) if listener is not None else None
+    sys.exit(serve(args.socket, listener, child, tracker))
+
+
+_NAMES = {nr: name for name, nr in X86_64_SYSCALLS.items()}
+
+_SIGNAL_ARG_INDEXES = {
+    "kill": (0, 1),
+    "tkill": (0, 1),
+    "tgkill": (1, 2),
+    "rt_sigqueueinfo": (0, 1),
+    "rt_tgsigqueueinfo": (1, 2),
+    "pidfd_send_signal": (None, 1),
+}
+
+_LD, _JEQ, _JGE, _JSET, _RET = 0x20, 0x15, 0x35, 0x45, 0x06
+_RET_ALLOW = 0x7FFF0000
+_RET_USER_NOTIF = 0x7FC00000
+# Arguments sit at byte 16 of the filter's seccomp_data but at byte 32 of a received notification.
+_ARGS_OFFSET = 16
+_NOTIF_FORMAT = "<QIIiIQ6Q"
+_RESPONSE_FORMAT = "<QqiI"
+_NOTIF_RECV = 0xC0502100
+_NOTIF_SEND = 0xC0182101
+_NOTIF_ID_VALID = 0x80082102
+_USER_NOTIF_FLAG_CONTINUE = 1
+_PR_SET_NO_NEW_PRIVS = 38
+_SYS_SECCOMP = 317
+_SECCOMP_SET_MODE_FILTER = 1
+_SECCOMP_FILTER_FLAG_NEW_LISTENER = 8
+
+_ACCEPT = "accept"
+_EXIT = "exit"
+_NOTIFY = "notify"
+_EXIT_POLL_S = 0.5
+_MAX_REQUEST = 4 * 1024 * 1024
+_MAX_ARGV = 64
+_MAX_SCRIPT = 256 * 1024
+_HARMLESS_WRITES = frozenset({"/dev/null", "/dev/tty", "/dev/stdin", "/dev/stdout", "/dev/stderr"})
+_HARMLESS_WRITE_PATTERN = re.compile(r"/dev/(?:pts|fd)/\d+")
+# /dev/fd/N reopens what descriptor N holds - a real file when the command opened one.
+_DESCRIPTOR_PATHS = {"/dev/stdin": 0, "/dev/stdout": 1, "/dev/stderr": 2}
+_DESCRIPTOR_PATH = re.compile(r"/dev/fd/(\d+)")
+_HARMLESS_TARGETS = ("pipe:", "socket:", "anon_inode:", "/dev/null", "/dev/tty", "/dev/pts/")
+_BARE_WORD = re.compile(r"[^\s'\"\\$`!*?;&|<>(){}\[\]#~]+")
+
+
+class _SockFprog(ctypes.Structure):
+    _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
+
+
+def _run_child(conn: socket.socket, command: list[str]) -> None:
+    try:
+        try:
+            listener = install_filter()
+        except (OSError, RuntimeError) as exc:
+            conn.sendall(f"E{exc}".encode())
+        else:
+            # sendmsg is unwatched: a watched handover would wait on a supervisor not yet listening.
+            socket.send_fds(conn, [b"L"], [listener])
+            os.close(listener)
+
+        conn.close()
+        os.execvp(command[0], command)
+    except OSError as exc:
+        print(f"claudebox-trace: {command[0]}: {exc.strerror or exc}", file=sys.stderr)
+    finally:
+        os._exit(127)
+
+
+def _receive_listener(conn: socket.socket) -> int | None:
+    try:
+        message, fds, _, _ = socket.recv_fds(conn, 4096, 1)
+    except OSError as exc:
+        message, fds = f"E{exc}".encode(), []
+    finally:
+        conn.close()
+
+    if fds:
+        return fds[0]
+
+    _log(f"unavailable: {message[1:].decode(errors='replace') or 'the command did not start'}")
+
+    return None
+
+
+def _handle_notification(listener: int, tracker: Tracker | None) -> None:
+    # The kernel refuses to fill a notification buffer that is not zeroed.
+    buffer = bytearray(struct.calcsize(_NOTIF_FORMAT))
+
+    try:
+        fcntl.ioctl(listener, _NOTIF_RECV, buffer)
+    except OSError:
+        return
+
+    notif_id, pid, _flags, nr, arch, _ip, *args = struct.unpack(_NOTIF_FORMAT, buffer)
+
+    try:
+        proc = ProcessTable().stat(pid)
+
+        if proc is None or tracker is None:
+            return
+
+        try:
+            with Caller(pid) as caller:
+                effect = decode(nr, arch, tuple(args), caller)
+        except Exception:  # noqa: BLE001
+            effect = CHANGE
+
+        if _still_waiting(listener, notif_id):
+            tracker.apply(proc, effect)
+    finally:
+        try:
+            fcntl.ioctl(
+                listener,
+                _NOTIF_SEND,
+                struct.pack(_RESPONSE_FORMAT, notif_id, 0, 0, _USER_NOTIF_FLAG_CONTINUE),
+            )
+        except OSError:
+            pass
+
+
+def _still_waiting(listener: int, notif_id: int) -> bool:
+    try:
+        fcntl.ioctl(listener, _NOTIF_ID_VALID, struct.pack("<Q", notif_id))
+    except OSError:
+        return False
+
+    return True
+
+
+def _read_request(
+    selector: selectors.BaseSelector,
+    conn: socket.socket,
+    buffer: bytearray,
+    tracker: Tracker | None,
+) -> None:
+    try:
+        data = conn.recv(65536)
+    except BlockingIOError:
+        return
+    except OSError:
+        data = b""
+
+    buffer += data
+
+    if data and b"\n" not in buffer and len(buffer) < _MAX_REQUEST:
+        return
+
+    selector.unregister(conn)
+
+    with conn:
+        if b"\n" in buffer:
+            reply = answer(tracker, bytes(buffer.split(b"\n", 1)[0]))
+
+            try:
+                conn.send(json.dumps(reply).encode() + b"\n")
+            except OSError:
+                pass
+
+
+def _listen(path: Path) -> socket.socket | None:
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.unlink(missing_ok=True)
+        server.bind(str(path))
+        path.chmod(0o600)
+        server.listen(64)
+    except OSError as exc:
+        server.close()
+        _log(f"serving no verdicts: {path}: {exc}")
+
+        return None
+
+    server.setblocking(False)
+
+    return server
+
+
+def _exit_fd(child: int) -> int | None:
+    try:
+        return os.pidfd_open(child)
+    except OSError:
+        return None
+
+
+def _shell_script(caller: Caller, path_address: int, argv_address: int) -> str | None:
+    path = caller.string(path_address)
+
+    if path is None or os.path.basename(path) not in SHELLS:
+        return None
+
+    argv = []
+
+    for index in range(_MAX_ARGV):
+        pointer = caller.pointer(argv_address + 8 * index)
+
+        if not pointer:
+            break
+
+        arg = caller.string(pointer, limit=_MAX_SCRIPT)
+
+        if arg is None:
+            return None
+
+        argv.append(arg)
+
+    return _script_of(argv)
+
+
+def _script_of(argv: list[str]) -> str | None:
+    runs_script = False
+    index = 1
+
+    while index < len(argv):
+        arg = argv[index]
+
+        if arg in ("-o", "+o", "-O", "+O"):
+            index += 2
+        elif arg == "--":
+            index += 1
+
+            break
+        elif arg.startswith("--"):
+            index += 1
+        elif len(arg) > 1 and arg[0] in "-+":
+            runs_script = runs_script or "c" in arg[1:]
+            index += 1
+        else:
+            break
+
+    return argv[index] if runs_script and index < len(argv) else None
+
+
+def _match(script: str, command: str) -> str | None:
+    if script == command:
+        return "verbatim"
+
+    head, marker, _ = script.rpartition(" && pwd -P >| ")
+    head = head.removesuffix(" < /dev/null")
+    # The CLI runs eval '<command>' (' written '"'"'), or eval <command> when nothing needs quoting.
+    forms = [" eval '" + command.replace("'", "'\"'\"'") + "'"]
+
+    if _BARE_WORD.fullmatch(command):
+        forms.append(" eval " + command)
+
+    if marker and any(f" {head}".endswith(form) for form in forms):
+        return "wrapper"
+
+    return None
+
+
+def _cwd_file(script: str) -> str | None:
+    _, marker, tail = script.rpartition("pwd -P >| ")
+
+    if not marker:
+        return None
+
+    try:
+        words = shlex.split(tail)
+    except ValueError:
+        return None
+
+    return words[0] if len(words) == 1 else None
+
+
+def _connect(address: bytes | None) -> Effect:
+    if address is None or len(address) < 2:
+        return CHANGE
+
+    family = struct.unpack("<H", address[:2])[0]
+
+    if family == socket.AF_UNSPEC:
+        return NONE
+
+    if family != socket.AF_UNIX or address[2:3] in (b"", b"\0"):
+        return CHANGE
+
+    path = address[2:].split(b"\0", 1)[0].decode(errors="surrogateescape")
+
+    if path in NAME_SERVICE_SOCKETS or path.startswith(NAME_SERVICE_SOCKET_DIRS):
+        return NONE
+
+    return CHANGE
+
+
+def _write(caller: Caller, path: str | None) -> Effect:
+    fd = _DESCRIPTOR_PATHS.get(path) if path else None
+
+    if fd is None and path and (match := _DESCRIPTOR_PATH.fullmatch(path)):
+        fd = int(match[1])
+
+    target = caller.descriptor(fd) if fd is not None else None
+
+    if target is not None and not target.startswith(_HARMLESS_TARGETS):
+        return Effect("write", path=target, reopened=True)
+
+    return Effect("write", path=path)
+
+
+def _harmless_write(path: str | None) -> bool:
+    return path is not None and (
+        path in _HARMLESS_WRITES or _HARMLESS_WRITE_PATTERN.fullmatch(path) is not None
+    )
+
+
+def _int32(value: int) -> int:
+    value &= 0xFFFFFFFF
+
+    return value - (1 << 32) if value & 0x80000000 else value
+
+
+def _bound(mapping: OrderedDict, limit: int) -> None:
+    while len(mapping) > limit:
+        mapping.popitem(last=False)
+
+
+def _ld(offset: int) -> tuple:
+    return (_LD, 0, 0, offset)
+
+
+def _assemble(lines: list) -> bytes:
+    positions = {}
+    count = 0
+
+    for line in lines:
+        if line[0] == "label":
+            positions[line[1]] = count
+        else:
+            count += 1
+
+    program = []
+
+    for line in lines:
+        if line[0] == "label":
+            continue
+
+        code, true_jump, false_jump, k = line
+        here = len(program) + 1
+        true_jump = positions[true_jump] - here if isinstance(true_jump, str) else true_jump
+        false_jump = positions[false_jump] - here if isinstance(false_jump, str) else false_jump
+        program.append(struct.pack("<HBBI", code, true_jump, false_jump, k))
+
+    return b"".join(program)
+
+
+def _kernel_version() -> tuple[int, int]:
+    match = re.match(r"(\d+)\.(\d+)", platform.release())
+
+    return (int(match[1]), int(match[2])) if match else (0, 0)
+
+
+def _forward(child: int, signum: int) -> None:
+    try:
+        os.kill(child, signum)
+    except ProcessLookupError:
+        pass
+
+
+def _exit_status(status: int) -> int:
+    code = os.waitstatus_to_exitcode(status)
+
+    return 128 - code if code < 0 else code
+
+
+def _log(message: str) -> None:
+    if os.environ.get("CLAUDEBOX_VERBOSE") == "1":
+        print(f"claudebox-trace: {message}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,11 +1,14 @@
 """Ticket/board domain - pure parsing, models, and error types."""
 
+from __future__ import annotations
+
 from .errors import (
     BoardParseError,
     InvalidLabel,
     StateNotFound,
     SwimlaneNotFound,
     TicketError,
+    TicketMoveRefused,
     TicketNotFound,
 )
 from .models import Board, BoardState, BoardSummary, BoardTicket, Swimlane

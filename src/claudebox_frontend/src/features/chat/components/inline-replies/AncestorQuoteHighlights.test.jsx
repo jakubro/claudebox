@@ -147,3 +147,46 @@ describe('AncestorQuoteHighlights - click routing', () => {
     expect(document.querySelector('.promoted-thread-card')).toBeNull()
   })
 })
+
+describe('AncestorQuoteHighlights - Tab over a rail-promoted quote', () => {
+  function renderPromoted(onFocusThread) {
+    const c = setupContainer()
+    render(
+      <AncestorQuoteHighlights
+        sessionId="anc-1"
+        messagesRef={{ current: c }}
+        sentThreads={[makeReply({ railPromoted: true, threadSessionId: 'thread-1' })]}
+        onFocusThread={onFocusThread}
+      />,
+    )
+    return c
+  }
+
+  it('focuses the thread group, as a click does, and keeps the key from the message box', async () => {
+    const onFocusThread = vi.fn()
+    const c = renderPromoted(onFocusThread)
+    fireEvent.mouseMove(c, { clientX: 195, clientY: 28, buttons: 0 })
+
+    await waitFor(() => {
+      const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+      document.body.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+    })
+    expect(onFocusThread).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('leaves Tab to the quote button while it shows', async () => {
+    const onFocusThread = vi.fn()
+    const c = renderPromoted(onFocusThread)
+    const button = document.createElement('button')
+    button.dataset.testid = 'quote-affordance'
+    document.body.appendChild(button)
+    fireEvent.mouseMove(c, { clientX: 195, clientY: 28, buttons: 0 })
+    await new Promise(r => setTimeout(r, 50))
+
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+
+    expect(onFocusThread).not.toHaveBeenCalled()
+    button.remove()
+  })
+})

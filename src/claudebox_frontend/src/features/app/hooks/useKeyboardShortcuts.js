@@ -116,14 +116,16 @@ export default function useKeyboardShortcuts({
           return !prev
         })
       }
+      const newSession = () => onNewSession?.()
+      const newSessionInNewTab = () => onNewSessionInNewTab?.()
 
       const keyMap = {
         [HELP_OVERLAY_KEY]: toggleHelpOverlay,
         '/': toggleHelpOverlay,
         c: focusChatTab,
         C: focusChatTab,
-        n: () => onNewSession?.(),
-        N: () => onNewSessionInNewTab?.(),
+        n: newSession,
+        N: newSessionInNewTab,
         ...Object.fromEntries(
           PANEL_TOGGLE_KEYS.map(([key, id]) => [key, () => handleTogglePanel(id)]),
         ),

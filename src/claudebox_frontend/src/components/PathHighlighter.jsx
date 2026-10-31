@@ -1,8 +1,7 @@
 /** Highlight resolvable file paths in children text nodes with dotted underline. */
 
 import { Children, Fragment } from 'react'
-import { PATH_COPIED_FEEDBACK_MS } from '../config/timing'
-import { resolveEditorUrl } from '../utils/editorUrl'
+import { handlePathClick, pathTitle } from '../utils/pathClick'
 import { computeHighlights } from '../utils/pathHighlights'
 
 /**
@@ -52,25 +51,12 @@ function highlightPaths(text, sessionDir, resolvedPaths, editorTemplate) {
     if (start > lastIndex) {
       parts.push(text.slice(lastIndex, start))
     }
-    const title = editorTemplate ? `${resolved}\nAlt+Click to open in editor` : resolved
     parts.push(
       <span
         key={start}
         className="path-link"
-        title={title}
-        onClick={e => {
-          // A path span carries no line information - always resolves to line 1.
-          const editorUrl = e.altKey ? resolveEditorUrl(editorTemplate, { path: resolved }) : null
-          if (editorUrl) {
-            e.preventDefault()
-            window.open(editorUrl, '_blank', 'noopener,noreferrer')
-            return
-          }
-          navigator.clipboard.writeText(resolved)
-          const el = e.currentTarget
-          el.classList.add('copied')
-          setTimeout(() => el.classList.remove('copied'), PATH_COPIED_FEEDBACK_MS)
-        }}>
+        title={pathTitle(resolved, editorTemplate)}
+        onClick={e => handlePathClick(e, resolved, editorTemplate)}>
         {candidate}
       </span>,
     )

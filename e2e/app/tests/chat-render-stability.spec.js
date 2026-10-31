@@ -2,9 +2,8 @@
  *  The maximum-update-depth crash itself is proven at the hook level, in useVirtualListGeometry. */
 
 import { expect, test } from '@playwright/test'
-import { waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { openSession } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
 
 test.describe('Chat Render Stability', () => {
   test.beforeEach(async ({ page }) => {
@@ -26,9 +25,7 @@ test.describe('Chat Render Stability', () => {
     const pageErrors = []
     page.on('pageerror', err => pageErrors.push(err.message))
 
-    await mockSSE(page, 'events/perf-350.jsonl')
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, 'events/perf-350.jsonl')
     // 1050 events chunks across many replay drains; interacting mid-replay races the app's own
     // event handling rather than exercising the virtualizer.
     await expect(page.locator('.chat-replay-overlay')).not.toBeVisible({ timeout: 30000 })

@@ -153,4 +153,17 @@ describe('LookupsGroup', () => {
     const [readRow] = screen.getAllByTestId('tool-block')
     expect(readRow.querySelector('.tool-open-in-editor-btn')).not.toBeInTheDocument()
   })
+
+  it('folded, its row carries the reminders inside its lookups results ahead of their added text', () => {
+    const read = entry('Read', 'r1', 0)
+    read.block.toolResult.content =
+      'print(1)<system-reminder>The file is shorter.</system-reminder>'
+    read.block.injected = [{ source: 'claude-code', text: 'note' }]
+    renderGroup({ entries: [read, entry('Grep', 'g1', 1)], blockOffsets: [] })
+
+    expect(screen.getByTestId('injected-context-toggle')).toHaveAttribute(
+      'title',
+      'System reminder, Claude Code',
+    )
+  })
 })

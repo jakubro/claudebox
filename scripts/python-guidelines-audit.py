@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Audit Python source against project conventions; runs every AUDITS class, exits 1 on any violation."""
 
+from __future__ import annotations
+
 import argparse
 import ast
 import re

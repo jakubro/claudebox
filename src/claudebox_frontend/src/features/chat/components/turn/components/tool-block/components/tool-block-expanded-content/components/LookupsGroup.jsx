@@ -1,6 +1,8 @@
 /** Panel that gathers a turn's scattered read-only tool calls into one collapsed group. */
 
 import { useState } from 'react'
+import { reminderEntries } from '../../../../../../../../../utils/eventProcessing'
+import { extractSystemReminders } from '../../../../../../../../../utils/parsers'
 import { useTurn } from '../../../../../hooks/useTurn'
 import ToolBlock from '../../../ToolBlock'
 import ToolBlockHeader from '../../ToolBlockHeader'
@@ -25,15 +27,26 @@ const INERT_STATUS = {
 export default function LookupsGroup({ entries, blockOffsets }) {
   const { todoDiffs } = useTurn()
   const [expanded, setExpanded] = useState(false)
+  const injected = expanded
+    ? null
+    : entries.flatMap(({ block }) => [
+        ...reminderEntries(extractSystemReminders(block.toolResult?.content || '').reminders),
+        ...(block.injected ?? []),
+      ])
 
   return (
-    <div className="tool-block" data-testid="lookups-group">
+    <div
+      className="tool-block"
+      data-testid="lookups-group"
+      data-lookup-ids={entries.map(({ block }) => block.toolUse?.tool_use_id).join(' ')}
+      data-expanded={String(expanded)}>
       <ToolBlockHeader
         header="Lookups"
         toolName="Lookups"
         summary={formatLookupsSummary(entries)}
         hasExpandable={true}
         onToggle={() => setExpanded(prev => !prev)}
+        injected={injected}
         toolStatus={INERT_STATUS}
       />
       {expanded && (
@@ -52,6 +65,7 @@ export default function LookupsGroup({ entries, blockOffsets }) {
                     skillContent={block.skillContent}
                     todoDiff={todoDiff}
                     blockRelativeTime={blockOffsets[index]}
+                    injected={block.injected}
                     nested
                   />
                 )

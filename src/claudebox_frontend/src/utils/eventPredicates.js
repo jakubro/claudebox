@@ -1,20 +1,23 @@
 /** Reusable predicate functions for event-structure-aware conditions. */
 
-import { EventType, TaskOutputStatus, ToolName } from '../config/schema'
+import { EventSubtype, EventType, TaskOutputStatus, ToolName } from '../config/schema'
 
 /** Test whether event is a human-authored user message. */
 export function isHumanEvent(event) {
   return event.type === EventType.USER && event.is_human
 }
 
-/** Test whether event indicates Claude is actively responding. */
+/** Test whether event indicates Claude is actively responding - a background subagent's own output is not. */
 export function isRespondingEvent(event) {
-  return event.type === EventType.ASSISTANT
+  return event.type === EventType.ASSISTANT && !event.parent_tool_use_id
 }
 
-/** Test whether event indicates Claude finished responding. */
+/** Test whether event indicates Claude finished responding - a result, or a reported failure. */
 export function isDoneRespondingEvent(event) {
-  return event.type === EventType.RESULT
+  return (
+    event.type === EventType.RESULT ||
+    (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR)
+  )
 }
 
 /** Test whether tool name is an interactive tool (requires user answer). */

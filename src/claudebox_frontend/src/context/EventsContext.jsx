@@ -10,13 +10,20 @@ import {
   useState,
 } from 'react'
 import { flushSync } from 'react-dom'
-import { getContainerId, getWorkspaceId, setContainerId } from '../api/apiClient'
+import {
+  getAddressedSessionId,
+  getContainerId,
+  getWorkspaceId,
+  sessionPath,
+  setAddress,
+} from '../api/apiClient'
 import { ConnectionStatus, EventSubtype, EventType } from '../config/schema'
 import { REPLAY_DRAIN_SLICE_SIZE } from '../config/thresholds'
 import { NORMAL_BATCH_INTERVAL, RECONNECT_MAX_ATTEMPTS } from '../config/timing'
 import useSSE from '../hooks/useSSE'
+import { isDoneRespondingEvent } from '../utils/eventPredicates'
 import { StreamingStatusContext } from './StreamingStatusContext'
-import { eventsReducer, initialState } from './utils/eventsReducer'
+import { eventsReducer, initialState, nextCreations } from './utils/eventsReducer'
 import { replaySliceEnd } from './utils/replaySlice'
 
 const EventsContext = createContext(null)
@@ -139,6 +146,16 @@ export function EventsProvider({ children }) {
         // Heavier derived state still batches into the reducer via FLUSH_BATCH every NORMAL_BATCH_INTERVAL ms.
         dispatch({ type: 'STREAMING_FLAGS', event })
         eventBufferRef.current.push(event)
+        // A turn's end flushes at once: whatever reads it - done signals, waiting on background
+        // work - must see the turn's own events alongside it, not 50 ms later.
+        if (isDoneRespondingEvent(event)) {
+          clearTimeout(batchTimeoutRef.current)
+          batchTimeoutRef.current = null
+          const batchEvents = eventBufferRef.current
+          eventBufferRef.current = []
+          dispatch({ type: 'FLUSH_BATCH', batchEvents })
+          return
+        }
         if (!batchTimeoutRef.current) {
           batchTimeoutRef.current = setTimeout(() => {
             batchTimeoutRef.current = null
@@ -154,13 +171,13 @@ export function EventsProvider({ children }) {
     [scheduleReplayDrain],
   )
 
-  // Container ID is mirrored into React state so sseUrl reacts to changes.
-  // Callers must call notifyContainerChanged() after setContainerId() to trigger a re-render.
-  const [containerId, setContainerIdState] = useState(() => getContainerId())
+  // The addressed session is mirrored into React state so sseUrl reacts to changes.
+  // Callers must call notifyAddressChanged() after setAddress() to trigger a re-render.
+  const [address, setAddressState] = useState(readAddress)
+  const { containerId, sessionId: addressedSessionId } = address
 
-  // Sync React state with the module-level containerId
-  const notifyContainerChanged = useCallback(() => {
-    setContainerIdState(getContainerId())
+  const notifyAddressChanged = useCallback(() => {
+    setAddressState(readAddress())
   }, [])
 
   // Compute SSE URL - null when no container (SSE stays disconnected)
@@ -172,8 +189,8 @@ export function EventsProvider({ children }) {
     if (!wsId) {
       return null
     }
-    return `/api/workspaces/${wsId}/containers/${containerId}/api/stream`
-  }, [containerId])
+    return `/api/workspaces/${wsId}/containers/${containerId}${sessionPath('/api/stream', addressedSessionId)}`
+  }, [containerId, addressedSessionId])
 
   // Signal container SSE reconnection exhausted - consumed by ContainerRecoveryEffect
   const [containerRecoveryNeeded, setContainerRecoveryNeeded] = useState(0)
@@ -234,21 +251,59 @@ export function EventsProvider({ children }) {
 
   const isConnected = connectionStatus === ConnectionStatus.CONNECTED
 
-  const startResume = useCallback(() => {
-    dispatch({ type: 'RESUME_STARTED' })
+  // Ref mirrors of the request markers and creation record, for event-time reads.
+  const requestsRef = useRef({ resume: null, create: null })
+  const creationsRef = useRef(initialState.creations)
+  const resumeTokenRef = useRef(0)
+
+  const dispatchCreation = useCallback(action => {
+    creationsRef.current = nextCreations(creationsRef.current, action)
+    dispatch(action)
   }, [])
 
-  const clearResume = useCallback(() => {
-    dispatch({ type: 'RESUME_CLEARED' })
-  }, [])
+  // Open and create lifetimes: a start returns the id its caller settles or aborts with; clearCreating
+  // is a soft end a pending create ignores.
+  const requestActions = useMemo(() => {
+    const settle = (kind, id) => {
+      if (requestsRef.current[kind] === id) {
+        requestsRef.current[kind] = null
+      }
+    }
 
-  const startCreating = useCallback(() => {
-    dispatch({ type: 'CREATING_STARTED' })
-  }, [])
-
-  const clearCreating = useCallback(() => {
-    dispatch({ type: 'CREATING_ENDED' })
-  }, [])
+    return {
+      startResume: () => {
+        const token = ++resumeTokenRef.current
+        requestsRef.current.resume = token
+        dispatch({ type: 'RESUME_STARTED', token })
+        return token
+      },
+      settleResumeRequest: token => {
+        settle('resume', token)
+        dispatch({ type: 'RESUME_REQUEST_SETTLED', token })
+      },
+      clearResume: () => {
+        requestsRef.current.resume = null
+        dispatch({ type: 'RESUME_CLEARED' })
+      },
+      startCreating: (fromRoute = null) => {
+        const seq = creationsRef.current.current + 1
+        requestsRef.current.create = seq
+        dispatchCreation({ type: 'CREATING_STARTED', seq, fromRoute })
+        return seq
+      },
+      settleCreateRequest: (seq, sessionId) => {
+        settle('create', seq)
+        dispatchCreation({ type: 'CREATE_REQUEST_SETTLED', seq, sessionId })
+      },
+      failCreating: seq => {
+        settle('create', seq)
+        dispatchCreation({ type: 'CREATING_FAILED', seq })
+      },
+      clearCreating: () => dispatch({ type: 'CREATING_ENDED' }),
+      getCreation: () => creationsRef.current,
+      getPendingRequests: () => ({ ...requestsRef.current }),
+    }
+  }, [dispatchCreation])
 
   // Marks a session id as "just created by this tab" - isCreating's clearing races the URL update,
   // so a resume-skip check reading it at effect time can already see false. Consumed on first read.
@@ -258,13 +313,21 @@ export function EventsProvider({ children }) {
     justCreatedSessionIdRef.current = sessionId
   }, [])
 
-  const consumeJustCreatedSession = useCallback(sessionId => {
-    if (justCreatedSessionIdRef.current !== sessionId) {
-      return false
-    }
-    justCreatedSessionIdRef.current = null
-    return true
-  }, [])
+  // Consuming it also marks the creation routed: the route has reached the session it produced.
+  const consumeJustCreatedSession = useCallback(
+    sessionId => {
+      if (justCreatedSessionIdRef.current !== sessionId) {
+        return false
+      }
+      justCreatedSessionIdRef.current = null
+      const { current, bySeq } = creationsRef.current
+      if (bySeq[current]?.sessionId === sessionId) {
+        dispatchCreation({ type: 'CREATION_ROUTED', seq: current })
+      }
+      return true
+    },
+    [dispatchCreation],
+  )
 
   const startForking = useCallback(() => {
     dispatch({ type: 'FORKING_STARTED' })
@@ -311,17 +374,12 @@ export function EventsProvider({ children }) {
     rawDisconnect()
   }, [rawDisconnect, resetEventBuffers])
 
-  // Reconnects SSE and clears events, unless skipClear=true (new sessions have no stale events).
-  const reconnectSSE = useCallback(
-    ({ skipClear = false } = {}) => {
-      if (!skipClear) {
-        dispatch({ type: 'CLEAR_EVENTS' })
-      }
-      resetEventBuffers()
-      rawReconnect()
-    },
-    [rawReconnect, resetEventBuffers],
-  )
+  // Reconnects SSE; the new connection's own replay replaces the transcript once it lands.
+  const reconnectSSE = useCallback(() => {
+    dispatch({ type: 'REPLAY_ABANDONED' })
+    resetEventBuffers()
+    rawReconnect()
+  }, [rawReconnect, resetEventBuffers])
 
   // Permanent close - clears events, kills connection with no reconnect possible
   const closeSSE = useCallback(() => {
@@ -330,8 +388,8 @@ export function EventsProvider({ children }) {
     // Synchronously close the manager to kill any pending reconnect timers
     rawClose()
     // Null the container state so sseUrl becomes null
-    setContainerId(null)
-    setContainerIdState(null)
+    setAddress(null, null)
+    setAddressState(readAddress())
   }, [rawClose, resetEventBuffers])
 
   const value = useMemo(
@@ -344,6 +402,9 @@ export function EventsProvider({ children }) {
       todoDiffs: state.todoDiffs,
       todosBySubagent: state.todosBySubagent,
       subagentLabels: state.subagentLabels,
+      backgroundLaunches: state.backgroundLaunches,
+      runningBackgroundWork: state.runningBackgroundWork,
+      awaitingPickup: !state.isResponding && state.hasUnclaimedCompletion,
       connectionStatus,
       connectionError,
       isConnected,
@@ -354,7 +415,11 @@ export function EventsProvider({ children }) {
       respondingSince: state.respondingSince,
       lastEventTimestamp: state.lastEventTimestamp,
       isResuming: state.isResuming,
+      isResumeRequestPending: state.resumeRequest !== null,
       isCreating: state.isCreating,
+      isCreateRequestPending: state.createRequest !== null,
+      creations: state.creations,
+      createdSessionId: createdSessionIdOf(state.creations),
       isForking: state.isForking,
       isOpeningBoard: state.isOpeningBoard,
       isOpeningWorkspace: state.isOpeningWorkspace,
@@ -364,10 +429,7 @@ export function EventsProvider({ children }) {
       reconnectSSE,
       disconnectSSE,
       closeSSE,
-      startResume,
-      clearResume,
-      startCreating,
-      clearCreating,
+      ...requestActions,
       markJustCreatedSession,
       consumeJustCreatedSession,
       startForking,
@@ -377,7 +439,7 @@ export function EventsProvider({ children }) {
       startOpeningWorkspace,
       clearOpeningWorkspace,
       containerId,
-      notifyContainerChanged,
+      notifyAddressChanged,
       containerRecoveryNeeded,
       subscribeSession,
       unsubscribeSession,
@@ -391,6 +453,9 @@ export function EventsProvider({ children }) {
       state.todoDiffs,
       state.todosBySubagent,
       state.subagentLabels,
+      state.backgroundLaunches,
+      state.runningBackgroundWork,
+      state.hasUnclaimedCompletion,
       connectionStatus,
       connectionError,
       isConnected,
@@ -401,7 +466,10 @@ export function EventsProvider({ children }) {
       state.respondingSince,
       state.lastEventTimestamp,
       state.isResuming,
+      state.resumeRequest,
       state.isCreating,
+      state.createRequest,
+      state.creations,
       state.isForking,
       state.isOpeningBoard,
       state.isOpeningWorkspace,
@@ -411,10 +479,7 @@ export function EventsProvider({ children }) {
       reconnectSSE,
       disconnectSSE,
       closeSSE,
-      startResume,
-      clearResume,
-      startCreating,
-      clearCreating,
+      requestActions,
       markJustCreatedSession,
       consumeJustCreatedSession,
       startForking,
@@ -424,22 +489,34 @@ export function EventsProvider({ children }) {
       startOpeningWorkspace,
       clearOpeningWorkspace,
       containerId,
-      notifyContainerChanged,
+      notifyAddressChanged,
       containerRecoveryNeeded,
       subscribeSession,
       unsubscribeSession,
     ],
   )
 
-  // Stable-identity flags for consumers that only watch resume/replay/respond transitions (e.g. SessionsPanel).
-  // Isolates them from EventsContext's FLUSH_BATCH-cadence churn; re-renders only when one flag flips.
+  // Stable-identity flags for consumers that only watch resume/replay/respond transitions and the
+  // request lifetimes (e.g. SessionsPanel, useSessionOwnership), isolated from flush-rate churn.
   const streamingStatus = useMemo(
     () => ({
       isResuming: state.isResuming,
       isReplaying: state.isReplaying,
       isResponding: state.isResponding,
+      isResumeRequestPending: state.resumeRequest !== null,
+      isCreateRequestPending: state.createRequest !== null,
+      creations: state.creations,
+      getCreation: requestActions.getCreation,
     }),
-    [state.isResuming, state.isReplaying, state.isResponding],
+    [
+      state.isResuming,
+      state.isReplaying,
+      state.isResponding,
+      state.resumeRequest,
+      state.createRequest,
+      state.creations,
+      requestActions,
+    ],
   )
 
   return (
@@ -458,4 +535,14 @@ export function useEvents() {
     throw new Error('useEvents must be used within EventsProvider')
   }
   return context
+}
+
+/** The current creation's session once it is created, else null. */
+function createdSessionIdOf({ current, bySeq }) {
+  const entry = bySeq[current]
+  return entry && (entry.status === 'created' || entry.status === 'routed') ? entry.sessionId : null
+}
+
+function readAddress() {
+  return { containerId: getContainerId(), sessionId: getAddressedSessionId() }
 }

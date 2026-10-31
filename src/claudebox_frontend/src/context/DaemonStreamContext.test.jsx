@@ -9,7 +9,7 @@ vi.mock('../hooks/useDaemonStream', () => ({
     clearProgress: vi.fn(),
     sessionsChanged: 5,
     lastSessionsChangedContainerId: 'ctr-1',
-    containerStatus: 3,
+    changesByWorkspace: { 'ws-1': 3 },
     lastContainerEvent: null,
     daemonConnected: true,
     daemonReconnected: 1,
@@ -25,7 +25,7 @@ function TestConsumer() {
       <span data-testid="progress">{ctx.progressMessage}</span>
       <span data-testid="sessionsChanged">{ctx.sessionsChanged}</span>
       <span data-testid="lastContainerId">{ctx.lastSessionsChangedContainerId}</span>
-      <span data-testid="containerStatus">{ctx.containerStatus}</span>
+      <span data-testid="changesByWorkspace">{JSON.stringify(ctx.changesByWorkspace)}</span>
       <span data-testid="lastContainerEvent">{String(ctx.lastContainerEvent)}</span>
       <span data-testid="connected">{String(ctx.daemonConnected)}</span>
       <span data-testid="reconnected">{ctx.daemonReconnected}</span>
@@ -44,7 +44,7 @@ describe('DaemonStreamContext', () => {
     expect(screen.getByTestId('progress').textContent).toBe('Loading...')
     expect(screen.getByTestId('sessionsChanged').textContent).toBe('5')
     expect(screen.getByTestId('lastContainerId').textContent).toBe('ctr-1')
-    expect(screen.getByTestId('containerStatus').textContent).toBe('3')
+    expect(screen.getByTestId('changesByWorkspace').textContent).toBe('{"ws-1":3}')
     expect(screen.getByTestId('lastContainerEvent').textContent).toBe('null')
     expect(screen.getByTestId('connected').textContent).toBe('true')
     expect(screen.getByTestId('reconnected').textContent).toBe('1')

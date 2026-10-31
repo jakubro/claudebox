@@ -1,5 +1,7 @@
 """Typed exception hierarchy for agent-session runtime adapters."""
 
+from __future__ import annotations
+
 
 class UnknownRuntime(Exception):
     """Raised when AgentSessionConfig.runtime names an unregistered runtime."""

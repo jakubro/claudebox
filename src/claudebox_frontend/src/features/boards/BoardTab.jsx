@@ -24,6 +24,7 @@ import {
   reorderStates,
   reorderSwimlanes,
 } from '../../api/boards'
+import { useInteraction } from '../../context/InteractionContext'
 import { useSessionRouting } from '../../context/SessionRoutingContext'
 import AddSwimlaneRow from './components/AddSwimlaneRow'
 import BoardColumn from './components/BoardColumn'
@@ -45,7 +46,8 @@ import { preferTicketCollisions } from './utils/preferTicketCollisions'
  */
 function BoardTab({ boardId }) {
   const { density } = useSessionRouting()
-  const { board, loading, error, refresh } = useBoardData(boardId)
+  const { setError } = useInteraction()
+  const { board, loading, error, refresh, updates } = useBoardData(boardId)
   const [selectedTickets, setSelectedTickets] = useState(new Set())
   const [detailTicket, setDetailTicket] = useState(null)
   const [collapsedColumns, setCollapsedColumns] = useState(new Set())
@@ -262,6 +264,7 @@ function BoardTab({ boardId }) {
 
       try {
         let nextIndex = dropIndex
+        const movedPaths = []
         for (const path of ticketsToMove) {
           const plan = planTicketMove({
             ticket: ticketsByPath[path],
@@ -271,25 +274,27 @@ function BoardTab({ boardId }) {
             nextIndex,
           })
           if (!plan) {
+            movedPaths.push(path)
             continue
           }
-          await moveTicket(boardId, path, plan.body)
+          const moved = await moveTicket(boardId, path, plan.body)
+          movedPaths.push(moved.path)
           if (plan.advanceIndex) {
             nextIndex += 1
           }
         }
 
         // Auto-assign when the destination is an active column.
-        if (activeColumns.has(targetCol) && ticketsToMove.length > 0) {
+        if (activeColumns.has(targetCol) && movedPaths.length > 0) {
           try {
-            if (ticketsToMove.length === 1) {
+            if (movedPaths.length === 1) {
               // Single-ticket case: only assign if it doesn't already own a session.
               if (!ticketsByPath[ticketsToMove[0]]?.session) {
-                await assignTickets(boardId, ticketsToMove)
+                await assignTickets(boardId, movedPaths)
               }
             } else {
               // Bulk case: spawn one shared session and reassign every selected ticket to it.
-              await assignTickets(boardId, ticketsToMove, { parallel: false })
+              await assignTickets(boardId, movedPaths, { parallel: false })
             }
           } catch (err) {
             console.error('Failed to auto-assign ticket:', err)
@@ -299,9 +304,21 @@ function BoardTab({ boardId }) {
         refresh()
       } catch (err) {
         console.error('Failed to move ticket:', err)
+        setError(err?.userFacing ? err.message : 'Failed to move ticket')
+        refresh()
       }
     },
-    [board, boardId, columns, swimlaneIds, activeColumns, ticketsByPath, selectedTickets, refresh],
+    [
+      board,
+      boardId,
+      columns,
+      swimlaneIds,
+      activeColumns,
+      ticketsByPath,
+      selectedTickets,
+      refresh,
+      setError,
+    ],
   )
 
   const [colContextMenu, setColContextMenu] = useState(null)
@@ -538,7 +555,8 @@ function BoardTab({ boardId }) {
 
       {detailTicket && (
         <TicketDetail
-          ticket={detailTicket}
+          ticket={ticketsByPath[detailTicket.path] ?? detailTicket}
+          version={updates}
           states={board.states}
           swimlanes={board.swimlanes}
           onClose={() => setDetailTicket(null)}

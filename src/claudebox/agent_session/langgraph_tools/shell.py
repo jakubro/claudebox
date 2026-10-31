@@ -1,5 +1,7 @@
 """Shell tool - bash. Timeout errors flow through ToolException so tool_result.is_error=True."""
 
+from __future__ import annotations
+
 import subprocess
 
 from langchain_core.tools import BaseTool, ToolException, tool
@@ -42,6 +44,8 @@ def make_shell_tools(ctx: ToolContext) -> list[BaseTool]:
                 cwd=cwd,
                 timeout=effective_timeout,
                 check=False,
+                # The syscall supervisor credits a command's leftover processes by session.
+                start_new_session=True,
             )
         except subprocess.TimeoutExpired as exc:
             raise ToolException(

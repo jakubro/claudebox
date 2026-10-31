@@ -2,6 +2,7 @@
 
 import { Bot, List, MessageSquare, MessageSquareQuote, Pin, Tag } from 'lucide-react'
 import { SESSION_FILTERS } from '../../../config/sessionFilters'
+import { displayName } from '../../../utils/sessionName'
 
 export { SESSION_FILTERS }
 
@@ -82,6 +83,45 @@ export function countTreeRows({ rootSessions, childrenMap }) {
   return count
 }
 
+/**
+ * The rows a tree shows, in display order: each root, then its expanded descendants depth-first.
+ * `key` names the row's root too, since a pinned fork is listed under itself and under its parent;
+ * `hiddenSessions` holds every session a collapsed row hides beneath it.
+ */
+export function flattenSessionTree({ rootSessions, childrenMap }, expandedSessions) {
+  const rows = []
+
+  const descendantsOf = session =>
+    (childrenMap.get(session.session_id) || []).flatMap(child => [child, ...descendantsOf(child)])
+
+  const visit = (session, rootId, depth, isLastChild, continuations) => {
+    const children = childrenMap.get(session.session_id) || []
+    const isExpanded = expandedSessions.has(session.session_id)
+    rows.push({
+      key: `${rootId}/${session.session_id}`,
+      session,
+      depth,
+      isLastChild,
+      continuations,
+      hasChildren: children.length > 0,
+      isExpanded,
+      hiddenSessions: isExpanded ? [] : descendantsOf(session),
+    })
+    if (isExpanded) {
+      const childContinuations = [...continuations, depth > 0 && !isLastChild]
+      children.forEach((child, index) => {
+        visit(child, rootId, depth + 1, index === children.length - 1, childContinuations)
+      })
+    }
+  }
+
+  rootSessions.forEach((root, index) => {
+    visit(root, root.session_id, 0, index === rootSessions.length - 1, [])
+  })
+
+  return rows
+}
+
 /** True if sessionId appears anywhere in a {rootSessions, childrenMap} tree. */
 export function isSessionInTree({ rootSessions, childrenMap }, sessionId) {
   const stack = [...rootSessions]
@@ -147,7 +187,10 @@ export function buildSessionTree(sessions, pinnedSessions, currentSessionId) {
     const children = childrenMap.get(session.session_id) || []
     return children.reduce((max, child) => {
       const childMax = getMaxTimestamp(child)
-      return childMax > max ? childMax : max
+      if (childMax > max) {
+        return childMax
+      }
+      return max
     }, own)
   }
 
@@ -157,11 +200,11 @@ export function buildSessionTree(sessions, pinnedSessions, currentSessionId) {
   }
 }
 
-/** True if name or id contains `query`, case-insensitively; a null name never matches. */
+/** True if the shown name or the id contains `query`, case-insensitively; a null name never matches. */
 export function matchesSearchQuery(session, query) {
   const q = query.toLowerCase()
   return Boolean(
-    session.name?.toLowerCase().includes(q) || session.session_id.toLowerCase().includes(q),
+    displayName(session)?.toLowerCase().includes(q) || session.session_id.toLowerCase().includes(q),
   )
 }
 

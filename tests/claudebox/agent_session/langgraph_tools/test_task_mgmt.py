@@ -1,5 +1,7 @@
 """task_mgmt.py @tool tests - 6 wrappers over TaskService."""
 
+from __future__ import annotations
+
 from dataclasses import replace
 
 import pytest

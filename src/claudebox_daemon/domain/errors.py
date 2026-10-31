@@ -1,5 +1,7 @@
 """Daemon domain exceptions - typed errors with HTTP status codes."""
 
+from __future__ import annotations
+
 
 class DaemonError(Exception):
     """Base exception for daemon domain errors.

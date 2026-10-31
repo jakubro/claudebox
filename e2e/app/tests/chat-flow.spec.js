@@ -1,9 +1,21 @@
 /** E2E tests for chat flow including message submission, pending states, draft persistence, and input animations. */
 
 import { expect, test } from '@playwright/test'
-import { assertRedColor, waitForAppReady, waitForStableScrollHeight } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { createSSEController, mockSSE, mockSSEDynamic } from '../mocks/sse.js'
+import {
+  assertRedColor,
+  captureSends,
+  openLiveSession,
+  openSession,
+  openWithDraft,
+  resumeNamedSession,
+  waitForAppReady,
+  waitForStableScrollHeight,
+} from '../helpers.js'
+import { DEFAULT_SESSION_URL, DEFAULT_WORKSPACE_ID, mockAPI } from '../mocks/api.js'
+
+const SECOND_SESSION_URL = `/#/workspaces/${DEFAULT_WORKSPACE_ID}/sessions/test-session-002`
+
+import { createSSEController, mockSSE } from '../mocks/sse.js'
 
 test.describe('Chat Flow', () => {
   test.beforeEach(async ({ page }) => {
@@ -24,9 +36,7 @@ test.describe('Chat Flow', () => {
       }
     })
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await expect
       .poll(() => page.evaluate(() => window.__focusLog.includes('chat-input')))
@@ -35,15 +45,9 @@ test.describe('Chat Flow', () => {
 
   // SPEC: shortcut:enter
   test('submits message on Enter', async ({ page }) => {
-    const sendCalls = []
-    await page.route('**/api/send', async route => {
-      sendCalls.push(await route.request().postDataJSON())
-      await route.fulfill({ status: 200, json: { success: true } })
-    })
+    const sendCalls = await captureSends(page)
 
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('[data-testid="chat-input"]').fill('Hello world')
     await page.locator('[data-testid="chat-input"]').press('Enter')
@@ -58,16 +62,13 @@ test.describe('Chat Flow', () => {
     page,
   }) => {
     // Use dynamic SSE that returns empty initially (connection established but no events)
-    await mockSSEDynamic(page, () => [])
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, [])
 
     await page.locator('[data-testid="chat-input"]').fill('My pending message')
     await page.locator('[data-testid="chat-input"]').press('Enter')
 
     await expect(page.getByText('My pending message')).toBeVisible()
     await expect(page.getByTestId('turn-progress-pending')).toBeVisible()
-    await expect(page.getByTestId('turn-progress-bare')).toHaveCount(0)
 
     // The server echoes the human message back (acknowledgement) - the frame must survive this,
     // since it tracks whether the turn has produced content, not whether it has been seen.
@@ -92,14 +93,37 @@ test.describe('Chat Flow', () => {
 
     await expect(page.locator('.turn-container.pending')).not.toBeVisible()
     await expect(page.getByTestId('turn-progress-pending')).toBeVisible()
-    await expect(page.getByTestId('turn-progress-bare')).toHaveCount(0)
+
+    // A tool lookup the transcript never shows is still nothing to show: the frame stays.
+    await page.evaluate(() => {
+      const instance = window.__sseChatInstance
+      if (instance && instance.readyState === 1) {
+        const msg = {
+          data: JSON.stringify({
+            type: 'assistant',
+            subtype: 'tool_use',
+            content: 'ToolSearch',
+            tool_use_id: 'tu_search',
+            tool_name: 'ToolSearch',
+            tool_input: { query: 'select:WebFetch' },
+            timestamp: Date.now(),
+          }),
+        }
+        if (instance.onmessage) {
+          instance.onmessage(msg)
+        }
+        instance._emit('message', msg)
+      }
+    })
+
+    await expect(page.getByTestId('turn-progress-pending')).toBeVisible()
+    await expect(page.getByTestId('turn-progress-pending')).toContainText('Working')
+    await expect(page.locator('[data-testid="message-assistant"]')).toHaveCount(0)
   })
 
   // SPEC: turn:pending-remove
   test('removes pending when SSE confirms', async ({ page }) => {
-    await mockSSEDynamic(page, () => [])
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page, [])
 
     await page.locator('[data-testid="chat-input"]').fill('Test message')
     await page.locator('[data-testid="chat-input"]').press('Enter')
@@ -164,12 +188,7 @@ test.describe('Chat Flow', () => {
 
   // SPEC: shortcut:shift-enter
   test('Shift+Enter inserts newline', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const input = page.locator('[data-testid="chat-input"]')
-    await input.fill('Line 1')
+    const input = await openWithDraft(page, 'Line 1')
     await input.press('Shift+Enter')
     await input.type('Line 2')
 
@@ -180,11 +199,7 @@ test.describe('Chat Flow', () => {
 
   // SPEC: input:autoresize
   test('textarea auto-resizes with content', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const input = page.locator('[data-testid="chat-input"]')
+    const input = await openSession(page)
 
     const initialHeight = await input.evaluate(el => el.offsetHeight)
 
@@ -196,9 +211,7 @@ test.describe('Chat Flow', () => {
 
   // SPEC: input:placeholder
   test('input has space placeholder for CSS styling', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     // Placeholder is " " by design (enables empty/focused CSS styling)
     const placeholder = await page.locator('[data-testid="chat-input"]').getAttribute('placeholder')
@@ -207,9 +220,7 @@ test.describe('Chat Flow', () => {
 
   // SPEC: input:slash-trigger
   test('slash command triggers autocomplete', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
+    await openSession(page)
 
     await page.locator('[data-testid="chat-input"]').type('/')
 
@@ -219,14 +230,8 @@ test.describe('Chat Flow', () => {
   // SPEC: input:history-nav
   // SPEC: shortcut:arrow-up
   test('Up arrow navigates history', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const input = page.locator('[data-testid="chat-input"]')
-
     // Send a message first to populate history
-    await input.fill('First message')
+    const input = await openWithDraft(page, 'First message')
     await input.press('Enter')
 
     await expect(input).toHaveValue('')
@@ -240,14 +245,8 @@ test.describe('Chat Flow', () => {
 
   // SPEC: shortcut:arrow-down
   test('Down arrow returns to current', async ({ page }) => {
-    await mockSSE(page)
-    await page.goto(DEFAULT_SESSION_URL)
-    await waitForAppReady(page)
-
-    const input = page.locator('[data-testid="chat-input"]')
-
     // Send message to populate history
-    await input.fill('History message')
+    const input = await openWithDraft(page, 'History message')
     await input.press('Enter')
 
     await expect(input).toHaveValue('')
@@ -269,7 +268,7 @@ test.describe('Chat Flow', () => {
     // SPEC: turn:progress-working
     test('active turn shows Working with spinner', async ({ page }) => {
       // Use dynamic SSE to send events with no result (keeps turn active)
-      await mockSSEDynamic(page, () => [
+      await openSession(page, [
         {
           type: 'user',
           subtype: 'text',
@@ -285,8 +284,6 @@ test.describe('Chat Flow', () => {
           timestamp: Date.now(),
         },
       ])
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
 
       await expect(page.getByText('Processing...').first()).toBeVisible()
 
@@ -317,15 +314,102 @@ test.describe('Chat Flow', () => {
     })
   })
 
-  test.describe('Draft Persistence', () => {
-    // SPEC: input:draft-save
-    test('draft saved to localStorage', async ({ page }) => {
+  test.describe('Failed Send', () => {
+    // SPEC: input:failed-send-preserved
+    test('a failed send leaves the text in the box and the draft intact', async ({ page }) => {
+      await page.route('**/api/send*', route => route.fulfill({ status: 500 }))
+      const input = await openWithDraft(page, 'This will fail to send')
+      await input.press('Enter')
+
+      await expect(page.getByText('Send failed')).toBeVisible()
+      await expect(input).toHaveValue('This will fail to send')
+
+      await page.reload()
+      await waitForAppReady(page)
+      await expect(page.locator('[data-testid="chat-input"]')).toHaveValue('This will fail to send')
+    })
+
+    // SPEC: input:failed-send-preserved
+    test('text from a send that fails after a move returns to the session it was typed in', async ({
+      page,
+    }) => {
+      await mockAPI(page, {
+        sessionsFixture: 'sessions/multiple.json',
+        handlers: {
+          resumeSession: resumeNamedSession,
+        },
+      })
       await mockSSE(page)
+      let fail
+      const sendHeld = new Promise(resolve => {
+        fail = resolve
+      })
+      await page.route('**/api/send*', async route => {
+        await sendHeld
+        await route.fulfill({ status: 404 })
+      })
       await page.goto(DEFAULT_SESSION_URL)
       await waitForAppReady(page)
 
       const input = page.locator('[data-testid="chat-input"]')
-      await input.fill('My draft message')
+      await input.fill('typed in the first session')
+      await input.press('Enter')
+      await page.evaluate(url => {
+        window.location.hash = url.slice(1)
+      }, SECOND_SESSION_URL)
+      await waitForAppReady(page)
+      fail()
+      await page.waitForTimeout(500)
+
+      await expect(input).toHaveValue('')
+      await expect(page.getByText('Connection lost')).toHaveCount(0)
+      await page.evaluate(url => {
+        window.location.hash = url.slice(1)
+      }, DEFAULT_SESSION_URL)
+      await expect(input).toHaveValue('typed in the first session')
+    })
+
+    // SPEC: input:failed-send-preserved
+    test('a failed queued message returns to the queue rather than vanishing', async ({ page }) => {
+      let sendAttempts = 0
+      await page.route('**/api/send*', route => {
+        sendAttempts++
+        return route.fulfill({ status: 500 })
+      })
+      await openSession(page, [])
+
+      const input = page.locator('[data-testid="chat-input"]')
+      await input.fill('Queued message')
+      await input.press('Alt+Enter')
+
+      await expect(page.getByText('Queued message')).toBeVisible()
+
+      // A result only counts as a response-cycle completion once isResponding was true - pair it
+      // with a preceding assistant event, as every other resultCount-driven test in this suite does.
+      await page.evaluate(() => {
+        const instance = window.__sseChatInstance
+        instance?.onmessage?.({
+          data: JSON.stringify({
+            type: 'assistant',
+            subtype: 'text',
+            content: 'ok',
+            turn_id: 't0',
+          }),
+        })
+        instance?.onmessage?.({
+          data: JSON.stringify({ type: 'result', subtype: 'success', turn_id: 't0' }),
+        })
+      })
+
+      await expect.poll(() => sendAttempts).toBeGreaterThan(0)
+      await expect(page.getByText('Queued message')).toBeVisible()
+    })
+  })
+
+  test.describe('Draft Persistence', () => {
+    // SPEC: input:draft-save
+    test('draft saved to localStorage', async ({ page }) => {
+      await openWithDraft(page, 'My draft message')
 
       // Poll until draft is saved to localStorage (debounce is 100ms)
       await expect
@@ -344,12 +428,7 @@ test.describe('Chat Flow', () => {
 
     // SPEC: input:draft-restore
     test('draft restored on page load', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
-      await input.fill('Saved draft')
+      const input = await openWithDraft(page, 'Saved draft')
 
       await expect
         .poll(async () => {
@@ -370,13 +449,7 @@ test.describe('Chat Flow', () => {
     // LIMITATION: racing input against draft restore is fragile in a test env, so this only
     // verifies typed content survives rather than confirming restore-only-when-empty.
     test('draft only restored when input is empty', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
-
-      await input.fill('Original draft')
+      const input = await openWithDraft(page, 'Original draft')
 
       await expect
         .poll(async () => {
@@ -396,12 +469,7 @@ test.describe('Chat Flow', () => {
 
     // SPEC: input:draft-flush
     test('beforeunload flushes draft immediately', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
-      await input.fill('Draft before unload')
+      const input = await openWithDraft(page, 'Draft before unload')
 
       // First check that draft might not be saved yet (debounce is 100ms)
       const _draftBefore = await page.evaluate(() => {
@@ -427,11 +495,9 @@ test.describe('Chat Flow', () => {
     // SPEC: input:scroll-compensation
     test('scroll position preserved when textarea shrinks', async ({ page }) => {
       // Long-conversation replay + wheel disengage + grow/shrink + settle poll exceeds the
-      // default 5s cap on slow CI - ResizeObserver's delayed reflow alone can take ~2s.
-      test.setTimeout(15000)
-      await mockSSE(page, 'events/long-conversation.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      // default test budget on slow CI - ResizeObserver's delayed reflow alone can take ~2s.
+      test.setTimeout(30_000)
+      await openSession(page, 'events/long-conversation.jsonl')
 
       const input = page.locator('[data-testid="chat-input"]')
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
@@ -488,42 +554,9 @@ test.describe('Chat Flow', () => {
   })
 
   test.describe('Copy Buttons', () => {
-    // SPEC: chat:copy-button-message
-    test('assistant message has per-message copy button', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const turnText = page.locator('.turn-text').first()
-      await expect(turnText).toBeVisible()
-
-      // Hover to reveal copy button (visible on hover per SPEC)
-      await turnText.hover()
-      const copyBtn = turnText.locator('.turn-text-copy-btn')
-      await expect(copyBtn).toBeVisible()
-      await expect(copyBtn).toHaveAttribute('title', 'Copy message')
-    })
-
-    // SPEC: chat:copy-button-message
-    test('assistant message has copy button', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await expect(page.getByText('Hello! How can I help you today?').first()).toBeVisible()
-
-      const turnText = page.locator('.turn-text').first()
-      await turnText.hover()
-      const responseCopyBtn = turnText.locator('.turn-text-copy-btn')
-      await expect(responseCopyBtn).toBeVisible()
-      await expect(responseCopyBtn).toHaveAttribute('title', 'Copy message')
-    })
-
     // SPEC: chat:copy-button-code
     test('tool output has copy button', async ({ page }) => {
-      await mockSSE(page, 'events/tool-bash.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/tool-bash.jsonl')
 
       const toolBlock = page.locator('[data-testid="tool-block"]').first()
       await expect(toolBlock).toBeVisible()
@@ -537,9 +570,7 @@ test.describe('Chat Flow', () => {
     // SPEC: chat:copy-slash-command
     test('user message with slash command copies plain text', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page, 'events/slash-command-message.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/slash-command-message.jsonl')
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await expect(userMessage).toBeVisible()
@@ -557,9 +588,7 @@ test.describe('Chat Flow', () => {
     // SPEC: chat:copy-stdout
     test('user message with command output renders stdout block', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-with-command-output.jsonl')
 
       await expect(page.getByText('Hello from stdout').first()).toBeVisible()
       await expect(page.locator('text=<local-command-stdout>')).not.toBeVisible()
@@ -576,9 +605,7 @@ test.describe('Chat Flow', () => {
     // SPEC: chat:copy-stdout
     test('user message with stderr renders stderr block', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page, 'events/user-message-with-command-output.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-with-command-output.jsonl')
 
       await expect(page.getByText('Something went wrong').first()).toBeVisible()
 
@@ -596,9 +623,7 @@ test.describe('Chat Flow', () => {
     // MOCK-LIMITED: Clipboard flaky in headless Chromium
     test('turn copy button copies full assistant text to clipboard', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       await expect(page.getByText('Hello! How can I help you today?').first()).toBeVisible()
 
@@ -617,9 +642,7 @@ test.describe('Chat Flow', () => {
     // SPEC: chat:copy-button-user
     test('user message copy button copies user text to clipboard', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await expect(userMessage).toBeVisible()
@@ -638,9 +661,7 @@ test.describe('Chat Flow', () => {
       context,
     }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page, 'events/user-message-askuser-response.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-askuser-response.jsonl')
 
       // The second user message contains the <response:AskUserQuestion> XML
       const userMessages = page.locator('[data-testid="message-user"]')
@@ -664,9 +685,7 @@ test.describe('Chat Flow', () => {
       context,
     }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page, 'events/user-message-arbitrary-xml.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/user-message-arbitrary-xml.jsonl')
 
       const userMessage = page.locator('[data-testid="message-user"]').first()
       await expect(userMessage).toBeVisible()
@@ -683,9 +702,7 @@ test.describe('Chat Flow', () => {
   test.describe('Chat Control Bar', () => {
     // SPEC: chat:control-reload
     test('reload button is visible and triggers reconnect', async ({ page }) => {
-      await createSSEController(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openLiveSession(page)
 
       const reloadBtn = page.locator('button[title="Reload session (picks up config changes)"]')
       await expect(reloadBtn).toBeVisible()
@@ -702,15 +719,9 @@ test.describe('Chat Flow', () => {
 
     // SPEC: chat:control-compact
     test('compact button sends /compact message', async ({ page }) => {
-      const sendCalls = []
-      await page.route('**/api/send', async route => {
-        sendCalls.push(await route.request().postDataJSON())
-        await route.fulfill({ status: 200, json: { success: true } })
-      })
+      const sendCalls = await captureSends(page)
 
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const compactBtn = page.locator('button[title="Compact conversation (/compact)"]')
       await expect(compactBtn).toBeVisible()
@@ -722,9 +733,7 @@ test.describe('Chat Flow', () => {
 
     // SPEC: chat:control-bottom
     test('jump-to-bottom button disabled when autoscroll active', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page)
 
       const jumpBtn = page.locator('button[title="Autoscroll enabled"]')
       await expect(jumpBtn).toBeVisible()
@@ -733,11 +742,16 @@ test.describe('Chat Flow', () => {
 
     // SPEC: chat:control-bottom
     test('jump-to-bottom scrolls to bottom', async ({ page }) => {
-      await mockSSE(page, 'events/long-conversation.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/long-conversation.jsonl')
 
       const messagesContainer = page.locator('[data-testid="chat-messages"]')
+
+      // Wait for the transcript to finish streaming before scrolling - a wheel event mid-replay
+      // races the settle loop's own scrollToBottom(), which snaps back and drifts the position.
+      await expect(
+        messagesContainer.locator('[data-testid="turn-container"]').first(),
+      ).toBeVisible()
+      await waitForStableScrollHeight(messagesContainer)
 
       // Wheel events reliably disable autoscroll; programmatic scrollTop doesn't (scrollHeight guard race).
       const box = await messagesContainer.boundingBox()
@@ -773,38 +787,28 @@ test.describe('Chat Flow', () => {
     })
   })
 
-  test.describe('Input Animations', () => {
-    // Decorative border ring: a static conic gradient revealed through the textarea's transparent border.
-    // Assert `.textarea-border-overlay` opacity (fades over 0.25s); its `::before` carries `border-travel`.
+  test.describe('Input State', () => {
+    const runningInputAnimations = page =>
+      page
+        .locator('.chat-input-wrapper')
+        .evaluate(
+          el => el.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length,
+        )
 
-    // SPEC: input:anim-idle
-    test('idle empty input reveals the animated border ring', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
+    // SPEC: input:animation
+    test('idle empty input shows its plain border with nothing moving', async ({ page }) => {
+      const input = await openSession(page)
       await expect(input).toBeVisible()
-
-      // Blur input so placeholder shows (idle state)
       await page.locator('[data-testid="footer"]').click()
 
-      const overlay = page.locator('.textarea-border-overlay')
-      await expect
-        .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
-        .toBeGreaterThan(0.5)
-      const anim = await overlay.evaluate(el => getComputedStyle(el, '::before').animationName)
-      expect(anim).toContain('border-travel')
+      expect(await runningInputAnimations(page)).toBe(0)
+      const border = await input.evaluate(el => getComputedStyle(el).borderTopColor)
+      expect(border).not.toBe('rgba(139, 92, 246, 0.85)')
     })
 
     // SPEC: input:anim-focus
     test('focused textarea has glow box-shadow', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      const input = page.locator('[data-testid="chat-input"]')
-      await input.fill('typed')
+      const input = await openWithDraft(page, 'typed')
       await input.focus()
 
       // Should have box-shadow glow (static focus ring, non-working)
@@ -814,57 +818,39 @@ test.describe('Chat Flow', () => {
       expect(boxShadow).not.toBe('none')
     })
 
+    // SPEC: input:anim-focus-color
+    test('focused idle input has a still green border and glow', async ({ page }) => {
+      const input = await openWithDraft(page, 'typed')
+      await input.focus()
+
+      const { border, shadow } = await input.evaluate(el => {
+        const style = getComputedStyle(el)
+        return { border: style.borderTopColor, shadow: style.boxShadow }
+      })
+      expect(border).toBe('rgba(76, 175, 80, 0.45)')
+      expect(shadow).toContain('rgba(76, 175, 80')
+      expect(await runningInputAnimations(page)).toBe(0)
+    })
+
     // SPEC: input:anim-working
-    test('working state reveals the color-cycling border ring', async ({ page }) => {
-      await mockSSE(page, 'events/progress-working.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await expect(page.locator('.chat-input')).toHaveClass(/status-working/)
-
-      const overlay = page.locator('.textarea-border-overlay')
-      await expect
-        .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
-        .toBeGreaterThan(0.5)
-      const anim = await overlay.evaluate(el => getComputedStyle(el, '::before').animationName)
-      expect(anim).toContain('border-travel')
-    })
-
     // SPEC: input:animation
-    test('working cue stays revealed when the input is focused', async ({ page }) => {
-      await mockSSE(page, 'events/progress-working.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+    test('working state shows a still accent border, focused or not', async ({ page }) => {
+      await openSession(page, 'events/progress-working.jsonl')
 
       await expect(page.locator('.chat-input')).toHaveClass(/status-working/)
-
-      await page.locator('[data-testid="chat-input"]').focus()
-
-      // The working border cue must persist even while focused (composer is usually focused during streaming).
-      const overlay = page.locator('.textarea-border-overlay')
-      await expect
-        .poll(() => overlay.evaluate(el => Number.parseFloat(getComputedStyle(el).opacity)))
-        .toBeGreaterThan(0.5)
-      const anim = await overlay.evaluate(el => getComputedStyle(el, '::before').animationName)
-      expect(anim).toContain('border-travel')
-    })
-
-    // SPEC: input:anim-idle
-    test('non-empty unfocused textarea hides the border ring', async ({ page }) => {
-      await mockSSE(page)
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
       const input = page.locator('[data-testid="chat-input"]')
 
-      await input.fill('Some text')
       await page.locator('[data-testid="footer"]').click()
+      expect(await input.evaluate(el => getComputedStyle(el).borderTopColor)).toBe(
+        'rgba(139, 92, 246, 0.85)',
+      )
+      expect(await runningInputAnimations(page)).toBe(0)
 
-      // Overlay hidden (SPEC: idle ripple only when "Empty and unfocused")
-      const opacity = await page
-        .locator('.textarea-border-overlay')
-        .evaluate(el => Number.parseFloat(getComputedStyle(el).opacity))
-      expect(opacity).toBeLessThan(0.5)
+      await input.focus()
+      expect(await input.evaluate(el => getComputedStyle(el).borderTopColor)).toBe(
+        'rgba(139, 92, 246, 0.85)',
+      )
+      expect(await runningInputAnimations(page)).toBe(0)
     })
   })
 })

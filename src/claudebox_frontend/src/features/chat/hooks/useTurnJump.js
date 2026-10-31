@@ -5,8 +5,8 @@ import { withMountedTurn } from '../../../utils/mountTurn'
 import { scrollAndHighlight } from '../../../utils/scroll'
 
 /**
- * Also runs the cross-session replay jump: once `isReplaying` clears with a URL-carried
- * `activeTurnId`, that turn is scrolled to and highlighted, and chat autoscroll is disengaged.
+ * Also runs the replay jump: once `isReplaying` clears, a URL-carried `activeTurnId` is scrolled to
+ * and highlighted with autoscroll disengaged; a URL-carried part goes to `jumpToBookmark` instead.
  */
 export function useTurnJump({
   turnsRef,
@@ -16,6 +16,8 @@ export function useTurnJump({
   isReplaying,
   activeTurnId,
   activeMessageType,
+  activeTarget = null,
+  jumpToBookmark = null,
 }) {
   const scrollToTurnAndHighlight = useCallback(
     (turnId, { preferUser = false } = {}) => {
@@ -67,8 +69,19 @@ export function useTurnJump({
       return
     }
 
+    if (activeTarget && jumpToBookmark) {
+      jumpToBookmark(activeTurnId, activeTarget)
+      return
+    }
     scrollToTurnAndHighlight(activeTurnId, { preferUser: activeMessageType === 'user' })
-  }, [isReplaying, activeTurnId, activeMessageType, scrollToTurnAndHighlight])
+  }, [
+    isReplaying,
+    activeTurnId,
+    activeMessageType,
+    activeTarget,
+    jumpToBookmark,
+    scrollToTurnAndHighlight,
+  ])
 
   return { scrollToTurnAndHighlight, handleTerminalEntryClick }
 }

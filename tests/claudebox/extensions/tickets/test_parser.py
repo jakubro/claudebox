@@ -1,5 +1,8 @@
 """Tests for board YAML parser."""
 
+from __future__ import annotations
+
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -14,11 +17,13 @@ from claudebox.extensions.tickets.errors import (
     InvalidLabel,
     StateNotFound,
     SwimlaneNotFound,
+    TicketMoveRefused,
     TicketNotFound,
 )
 from claudebox.extensions.tickets.models import Board, BoardState, BoardSummary, Swimlane
 from claudebox.extensions.tickets.parser import (
     _resolve_title,
+    _write_yaml,
     add_swimlane,
     archive_ticket,
     assign_ticket,
@@ -47,24 +52,24 @@ _STATES_YAML = (
     "states:\n"
     "  - id: backlog\n"
     "    label: Backlog\n"
-    "    folder: backlog/\n"
+    "    folder: tickets/backlog/\n"
     "  - id: in-progress\n"
     "    label: In Progress\n"
-    "    folder: in-progress/\n"
+    "    folder: tickets/in-progress/\n"
     "  - id: review\n"
     "    label: Review\n"
-    "    folder: review/\n"
+    "    folder: tickets/review/\n"
     "  - id: done\n"
     "    label: Done\n"
-    "    folder: completed/\n"
+    "    folder: tickets/completed/\n"
     "    terminal: true\n"
     "  - id: rejected\n"
     "    label: Rejected\n"
-    "    folder: rejected/\n"
+    "    folder: tickets/rejected/\n"
     "    terminal: true\n"
     "  - id: definitely-rejected\n"
     "    label: Definitely Rejected\n"
-    "    folder: definitely-rejected/\n"
+    "    folder: tickets/definitely-rejected/\n"
     "    terminal: true\n"
 )
 
@@ -294,7 +299,12 @@ class TestMoveTicket:
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# T1\n")
 
-        result = move_ticket(yaml_path, "tickets/backlog/t1.md", column="in-progress")
+        result = move_ticket(
+            yaml_path,
+            "tickets/backlog/t1.md",
+            root=tmp_path,
+            column="in-progress",
+        )
 
         assert result["path"] == "tickets/in-progress/t1.md"
         data = _read_yaml(yaml_path)
@@ -304,7 +314,7 @@ class TestMoveTicket:
     def test_swimlane_change(self, tmp_path: Path) -> None:
         """Change ticket swimlane without changing column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        result = move_ticket(yaml_path, "tickets/backlog/t1.md", swimlane="backend")
+        result = move_ticket(yaml_path, "tickets/backlog/t1.md", root=tmp_path, swimlane="backend")
 
         assert result["swimlane"] == "backend"
         data = _read_yaml(yaml_path)
@@ -322,6 +332,7 @@ class TestMoveTicket:
         result = move_ticket(
             yaml_path,
             "tickets/backlog/t1.md",
+            root=tmp_path,
             column="review",
             swimlane="backend",
         )
@@ -337,20 +348,20 @@ class TestMoveTicket:
         ticket_file.write_text("# T1\n")
 
         with pytest.raises(KeyError):
-            move_ticket(yaml_path, "tickets/backlog/t1.md", column="nonexistent")
+            move_ticket(yaml_path, "tickets/backlog/t1.md", root=tmp_path, column="nonexistent")
 
     def test_ticket_not_found(self, tmp_path: Path) -> None:
         """Raise TicketNotFound when ticket path is not in any column."""
         yaml_path = _write_board(tmp_path, _minimal_board_yaml())
 
         with pytest.raises(TicketNotFound):
-            move_ticket(yaml_path, "tickets/backlog/missing.md", column="done")
+            move_ticket(yaml_path, "tickets/backlog/missing.md", root=tmp_path, column="done")
 
     def test_index_none_appends(self, tmp_path: Path) -> None:
         """Default behavior (index=None) appends to the target column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         # No index: t1 pops from backlog and re-appends, landing after t2 -> [t2, t1].
-        move_ticket(yaml_path, "tickets/backlog/t1.md")
+        move_ticket(yaml_path, "tickets/backlog/t1.md", root=tmp_path)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
         assert paths == ["tickets/backlog/t2.md", "tickets/backlog/t1.md"]
@@ -359,7 +370,7 @@ class TestMoveTicket:
         """index=0 inserts at the start of the target column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         # backlog: [t1, t2] -> move t2 to index 0 -> [t2, t1]
-        move_ticket(yaml_path, "tickets/backlog/t2.md", index=0)
+        move_ticket(yaml_path, "tickets/backlog/t2.md", root=tmp_path, index=0)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
         assert paths == ["tickets/backlog/t2.md", "tickets/backlog/t1.md"]
@@ -371,7 +382,13 @@ class TestMoveTicket:
         ticket_file = yaml_path.parent / "tickets" / "backlog" / "t1.md"
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# T1\n")
-        move_ticket(yaml_path, "tickets/backlog/t1.md", column="in-progress", index=1)
+        move_ticket(
+            yaml_path,
+            "tickets/backlog/t1.md",
+            root=tmp_path,
+            column="in-progress",
+            index=1,
+        )
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["in-progress"]]
         assert paths == ["tickets/in-progress/t3.md", "tickets/in-progress/t1.md"]
@@ -380,7 +397,7 @@ class TestMoveTicket:
         """index moves a ticket within its current column."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         # backlog: [t1, t2] -> move t2 to index 0 (intra-column) -> [t2, t1]
-        move_ticket(yaml_path, "tickets/backlog/t2.md", index=0)
+        move_ticket(yaml_path, "tickets/backlog/t2.md", root=tmp_path, index=0)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
         assert paths == ["tickets/backlog/t2.md", "tickets/backlog/t1.md"]
@@ -389,7 +406,7 @@ class TestMoveTicket:
         """index larger than list length clamps to len(target_list)."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
         # After popping t1 backlog has 1 entry [t2]; index=999 clamps to 1 -> append.
-        move_ticket(yaml_path, "tickets/backlog/t1.md", index=999)
+        move_ticket(yaml_path, "tickets/backlog/t1.md", root=tmp_path, index=999)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
         assert paths == ["tickets/backlog/t2.md", "tickets/backlog/t1.md"]
@@ -397,7 +414,7 @@ class TestMoveTicket:
     def test_index_clamps_negative(self, tmp_path: Path) -> None:
         """Negative index clamps to 0 (avoids list.insert(-1) semantics)."""
         yaml_path = _write_board(tmp_path, _full_board_yaml())
-        move_ticket(yaml_path, "tickets/backlog/t2.md", index=-5)
+        move_ticket(yaml_path, "tickets/backlog/t2.md", root=tmp_path, index=-5)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["backlog"]]
         assert paths == ["tickets/backlog/t2.md", "tickets/backlog/t1.md"]
@@ -411,6 +428,7 @@ class TestMoveTicket:
         result = move_ticket(
             yaml_path,
             "tickets/backlog/t1.md",
+            root=tmp_path,
             column="review",
             swimlane="backend",
             index=0,
@@ -428,10 +446,93 @@ class TestMoveTicket:
         ticket_file.parent.mkdir(parents=True, exist_ok=True)
         ticket_file.write_text("# T1\n")
         # 'done' state maps to folder 'completed/' per the test board's states.
-        move_ticket(yaml_path, "tickets/backlog/t1.md", column="done", index=0)
+        move_ticket(yaml_path, "tickets/backlog/t1.md", root=tmp_path, column="done", index=0)
         data = _read_yaml(yaml_path)
         paths = [str(t["path"]) for t in data["done"]]
         assert paths == ["tickets/completed/t1.md"]
+
+
+class TestWriteYamlAtomicity:
+    """A board save is all-or-nothing - a reader concurrent with it never meets a partial file."""
+
+    def test_reader_never_meets_a_partial_file_during_repeated_saves(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        yaml_path = _write_board(tmp_path, _minimal_board_yaml())
+        workspace_root = yaml_path.parent.parent
+        unpatched = Path.write_text
+
+        def _slow_write_text(self, content, *args, **kwargs):
+            unpatched(self, content, *args, **kwargs)
+            time.sleep(0.01)
+
+        monkeypatch.setattr(Path, "write_text", _slow_write_text)
+
+        stop = threading.Event()
+        failures: list[Exception] = []
+
+        def _read_repeatedly() -> None:
+            while not stop.is_set():
+                try:
+                    parse_board(yaml_path, workspace_root)
+                except Exception as exc:  # noqa: BLE001
+                    failures.append(exc)
+
+        reader = threading.Thread(target=_read_repeatedly)
+        reader.start()
+
+        try:
+            for _ in range(20):
+                _write_yaml(yaml_path, _yaml.load(yaml_path))
+        finally:
+            stop.set()
+            reader.join(timeout=5)
+
+        assert failures == []
+
+    def test_save_that_raises_midway_leaves_previous_file_intact(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        yaml_path = _write_board(tmp_path, _minimal_board_yaml())
+        original = yaml_path.read_text()
+        data = _yaml.load(yaml_path)
+        data["backlog"][0]["path"] = "tickets/backlog/changed.md"
+
+        def _boom(self, *args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Path, "write_text", _boom)
+
+        with pytest.raises(OSError):
+            _write_yaml(yaml_path, data)
+
+        assert yaml_path.read_text() == original
+        siblings = [p.name for p in yaml_path.parent.iterdir() if p.name.startswith(yaml_path.name)]
+        assert siblings == [yaml_path.name]
+
+    def test_comments_and_key_order_survive_a_save(self, tmp_path: Path) -> None:
+        yaml_path = _write_board(
+            tmp_path,
+            _STATES_YAML + "backlog:\n"
+            "  - path: tickets/backlog/t1.md  # keep this note\n"
+            "in-progress: []\n"
+            "review: []\n"
+            "done: []\n"
+            "rejected: []\n"
+            "definitely-rejected: []\n",
+        )
+
+        data = _yaml.load(yaml_path)
+        data["backlog"].append({"path": "tickets/backlog/t2.md"})
+        _write_yaml(yaml_path, data)
+
+        content = yaml_path.read_text()
+        assert "# keep this note" in content
+        assert content.index("states:") < content.index("backlog:")
 
 
 class TestFileLockTimeout:
@@ -452,7 +553,12 @@ class TestFileLockTimeout:
                 started = time.monotonic()
 
                 with pytest.raises(BoardLocked) as exc_info:
-                    move_ticket(yaml_path, "tickets/backlog/t1.md", column="in-progress")
+                    move_ticket(
+                        yaml_path,
+                        "tickets/backlog/t1.md",
+                        root=tmp_path,
+                        column="in-progress",
+                    )
 
                 elapsed = time.monotonic() - started
         finally:
@@ -551,7 +657,7 @@ class TestRenameState:
         assert result == BoardState(
             id="in-progress",
             label="Working On",
-            folder="in-progress",
+            folder="tickets/in-progress",
             terminal=False,
             active=False,
         )
@@ -567,7 +673,7 @@ class TestRenameState:
         data = _read_yaml(yaml_path)
         backlog = next(s for s in data["states"] if str(s["id"]) == "backlog")
         assert str(backlog["id"]) == "backlog"
-        assert str(backlog["folder"]) == "backlog/"
+        assert str(backlog["folder"]) == "tickets/backlog/"
 
     def test_strips_whitespace(self, tmp_path: Path) -> None:
         """Trim surrounding whitespace before saving."""
@@ -776,7 +882,7 @@ class TestParseStates:
             "states:\n"
             "  - id: backlog\n"
             "    label: Backlog\n"
-            "    folder: backlog/\n"
+            "    folder: tickets/backlog/\n"
             "  - id: backlog\n"
             "    label: Backlog Again\n"
             "    folder: backlog2/\n"
@@ -799,3 +905,226 @@ class TestBoardSummaryWithName:
         yaml_path = _write_board(tmp_path, "name: My Project Board\n" + _STATES_YAML)
         result = board_summary(yaml_path, tmp_path)
         assert result.name == "My Project Board"
+
+
+class TestMoveTicketConfinement:
+    """A ticket move stays inside the workspace and never overwrites another file."""
+
+    @staticmethod
+    def _board(tmp_path: Path, *, done_folder: str = "t/done", ticket: str = "t/todo/x.md") -> Path:
+        workspace = tmp_path / "ws"
+        (workspace / "t" / "todo").mkdir(parents=True)
+        (workspace / "t" / "todo" / "x.md").write_text("a")
+        yaml_path = workspace / "board.yaml"
+        yaml_path.write_text(
+            "states:\n"
+            "  - id: todo\n"
+            "    label: Todo\n"
+            "    folder: t/todo\n"
+            "  - id: done\n"
+            "    label: Done\n"
+            f"    folder: {done_folder}\n"
+            "todo:\n"
+            f"  - path: {ticket}\n"
+            "done: []\n",
+        )
+
+        return yaml_path
+
+    def test_a_same_name_destination_is_refused_and_nothing_changes(self, tmp_path):
+        yaml_path = self._board(tmp_path)
+        workspace = yaml_path.parent
+        (workspace / "t" / "done").mkdir()
+        (workspace / "t" / "done" / "x.md").write_text("b")
+        board_before = yaml_path.read_bytes()
+
+        with pytest.raises(TicketMoveRefused) as excinfo:
+            move_ticket(yaml_path, "t/todo/x.md", root=workspace, column="done")
+
+        assert excinfo.value.context["reason"] == "destination_exists"
+        assert (workspace / "t" / "todo" / "x.md").read_text() == "a"
+        assert (workspace / "t" / "done" / "x.md").read_text() == "b"
+        assert yaml_path.read_bytes() == board_before
+
+    def test_a_folder_climbing_out_of_the_workspace_is_refused(self, tmp_path):
+        yaml_path = self._board(tmp_path, done_folder="../outside")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "x.md").write_text("sentinel")
+
+        with pytest.raises(TicketMoveRefused) as excinfo:
+            move_ticket(yaml_path, "t/todo/x.md", root=yaml_path.parent, column="done")
+
+        assert excinfo.value.context["reason"] == "outside_workspace"
+        assert (outside / "x.md").read_text() == "sentinel"
+        assert (yaml_path.parent / "t" / "todo" / "x.md").read_text() == "a"
+
+    def test_a_ticket_path_climbing_out_is_refused(self, tmp_path):
+        outside = tmp_path / "todo"
+        outside.mkdir()
+        (outside / "secret.md").write_text("host file")
+        yaml_path = self._board(tmp_path, ticket="../todo/secret.md")
+
+        with pytest.raises(TicketMoveRefused):
+            move_ticket(yaml_path, "../todo/secret.md", root=yaml_path.parent, column="done")
+
+        assert (outside / "secret.md").read_text() == "host file"
+        assert not (tmp_path / "done").exists()
+
+    def test_a_normal_move_lands_the_file_and_updates_the_entry(self, tmp_path):
+        yaml_path = self._board(tmp_path)
+        workspace = yaml_path.parent
+
+        entry = move_ticket(yaml_path, "t/todo/x.md", root=workspace, column="done")
+
+        assert entry["path"] == "t/done/x.md"
+        assert (workspace / "t" / "done" / "x.md").read_text() == "a"
+        assert not (workspace / "t" / "todo" / "x.md").exists()
+
+
+class TestMoveTicketFolders:
+    """A column change moves the file only between states keeping tickets in different folders."""
+
+    @staticmethod
+    def _board(tmp_path: Path, open_folder: str, done_folder: str, ticket: str) -> Path:
+        (tmp_path / ticket).parent.mkdir(parents=True)
+        (tmp_path / ticket).write_text("# T1\n")
+        yaml_path = tmp_path / "board.yaml"
+        yaml_path.write_text(
+            "states:\n"
+            + "".join(
+                f"  - id: {state}\n    label: {state}\n    folder: {open_folder}\n"
+                for state in ("backlog", "in-progress", "review")
+            )
+            + f"  - id: done\n    label: Done\n    folder: {done_folder}\n    terminal: true\n"
+            + f"backlog:\n  - path: {ticket}\n"
+            + "in-progress: []\nreview: []\ndone: []\n",
+        )
+
+        return yaml_path
+
+    def test_a_move_between_open_columns_sharing_a_folder_moves_only_the_card(self, tmp_path):
+        yaml_path = self._board(
+            tmp_path,
+            "tickets/active/",
+            "tickets/completed/",
+            "tickets/active/t1.md",
+        )
+
+        entry = move_ticket(yaml_path, "tickets/active/t1.md", root=tmp_path, column="in-progress")
+
+        assert entry["path"] == "tickets/active/t1.md"
+        assert (tmp_path / "tickets" / "active" / "t1.md").read_text() == "# T1\n"
+        assert _read_yaml(yaml_path)["backlog"] == []
+        assert [str(t["path"]) for t in _read_yaml(yaml_path)["in-progress"]] == [
+            "tickets/active/t1.md",
+        ]
+
+    @pytest.mark.parametrize(
+        "spelling",
+        ["tickets/active", "./tickets/active/", "tickets//active/", "tickets/./active"],
+        ids=["no-trailing-slash", "leading-dot", "doubled-slash", "inner-dot"],
+    )
+    def test_two_spellings_of_one_directory_are_one_folder(self, tmp_path, spelling):
+        yaml_path = self._board(
+            tmp_path,
+            "tickets/active/",
+            "tickets/completed/",
+            "tickets/active/t1.md",
+        )
+        yaml_path.write_text(
+            yaml_path.read_text().replace(
+                "folder: tickets/active/\n",
+                f"folder: {spelling}\n",
+                1,
+            ),
+        )
+
+        entry = move_ticket(yaml_path, "tickets/active/t1.md", root=tmp_path, column="in-progress")
+
+        assert entry["path"] == "tickets/active/t1.md"
+        assert (tmp_path / "tickets" / "active" / "t1.md").read_text() == "# T1\n"
+
+    @pytest.mark.parametrize(
+        ("open_folder", "done_folder", "ticket", "moved_to"),
+        [
+            (
+                "tickets/active/",
+                "tickets/completed/",
+                "tickets/active/t1.md",
+                "tickets/completed/t1.md",
+            ),
+            (
+                "./tickets/active/",
+                "tickets//completed",
+                "tickets/active/t1.md",
+                "tickets/completed/t1.md",
+            ),
+            ("active", "completed", "active/t1.md", "completed/t1.md"),
+            (
+                "active/",
+                "completed/",
+                "active/drafts/active/t1.md",
+                "completed/drafts/active/t1.md",
+            ),
+        ],
+        ids=[
+            "shared-open-folder",
+            "spelled-differently",
+            "beside-the-board",
+            "kept-below-the-folder",
+        ],
+    )
+    def test_a_move_to_a_closing_column_moves_the_file_to_its_folder(
+        self,
+        tmp_path,
+        open_folder,
+        done_folder,
+        ticket,
+        moved_to,
+    ):
+        yaml_path = self._board(tmp_path, open_folder, done_folder, ticket)
+
+        entry = move_ticket(yaml_path, ticket, root=tmp_path, column="done")
+
+        assert entry["path"] == moved_to
+        assert (tmp_path / moved_to).read_text() == "# T1\n"
+        assert not (tmp_path / ticket).exists()
+        assert [str(t["path"]) for t in _read_yaml(yaml_path)["done"]] == [moved_to]
+
+    @pytest.mark.parametrize(
+        "ticket",
+        ["tickets/inactive/t1.md", "tickets/elsewhere/t1.md", "tickets/active"],
+        ids=["folder-only-as-a-substring", "another-folder", "the-folder-itself"],
+    )
+    def test_a_file_outside_its_columns_folder_is_refused_and_nothing_changes(
+        self,
+        tmp_path,
+        ticket,
+    ):
+        yaml_path = self._board(tmp_path, "tickets/active/", "tickets/completed/", ticket)
+        board_before = yaml_path.read_bytes()
+
+        with pytest.raises(TicketMoveRefused) as excinfo:
+            move_ticket(yaml_path, ticket, root=tmp_path, column="done")
+
+        assert excinfo.value.context["reason"] == "not_in_column_folder"
+        assert (tmp_path / ticket).read_text() == "# T1\n"
+        assert yaml_path.read_bytes() == board_before
+
+    @pytest.mark.parametrize(
+        "done_folder",
+        ["completed/", "tickets/completed/"],
+        ids=["bare-board", "mixed-board"],
+    )
+    def test_a_bare_folder_names_the_boards_own_subdirectory(self, tmp_path, done_folder):
+        yaml_path = self._board(tmp_path, "active/", done_folder, "tickets/active/t1.md")
+        board_before = yaml_path.read_bytes()
+
+        with pytest.raises(TicketMoveRefused) as excinfo:
+            move_ticket(yaml_path, "tickets/active/t1.md", root=tmp_path, column="done")
+
+        assert excinfo.value.context["reason"] == "not_in_column_folder"
+        assert (tmp_path / "tickets" / "active" / "t1.md").read_text() == "# T1\n"
+        assert not (tmp_path / "tickets" / "tickets").exists()
+        assert yaml_path.read_bytes() == board_before

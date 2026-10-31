@@ -1,9 +1,20 @@
 /** E2E tests for mermaid diagram rendering. */
 
 import { expect, test } from '@playwright/test'
-import { disableAutoCollapse, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
-import { mockSSE } from '../mocks/sse.js'
+import { disableAutoCollapse, openSession } from '../helpers.js'
+import { mockAPI } from '../mocks/api.js'
+
+async function openZoomedDiagram(page) {
+  await openSession(page, 'events/mermaid-diagram.jsonl')
+  await page.locator('.mermaid-diagram').first().click()
+  await expect(page.locator('.zoom-overlay')).toBeVisible()
+}
+
+async function openZoomedInTwice(page) {
+  await page.locator('.mermaid-diagram').first().click()
+  await page.getByTitle('Zoom in').click()
+  await page.getByTitle('Zoom in').click()
+}
 
 test.describe('Mermaid Diagrams', () => {
   test.beforeEach(async ({ page }) => {
@@ -14,9 +25,7 @@ test.describe('Mermaid Diagrams', () => {
     // SPEC: chat:mermaid
     // SPEC: chat:mermaid-render
     test('renders mermaid code block as SVG diagram', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-diagram.jsonl')
 
       const container = page.locator('.mermaid-container').first()
       await expect(container).toBeVisible()
@@ -28,9 +37,7 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-theme
     test('diagram uses dark theme colors', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-diagram.jsonl')
 
       const svg = page.locator('.mermaid-diagram svg').first()
       await expect(svg).toBeVisible()
@@ -52,9 +59,7 @@ test.describe('Mermaid Diagrams', () => {
     // SPEC: chat:mermaid-no-side-effect
     test('non-mermaid code blocks render normally', async ({ page }) => {
       // Fixture mixes a mermaid block with a JS code block.
-      await mockSSE(page, 'events/mermaid-mixed.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-mixed.jsonl')
 
       await expect(page.locator('.mermaid-container').first()).toBeVisible()
       await expect(page.locator('.mermaid-diagram svg').first()).toBeVisible()
@@ -68,9 +73,7 @@ test.describe('Mermaid Diagrams', () => {
   test.describe('Toggle', () => {
     // SPEC: chat:mermaid-toggle
     test('toggle button switches to source view', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-diagram.jsonl')
 
       const container = page.locator('.mermaid-container').first()
       await expect(container.locator('.mermaid-diagram')).toBeVisible()
@@ -86,9 +89,7 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-toggle
     test('toggle button switches back to diagram view', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-diagram.jsonl')
 
       const container = page.locator('.mermaid-container').first()
       await container.hover()
@@ -104,9 +105,7 @@ test.describe('Mermaid Diagrams', () => {
   test.describe('Zoom', () => {
     // SPEC: chat:mermaid-zoom
     test('clicking diagram opens zoom overlay', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-diagram.jsonl')
 
       await page.locator('.mermaid-diagram').first().click()
 
@@ -116,12 +115,7 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-zoom-close
     test('Escape closes zoom overlay', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await page.locator('.mermaid-diagram').first().click()
-      await expect(page.locator('.zoom-overlay')).toBeVisible()
+      await openZoomedDiagram(page)
 
       await page.keyboard.press('Escape')
       await expect(page.locator('.zoom-overlay')).not.toBeVisible()
@@ -129,12 +123,7 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-zoom-close
     test('backdrop click closes zoom overlay', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await page.locator('.mermaid-diagram').first().click()
-      await expect(page.locator('.zoom-overlay')).toBeVisible()
+      await openZoomedDiagram(page)
 
       // Click the overlay itself (backdrop), not the content
       await page.locator('.zoom-overlay').click({ position: { x: 10, y: 10 } })
@@ -143,12 +132,7 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-zoom-close
     test('close button closes zoom overlay', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
-
-      await page.locator('.mermaid-diagram').first().click()
-      await expect(page.locator('.zoom-overlay')).toBeVisible()
+      await openZoomedDiagram(page)
 
       await page.locator('.zoom-overlay-close').click()
       await expect(page.locator('.zoom-overlay')).not.toBeVisible()
@@ -157,9 +141,7 @@ test.describe('Mermaid Diagrams', () => {
 
   test.describe('Zoom Pan Controls', () => {
     test.beforeEach(async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-zoom-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-zoom-diagram.jsonl')
       // The fixture's two diagrams render async and the wide one takes longer, so without this
       // .mermaid-diagram.first() can resolve to the small one alone.
       await expect(page.locator('.mermaid-diagram')).toHaveCount(2)
@@ -272,9 +254,7 @@ test.describe('Mermaid Diagrams', () => {
     test('arrow keys pan the same way the directional controls do; page behind stays put', async ({
       page,
     }) => {
-      await page.locator('.mermaid-diagram').first().click()
-      await page.getByTitle('Zoom in').click()
-      await page.getByTitle('Zoom in').click()
+      await openZoomedInTwice(page)
       const before = await contentBox(page)
       const scrollBefore = await page.evaluate(() => window.scrollY)
 
@@ -318,9 +298,7 @@ test.describe('Mermaid Diagrams', () => {
 
     // SPEC: chat:mermaid-zoom-wheel
     test('pressing and dragging pans the diagram, following the pointer', async ({ page }) => {
-      await page.locator('.mermaid-diagram').first().click()
-      await page.getByTitle('Zoom in').click()
-      await page.getByTitle('Zoom in').click()
+      await openZoomedInTwice(page)
       const before = await contentBox(page)
 
       const viewport = await page.locator('.mermaid-zoom-content').boundingBox()
@@ -340,9 +318,7 @@ test.describe('Mermaid Diagrams', () => {
     test('a drag that ends over the backdrop leaves the overlay open; a plain backdrop click still closes it', async ({
       page,
     }) => {
-      await page.locator('.mermaid-diagram').first().click()
-      await page.getByTitle('Zoom in').click()
-      await page.getByTitle('Zoom in').click()
+      await openZoomedInTwice(page)
       await page.getByTitle('Zoom in').click()
 
       const viewport = await page.locator('.mermaid-zoom-content').boundingBox()
@@ -431,9 +407,7 @@ test.describe('Mermaid Diagrams', () => {
     // SPEC: chat:mermaid-copy
     test('copy button copies raw mermaid source', async ({ page, context }) => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-      await mockSSE(page, 'events/mermaid-diagram.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-diagram.jsonl')
 
       const container = page.locator('.mermaid-container').first()
       await container.hover()
@@ -451,9 +425,7 @@ test.describe('Mermaid Diagrams', () => {
   test.describe('Error Fallback', () => {
     // SPEC: chat:mermaid-fallback
     test('invalid mermaid falls back to syntax-highlighted code', async ({ page }) => {
-      await mockSSE(page, 'events/mermaid-invalid.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-invalid.jsonl')
 
       await expect(page.locator('.code-block-wrapper').first()).toBeVisible()
       await expect(page.locator('.mermaid-diagram')).not.toBeVisible()
@@ -463,9 +435,7 @@ test.describe('Mermaid Diagrams', () => {
     test('a syntax failure shows a notice naming the reason, source stays visible', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/mermaid-syntax-error.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-syntax-error.jsonl')
 
       const notice = page.locator('.mermaid-failure-notice')
       await expect(notice).toBeVisible()
@@ -483,9 +453,7 @@ test.describe('Mermaid Diagrams', () => {
     test('an unsupported diagram type reports a reason distinct from a syntax error', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/mermaid-unsupported-type.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-unsupported-type.jsonl')
 
       const notice = page.locator('.mermaid-failure-notice')
       await expect(notice).toBeVisible()
@@ -499,9 +467,7 @@ test.describe('Mermaid Diagrams', () => {
     test('a corrected diagram in a later message draws with no notice carried over', async ({
       page,
     }) => {
-      await mockSSE(page, 'events/mermaid-recover.jsonl')
-      await page.goto(DEFAULT_SESSION_URL)
-      await waitForAppReady(page)
+      await openSession(page, 'events/mermaid-recover.jsonl')
       await disableAutoCollapse(page)
 
       await expect(page.locator('.mermaid-failure-notice')).toBeVisible()

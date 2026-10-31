@@ -1,5 +1,7 @@
 """Request models - Pydantic schemas for HTTP endpoints."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 from claudebox import EffortLevelId, PermissionModeId

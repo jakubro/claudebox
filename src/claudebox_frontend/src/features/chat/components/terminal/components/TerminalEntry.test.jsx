@@ -1,10 +1,18 @@
 /** Tests for TerminalEntry - one shell-call transcript row. */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { useOptionalBookmarks } from '../../../../../context/BookmarksContext'
 import TerminalEntry from './TerminalEntry'
+
+vi.mock('../../../../../context/BookmarksContext', () => ({
+  useOptionalBookmarks: vi.fn(() => null),
+}))
+
+const writeText = vi.fn().mockResolvedValue(undefined)
+Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
 
 /** A terminal entry as deriveTerminalEntries would produce it. */
 function entry(overrides = {}) {
@@ -23,6 +31,37 @@ describe('TerminalEntry', () => {
     render(<TerminalEntry entry={entry()} />)
 
     expect(screen.getByText('ls -la')).toBeInTheDocument()
+  })
+
+  it('shows the laid-out command, one command per line, when the call carries one', () => {
+    const { container } = render(
+      <TerminalEntry entry={entry({ command: 'cd /srv; ls', commandLayout: 'cd /srv\nls' })} />,
+    )
+
+    expect(container.querySelector('.terminal-entry-command').textContent).toBe('cd /srv\nls')
+  })
+
+  it('copies the command as sent, not its layout', async () => {
+    render(
+      <TerminalEntry entry={entry({ command: 'cd /srv; ls', commandLayout: 'cd /srv\nls' })} />,
+    )
+
+    fireEvent.click(screen.getByTitle('Copy command'))
+
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('cd /srv; ls'))
+  })
+
+  it('bookmarks the call under the command as sent', async () => {
+    const user = userEvent.setup()
+    const toggleBookmark = vi.fn()
+    useOptionalBookmarks.mockReturnValue({ isBookmarked: () => false, toggleBookmark })
+    render(
+      <TerminalEntry entry={entry({ command: 'cd /srv; ls', commandLayout: 'cd /srv\nls' })} />,
+    )
+
+    await user.click(screen.getByTitle('Bookmark this tool call'))
+
+    expect(toggleBookmark).toHaveBeenCalledWith('t-1', expect.any(String), 'cd /srv; ls')
   })
 
   it('renders the description as a comment line when present', () => {

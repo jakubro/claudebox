@@ -1,5 +1,7 @@
 """Tests for top-level workspaces CRUD routes (GET / POST / DELETE /api/workspaces)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -10,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from claudebox_daemon.domain import DaemonError, DaemonService, get_daemon
 from claudebox_daemon.domain.containers.models import Container, ContainerStatus
-from claudebox_daemon.domain.errors import WorkspaceNotRegistered
+from claudebox_daemon.domain.errors import ValidationError, WorkspaceNotRegistered
 from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from claudebox_daemon.handlers.workspaces import router
 
@@ -24,14 +26,19 @@ def _container(container_id: str, *, status: ContainerStatus) -> Container:
 
 
 def _workspace_stub(workspace_id: str, path: Path, *, containers=(), available=True):
-    """Build a stub WorkspaceService exposing workspace + container_service."""
+    """Build a stub WorkspaceService exposing workspace, the snapshotted `available`, and
+    `_container_service` - the private field the real listing route reads directly."""
 
     container_service = MagicMock()
     container_service.list_all.return_value = list(containers)
 
     workspace = SimpleNamespace(id=workspace_id, path=path, available=available)
 
-    return SimpleNamespace(workspace=workspace, container_service=container_service)
+    return SimpleNamespace(
+        workspace=workspace,
+        available=available,
+        _container_service=container_service if available else None,
+    )
 
 
 def _build_app(daemon: MagicMock):
@@ -132,38 +139,56 @@ class TestListWorkspaces:
 
 
 class TestRegisterWorkspace:
-    """POST registers a workspace; idempotent - re-register surfaces existing entry."""
+    """POST registers a workspace and says whether it already was; a refused path answers 400."""
 
     def test_registers_new(self, tmp_path):
         new = RegisteredWorkspace(id="myproj", path=tmp_path / "myproj")
-        daemon = _make_daemon(register_returns=new)
+        daemon = _make_daemon(register_returns=(new, False))
 
         client = TestClient(_build_app(daemon))
         response = client.post("/api/workspaces", json={"path": str(tmp_path / "myproj")})
 
         assert response.status_code == 200
-        body = response.json()
-        assert body["id"] == "myproj"
-        assert body["path"] == str(tmp_path / "myproj")
+        assert response.json() == {
+            "id": "myproj",
+            "path": str(tmp_path / "myproj"),
+            "already_registered": False,
+        }
         daemon.register_workspace.assert_awaited_once_with(str(tmp_path / "myproj"))
 
-    def test_idempotent_returns_existing_entry(self, tmp_path):
+    def test_a_repeat_answers_already_registered(self, tmp_path):
         existing = RegisteredWorkspace(id="myproj", path=tmp_path / "myproj")
-        daemon = _make_daemon(register_returns=existing)
+        daemon = _make_daemon(register_returns=(existing, True))
 
         client = TestClient(_build_app(daemon))
-        first = client.post("/api/workspaces", json={"path": str(tmp_path / "myproj")})
-        second = client.post("/api/workspaces", json={"path": str(tmp_path / "myproj")})
+        response = client.post("/api/workspaces", json={"path": str(tmp_path / "myproj")})
 
-        assert first.status_code == 200
-        assert second.status_code == 200
-        assert first.json() == second.json()
+        assert response.status_code == 200
+        assert response.json()["already_registered"] is True
+
+    def test_a_refused_path_answers_400_with_its_reason(self):
+        refusal = ValidationError(
+            "workspace_path_missing",
+            path="/srv/nowhere",
+            message="No directory at /srv/nowhere",
+        )
+        daemon = _make_daemon(register_raises=refusal)
+
+        client = TestClient(_build_app(daemon))
+        response = client.post("/api/workspaces", json={"path": "/srv/nowhere"})
+
+        assert response.status_code == 400
+        assert response.json() == {
+            "error": "workspace_path_missing",
+            "path": "/srv/nowhere",
+            "message": "No directory at /srv/nowhere",
+        }
 
     def test_basename_collision_disambiguates_id(self, tmp_path):
         """Two paths sharing basename get distinct ids - handler surfaces the daemon's choice."""
 
         disambiguated = RegisteredWorkspace(id="myapp-a1b2c3d4", path=tmp_path / "other/myapp")
-        daemon = _make_daemon(register_returns=disambiguated)
+        daemon = _make_daemon(register_returns=(disambiguated, False))
 
         client = TestClient(_build_app(daemon))
         response = client.post("/api/workspaces", json={"path": str(tmp_path / "other/myapp")})

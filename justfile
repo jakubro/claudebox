@@ -12,8 +12,12 @@ UV_ENV := if CONTAINER == "true" { f"UV_PROJECT_ENVIRONMENT='{{ CONTAINER_VENV }
 UV_RUN := UV_ENV + " uv run --extra dev"
 # Python runner: auto-selects container venv
 PYTHON := UV_RUN + " python -m"
-# Test runner wrapper: bounds wall-clock time and virtual memory
-RUN_BOUNDED := justfile_directory() / "scripts/run-bounded.sh"
+# Test runner wrapper: time and total resident memory caps, each with a backstop, and a per-process limit
+RUN_CAPPED := justfile_directory() / "scripts/run-capped.sh"
+# Clone detector, pinned exactly in package.json: its fingerprints are the baseline's format
+JSCPD := "npx jscpd --config .jscpd.json"
+JSCPD_PYTHON := JSCPD + " --format python --min-tokens 100 --output /tmp/claudebox--jscpd-python"
+JSCPD_JS := JSCPD + " --format javascript,jsx,typescript,tsx,css,scss,less --output /tmp/claudebox--jscpd-js"
 
 # List available recipes
 default:
@@ -46,7 +50,7 @@ install-py:
 # Run Python tests
 [group('python')]
 test-py *ARGS:
-    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run --extra dev python -m pytest tests/ {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-py.log
+    {{ UV_RUN }} nice -n 19 {{ RUN_CAPPED }} 10 16384 32768 -- python -m pytest -n auto tests/ {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-py.log
 
 # Run Python tests with coverage
 [group('python')]
@@ -78,7 +82,7 @@ build-fe:
 [group('frontend')]
 [working-directory('src/claudebox_frontend')]
 test-fe *ARGS:
-    {{ RUN_BOUNDED }} 5m 32768 -- npx vitest run {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-fe.log
+    nice -n 19 {{ RUN_CAPPED }} 5 16384 32768 -- npx vitest run {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-fe.log
 
 # Run frontend unit tests with coverage
 [group('frontend')]
@@ -100,12 +104,12 @@ install-e2e-app:
 [group('e2e/app')]
 [working-directory('e2e/app')]
 test-e2e-app *ARGS: build-fe
-    {{ RUN_BOUNDED }} 15m 131072 -- npx playwright test -- {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-e2e-app.log
+    nice -n 19 {{ RUN_CAPPED }} 15 16384 131072 -- npx playwright test -- {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-e2e-app.log
 
 # Run CLI E2E tests
 [group('e2e/cli')]
 test-e2e-cli *ARGS:
-    {{ UV_ENV }} {{ RUN_BOUNDED }} 10m 4096 -- uv run --extra dev python -m pytest e2e/cli/ {{ ARGS }} 2>&1 | tee -a /tmp/claudebox--test-e2e-cli.log
+    {{ UV_RUN }} nice -n 19 {{ RUN_CAPPED }} 10 16384 32768 -- python -m pytest -n auto e2e/cli/ {{ ARGS }} 2>&1 | tee -a /tmp/claudebox--test-e2e-cli.log
 
 # Run E2E spec coverage
 [group('e2e')]
@@ -150,7 +154,7 @@ test-ui-browse *ARGS:
 # Run a Playwright script against test UI (e.g.: just test-ui-run repro/focus.py)
 [group('test-ui')]
 test-ui-run SCRIPT *ARGS:
-    UV_PROJECT_ENVIRONMENT="/tmp/claudebox-test/.venv" uv run --directory "{{ justfile_directory() }}" {{ SCRIPT }} {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-ui-run.log
+    PYTHONPATH="{{ justfile_directory() }}/src" /tmp/claudebox-test/.venv/bin/python {{ SCRIPT }} {{ ARGS }} 2>&1 | tee /tmp/claudebox--test-ui-run.log
 
 # --- Demo -----------------------------------------------
 
@@ -195,6 +199,8 @@ lint:
     {{ UV_RUN }} ruff format --check 2>&1 | tee -a /tmp/claudebox--lint.log
     {{ UV_RUN }} ruff check 2>&1 | tee -a /tmp/claudebox--lint.log
     PYTHONPATH= {{ UV_RUN }} ty check 2>&1 | tee -a /tmp/claudebox--lint.log
+    {{ UV_RUN }} deptry src 2>&1 | tee -a /tmp/claudebox--lint.log
+    PYTHONPATH=src {{ UV_RUN }} lint-imports --no-logo --cache-dir /tmp/.import-linter-claudebox 2>&1 | tee -a /tmp/claudebox--lint.log
     {{ UV_RUN }} python scripts/python-guidelines-audit.py 2>&1 | tee -a /tmp/claudebox--lint.log
     npx biome check 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/frontend-guidelines-audit.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
@@ -202,8 +208,27 @@ lint:
     node --test scripts/architecture-drift-check.test.js 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/architecture-drift-check.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     npx knip 2>&1 | tee -a /tmp/claudebox--lint.log
-    npx jscpd --exit-code 1 --format python --min-tokens 100 2>&1 | tee -a /tmp/claudebox--lint.log
-    npx jscpd --exit-code 1 --format javascript,jsx,typescript,tsx,css,scss,less 2>&1 | tee -a /tmp/claudebox--lint.log
+    {{ JSCPD_PYTHON }} --baseline .jscpd-baseline.json --fail-on-new-clones --reporters json,sarif,silent 2>&1 | tee -a /tmp/claudebox--lint.log \
+        || { {{ UV_RUN }} python scripts/new_clones.py /tmp/claudebox--jscpd-python/jscpd-report.json \
+        | tee -a /tmp/claudebox--lint.log; exit 1; }
+    {{ JSCPD_JS }} --baseline .jscpd-baseline.json --fail-on-new-clones --reporters json,sarif,silent 2>&1 | tee -a /tmp/claudebox--lint.log \
+        || { {{ UV_RUN }} python scripts/new_clones.py /tmp/claudebox--jscpd-js/jscpd-report.json \
+        | tee -a /tmp/claudebox--lint.log; exit 1; }
+    just clone-reasons 2>&1 | tee -a /tmp/claudebox--lint.log
+
+# Refresh the clone baseline, print every clone, and list each accepted one still lacking a reason
+dupes:
+    rm -f /tmp/claudebox--jscpd-python/baseline.json /tmp/claudebox--jscpd-js/baseline.json
+    mkdir -p /tmp/claudebox--jscpd-python /tmp/claudebox--jscpd-js
+    {{ JSCPD_PYTHON }} --baseline /tmp/claudebox--jscpd-python/baseline.json --update-baseline --reporters console,sarif 2>&1 | tee /tmp/claudebox--dupes.log
+    {{ JSCPD_JS }} --baseline /tmp/claudebox--jscpd-js/baseline.json --update-baseline --reporters console,sarif 2>&1 | tee -a /tmp/claudebox--dupes.log
+    {{ UV_RUN }} python scripts/jscpd_merge.py --baseline 2>&1 | tee -a /tmp/claudebox--dupes.log
+    just clone-reasons 2>&1 | tee -a /tmp/claudebox--dupes.log
+
+# Fail unless each baselined clone has a reason and each reason a clone, in the last lint or dupes report
+clone-reasons:
+    {{ UV_RUN }} python scripts/jscpd_merge.py
+    {{ UV_RUN }} python scripts/clone_reasons.py /tmp/claudebox--jscpd/jscpd-report.sarif
 
 # Auto-fix all code
 fix:

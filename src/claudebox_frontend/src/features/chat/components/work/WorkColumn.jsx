@@ -3,7 +3,8 @@
 // audit-ignore-file: excessive-props
 
 import { useCallback, useMemo, useRef } from 'react'
-import { useScrollElementRef } from '../../hooks/useVirtualListGeometry'
+import { useOptionalBookmarks } from '../../../../context/BookmarksContext'
+import { useScrollElementRef } from '../../../../hooks/useVirtualListGeometry'
 import useWorkPanelVirtualizer from '../../hooks/useWorkPanelVirtualizer'
 import { hasAnyWorkPanelContent } from '../../utils/predictWorkEntryHeight'
 import WorkTurnEntry from './components/WorkTurnEntry'
@@ -91,6 +92,9 @@ export default function WorkColumn({
 
   // Identical across every entry - built once so WorkTurnEntry's memo isn't defeated by a fresh
   // object every render.
+  const bookmarks = useOptionalBookmarks()
+  const bookmarkedPartsOf = bookmarks?.bookmarkedPartsOf ?? null
+  const onToggleBookmark = bookmarks?.toggleBookmark ?? null
   const sessionScope = useMemo(
     () => ({
       hasPendingMessages,
@@ -99,6 +103,8 @@ export default function WorkColumn({
       onFormSubmit,
       registerPendingForm,
       duplicateAskUserIds,
+      bookmarkedPartsOf,
+      onToggleBookmark,
     }),
     [
       hasPendingMessages,
@@ -107,6 +113,8 @@ export default function WorkColumn({
       onFormSubmit,
       registerPendingForm,
       duplicateAskUserIds,
+      bookmarkedPartsOf,
+      onToggleBookmark,
     ],
   )
 

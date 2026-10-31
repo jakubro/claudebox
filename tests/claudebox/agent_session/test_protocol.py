@@ -3,6 +3,8 @@
 `ty` is the primary validator via `_sdk_client: AgentSession = ClaudeRuntime(...)`; this is defense-in-depth.
 """
 
+from __future__ import annotations
+
 import inspect
 
 from claudebox.agent_session.protocol import AgentSession
@@ -21,6 +23,7 @@ PROTOCOL_COROUTINE_METHODS = (
     "toggle_mcp_server",
     "get_mcp_status",
     "get_context_usage",
+    "generate_title",
 )
 
 

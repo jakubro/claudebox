@@ -5,12 +5,15 @@
 import { memo, useRef, useState } from 'react'
 import { createPropsComparator, sameIdSet } from '../../../utils/comparators'
 import useTurnVirtualizer from '../hooks/useTurnVirtualizer'
+import { dividerRows } from '../utils/settingLabels'
 import { computeFoldBoundary, resolveForkParentId } from '../utils/turnFold'
 import SettingChangeDivider from './SettingChangeDivider'
 import ThreadFoldRow from './ThreadFoldRow'
 import Turn from './turn'
+import { useFocusedMarks } from './turn/hooks/useFocusedMarks'
 import { useTurnCollapse } from './turn/hooks/useTurnCollapse'
 import { useTurnRoutingMode } from './turn/hooks/useTurnRoutingMode'
+import { turnRecordProps } from './turn/utils/turnContent'
 
 const EMPTY_SET = new Set()
 
@@ -27,9 +30,12 @@ const EMPTY_SET = new Set()
  * @param {string|null} props.boundaryNextUserMessage - Next user message after the last turn here.
  * @param {Set} props.duplicateAskUserIds - Cross-turn duplicate AskUserQuestion IDs to hide.
  * @param {Function} props.isBookmarked - (turnId, messageType) => boolean.
+ * @param {Function} [props.bookmarkedPartsOf] - (turnId) => the turn's bookmarked part tails.
+ * @param {string|null} [props.sessionId] - Session the turns belong to; null for the one addressed.
  * @param {boolean} [props.isSideThread] - This session is a promoted thread; gates the fold below.
  * @param {boolean} [props.expanded] - Controlled fold-open state; omit to manage it locally.
  * @param {Function} [props.onToggleExpanded] - Required together with `expanded`.
+ * @param {object} [props.rowSizes] - `createRowSizeStore` the list publishes each turn's size into.
  */
 function HistoricalTurnList({
   messagesEl,
@@ -46,20 +52,24 @@ function HistoricalTurnList({
   registerPendingForm,
   onRewind,
   isBookmarked,
+  bookmarkedPartsOf = null,
   onToggleBookmark,
+  sessionId = null,
   isSideThread = false,
   expanded: controlledExpanded,
   onToggleExpanded,
+  rowSizes = null,
 }) {
   const collapse = useTurnCollapse()
   const collapsedTurnIds = collapse?.collapsedTurnIds ?? EMPTY_SET
   const listRef = useRef(null)
-  // A genuine context descendant of ChatPanel's Provider (unlike ChatPanel's own useTurnHeights
-  // call, which reads its ancestor's value instead) - the single delivery path this fact needs.
+  // A genuine context descendant of ChatPanel's Provider (unlike the minimap, which sits outside
+  // it and takes the mode as a prop) - the single delivery path this fact needs.
   const mode = useTurnRoutingMode()
+  const { isMarked } = useFocusedMarks()
 
-  // Per group, in memory, starts folded. Uncontrolled by default; ChatPanel controls it so its
-  // own useTurnHeights call prices the fold this component is showing.
+  // Per group, in memory, starts folded. Uncontrolled by default; ChatPanel controls it so the
+  // minimap prices the fold this component is showing.
   const [localExpanded, setLocalExpanded] = useState(false)
   const isControlled = controlledExpanded !== undefined
   const expanded = isControlled ? controlledExpanded : localExpanded
@@ -78,6 +88,9 @@ function HistoricalTurnList({
     mode,
     foldBoundary,
     foldExpanded: expanded,
+    rowSizes,
+    bookmarkedPartsOf,
+    isMarked,
   })
 
   if (virtualizerRef) {
@@ -122,12 +135,8 @@ function HistoricalTurnList({
           />
         )}
         <Turn
-          userMessage={turn.userMessage}
-          attachments={turn.attachments}
-          inlineReplies={turn.inlineReplies}
-          note={turn.note}
-          events={turn.events}
-          turnId={turn.turn_id}
+          {...turnRecordProps(turn)}
+          sessionId={hasFold && i <= foldBoundary ? (forkParentSessionId ?? sessionId) : sessionId}
           todoDiffs={todoDiffs}
           taskNotifications={taskNotifications}
           resultStatus={turn.turn_id ? turnResults[turn.turn_id] : null}
@@ -146,10 +155,11 @@ function HistoricalTurnList({
           forking={forkingTurnId === turn.turn_id}
           isUserBookmarked={isBookmarked(turn.turn_id, 'user')}
           isAssistantBookmarked={isBookmarked(turn.turn_id, 'assistant')}
+          bookmarkedParts={bookmarkedPartsOf?.(turn.turn_id) ?? null}
           onToggleBookmark={onToggleBookmark}
         />
-        {(turn.settingChanges || []).map((event, ci) => (
-          <SettingChangeDivider key={`sc-${i}-${ci}`} event={event} />
+        {dividerRows(turn.settingChanges || []).map((row, ri) => (
+          <SettingChangeDivider key={`sc-${i}-${ri}`} events={row} />
         ))}
       </>
     )

@@ -2,12 +2,12 @@
 
 import { useRef } from 'react'
 import { CHAT_SPLIT_DIVIDER_WIDTH, CHAT_TRANSCRIPT_MIN_WIDTH } from '../../../config/dimensions'
-import { RIGHT_SLOT_VIEWS, RightSlotView } from '../utils/rightSlotViews'
+import { RIGHT_SLOT_VIEWS } from '../utils/rightSlotViews'
 import useElementWidth from './useElementWidth'
 import { useTerminalSplit } from './useTerminalSplit'
 
 /**
- * `activeView` is the resolved `RIGHT_SLOT_VIEWS` record, or `null` when the preference is off,
+ * `activeView` is the resolved `RIGHT_SLOT_VIEWS` record, or `null` when the view mounts no column,
  * the column cannot fit, or the layout is mobile; `terminalSplit` is the raw preference.
  */
 export function useTerminalSplitLayout(sessionId, isMobile) {
@@ -19,10 +19,7 @@ export function useTerminalSplitLayout(sessionId, isMobile) {
     setRatio: setTerminalSplitRatio,
   } = useTerminalSplit(sessionId)
 
-  const requestedView =
-    terminalSplit?.view && terminalSplit.view !== RightSlotView.OFF
-      ? RIGHT_SLOT_VIEWS[terminalSplit.view]
-      : null
+  const requestedView = RIGHT_SLOT_VIEWS[terminalSplit?.view] ?? null
   const canFit =
     !requestedView ||
     contentAreaWidth == null ||

@@ -33,10 +33,10 @@ export function buildDefaultLayout(api, manager) {
   // Left side: only the Sessions panel opens by default; it anchors the left group with a sized width.
   addPanelColumn(api, manager, 'left', ['sessions'])
 
-  // Right side: Todos, Stash, Tasks, Bookmarks, Boards open by default in canonical order; Usage and
+  // Right side: Todos, Stash, Tasks, Crons, Bookmarks, Boards open by default in canonical order; Usage and
   // MCP stay hidden until toggled via the icon strip. Bookmarks/Boards seed here (not left) because
   // PANEL_SIDES routes them to the right strip.
-  addPanelColumn(api, manager, 'right', ['todos', 'stash', 'tasks', 'bookmarks', 'boards'])
+  addPanelColumn(api, manager, 'right', ['todos', 'stash', 'tasks', 'crons', 'bookmarks', 'boards'])
 }
 
 /**

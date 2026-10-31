@@ -1,8 +1,18 @@
 """Session metadata models for daemon-side session management."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from claudebox import DataClass, SessionMetadata
+
+
+@dataclass(frozen=True)
+class RenderedListing:
+    """A sessions listing rendered once and shared by every caller of the same scan."""
+
+    body: bytes
+    session_count: int
 
 
 @dataclass
@@ -30,9 +40,13 @@ class SessionsChangedEvent(DataClass):
 
 @dataclass
 class SessionInfo(SessionMetadata):
-    """Session metadata extended with daemon-specific container state."""
+    """Session metadata extended with daemon-specific container state - ``failed_prompts`` differs
+    from ``undelivered_messages`` (new_session's own, unrelated allowlist-rejection field).
+    """
 
     container_id: str | None = None
     workspace: str | None = None
     permission_mode: str | None = None
     effort_level: str | None = None
+    failed_prompts: list[str] | None = None
+    failed_seeds: list[str] | None = None

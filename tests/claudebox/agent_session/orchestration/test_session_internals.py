@@ -1,6 +1,9 @@
 """Tests for claudebox.agent_session.orchestration.session - dispose, projection resolution, state tracking."""
 
+from __future__ import annotations
+
 import asyncio
+import threading
 import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,9 +12,16 @@ import pytest
 
 from claudebox.agent_session.catalogs import StreamHealth
 from claudebox.agent_session.hooks import CompactStartPayload
+from claudebox.agent_session.orchestration import projection as projection_module
 from claudebox.agent_session.orchestration.models import SessionSummary
+from claudebox.agent_session.orchestration.pipeline import EventPipeline
+from claudebox.agent_session.orchestration.projection import Projection
 from claudebox.agent_session.orchestration.session import SessionService
+from claudebox.agent_session.orchestration.turn_tracker import TurnTracker
 from claudebox.constants import SESSION_STALL_TIMEOUT
+from claudebox.core import serialization
+from claudebox.core.io import read_json, write_json
+from claudebox.workspace import Workspace
 from ._helpers import make_published_event as _make_event
 
 
@@ -287,14 +297,46 @@ class TestInterrupt:
         await session.interrupt()
 
         assert session._event_pipeline.inject_event.await_count == 2
-        subtypes = [
-            c.kwargs["subtype"] for c in session._event_pipeline.inject_event.await_args_list
-        ]
-        assert subtypes == ["interrupt_sent", "compact_boundary"]
-        boundary_kwargs = session._event_pipeline.inject_event.await_args_list[1].kwargs
-        assert boundary_kwargs["message_data"]["compact_metadata"]["status"] == "interrupted"
-        assert boundary_kwargs["message_data"]["compact_metadata"]["trigger"] == "manual"
-        session._sdk_client.interrupt.assert_awaited_once()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("finished", "running"),
+        [(False, True), (True, False)],
+        ids=["while-running", "after-the-result"],
+    )
+    async def test_records_whether_a_turn_was_running(self, tmp_workspace, finished, running):
+        tracker = TurnTracker()
+        tracker.observe(_make_event(type="user", subtype="message", is_human=True, turn_id="T1"))
+
+        if finished:
+            tracker.observe(_make_event(type="result", subtype="success", turn_id="T1"))
+
+        session = _make_session(tmp_workspace)
+        session._event_pipeline = MagicMock()
+        session._event_pipeline.inject_event = AsyncMock()
+        session._event_pipeline.turn_tracker = tracker
+        session._sdk_client = MagicMock()
+        session._sdk_client.interrupt = AsyncMock()
+
+        await session.interrupt()
+
+        sent = session._event_pipeline.inject_event.call_args_list[0].kwargs
+        assert (sent["subtype"], sent["turn_running"]) == ("interrupt_sent", running)
+
+    @pytest.mark.anyio
+    async def test_expires_pending_echo_suppressions(self, tmp_workspace):
+        """An attachment message's suppression must not outlive an interrupted turn."""
+
+        session = _make_session(tmp_workspace)
+        session._event_pipeline = MagicMock()
+        session._event_pipeline.inject_event = AsyncMock()
+        session._event_pipeline.turn_tracker = MagicMock(is_compacting=False)
+        session._sdk_client = MagicMock()
+        session._sdk_client.interrupt = AsyncMock()
+
+        await session.interrupt()
+
+        session._event_pipeline.expire_pending_echo_suppressions.assert_called_once()
 
     @pytest.mark.anyio
     async def test_no_projection_sets_none(self, tmp_workspace):
@@ -338,6 +380,7 @@ class TestHandleEvent:
         session._broadcaster = MagicMock()
         session._broadcaster.broadcast = AsyncMock()
         session._projection = MagicMock()
+        session._projection.update.return_value = False
         session._sdk_client = MagicMock()
 
         event = _make_event(subtype="text")
@@ -350,6 +393,58 @@ class TestHandleEvent:
             event,
         )
         session._projection.schedule_save.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_a_change_of_activity_reaches_the_record_at_once(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = Projection("activity-record", Workspace(start_dir=tmp_workspace))
+        session._sdk_client = MagicMock()
+        record = session._projection._path
+
+        await session._handle_event(_make_event(type="assistant", subtype="text", content="ok"))
+
+        assert read_json(record)["activity"] == "working"
+
+        await session._handle_event(_make_event(type="assistant", subtype="text", content="more"))
+        record.unlink()
+        await session._handle_event(_make_event(type="assistant", subtype="thinking", content="hm"))
+
+        assert not record.exists()
+
+    @pytest.mark.anyio
+    async def test_a_slower_write_already_in_flight_never_has_the_last_word(self, tmp_workspace):
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = Projection("activity-race", Workspace(start_dir=tmp_workspace))
+        session._sdk_client = MagicMock()
+        record = session._projection._path
+        release = threading.Event()
+        held = []
+        real_write_json = projection_module.write_json
+
+        def write_json(path, data):
+            if threading.current_thread() is threading.main_thread() or held:
+                real_write_json(path, data)
+
+                return
+
+            held.append(serialization.dumps(data))
+            release.wait(5)
+            path.write_text(held[0])
+
+        with patch.object(projection_module, "write_json", write_json):
+            await session._handle_event(_make_event(type="assistant", subtype="text", content="a"))
+            await session._handle_event(_make_event(type="assistant", subtype="text", content="b"))
+            await asyncio.sleep(0.7)
+            await session._handle_event(_make_event(type="result", subtype="success"))
+            release.set()
+            await asyncio.sleep(0.7)
+
+        assert held
+        assert read_json(record)["activity"] is None
 
     @pytest.mark.anyio
     async def test_compact_boundary_sends_pending_prompt(self, tmp_workspace):
@@ -416,6 +511,277 @@ class TestHandleEvent:
         await session._handle_event(event)
 
         session._sdk_client.query.assert_not_awaited()
+
+
+class TestSessionTitle:
+    """An unnamed session is titled in the background at its third, sixth and tenth user message."""
+
+    def _session(self, tmp_workspace, monkeypatch, title="Fixing the CSV parser"):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        session = _make_session(tmp_workspace)
+        session._broadcaster = MagicMock()
+        session._broadcaster.broadcast = AsyncMock()
+        session._projection = Projection("titled", Workspace(start_dir=tmp_workspace))
+        session._sdk_client = MagicMock()
+        session._sdk_client.generate_title = AsyncMock(return_value=title)
+
+        return session
+
+    @staticmethod
+    async def _send(session, *messages):
+        for message in messages:
+            await session._handle_event(_make_event(type="user", is_human=True, content=message))
+
+    @pytest.mark.anyio
+    async def test_third_message_titles_the_session_from_the_first_three(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch)
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+
+        session._sdk_client.generate_title.assert_awaited_once_with(["one", "two", "three"])
+        assert read_json(session._projection._path)["auto_name"] == "Fixing the CSV parser"
+        assert session._projection.value.name is None
+
+    @pytest.mark.anyio
+    async def test_subagent_prompts_do_not_count_as_user_messages(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+        await self._send(session, "one")
+
+        for prompt in ("explore the parser", "read the tests"):
+            await session._handle_event(
+                _make_event(type="user", is_human=True, content=prompt, parent_tool_use_id="t1"),
+            )
+
+        await self._send(session, "two")
+
+        assert session._title_task is None
+
+        await self._send(session, "three")
+        await session._title_task
+
+        session._sdk_client.generate_title.assert_awaited_once_with(["one", "two", "three"])
+
+    @pytest.mark.anyio
+    async def test_two_messages_leave_the_session_unnamed(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+
+        await self._send(session, "one", "two")
+
+        assert session._title_task is None
+        assert session._projection.value.auto_name is None
+
+    @pytest.mark.anyio
+    async def test_only_the_third_sixth_and_tenth_messages_retitle(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch)
+        counts = []
+
+        for n in range(1, 15):
+            calls = session._sdk_client.generate_title.await_count
+            await self._send(session, f"m{n}")
+
+            if session._title_task is not None:
+                await session._title_task
+
+            if session._sdk_client.generate_title.await_count > calls:
+                counts.append(n)
+
+        assert counts == [3, 6, 10]
+
+    @pytest.mark.anyio
+    async def test_sixth_and_tenth_messages_retitle_from_the_longer_opening(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch)
+        session._sdk_client.generate_title = AsyncMock(side_effect=["Three", "Six", "Ten"])
+        messages = [f"m{n}" for n in range(1, 11)]
+
+        await self._send(session, *messages[:3])
+        await session._title_task
+        await self._send(session, *messages[3:6])
+        await session._title_task
+
+        assert session._projection.value.auto_name == "Six"
+
+        await self._send(session, *messages[6:])
+        await session._title_task
+
+        assert [c.args[0] for c in session._sdk_client.generate_title.await_args_list] == [
+            messages[:3],
+            messages[:6],
+            messages,
+        ]
+        assert read_json(session._projection._path)["auto_name"] == "Ten"
+
+    @pytest.mark.anyio
+    async def test_failed_refresh_keeps_the_previous_title(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+        session._sdk_client.generate_title = AsyncMock(
+            side_effect=["Three", RuntimeError("model down")],
+        )
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+        await self._send(session, "four", "five", "six")
+        await session._title_task
+
+        assert session._projection.value.auto_name == "Three"
+
+    @pytest.mark.anyio
+    async def test_failed_first_title_is_filled_at_the_sixth(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+        session._sdk_client.generate_title = AsyncMock(side_effect=[RuntimeError("down"), "Six"])
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+
+        assert session._projection.value.auto_name is None
+
+        await self._send(session, "four", "five", "six")
+        await session._title_task
+
+        assert session._projection.value.auto_name == "Six"
+
+    @pytest.mark.anyio
+    async def test_hand_name_after_the_first_title_stops_later_ones(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch)
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+        data = read_json(session._projection._path)
+        write_json(session._projection._path, {**data, "name": "My name"})
+        await self._send(session, *[f"m{n}" for n in range(4, 11)])
+
+        session._sdk_client.generate_title.assert_awaited_once()
+        assert session._projection.value.name == "My name"
+
+    @pytest.mark.anyio
+    async def test_slow_title_is_superseded_by_the_next_checkpoint(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch)
+        never = asyncio.Event()
+
+        async def slow_then_fast(messages):
+            if len(messages) == 3:
+                await never.wait()
+
+            return f"From {len(messages)}"
+
+        session._sdk_client.generate_title = AsyncMock(side_effect=slow_then_fast)
+
+        await self._send(session, "one", "two", "three")
+        slow = session._title_task
+        await self._send(session, "four", "five", "six")
+
+        assert session._title_task is not slow
+
+        await session._title_task
+        never.set()
+        await asyncio.sleep(0)
+
+        assert slow.cancelled()
+        assert session._projection.value.auto_name == "From 6"
+
+    @pytest.mark.anyio
+    async def test_resumed_session_titles_only_when_a_checkpoint_arrives(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        """History seeds the count, so resume never backfills a checkpoint already passed."""
+
+        session = self._session(tmp_workspace, monkeypatch)
+        session._user_message_count = 8
+        session._opening_messages = [f"m{n}" for n in range(1, 9)]
+
+        await self._send(session, "m9")
+
+        assert session._title_task is None
+
+        await self._send(session, "m10")
+        await session._title_task
+
+        session._sdk_client.generate_title.assert_awaited_once_with(
+            [f"m{n}" for n in range(1, 11)],
+        )
+
+    @pytest.mark.anyio
+    async def test_hand_named_session_is_never_titled(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+        session._projection.save()
+        write_json(session._projection._path, {"session_id": "titled", "name": "My name"})
+
+        await self._send(session, "one", "two", "three")
+
+        assert session._title_task is None
+        session._sdk_client.generate_title.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_hand_name_given_while_titling_wins(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+
+        async def rename_then_title(_messages):
+            session._projection.save()
+            data = read_json(session._projection._path)
+            write_json(session._projection._path, {**data, "name": "My name"})
+
+            return "Fixing the CSV parser"
+
+        session._sdk_client.generate_title = AsyncMock(side_effect=rename_then_title)
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+
+        assert session._projection.value.name == "My name"
+        assert session._projection.value.auto_name is None
+
+    @pytest.mark.anyio
+    async def test_failed_title_leaves_the_session_unnamed(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch)
+        session._sdk_client.generate_title = AsyncMock(side_effect=RuntimeError("model down"))
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+
+        assert session._projection.value.auto_name is None
+
+    @pytest.mark.anyio
+    async def test_empty_title_leaves_the_session_unnamed(self, tmp_workspace, monkeypatch):
+        session = self._session(tmp_workspace, monkeypatch, title=None)
+
+        await self._send(session, "one", "two", "three")
+        await session._title_task
+
+        assert session._projection.value.auto_name is None
+
+    @pytest.mark.anyio
+    async def test_titling_bumps_updated_at(self, tmp_workspace, monkeypatch):
+        """The listing refreshes on a changed `updated_at`, so a title must move it."""
+
+        session = self._session(tmp_workspace, monkeypatch)
+        await self._send(session, "one", "two", "three")
+        before = session._projection.value.updated_at
+
+        await session._title_task
+
+        assert session._projection.value.updated_at > before
 
 
 class TestTurnCompleteScheduling:
@@ -548,47 +914,99 @@ class TestTurnCompleteScheduling:
 
         await session.settle_turn_complete()  # must not raise
 
+    @staticmethod
+    def _lost_stream_runtime():
+        runtime = MagicMock()
+        runtime.ready = asyncio.Event()
+        runtime.ready.set()
+        runtime.connect_error = None
+
+        async def receive_events():
+            for _ in ():
+                yield
+
+        runtime.receive_events = receive_events
+
+        return runtime
+
+    def _pipeline_for(self, session, runtime):
+        pipeline = EventPipeline(
+            sdk_client=runtime,
+            workspace=MagicMock(),
+            on_init=AsyncMock(),
+            on_event=AsyncMock(),
+            on_stream_lost=session._schedule_turn_complete,
+        )
+        pipeline._initialized = True
+        pipeline._event_log = MagicMock(open=AsyncMock(), append=AsyncMock(), close=AsyncMock())
+
+        return pipeline
+
     @pytest.mark.anyio
-    async def test_pipeline_task_done_schedules_on_stream_loss(self, tmp_workspace):
-        """Trigger #3: the consumer loop exiting on stream loss - no event ever fires for it."""
-
+    async def test_a_member_whose_stream_ends_is_stopped(self, tmp_workspace):
         session, on_turn_complete = self._member_session(tmp_workspace)
-        session._event_pipeline = MagicMock(stream_lost=True)
-        task = asyncio.create_task(asyncio.sleep(0))
-        await task
+        pipeline = self._pipeline_for(session, self._lost_stream_runtime())
 
-        session._on_pipeline_task_done(task)
+        await pipeline.start()
+        await pipeline._task
         await session._turn_complete_task
 
         on_turn_complete.assert_awaited_once_with("side-1")
 
     @pytest.mark.anyio
-    async def test_pipeline_task_done_no_op_when_stream_is_not_lost(self, tmp_workspace):
-        session, _on_turn_complete = self._member_session(tmp_workspace)
-        session._event_pipeline = MagicMock(stream_lost=False)
-        task = asyncio.create_task(asyncio.sleep(0))
-        await task
+    async def test_a_rebuilt_consumer_reports_its_stream_loss_too(self, tmp_workspace):
+        session, on_turn_complete = self._member_session(tmp_workspace)
+        session._sdk_client = self._lost_stream_runtime()
+        session._handle_init = AsyncMock()
+        dead = MagicMock(is_alive=False, stream_lost=False, session_id="side-1", stop=AsyncMock())
+        session._event_pipeline = dead
 
-        session._on_pipeline_task_done(task)
+        with patch("claudebox.agent_session.orchestration.pipeline.EventLog") as event_log:
+            event_log.return_value = MagicMock(
+                open=AsyncMock(),
+                append=AsyncMock(),
+                close=AsyncMock(),
+                read_all=MagicMock(return_value=[]),
+            )
+            await session._ensure_pipeline_alive()
+            await session._event_pipeline._task
 
-        assert session._turn_complete_task is None
+        await session._turn_complete_task
+
+        on_turn_complete.assert_awaited_once_with("side-1")
 
     @pytest.mark.anyio
-    async def test_pipeline_task_done_ignores_a_cancelled_task(self, tmp_workspace):
-        """A cancelled pipeline task means stop() is already tearing this session down -
-        not a turn ending on its own."""
+    async def test_a_primary_whose_stream_ends_schedules_nothing(self, tmp_workspace):
+        session = SessionService(workspace=tmp_workspace)
+        session._base_session = MagicMock(id="primary-1")
+        pipeline = self._pipeline_for(session, self._lost_stream_runtime())
 
+        await pipeline.start()
+        await pipeline._task
+
+        assert session._turn_complete_task is None
+        errors = [
+            call.args[0].content
+            for call in pipeline._on_event.await_args_list
+            if call.args[0].subtype == "error"
+        ]
+        assert errors == ["The agent's connection ended before it answered"]
+
+    @pytest.mark.anyio
+    async def test_stopping_a_live_member_schedules_no_disposition(self, tmp_workspace):
         session, _on_turn_complete = self._member_session(tmp_workspace)
-        session._event_pipeline = MagicMock(stream_lost=True)
-        task = asyncio.create_task(asyncio.sleep(10))
-        task.cancel()
+        runtime = self._lost_stream_runtime()
 
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        async def parked():
+            await asyncio.Event().wait()
+            yield
 
-        session._on_pipeline_task_done(task)
+        runtime.receive_events = parked
+        pipeline = self._pipeline_for(session, runtime)
+
+        await pipeline.start()
+        await asyncio.sleep(0)
+        await pipeline.stop()
 
         assert session._turn_complete_task is None
 
@@ -888,8 +1306,39 @@ class TestHandleInitProjectionReplay:
 
         assert mock_projection.update.call_count == 3
         mock_projection.save.assert_called_once()
+        mock_projection.seed_last_result_cost.assert_called_once_with(events)
         # get_historical_events is called twice: once by the replay block, once by container-restart emit.
         assert mock_pipeline.get_historical_events.call_count == 2
+
+    @pytest.mark.anyio
+    async def test_counts_only_top_level_user_messages_from_history(self, tmp_workspace):
+        """A resumed session continues toward its title from the user messages already sent."""
+
+        session = _make_session(tmp_workspace)
+        session._sdk_client = MagicMock()
+        mock_projection = MagicMock()
+        mock_projection.loaded_from_disk = True
+        mock_projection.value = SessionSummary(session_id="resumed", fork_point_cost_usd=0.0)
+        mock_pipeline = MagicMock()
+        mock_pipeline.get_historical_events.return_value = [
+            _make_event(type="user", is_human=True, content="hello"),
+            _make_event(type="user", is_human=True, content="nested", parent_tool_use_id="t1"),
+            _make_event(type="user", is_human=True, content="world"),
+        ]
+        mock_pipeline.inject_event = AsyncMock()
+        session._event_pipeline = mock_pipeline
+
+        with (
+            patch("claudebox.agent_session.orchestration.session.BaseSession"),
+            patch(
+                "claudebox.agent_session.orchestration.session.Projection",
+                return_value=mock_projection,
+            ),
+        ):
+            await session._handle_init("resumed")
+
+        assert session._user_message_count == 2
+        assert session._opening_messages == ["hello", "world"]
 
     @pytest.mark.anyio
     async def test_skips_replay_when_session_json_exists(self, tmp_workspace):
@@ -1023,7 +1472,7 @@ class TestHandleInitCapabilityGuards:
         assert session._last_known_effort_level is None
 
     @pytest.mark.anyio
-    async def test_applies_setters_the_runtime_supports(self, tmp_workspace):
+    async def test_replays_the_supported_setters_without_waiting(self, tmp_workspace):
         session, projection = self._session_with(tmp_workspace, supported=True)
 
         with (
@@ -1035,9 +1484,9 @@ class TestHandleInitCapabilityGuards:
         ):
             await session._handle_init("resumed")
 
-        session._sdk_client.set_model.assert_awaited_once_with("provider:some-model")  # ty: ignore[unresolved-attribute]
-        session._sdk_client.set_permission_mode.assert_awaited_once_with("default")  # ty: ignore[unresolved-attribute]
-        session._sdk_client.set_effort_level.assert_awaited_once_with("high")  # ty: ignore[unresolved-attribute]
+        session._sdk_client.set_model.assert_awaited_once_with("provider:some-model", wait=False)  # ty: ignore[unresolved-attribute]
+        session._sdk_client.set_permission_mode.assert_awaited_once_with("default", wait=False)  # ty: ignore[unresolved-attribute]
+        session._sdk_client.set_effort_level.assert_awaited_once_with("high", wait=False)  # ty: ignore[unresolved-attribute]
         assert session._last_known_model == "provider:some-model"
 
 
@@ -1346,7 +1795,9 @@ class TestSendInlineReplies:
         assert inject_kwargs["content"] == "main message"
         assert inject_kwargs["inline_replies"] == replies
         assert inject_kwargs["is_human"] is True
-        session._event_pipeline.suppress_next_user_echo.assert_called_once()  # ty: ignore[unresolved-attribute]
+        session._event_pipeline.suppress_user_echo.assert_called_once_with(inject_kwargs["turn_id"])  # ty: ignore[unresolved-attribute]
+        query = session._sdk_client.query.call_args  # ty: ignore[unresolved-attribute]
+        assert query.kwargs == {"message_uuid": inject_kwargs["turn_id"]}
 
         blocks = session._sdk_client.query.call_args.args[0]  # ty: ignore[unresolved-attribute]
         text = blocks[0]["text"]
@@ -1581,10 +2032,28 @@ class TestEnsureStreamHealthy:
             tmp_workspace,
             StreamHealth(reader_finished=True, buffer_full=False, buffered=7, consumers_waiting=1),
         )
+        session._projection = MagicMock(session_id="sess-1")
 
         await session._ensure_stream_healthy()
 
-        session.restart.assert_awaited_once()  # ty: ignore[unresolved-attribute]
+        session.restart.assert_awaited_once_with("sess-1")  # ty: ignore[unresolved-attribute]
+
+    @pytest.mark.anyio
+    async def test_stream_restart_before_init_keeps_the_session_id(self, tmp_workspace):
+        """A session the agent never announced has no transcript to resume; it starts again fresh."""
+
+        session = self._session_with_health(
+            tmp_workspace,
+            StreamHealth(reader_finished=True, buffer_full=False, buffered=0, consumers_waiting=0),
+        )
+        session._session_id = "start-id"
+        session.stop = AsyncMock()
+        session.start = AsyncMock()
+
+        await session._ensure_stream_healthy()
+
+        session.restart.assert_not_awaited()  # ty: ignore[unresolved-attribute]
+        session.start.assert_awaited_once_with(session_id="start-id")
 
     @pytest.mark.anyio
     async def test_unavailable_probe_yields_no_verdict(self, tmp_workspace):

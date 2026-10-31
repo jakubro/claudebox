@@ -3,6 +3,8 @@
 Help must look good in a terminal and stay machine-readable in a pipe, asserted against the real binary.
 """
 
+from __future__ import annotations
+
 import re
 
 import pytest

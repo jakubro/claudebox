@@ -1,6 +1,8 @@
 """Bidirectional drift check between Config's fields and etc/settings.sample.toml - the shipped
 template must document every key Config accepts, and show nothing Config would reject."""
 
+from __future__ import annotations
+
 import re
 import tomllib
 from dataclasses import fields
@@ -12,8 +14,8 @@ from claudebox.config import Config
 LIB_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_PATH = LIB_ROOT / "etc" / "settings.sample.toml"
 
-# Constructor-derived fields, never settings keys.
-_NON_SETTINGS_FIELDS = {"work_dir", "config_dir"}
+# Fields the loader sets itself, never settings keys.
+_NON_SETTINGS_FIELDS = {"work_dir", "config_dir", "bundle"}
 
 # Template-only key with no Config field: `root` stops the walk-up in Config._load_config_files.
 _TEMPLATE_ONLY_KEYS = {"root"}
@@ -28,6 +30,8 @@ _EXACT_KEY_TO_FIELD = {
     "containers.nested": "containers_nested",
     "editor.url_template": "editor_url_template",
     "links.allow": "links_allow",
+    "prune.session_days": "prune_session_days",
+    "prune.tmp_days": "prune_tmp_days",
     "langgraph.model": "langgraph_model",
     "langgraph.max_tokens_override": "langgraph_max_tokens_override",
     "langgraph.web_search.provider": "langgraph_web_search_provider",
@@ -42,6 +46,7 @@ _PREFIX_TO_FIELD = {
     "langgraph.mcp": "langgraph_mcp_servers",
     "langgraph.cost": "langgraph_cost_overrides",
     "langgraph.hooks": "langgraph_hooks",
+    "bundles": "bundles",
 }
 
 # [langgraph.<x>] sub-tables config.py reserves for typed fields; any other name is a provider's

@@ -1,12 +1,15 @@
 """Workspaces - top-level CRUD + workspace-scoped session-defaults / commands."""
 
+from __future__ import annotations
+
 import dataclasses
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from claudebox import UnknownRuntime, resolve_runtime_class
+from claudebox import Config, UnknownRuntime, agent_logged_in, resolve_runtime_class
 from ._shared import DaemonDep, WorkspaceDep
+from ..domain import SEEDED_BUNDLE_KEYS
 
 
 class RegisterWorkspaceRequest(BaseModel):
@@ -30,10 +33,16 @@ async def list_workspaces(svc: DaemonDep) -> dict:
 
 
 @router.post("")
-async def register_workspace(svc: DaemonDep, body: RegisterWorkspaceRequest):
-    """Register a workspace; idempotent - re-register returns the existing entry."""
+async def register_workspace(svc: DaemonDep, body: RegisterWorkspaceRequest) -> dict:
+    """Register a directory as a workspace, writing its .workspace marker; a repeat says so."""
 
-    return await svc.register_workspace(body.path)
+    workspace, already_registered = await svc.register_workspace(body.path)
+
+    return {
+        "id": workspace.id,
+        "path": str(workspace.path),
+        "already_registered": already_registered,
+    }
 
 
 @router.delete("/{workspace_id}")
@@ -50,7 +59,7 @@ async def deregister_workspace(svc: DaemonDep, workspace_id: str):
 
 
 @router.get("/{workspace_id}/session-defaults")
-async def get_session_defaults(svc: WorkspaceDep) -> dict:
+async def get_session_defaults(svc: WorkspaceDep, workspace_id: str) -> dict:
     """Return what a new session in this workspace would inherit plus the available choices.
 
     Catalog fields go NULL when the runtime flag is False; frontend infers absence from the missing field.
@@ -62,12 +71,14 @@ async def get_session_defaults(svc: WorkspaceDep) -> dict:
     except UnknownRuntime as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Protocol declares these for instances; ty doesn't resolve class attrs via type[AgentSession].
-    caps = cls.CAPABILITIES  # ty: ignore[unresolved-attribute]
+    caps = cls.CAPABILITIES
+    # Re-read per request: `svc.config` is a construction-time snapshot and bundles re-resolve.
+    config = Config.load(svc.workspace.path)
+    bundles = config.bundles or {}
 
     return {
         "workspace": str(svc.workspace.path),
-        "runtime_name": cls.runtime_name,  # ty: ignore[unresolved-attribute]
+        "runtime_name": cls.runtime_name,
         "editor_url_template": svc.config.editor_url_template,
         "capabilities": dataclasses.asdict(caps),
         "rate_limits": svc.rate_limits.get(),
@@ -76,24 +87,27 @@ async def get_session_defaults(svc: WorkspaceDep) -> dict:
             cls.get_default_permission_mode() if caps.supports_permission_modes else None
         ),
         "effort_level": (cls.get_default_effort_level() if caps.supports_effort_levels else None),
-        "available_models": cls.AVAILABLE_MODELS  # ty: ignore[unresolved-attribute]
-        if caps.supports_models
-        else None,
+        "available_models": cls.AVAILABLE_MODELS if caps.supports_models else None,
         "available_permission_modes": (
-            cls.AVAILABLE_PERMISSION_MODES  # ty: ignore[unresolved-attribute]
-            if caps.supports_permission_modes
-            else None
+            cls.AVAILABLE_PERMISSION_MODES if caps.supports_permission_modes else None
         ),
         "available_effort_levels": (
-            cls.AVAILABLE_EFFORT_LEVELS  # ty: ignore[unresolved-attribute]
-            if caps.supports_effort_levels
-            else None
+            cls.AVAILABLE_EFFORT_LEVELS if caps.supports_effort_levels else None
         ),
+        "logged_in": agent_logged_in(config),
+        "bundle_names": list(bundles),
+        "bundles": {
+            name: {
+                "declared": {key: table[key] for key in SEEDED_BUNDLE_KEYS if key in table},
+                "keys": sorted(table),
+            }
+            for name, table in bundles.items()
+        },
     }
 
 
 @router.get("/{workspace_id}/commands")
-async def get_workspace_commands(svc: WorkspaceDep) -> dict | None:
+async def get_workspace_commands(svc: WorkspaceDep, workspace_id: str) -> dict | None:
     """Return the workspace's filesystem-discovered slash commands and skills, or null when supports_skills is False."""
 
     return svc.list_workspace_commands()

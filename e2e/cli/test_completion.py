@@ -3,6 +3,8 @@
 Asserts candidates for a given COMP_LINE; the ``complete`` fixture drives argcomplete against the CLI subprocess.
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 

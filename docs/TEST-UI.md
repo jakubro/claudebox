@@ -20,7 +20,7 @@ The harness connects to real Claude with active credentials — sessions produce
 
 1. **Stop** any existing test environment (kills process group via PID file)
 2. **Create workspace** at `/tmp/claudebox-test/ws/` with `.workspace` marker and `.claudebox/settings.toml` configured for `backend = "local"`
-3. **Sync dependencies** into an isolated venv at `/tmp/claudebox-test/.venv` via `uv sync --extra dev`; install Playwright into the same venv
+3. **Sync dependencies** into an isolated venv at `/tmp/claudebox-test/.venv` via `uv sync --extra dev`; install Playwright into the same venv; then `claude-agent-sdk` is upgraded to its latest release, as the image does at build, because its bundled agent CLI decides which models a session can use
 4. **Rewrite daemon config** — deregisters all existing workspaces and registers only the test workspace, isolating from any host daemon configuration
 5. **Start daemon** via `setsid` as a background process group:
    - Environment: `CLAUDEBOX_PWD` (workspace path), `CLAUDEBOX_NO_RELOAD=1` (no file watcher), `CLAUDEBOX_NO_TMP_REMAP=1` (disable `/tmp` symlink remapping in hook subprocesses)
@@ -35,32 +35,32 @@ The harness connects to real Claude with active credentials — sessions produce
 
 ```
 /tmp/claudebox-test/
-├── .venv/                  # Isolated Python venv (uv sync --extra dev + playwright)
-├── ws/                     # Test workspace root
-│   ├── .workspace          # Workspace marker
-│   └── .claudebox/
-│       └── settings.toml   # backend = "local"
-├── pids                    # Process group PID file for cleanup
-├── daemon.log              # Daemon stdout/stderr
-├── screenshot.png          # Full-page screenshot (from browse.py)
-├── element.png             # Element screenshot (from browse.py)
-├── console.log             # Captured console messages (from browse.py)
-└── network.log             # Captured network requests (from browse.py)
+|-- .venv/                  # Isolated Python venv (uv sync --extra dev + playwright + latest claude-agent-sdk)
+|-- ws/                     # Test workspace root
+|   |-- .workspace          # Workspace marker
+|   `-- .claudebox/
+|       `-- settings.toml   # backend = "local"
+|-- pids                    # Process group PID file for cleanup
+|-- daemon.log              # Daemon stdout/stderr
+|-- screenshot.png          # Full-page screenshot (from browse.py)
+|-- element.png             # Element screenshot (from browse.py)
+|-- console.log             # Captured console messages (from browse.py)
+`-- network.log             # Captured network requests (from browse.py)
 ```
 
 ---
 
 ## 4. Commands
 
-All commands run from `lib/` via `just`. The test venv is injected via `UV_PROJECT_ENVIRONMENT="/tmp/claudebox-test/.venv"`.
+All commands run from the repository root via `just`; `test-ui-run` executes scripts with `/tmp/claudebox-test/.venv/bin/python` and `PYTHONPATH` set to the repository's `src/`.
 
 ### `just test-ui-start`
 
 Starts the test environment, killing any existing instance first; blocks until Ctrl-C.
 
-**Prerequisites**: `just install-py` (installs Python deps into the container-local venv). Chrome ships in the container image at `/usr/bin/google-chrome`, which harness scripts use via `channel="chrome"`.
+**Prerequisites**: Google Chrome where the harness runs - its scripts launch it through `channel="chrome"`, and the image claudebox builds does not include it, so a profile's `image-build.sh` hook is the place to add it. `just test-ui-start` builds the harness venv itself.
 
-The image ships its own Playwright and matching browser builds, but `lib/e2e/app` pins its own `@playwright/test` and each release demands its own build. On a mismatch the suite fails outright - run `just install-e2e-app`, see GUIDELINES.md §0 and Troubleshooting below.
+`e2e/app` pins its own `@playwright/test`, and each Playwright release needs its own browser build. On a mismatch the suite fails outright - run `just install-e2e-app`, see GUIDELINES.md §0 and Troubleshooting below.
 
 ### `just test-ui-stop`
 
@@ -84,7 +84,7 @@ Output files default to `/tmp/claudebox-test/`; override with `--output <dir>`, 
 
 ### `just test-ui-run <script> [args]`
 
-Runs an arbitrary Python script in the test venv, with access to Playwright, claudebox packages, and test dependencies. Extra arguments are forwarded to the script.
+Runs a Python script with the test venv's interpreter (Playwright, dev dependencies) and the workspace's own `src/` on `PYTHONPATH`. It does not sync the venv; `just test-ui-start` builds it. Extra arguments are forwarded to the script.
 
 ```bash
 just test-ui-run path/to/repro.py
@@ -95,7 +95,7 @@ just test-ui-run path/to/repro.py --verbose
 
 ## 5. Writing Custom Playwright Scripts
 
-Scripts run inside the container with Chrome pre-installed; no display server needed, everything runs headless.
+Scripts run headless against the harness; no display server is needed.
 
 ### Minimal template
 
@@ -166,25 +166,32 @@ with sync_playwright() as pw:
 | Process model | `setsid` process group + PID file | systemd user service |
 | `/tmp` remapping | Disabled (`CLAUDEBOX_NO_TMP_REMAP=1`) | Active |
 | File watcher | Disabled (`CLAUDEBOX_NO_RELOAD=1`) | Enabled in dev, disabled in prod |
+| Agent SDK / CLI | Latest release, resolved at each start | Latest release, resolved at each image build |
 
 ---
 
 ## 7. Troubleshooting
 
-**Port 41930 already in use**
+### Port 41930 already in use
+
 Another test-UI instance or stale process is running. Run `just test-ui-stop` first, or manually kill processes on that port.
 
-**Daemon dies on startup**
-Check `cat /tmp/claudebox-test/daemon.log` for errors. Common causes: missing dependencies (run `just install-py`), port conflict, corrupted daemon config.
+### Daemon dies on startup
 
-**Playwright or Chrome not found**
-Run `just install-py` to sync the test venv. Chrome is pre-installed in the container image — if missing, the container image needs rebuilding.
+Check `cat /tmp/claudebox-test/daemon.log` for errors. Common causes: a harness venv out of date (run `just test-ui-start` again, which syncs it), a port conflict, a corrupted daemon config.
 
-**`Executable doesn't exist at .../chromium_headless_shell-<build>`**
-The pinned `@playwright/test` in `lib/e2e/app` wants a browser build the container image doesn't carry (the image only installs builds for its own Playwright version). Run `just install-e2e-app` to fetch the matching build - expect this after bumping either Playwright version.
+### Playwright or Chrome not found
 
-**Screenshots are blank or show wrong state**
+`just test-ui-start` recreates the harness venv with Playwright in it. Chrome has to be installed where the harness runs; the image claudebox builds does not ship it.
+
+### `Executable doesn't exist at .../chromium_headless_shell-<build>`
+
+The pinned `@playwright/test` in `e2e/app` wants a browser build that is not installed. Run `just install-e2e-app` to fetch the matching build - expect this after bumping Playwright.
+
+### Screenshots are blank or show wrong state
+
 Ensure the test-UI is fully ready before capturing. Add `page.wait_for_timeout(3000)` after navigation. Check that Vite has finished compiling (`daemon.log` shows "ready in" message).
 
-**Session not starting**
-The test workspace uses `backend=local` which spawns Claude as a subprocess. Check daemon logs for subprocess errors. Verify the Claude CLI is available in PATH.
+### Session not starting
+
+The test workspace uses `backend=local` which spawns Claude as a subprocess. Check daemon logs for subprocess errors. Sessions run the CLI bundled with `claude-agent-sdk`, not the one on `PATH`. A `400 ... does not support this model` means that CLI predates the model; restart the harness.

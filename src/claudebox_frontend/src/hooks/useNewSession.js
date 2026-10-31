@@ -1,7 +1,7 @@
 /** Hook encapsulating the create-new-session workflow shared across UI surfaces. */
 
 import { useCallback, useRef, useState } from 'react'
-import { setContainerId } from '../api/apiClient'
+import { setAddress } from '../api/apiClient'
 import { newSession } from '../api/sessions'
 import { useAppActions } from '../context/AppActionsContext'
 import { useContainerMap } from '../context/ContainerMapContext'
@@ -22,26 +22,33 @@ export default function useNewSession() {
   const { focusChatTab } = useAppActions()
   const { setSessionContainer } = useContainerMap()
   const { setError } = useInteraction()
-  const { clearSessionData, seedSessionData } = useSessionActions()
+  const { clearSessionData, seedSessionData, refreshSession } = useSessionActions()
   const {
-    notifyContainerChanged,
+    notifyAddressChanged,
     reconnectSSE,
     startCreating,
-    clearCreating,
+    settleCreateRequest,
+    failCreating,
     markJustCreatedSession,
     isCreating,
     isResponding,
   } = useEvents()
-  const { sessionId: currentSessionId, sessionName: currentSessionName } = useSessionData()
+  const {
+    sessionData: currentSessionData,
+    sessionId: currentSessionId,
+    sessionName: currentSessionName,
+    deferredBundle,
+  } = useSessionData()
   const { showStillRunningToast } = useStillRunningToast()
   const { clearProgress } = useDaemonStreamContext()
-  const { navigateToSession } = useSessionRouting()
+  const { navigateToSession, activeSessionId } = useSessionRouting()
   const { workspaceId } = useWorkspace()
   const creatingRef = useRef(false)
   const abortRef = useRef(null)
+  const creationSeqRef = useRef(null)
 
   const createSession = useCallback(
-    async messages => {
+    async (messages, bundle) => {
       if (creatingRef.current) {
         return { success: false, undeliveredMessages: [] }
       }
@@ -52,6 +59,7 @@ export default function useNewSession() {
       const prevSessionId = currentSessionId
       const prevSessionName = currentSessionName
       const prevWasResponding = isResponding
+      const prevSessionData = currentSessionData
 
       abortRef.current?.abort()
       const abortController = new AbortController()
@@ -60,19 +68,25 @@ export default function useNewSession() {
       // Drop stale sessionData now - the create response reseeds a full SessionInfo below:
       // workspace, session_dir, effort_level, zeroed stats.
       clearSessionData()
-      startCreating()
+      const seq = startCreating(activeSessionId ?? null)
+      creationSeqRef.current = seq
       focusChatTab()
 
       try {
-        const data = await newSession({ signal: abortController.signal, messages })
+        const data = await newSession({
+          signal: abortController.signal,
+          messages,
+          bundle: bundle ?? deferredBundle ?? undefined,
+        })
+        settleCreateRequest(seq, data?.session_id ?? null)
 
         if (data?.session_id) {
           // Seed the full SessionInfo response so the footer populates immediately.
           seedSessionData(data)
         }
         if (data?.container_id) {
-          setContainerId(data.container_id)
-          notifyContainerChanged()
+          setAddress(data.container_id, data.session_id)
+          notifyAddressChanged()
           reconnectSSE()
           if (data.session_id) {
             setSessionContainer(data.session_id, data.container_id)
@@ -89,15 +103,20 @@ export default function useNewSession() {
             })
           }
         }
-        // Don't clearCreating() here - ChatPanel effect clears when SSE connects
+        // "Creating" stays up until useChatCreatingClear sees the new session's stream connect.
         focusChatTab()
         return { success: true, undeliveredMessages: data?.undelivered_messages ?? [] }
       } catch (err) {
+        failCreating(seq)
         if (err?.name === 'AbortError') {
           return { success: false, undeliveredMessages: [] }
         }
-        clearCreating()
-        setError('New session failed')
+        // The tab still addresses the session left; it is back on screen at once, then confirmed.
+        if (prevSessionData?.session_id) {
+          seedSessionData(prevSessionData)
+          void refreshSession()
+        }
+        setError(err?.userFacing ? err.message : 'New session failed')
         return { success: false, undeliveredMessages: [] }
       } finally {
         creatingRef.current = false
@@ -107,7 +126,7 @@ export default function useNewSession() {
       clearProgress,
       clearSessionData,
       seedSessionData,
-      notifyContainerChanged,
+      notifyAddressChanged,
       reconnectSSE,
       navigateToSession,
       workspaceId,
@@ -115,19 +134,28 @@ export default function useNewSession() {
       setError,
       setSessionContainer,
       startCreating,
-      clearCreating,
+      settleCreateRequest,
+      failCreating,
+      activeSessionId,
       markJustCreatedSession,
+      currentSessionData,
       currentSessionId,
       currentSessionName,
+      deferredBundle,
+      refreshSession,
       isResponding,
       showStillRunningToast,
     ],
   )
 
-  const executeNewSession = useCallback(async () => {
-    const { success } = await createSession()
-    return success
-  }, [createSession])
+  /** Create a session in this tab, under `bundle` when one is named, else under the welcome pick. */
+  const executeNewSession = useCallback(
+    async bundle => {
+      const { success } = await createSession(undefined, bundle)
+      return success
+    },
+    [createSession],
+  )
 
   /** Create a session from a link's carried messages; returns which ones the allowlist blocked. */
   const executeNewSessionFromLink = useCallback(
@@ -137,9 +165,11 @@ export default function useNewSession() {
 
   const cancelCreation = useCallback(() => {
     abortRef.current?.abort()
-    clearCreating()
+    if (creationSeqRef.current !== null) {
+      failCreating(creationSeqRef.current)
+    }
     creatingRef.current = false
-  }, [clearCreating])
+  }, [failCreating])
 
   const [isCreatingInNewTab, setIsCreatingInNewTab] = useState(false)
 

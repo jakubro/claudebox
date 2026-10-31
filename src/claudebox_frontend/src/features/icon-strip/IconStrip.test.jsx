@@ -10,6 +10,7 @@ vi.mock('lucide-react', () => ({
   Archive: () => <span>📦</span>,
   Bookmark: () => <span>🔖</span>,
   Box: () => <span>📥</span>,
+  CalendarClock: () => <span>📅</span>,
   Command: () => <span>⌘</span>,
   HelpCircle: () => <span>❓</span>,
   History: () => <span>⏰</span>,
@@ -25,6 +26,7 @@ const mockBadgeCounts = {
   todoCount: 0,
   stashCount: 0,
   taskCount: 0,
+  cronCount: 0,
   mcpFailedCount: 0,
   logsHasErrors: false,
 }
@@ -117,6 +119,15 @@ describe('IconStrip', () => {
     const badge = document.querySelector('.icon-badge')
     expect(badge).toHaveTextContent('4')
     expect(badge).not.toHaveClass('icon-badge-danger')
+  })
+
+  it('shows the active schedule count on the crons icon', () => {
+    mockBadgeCounts.cronCount = 2
+
+    render(<IconStrip panels={['crons']} onTogglePanel={vi.fn()} />)
+
+    expect(document.querySelector('.icon-badge')).toHaveTextContent('2')
+    mockBadgeCounts.cronCount = 0
   })
 
   it('shows badge for failed MCP servers in danger (red) style', () => {

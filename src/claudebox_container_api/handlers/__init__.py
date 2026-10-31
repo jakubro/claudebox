@@ -1,5 +1,7 @@
 """HTTP request handlers package."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from .chat import router as chat_router
