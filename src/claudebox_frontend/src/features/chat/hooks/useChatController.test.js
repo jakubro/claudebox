@@ -30,6 +30,10 @@ vi.mock('../../../context/EventsContext', () => ({
     resultCount: mockResultCount,
     isConnected: mockIsConnected,
     containerId: mockContainerId,
+    placeOpening: (seq, field) => {
+      const { [field]: _placed, ...entry } = mockCreations.bySeq[seq]
+      mockCreations = { ...mockCreations, bySeq: { ...mockCreations.bySeq, [seq]: entry } }
+    },
   }),
 }))
 
@@ -489,10 +493,20 @@ describe('useChatController input typed while a session is created', () => {
       chatAutoScrollEnabledRef: { current: true },
     },
   }
-  const creation = (seq, status, sessionId = null, fromRoute = 'A') => ({
+  const creation = (seq, status, sessionId = null, fromRoute = 'A', opening = {}) => ({
     current: seq,
-    bySeq: { [seq]: { status, sessionId, fromRoute } },
+    bySeq: { [seq]: { status, sessionId, fromRoute, ...opening } },
   })
+
+  async function bindToNewSession(rerender) {
+    mockCreatePending = false
+    mockCreations = creation(1, 'created', 'C')
+    mockSessionId = 'C'
+    rerender()
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+    })
+  }
 
   let sendMessage
 
@@ -542,14 +556,8 @@ describe('useChatController input typed while a session is created', () => {
     const { result, rerender } = typeDuringCreation()
     expect(localStorage.getItem('queue:A')).toBeNull()
 
-    mockCreatePending = false
-    mockCreations = creation(1, 'created', 'C')
-    mockSessionId = 'C'
-    rerender()
+    await bindToNewSession(rerender)
 
-    await vi.waitFor(() => {
-      expect(sendMessage).toHaveBeenCalledTimes(1)
-    })
     expect(sendMessage.mock.calls[0][0]).toBe('first for new')
     expect(JSON.parse(localStorage.getItem('queue:C')).map(i => i.content)).toEqual([
       'queued for new',
@@ -600,5 +608,110 @@ describe('useChatController input typed while a session is created', () => {
     })
     expect(sendMessage.mock.calls[0][0]).toBe('second try')
     expect(result.current.queue.queueItems).toEqual([])
+  })
+
+  describe('opening messages of a new session', () => {
+    const opened = (status, sessionId, opening) => creation(1, status, sessionId, 'A', opening)
+    const answer = (bundle, blocked = false) => ({ answer: { blocked, bundle } })
+    const queued = result => result.current.queue.queueItems.map(i => i.content)
+
+    function typeWhileCreating(content = 'typed') {
+      const hook = renderHook(() => useChatController(PROPS))
+      act(() => {
+        hook.result.current.deferred.deferSend(content, [])
+      })
+      return hook
+    }
+
+    it('holds the first carried message and queues the rest under the creation', () => {
+      mockCreations = opened('pending', null, { carried: ['alpha', 'bravo', 'charlie'] })
+
+      const { result } = renderHook(() => useChatController(PROPS))
+
+      expect(result.current.deferred.deferredSend.content).toBe('alpha')
+      expect(queued(result)).toEqual(['bravo', 'charlie'])
+      expect(result.current.queue.queueItems.every(i => i.owner?.creation === 1)).toBe(true)
+    })
+
+    it('sends only the first into the new session and leaves the rest queued there', async () => {
+      mockCreations = opened('pending', null, { carried: ['alpha', 'bravo', 'charlie'] })
+      const { rerender } = renderHook(() => useChatController(PROPS))
+
+      await bindToNewSession(rerender)
+
+      expect(sendMessage.mock.calls[0][0]).toBe('alpha')
+      expect(JSON.parse(localStorage.getItem('queue:C')).map(i => i.content)).toEqual([
+        'bravo',
+        'charlie',
+      ])
+    })
+
+    it('puts a bundle after what the user typed while the session was created', () => {
+      const { result, rerender } = typeWhileCreating()
+
+      mockCreations = opened('created', 'C', answer(['delta', 'echo']))
+      rerender()
+
+      expect(result.current.deferred.deferredSend.content).toBe('typed')
+      expect(queued(result)).toEqual(['delta', 'echo'])
+    })
+
+    it('queues what is typed while a link creates after the carried messages', () => {
+      mockCreations = opened('pending', null, { carried: ['alpha', 'bravo'] })
+
+      const { result } = typeWhileCreating()
+
+      expect(result.current.deferred.deferredSend.content).toBe('alpha')
+      expect(queued(result)).toEqual(['bravo', 'typed'])
+    })
+
+    it('takes a blocked link back out, sends the bundle and hands nothing to the composer', () => {
+      mockCreations = opened('pending', null, { carried: ['alpha', 'bravo'] })
+      const { result, rerender } = renderHook(() => useChatController(PROPS))
+
+      mockCreations = opened('created', 'C', answer(['delta', 'echo'], true))
+      rerender()
+
+      expect(result.current.deferred.deferredSend.content).toBe('delta')
+      expect(queued(result)).toEqual(['echo'])
+      expect(result.current.deferred.returnedInput).toBeNull()
+    })
+
+    it('gives the slot a blocked link held to what was typed while it created', () => {
+      mockCreations = opened('pending', null, { carried: ['alpha'] })
+      const { result, rerender } = typeWhileCreating()
+
+      mockCreations = opened('created', 'C', answer(['delta'], true))
+      rerender()
+
+      expect(result.current.deferred.deferredSend.content).toBe('typed')
+      expect(queued(result)).toEqual(['delta'])
+    })
+
+    it('queues every opening message while another creation holds the slot', () => {
+      const { result, rerender } = typeWhileCreating('older creation')
+
+      mockCreations = {
+        current: 2,
+        bySeq: {
+          ...mockCreations.bySeq,
+          2: { status: 'pending', sessionId: null, fromRoute: 'A', carried: ['alpha', 'bravo'] },
+        },
+      }
+      rerender()
+
+      expect(result.current.deferred.deferredSend.content).toBe('older creation')
+      expect(queued(result)).toEqual(['alpha', 'bravo'])
+    })
+
+    it('places opening messages once, so a chat mounted again later holds none of them', () => {
+      mockCreations = opened('created', 'C', { carried: ['alpha', 'bravo'], ...answer(['delta']) })
+      renderHook(() => useChatController(PROPS)).unmount()
+
+      const { result } = renderHook(() => useChatController(PROPS))
+
+      expect(result.current.deferred.deferredSend).toBeNull()
+      expect(queued(result)).toEqual([])
+    })
   })
 })

@@ -36,8 +36,9 @@ NEEDS_USER_REPLIES_DESCRIPTION = (
 _SIGNALLED = "The user has been told this session needs them."
 
 _IGNORED_SPAWNED = (
-    "Ignored: this session was started by another session and never signals the user. "
-    "Ask the session that started it instead."
+    "Ignored: this session was started by another session, and only that session reads what you "
+    "write - the user is not watching it. End your turn with your question in plain text; the "
+    "session that started it receives it and answers."
 )
 
 _IGNORED_SIDE_THREAD = "Ignored: a reply thread never signals the user. Ask in your reply instead."

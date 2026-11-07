@@ -21,21 +21,6 @@ from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from .scripted_cli import PROJECT, ScriptedCli
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.chdir(tmp_path)
-
-    return tmp_path
-
-
 async def _started_session(workspace: Path) -> tuple[ContainerSession, str]:
     session = ContainerSession(workspace=workspace, remaps_tmp=False)
     session_id = await session.start()

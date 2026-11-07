@@ -11,11 +11,6 @@ from .scripted_cli import ScriptedCli
 
 
 @pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
 async def cli_env(tmp_path, monkeypatch) -> dict[str, str]:
     (tmp_path / ".workspace").touch()
     monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
@@ -41,5 +36,8 @@ async def cli_env(tmp_path, monkeypatch) -> dict[str, str]:
 # SPEC: notify:needs-you-ends-turn
 @pytest.mark.anyio
 async def test_the_agent_cli_may_end_a_turn_on_needs_user(cli_env, tmp_path):
-    assert cli_env["CLAUDE_CODE_TERMINAL_MCP_TOOLS"] == "mcp__claudebox__needs_user"
+    assert cli_env["CLAUDE_CODE_TERMINAL_MCP_TOOLS"].split(",") == [
+        "mcp__claudebox__needs_user",
+        "mcp__claudebox__port_open",
+    ]
     assert cli_env["CLAUDEBOX_PWD"] == str(tmp_path)

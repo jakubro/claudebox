@@ -1,6 +1,6 @@
 # Choosing a runtime
 
-Claudebox runs Claude through the Claude Agent SDK by default. Set one key and it runs LangGraph instead, which talks to any LangChain-supported provider - Anthropic, OpenAI, Google, Groq, Mistral, AWS Bedrock, or a model on your own machine through Ollama or an OpenAI-compatible server.
+Claudebox runs Claude through the Claude Agent SDK by default. One key switches it to LangGraph, which talks to any LangChain-supported provider - Anthropic, OpenAI, Google, Groq, Mistral, AWS Bedrock, or a model on the local machine through Ollama or an OpenAI-compatible server.
 
 ```toml
 agent = "langgraph"
@@ -15,19 +15,21 @@ Provider packages ship preinstalled, so switching is configuration and a relaunc
 
 ## What stays the same
 
-More than you would expect. Under LangGraph the agent still has filesystem, shell, search, web and notebook tools, and their results render as the same tool blocks. It still spawns sub-agents, still drives the task list and the Tasks panel, still asks structured questions through the in-chat form, still discovers and runs your skills - including typed `/<skill>` commands and the autocomplete - still connects to MCP servers, and can still hand work to a second session and read its answers.
+Under LangGraph the agent still has filesystem, shell, search, web and notebook tools, and their results render as the same tool blocks. It still spawns sub-agents, still drives the task list and the Tasks panel, still asks structured questions through the in-chat form, still discovers and runs the profile's skills - including typed `/<skill>` commands and the autocomplete - still connects to MCP servers, still hands work to a second session, messages it, stops it and reads its transcript, and still asks to open a port to this computer.
 
 ## What changes
 
-**There is no permission mode and no per-action approval.** Under Claude you can be asked before a tool runs. Under LangGraph you cannot: the container is the isolation boundary for the entire tool surface, and nothing sits in front of it. Decide that on purpose, not by discovering it.
+**There is no permission mode and no per-action approval.** Under Claude a tool can wait for approval before it runs. Under LangGraph it cannot: the container is the isolation boundary for the entire tool surface, and nothing sits in front of it.
 
 **Some controls disappear**, because the runtime does not implement what they set: the effort picker, the permission-mode picker, the mid-session model picker, the manual compaction button, and the MCP control panel. Where a runtime does not report cost telemetry, the per-turn cost summary does not appear either.
+
+**A second session keeps the runtime's model and effort.** LangGraph cannot set either after a session starts, so an agent that names a model or an effort level when it starts a second session is told which of them was not applied.
 
 **Compaction is the runtime's own.** The manual compact control belongs to Claude; a session prompt is re-supplied after compaction on both.
 
 ## Providers
 
-The model id follows LangChain's `provider:model-id` convention, and credentials come from the environment rather than from your settings file.
+The model id follows LangChain's `provider:model-id` convention, and credentials come from the environment rather than from the settings file.
 
 | Provider | Environment variable | `model =` |
 |---|---|---|
@@ -55,11 +57,11 @@ reasoning_effort = "high"
 
 A model's thinking appears in the transcript only where the provider has been asked to return it.
 
-## A word on network
+## Network
 
-Model calls, web fetch and search, and any MCP server you declare all make outbound requests from the container. The container's network policy is the real boundary - worth reviewing your configured providers before pointing this at a workspace whose contents are sensitive.
+Model calls, web fetch and search, and any declared MCP server all make outbound requests from the container. The container's network policy is the boundary; the configured providers receive what the agent sends them, so review them before using a workspace whose contents are sensitive.
 
-## Details
+## Related pages
 
 - [Multi-runtime support](../SPEC.md#24-multi-runtime-support) - the behavior contract
 - [Configuration reference](../reference/configuration.md) - every `[langgraph]` key

@@ -13,6 +13,7 @@ import {
   hasUnclaimedCompletion,
   INITIAL_TURN_GROUPING_STATE,
   isVisibleEvent,
+  recordTurnDurations,
   selectRunningBackgroundWork,
 } from '../../utils/eventProcessing'
 
@@ -201,7 +202,12 @@ export function nextCreations(creations, action) {
         current: action.seq,
         bySeq: {
           ...creations.bySeq,
-          [action.seq]: { status: 'pending', sessionId: null, fromRoute: action.fromRoute ?? null },
+          [action.seq]: {
+            status: 'pending',
+            sessionId: null,
+            fromRoute: action.fromRoute ?? null,
+            ...(action.carried?.length > 0 && { carried: action.carried }),
+          },
         },
       }
     case 'CREATE_REQUEST_SETTLED':
@@ -209,6 +215,7 @@ export function nextCreations(creations, action) {
         ? withEntry(creations, action.seq, {
             status: 'created',
             sessionId: action.sessionId ?? null,
+            ...openingAnswer(action.answer),
           })
         : creations
     case 'CREATING_FAILED':
@@ -219,9 +226,16 @@ export function nextCreations(creations, action) {
       return entry?.status === 'created'
         ? withEntry(creations, action.seq, { status: 'routed' })
         : creations
+    case 'OPENING_PLACED':
+      return entry ? withoutField(creations, action.seq, action.field) : creations
     default:
       return creations
   }
+}
+
+function openingAnswer({ undeliveredMessages = [], bundleMessages = [] } = {}) {
+  const blocked = undeliveredMessages.length > 0
+  return blocked || bundleMessages.length > 0 ? { answer: { blocked, bundle: bundleMessages } } : {}
 }
 
 function withEntry(creations, seq, patch) {
@@ -229,6 +243,12 @@ function withEntry(creations, seq, patch) {
     ...creations,
     bySeq: { ...creations.bySeq, [seq]: { ...creations.bySeq[seq], ...patch } },
   }
+}
+
+function withoutField(creations, seq, field) {
+  const entry = { ...creations.bySeq[seq] }
+  delete entry[field]
+  return { ...creations, bySeq: { ...creations.bySeq, [seq]: entry } }
 }
 
 /** The loading flags, their request markers and the creation record - kept across every reset. */
@@ -310,12 +330,13 @@ export function flushBatch(state, batch) {
 
   const visibleBatch = batch.filter(isVisibleEvent)
   const turnResults = appendTurnResults(state.turnResults, batch)
-  const { turns, state: turnGroupingState } = appendTurns(
+  const { turns: grouped, state: turnGroupingState } = appendTurns(
     state.turns,
     state._turnGroupingState,
     visibleBatch,
     turnResults,
   )
+  const turns = recordTurnDurations(grouped, batch)
   const baseIndex = state.events.length
   const taskNotifications = appendTaskNotifications(state.taskNotifications, batch, baseIndex)
   const { launches: backgroundLaunches, bashInputs: backgroundBashInputs } =

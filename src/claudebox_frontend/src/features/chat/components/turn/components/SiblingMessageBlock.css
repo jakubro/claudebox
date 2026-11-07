@@ -1,0 +1,25 @@
+/* A turn end of a session this one spawned */
+.sibling-message {
+  position: relative;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin: 6px 0;
+}
+
+.sibling-message-from {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.sibling-message-copy-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+}
+
+.sibling-message:hover .sibling-message-copy-btn {
+  opacity: 1;
+}

@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import TypedDict
 
 from .models import Event, EventSubtype, EventType, PublishedEvent
+from .sibling_turns import SIBLING_MESSAGE_TAG, SiblingMessage, split_sibling_messages
 from ..events import (
     AgentEvent,
     AssistantMessagePayload,
@@ -62,6 +63,7 @@ _SYNTHETIC_USER_MARKERS = (
     # system event - the real completion signal is the typed system/task_notification event.
     "<task-notification>",
     "<system-reminder>",
+    f"<{SIBLING_MESSAGE_TAG}",
 )
 
 
@@ -107,6 +109,13 @@ def dict_message_to_events(data: dict) -> Iterator[Event]:
         content = ""
 
     if isinstance(content, str):
+        if msg_type == EventType.USER:
+            siblings, content = split_sibling_messages(content)
+            yield from (_sibling_message_event(sibling) for sibling in siblings)
+
+            if siblings and not content:
+                return
+
         is_human = msg_type == EventType.USER and is_human_message(content)
         yield Event(
             type=msg_type,
@@ -150,9 +159,20 @@ def agent_event_to_events(evt: AgentEvent) -> Iterator[Event]:
 
 
 def is_human_message(content: object) -> bool:
-    """Whether user-kind content is the person's own message, not a tool result or runtime text."""
+    """Whether user-kind content is the person's own message, not a tool result or runtime text.
 
-    return isinstance(content, str) and not _is_synthetic_user_message(content)
+    A sibling's turn end merged into the message is set aside first: what is left decides.
+    """
+
+    if not isinstance(content, str):
+        return False
+
+    siblings, remainder = split_sibling_messages(content)
+
+    if siblings and not remainder:
+        return False
+
+    return not _is_synthetic_user_message(remainder)
 
 
 def _typed_payload_to_dict_message(evt: AgentEvent) -> dict:
@@ -307,6 +327,24 @@ def _block_to_dict(block: ContentBlock) -> dict:
         return {"type": "unknown", "class_name": block.class_name, "data": dict(block.data)}
 
     raise TypeError(f"Unknown ContentBlock type: {type(block).__name__}")
+
+
+def _sibling_message_event(message: SiblingMessage) -> Event:
+    data = {
+        "from_session_id": message.from_session_id,
+        "from_name": message.from_name,
+        "outcome": message.outcome,
+        "delivery_id": message.delivery_id,
+    }
+
+    return Event(
+        type=EventType.SYSTEM,
+        subtype=EventSubtype.SIBLING_MESSAGE,
+        content=message.text,
+        primary=False,
+        is_human=False,
+        raw={"message": {"subtype": EventSubtype.SIBLING_MESSAGE, "data": data}},
+    )
 
 
 def _is_subagent_message(data: dict) -> bool:

@@ -291,13 +291,13 @@
   overflow: hidden;
 }
 
-/* Floor height so absolutely-positioned .turn-meta buttons don't overflow an empty preview strip */
 .turn-collapsed .turn {
   min-height: 44px;
 }
 
 .turn > .turn-content > :first-child {
-  margin-top: 20px;
+  --text-edge-top: 20px;
+  margin-top: var(--text-edge-top);
 }
 
 .turn-error {
@@ -311,7 +311,9 @@
 .turn-text {
   position: relative;
   word-break: break-word;
-  margin: 10px 0;
+  --text-edge-top: 10px;
+  --text-edge-bottom: 10px;
+  margin: var(--text-edge-top) 0 var(--text-edge-bottom);
   --block-strip-width: calc(2 * var(--block-strip-btn-width) + var(--block-strip-gap));
   --cell-padding-x: 10px;
 }
@@ -378,7 +380,61 @@
 }
 
 .turn-text:last-child {
-  margin-bottom: 0;
+  --text-edge-bottom: 0px;
+}
+
+/* A contained root (Markdown.css) keeps its edge blocks' margins inside it. An unpadded root gets an empty box at
+   each edge carrying the margin that edge collapses with outside - its own, or --text-edge-collapse-* where a
+   neighbour's is larger - once added and once taken away, so only what exceeds it remains. */
+.turn-text:not(
+  .markdown-preview-content,
+  .collapsible-content,
+  .tool-skill-content,
+  .tool-plan,
+  .tool-markdown-content
+):has(> [data-md-block]) {
+  --text-edge-box: "";
+}
+
+.turn-text::before,
+.turn-text::after {
+  content: var(--text-edge-box, none);
+  display: block;
+}
+
+.turn-text::before {
+  --edge: var(--text-edge-collapse-top, var(--text-edge-top));
+  margin: calc(-1 * var(--edge)) 0 var(--edge);
+}
+
+.turn-text::after {
+  --edge: var(--text-edge-collapse-bottom, var(--text-edge-bottom));
+  margin: var(--edge) 0 calc(-1 * var(--edge));
+}
+
+/* A rule or display math closing a reply keeps its 1em inside; the reply after it collapses with that 1em too. A
+   narration's own last block has no margin, and a reminder row keeps the 1em above itself. */
+.turn-text:not(.nested-text-entry, :has(> .injected-context-corner)):has(
+    > [data-md-block]:nth-last-child(1 of [data-md-block]):is(hr, .katex-display)
+  )
+  + .turn-text,
+.turn-text:not(:has(> .injected-context-corner)):has(
+    > :is(ul, ol)[data-md-block]:nth-last-child(1 of [data-md-block])
+      > li:last-child
+      > :is(hr, .katex-display):last-child
+  )
+  + .turn-text,
+.tool-block:has(
+    > .tool-expanded-content:last-child
+      > .task-activity:last-child
+      .nested-content
+      > .nested-text-entry:last-child
+      > :is(ul, ol)[data-md-block]:nth-last-child(1 of [data-md-block])
+      > li:last-child
+      > :is(hr, .katex-display):last-child
+  )
+  + .turn-text {
+  --text-edge-collapse-top: max(var(--text-edge-top), 1em);
 }
 
 /* Markdown styles */

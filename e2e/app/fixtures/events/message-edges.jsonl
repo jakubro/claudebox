@@ -1,0 +1,45 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Walk me through the build","ts":"2025-01-18T12:00:01Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_1","tool_name":"Bash","tool_input":{"command":"make configure"},"primary":false,"id":"evt_002","ts":"2025-01-18T12:00:02Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_1","primary":false,"id":"evt_003","ts":"2025-01-18T12:00:03Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"---\n\nThe configure step opened with a rule.","primary":true,"id":"evt_004","ts":"2025-01-18T12:00:04Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_2","tool_name":"Bash","tool_input":{"command":"make build"},"primary":false,"id":"evt_005","ts":"2025-01-18T12:00:05Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_2","primary":false,"id":"evt_006","ts":"2025-01-18T12:00:06Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"The build step closes with a rule.\n\n---","primary":true,"id":"evt_007","ts":"2025-01-18T12:00:07Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_3","tool_name":"Bash","tool_input":{"command":"make measure"},"primary":false,"id":"evt_008","ts":"2025-01-18T12:00:08Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_3","primary":false,"id":"evt_009","ts":"2025-01-18T12:00:09Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"The measured size grows as\n\n$$\nn^2\n$$","primary":true,"id":"evt_010","ts":"2025-01-18T12:00:10Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_4","tool_name":"Bash","tool_input":{"command":"make plan"},"primary":false,"id":"evt_011","ts":"2025-01-18T12:00:11Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_4","primary":false,"id":"evt_012","ts":"2025-01-18T12:00:12Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"- stages\n  - compile and link","primary":true,"id":"evt_013","ts":"2025-01-18T12:00:13Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_5","tool_name":"Bash","tool_input":{"command":"make list"},"primary":false,"id":"evt_014","ts":"2025-01-18T12:00:14Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_5","primary":false,"id":"evt_015","ts":"2025-01-18T12:00:15Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"- alpha target\n- beta target\n<system-reminder>\nKeep the target list short.\n</system-reminder>","primary":true,"id":"evt_016","ts":"2025-01-18T12:00:16Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_6","tool_name":"Bash","tool_input":{"command":"make show"},"primary":false,"id":"evt_017","ts":"2025-01-18T12:00:17Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_6","primary":false,"id":"evt_018","ts":"2025-01-18T12:00:18Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"```\nbuild/out.bin\n```\n<system-reminder>\nCheck the output path.\n</system-reminder>","primary":true,"id":"evt_019","ts":"2025-01-18T12:00:19Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_7","tool_name":"Bash","tool_input":{"command":"make check"},"primary":false,"id":"evt_020","ts":"2025-01-18T12:00:20Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_7","primary":false,"id":"evt_021","ts":"2025-01-18T12:00:21Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"A plain paragraph between two steps.","primary":true,"id":"evt_022","ts":"2025-01-18T12:00:22Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_8","tool_name":"Bash","tool_input":{"command":"make clean"},"primary":false,"id":"evt_023","ts":"2025-01-18T12:00:23Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_8","primary":false,"id":"evt_024","ts":"2025-01-18T12:00:24Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"The release notes close with a rule.\n\n---","primary":true,"id":"evt_025","ts":"2025-01-18T12:00:25Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"---\n\nThe upgrade notes open with a rule.","primary":true,"id":"evt_026","ts":"2025-01-18T12:00:26Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Task","tool_use_id":"tool_9","tool_name":"Task","tool_input":{"description":"Survey the targets","prompt":"List the build targets.","subagent_type":"Explore"},"primary":false,"id":"evt_027","ts":"2025-01-18T12:00:27Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"- - debug and release\n- targets","parent_tool_use_id":"tool_9","primary":false,"id":"evt_028","ts":"2025-01-18T12:00:28Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Read","parent_tool_use_id":"tool_9","tool_use_id":"tool_10","tool_name":"Read","tool_input":{"file_path":"/home/user/project/Makefile"},"primary":false,"id":"evt_029","ts":"2025-01-18T12:00:29Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"all: build","tool_use_id":"tool_10","parent_tool_use_id":"tool_9","primary":false,"id":"evt_030","ts":"2025-01-18T12:00:30Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"- found\n  - two targets","parent_tool_use_id":"tool_9","primary":false,"id":"evt_031","ts":"2025-01-18T12:00:31Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Two targets:\n- debug\n- release","tool_use_id":"tool_9","primary":false,"id":"evt_032","ts":"2025-01-18T12:00:32Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Task","tool_use_id":"tool_12","tool_name":"Task","tool_input":{"description":"Check the targets","prompt":"Check both targets build.","subagent_type":"Explore"},"primary":false,"id":"evt_033","ts":"2025-01-18T12:00:33Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"- checked\n  - both build","parent_tool_use_id":"tool_12","primary":false,"id":"evt_034","ts":"2025-01-18T12:00:34Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Both build.","tool_use_id":"tool_12","primary":false,"id":"evt_035","ts":"2025-01-18T12:00:35Z","is_human":false}
+{"type":"assistant","subtype":"tool_use","content":"Bash","tool_use_id":"tool_11","tool_name":"Bash","tool_input":{"command":"make release"},"primary":false,"id":"evt_036","ts":"2025-01-18T12:00:36Z","is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"done","tool_use_id":"tool_11","primary":false,"id":"evt_037","ts":"2025-01-18T12:00:37Z","is_human":false}
+{"type":"assistant","subtype":"text","content":"The deploy notes end with a rule.\n\n---\n<system-reminder>\nKeep the deploy notes short.\n</system-reminder>","primary":true,"is_human":false,"id":"evt_038","ts":"2025-01-18T12:00:38Z"}
+{"type":"assistant","subtype":"text","content":"---\n\nThe rollback notes start with a rule.","primary":true,"is_human":false,"id":"evt_039","ts":"2025-01-18T12:00:39Z"}
+{"type":"assistant","subtype":"tool_use","content":"Task","tool_use_id":"tool_13","tool_name":"Task","tool_input":{"description":"Audit the targets","prompt":"Audit both targets.","subagent_type":"Explore"},"primary":false,"is_human":false,"id":"evt_040","ts":"2025-01-18T12:00:40Z"}
+{"type":"assistant","subtype":"text","content":"The audit found:\n\n---","parent_tool_use_id":"tool_13","primary":false,"is_human":false,"id":"evt_041","ts":"2025-01-18T12:00:41Z"}
+{"type":"assistant","subtype":"text","content":"- - debug audited\n- release audited\n\n  ---","parent_tool_use_id":"tool_13","primary":false,"is_human":false,"id":"evt_042","ts":"2025-01-18T12:00:42Z"}
+{"type":"assistant","subtype":"tool_result","content":"Audited.","tool_use_id":"tool_13","primary":false,"is_human":false,"id":"evt_043","ts":"2025-01-18T12:00:43Z"}
+{"type":"assistant","subtype":"text","content":"---\n\nThe audit notes open with a rule.","primary":true,"is_human":false,"id":"evt_044","ts":"2025-01-18T12:00:44Z"}
+{"type":"result","subtype":"success","turn_id":"turn_001","primary":false,"id":"evt_045","ts":"2025-01-18T12:00:45Z","is_human":false}

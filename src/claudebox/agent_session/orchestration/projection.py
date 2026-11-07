@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from .cost import cost_added
 from .models import EventSubtype, EventType, PublishedEvent, SessionSummary
 from .._needs_user import NEEDS_USER_TOOL_NAMES, first_line, needs_user_replies
+from .._ports import PORT_OPEN_TOOL_NAMES, PORT_REFUSAL_PREFIX, is_port
 from ..protocol import AgentSession
 from ...constants import SESSION_METADATA_FILE
 from ...core import serialization
@@ -126,6 +127,7 @@ class Projection:
 
         self._save_timer: asyncio.TimerHandle | None = None
         self._dirty = False
+        self._port_request: str | None = None
 
         # Background work since the last container restart, as the browser's own rule counts it.
         self._bash_tool_uses: set[str] = set()
@@ -202,7 +204,7 @@ class Projection:
         activity = self._value.activity
         self._value.updated_at = datetime.now(UTC)
 
-        if event.is_human:
+        if event.is_human and event.parent_tool_use_id is None:
             self._value.num_turns = (self._value.num_turns or 0) + 1
 
             if event.content:
@@ -249,6 +251,12 @@ class Projection:
             elif (reason := _needs_user_reason(event)) and self._may_need_user():
                 self._value.needs_user = reason
                 self._value.needs_user_replies = _needs_user_replies(event)
+                self._port_request = (
+                    event.tool_use_id if event.tool_name in PORT_OPEN_TOOL_NAMES else None
+                )
+            elif event.tool_use_id == self._port_request and _failed_tool_result(event):
+                self._value.needs_user = None
+                self._value.needs_user_replies = None
 
             self._fold_activity(event)
 
@@ -382,7 +390,7 @@ class Projection:
         if (
             (event.type == EventType.USER and event.is_human)
             or event.type == EventType.ASSISTANT
-            or event.subtype == EventSubtype.TASK_NOTIFICATION
+            or event.subtype in (EventSubtype.TASK_NOTIFICATION, EventSubtype.SIBLING_MESSAGE)
         ):
             self._value.activity = "working"
         elif event.type == EventType.RESULT or (
@@ -476,6 +484,8 @@ def _needs_user_reason(event: PublishedEvent) -> str | None:
         return first_line(tool_input.get("reason")) or "Needs you"
     elif event.tool_name in _QUESTION_TOOL_NAMES:
         return _question_reason(tool_input.get("questions"))
+    elif event.tool_name in PORT_OPEN_TOOL_NAMES and is_port(port := tool_input.get("port")):
+        return f"Approve: open port {port}"
     elif (
         event.tool_name == _PLAN_TOOL_NAME
         and isinstance(plan := tool_input.get("plan"), str)
@@ -484,6 +494,12 @@ def _needs_user_reason(event: PublishedEvent) -> str | None:
         return "Approve the plan"
     else:
         return None
+
+
+def _failed_tool_result(event: PublishedEvent) -> bool:
+    return event.subtype == "tool_result" and bool(
+        event.is_error or str(event.content or "").startswith(PORT_REFUSAL_PREFIX),
+    )
 
 
 def _question_reason(questions: object) -> str | None:

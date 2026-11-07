@@ -53,6 +53,8 @@ export const CREATING_OVERLAY_TIMEOUT_MS = 30_000
 export const SESSION_DEFAULTS_CACHE_TTL_MS = 60_000
 export const ERROR_REPORT_DEDUP_WINDOW_MS = 60_000
 export const RENDER_FAILURE_NOTICE_DELAY_MS = 750
+// How long a jump keeps looking for what it asked to draw - time, not frames: under load one render spans many.
+export const MOUNT_TIMEOUT_MS = 2000
 export const SCROLL_SETTLE_MAX_FRAMES = 30
 export const SCROLL_SETTLE_STILL_FRAMES = 3
 export const RATE_LIMIT_SWEEP_INTERVAL_MS = 30_000

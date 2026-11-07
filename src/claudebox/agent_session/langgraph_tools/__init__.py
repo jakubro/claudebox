@@ -10,8 +10,9 @@ Modules (extended as later subscopes ship):
 - subagent                                     -- task dispatcher
 - task_mgmt                                    -- agentic task list
 - question                                     -- AskUserQuestion via interrupt
-- sibling                                      -- spawn/ask/read a sibling session
+- sibling                                      -- spawn/ask/read/stop/list sibling sessions
 - needs_user                                   -- mark the session as needing the user
+- ports                                        -- ask the user to open a port, and close it
 - worktree                                     -- git worktree manager
 - scheduling                                   -- daemon scheduler client
 - skill                                        -- workspace skill catalog
@@ -29,6 +30,7 @@ from .mcp import make_mcp_tools
 from .meta import make_meta_tools
 from .needs_user import make_needs_user_tools
 from .notebook import make_notebook_tools
+from .ports import make_port_tools
 from .question import make_question_tools
 from .search import make_search_tools
 from .shell import make_shell_tools
@@ -56,6 +58,7 @@ def make_tools(ctx: ToolContext) -> list[BaseTool]:
         *make_question_tools(ctx),
         *make_sibling_tools(ctx),
         *make_needs_user_tools(ctx),
+        *make_port_tools(ctx),
         *make_skill_tools(ctx),
         *make_meta_tools(ctx),
         *make_mcp_tools(ctx),

@@ -1,9 +1,10 @@
 /** Session bundles: starting a session under one, and seeing which one a session started under. */
 
 import { expect, test } from '@playwright/test'
-import { openSession, openSessionsPanel, waitForAppReady } from '../helpers.js'
+import { captureSends, openSession, openSessionsPanel, waitForAppReady } from '../helpers.js'
 import {
   DEFAULT_CONTAINER_ID,
+  DEFAULT_SESSION_ID,
   DEFAULT_SESSION_URL,
   DEFAULT_WORKSPACE_ID,
   loadFixture,
@@ -69,6 +70,32 @@ function recordingNewSession(bodies) {
   }
 }
 
+/** Create under a bundle opening with `messages`; `gate`, when given, holds the answer until it resolves. */
+async function mockOpeningBundle(page, messages, gate = null) {
+  await mockAPI(page, {
+    sessionDefaults: TWO_BUNDLES,
+    handlers: {
+      newSession: async route => {
+        await gate
+        await route.fulfill({
+          json: {
+            session_id: DEFAULT_SESSION_ID,
+            container_id: DEFAULT_CONTAINER_ID,
+            name: null,
+            undelivered_messages: [],
+            bundle_messages: messages,
+          },
+        })
+      },
+    },
+  })
+}
+
+async function pickResearch(page) {
+  await page.locator('[data-testid="footer-bundle-picker"]').click()
+  await page.locator('[data-testid="bundle-dropdown"]').getByText('research').click()
+}
+
 async function menuRows(page) {
   return page.locator('.new-session-dropdown-portal .dropdown-option').allTextContents()
 }
@@ -130,6 +157,70 @@ test.describe('Session bundles', () => {
     await input.press('Enter')
 
     await expect.poll(() => bodies).toEqual([{ bundle: 'research' }])
+  })
+
+  // SPEC: bundle:opening-messages-queued
+  test("a bundle's first opening message is sent and the rest wait in the queue", async ({
+    page,
+  }) => {
+    await mockOpeningBundle(page, ['delta', 'echo'])
+    const sends = await captureSends(page)
+    await mockSSE(page)
+    await page.goto(WELCOME_URL)
+
+    await pickResearch(page)
+    await page.locator('[data-testid="header-new-session-btn"]').click()
+
+    await expect.poll(() => sends.map(s => s.prompt)).toEqual(['delta'])
+    await expect(page.locator('[data-testid="queued-message-bubble"]')).toHaveText([/^echo/])
+  })
+
+  // SPEC: bundle:opening-messages-queued
+  test("a message typed on the welcome screen goes first and the bundle's messages queue after it", async ({
+    page,
+  }) => {
+    await mockOpeningBundle(page, ['delta', 'echo'])
+    const sends = await captureSends(page)
+    await mockSSE(page)
+    await page.goto(WELCOME_URL)
+
+    await pickResearch(page)
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('typed first')
+    await input.press('Enter')
+
+    await expect.poll(() => sends.map(s => s.prompt)).toEqual(['typed first'])
+    await expect(page.locator('[data-testid="queued-message-bubble"]')).toHaveText([
+      /^delta/,
+      /^echo/,
+    ])
+  })
+
+  // SPEC: bundle:opening-messages-queued
+  test("a message sent while the session is created goes before the bundle's messages", async ({
+    page,
+  }) => {
+    let answer
+    const gate = new Promise(resolve => {
+      answer = resolve
+    })
+    await mockOpeningBundle(page, ['delta', 'echo'], gate)
+    const sends = await captureSends(page)
+    await mockSSE(page)
+    await page.goto(WELCOME_URL)
+
+    await pickResearch(page)
+    await page.locator('[data-testid="header-new-session-btn"]').click()
+    const input = page.locator('[data-testid="chat-input"]')
+    await input.fill('sent while creating')
+    await input.press('Enter')
+    answer()
+
+    await expect.poll(() => sends.map(s => s.prompt)).toEqual(['sent while creating'])
+    await expect(page.locator('[data-testid="queued-message-bubble"]')).toHaveText([
+      /^delta/,
+      /^echo/,
+    ])
   })
 
   // SPEC: bundle:welcome-picker

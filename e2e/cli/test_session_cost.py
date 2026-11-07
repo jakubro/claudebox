@@ -18,21 +18,6 @@ from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
 from .scripted_cli import ScriptedCli
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.chdir(tmp_path)
-
-    return tmp_path
-
-
 def _running_total_cli(turn_costs: list[float], *, carries_forward: bool) -> type[ScriptedCli]:
     costs = list(turn_costs)
 

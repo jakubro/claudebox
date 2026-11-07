@@ -148,23 +148,23 @@ describe('HelpPanel', () => {
         ],
         [
           "Alt+5",
-          "Toggle Bookmarks",
+          "Toggle Crons",
         ],
         [
           "Alt+6",
-          "Toggle Boards",
+          "Toggle Bookmarks",
         ],
         [
           "Alt+7",
-          "Toggle Usage",
+          "Toggle Boards",
         ],
         [
           "Alt+8",
-          "Toggle MCP Servers",
+          "Toggle Usage",
         ],
         [
           "Alt+9",
-          "Toggle Skills",
+          "Toggle MCP Servers",
         ],
         [
           "Alt+0",

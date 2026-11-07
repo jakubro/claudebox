@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FETCH_TIMEOUT_INTERACTIVE_MS, FETCH_TIMEOUT_SESSION_LIFECYCLE_MS } from '../config/timing'
 import {
+  answerPortRequest,
   forkSession,
   getSession,
   getSessionEvents,
@@ -454,5 +455,33 @@ describe('newSession refusals', () => {
 
     expect(error.userFacing).toBeUndefined()
     expect(error.message).toBe('Failed to start new session')
+  })
+})
+
+describe('answerPortRequest refusals', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('tells a session started before ports to be stopped and resumed', async () => {
+    workspaceFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ error: 'port_tunnel_missing', port: '5173' }),
+    })
+
+    const error = await answerPortRequest('s-1', 5173, true).catch(err => err)
+
+    expect(error.userFacing).toBe(true)
+    expect(error.message).toContain('Stop it, resume it')
+  })
+
+  it('keeps the generic message for any other failure', async () => {
+    workspaceFetch.mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) })
+
+    const error = await answerPortRequest('s-1', 5173, true).catch(err => err)
+
+    expect(error.userFacing).toBe(false)
+    expect(error.message).toBe('Failed to answer the port request')
   })
 })

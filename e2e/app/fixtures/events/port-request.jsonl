@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Start the dev server and let me see it.","ts":"2026-11-07T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"tool_use","content":"mcp__claudebox__port_open","ts":"2026-11-07T12:00:01Z","tool_use_id":"tool_001","tool_name":"mcp__claudebox__port_open","tool_input":{"port":5173},"id":"evt_002","primary":false,"is_human":false}
+{"type":"assistant","subtype":"tool_result","content":"Asked the user to open port 5173 to their computer. End your turn now; their answer arrives as their next message.","ts":"2026-11-07T12:00:02Z","tool_use_id":"tool_001","id":"evt_003","primary":false,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The dev server listens on port 5173; approve the card to open it.","ts":"2026-11-07T12:00:03Z","id":"evt_004","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-11-07T12:00:04Z","id":"evt_005","primary":false,"is_human":false}

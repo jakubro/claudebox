@@ -167,6 +167,28 @@ test.describe('Attachment Image Source', () => {
     )
     expect(src).not.toMatch(/^data:/)
   })
+
+  // SPEC: chat:attachment-download
+  test('an SVG attachment served as a download still draws as a thumbnail', async ({ page }) => {
+    await mockAPI(page)
+    await page.route('**/api/sessions/current/attachments/*', async route => {
+      await route.fulfill({
+        status: 200,
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>',
+        contentType: 'image/svg+xml',
+        headers: {
+          'content-disposition': 'attachment; filename="att_002_logo.svg"',
+          'x-content-type-options': 'nosniff',
+          'content-security-policy': "default-src 'none'; sandbox",
+        },
+      })
+    })
+    await openSession(page, 'events/chat-with-stored-svg-attachment.jsonl')
+
+    const thumb = page.locator('.message-attachment-thumb').first()
+    await expect(thumb).toBeVisible()
+    await expect.poll(() => thumb.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true)
+  })
 })
 
 test.describe('Attachment Zoom', () => {

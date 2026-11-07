@@ -21,6 +21,8 @@ root = true
 ## Port mappings: host port = container port
 [ports]
 #8080 = 80
+## Published on 127.0.0.1 unless the entry names a bind address.
+#9000 = { container = 90, bind = "0.0.0.0" }
 
 ## Networking configuration
 ## host, none, container: and ns: modes apply to claudebox run and shell; browser sessions refuse them.

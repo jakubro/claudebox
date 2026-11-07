@@ -360,6 +360,30 @@ test.describe('Workspace Switcher', () => {
     )
     await expect(modal).toBeVisible()
   })
+
+  // SPEC: workspace:register-needs-cli
+  test('the home directory is refused with the command that registers it', async ({ page }) => {
+    const message =
+      "/home/user holds your home directory or Claudebox's own files, so a session started there " +
+      'would mount all of them. To register it on purpose, run `claudebox workspaces register ' +
+      '/home/user` in a terminal.'
+    await page.route('**/api/workspaces', async route => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 400,
+          json: { error: 'workspace_path_needs_cli', path: '/home/user', message },
+        })
+      } else {
+        await route.continue()
+      }
+    })
+    const modal = await openRegisterModal(page)
+    await page.locator('[data-testid="register-workspace-input"]').fill('~')
+    await page.locator('[data-testid="register-workspace-confirm"]').click()
+
+    await expect(page.locator('[data-testid="register-workspace-error"]')).toHaveText(message)
+    await expect(modal).toBeVisible()
+  })
 })
 
 test.describe('Workspace Color', () => {

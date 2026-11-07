@@ -93,6 +93,7 @@ export function turnRecordProps(turn) {
     inlineReplies: turn.inlineReplies,
     note: turn.note,
     userMessageTime: turn.userMessageTs,
+    recordedDurationMs: turn.durationMs ?? null,
     events: turn.events,
     turnId: turn.turn_id,
   }

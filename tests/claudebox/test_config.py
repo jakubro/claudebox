@@ -8,6 +8,7 @@ import pytest
 
 from claudebox.config import Config
 from claudebox.constants import CLAUDEBOX_SETTINGS_FILE, profile_dir
+from claudebox.core.ports import PortMapping
 from ..conftest import bounded_walk_up
 
 
@@ -536,7 +537,21 @@ class TestBundles:
         assert config.bundles == {"research": {"model": "claude-opus-5-5", "env": {"A": "2"}}}
         assert config.env == {"A": "1"}
         assert config.mounts == {Path("/srv/a"): Path("/a")}
-        assert config.ports == {"8080": 80}
+        assert config.ports == {8080: PortMapping(container=80)}
+
+    def test_a_bundle_port_entry_inherits_the_workspaces_bind(self, tmp_workspace):
+        self._write(
+            tmp_workspace,
+            '[ports]\n8080 = { container = 80, bind = "0.0.0.0" }\n9000 = 90\n'
+            "[bundles.research.ports]\n8080 = { container = 81 }\n",
+        )
+
+        config = Config.resolve_bundle(tmp_workspace, "research")
+
+        assert config.ports == {
+            8080: PortMapping(container=81, bind="0.0.0.0"),
+            9000: PortMapping(container=90),
+        }
 
     def test_resolution_merges_the_bundle_over_the_workspace(self, tmp_workspace):
         self._write(
@@ -638,3 +653,109 @@ class TestBundles:
             Config.load(workspace_path=tmp_workspace)
 
         assert str(home_settings) in str(excinfo.value)
+
+
+class TestPorts:
+    """[ports] loads in every accepted form and refuses anything else, naming the file."""
+
+    @staticmethod
+    def _write(workspace, text):
+        settings_path = workspace / CLAUDEBOX_SETTINGS_FILE
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(text)
+
+        return settings_path
+
+    def test_the_three_forms_load(self, tmp_workspace):
+        self._write(
+            tmp_workspace,
+            '[ports]\n8080 = 80\n8081 = "81/udp"\n9000 = { container = 90, bind = "0.0.0.0" }\n',
+        )
+
+        config = Config.load(workspace_path=tmp_workspace)
+
+        assert config.ports == {
+            8080: PortMapping(container=80),
+            8081: PortMapping(container=81, protocol="udp"),
+            9000: PortMapping(container=90, bind="0.0.0.0"),
+        }
+
+    def test_a_bad_entry_fails_the_load_naming_the_file(self, tmp_workspace):
+        settings_path = self._write(
+            tmp_workspace,
+            '[ports]\n8080 = { container = 80, bind = "localhost" }\n',
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            Config.load(workspace_path=tmp_workspace)
+
+        assert str(settings_path) in str(excinfo.value)
+        assert "'8080'" in str(excinfo.value)
+
+    def test_a_bad_entry_in_the_home_file_names_the_home_file(self, tmp_workspace):
+        self._write(tmp_workspace, "[ports]\n8080 = 80\n")
+        home_settings = self._write(
+            tmp_workspace / "_home",
+            '[ports]\n9000 = { container = 90, bind = "localhost" }\n',
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            Config.load(workspace_path=tmp_workspace)
+
+        assert f"[ports] in {home_settings}: entry '9000'" in str(excinfo.value)
+
+    def test_a_bad_entry_in_the_nearer_file_names_the_nearer_file(self, tmp_workspace):
+        settings_path = self._write(
+            tmp_workspace,
+            '[ports]\n9000 = { container = 90, bind = "localhost" }\n',
+        )
+        self._write(tmp_workspace / "_home", "[ports]\n8080 = 80\n")
+
+        with pytest.raises(ValueError) as excinfo:
+            Config.load(workspace_path=tmp_workspace)
+
+        assert f"[ports] in {settings_path}: entry '9000'" in str(excinfo.value)
+
+    def test_a_key_both_files_set_is_named_against_the_nearer_one(self, tmp_workspace):
+        settings_path = self._write(
+            tmp_workspace,
+            '[ports]\n9000 = { container = 90, bind = "localhost" }\n',
+        )
+        self._write(tmp_workspace / "_home", "[ports]\n9000 = 90\n")
+
+        with pytest.raises(ValueError) as excinfo:
+            Config.load(workspace_path=tmp_workspace)
+
+        assert f"[ports] in {settings_path}: entry '9000'" in str(excinfo.value)
+
+    @pytest.mark.parametrize("declared_in", [".", "_home"])
+    def test_a_bad_bundle_entry_names_the_bundle_table_and_its_file(
+        self,
+        tmp_workspace,
+        declared_in,
+    ):
+        self._write(tmp_workspace, "[ports]\n8080 = 80\n")
+        bundle_settings = self._write(
+            tmp_workspace / declared_in,
+            '[bundles.research.ports]\n7000 = { container = 70, bind = "example" }\n',
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            Config.resolve_bundle(tmp_workspace, "research")
+
+        assert f"[bundles.research.ports] in {bundle_settings}: entry '7000'" in str(excinfo.value)
+
+    def test_a_bundle_part_that_breaks_a_workspace_entry_names_the_bundle_table(
+        self,
+        tmp_workspace,
+    ):
+        settings_path = self._write(
+            tmp_workspace,
+            "[ports]\n8080 = { container = 80 }\n"
+            '[bundles.research.ports]\n8080 = { bind = "example" }\n',
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            Config.resolve_bundle(tmp_workspace, "research")
+
+        assert f"[bundles.research.ports] in {settings_path}: entry '8080'" in str(excinfo.value)

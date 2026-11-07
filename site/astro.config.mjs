@@ -30,6 +30,7 @@ const SIDEBAR = [
       { label: 'Panels', slug: 'features/panels' },
       { label: 'Boards', slug: 'features/boards' },
       { label: 'Nested containers', slug: 'features/nested-containers' },
+      { label: 'Container boundary', slug: 'features/container-boundary' },
       { label: 'Many sessions', slug: 'features/multi-session' },
     ],
   },

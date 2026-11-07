@@ -58,6 +58,23 @@ describe('SidePanelManager', () => {
       )
     })
 
+    it('names a tab with its icon name', () => {
+      manager = new SidePanelManager(mockApi, {
+        ...CONFIG,
+        sides: { ...CONFIG.sides, mcp: 'right', commands: 'right' },
+        canonicalOrder: { ...CONFIG.canonicalOrder, right: ['todos', 'mcp', 'commands'] },
+      })
+      mockApi.getPanel.mockReturnValue(null)
+
+      manager.toggle('commands')
+      manager.toggle('mcp')
+
+      expect(mockApi.addPanel.mock.calls.map(([options]) => [options.id, options.title])).toEqual([
+        ['commands', 'Skills'],
+        ['mcp', 'MCP Servers'],
+      ])
+    })
+
     it('closes panel when open', () => {
       const mockPanel = createMockPanel('todos')
       mockApi.getPanel.mockReturnValue(mockPanel)
@@ -678,13 +695,30 @@ describe('SidePanelManager', () => {
           panelGroups: { left: { order: ['sessions'] }, right: { order: ['stash'] } },
         },
       })
-      mockApi.panels = [{ id: 'sessions' }, { id: 'todos' }]
+      mockApi.panels = [createMockPanel('sessions'), createMockPanel('todos')]
 
       await manager.restoreFromServer('session-123')
 
       // Order from saved state, not rebuilt from panels
       expect(manager.state.left.order).toEqual(['sessions'])
       expect(manager.state.right.order).toEqual(['stash'])
+    })
+
+    it('renames each restored side panel to its icon name and leaves the chat tab as saved', async () => {
+      getUiState.mockResolvedValue({
+        session: {
+          layout: { panels: { commands: { title: 'Commands' }, chat: { title: 'Session one' } } },
+          panelGroups: { right: { order: ['commands'] } },
+        },
+      })
+      const commands = createMockPanel('commands')
+      const chat = createMockPanel('chat')
+      mockApi.panels = [commands, chat]
+
+      await manager.restoreFromServer('session-123')
+
+      expect(commands.api.setTitle).toHaveBeenCalledWith('Skills')
+      expect(chat.api.setTitle).not.toHaveBeenCalled()
     })
 
     it('returns { loaded: false } on API error', async () => {
@@ -806,6 +840,7 @@ function createMockPanel(id, options = {}) {
     id,
     api: {
       close: vi.fn(),
+      setTitle: vi.fn(),
       group: {
         api: {
           width,

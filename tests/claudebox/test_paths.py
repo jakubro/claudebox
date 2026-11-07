@@ -9,6 +9,7 @@ import pytest
 
 from claudebox.paths import (
     InvalidSessionId,
+    covers_home,
     find_session_dir,
     get_session_dir,
     get_sessions_root,
@@ -37,6 +38,80 @@ class TestGetWorkspaceRoot:
         # Constrain walk to tmp_path only - prevents finding host .workspace markers
         monkeypatch.setattr("claudebox.paths.walk_up", lambda *_a, **_kw: [tmp_path])
         assert get_workspace_root(tmp_path) is None
+
+
+# --- covers_home ---
+
+
+class TestCoversHome:
+    """The home directory, Claudebox's own folder and every directory above them are gated."""
+
+    @pytest.fixture
+    def home(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        (home / ".claudebox" / "fs" / "root").mkdir(parents=True)
+        (home / "code" / "app").mkdir(parents=True)
+        monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: home))
+
+        return home
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            "<home>",
+            "<home>/",
+            "<home>/code/..",
+            "<tmp>",
+            "/",
+            "<home>/.claudebox",
+            "<home>/.claudebox/fs/..",
+        ],
+        ids=[
+            "home",
+            "trailing-slash",
+            "dot-dot",
+            "parent",
+            "root",
+            "own-folder",
+            "own-folder-dot-dot",
+        ],
+    )
+    def test_a_directory_holding_home_or_its_own_folder_is_gated(self, home, tmp_path, spelling):
+        assert (
+            covers_home(spelling.replace("<home>", str(home)).replace("<tmp>", str(tmp_path)))
+            is True
+        )
+
+    @pytest.mark.parametrize(
+        "spelling",
+        ["<home>/code/app", "<home>/.claudebox/fs/root", "<tmp>/other", "<tmp>/home-other"],
+        ids=["project", "inside-own-folder", "sibling", "shared-prefix"],
+    )
+    def test_any_other_directory_is_not(self, home, tmp_path, spelling):
+        assert (
+            covers_home(spelling.replace("<home>", str(home)).replace("<tmp>", str(tmp_path)))
+            is False
+        )
+
+    def test_a_link_to_home_is_gated(self, home, tmp_path):
+        link = tmp_path / "link"
+        link.symlink_to(home)
+
+        assert covers_home(link) is True
+
+    def test_a_home_reached_through_a_link_answers_the_same_for_both_spellings(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        real = tmp_path / "real-home"
+        (real / "code").mkdir(parents=True)
+        link = tmp_path / "home-link"
+        link.symlink_to(real)
+        monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: link))
+
+        assert (covers_home(real), covers_home(link)) == (True, True)
+        assert (covers_home(real / "code"), covers_home(link / "code")) == (False, False)
 
 
 # --- parse_session_dir_name / make_session_dir_name ---

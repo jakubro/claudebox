@@ -209,7 +209,7 @@ class BoardService:
             raise TicketNotFound(board_id=board_id, ticket_path=ticket_path)
 
         try:
-            return abs_path.read_text()
+            return abs_path.read_text(encoding="utf-8")
         except FileNotFoundError as exc:
             raise TicketNotFound(board_id=board_id, ticket_path=ticket_path) from exc
 

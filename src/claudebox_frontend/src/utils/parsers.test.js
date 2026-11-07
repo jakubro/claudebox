@@ -6,6 +6,7 @@ import {
   parseGrepLine,
   parseLocalCommandOutput,
   parsePersistedOutput,
+  parsePortAnswer,
   parseSlashCommand,
   parseStructuredQA,
 } from './parsers'
@@ -481,5 +482,36 @@ describe('extractSystemReminders', () => {
     const result = extractSystemReminders(content)
 
     expect(result.content).toBe('  spaced content  ')
+  })
+})
+
+describe('parsePortAnswer', () => {
+  it('reads the port and the outcome text', () => {
+    expect(
+      parsePortAnswer(
+        '<response:port_open port="8080">Rejected: port 8080 stays closed.</response:port_open>',
+      ),
+    ).toEqual({ port: 8080, text: 'Rejected: port 8080 stays closed.' })
+  })
+
+  it('reads the answer when a reminder rides after it', () => {
+    expect(
+      parsePortAnswer(
+        '<response:port_open port="80">Rejected: port 80 stays closed.</response:port_open>\n\n<system-reminder>\nPort 3000 moved.\n</system-reminder>',
+      ),
+    ).toEqual({ port: 80, text: 'Rejected: port 80 stays closed.' })
+  })
+
+  it('reads nothing from any other message', () => {
+    expect(parsePortAnswer('hello')).toBeNull()
+    expect(parsePortAnswer(null)).toBeNull()
+  })
+
+  it('shows the outcome text alone in the user bubble', () => {
+    expect(
+      parseLocalCommandOutput(
+        '<response:port_open port="1">Approved: port 1 is reachable at x.</response:port_open>',
+      ),
+    ).toEqual([{ type: 'text', content: 'Approved: port 1 is reachable at x.' }])
   })
 })

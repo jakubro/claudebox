@@ -118,6 +118,49 @@ print("hello")
     expect(looksLikeMarkdown('')).toBe(false)
     expect(looksLikeMarkdown(null)).toBe(false)
   })
+
+  it('returns false for JavaScript whose strings hold a link and fence markers', () => {
+    const js = [
+      '// Write a notes file for the fixture.',
+      "import fs from 'node:fs'",
+      '',
+      'const lines = [',
+      "  '# Plan',",
+      "  '![chart](http://localhost:9/chart.png)',",
+      "  '```mermaid',",
+      "  'flowchart LR',",
+      "  '```',",
+      ']',
+      "fs.writeFileSync('notes.md', lines.join('\\n'))",
+    ].join('\n')
+    expect(looksLikeMarkdown(js)).toBe(false)
+  })
+
+  it('returns false for Python with a comment line and keyword unpacking', () => {
+    const py = [
+      '# Merge the overrides over the defaults',
+      'def merged(base, extra):',
+      '    return dict(**base, **extra)',
+    ].join('\n')
+    expect(looksLikeMarkdown(py)).toBe(false)
+  })
+
+  it('detects markdown holding a fenced Python block', () => {
+    const md = ['Run this:', '', '```python', 'import os', 'print(os.getcwd())', '```', ''].join(
+      '\n',
+    )
+    expect(looksLikeMarkdown(`# Setup\n\n${md}`)).toBe(true)
+  })
+
+  it('detects a short report with bold and a link', () => {
+    expect(looksLikeMarkdown('**3 passed**, see [the log](x.log)')).toBe(true)
+  })
+
+  it('detects a heading over a bold sentence and a list', () => {
+    const md =
+      '## Page Summary\n\nThis page has **important information**.\n\n- Key point one\n- Key point two'
+    expect(looksLikeMarkdown(md)).toBe(true)
+  })
 })
 
 describe('looksLikeJson', () => {

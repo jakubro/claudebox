@@ -10,6 +10,7 @@ import {
   openSessionsPanel,
   openSessionWithAPI,
   resumeNamedSession,
+  sendAtFixedTime,
   sessionsHandler,
   startHeldRefresh,
   waitForAppReady,
@@ -1357,7 +1358,7 @@ test.describe('Sessions Panel', () => {
       await page.keyboard.press('Alt+2') // Close Todos
       await page.keyboard.press('Alt+3') // Close Stash
       await page.keyboard.press('Alt+4') // Close Tasks
-      await page.keyboard.press('Alt+7') // Close Usage
+      await page.keyboard.press('Alt+8') // Close Usage
 
       // Waits for all 3 sessions from the fixture to render.
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3, { timeout: 10000 })
@@ -1377,7 +1378,7 @@ test.describe('Sessions Panel', () => {
       await page.keyboard.press('Alt+2') // Close Todos
       await page.keyboard.press('Alt+3') // Close Stash
       await page.keyboard.press('Alt+4') // Close Tasks
-      await page.keyboard.press('Alt+7') // Close Usage
+      await page.keyboard.press('Alt+8') // Close Usage
 
       // Waits for all 3 sessions from the fixture to render.
       await expect(page.locator('[data-testid="session-item"]')).toHaveCount(3, { timeout: 10000 })
@@ -1848,6 +1849,37 @@ test.describe('Sessions Panel', () => {
       // Give the timer a moment to increment before checking its "(Ns)" format.
       await page.waitForTimeout(1100)
       await expect(statusText).toContainText(/Submitting.*\(\d+s\)/)
+    })
+  })
+
+  test.describe('Working Timer', () => {
+    // SPEC: footer:elapsed-timer
+    test("counts from the press of send, unmoved by the agent's first output, in step with the turn", async ({
+      page,
+    }) => {
+      const { controller, sent, at } = await sendAtFixedTime(page, 'Tell me a story')
+      const elapsed = page.locator('[data-testid="footer"] .footer-elapsed')
+      await page.clock.setFixedTime(sent + 3000)
+      await expect(elapsed).toHaveText('(3s)')
+
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Tell me a story',
+          ...at(4000),
+          turn_id: 'turn_sent',
+        },
+        { type: 'assistant', subtype: 'text', content: 'Once upon a time...', ...at(5000) },
+      ])
+      await expect(page.getByText('Once upon a time...').first()).toBeVisible()
+      await page.clock.setFixedTime(sent + 7000)
+      await expect(elapsed).toHaveText('(7s)')
+
+      await page.clock.setFixedTime(sent + 9000)
+      await expect(elapsed).toHaveText('(9s)')
+      await expect(page.locator('.turn-duration').first()).toHaveText('9s')
     })
   })
 })

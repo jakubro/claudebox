@@ -8,6 +8,7 @@ import {
   PX_PER_ATTACHMENT_ROW,
   PX_PER_BASH_TOOL_BLOCK,
   PX_PER_INLINE_REPLIES_PLACEHOLDER,
+  PX_PER_SIBLING_MESSAGE,
   PX_PER_TEXT_BLOCK_GAP,
   PX_PER_THINKING_BLOCK,
   PX_PER_TOOL_BLOCK,
@@ -18,6 +19,7 @@ import {
 } from '../../../config/dimensions'
 import { isLookupsGroupingEnabled } from '../../../config/features'
 import { isReadOnlyCall } from '../../../config/toolRegistry'
+import { isSiblingMessage } from '../../../utils/eventPredicates'
 import {
   isToolBlockVisible,
   isTopLevelBashCall,
@@ -95,6 +97,7 @@ function predictTurnContentHeight(
     metrics.thinkingBlocks * PX_PER_THINKING_BLOCK +
     (metrics.toolBlocks + readOnlyBlocks) * PX_PER_TOOL_BLOCK +
     metrics.bashBlocks * PX_PER_BASH_TOOL_BLOCK +
+    metrics.siblingMessages * PX_PER_SIBLING_MESSAGE +
     attachmentContribution(turn, effectiveWidth)
 
   return Math.max(TURN_MIN_PREDICTED_HEIGHT_PX, predicted)
@@ -139,6 +142,7 @@ function countVisibleContent(turn, mode, charsPerLine, bookmarkedParts, isMarked
   let toolBlocks = 0
   let readOnlyToolBlocks = 0
   let bashBlocks = 0
+  let siblingMessages = 0
   let hasVisibleContent = false
 
   // Index by tool_use_id so the visibility check finds its paired result.
@@ -183,6 +187,12 @@ function countVisibleContent(turn, mode, charsPerLine, bookmarkedParts, isMarked
       }
     } else if (event.subtype === 'compact_start' || event.subtype === 'compact_boundary') {
       hasVisibleContent = true
+    } else if (isSiblingMessage(event) && event.content?.trim()) {
+      const text = countTextLines(event.content, charsPerLine)
+      textLines += text.lines
+      textBlockGaps += text.gaps
+      siblingMessages += 1
+      hasVisibleContent = true
     }
   }
 
@@ -193,6 +203,7 @@ function countVisibleContent(turn, mode, charsPerLine, bookmarkedParts, isMarked
     toolBlocks,
     readOnlyToolBlocks,
     bashBlocks,
+    siblingMessages,
     hasVisibleContent,
   }
 }

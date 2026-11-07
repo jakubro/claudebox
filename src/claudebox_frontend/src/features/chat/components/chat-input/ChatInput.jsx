@@ -447,14 +447,22 @@ function ChatInput({
 
   // Restore focus after a session change or the create-overlay clears - deferred to a second rAF so
   // dockview's post-layout focus settles. Mobile skips this; deps below are reactive triggers only.
+  // `data-focus-restored` turns true once the latest restore has run; tests wait on it.
+  const focusRestoreRef = useRef(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: sessionId and overlayMode are intentional reactive triggers
   useEffect(() => {
     if (isMobile || !textareaRef.current) {
       return
     }
+    const restore = ++focusRestoreRef.current
+    textareaRef.current.dataset.focusRestored = 'false'
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        textareaRef.current?.focus()
+        const textarea = textareaRef.current
+        textarea?.focus()
+        if (textarea && restore === focusRestoreRef.current) {
+          textarea.dataset.focusRestored = 'true'
+        }
       })
     })
   }, [sessionId, overlayMode, isMobile])

@@ -332,12 +332,16 @@ Examples:
   claudebox workspaces list                  table of all registered workspaces
   claudebox workspaces register              register cwd as a workspace
   claudebox workspaces register ~/dev/bar    register a specific path
+  claudebox workspaces register ~            register the home directory, on purpose
   claudebox workspaces deregister foo        remove from the daemon's registry
 
 Notes:
   Register creates the `.workspace` marker file if absent, then registers with the
   daemon. Re-registering an already-registered path is idempotent and exits 0.
   Basename collisions are disambiguated by an 8-char path-hash suffix on the id.
+
+  The home directory, a directory above it and `~/.claudebox` register only when named,
+  never from a bare `register` run in them, and the browser refuses them until they have.
 
   Deregister removes the workspace from the daemon's registry only - the `.workspace`
   marker file on disk is preserved.

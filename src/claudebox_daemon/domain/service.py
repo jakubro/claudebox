@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 from contextlib import suppress
 from pathlib import Path
 
-from claudebox import Workspace, get_logger, library_commit
+from claudebox import Workspace, covers_home, get_logger, library_commit
 from claudebox.constants import CONFIG_DIR_NAME, SESSIONS_DIR_NAME, WORKSPACE_MARKER
 from .broadcaster import DaemonBroadcaster
 from .config import DaemonConfig
@@ -276,7 +277,16 @@ class DaemonService:
 
         try:
             # Config uses the registered path, Workspace the nearest marker; a marker aligns them.
-            if Workspace(workspace.path).sessions_root.resolve() != own_sessions.resolve():
+            needs_marker = (
+                Workspace(workspace.path).sessions_root.resolve() != own_sessions.resolve()
+            )
+
+            if needs_marker and covers_home(workspace.path):
+                self._logger.warning(
+                    "Not marking a workspace that holds the home directory",
+                    workspace={"id": workspace.id, "path": workspace.path},
+                )
+            elif needs_marker:
                 (workspace.path / WORKSPACE_MARKER).touch()
         except OSError as exc:
             self._logger.warning(
@@ -362,7 +372,17 @@ def _marked_directory(path: str | Path) -> tuple[Path, bool]:
         marker = directory / WORKSPACE_MARKER
         marked = not marker.exists()
 
-        if marked:
+        if marked and covers_home(directory):
+            raise ValidationError(
+                "workspace_path_needs_cli",
+                path=str(directory),
+                message=(
+                    f"{directory} holds your home directory or Claudebox's own files, so a session "
+                    "started there would mount all of them. To register it on purpose, run "
+                    f"`claudebox workspaces register {shlex.quote(str(directory))}` in a terminal."
+                ),
+            )
+        elif marked:
             marker.touch()
     except OSError as exc:
         raise ValidationError(

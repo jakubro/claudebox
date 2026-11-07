@@ -28,21 +28,6 @@ COMMANDS = {
 }
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.chdir(tmp_path)
-
-    return tmp_path
-
-
 class BashCli(ScriptedCli):
     def reply(self) -> list:
         calls: list[ContentBlock] = [

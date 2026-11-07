@@ -705,6 +705,73 @@ class TestRegisterWorkspace:
         assert svc._workspaces["my-project"] is loaded
 
 
+class TestRegisterTheHomeDirectory:
+    """A directory holding the home directory or Claudebox's own files registers only once marked."""
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("spelling", "resolved"),
+        [
+            ("<home>", "<home>"),
+            ("<root>", "<root>"),
+            ("<home>/.claudebox", "<home>/.claudebox"),
+            ("<root>/home-link", "<home>"),
+        ],
+        ids=["home", "above-home", "own-folder", "link-to-home"],
+    )
+    async def test_an_unmarked_one_is_refused_and_left_unmarked(
+        self,
+        isolated,
+        patched,
+        spelling,
+        resolved,
+    ):
+        home = isolated / "home"
+        (home / ".claudebox").mkdir()
+        (isolated / "home-link").symlink_to(home)
+        svc = _registering_service(isolated, patched)
+
+        with pytest.raises(ValidationError) as excinfo:
+            await svc.register_workspace(_spelled(spelling, home=home, root=isolated))
+
+        directory = Path(_spelled(resolved, home=home, root=isolated))
+        assert excinfo.value.error_key == "workspace_path_needs_cli"
+        assert f"claudebox workspaces register {directory}" in excinfo.value.context["message"]
+        assert not (directory / ".workspace").exists()
+        assert svc._daemon_config.workspaces == []
+
+    @pytest.mark.anyio
+    async def test_the_refusal_quotes_a_path_holding_a_space(self, tmp_path, patched, monkeypatch):
+        home = tmp_path / "my home"
+        home.mkdir()
+        monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: home))
+        monkeypatch.setattr("claudebox.paths.walk_up", bounded_walk_up(tmp_path))
+        svc = _registering_service(tmp_path, patched)
+
+        with pytest.raises(ValidationError) as excinfo:
+            await svc.register_workspace(str(home))
+
+        assert (
+            f"claudebox workspaces register '{home}'` in a terminal"
+            in excinfo.value.context["message"]
+        )
+
+    @pytest.mark.anyio
+    async def test_a_marked_one_registers(self, isolated, patched):
+        home = isolated / "home"
+        (home / ".workspace").touch()
+        svc = _registering_service(isolated, patched)
+
+        workspace, already_registered = await svc.register_workspace(str(home))
+        _, again = await svc.register_workspace(str(home))
+
+        assert (workspace.path, already_registered, again) == (home, False, True)
+
+
+def _spelled(template: str, *, home: Path, root: Path) -> str:
+    return template.replace("<home>", str(home)).replace("<root>", str(root))
+
+
 class TestMarkerRepair:
     """Loading a registration whose sessions resolve outside it gives it its own marker."""
 
@@ -736,6 +803,15 @@ class TestMarkerRepair:
         await svc.list_workspaces(sync=True)
 
         assert not (home / ".workspace").exists()
+
+    @pytest.mark.anyio
+    async def test_a_directory_above_home_is_loaded_without_a_marker(self, isolated, patched):
+        svc = _make_service(workspaces=[_make_workspace("above", isolated)], mocks=patched)
+
+        await svc.list_workspaces(sync=True)
+
+        assert "above" in svc._workspaces
+        assert not (isolated / ".workspace").exists()
 
     @pytest.mark.anyio
     async def test_a_missing_directory_still_loads(self, isolated, patched):

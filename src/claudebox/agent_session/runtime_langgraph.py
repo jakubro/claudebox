@@ -214,7 +214,10 @@ class LangGraphRuntime:
         self._checkpointer: Any | None = None
         # Entered in connect, exited in disconnect.
         self._checkpointer_stack: AsyncExitStack | None = None
-        self._prompt_queue: asyncio.Queue[tuple[str | list[dict], str | None]] = asyncio.Queue()
+        self._prompt_queue: asyncio.Queue[tuple[str | list[dict], str | None, bool]] = (
+            asyncio.Queue()
+        )
+        self._held_after_turn: list[tuple[str | list[dict], str | None]] = []
         # The running turn's graph, in a task of its own so Stop ends the turn, not the reader.
         self._graph_task: asyncio.Task | None = None
         self._turn_active = False
@@ -399,16 +402,23 @@ class LangGraphRuntime:
         self._graph = None
         self._summarization = None
 
-    async def query(self, prompt: str | list[dict], *, message_uuid: str | None = None) -> None:
+    async def query(
+        self,
+        prompt: str | list[dict],
+        *,
+        message_uuid: str | None = None,
+        after_turn: bool = False,
+    ) -> None:
         """Stage prompt for the next receive_events drain, or refuse if connect failed.
 
         Buffers if connect() hasn't completed - the prompt sits queued until receive_events drives the graph.
+        Every prompt waits for its own turn; an `after_turn` one also waits out a question's answer.
         """
 
         if self.connect_error is not None:
             raise RuntimeError(self.connect_error)
 
-        await self._prompt_queue.put((prompt, message_uuid))
+        await self._prompt_queue.put((prompt, message_uuid, after_turn))
 
     async def interrupt(self) -> None:
         """End the in-flight turn, which still closes with one result; the reader keeps running."""
@@ -563,7 +573,15 @@ class LangGraphRuntime:
             return
 
         while True:
-            prompt, message_uuid = await self._prompt_queue.get()
+            if self._held_after_turn and not self._awaiting_resume:
+                prompt, message_uuid = self._held_after_turn.pop(0)
+            else:
+                prompt, message_uuid, after_turn = await self._prompt_queue.get()
+
+                if after_turn and self._awaiting_resume:
+                    self._held_after_turn.append((prompt, message_uuid))
+
+                    continue
 
             async for event in self._drive_turn(prompt, message_uuid):
                 yield event

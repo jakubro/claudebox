@@ -20,7 +20,7 @@ The harness connects to real Claude with active credentials — sessions produce
 
 1. **Stop** any existing test environment (kills process group via PID file)
 2. **Create workspace** at `/tmp/claudebox-test/ws/` with `.workspace` marker and `.claudebox/settings.toml` configured for `backend = "local"`
-3. **Sync dependencies** into an isolated venv at `/tmp/claudebox-test/.venv` via `uv sync --extra dev`; install Playwright into the same venv; then `claude-agent-sdk` is upgraded to its latest release, as the image does at build, because its bundled agent CLI decides which models a session can use
+3. **Sync dependencies** into an isolated venv at `/tmp/claudebox-test/.venv` via `uv sync --extra dev`; install Playwright into the same venv, and the Chromium build it drives; then `claude-agent-sdk` is upgraded to its latest release, as the image does at build, because its bundled agent CLI decides which models a session can use
 4. **Rewrite daemon config** — deregisters all existing workspaces and registers only the test workspace, isolating from any host daemon configuration
 5. **Start daemon** via `setsid` as a background process group:
    - Environment: `CLAUDEBOX_PWD` (workspace path), `CLAUDEBOX_NO_RELOAD=1` (no file watcher), `CLAUDEBOX_NO_TMP_REMAP=1` (disable `/tmp` symlink remapping in hook subprocesses)
@@ -58,7 +58,7 @@ All commands run from the repository root via `just`; `test-ui-run` executes scr
 
 Starts the test environment, killing any existing instance first; blocks until Ctrl-C.
 
-**Prerequisites**: Google Chrome where the harness runs - its scripts launch it through `channel="chrome"`, and the image claudebox builds does not include it, so a profile's `image-build.sh` hook is the place to add it. `just test-ui-start` builds the harness venv itself.
+**Prerequisites**: `just test-ui-start` installs the browser the harness uses.
 
 `e2e/app` pins its own `@playwright/test`, and each Playwright release needs its own browser build. On a mismatch the suite fails outright - run `just install-e2e-app`, see GUIDELINES.md §0 and Troubleshooting below.
 
@@ -68,7 +68,7 @@ Stops the test environment by killing the daemon process group. Safe to call whe
 
 ### `just test-ui-browse <subcommand> [args]`
 
-Runs `browse.py`, a headless Playwright browser helper: launches Chrome, navigates to `http://localhost:41930`, executes the subcommand, then exits.
+Runs `browse.py`, a headless Playwright browser helper: launches Chromium, navigates to `http://localhost:41930`, executes the subcommand, then exits.
 
 | Subcommand | Arguments | Output | Description |
 |------------|-----------|--------|-------------|
@@ -109,11 +109,7 @@ URL = "http://localhost:41930"
 OUTPUT = "/tmp/claudebox-test"
 
 with sync_playwright() as pw:
-    browser = pw.chromium.launch(
-        channel="chrome",
-        headless=True,
-        args=["--no-sandbox"],
-    )
+    browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
     page = browser.new_page()
     page.goto(URL, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)  # wait for SSE connection and initial render
@@ -179,10 +175,6 @@ Another test-UI instance or stale process is running. Run `just test-ui-stop` fi
 ### Daemon dies on startup
 
 Check `cat /tmp/claudebox-test/daemon.log` for errors. Common causes: a harness venv out of date (run `just test-ui-start` again, which syncs it), a port conflict, a corrupted daemon config.
-
-### Playwright or Chrome not found
-
-`just test-ui-start` recreates the harness venv with Playwright in it. Chrome has to be installed where the harness runs; the image claudebox builds does not ship it.
 
 ### `Executable doesn't exist at .../chromium_headless_shell-<build>`
 

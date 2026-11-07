@@ -453,3 +453,34 @@ class TestAssistantEmitted:
     def test_has_none_returns_false(self):
         tracker = TurnTracker()
         assert tracker.has_assistant_emitted(None) is False
+
+
+class TestSiblingMessage:
+    """A sibling's turn end runs the current turn again, as a task notification does, and opens none."""
+
+    def test_it_runs_the_current_turn_again_after_its_result(self):
+        tracker = TurnTracker()
+        _open(tracker, "T1")
+        tracker.observe(_result("T1"))
+
+        tracker.observe(_event("system", "sibling_message", turn_id="T1"))
+
+        assert (tracker.current, tracker.running) == ("T1", True)
+
+    def test_its_echo_opens_no_turn(self):
+        tracker = TurnTracker()
+        _open(tracker, "T1")
+        envelope = '<sibling-message session="s" outcome="ended" id="D1">\nx\n</sibling-message>'
+
+        tracker.on_event(_make_user_message("D1", envelope))
+
+        assert tracker.current == "T1"
+
+    def test_the_users_text_merged_after_it_still_opens_a_turn(self):
+        tracker = TurnTracker()
+        _open(tracker, "T1")
+        envelope = '<sibling-message session="s" outcome="ended" id="D1">\nx\n</sibling-message>'
+
+        tracker.on_event(_make_user_message("U2", f"{envelope}\nand stop it"))
+
+        assert tracker.current == "U2"

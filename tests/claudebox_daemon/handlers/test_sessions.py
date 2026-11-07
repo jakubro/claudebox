@@ -85,7 +85,7 @@ def test_fork_session_defaults_parent_session_id_to_none():
 
 
 def test_new_session_with_no_body_behaves_as_before():
-    """A body-less POST creates plainly - no allowlist consulted, no messages delivered."""
+    """A body-less POST creates plainly - no allowlist consulted, no opening messages returned."""
 
     session_service = MagicMock()
     session_service.create = AsyncMock(
@@ -100,12 +100,12 @@ def test_new_session_with_no_body_behaves_as_before():
     assert resp.status_code == 200
     session_service.create.assert_awaited_once()
     session_service.create_with_prompts.assert_not_called()
-    assert resp.json()["undelivered_messages"] == []
+    assert (resp.json()["undelivered_messages"], resp.json()["bundle_messages"]) == ([], [])
 
 
-def test_new_session_delivers_messages_matching_the_allowlist():
+def test_new_session_leaves_messages_matching_the_allowlist_to_the_browser():
     session_service = MagicMock()
-    session_service.create_with_prompts = AsyncMock(
+    session_service.create = AsyncMock(
         return_value=SessionInfo(session_id="s-2", fork_point_cost_usd=0.0),
     )
 
@@ -118,8 +118,10 @@ def test_new_session_delivers_messages_matching_the_allowlist():
         )
 
     assert resp.status_code == 200
-    session_service.create_with_prompts.assert_awaited_once_with(["/greet ada"], bundle=None)
-    assert resp.json()["undelivered_messages"] == []
+    session_service.create.assert_awaited_once_with(bundle=None)
+    session_service.create_with_prompts.assert_not_called()
+    session_service.deliver_prompt.assert_not_called()
+    assert (resp.json()["undelivered_messages"], resp.json()["bundle_messages"]) == ([], [])
 
 
 def test_new_session_blocks_the_whole_batch_on_one_disallowed_message():
@@ -139,6 +141,7 @@ def test_new_session_blocks_the_whole_batch_on_one_disallowed_message():
     assert resp.status_code == 200
     session_service.create.assert_awaited_once()
     session_service.create_with_prompts.assert_not_called()
+    session_service.deliver_prompt.assert_not_called()
     assert resp.json()["undelivered_messages"] == ["/greet ada", "/danger"]
 
 
@@ -287,7 +290,7 @@ def test_list_sessions_serves_every_record_field_from_a_real_workspace(tmp_path)
     }
 
 
-def test_a_bundles_messages_skip_the_link_allowlist_and_follow_the_link(tmp_path):
+def test_a_bundles_messages_skip_the_link_allowlist_and_come_back_for_the_browser(tmp_path):
     (tmp_path / ".workspace").touch()
     settings = tmp_path / ".claudebox" / "settings.toml"
     settings.parent.mkdir()
@@ -296,7 +299,7 @@ def test_a_bundles_messages_skip_the_link_allowlist_and_follow_the_link(tmp_path
         '[bundles.research]\nmessages = ["/danger opening", "second"]\n',
     )
     session_service = MagicMock()
-    session_service.create_with_prompts = AsyncMock(
+    session_service.create = AsyncMock(
         return_value=SessionInfo(session_id="s-4", fork_point_cost_usd=0.0),
     )
 
@@ -307,10 +310,11 @@ def test_a_bundles_messages_skip_the_link_allowlist_and_follow_the_link(tmp_path
     )
 
     assert resp.status_code == 200
-    session_service.create_with_prompts.assert_awaited_once_with(
-        ["/greet ada", "/danger opening", "second"],
-        bundle="research",
-    )
+    session_service.create.assert_awaited_once_with(bundle="research")
+    session_service.create_with_prompts.assert_not_called()
+    session_service.deliver_prompt.assert_not_called()
+    assert resp.json()["undelivered_messages"] == []
+    assert resp.json()["bundle_messages"] == ["/danger opening", "second"]
 
 
 def test_link_messages_are_still_filtered_beside_a_bundle(tmp_path):
@@ -321,7 +325,7 @@ def test_link_messages_are_still_filtered_beside_a_bundle(tmp_path):
         'root = true\n[links]\nallow = ["/greet \\\\S+"]\n[bundles.research]\nmessages = ["hi"]\n',
     )
     session_service = MagicMock()
-    session_service.create_with_prompts = AsyncMock(
+    session_service.create = AsyncMock(
         return_value=SessionInfo(session_id="s-5", fork_point_cost_usd=0.0),
     )
 
@@ -332,4 +336,5 @@ def test_link_messages_are_still_filtered_beside_a_bundle(tmp_path):
     )
 
     assert resp.json()["undelivered_messages"] == ["/danger"]
-    session_service.create_with_prompts.assert_awaited_once_with(["hi"], bundle="research")
+    assert resp.json()["bundle_messages"] == ["hi"]
+    session_service.create.assert_awaited_once_with(bundle="research")

@@ -30,9 +30,11 @@ from ..constants import (
     LIB_ROOT,
     LIB_RUN_DIR,
     SESSIONS_DIR_NAME,
+    TUNNEL_CONTAINER_PORT,
     WEB_CONTAINER_PORT,
 )
 from ..core.fs import resolve_path, touch_dir, touch_file
+from ..core.ports import LOOPBACK, PortMapping, parse_ports, publish_spec
 
 
 if TYPE_CHECKING:
@@ -186,13 +188,13 @@ def get_container_run_args(
 
     if publish_all:
         yield "--publish"
-        yield f"127.0.0.1::{WEB_CONTAINER_PORT}"
+        yield f"{LOOPBACK}::{WEB_CONTAINER_PORT}"
+        yield "--publish"
+        yield f"{LOOPBACK}::{TUNNEL_CONTAINER_PORT}"
 
-    if config.ports:
-        for host_port, container_port in config.ports.items():
-            published = (port_substitutes or {}).get(int(host_port), host_port)
-            yield "--publish"
-            yield f"{published}:{container_port}"
+    for host_port, mapping in (parse_ports(config.ports) or {}).items():
+        yield "--publish"
+        yield publish_spec((port_substitutes or {}).get(host_port, host_port), mapping)
 
     effective_network = config.network_mode or network
 
@@ -219,12 +221,13 @@ def network_mode_publishes(mode: str | None) -> bool:
     return mode not in ("host", "none") and not (mode or "").startswith(("container:", "ns:"))
 
 
-def substitute_held_ports(ports: Mapping[int, int] | None) -> dict[int, int]:
+def substitute_held_ports(ports: Mapping | None) -> dict[int, int]:
     """Map each fixed host port in `ports` that something on this host already holds to a free one."""
 
-    held = [int(port) for port in (ports or {}) if int(port) and _port_in_use(int(port))]
+    parsed = parse_ports(ports) or {}
+    held = [port for port, mapping in parsed.items() if port and _port_in_use(port, mapping)]
 
-    return {port: _free_port() for port in held}
+    return {port: _free_port(parsed[port]) for port in held}
 
 
 def tmp_mount_conflicts(config: Config, extra: Iterable[Path] = ()) -> list[Path]:
@@ -338,23 +341,50 @@ def _session_claude_dir(config: Config) -> Path:
     return config.config_dir / HOST_CLAUDE_DIR_SUBPATH
 
 
-def _container_port(ports: Mapping[int, int] | None, host_port: int) -> int | None:
-    return next((c for h, c in (ports or {}).items() if int(h) == host_port), None)
+def _container_port(ports: Mapping | None, host_port: int) -> str | None:
+    mapping = (parse_ports(ports) or {}).get(host_port)
+
+    return mapping.container_spec if mapping else None
 
 
-def _port_in_use(port: int) -> bool:
-    # A wildcard bind also fails for a listener on 127.0.0.1 alone; only EADDRINUSE means held.
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        try:
-            probe.bind(("0.0.0.0", port))
-        except OSError as exc:
-            return exc.errno == errno.EADDRINUSE
+def _port_in_use(port: int, mapping: PortMapping) -> bool:
+    # A wildcard bind also fails for a listener on one address alone; only EADDRINUSE means held.
+    try:
+        with _probe_socket(mapping) as probe:
+            probe.bind((_wildcard(mapping), port))
+    except OSError as exc:
+        return exc.errno == errno.EADDRINUSE
 
     return False
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("0.0.0.0", 0))
+def _free_port(mapping: PortMapping) -> int:
+    with _probe_socket(mapping) as probe:
+        probe.bind((_wildcard(mapping), 0))
 
         return probe.getsockname()[1]
+
+
+def _probe_socket(mapping: PortMapping) -> socket.socket:
+    family = socket.AF_INET6 if ":" in mapping.bind else socket.AF_INET
+
+    if mapping.protocol == "udp":
+        probe = socket.socket(family, socket.SOCK_DGRAM)
+    elif mapping.protocol == "sctp" and hasattr(socket, "IPPROTO_SCTP"):
+        try:
+            probe = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_SCTP)
+        except OSError:
+            # A host without SCTP probes an sctp entry over TCP.
+            probe = socket.socket(family, socket.SOCK_STREAM)
+    else:
+        probe = socket.socket(family, socket.SOCK_STREAM)
+
+    if family == socket.AF_INET6:
+        # An IPv6 entry collides only with IPv6 holders, never with an IPv4 listener on its port.
+        probe.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+
+    return probe
+
+
+def _wildcard(mapping: PortMapping) -> str:
+    return "::" if ":" in mapping.bind else "0.0.0.0"

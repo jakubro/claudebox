@@ -231,7 +231,7 @@ class PathResolver:
         """
 
         try:
-            saved = serialization.loads(self._index_path.read_text())
+            saved = serialization.loads(self._index_path.read_text(encoding="utf-8"))
 
             if time.time() - saved["saved_at"] > PATH_INDEX_LOAD_MAX_AGE.total_seconds():
                 return
@@ -253,7 +253,7 @@ class PathResolver:
 
         try:
             touch_dir(self._index_path.parent)
-            tmp_path.write_text(serialization.dumps(payload))
+            tmp_path.write_text(serialization.dumps(payload), encoding="utf-8")
             os.replace(tmp_path, self._index_path)
         except OSError:
             self._logger.warning("path_index_persist_failed", path=str(self._index_path))

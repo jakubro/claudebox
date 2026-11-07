@@ -98,9 +98,8 @@ export function parseTreeEntries(contentLines, startLineNum) {
     if (!raw.trim()) {
       continue
     }
-    // Box-drawing glyphs the tree convention uses, as escapes to keep this file pure ASCII:
-    // vertical U+2502, tee U+251C, elbow U+2514, horizontal U+2500.
-    const prefixMatch = raw.match(/^[\s\u2502\u251c\u2514\u2500]*/)
+    // The tree prefix: `|-- `, `` `-- ``, `|   ` and spaces, four characters to a level.
+    const prefixMatch = raw.match(/^[\s|`-]*/)
     const prefixLen = prefixMatch[0].length
     const rest = raw.slice(prefixLen)
     if (rest.startsWith('#') || !rest.trim()) {

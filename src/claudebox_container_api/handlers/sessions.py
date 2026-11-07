@@ -8,7 +8,13 @@ import dataclasses
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-from claudebox import EventLog, SessionEntryNotFound, ToolOutput, serialize_event
+from claudebox import (
+    CONTAINED_CONTENT_HEADERS,
+    EventLog,
+    SessionEntryNotFound,
+    ToolOutput,
+    serialize_event,
+)
 from ._models import UpdateSessionPromptRequest
 from ._shared import RegistryDep, SessionDep
 
@@ -145,7 +151,12 @@ async def get_attachment(svc: SessionDep, filename: str):
 
     info = svc.get_attachment(session_id, filename)
 
-    return FileResponse(path=info.path, media_type=info.media_type)
+    return FileResponse(
+        path=info.path,
+        media_type=info.media_type,
+        headers=CONTAINED_CONTENT_HEADERS,
+        filename=None if info.inline else info.path.name,
+    )
 
 
 @router.get("/{session_id}/tool-output/{tool_use_id}")

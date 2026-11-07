@@ -33,6 +33,7 @@
 @import "./components/turn/components/ThinkingBlock.css";
 @import "./components/turn/components/LocalCommandBlock.css";
 @import "./components/turn/components/InjectedContext.css";
+@import "./components/turn/components/SiblingMessageBlock.css";
 
 /* User message content */
 @import "./components/turn/components/user-message-content/UserMessageContent.css";
@@ -48,6 +49,7 @@
 /* Tool block */
 @import "./components/turn/components/tool-block/ToolBlock.css";
 @import "./components/turn/components/tool-block/components/ToolBlockHeader.css";
+@import "./components/turn/components/tool-block/components/PortRequestCard.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/ToolBlockExpandedContent.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/CollapsibleSection.css";
 @import "./components/turn/components/tool-block/components/tool-block-expanded-content/components/NestedContent.css";

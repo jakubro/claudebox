@@ -50,7 +50,13 @@ describe('useSendMessage', () => {
     })
 
     expect(outcome).toBe(true)
-    expect(deps.addPendingMessage).toHaveBeenCalledWith('hello', null, null, null)
+    expect(deps.addPendingMessage).toHaveBeenCalledWith(
+      'hello',
+      null,
+      null,
+      null,
+      expect.any(Number),
+    )
     expect(deps.startSubmitting).toHaveBeenCalledOnce()
     expect(mockSendMessage).toHaveBeenCalledWith('hello', {
       attachments: null,
@@ -69,12 +75,28 @@ describe('useSendMessage', () => {
       await result.current('msg', { attachments })
     })
 
-    expect(deps.addPendingMessage).toHaveBeenCalledWith('msg', attachments, null, null)
+    expect(deps.addPendingMessage).toHaveBeenCalledWith(
+      'msg',
+      attachments,
+      null,
+      null,
+      expect.any(Number),
+    )
     expect(mockSendMessage).toHaveBeenCalledWith('msg', {
       attachments,
       inlineReplies: null,
       note: null,
     })
+  })
+
+  it('gives the pending entry the time the message was first sent', async () => {
+    const { result } = renderHook(() => useSendMessage(deps))
+
+    await act(async () => {
+      await result.current('first', { sentAt: 1000 })
+    })
+
+    expect(deps.addPendingMessage).toHaveBeenCalledWith('first', null, null, null, 1000)
   })
 
   it('removes pending message and calls submitFailed on error', async () => {

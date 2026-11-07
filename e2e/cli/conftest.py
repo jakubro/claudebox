@@ -55,6 +55,33 @@ def hermetic_home(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def anyio_backend():
+    """Run async tests on asyncio only."""
+
+    return "asyncio"
+
+
+@pytest.fixture
+def workspace(tmp_path, monkeypatch) -> Path:
+    """A marked workspace sessions start in: CLAUDEBOX_PWD, a HOME inside it, and the working directory."""
+
+    (tmp_path / ".workspace").touch()
+    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.chdir(tmp_path)
+
+    return tmp_path
+
+
+@pytest.fixture
+def claude_runtime_env(workspace, monkeypatch) -> None:
+    """What a Claude runtime started in `workspace` reads: no /tmp remap, and a ~/.claude."""
+
+    monkeypatch.setenv("CLAUDEBOX_NO_TMP_REMAP", "1")
+    (workspace / "home" / ".claude").mkdir(parents=True)
+
+
+@pytest.fixture
 def record_dir(tmp_path: Path) -> Path:
     """Per-test directory where fake bins log invocations."""
 

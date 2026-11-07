@@ -15,6 +15,7 @@ from claudebox import (
     SessionService,
     ValidationError,
     Workspace,
+    report_sibling_turn_end,
 )
 from claudebox.constants import CONFIG_DIR_NAME
 from .constants import CONTAINER_API_LOG_FILENAME
@@ -90,6 +91,7 @@ class SessionRegistry:
                 permission_mode=self._permission_mode,
                 remaps_tmp=primary,
                 on_turn_complete=self._on_member_turn_complete if stops_after_answer else None,
+                report_turn_end=report_sibling_turn_end,
             )
             session_id = await svc.start(resume_session_id)
             self._entries[session_id] = svc

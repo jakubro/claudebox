@@ -79,3 +79,38 @@ async def test_stream_replay_false_forwards_to_subscribe_kwargs(monkeypatch):
     await chat_stream(svc, replay=False)
 
     assert captured["subscribe_kwargs"] == {"replay": False}
+
+
+@pytest.mark.anyio
+async def test_a_sibling_message_reaches_the_session_as_one_message():
+    from unittest.mock import AsyncMock
+
+    from claudebox import SiblingMessage
+    from claudebox_container_api.handlers._models import SiblingMessageRequest
+    from claudebox_container_api.handlers.chat import sibling_message
+
+    svc = MagicMock(deliver_sibling_message=AsyncMock())
+    body = SiblingMessageRequest(
+        from_session_id="sib-1",
+        from_name=None,
+        delivery_id="d1",
+        outcome="asking",
+        text="Which branch?",
+    )
+
+    await sibling_message(svc, body)
+
+    svc.deliver_sibling_message.assert_awaited_once_with(
+        SiblingMessage("sib-1", None, "asking", "d1", "Which branch?"),
+    )
+
+
+def test_a_sibling_message_with_an_unknown_outcome_is_refused():
+    from pydantic import ValidationError
+
+    from claudebox_container_api.handlers._models import SiblingMessageRequest
+
+    with pytest.raises(ValidationError):
+        SiblingMessageRequest.model_validate(
+            {"from_session_id": "s", "delivery_id": "d", "outcome": "maybe", "text": ""},
+        )

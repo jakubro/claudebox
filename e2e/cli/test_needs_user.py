@@ -26,19 +26,6 @@ from claudebox_daemon.handlers.sessions import router
 
 
 @pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-
-    return tmp_path
-
-
-@pytest.fixture
 def service(workspace):
     containers = MagicMock()
     containers.find_by_session = AsyncMock(return_value=None)

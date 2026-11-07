@@ -52,6 +52,10 @@ test.describe('Geo maps', () => {
   test('clicking a shape lists its properties as plain text', async ({ page }) => {
     const { maps } = await openMaps(page)
     const point = maps.nth(0).locator('path.leaflet-interactive').last()
+    // A scroll with no wheel behind it leaves the view following the bottom, which pulls it back.
+    await page.locator('[data-testid="chat-messages"]').hover()
+    await page.mouse.wheel(0, -5000)
+    await expect(point).toBeInViewport()
 
     await point.click({ force: true })
 

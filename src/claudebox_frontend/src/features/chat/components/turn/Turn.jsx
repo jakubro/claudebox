@@ -3,10 +3,10 @@
 // audit-ignore-file: excessive-props
 
 import { Bookmark } from 'lucide-react'
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useLayoutEffect, useMemo, useState } from 'react'
 import CopyButton from '../../../../components/CopyButton.jsx'
 import RelativeTime from '../../../../components/RelativeTime'
-import { LIVE_TICK_INTERVAL_MS } from '../../../../config/timing'
+import useTurnClock from '../../../../hooks/useTurnClock'
 import { createPropsComparator, sameIdSet } from '../../../../utils/comparators'
 import {
   computeTimingOffsets,
@@ -14,6 +14,7 @@ import {
   processEvents,
 } from '../../../../utils/eventProcessing'
 import { formatUserMessageForCopy } from '../../../../utils/formatters'
+import { holdRunningTurnStart } from '../../../../utils/runningTurnStart'
 import InjectedContext from './components/InjectedContext'
 import NeedsUserReplies from './components/NeedsUserReplies'
 import RewindSplitButton from './components/RewindSplitButton'
@@ -42,6 +43,10 @@ import {
  * @param {Array} props.inlineReplies - Inline reply pairs (quote/from/response) for the user message
  * @param {string} [props.note] - Message box text sent alongside a form answer or a one-click reply
  * @param {string} [props.userMessageTime] - When the user message was sent; none until it is confirmed
+ * @param {number} [props.sentAt] - When this tab sent the message, ahead of `userMessageTime`
+ * @param {boolean} [props.sharesRunningStart] - Holds its start as the transcript's running start;
+ *   never set on a side thread's turn, which runs beside the transcript's own
+ * @param {number} [props.recordedDurationMs] - How long the agent recorded working on the finished turn
  * @param {Set} props.duplicateAskUserIds - Cross-turn duplicate AskUserQuestion IDs to hide
  * @param {boolean} props.isCompacting - Compaction in progress, for pending turns with no events
  *   to derive it from
@@ -57,6 +62,9 @@ function Turn({
   inlineReplies = null,
   note = null,
   userMessageTime = null,
+  sentAt = null,
+  sharesRunningStart = false,
+  recordedDurationMs = null,
   events,
   turnId = null,
   sessionId = null,
@@ -136,23 +144,32 @@ function Turn({
   // Calculate turn duration from event timestamps
   const { startTime, endTime } = useMemo(() => getTurnTimeRange(events), [events])
 
-  // Live ticking duration when active
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    if (!(isActive && startTime)) {
+  // Live ticking duration while running
+  const running = isActive || showProgress
+  const runningSince =
+    sentAt ?? (userMessageTime ? new Date(userMessageTime).getTime() : null) ?? startTime
+  const now = useTurnClock(running ? runningSince : null)
+
+  // Layout, not passive: the footer redraws from the new start before this commit paints.
+  useLayoutEffect(() => {
+    if (!(sharesRunningStart && running && runningSince)) {
       return
     }
-    const interval = setInterval(() => setNow(Date.now()), LIVE_TICK_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [isActive, startTime])
+    return holdRunningTurnStart(runningSince)
+  }, [sharesRunningStart, running, runningSince])
 
   const duration = useMemo(() => {
+    if (running && runningSince) {
+      return Math.max(0, Math.floor((now - runningSince) / 1000))
+    }
     if (!startTime) {
       return null
     }
-    const end = isActive ? now : endTime
-    return Math.max(0, Math.floor((end - startTime) / 1000))
-  }, [startTime, endTime, isActive, now])
+    if (recordedDurationMs !== null) {
+      return Math.floor(recordedDurationMs / 1000)
+    }
+    return Math.max(0, Math.floor((endTime - startTime) / 1000))
+  }, [startTime, endTime, running, runningSince, now, recordedDurationMs])
 
   // Precompute threshold-filtered timing offsets per block (delta >= 30s between shown offsets)
   const blockOffsets = useMemo(() => {

@@ -8,7 +8,7 @@ from glob import escape as glob_escape
 from glob import glob
 from pathlib import Path
 
-from .constants import CONFIG_DIR_NAME, SESSIONS_DIR_NAME, WORKSPACE_MARKER
+from .constants import CONFIG_DIR_NAME, SESSIONS_DIR_NAME, WORKSPACE_MARKER, global_config_dir
 from .core.fs import touch_dir, walk_up
 from .core.time import get_timestamp, parse_timestamp
 
@@ -43,6 +43,16 @@ def get_workspace_root(start_dir: str | Path | None = None) -> Path | None:
             return directory
 
     return None
+
+
+def covers_home(directory: str | Path) -> bool:
+    """Return whether `directory` is `$HOME` or `~/.claudebox`, or lies above either, symlinks resolved."""
+
+    resolved = Path(directory).expanduser().resolve()
+
+    return any(
+        path.resolve().is_relative_to(resolved) for path in (Path.home(), global_config_dir())
+    )
 
 
 def get_claudebox_root(start_dir: str | Path | None = None) -> Path:

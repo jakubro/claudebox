@@ -24,8 +24,11 @@ export default function useSendMessage({
   ownerNow,
 }) {
   return useCallback(
-    async (content, { attachments = null, inlineReplies = null, note = null, target } = {}) => {
-      const messageId = addPendingMessage?.(content, attachments, inlineReplies, note)
+    async (
+      content,
+      { attachments = null, inlineReplies = null, note = null, target, sentAt = Date.now() } = {},
+    ) => {
+      const messageId = addPendingMessage?.(content, attachments, inlineReplies, note, sentAt)
       // Fixed before the await: the session on screen may be another one by the time it fails.
       const owner = ownerNow()
       startSubmitting()

@@ -219,26 +219,32 @@ class TestProxyBufferedResponse:
 
 
 class TestRequestHeaders:
-    """Test host header stripping on outgoing proxy requests."""
+    """Only Accept and Content-Type cross from the browser to the container."""
 
-    def test_strips_host_header(self):
-        req = _make_starlette_request(headers={"host": "example.com", "accept": "application/json"})
-        headers = ProxyClient._request_headers(req)
-        assert "host" not in {k.lower() for k in headers}
-        assert headers["accept"] == "application/json"
-
-    def test_preserves_other_headers(self):
+    def test_keeps_accept_and_content_type(self):
         req = _make_starlette_request(
-            headers={
-                "authorization": "Bearer token",
-                "content-type": "application/json",
-                "x-custom": "foo",
-            },
+            headers={"accept": "text/event-stream", "content-type": "application/json"},
         )
         headers = ProxyClient._request_headers(req)
-        assert headers["authorization"] == "Bearer token"
-        assert headers["content-type"] == "application/json"
-        assert headers["x-custom"] == "foo"
+        assert headers == {"accept": "text/event-stream", "content-type": "application/json"}
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "host",
+            "authorization",
+            "cookie",
+            "origin",
+            "referer",
+            "x-forwarded-for",
+            "sec-fetch-site",
+            "x-custom",
+        ],
+    )
+    def test_drops_every_other_header(self, name):
+        req = _make_starlette_request(headers={name: "value", "Content-Type": "application/json"})
+        headers = ProxyClient._request_headers(req)
+        assert {k.lower() for k in headers} == {"content-type"}
 
     def test_empty_headers(self):
         req = _make_starlette_request(headers={})
@@ -250,36 +256,162 @@ class TestRequestHeaders:
 
 
 class TestResponseHeaders:
-    """Test hop-by-hop header stripping on upstream responses."""
+    """Only listed headers come back, every response is sandboxed, and non-inline types download."""
 
-    def test_strips_content_length(self):
-        resp = _make_httpx_response(headers={"content-length": "42", "x-req-id": "abc"})
-        headers = ProxyClient._response_headers(resp)
-        assert "content-length" not in {k.lower() for k in headers}
-        assert headers["x-req-id"] == "abc"
+    @staticmethod
+    def _lowered(headers: dict[str, str]) -> dict[str, str]:
+        return {k.lower(): v for k, v in headers.items()}
 
-    def test_strips_transfer_encoding(self):
-        resp = _make_httpx_response(headers={"transfer-encoding": "chunked"})
-        headers = ProxyClient._response_headers(resp)
-        assert "transfer-encoding" not in {k.lower() for k in headers}
-
-    def test_strips_content_encoding(self):
-        resp = _make_httpx_response(headers={"content-encoding": "gzip"})
-        headers = ProxyClient._response_headers(resp)
-        assert "content-encoding" not in {k.lower() for k in headers}
-
-    def test_preserves_other_headers(self):
+    def test_keeps_the_listed_headers(self):
         resp = _make_httpx_response(
             headers={
                 "content-type": "application/json",
-                "x-custom": "bar",
-                "content-length": "10",
+                "cache-control": "no-store",
+                "etag": '"v1"',
+                "last-modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+                "x-accel-buffering": "no",
             },
         )
-        headers = ProxyClient._response_headers(resp)
+        headers = self._lowered(ProxyClient._response_headers(resp))
         assert headers["content-type"] == "application/json"
-        assert headers["x-custom"] == "bar"
-        assert "content-length" not in {k.lower() for k in headers}
+        assert headers["cache-control"] == "no-store"
+        assert headers["etag"] == '"v1"'
+        assert headers["last-modified"] == "Wed, 01 Jan 2025 00:00:00 GMT"
+        assert headers["x-accel-buffering"] == "no"
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "set-cookie",
+            "location",
+            "content-length",
+            "transfer-encoding",
+            "content-encoding",
+            "refresh",
+            "clear-site-data",
+            "access-control-allow-origin",
+            "x-req-id",
+        ],
+    )
+    def test_drops_every_other_header(self, name):
+        resp = _make_httpx_response(headers={name: "value", "content-type": "application/json"})
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert name not in headers
+
+    def test_forces_nosniff_and_the_sandbox_policy_over_the_upstream_ones(self):
+        resp = _make_httpx_response(
+            headers={
+                "content-type": "application/json",
+                "content-security-policy": "default-src *",
+                "x-content-type-options": "sniff",
+            },
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert headers["x-content-type-options"] == "nosniff"
+        assert headers["content-security-policy"] == "default-src 'none'; sandbox"
+
+    @pytest.mark.parametrize(
+        "content_type",
+        [
+            "application/json",
+            "application/json; charset=utf-8",
+            "text/event-stream; charset=utf-8",
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "IMAGE/PNG",
+        ],
+    )
+    def test_an_inline_type_carries_no_disposition(self, content_type):
+        resp = _make_httpx_response(
+            headers={"content-type": content_type, "content-disposition": "attachment"},
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert "content-disposition" not in headers
+
+    @pytest.mark.parametrize(
+        "content_type",
+        [
+            "image/svg+xml",
+            "application/pdf",
+            "text/html",
+            "text/plain",
+            "application/octet-stream",
+            "image/png, text/html",
+            None,
+        ],
+    )
+    def test_any_other_type_downloads(self, content_type):
+        upstream = {"content-type": content_type} if content_type else {}
+        headers = self._lowered(
+            ProxyClient._response_headers(_make_httpx_response(headers=upstream)),
+        )
+        assert headers["content-disposition"] == "attachment"
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            ["image/png; x=1", "text/html"],
+            ["text/html", "image/png"],
+            ["image/png, text/html"],
+        ],
+    )
+    def test_a_repeated_or_joined_type_downloads(self, values):
+        upstream = httpx.Response(200, headers=[("content-type", value) for value in values])
+        headers = self._lowered(ProxyClient._response_headers(upstream))
+        assert headers["content-disposition"] == "attachment"
+
+    def test_an_upstream_attachment_disposition_is_kept_verbatim(self):
+        resp = _make_httpx_response(
+            headers={
+                "content-type": "text/plain",
+                "content-disposition": 'attachment; filename="x.txt"',
+            },
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert headers["content-disposition"] == 'attachment; filename="x.txt"'
+
+    @pytest.mark.parametrize("disposition", ["attachment=1", "attachmentfoo; filename=a.html"])
+    def test_a_disposition_whose_type_is_not_attachment_is_replaced(self, disposition):
+        resp = _make_httpx_response(
+            headers={"content-type": "text/html", "content-disposition": disposition},
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert headers["content-disposition"] == "attachment"
+
+    def test_a_disposition_opening_with_a_space_other_than_space_or_tab_is_replaced(self):
+        resp = httpx.Response(
+            200,
+            headers=[
+                (b"content-type", b"text/html"),
+                (b"content-disposition", b"\xa0attachment; filename=a.html"),
+            ],
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert headers["content-disposition"] == "attachment"
+
+    def test_a_disposition_with_space_and_tab_around_its_type_is_kept(self):
+        resp = _make_httpx_response(
+            headers={
+                "content-type": "text/plain",
+                "content-disposition": ' \tattachment ; filename="x.txt"',
+            },
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert headers["content-disposition"] == ' \tattachment ; filename="x.txt"'
+
+    def test_an_upstream_inline_disposition_becomes_attachment(self):
+        resp = _make_httpx_response(
+            headers={"content-type": "image/svg+xml", "content-disposition": "inline"},
+        )
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert headers["content-disposition"] == "attachment"
+
+    def test_a_not_modified_answer_carries_no_disposition(self):
+        resp = _make_httpx_response(status_code=304, headers={"content-type": "image/svg+xml"})
+        headers = self._lowered(ProxyClient._response_headers(resp))
+        assert "content-disposition" not in headers
 
 
 # --- ProxyClient.forward ---
@@ -303,6 +435,80 @@ class TestProxyClientForward:
         resp = await client.forward(request, path="/v1/chat")
 
         assert isinstance(resp, ProxyStreamingResponse)
+        assert resp.headers["x-content-type-options"] == "nosniff"
+        assert resp.headers["content-security-policy"] == "default-src 'none'; sandbox"
+        assert "content-disposition" not in resp.headers
+        await client.close()
+
+    @pytest.mark.anyio
+    async def test_a_repeated_event_stream_type_is_buffered_as_a_download(self):
+        upstream_mock = MagicMock(spec=httpx.Response)
+        upstream_mock.status_code = 200
+        upstream_mock.headers = httpx.Headers(
+            [("content-type", "text/event-stream; x=1"), ("content-type", "text/html")],
+        )
+        upstream_mock.aread = AsyncMock(return_value=b"<p>hi</p>")
+        upstream_mock.aclose = AsyncMock()
+
+        client = ProxyClient(base_url="http://upstream")
+        client._client.send = AsyncMock(return_value=upstream_mock)
+
+        resp = await client.forward(_make_starlette_request(), path="/x")
+
+        assert isinstance(resp, ProxyBufferedResponse)
+        assert resp.headers["content-disposition"] == "attachment"
+        await client.close()
+
+    @pytest.mark.anyio
+    async def test_a_buffered_answer_is_sandboxed_and_sets_no_cookie_and_no_redirect(self):
+        upstream_mock = MagicMock(spec=httpx.Response)
+        upstream_mock.status_code = 302
+        upstream_mock.headers = httpx.Headers(
+            [
+                ("content-type", "application/json"),
+                ("set-cookie", "a=1"),
+                ("set-cookie", "b=2"),
+                ("location", "https://elsewhere.example/"),
+            ],
+        )
+        upstream_mock.aread = AsyncMock(return_value=b"{}")
+        upstream_mock.aclose = AsyncMock()
+
+        client = ProxyClient(base_url="http://upstream")
+        client._client.send = AsyncMock(return_value=upstream_mock)
+
+        resp = await client.forward(_make_starlette_request(), path="/x")
+
+        assert resp.status_code == 302
+        assert resp.headers.getlist("set-cookie") == []
+        assert "location" not in resp.headers
+        assert resp.headers["x-content-type-options"] == "nosniff"
+        assert resp.headers["content-security-policy"] == "default-src 'none'; sandbox"
+        await client.close()
+
+    @pytest.mark.anyio
+    async def test_a_cookie_one_upstream_sets_reaches_no_later_request(self):
+        seen = []
+
+        def upstream(request):
+            seen.append(request.headers.get("cookie"))
+            headers = {"content-type": "application/json"}
+
+            if request.url.port == 9001:
+                headers["set-cookie"] = "planted=1; Path=/"
+
+            return httpx.Response(200, headers=headers, json={})
+
+        client = ProxyClient(transport=httpx.MockTransport(upstream))
+
+        for url in (
+            "http://localhost:9001/api/a",
+            "http://localhost:9002/api/b",
+            "http://localhost:9001/api/c",
+        ):
+            await client.forward(_make_starlette_request(), path=url)
+
+        assert seen == [None, None, None]
         await client.close()
 
     @pytest.mark.anyio

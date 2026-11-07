@@ -1,4 +1,4 @@
-/** Sanitization schema for rendered markdown - permissive structural/presentational HTML, hard block on scripts, event handlers, and unsafe URL protocols. */
+/** Sanitization schema for markdown: structural HTML and the pipeline's own classes, no scripts. */
 
 import { defaultSchema } from 'rehype-sanitize'
 
@@ -30,16 +30,21 @@ const EXTRA_TAGS = [
 
 const baseAttributes = defaultSchema.attributes ?? {}
 
-// Permissive: className + style allowed on every element, verbatim.
-// className must survive for `language-*` fences (highlighting, mermaid) and KaTeX's math placeholders.
-// Scripts, `on*` handlers, and javascript:/data: URLs remain stripped by defaultSchema.
+// Classes the pipeline emits ahead of the sanitiser and reads after it.
+const MATH_CLASSES = ['math-inline', 'math-display']
+const ALERT_CLASSES = ['markdown-alert', /^markdown-alert-(?:note|tip|important|warning|caution)$/]
+
+// className survives only as listed, plus defaultSchema's task-list and footnote classes; `style`
+// survives for rehypeStyleFilter, the next step. Scripts, `on*` handlers, javascript:/data: URLs do not.
 const markdownSanitizeSchema = {
   ...defaultSchema,
   tagNames: [...new Set([...(defaultSchema.tagNames ?? []), ...EXTRA_TAGS])],
   attributes: {
     ...baseAttributes,
-    '*': [...(baseAttributes['*'] ?? []), 'className', 'style'],
+    '*': [...(baseAttributes['*'] ?? []), 'style'],
     a: [...(baseAttributes.a ?? []), 'target', 'rel'],
+    blockquote: [...(baseAttributes.blockquote ?? []), ['className', ...ALERT_CLASSES]],
+    code: [['className', /^language-./, ...MATH_CLASSES]],
     td: [...(baseAttributes.td ?? []), 'colSpan', 'rowSpan', 'align'],
     th: [...(baseAttributes.th ?? []), 'colSpan', 'rowSpan', 'align'],
     details: [...(baseAttributes.details ?? []), 'open'],

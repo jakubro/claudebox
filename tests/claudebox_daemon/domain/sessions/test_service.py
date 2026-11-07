@@ -44,7 +44,11 @@ from claudebox_daemon.domain.sessions.errors import (
     SessionContainerResumeFailed,
     SessionContainerUnavailable,
     SessionNotFound,
+    SessionNotSpawned,
     SessionTranscriptMissing,
+    SiblingNotOwned,
+    SiblingStopHostsThread,
+    SpawnerUnreachable,
 )
 from claudebox_daemon.domain.sessions.models import SessionInfo
 from claudebox_daemon.domain.sessions.service import SessionService, deliver_prompt
@@ -1251,7 +1255,7 @@ class TestCreateWithPrompt:
 
 
 class TestCreateWithPrompts:
-    """Test the list-taking multi-message case the link-session handler drives."""
+    """Test creating a session and delivering several prompts to it, in order."""
 
     @pytest.mark.anyio
     async def test_delivers_every_prompt_in_order(self, tmp_path):
@@ -3208,6 +3212,30 @@ class TestComputeDerivedFields:
         assert result["total_duration_ms"] == 3500
         assert result["num_turns"] == 2
 
+    def test_a_subagents_prompt_is_neither_a_turn_nor_the_last_message(self, tmp_path):
+        events = tmp_path / "events.jsonl"
+        lines = [
+            {"type": "user", "is_human": True, "content": "review the diff"},
+            {
+                "type": "user",
+                "is_human": True,
+                "content": "Check every hunk.",
+                "parent_tool_use_id": "tu_agent",
+            },
+            {"type": "user", "is_human": True, "content": "now commit"},
+            {
+                "type": "user",
+                "is_human": True,
+                "content": "Run the tests.",
+                "parent_tool_use_id": "tu_agent2",
+            },
+        ]
+        events.write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+        result = self._derive(tmp_path, events)
+
+        assert (result["num_turns"], result["last_message"]) == (2, "now commit")
+
     def test_fork_seed_cost_counts_each_turn_once(self, tmp_path):
         events = tmp_path / "events.jsonl"
         totals = (0.68, 4.18, 4.37, 0.50, 0.90)
@@ -3991,7 +4019,7 @@ class TestBundleSeeding:
         ]
 
     @pytest.mark.anyio
-    async def test_seeding_precedes_the_opening_messages(self, tmp_path):
+    async def test_seeding_precedes_the_prompts_it_delivers(self, tmp_path):
         _write_bundle_settings(tmp_path, '[bundles.fast]\nmodel = "claude-sonnet-5"\n')
         svc, containers = _creating_service(tmp_path)
         patcher, client = _patched_container_http("sess-new")
@@ -4087,6 +4115,407 @@ class TestBundleSeeding:
 
         containers.send.assert_not_awaited()
         assert result.failed_seeds is None
+
+
+class TestSpawnSeeding:
+    """A spawn's explicit model and effort overlay the bundle's, and land before any message."""
+
+    @pytest.mark.anyio
+    async def test_explicit_values_win_over_the_bundles(self, tmp_path):
+        _write_bundle_settings(
+            tmp_path,
+            '[bundles.research]\nmodel = "claude-opus-5-5"\neffort_level = "max"\n',
+        )
+        svc, containers = _creating_service(tmp_path)
+        patcher, client = _patched_container_http("sess-new")
+
+        with patcher as client_cls:
+            client_cls.return_value = client
+            result = await svc.create(bundle="research", model="haiku", effort_level="low")
+
+        assert _sends(containers) == [
+            ("POST", "api/model?session_id=sess-new", {"model": "haiku"}),
+            ("POST", "api/effort-level?session_id=sess-new", {"effort_level": "low"}),
+        ]
+        assert (result.model, result.effort_level) == ("haiku", "low")
+
+    @pytest.mark.anyio
+    async def test_an_explicit_effort_alone_is_seeded_without_a_bundle(self, tmp_path):
+        svc, containers = _creating_service(tmp_path)
+        patcher, client = _patched_container_http("sess-new")
+
+        with patcher as client_cls:
+            client_cls.return_value = client
+            result = await svc.create(effort_level="medium")
+
+        assert _sends(containers) == [
+            ("POST", "api/effort-level?session_id=sess-new", {"effort_level": "medium"}),
+        ]
+        assert result.failed_seeds is None
+
+    @pytest.mark.anyio
+    async def test_an_explicit_value_the_runtime_cannot_set_is_reported_failed(self, tmp_path):
+        _write_bundle_settings(tmp_path, '[bundles.research]\npermission_mode = "plan"\n')
+        svc, containers = _creating_service(tmp_path, agent="langgraph")
+        patcher, client = _patched_container_http("sess-new")
+
+        with patcher as client_cls:
+            client_cls.return_value = client
+            result = await svc.create(bundle="research", model="m", effort_level="low")
+
+        containers.send.assert_not_awaited()
+        assert result.failed_seeds == ["model", "effort_level"]
+
+    @pytest.mark.anyio
+    async def test_the_settings_precede_the_prompt(self, tmp_path):
+        svc, containers = _creating_service(tmp_path)
+        patcher, client = _patched_container_http("sess-new")
+
+        with patcher as client_cls:
+            client_cls.return_value = client
+            await svc.create_with_prompt("go", model="haiku")
+
+        assert [endpoint for _, endpoint, _ in _sends(containers)] == [
+            "api/model?session_id=sess-new",
+            "api/send",
+        ]
+
+    @pytest.mark.anyio
+    async def test_name_and_lineage_are_on_disk_before_the_listing_is_told(self, tmp_path):
+        svc, containers = _creating_service(tmp_path)
+        patcher, client = _patched_container_http("sess-new")
+        path = Workspace(tmp_path).ensure_session("sess-new").path / SESSION_METADATA_FILE
+        seen_at_broadcast: list[dict] = []
+
+        async def capture(_event):
+            seen_at_broadcast.append(read_json(path, default={}) or {})
+
+        svc._events.broadcast = AsyncMock(side_effect=capture)
+
+        with patcher as client_cls:
+            client_cls.return_value = client
+            result = await svc.create_with_prompt(
+                "go",
+                spawned_from_session_id="parent-1",
+                name="lint-fix",
+            )
+
+        changed = [
+            seen
+            for seen, call in zip(
+                seen_at_broadcast,
+                svc._events.broadcast.await_args_list,
+                strict=True,
+            )
+            if call.args[0].type == "sessions_changed"
+        ]
+        assert changed[0]["spawned_from_session_id"] == "parent-1"
+        assert changed[0]["name"] == "lint-fix"
+        assert (result.name, result.spawned_from_session_id) == ("lint-fix", "parent-1")
+        containers.create.assert_awaited_once_with(bundle=None)
+
+
+def _sibling_info(session_id: str, **overrides) -> SessionInfo:
+    return SessionInfo(session_id=session_id, fork_point_cost_usd=0.0, **overrides)
+
+
+class TestSpawnedSiblings:
+    """A caller resumes, lists and stops only the sessions whose recorded spawner it is."""
+
+    @staticmethod
+    def _service(tmp_path, records: dict[str, SessionMetadata]):
+        svc, repo, containers = _make_service(tmp_path)
+
+        def get(session_id):
+            if session_id not in records:
+                raise SharedSessionNotFound(session_id=session_id)
+
+            return records[session_id]
+
+        repo.get.side_effect = get
+
+        return svc, containers
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("target", ["stranger", "missing"])
+    async def test_a_session_the_caller_did_not_spawn_is_refused(self, tmp_path, target):
+        records = {"stranger": _make_metadata("stranger", spawned_from_session_id="someone-else")}
+        svc, containers = self._service(tmp_path, records)
+        containers.stop_container = AsyncMock()
+
+        with pytest.raises(SiblingNotOwned):
+            await svc.stop_spawned("parent-1", target)
+
+        with pytest.raises(SiblingNotOwned):
+            await svc.resume_spawned("parent-1", target)
+
+        containers.stop_container.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_resume_reports_a_new_container_as_resumed(self, tmp_path):
+        records = {"sib": _make_metadata("sib", spawned_from_session_id="parent-1")}
+        svc, containers = self._service(tmp_path, records)
+        containers.find_by_session = AsyncMock(return_value=None)
+
+        with patch.object(
+            svc,
+            "resume",
+            new=AsyncMock(return_value=_sibling_info("sib", container_id="ctr-new")),
+        ):
+            info, resumed = await svc.resume_spawned("parent-1", "sib")
+
+        assert (info.container_id, resumed) == ("ctr-new", True)
+
+    @pytest.mark.anyio
+    async def test_resume_adopts_a_running_sibling_in_place(self, tmp_path):
+        records = {"sib": _make_metadata("sib", spawned_from_session_id="parent-1")}
+        svc, containers = self._service(tmp_path, records)
+        containers.find_by_session = AsyncMock(
+            return_value=_make_container("ctr-1", session_id="sib"),
+        )
+
+        with patch.object(
+            svc,
+            "resume",
+            new=AsyncMock(return_value=_sibling_info("sib", container_id="ctr-1")),
+        ):
+            _, resumed = await svc.resume_spawned("parent-1", "sib")
+
+        assert resumed is False
+
+    @pytest.mark.anyio
+    async def test_list_names_own_siblings_oldest_first_with_their_state(self, tmp_path):
+        from datetime import UTC, datetime
+
+        svc, containers = self._service(tmp_path, {})
+        containers.list_all = MagicMock(
+            return_value=[
+                _make_container("ctr-a", session_id="a"),
+                _make_container("ctr-c", session_id="c", status=ContainerStatus.STARTING),
+            ],
+        )
+        sessions = (
+            _sibling_info(
+                "c",
+                spawned_from_session_id="p",
+                container_id="ctr-c",
+                started_at=datetime(2026, 1, 3, tzinfo=UTC),
+            ),
+            _sibling_info(
+                "a",
+                spawned_from_session_id="p",
+                container_id="ctr-a",
+                name="hand",
+                auto_name="auto",
+                activity="working",
+                started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+            _sibling_info(
+                "b",
+                spawned_from_session_id="p",
+                auto_name="auto-b",
+                started_at=datetime(2026, 1, 2, tzinfo=UTC),
+            ),
+            _sibling_info(
+                "x",
+                spawned_from_session_id="other",
+                started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+            _sibling_info(
+                "d",
+                spawned_from_session_id="p",
+                container_id="ctr-a",
+                started_at=datetime(2026, 1, 4, tzinfo=UTC),
+            ),
+        )
+
+        with patch.object(
+            svc,
+            "list_all",
+            new=AsyncMock(return_value=MagicMock(sessions=sessions)),
+        ):
+            siblings = await svc.list_spawned("p")
+
+        assert [(s.session_id, s.name, s.state) for s in siblings] == [
+            ("a", "hand", "working"),
+            ("b", "auto-b", "stopped"),
+            ("c", None, "working"),
+            ("d", None, "idle"),
+        ]
+
+    @pytest.mark.anyio
+    async def test_a_stop_reaches_the_whole_tree_deepest_first(self, tmp_path):
+        records = {"child": _make_metadata("child", spawned_from_session_id="parent-1")}
+        svc, containers = self._service(tmp_path, records)
+        sessions = (
+            _sibling_info("child", spawned_from_session_id="parent-1"),
+            _sibling_info("grand", spawned_from_session_id="child"),
+            _sibling_info("great", spawned_from_session_id="grand"),
+            _sibling_info("unrelated", spawned_from_session_id="parent-1"),
+        )
+        running = {
+            sid: _make_container(f"ctr-{sid}", session_id=sid)
+            for sid in ("child", "grand", "great", "unrelated")
+        }
+        containers.find_by_session = AsyncMock(side_effect=lambda sid, **_: running.get(sid))
+        stopped: list[str] = []
+        containers.stop_container = AsyncMock(side_effect=stopped.append)
+        containers.remove = AsyncMock()
+
+        with patch.object(
+            svc,
+            "list_all",
+            new=AsyncMock(return_value=MagicMock(sessions=sessions)),
+        ):
+            await svc.stop_spawned("parent-1", "child")
+
+        assert stopped == ["ctr-great", "ctr-grand", "ctr-child"]
+        assert [call.args[0] for call in containers.remove.await_args_list] == stopped
+
+    @pytest.mark.anyio
+    async def test_a_live_reply_thread_in_the_tree_refuses_the_whole_stop(self, tmp_path):
+        records = {"child": _make_metadata("child", spawned_from_session_id="parent-1")}
+        svc, containers = self._service(tmp_path, records)
+        sessions = (
+            _sibling_info("child", spawned_from_session_id="parent-1"),
+            _sibling_info("grand", spawned_from_session_id="child"),
+        )
+        running = {
+            "child": _make_container("ctr-child", session_id="child"),
+            "grand": _make_container(
+                "ctr-grand",
+                session_id="grand",
+                members=["thread-1", "thread-old"],
+                live_session_ids=["grand", "thread-1"],
+            ),
+        }
+        containers.find_by_session = AsyncMock(side_effect=lambda sid, **_: running.get(sid))
+        containers.stop_container = AsyncMock()
+
+        with (
+            patch.object(svc, "list_all", new=AsyncMock(return_value=MagicMock(sessions=sessions))),
+            pytest.raises(SiblingStopHostsThread) as refused,
+        ):
+            await svc.stop_spawned("parent-1", "child")
+
+        assert refused.value.context["session_id"] == "thread-1"
+        containers.stop_container.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_a_stopped_sibling_stops_as_a_no_op(self, tmp_path):
+        records = {"child": _make_metadata("child", spawned_from_session_id="parent-1")}
+        svc, containers = self._service(tmp_path, records)
+        containers.find_by_session = AsyncMock(return_value=None)
+        containers.stop_container = AsyncMock()
+
+        with patch.object(
+            svc,
+            "list_all",
+            new=AsyncMock(
+                return_value=MagicMock(
+                    sessions=(_sibling_info("child", spawned_from_session_id="parent-1"),),
+                ),
+            ),
+        ):
+            await svc.stop_spawned("parent-1", "child")
+
+        containers.stop_container.assert_not_awaited()
+
+
+class TestDeliverTurnEnd:
+    """A spawned session's turn end reaches its spawner's current container, or waits on disk."""
+
+    @staticmethod
+    def _service(tmp_path, *, parent_container: str | None):
+        svc, repo, containers = _make_service(tmp_path)
+        records = {
+            "sib": _make_metadata("sib", spawned_from_session_id="parent-1", auto_name="lint-fix"),
+            "parent-1": _make_metadata("parent-1"),
+            "root": _make_metadata("root"),
+        }
+
+        def get(session_id):
+            if session_id not in records:
+                raise SharedSessionNotFound(session_id=session_id)
+
+            return records[session_id]
+
+        repo.get.side_effect = get
+        container = (
+            _make_container(parent_container, session_id="parent-1") if parent_container else None
+        )
+        containers.find_by_session = AsyncMock(return_value=container)
+        containers.send = AsyncMock(return_value={})
+
+        return svc, containers
+
+    @pytest.mark.anyio
+    async def test_a_running_spawner_gets_it_in_its_current_container(self, tmp_path):
+        svc, containers = self._service(tmp_path, parent_container="ctr-now")
+
+        outcome = await svc.deliver_turn_end("sib", delivery_id="d1", outcome="ended", text="Done.")
+
+        assert outcome == "delivered"
+        containers.send.assert_awaited_once_with(
+            payload={
+                "from_session_id": "sib",
+                "from_name": "lint-fix",
+                "delivery_id": "d1",
+                "outcome": "ended",
+                "text": "Done.",
+            },
+            container_id="ctr-now",
+            endpoint="api/sibling-message?session_id=parent-1",
+            method="POST",
+        )
+
+    @pytest.mark.anyio
+    async def test_a_stopped_spawner_has_it_held_in_order(self, tmp_path):
+        svc, containers = self._service(tmp_path, parent_container=None)
+
+        first = await svc.deliver_turn_end("sib", delivery_id="d1", outcome="ended", text="one")
+        await svc.deliver_turn_end("sib", delivery_id="d2", outcome="failed", text="two")
+
+        held = (
+            Workspace(tmp_path).ensure_session("parent-1").path / "sibling-messages.pending.jsonl"
+        )
+        assert first == "held"
+        assert [json.loads(line)["delivery_id"] for line in held.read_text().splitlines()] == [
+            "d1",
+            "d2",
+        ]
+        containers.send.assert_not_awaited()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("caller", ["root", "ghost"])
+    async def test_a_session_nobody_spawned_is_refused(self, tmp_path, caller):
+        svc, _ = self._service(tmp_path, parent_container="ctr-now")
+
+        with pytest.raises(SessionNotSpawned):
+            await svc.deliver_turn_end(caller, delivery_id="d1", outcome="ended", text="x")
+
+    @pytest.mark.anyio
+    async def test_a_send_that_fails_is_reported_unreachable(self, tmp_path):
+        svc, containers = self._service(tmp_path, parent_container="ctr-now")
+        containers.send = AsyncMock(side_effect=ContainerTimeout(container_id="ctr-now"))
+
+        with pytest.raises(SpawnerUnreachable):
+            await svc.deliver_turn_end("sib", delivery_id="d1", outcome="ended", text="x")
+
+    @pytest.mark.anyio
+    async def test_a_turn_its_spawners_stop_cut_short_is_dropped(self, tmp_path):
+        svc, containers = self._service(tmp_path, parent_container="ctr-now")
+        svc._stopped_by_spawner.add("sib")
+
+        outcome = await svc.deliver_turn_end(
+            "sib",
+            delivery_id="d1",
+            outcome="interrupted",
+            text="x",
+        )
+
+        assert outcome == "dropped"
+        containers.send.assert_not_awaited()
 
 
 def _plant_transcript(workspace_path: Path, session_id: str) -> Path:

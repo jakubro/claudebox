@@ -118,14 +118,12 @@
 
 /* --- Row type: diff-add --- */
 .code-block-type-diff-add {
-  color: #4caf50;
-  background: rgba(76, 175, 80, 0.1);
+  background: var(--diff-added-bg);
 }
 
 /* --- Row type: diff-remove --- */
 .code-block-type-diff-remove {
-  color: #f44336;
-  background: rgba(244, 67, 54, 0.1);
+  background: var(--diff-removed-bg);
 }
 
 /* --- Row type: diff-context (unchanged line in diff) --- */

@@ -15,11 +15,11 @@ const SHORTCUTS = [
   { key: 'Alt+2', label: 'Todos' },
   { key: 'Alt+3', label: 'Stash' },
   { key: 'Alt+4', label: 'Tasks' },
-  { key: 'Alt+5', label: 'Bookmarks' },
-  { key: 'Alt+6', label: 'Boards' },
-  { key: 'Alt+7', label: 'Usage' },
-  { key: 'Alt+8', label: 'MCP' },
-  { key: 'Alt+9', label: 'Skills' },
+  { key: 'Alt+5', label: 'Crons' },
+  { key: 'Alt+6', label: 'Bookmarks' },
+  { key: 'Alt+7', label: 'Boards' },
+  { key: 'Alt+8', label: 'Usage' },
+  { key: 'Alt+9', label: 'MCP' },
   { key: 'Alt+?', label: 'Help' },
 ]
 

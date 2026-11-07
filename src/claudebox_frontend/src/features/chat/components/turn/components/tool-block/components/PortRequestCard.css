@@ -1,0 +1,41 @@
+/* An agent's request to open a port to this computer */
+.port-request {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 4px 0 6px;
+  font-size: 13px;
+}
+
+.port-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.port-request-actions button {
+  padding: 3px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.port-request-actions .port-request-approve {
+  border-color: var(--accent);
+}
+
+.port-request-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.port-request-outcome {
+  color: var(--text-muted);
+}
+
+.port-request-error {
+  margin-top: 6px;
+  color: var(--error);
+}

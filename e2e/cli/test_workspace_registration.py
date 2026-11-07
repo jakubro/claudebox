@@ -180,3 +180,56 @@ def test_registering_the_same_directory_again_says_it_is_already_registered(tmp_
     assert (first["already_registered"], again["already_registered"]) == (False, True)
     assert again["id"] == first["id"]
     assert [w["id"] for w in client.get("/api/workspaces").json()["workspaces"]] == [first["id"]]
+
+
+# SPEC: workspace:register-needs-cli
+@pytest.mark.parametrize(
+    ("spelling", "resolved"),
+    [
+        ("<home>", "<home>"),
+        ("<root>", "<root>"),
+        ("<home>/.claudebox", "<home>/.claudebox"),
+        ("<root>/home-link", "<home>"),
+    ],
+    ids=["home", "above-home", "own-folder", "link-to-home"],
+)
+def test_the_home_directory_registers_only_once_a_terminal_marked_it(
+    tmp_path,
+    home,
+    client,
+    spelling,
+    resolved,
+):
+    (home / ".claudebox").mkdir(exist_ok=True)
+    (tmp_path / "home-link").symlink_to(home)
+    directory = Path(resolved.replace("<home>", str(home)).replace("<root>", str(tmp_path)))
+    spelled = spelling.replace("<home>", str(home)).replace("<root>", str(tmp_path))
+
+    refused = client.post("/api/workspaces", json={"path": spelled})
+
+    assert (refused.status_code, refused.json()["error"]) == (400, "workspace_path_needs_cli")
+    assert "claudebox workspaces register" in refused.json()["message"]
+    assert not (directory / ".workspace").exists()
+    assert client.get("/api/workspaces").json()["workspaces"] == []
+
+    (directory / ".workspace").touch()
+    accepted = client.post("/api/workspaces", json={"path": spelled})
+
+    assert accepted.status_code == 200
+    assert (accepted.json()["path"], accepted.json()["already_registered"]) == (
+        str(directory.resolve()),
+        False,
+    )
+
+
+# SPEC: workspace:register-needs-cli
+def test_a_project_beside_the_refused_home_still_registers(tmp_path, home, client):
+    refused = client.post("/api/workspaces", json={"path": str(home)})
+    project = home / "code" / "app"
+    project.mkdir(parents=True)
+
+    accepted = client.post("/api/workspaces", json={"path": str(project)})
+
+    assert refused.status_code == 400
+    assert accepted.status_code == 200
+    assert (project / ".workspace").is_file()

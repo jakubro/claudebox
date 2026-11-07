@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildNotificationTitle,
+  finishedRunOrigin,
   getResponsePreview,
   requestNotificationPermission,
   setTitleIndicator,
@@ -124,5 +125,62 @@ describe('setTitleIndicator', () => {
   it('does nothing when removing prefix that does not exist', () => {
     setTitleIndicator(false)
     expect(document.title).toBe('Claudebox')
+  })
+})
+
+describe('finishedRunOrigin', () => {
+  const user = (content = 'go') => ({ type: 'user', subtype: 'message', is_human: true, content })
+  const reply = { type: 'assistant', subtype: 'text', content: 'ok' }
+  const result = { type: 'result', subtype: 'success' }
+  const sibling = { type: 'system', subtype: 'sibling_message', content: 'Done.' }
+  const taskNotification = { type: 'system', subtype: 'task_notification' }
+  const tool = name => ({ type: 'assistant', subtype: 'tool_use', tool_name: name })
+
+  it.each([
+    ['a run the user started', [user(), reply, result], false],
+    [
+      'a run a sibling message started after an idle turn',
+      [user(), reply, result, sibling, reply, result],
+      true,
+    ],
+    [
+      'a sibling message delivered mid-run and run afterwards',
+      [user(), reply, sibling, result, reply, result],
+      true,
+    ],
+    [
+      'the user typing during a sibling run',
+      [user(), reply, result, sibling, reply, user('stop'), result],
+      false,
+    ],
+    ['a task notification run', [user(), reply, result, taskNotification, reply, result], false],
+    ['a sibling run with no reply of its own', [user(), reply, result, sibling, result], true],
+  ])('%s', (_name, events, fromSibling) => {
+    expect(finishedRunOrigin(events).fromSibling).toBe(fromSibling)
+  })
+
+  it.each(['mcp__claudebox__needs_user', 'needs_user', 'AskUserQuestion', 'ExitPlanMode'])(
+    'a run calling %s asks the user',
+    name => {
+      expect(finishedRunOrigin([user(), tool(name), result]).asksUser).toBe(true)
+    },
+  )
+
+  it('an ask in an earlier run does not count', () => {
+    const events = [user(), tool('needs_user'), result, sibling, reply, result]
+
+    expect(finishedRunOrigin(events)).toEqual({ fromSibling: true, asksUser: false })
+  })
+
+  it("ignores a subagent's own events", () => {
+    const nested = { ...sibling, parent_tool_use_id: 'tu_1' }
+
+    expect(finishedRunOrigin([user(), reply, result, nested, reply, result]).fromSibling).toBe(
+      false,
+    )
+  })
+
+  it('reports nothing before any run finished', () => {
+    expect(finishedRunOrigin([user(), reply])).toEqual({ fromSibling: false, asksUser: false })
   })
 })

@@ -287,6 +287,37 @@ class TestRealGraphToolTurn:
         assert block.is_error is True
         assert "7" in block.content
 
+    @pytest.mark.anyio
+    async def test_asking_for_a_port_ends_the_turn_on_the_call(self, tmp_path):
+        """The model is not called again after port_open - the user's answer starts the next turn."""
+
+        runtime = await _connected_runtime(
+            tmp_path,
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[{"id": "tc-1", "name": "port_open", "args": {"port": 5173}}],
+                ),
+                AIMessage(content="carried on without the answer"),
+            ],
+        )
+
+        try:
+            events = await _drive(runtime, "open the dev server", 5)
+        finally:
+            await runtime.disconnect()
+
+        assert [e.kind for e in events] == [
+            "system_init",
+            "user_message",
+            "assistant_message",
+            "user_message",
+            "result",
+        ]
+        block = events[3].payload.content[0]
+        assert isinstance(block, ToolResultBlock)
+        assert "Asked the user to open port 5173" in str(block.content)
+
 
 class TestSessionStartContext:
     """The profile's session-start hook reaches the model, exactly once per thread."""

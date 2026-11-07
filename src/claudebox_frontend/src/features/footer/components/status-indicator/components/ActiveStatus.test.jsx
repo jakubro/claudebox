@@ -16,12 +16,7 @@ describe('ActiveStatus', () => {
   it('renders label with animated dots and interrupt hint', () => {
     const now = Date.now()
     render(
-      <ActiveStatus
-        label="Working"
-        status="working"
-        respondingSince={now}
-        lastEventTimestamp={now}
-      />,
+      <ActiveStatus label="Working" status="working" runningSince={now} lastEventTimestamp={now} />,
     )
 
     expect(screen.getByText('Working')).toBeInTheDocument()
@@ -32,12 +27,7 @@ describe('ActiveStatus', () => {
   it('shows elapsed timer after 1 second', () => {
     const now = Date.now()
     render(
-      <ActiveStatus
-        label="Working"
-        status="working"
-        respondingSince={now}
-        lastEventTimestamp={now}
-      />,
+      <ActiveStatus label="Working" status="working" runningSince={now} lastEventTimestamp={now} />,
     )
 
     expect(screen.queryByText(/\(\d+s\)/)).not.toBeInTheDocument()
@@ -47,18 +37,17 @@ describe('ActiveStatus', () => {
     expect(screen.getByText('(1s)')).toBeInTheDocument()
   })
 
-  it('anchors elapsed timer to respondingSince, not mount time', () => {
+  it('anchors elapsed timer to runningSince, not mount time', () => {
     const threeSecondsAgo = Date.now() - 3000
     render(
       <ActiveStatus
         label="Working"
         status="working"
-        respondingSince={threeSecondsAgo}
+        runningSince={threeSecondsAgo}
         lastEventTimestamp={Date.now()}
       />,
     )
 
-    // First tick should show ~3s since respondingSince is 3s in the past
     act(() => vi.advanceTimersByTime(1000))
 
     expect(screen.getByText('(4s)')).toBeInTheDocument()
@@ -70,7 +59,7 @@ describe('ActiveStatus', () => {
       <ActiveStatus
         label="Working"
         status="working"
-        respondingSince={twoMinutesAgo}
+        runningSince={twoMinutesAgo}
         lastEventTimestamp={Date.now()}
       />,
     )
@@ -86,7 +75,7 @@ describe('ActiveStatus', () => {
       <ActiveStatus
         label="Working"
         status="working"
-        respondingSince={ninetyMinutesAgo}
+        runningSince={ninetyMinutesAgo}
         lastEventTimestamp={Date.now()}
       />,
     )
@@ -102,7 +91,7 @@ describe('ActiveStatus', () => {
       <ActiveStatus
         label="Working"
         status="working"
-        respondingSince={thirtyHoursAgo}
+        runningSince={thirtyHoursAgo}
         lastEventTimestamp={Date.now()}
       />,
     )
@@ -115,12 +104,7 @@ describe('ActiveStatus', () => {
   it('keeps the Working label at full strength through silence', () => {
     const now = Date.now()
     render(
-      <ActiveStatus
-        label="Working"
-        status="working"
-        respondingSince={now}
-        lastEventTimestamp={now}
-      />,
+      <ActiveStatus label="Working" status="working" runningSince={now} lastEventTimestamp={now} />,
     )
 
     // Advance past silence threshold (5s)
@@ -133,12 +117,7 @@ describe('ActiveStatus', () => {
   it('applies status-silent class when silent', () => {
     const now = Date.now()
     render(
-      <ActiveStatus
-        label="Working"
-        status="working"
-        respondingSince={now}
-        lastEventTimestamp={now}
-      />,
+      <ActiveStatus label="Working" status="working" runningSince={now} lastEventTimestamp={now} />,
     )
 
     const dot = screen.getByTestId('footer-status')
@@ -152,12 +131,7 @@ describe('ActiveStatus', () => {
   it('reverts the dot to active when new events arrive', () => {
     const now = Date.now()
     const { rerender } = render(
-      <ActiveStatus
-        label="Working"
-        status="working"
-        respondingSince={now}
-        lastEventTimestamp={now}
-      />,
+      <ActiveStatus label="Working" status="working" runningSince={now} lastEventTimestamp={now} />,
     )
 
     const dot = screen.getByTestId('footer-status')
@@ -168,7 +142,7 @@ describe('ActiveStatus', () => {
       <ActiveStatus
         label="Working"
         status="working"
-        respondingSince={now}
+        runningSince={now}
         lastEventTimestamp={Date.now()}
       />,
     )
@@ -182,7 +156,7 @@ describe('ActiveStatus', () => {
       <ActiveStatus
         label="Submitting"
         status="submitting"
-        respondingSince={null}
+        runningSince={null}
         lastEventTimestamp={null}
       />,
     )
@@ -196,12 +170,7 @@ describe('ActiveStatus', () => {
   it('increments elapsed time continuously', () => {
     const now = Date.now()
     render(
-      <ActiveStatus
-        label="Working"
-        status="working"
-        respondingSince={now}
-        lastEventTimestamp={now}
-      />,
+      <ActiveStatus label="Working" status="working" runningSince={now} lastEventTimestamp={now} />,
     )
 
     act(() => vi.advanceTimersByTime(3000))
@@ -211,12 +180,12 @@ describe('ActiveStatus', () => {
     expect(screen.getByText('(5s)')).toBeInTheDocument()
   })
 
-  it('falls back to mount time when respondingSince is null', () => {
+  it('falls back to mount time when runningSince is null', () => {
     render(
       <ActiveStatus
         label="Submitting"
         status="submitting"
-        respondingSince={null}
+        runningSince={null}
         lastEventTimestamp={null}
       />,
     )
@@ -224,5 +193,25 @@ describe('ActiveStatus', () => {
     act(() => vi.advanceTimersByTime(2000))
 
     expect(screen.getByText('(2s)')).toBeInTheDocument()
+  })
+
+  it("shows the running turn's time at once, then changes on that start's whole seconds", () => {
+    const startedAt = Date.now() - 3400
+    render(
+      <ActiveStatus
+        label="Submitting"
+        status="submitting"
+        runningSince={startedAt}
+        lastEventTimestamp={null}
+      />,
+    )
+
+    expect(screen.getByText('(3s)')).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(599))
+    expect(screen.getByText('(3s)')).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.getByText('(4s)')).toBeInTheDocument()
   })
 })

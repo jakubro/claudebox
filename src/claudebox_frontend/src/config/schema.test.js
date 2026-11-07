@@ -35,6 +35,8 @@ describe('normalizeToolName', () => {
     expect(normalizeToolName('session_spawn')).toBe(ToolName.SESSION_SPAWN)
     expect(normalizeToolName('session_ask')).toBe(ToolName.SESSION_ASK)
     expect(normalizeToolName('session_read')).toBe(ToolName.SESSION_READ)
+    expect(normalizeToolName('session_stop')).toBe(ToolName.SESSION_STOP)
+    expect(normalizeToolName('session_list')).toBe(ToolName.SESSION_LIST)
   })
 
   it('returns Claude canonical names unchanged', () => {

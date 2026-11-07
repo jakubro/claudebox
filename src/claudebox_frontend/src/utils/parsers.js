@@ -5,6 +5,14 @@ import { unescapeXml } from './xml'
 const FORM_RESPONSE =
   /^<response:(?:AskUserQuestion|ExitPlanMode)>([\s\S]*?)<\/response:(?:AskUserQuestion|ExitPlanMode)>$/
 
+const PORT_ANSWER = /^<response:port_open port="(\d+)">([\s\S]*?)<\/response:port_open>/
+
+/** The port and outcome text a user's answer to a port request carries, or null for any other message. */
+export function parsePortAnswer(message) {
+  const match = message?.trim().match(PORT_ANSWER)
+  return match ? { port: Number(match[1]), text: match[2] } : null
+}
+
 /**
  * Walk `<local-command-stdout|stderr>` blocks in `message` into interleaved segments; returns null
  * (not []) when none are present, so callers can branch on absence without re-running the regex.
@@ -60,6 +68,11 @@ export function parseLocalCommandOutput(message) {
   const segments = parseLocalCommandSegments(message)
   if (segments) {
     return segments.length > 0 ? segments : [{ type: 'text', content: message }]
+  }
+
+  const portAnswer = parsePortAnswer(message)
+  if (portAnswer) {
+    return [{ type: 'text', content: portAnswer.text }]
   }
 
   // response:AskUserQuestion or response:ExitPlanMode: single full-wrap block

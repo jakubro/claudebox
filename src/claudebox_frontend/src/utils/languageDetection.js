@@ -123,6 +123,19 @@ export function getLanguageFromPath(filePath) {
 
 const MIN_RELEVANCE = 5 // audit-ignore: misplaced-constant
 
+const MARKDOWN_STRUCTURES = [
+  /^#{1,6}\s+\S/m, // Headers: # Header
+  /^[-*]\s+\S/m, // Unordered list: - item
+  /^\d+\.\s+\S/m, // Ordered list: 1. item
+  /^>\s+\S/m, // Blockquote: > quote
+  /^ {0,3}```[^\n]*\n[\s\S]*?^ {0,3}```/m, // Code block, fenced at line starts
+]
+const MARKDOWN_SIGNS = [
+  /\*\*[^*]+\*\*/, // Bold: **text**
+  /\[[^\]]+\]\([^)]+\)/, // Links: [text](url)
+]
+const FENCED_BLOCKS = /^ {0,3}```[^\n]*\n[\s\S]*?^ {0,3}```[^\n]*$/gm
+
 /** Detect language from content using highlight.js. */
 export function detectLanguageFromContent(content) {
   if (!content || content.length < 10) {
@@ -141,26 +154,25 @@ export function detectLanguageFromContent(content) {
   return null
 }
 
-/** Check if content has markdown-like patterns. */
+/** Whether content reads as markdown to format, rather than source code holding markdown signs. */
 export function looksLikeMarkdown(content) {
   if (!content) {
     return false
   }
 
-  const patterns = [
-    /^#{1,6}\s+\S/m, // Headers: # Header
-    /\*\*[^*]+\*\*/, // Bold: **text**
-    /\[[^\]]+\]\([^)]+\)/, // Links: [text](url)
-    /^[-*]\s+\S/m, // Unordered list: - item
-    /^\d+\.\s+\S/m, // Ordered list: 1. item
-    /^>\s+\S/m, // Blockquote: > quote
-    /```[\s\S]*?```/, // Code blocks
-  ]
+  const structures = MARKDOWN_STRUCTURES.filter(p => p.test(content)).length
+  if (structures >= 2) {
+    return true
+  }
 
-  const matches = patterns.filter(p => p.test(content)).length
+  // Detection misreads markdown prose (it calls a heading-and-list summary css), so it runs only
+  // short of two structures, and never on fenced blocks, whose code would pass for the whole text.
+  const language = detectLanguageFromContent(content.replace(FENCED_BLOCKS, ''))
+  if (language && language !== 'markdown') {
+    return false
+  }
 
-  // Require at least 2 different markdown indicators
-  return matches >= 2
+  return structures + MARKDOWN_SIGNS.filter(p => p.test(content)).length >= 2
 }
 
 /** Whether trimmed text opens like a JSON document (array or object), sniffed from its edge. */

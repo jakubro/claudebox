@@ -212,13 +212,13 @@ class TestRunContainerFixedPorts:
         runtime._backend.run_container.return_value = "b1"
 
         with (
-            patch("claudebox.containers.run._port_in_use", {8080}.__contains__),
-            patch("claudebox.containers.run._free_port", lambda: 41000),
+            patch("claudebox.containers.run._port_in_use", lambda port, _mapping: port == 8080),
+            patch("claudebox.containers.run._free_port", lambda _mapping: 41000),
         ):
             runtime.run_container(name="c1", labels={}, env={}, detach=True)
 
         args = list(runtime._backend.run_container.call_args.args)
-        assert "41000:80" in [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
+        assert "127.0.0.1:41000:80" in [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
 
     def test_probe_and_run_are_serialised(self, _tf, _td, tmp_path):
         runtime = ContainerRuntime(_ported_config(tmp_path, {"8080": 80}))
@@ -237,7 +237,7 @@ class TestRunContainerFixedPorts:
         runtime._backend = MagicMock()
         runtime._backend.run_container.side_effect = slow_run
 
-        with patch("claudebox.containers.run._port_in_use", lambda _port: False):
+        with patch("claudebox.containers.run._port_in_use", lambda _port, _mapping: False):
             threads = [
                 threading.Thread(
                     target=runtime.run_container,

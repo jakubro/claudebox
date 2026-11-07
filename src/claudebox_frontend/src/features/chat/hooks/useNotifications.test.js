@@ -477,4 +477,57 @@ describe('useNotifications with notificationsEnabled', () => {
 
     expect(global.AudioContext).not.toHaveBeenCalled()
   })
+
+  describe('a run a sibling session started', () => {
+    const user = { type: 'user', subtype: 'message', is_human: true, content: 'go' }
+    const reply = { type: 'assistant', subtype: 'text', content: 'ok' }
+    const result = { type: 'result', subtype: 'success' }
+    const sibling = {
+      type: 'system',
+      subtype: 'sibling_message',
+      content: 'Done.',
+      message_data: { from_session_id: 's-1' },
+    }
+    const ask = { type: 'assistant', subtype: 'tool_use', tool_name: 'mcp__claudebox__needs_user' }
+
+    const finish = (events, options = {}) => {
+      const { rerender } = renderHook(
+        props =>
+          useNotifications({
+            ...props,
+            sessionName: 'Test',
+            workspace: '/home/user/project',
+            notificationsEnabled: true,
+            ...options,
+          }),
+        { initialProps: { isResponding: true, events } },
+      )
+      rerender({ isResponding: false, events })
+    }
+
+    it('plays no chime', () => {
+      finish([user, reply, result, sibling, reply, result])
+
+      expect(global.AudioContext).not.toHaveBeenCalled()
+      expect(document.title).toBe('* Test | Claudebox')
+    })
+
+    it('notifies when that run itself asks the user', () => {
+      finish([user, reply, result, sibling, reply, ask, result])
+
+      expect(global.AudioContext).toHaveBeenCalledTimes(1)
+    })
+
+    it('stays quiet when it asks in a session another session spawned', () => {
+      finish([user, reply, result, sibling, reply, ask, result], { canNeedUser: false })
+
+      expect(global.AudioContext).not.toHaveBeenCalled()
+    })
+
+    it('still notifies for a run the user started', () => {
+      finish([sibling, reply, result, user, reply, result])
+
+      expect(global.AudioContext).toHaveBeenCalledTimes(1)
+    })
+  })
 })

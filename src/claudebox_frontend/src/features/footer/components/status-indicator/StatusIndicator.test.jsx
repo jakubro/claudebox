@@ -8,7 +8,7 @@ const defaultProps = {
   connectionStatus: 'connected',
   connectionError: null,
   isResponding: false,
-  respondingSince: null,
+  runningSince: null,
   lastEventTimestamp: null,
   isSubmitting: false,
   isAwaitingResponse: false,

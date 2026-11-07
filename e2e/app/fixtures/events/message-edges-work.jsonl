@@ -1,0 +1,5 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Audit the build","turn_id":"turn_001","primary":true,"id":"evt_001","ts":"2025-01-18T13:00:01Z"}
+{"type":"assistant","subtype":"tool_use","content":"Task","tool_use_id":"tool_1","tool_name":"Task","tool_input":{"description":"Audit the build","prompt":"Audit the build.","subagent_type":"Explore"},"primary":false,"is_human":false,"id":"evt_002","ts":"2025-01-18T13:00:02Z"}
+{"type":"assistant","subtype":"text","content":"- debug audited\n- release audited\n\n  ---","parent_tool_use_id":"tool_1","primary":false,"is_human":false,"id":"evt_003","ts":"2025-01-18T13:00:03Z"}
+{"type":"assistant","subtype":"tool_result","content":"Audited.","tool_use_id":"tool_1","primary":false,"is_human":false,"id":"evt_004","ts":"2025-01-18T13:00:04Z"}
+{"type":"result","subtype":"success","turn_id":"turn_001","primary":false,"is_human":false,"id":"evt_005","ts":"2025-01-18T13:00:05Z"}

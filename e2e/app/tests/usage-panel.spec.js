@@ -29,8 +29,8 @@ test.describe('Usage Panel', () => {
     expect(box.x).toBeGreaterThan(viewport.width / 2)
   })
 
-  // SPEC: shortcut:alt7
-  test('Alt+7 toggles usage panel', async ({ page }) => {
+  // SPEC: shortcut:alt8
+  test('Alt+8 toggles usage panel', async ({ page }) => {
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
@@ -38,10 +38,10 @@ test.describe('Usage Panel', () => {
     // Usage is hidden by default.
     await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
 
-    await page.keyboard.press('Alt+7')
+    await page.keyboard.press('Alt+8')
     await expect(page.locator('[data-testid="panel-usage"]')).toBeVisible()
 
-    await page.keyboard.press('Alt+7')
+    await page.keyboard.press('Alt+8')
     await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
   })
 
@@ -183,7 +183,7 @@ test.describe('Usage Panel', () => {
 
     const iconBtn = page.locator('[data-testid="icon-usage"]')
     await expect(iconBtn).toBeVisible()
-    await expect(iconBtn).toHaveAttribute('title', 'Usage (Alt+7)')
+    await expect(iconBtn).toHaveAttribute('title', 'Usage (Alt+8)')
 
     // TrendingUp from lucide-react renders as an SVG element
     const svg = iconBtn.locator('svg')

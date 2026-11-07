@@ -461,3 +461,56 @@ class TestIsSyntheticUserMessage:
 
     def test_whitespace_preserved(self):
         assert _is_synthetic_user_message("  <system-reminder>x</system-reminder>  ") is True
+
+
+class TestSiblingMessageEnvelope:
+    """A sibling's turn end echoed as a user message becomes a system event nobody counts as human."""
+
+    ENVELOPE = '<sibling-message session="s-1" name="lint-fix" outcome="ended" id="d-1">\nDone.\n</sibling-message>'
+
+    def test_an_envelope_echo_is_one_sibling_event_and_no_human_message(self):
+        events = _events({"type": "user", "message": {"content": self.ENVELOPE}})
+
+        assert [(e.type, e.subtype, e.is_human, e.content) for e in events] == [
+            ("system", "sibling_message", False, "Done."),
+        ]
+        published = to_published_event(
+            events[0],
+            id_="e1",
+            ts=datetime(2026, 1, 1, tzinfo=UTC),
+            turn_id="T1",
+        )
+        assert published.message_data == {
+            "from_session_id": "s-1",
+            "from_name": "lint-fix",
+            "outcome": "ended",
+            "delivery_id": "d-1",
+        }
+
+    def test_two_envelopes_are_two_events_in_order(self):
+        second = self.ENVELOPE.replace("d-1", "d-2").replace("Done.", "Again.")
+        events = _events({"type": "user", "message": {"content": f"{self.ENVELOPE}\n{second}"}})
+
+        assert [e.content for e in events] == ["Done.", "Again."]
+
+    def test_the_users_text_merged_with_an_envelope_stays_a_human_message(self):
+        events = _events(
+            {"type": "user", "message": {"content": f"{self.ENVELOPE}\nstop it now"}},
+        )
+
+        assert [(e.subtype, e.is_human, e.content) for e in events] == [
+            ("sibling_message", False, "Done."),
+            ("message", True, "stop it now"),
+        ]
+
+    def test_a_malformed_envelope_is_user_text_no_one_counts_as_human(self):
+        content = '<sibling-message session="s" outcome="nope" id="d">\nx\n</sibling-message>'
+
+        events = _events({"type": "user", "message": {"content": content}})
+
+        assert [(e.subtype, e.is_human) for e in events] == [("text", False)]
+
+    def test_an_assistant_never_carries_one(self):
+        events = _events({"type": "assistant", "message": {"content": self.ENVELOPE}})
+
+        assert [e.subtype for e in events] == ["text"]

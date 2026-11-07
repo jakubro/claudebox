@@ -285,20 +285,21 @@ export function EventsProvider({ children }) {
         requestsRef.current.resume = null
         dispatch({ type: 'RESUME_CLEARED' })
       },
-      startCreating: (fromRoute = null) => {
+      startCreating: (fromRoute = null, carriedMessages = []) => {
         const seq = creationsRef.current.current + 1
         requestsRef.current.create = seq
-        dispatchCreation({ type: 'CREATING_STARTED', seq, fromRoute })
+        dispatchCreation({ type: 'CREATING_STARTED', seq, fromRoute, carried: carriedMessages })
         return seq
       },
-      settleCreateRequest: (seq, sessionId) => {
+      settleCreateRequest: (seq, sessionId, answer = {}) => {
         settle('create', seq)
-        dispatchCreation({ type: 'CREATE_REQUEST_SETTLED', seq, sessionId })
+        dispatchCreation({ type: 'CREATE_REQUEST_SETTLED', seq, sessionId, answer })
       },
       failCreating: seq => {
         settle('create', seq)
         dispatchCreation({ type: 'CREATING_FAILED', seq })
       },
+      placeOpening: (seq, field) => dispatchCreation({ type: 'OPENING_PLACED', seq, field }),
       clearCreating: () => dispatch({ type: 'CREATING_ENDED' }),
       getCreation: () => creationsRef.current,
       getPendingRequests: () => ({ ...requestsRef.current }),

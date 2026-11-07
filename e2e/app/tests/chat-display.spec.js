@@ -9,6 +9,7 @@ import {
   openSession,
   openSessionWithAPI,
   openWithNoSession,
+  sendAtFixedTime,
   sendFinishedTurn,
   waitForStableScrollHeight,
 } from '../helpers.js'
@@ -199,6 +200,76 @@ test.describe('Chat Display', () => {
       await expect
         .poll(async () => (await badge.textContent())?.trim(), { timeout: 5000 })
         .not.toBe(t0)
+    })
+
+    // SPEC: chat:duration-recorded
+    test('a finished turn shows the time its agent recorded; one with none, its span', async ({
+      page,
+    }) => {
+      await openSession(page, 'events/chat-duration-recorded.jsonl')
+      const turns = page.locator('.turn-container')
+
+      await expect(turns.nth(1).locator('.turn-duration')).toHaveText('14s')
+      await expect(turns.nth(1).locator('.turn-progress-complete')).toContainText('worked for 14s')
+      await expect(turns.nth(0).locator('.turn-duration')).toHaveText('3s')
+    })
+
+    // SPEC: chat:duration-running-start
+    test("a running turn's time counts from when its message was sent", async ({ page }) => {
+      const sent = Date.parse('2026-03-01T12:00:00Z')
+      await page.clock.setFixedTime(sent + 10_000)
+      const controller = await openLiveSessionWithAPI(page)
+      await controller.sendEvents([
+        {
+          type: 'user',
+          subtype: 'text',
+          is_human: true,
+          content: 'Tell me a story',
+          timestamp: sent,
+          ts: new Date(sent).toISOString(),
+          turn_id: 'turn_run',
+        },
+        {
+          type: 'assistant',
+          subtype: 'text',
+          content: 'Once upon a time...',
+          timestamp: sent + 8000,
+          ts: new Date(sent + 8000).toISOString(),
+          turn_id: 'turn_run',
+        },
+      ])
+      await expect(page.getByText('Once upon a time...').first()).toBeVisible()
+      const badge = page.locator('.turn-duration').first()
+      await expect(badge).toHaveText('10s')
+
+      await page.clock.setFixedTime(sent + 12_000)
+
+      await expect(badge).toHaveText('12s')
+    })
+
+    // SPEC: turn:progress-no-time
+    // SPEC: chat:duration-running-start
+    test('a message sent here shows no time on its working line; its header counts from the press', async ({
+      page,
+    }) => {
+      const { controller, sent, at } = await sendAtFixedTime(page, 'Tell me a story')
+      const working = page.getByTestId('turn-progress-working')
+      await page.clock.setFixedTime(sent + 3000)
+      await expect(working).toHaveText('Working...')
+      const label = working.locator('.turn-progress-label')
+      expect(await label.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+
+      // The session records the message only when the agent echoes it, seconds after the press.
+      const echo = { type: 'user', subtype: 'text', is_human: true, content: 'Tell me a story' }
+      await controller.sendEvents([{ ...echo, ...at(5000), turn_id: 'turn_sent' }])
+      await page.clock.setFixedTime(sent + 7000)
+      await expect(working).toHaveText('Working...')
+
+      const reply = { type: 'assistant', subtype: 'text', content: 'Once upon a time...' }
+      await controller.sendEvents([{ ...reply, ...at(8000), turn_id: 'turn_sent' }])
+      await page.clock.setFixedTime(sent + 9000)
+      await expect(page.locator('.turn-duration').first()).toHaveText('9s')
+      await expect(working).toHaveText('Working...')
     })
 
     // SPEC: chat:duration-format
@@ -782,6 +853,67 @@ test.describe('Chat Display', () => {
       const preview = await openCollapsedPreview(page, 'events/chat-preview-angle-brackets.jsonl')
 
       await expect(preview.locator('.turn-preview-text')).toHaveText('if a < b and c > d then')
+    })
+  })
+
+  test.describe('Collapsed Turn In A Narrow Conversation', () => {
+    async function collapseInNarrowWindow(page) {
+      await page.setViewportSize({ width: 760, height: 720 })
+      await openSession(page, 'events/chat-collapsed-preview-long.jsonl')
+      const turns = page.locator('.turn-container')
+      for (const turn of await turns.all()) {
+        if (!(await turn.getAttribute('class')).includes('turn-collapsed')) {
+          await turn.locator('.turn-meta-collapsible').click()
+        }
+        await expect(turn.locator('.turn-preview')).toBeVisible()
+      }
+      return turns
+    }
+
+    function previewLayout(turn) {
+      return turn.locator('.turn').evaluate(bubble => {
+        const box = el => el.getBoundingClientRect()
+        const drawn = [...bubble.querySelector('.turn-meta').children]
+          .map(box)
+          .filter(r => r.width > 0)
+        const meta = {
+          left: Math.min(...drawn.map(r => r.left)),
+          top: Math.min(...drawn.map(r => r.top)),
+          right: Math.max(...drawn.map(r => r.right)),
+          bottom: Math.max(...drawn.map(r => r.bottom)),
+        }
+        const text = bubble.querySelector('.turn-preview-text')
+        const parts = [box(text), box(bubble.querySelector('.turn-preview-status'))]
+        return {
+          overlapsMeta: parts.some(
+            r =>
+              r.width > 0 &&
+              r.left < meta.right &&
+              r.right > meta.left &&
+              r.top < meta.bottom &&
+              r.bottom > meta.top,
+          ),
+          truncated: text.scrollWidth > text.clientWidth,
+          textWidth: box(text).width,
+          height: box(bubble).height,
+        }
+      })
+    }
+
+    // SPEC: turn:preview-clear-of-meta
+    test('a long first line ends before the time and buttons, the short one shows whole', async ({
+      page,
+    }) => {
+      const turns = await collapseInNarrowWindow(page)
+      const long = await previewLayout(turns.nth(0))
+      const short = await previewLayout(turns.nth(1))
+
+      expect(long.overlapsMeta).toBe(false)
+      expect(long.truncated).toBe(true)
+      expect(long.textWidth).toBeGreaterThan(100)
+      expect(short.overlapsMeta).toBe(false)
+      expect(short.truncated).toBe(false)
+      expect(long.height).toBe(short.height)
     })
   })
 

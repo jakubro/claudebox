@@ -51,9 +51,9 @@ export async function listSessionsForWorkspace(workspaceId) {
 /**
  * @param {object} [options]
  * @param {AbortSignal} [options.signal]
- * @param {string[]} [options.messages] - Messages to submit as the session's first turns.
+ * @param {string[]} [options.messages] - A link's carried messages, checked against the allowlist.
  * @param {string|null} [options.bundle] - Settings bundle the session is created under.
- * @returns {Promise<{session_id: string, container_id: string, undelivered_messages?: string[]}>}
+ * @returns {Promise<{session_id: string, container_id: string, undelivered_messages?: string[], bundle_messages?: string[]}>}
  */
 export async function newSession({ signal, messages, bundle } = {}) {
   const body = {
@@ -144,6 +144,37 @@ export async function forkSession(
     throw new Error('Failed to fork session')
   }
   return res.json()
+}
+
+/**
+ * Answer an agent's request to open one of its session's ports to this computer.
+ * @param {string} sessionId
+ * @param {number} port
+ * @param {boolean} approve
+ * @returns {Promise<{port: number, host_port?: number, address?: string, state?: string}>}
+ */
+export async function answerPortRequest(sessionId, port, approve) {
+  const res = await workspaceFetch(`/sessions/${sessionId}/ports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ port, approve }),
+    timeoutMs: FETCH_TIMEOUT_SESSION_LIFECYCLE_MS,
+  })
+  if (!res.ok) {
+    const body = res.status === 409 ? await res.json().catch(() => null) : null
+    const refusal = PORT_ANSWER_REFUSALS[body?.error]
+    const error = new Error(refusal ?? 'Failed to answer the port request')
+    error.userFacing = Boolean(refusal)
+    throw error
+  }
+  return res.json()
+}
+
+const PORT_ANSWER_REFUSALS = {
+  port_tunnel_missing:
+    'This session started before ports could be opened. Stop it, resume it, then ask the agent again.',
+  port_session_not_running: 'The session is not running. Resume it, then answer again.',
+  port_request_refused: 'This session cannot open a port.',
 }
 
 // Container-scoped (proxied) endpoints

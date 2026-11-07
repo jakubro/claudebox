@@ -22,6 +22,7 @@ from .constants import (
 )
 from .core.fs import resolve_path, walk_up
 from .core.io import read_toml
+from .core.ports import PortMapping, parse_ports
 from .core.structures import DataClass, merge
 from .paths import get_workspace_root
 
@@ -60,7 +61,7 @@ class Config(DataClass):
 
     profile: Path | None = None
     mounts: dict[Path, Path] | None = None
-    ports: dict[int, int] | None = None
+    ports: dict[int, PortMapping] | None = None
     network_mode: str | None = None
     env: dict[str, str] | None = None
 
@@ -132,7 +133,13 @@ class Config(DataClass):
                 f"{config_root / CLAUDEBOX_SETTINGS_FILE}; declared bundles: {sorted(bundles)}",
             )
 
-        config = cls._parse(merge(data, bundles[bundle]), files, work_dir, config_root)
+        config = cls._parse(
+            merge(data, bundles[bundle]),
+            files,
+            work_dir,
+            config_root,
+            bundle=bundle,
+        )
         config.bundle = bundle
 
         return config
@@ -150,7 +157,15 @@ class Config(DataClass):
         return work_dir, config_root, cls._collect_config_files(work_dir)
 
     @classmethod
-    def _parse(cls, data: dict, files: dict[Path, dict], work_dir: Path, config_root: Path) -> Self:
+    def _parse(
+        cls,
+        data: dict,
+        files: dict[Path, dict],
+        work_dir: Path,
+        config_root: Path,
+        *,
+        bundle: str | None = None,
+    ) -> Self:
         backend = data.get("backend", DEFAULT_BACKEND)
 
         if backend not in ACCEPTED_BACKENDS:
@@ -218,7 +233,7 @@ class Config(DataClass):
             agent=data.get("agent", DEFAULT_AGENT),
             backend=backend,
             mounts=mounts,
-            ports=data.get("ports"),
+            ports=_parse_ports(data, files, bundle),
             network_mode=data.get("network", {}).get("mode"),
             env=data.get("env"),
             containers_nested=data.get("containers", {}).get("nested", False),
@@ -308,6 +323,45 @@ class Config(DataClass):
                 break
 
         return files
+
+
+def _parse_ports(
+    data: dict,
+    files: dict[Path, dict],
+    bundle: str | None,
+) -> dict[int, PortMapping] | None:
+    def locate(key: object | None) -> str:
+        # A bundle entry over a workspace one is named against the bundle, which supplied what applies.
+        if bundle is not None and (
+            source := _ports_source(files, ("bundles", bundle, "ports"), key)
+        ):
+            return f"[bundles.{bundle}.ports] in {source}"
+
+        source = _ports_source(files, ("ports",), key)
+
+        return f"[ports] in {source}" if source else "[ports]"
+
+    return parse_ports(data.get("ports"), where=locate)
+
+
+def _ports_source(
+    files: dict[Path, dict],
+    table: tuple[str, ...],
+    key: object | None,
+) -> Path | None:
+    for path, file_data in files.items():
+        node = file_data
+
+        for part in table[:-1]:
+            node = node.get(part) if isinstance(node, dict) else None
+
+        if isinstance(node, dict) and table[-1] in node:
+            entries = node[table[-1]]
+
+            if key is None or (isinstance(entries, dict) and key in entries):
+                return path
+
+    return None
 
 
 def _prune_days(section: dict, files: dict[Path, dict], key: str, default: timedelta) -> int:

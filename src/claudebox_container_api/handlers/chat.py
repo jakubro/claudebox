@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from claudebox import BroadcastEventSourceResponse
-from ._models import SendRequest, SetEffortLevelRequest, SetModelRequest, SetPermissionModeRequest
+from claudebox import BroadcastEventSourceResponse, SiblingMessage
+from ._models import (
+    SendRequest,
+    SetEffortLevelRequest,
+    SetModelRequest,
+    SetPermissionModeRequest,
+    SiblingMessageRequest,
+)
 from ._shared import SessionDep
 
 
@@ -17,6 +23,13 @@ async def send(svc: SessionDep, body: SendRequest):
     """Queue a user prompt with optional attachments, inline replies, and a note for the assistant."""
 
     await svc.send(body.prompt, body.attachments, body.inline_replies, body.note)
+
+
+@router.post("/sibling-message", response_model=None)
+async def sibling_message(svc: SessionDep, body: SiblingMessageRequest):
+    """Queue a turn end of a session this one spawned, behind any running turn."""
+
+    await svc.deliver_sibling_message(SiblingMessage(**body.model_dump()))
 
 
 @router.get("/stream")

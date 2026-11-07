@@ -6,6 +6,7 @@ import {
   LINE_HEIGHT_PX,
   PX_PER_ATTACHMENT_ROW,
   PX_PER_BASH_TOOL_BLOCK,
+  PX_PER_SIBLING_MESSAGE,
   PX_PER_TEXT_BLOCK_GAP,
   PX_PER_THINKING_BLOCK,
   PX_PER_TOOL_BLOCK,
@@ -58,6 +59,22 @@ describe('predictTurnHeight', () => {
     // Narrower column -> more wrap lines -> larger predicted height.
     expect(narrow).toBeGreaterThan(wide)
     expect(wide).toBe(TURN_BASE_HEIGHT_PX + 5 * LINE_HEIGHT_PX)
+  })
+
+  it('prices a sibling message as its text lines plus its own chrome', () => {
+    const charsPerLine = Math.floor(EFFECTIVE_WIDTH / AVG_CHAR_WIDTH_PX)
+    const turn = {
+      turn_id: 't',
+      events: [
+        { type: 'system', subtype: 'sibling_message', content: 'x'.repeat(charsPerLine * 3) },
+      ],
+      userMessage: '',
+      attachments: null,
+    }
+
+    expect(contentHeight(turn, EFFECTIVE_WIDTH)).toBe(
+      TURN_BASE_HEIGHT_PX + 3 * LINE_HEIGHT_PX + PX_PER_SIBLING_MESSAGE,
+    )
   })
 
   it('adds fixed pixels per tool_use event', () => {

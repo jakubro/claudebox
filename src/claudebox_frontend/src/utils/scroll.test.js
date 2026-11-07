@@ -1,7 +1,7 @@
 /** Tests for scroll animation utilities. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computeScrollDestination, easeOutCubic, scrollToEdge } from './scroll'
+import { alignOffscreen, computeScrollDestination, easeOutCubic, scrollToEdge } from './scroll'
 
 describe('easeOutCubic', () => {
   it('returns 0 at start (t=0)', () => {
@@ -25,6 +25,49 @@ describe('easeOutCubic', () => {
     const early = easeOutCubic(0.25) - easeOutCubic(0)
     const late = easeOutCubic(1) - easeOutCubic(0.75)
     expect(early).toBeGreaterThan(late)
+  })
+})
+
+describe('alignOffscreen', () => {
+  const container = () => ({
+    scrollTop: 100,
+    getBoundingClientRect: () => ({ top: 0, bottom: 500 }),
+  })
+  const element = (top, bottom) => ({
+    getBoundingClientRect: () => ({ top, bottom, height: bottom - top }),
+  })
+
+  it('brings an element wholly above the view to its top, as a programmatic scroll', () => {
+    const view = container()
+    const markProgrammaticScroll = vi.fn()
+
+    alignOffscreen(view, element(-1404, -1360), markProgrammaticScroll)
+
+    expect(view.scrollTop).toBe(-1304)
+    expect(markProgrammaticScroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('brings an element wholly below the view to its top', () => {
+    const view = container()
+
+    alignOffscreen(view, element(620, 664))
+
+    expect(view.scrollTop).toBe(720)
+  })
+
+  it('leaves the view alone while any of the element shows', () => {
+    const view = container()
+    const markProgrammaticScroll = vi.fn()
+
+    alignOffscreen(view, element(-20, 24), markProgrammaticScroll)
+    alignOffscreen(view, element(480, 900), markProgrammaticScroll)
+
+    expect(view.scrollTop).toBe(100)
+    expect(markProgrammaticScroll).not.toHaveBeenCalled()
+  })
+
+  it('does nothing without a container', () => {
+    expect(() => alignOffscreen(null, element(-1404, -1360))).not.toThrow()
   })
 })
 

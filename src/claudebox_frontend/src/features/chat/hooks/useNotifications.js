@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { NOTIFICATION_BATCH_DELAY_MS } from '../../../config/timing'
 import {
   buildNotificationTitle,
+  finishedRunOrigin,
   getResponsePreview,
   playChime,
   requestNotificationPermission,
@@ -19,6 +20,7 @@ import {
  * @param {string} options.sessionName - Current session name
  * @param {string} options.workspace - Current workspace path
  * @param {boolean} options.notificationsEnabled - Whether notifications (sound + desktop) are enabled
+ * @param {boolean} [options.canNeedUser] - False in a spawned session; a sibling-started run chimes only if it asks
  */
 export default function useNotifications({
   isResponding,
@@ -28,6 +30,7 @@ export default function useNotifications({
   sessionName,
   workspace,
   notificationsEnabled,
+  canNeedUser = true,
 }) {
   const wasRespondingRef = useRef(false)
   const permissionRequestedRef = useRef(false)
@@ -35,6 +38,8 @@ export default function useNotifications({
   const userInteractedRef = useRef(false)
   const eventsRef = useRef(events)
   eventsRef.current = events
+  const canNeedUserRef = useRef(canNeedUser)
+  canNeedUserRef.current = canNeedUser
 
   // Request permission on first response (non-blocking)
   useEffect(() => {
@@ -89,6 +94,11 @@ export default function useNotifications({
 
       // Add tab title indicator (user's turn)
       setTitleIndicator(true)
+
+      const origin = finishedRunOrigin(eventsRef.current)
+      if (origin.fromSibling && !(canNeedUserRef.current && origin.asksUser)) {
+        return
+      }
 
       if (document.hidden && notificationsEnabled) {
         playChime()

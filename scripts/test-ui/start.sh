@@ -12,7 +12,7 @@ VENV_DIR="${TEST_DIR}/.venv"
 PID_FILE="${TEST_DIR}/pids"
 LOG_DIR="${TEST_DIR}"
 
-# Port 41930 -> Vite on 41930, uvicorn on 41931 (avoids host daemon on 41920/41921)
+# Port 41930 -> Vite on 41930, uvicorn on 41931 (avoids host daemon on 41820/41821, dev mode on 41920/41921)
 DAEMON_PORT=41930
 
 # Stop running test environment (kill entire process group), then free the harness ports
@@ -70,6 +70,7 @@ TOML
 echo "Syncing dependencies..."
 UV_PROJECT_ENVIRONMENT="$VENV_DIR" uv sync --directory "$LIB_DIR" --extra dev 2>&1 | tail -3
 uv pip install --python "${VENV_DIR}/bin/python" playwright 2>&1 | tail -3
+"${VENV_DIR}/bin/python" -m playwright install chromium 2>&1 | tail -3
 # Latest agent SDK, as the image resolves it at build: its bundled CLI decides which models work.
 uv pip install --python "${VENV_DIR}/bin/python" --upgrade-package claude-agent-sdk claude-agent-sdk 2>&1 | tail -3
 

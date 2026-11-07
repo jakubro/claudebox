@@ -34,14 +34,21 @@ describe('findTurnEl / findTurnRow', () => {
 })
 
 describe('pollFrames', () => {
+  const FRAME_MS = 16
+  let now
+
   beforeEach(() => {
+    now = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
     vi.stubGlobal('requestAnimationFrame', cb => {
+      now += FRAME_MS
       cb()
       return 0
     })
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
@@ -49,13 +56,13 @@ describe('pollFrames', () => {
     const rafSpy = vi.spyOn(global, 'requestAnimationFrame')
     const onResolved = vi.fn()
 
-    pollFrames(5, () => 'found-it', onResolved)
+    pollFrames(100, () => 'found-it', onResolved)
 
     expect(onResolved).toHaveBeenCalledWith('found-it')
     expect(rafSpy).not.toHaveBeenCalled()
   })
 
-  it('gives up immediately when frames is exhausted from the start', () => {
+  it('gives up immediately when no time is left from the start', () => {
     const rafSpy = vi.spyOn(global, 'requestAnimationFrame')
     const onResolved = vi.fn()
 
@@ -73,19 +80,41 @@ describe('pollFrames', () => {
     }
     const onResolved = vi.fn()
 
-    pollFrames(5, resolve, onResolved)
+    pollFrames(100, resolve, onResolved)
 
     expect(attempts).toBe(3)
     expect(onResolved).toHaveBeenCalledWith('landed')
   })
 
-  it('reports null once every frame is exhausted without a find', () => {
+  it('keeps polling for as many frames as its time allows, as a loaded machine needs', () => {
+    let attempts = 0
+    const resolve = () => {
+      attempts += 1
+      return attempts >= 40 ? 'landed' : null
+    }
     const onResolved = vi.fn()
 
-    pollFrames(3, () => null, onResolved)
+    pollFrames(1000, resolve, onResolved)
+
+    expect(onResolved).toHaveBeenCalledWith('landed')
+  })
+
+  it('reports null once its time has passed without a find', () => {
+    let attempts = 0
+    const onResolved = vi.fn()
+
+    pollFrames(
+      160,
+      () => {
+        attempts += 1
+        return null
+      },
+      onResolved,
+    )
 
     expect(onResolved).toHaveBeenCalledWith(null)
     expect(onResolved).toHaveBeenCalledTimes(1)
+    expect(attempts).toBe(11)
   })
 })
 
@@ -146,8 +175,11 @@ describe('withMountedTurn', () => {
     vi.unstubAllGlobals()
   })
 
-  it('gives up and resolves null once the poll frames are exhausted', () => {
+  it('gives up and resolves null once its time has passed', () => {
+    let now = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
     vi.stubGlobal('requestAnimationFrame', cb => {
+      now += 16
       cb()
       return 0
     })
@@ -163,6 +195,7 @@ describe('withMountedTurn', () => {
 
     expect(onResolved).toHaveBeenCalledWith(null)
 
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 })

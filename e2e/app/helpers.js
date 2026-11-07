@@ -115,6 +115,19 @@ export async function openLiveSessionWithAPI(page, apiOptions) {
   return controller
 }
 
+export async function sendAtFixedTime(page, content) {
+  const sent = Date.parse('2026-03-01T12:00:00Z')
+  await page.clock.setFixedTime(sent)
+  const controller = await openLiveSessionWithAPI(page)
+  await expect(page.getByTestId('footer-status')).toHaveAttribute('data-status', 'ready')
+  const input = page.locator('[data-testid="chat-input"]')
+  await input.fill(content)
+  await input.press('Enter')
+  const at = ms => ({ timestamp: sent + ms, ts: new Date(sent + ms).toISOString() })
+
+  return { controller, sent, at }
+}
+
 export async function openSessionWithAPI(page, events, apiOptions) {
   await mockAPI(page, apiOptions)
 
@@ -234,18 +247,18 @@ export async function waitForMobileReady(page) {
 }
 
 const PANELS = {
-  sessions: { button: 'button[title="Sessions (Alt+1)"]', content: '.sessions-panel' },
-  todos: { button: 'button[title="Todos (Alt+2)"]', content: '.todos-panel' },
-  stash: { button: 'button[title="Stash (Alt+3)"]', content: '.stash-panel' },
-  tasks: { button: 'button[title="Tasks (Alt+4)"]', content: '.tasks-panel' },
-  crons: { button: 'button[title="Crons"]', content: '.crons-panel' },
-  bookmarks: { button: 'button[title="Bookmarks (Alt+5)"]', content: '.bookmarks-panel' },
-  boards: { button: 'button[title="Boards (Alt+6)"]', content: '.boards-panel' },
-  usage: { button: 'button[title="Usage (Alt+7)"]', content: '.usage-panel' },
-  mcp: { button: 'button[title="MCP Servers (Alt+8)"]', content: '.mcp-panel' },
-  commands: { button: 'button[title="Skills (Alt+9)"]', content: '.skills-panel' },
-  help: { button: 'button[title="Help"]', content: '.help-panel' },
-  logs: { button: 'button[title="Logs (Alt+0)"]', content: '.logs-panel' },
+  sessions: { button: '[data-testid="icon-sessions"]', content: '.sessions-panel' },
+  todos: { button: '[data-testid="icon-todos"]', content: '.todos-panel' },
+  stash: { button: '[data-testid="icon-stash"]', content: '.stash-panel' },
+  tasks: { button: '[data-testid="icon-tasks"]', content: '.tasks-panel' },
+  crons: { button: '[data-testid="icon-crons"]', content: '.crons-panel' },
+  bookmarks: { button: '[data-testid="icon-bookmarks"]', content: '.bookmarks-panel' },
+  boards: { button: '[data-testid="icon-boards"]', content: '.boards-panel' },
+  usage: { button: '[data-testid="icon-usage"]', content: '.usage-panel' },
+  mcp: { button: '[data-testid="icon-mcp"]', content: '.mcp-panel' },
+  commands: { button: '[data-testid="icon-commands"]', content: '.skills-panel' },
+  help: { button: '[data-testid="icon-help"]', content: '.help-panel' },
+  logs: { button: '[data-testid="icon-logs"]', content: '.logs-panel' },
 }
 
 /** Toggle panel (always clicks button). */

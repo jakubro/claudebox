@@ -47,6 +47,9 @@ from claude_agent_sdk import (
     ThinkingBlock as SdkThinkingBlock,
 )
 from claude_agent_sdk import (
+    ToolAnnotations as SdkToolAnnotations,
+)
+from claude_agent_sdk import (
     ToolResultBlock as SdkToolResultBlock,
 )
 from claude_agent_sdk import (
@@ -70,8 +73,42 @@ from ._needs_user import (
     needs_user_replies,
     needs_user_reply,
 )
+from ._ports import (
+    PORT_ARGUMENT_DESCRIPTION,
+    PORT_CLOSE_CLAUDE_TOOL_NAME,
+    PORT_CLOSE_DESCRIPTION,
+    PORT_CLOSE_TOOL_NAME,
+    PORT_OPEN_CLAUDE_TOOL_NAME,
+    PORT_OPEN_DESCRIPTION,
+    PORT_OPEN_TOOL_NAME,
+    close_port,
+    port_open_reply,
+)
 from ._sibling_sessions import (
+    CLAUDEBOX_MCP_INSTRUCTIONS,
     CLAUDEBOX_MCP_SERVER_NAME,
+    SESSION_ASK_DESCRIPTION,
+    SESSION_ASK_MESSAGE_DESCRIPTION,
+    SESSION_ASK_SESSION_ID_DESCRIPTION,
+    SESSION_ASK_TOOL_NAME,
+    SESSION_LIST_CLAUDE_TOOL_NAME,
+    SESSION_LIST_DESCRIPTION,
+    SESSION_LIST_TOOL_NAME,
+    SESSION_READ_CLAUDE_TOOL_NAME,
+    SESSION_READ_DEFAULT_LIMIT,
+    SESSION_READ_DESCRIPTION,
+    SESSION_READ_LIMIT_DESCRIPTION,
+    SESSION_READ_SESSION_ID_DESCRIPTION,
+    SESSION_READ_TOOL_NAME,
+    SESSION_SPAWN_DESCRIPTION,
+    SESSION_SPAWN_EFFORT_DESCRIPTION,
+    SESSION_SPAWN_MODEL_DESCRIPTION,
+    SESSION_SPAWN_NAME_DESCRIPTION,
+    SESSION_SPAWN_PROMPT_DESCRIPTION,
+    SESSION_SPAWN_TOOL_NAME,
+    SESSION_STOP_DESCRIPTION,
+    SESSION_STOP_SESSION_ID_DESCRIPTION,
+    SESSION_STOP_TOOL_NAME,
     SiblingSessionClient,
     SiblingSessionError,
 )
@@ -124,6 +161,7 @@ KNOWN_INIT_FIELDS: frozenset[str] = frozenset(
 class _QueuedPrompt(NamedTuple):
     prompt: str | list[dict]
     message_uuid: str | None
+    after_turn: bool = False
 
 
 class _QueuedChange(NamedTuple):
@@ -131,6 +169,9 @@ class _QueuedChange(NamedTuple):
     # None when the caller does not wait for the outcome.
     future: asyncio.Future | None
 
+
+# The agent CLI's queue priority it never folds into a running turn, as it queues task notifications.
+_AFTER_TURN_PRIORITY = "later"
 
 # Unknown init keys already warned about - dedups the warning to once per process.
 _SEEN_UNKNOWN_INIT_KEYS: set[str] = set()
@@ -150,6 +191,65 @@ _NEEDS_USER_INPUT_SCHEMA = {
         },
     },
     "required": ["reason"],
+}
+
+_SESSION_SPAWN_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "prompt": {"type": "string", "description": SESSION_SPAWN_PROMPT_DESCRIPTION},
+        "name": {"type": "string", "description": SESSION_SPAWN_NAME_DESCRIPTION},
+        "model": {"type": "string", "description": SESSION_SPAWN_MODEL_DESCRIPTION},
+        "effort": {"type": "string", "description": SESSION_SPAWN_EFFORT_DESCRIPTION},
+    },
+    "required": ["prompt"],
+}
+
+_SESSION_ASK_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "session_id": {"type": "string", "description": SESSION_ASK_SESSION_ID_DESCRIPTION},
+        "message": {"type": "string", "description": SESSION_ASK_MESSAGE_DESCRIPTION},
+    },
+    "required": ["session_id", "message"],
+}
+
+_SESSION_READ_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "session_id": {"type": "string", "description": SESSION_READ_SESSION_ID_DESCRIPTION},
+        "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": SESSION_READ_DEFAULT_LIMIT,
+            "description": SESSION_READ_LIMIT_DESCRIPTION,
+        },
+    },
+    "required": ["session_id"],
+}
+
+_SESSION_STOP_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "session_id": {"type": "string", "description": SESSION_STOP_SESSION_ID_DESCRIPTION},
+    },
+    "required": ["session_id"],
+}
+
+_SESSION_LIST_INPUT_SCHEMA = {"type": "object", "properties": {}}
+
+_TERMINAL_MCP_TOOLS = f"{NEEDS_USER_CLAUDE_TOOL_NAME},{PORT_OPEN_CLAUDE_TOOL_NAME}"
+
+_PORT_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": PORT_ARGUMENT_DESCRIPTION,
+        },
+    },
+    "required": ["port"],
 }
 
 
@@ -395,19 +495,26 @@ class ClaudeRuntime:
     # Queries
     # ----------------------------------------------------------------------------------------------
 
-    async def query(self, prompt: str | list[dict], *, message_uuid: str | None = None) -> None:
+    async def query(
+        self,
+        prompt: str | list[dict],
+        *,
+        message_uuid: str | None = None,
+        after_turn: bool = False,
+    ) -> None:
         """Send query to SDK, buffer it until queued work drains, or refuse if connect failed.
 
         A plain string uses the SDK's string path; blocks or a `message_uuid`, one transport message.
+        `after_turn` keeps the message out of a running turn: the agent CLI runs it once that ends.
         """
 
         if self.connect_error is not None:
             raise RuntimeError(self.connect_error)
 
         if self._drained.is_set():
-            await self._send(prompt, message_uuid)
+            await self._send(prompt, message_uuid, after_turn=after_turn)
         else:
-            self._queue.append(_QueuedPrompt(prompt, message_uuid))
+            self._queue.append(_QueuedPrompt(prompt, message_uuid, after_turn))
 
     async def interrupt(self) -> None:
         """Interrupt SDK and drop the prompts still queued for connect."""
@@ -938,11 +1045,21 @@ class ClaudeRuntime:
                 else None
             ),
             permission_mode=cfg.permission_mode,  # ty: ignore[invalid-argument-type]
-            # It only acknowledges, and outside bypass mode a call is otherwise refused unasked.
-            allowed_tools=[NEEDS_USER_CLAUDE_TOOL_NAME],
+            # They acknowledge, read, ask the user, or close a port the user opened.
+            # Outside bypass mode a call is otherwise refused unasked.
+            allowed_tools=[
+                NEEDS_USER_CLAUDE_TOOL_NAME,
+                SESSION_READ_CLAUDE_TOOL_NAME,
+                SESSION_LIST_CLAUDE_TOOL_NAME,
+                PORT_OPEN_CLAUDE_TOOL_NAME,
+                PORT_CLOSE_CLAUDE_TOOL_NAME,
+            ],
             setting_sources=cfg.setting_sources,  # ty: ignore[invalid-argument-type]
             # The CLI's undocumented list of tools a turn may end on without being asked for text.
-            env={**cfg.env, "CLAUDE_CODE_TERMINAL_MCP_TOOLS": NEEDS_USER_CLAUDE_TOOL_NAME},
+            env={
+                **cfg.env,
+                "CLAUDE_CODE_TERMINAL_MCP_TOOLS": _TERMINAL_MCP_TOOLS,
+            },
             cwd=cfg.cwd,
             extra_args=extra_args,
             max_buffer_size=cfg.max_buffer_size,
@@ -998,6 +1115,8 @@ class ClaudeRuntime:
         cls,
         content: str | list[dict],
         message_uuid: str | None = None,
+        *,
+        priority: str | None = None,
     ) -> AsyncIterator[dict]:
         """Yield a single transport message; the CLI keeps a given `message_uuid` as its own."""
 
@@ -1009,6 +1128,9 @@ class ClaudeRuntime:
 
         if message_uuid is not None:
             message["uuid"] = message_uuid
+
+        if priority is not None:
+            message["priority"] = priority
 
         yield message
 
@@ -1034,10 +1156,10 @@ class ClaudeRuntime:
 
                 continue
 
-            prompt, message_uuid = entry
+            prompt, message_uuid, after_turn = entry
 
             try:
-                await self._send(prompt, message_uuid)
+                await self._send(prompt, message_uuid, after_turn=after_turn)
             except Exception:
                 # One lost prompt must not strand the ones behind it.
                 self._logger.exception("Queued prompt failed", message_uuid=message_uuid)
@@ -1144,11 +1266,23 @@ class ClaudeRuntime:
     def _log_refused(self, exc: ChangeRefused) -> None:
         self._logger.error("Queued change refused", **exc.context)
 
-    async def _send(self, prompt: str | list[dict], message_uuid: str | None) -> None:
-        if isinstance(prompt, str) and message_uuid is None:
+    async def _send(
+        self,
+        prompt: str | list[dict],
+        message_uuid: str | None,
+        *,
+        after_turn: bool = False,
+    ) -> None:
+        if isinstance(prompt, str) and message_uuid is None and not after_turn:
             await self._sdk.query(prompt)
         else:
-            await self._sdk.query(self._content_blocks_stream(prompt, message_uuid))
+            await self._sdk.query(
+                self._content_blocks_stream(
+                    prompt,
+                    message_uuid,
+                    priority=_AFTER_TURN_PRIORITY if after_turn else None,
+                ),
+            )
 
     # Delta-detection state machine
     # ----------------------------------------------------------------------------------------------
@@ -1373,66 +1507,79 @@ class ClaudeRuntime:
 
         server = create_sdk_mcp_server(
             name=CLAUDEBOX_MCP_SERVER_NAME,
-            tools=[*self._sibling_sdk_tools(), self._needs_user_sdk_tool()],
+            tools=[
+                *self._sibling_sdk_tools(),
+                self._needs_user_sdk_tool(),
+                *self._port_sdk_tools(),
+            ],
         )
+        # The SDK's builder takes no instructions; the mcp Server it wraps reads them on initialize.
+        server["instance"].instructions = CLAUDEBOX_MCP_INSTRUCTIONS
 
         return {CLAUDEBOX_MCP_SERVER_NAME: server}
 
     def _sibling_sdk_tools(self) -> list[SdkMcpTool]:
-        """Bind session_spawn/session_ask/session_read against this instance's client.
-
-        Same names, arguments and result shape as `langgraph_tools/sibling.py`.
-        """
+        """Bind the session tools against this instance's client, as `langgraph_tools/sibling.py`."""
 
         client = self._sibling_sessions
+        read_only = SdkToolAnnotations(readOnlyHint=True)
 
-        @sdk_tool(
-            "session_spawn",
-            "Spawn a sibling session seeded with a prompt; returns its session and container "
-            "ids. The sibling is an ordinary session - it appears in the Sessions and "
-            "Containers panels immediately, and can be opened in a tab at any time.",
-            {"prompt": str},
-        )
+        @sdk_tool(SESSION_SPAWN_TOOL_NAME, SESSION_SPAWN_DESCRIPTION, _SESSION_SPAWN_INPUT_SCHEMA)
         async def session_spawn(args: dict) -> dict:
-            try:
-                result = await client.spawn(args["prompt"])
+            return await _tool_result(
+                client.spawn(
+                    args["prompt"],
+                    name=args.get("name"),
+                    model=args.get("model"),
+                    effort=args.get("effort"),
+                ),
+            )
 
-                return {"content": [{"type": "text", "text": json.dumps(result)}]}
-            except SiblingSessionError as exc:
-                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
-
-        @sdk_tool(
-            "session_ask",
-            "Ask a sibling session something and wait for its turn to settle. Returns "
-            '{"state": "replied", "text": "..."} once it answers, or '
-            '{"state": "asking", "text": "..."} if it ends by asking a question instead - call '
-            "again with the answer to resume it.",
-            {"session_id": str, "message": str},
-        )
+        @sdk_tool(SESSION_ASK_TOOL_NAME, SESSION_ASK_DESCRIPTION, _SESSION_ASK_INPUT_SCHEMA)
         async def session_ask(args: dict) -> dict:
-            try:
-                result = await client.ask(args["session_id"], args["message"])
-
-                return {"content": [{"type": "text", "text": json.dumps(result)}]}
-            except SiblingSessionError as exc:
-                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+            return await _tool_result(client.ask(args["session_id"], args["message"]))
 
         @sdk_tool(
-            "session_read",
-            "Read a sibling session's transcript as {role, content} turns, oldest first, "
-            "capped at `limit` (default 50). Works even while the sibling's container is "
-            "stopped - reads its persisted log directly, no network call.",
-            {"session_id": str, "limit": int},
+            SESSION_READ_TOOL_NAME,
+            SESSION_READ_DESCRIPTION,
+            _SESSION_READ_INPUT_SCHEMA,
+            annotations=read_only,
         )
         async def session_read(args: dict) -> dict:
-            try:
-                turns = await client.read(args["session_id"], args.get("limit") or 50)
+            return await _tool_result(
+                client.read(args["session_id"], args.get("limit", SESSION_READ_DEFAULT_LIMIT)),
+            )
 
-                return {"content": [{"type": "text", "text": json.dumps(turns)}]}
-            except SiblingSessionError as exc:
-                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+        @sdk_tool(SESSION_STOP_TOOL_NAME, SESSION_STOP_DESCRIPTION, _SESSION_STOP_INPUT_SCHEMA)
+        async def session_stop(args: dict) -> dict:
+            return await _tool_result(client.stop(args["session_id"]))
 
-        return [session_spawn, session_ask, session_read]
+        @sdk_tool(
+            SESSION_LIST_TOOL_NAME,
+            SESSION_LIST_DESCRIPTION,
+            _SESSION_LIST_INPUT_SCHEMA,
+            annotations=read_only,
+        )
+        async def session_list(_args: dict) -> dict:
+            return await _tool_result(client.list_siblings())
+
+        return [session_spawn, session_ask, session_read, session_stop, session_list]
+
+    def _port_sdk_tools(self) -> list[SdkMcpTool]:
+        session_dir = self._config.session_dir
+        session_id = self._config.session_id or ""
+
+        @sdk_tool(PORT_OPEN_TOOL_NAME, PORT_OPEN_DESCRIPTION, _PORT_INPUT_SCHEMA)
+        async def port_open(args: dict) -> dict:
+            return {
+                "content": [{"type": "text", "text": port_open_reply(session_dir, args["port"])}],
+            }
+
+        @sdk_tool(PORT_CLOSE_TOOL_NAME, PORT_CLOSE_DESCRIPTION, _PORT_INPUT_SCHEMA)
+        async def port_close(args: dict) -> dict:
+            return await _tool_result(close_port(session_id, args["port"]))
+
+        return [port_open, port_close]
 
     def _needs_user_sdk_tool(self) -> SdkMcpTool:
         """Bind needs_user; same name, argument and result as `langgraph_tools/needs_user.py`."""
@@ -1446,3 +1593,12 @@ class ClaudeRuntime:
             return {"content": [{"type": "text", "text": needs_user_reply(session_dir, dropped)}]}
 
         return needs_user
+
+
+async def _tool_result(call: Awaitable[Any]) -> dict:
+    try:
+        result = await call
+    except SiblingSessionError as exc:
+        return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+
+    return {"content": [{"type": "text", "text": json.dumps(result)}]}

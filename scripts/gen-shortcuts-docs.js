@@ -12,8 +12,7 @@ const REGISTRY = path.join(LIB_ROOT, 'src', 'claudebox_frontend', 'src', 'config
 
 const HEADER = `# Keyboard shortcuts
 
-Every binding the app registers, generated from the same list the in-app Help panel draws. This
-file is generated - run \`just docs\` to bring it back in step after changing a binding.
+Every binding the app registers, generated from the same list the in-app Help panel draws. This file is generated - run \`just docs\` to bring it back in step after changing a binding.
 
 ![The keyboard help overlay, listing the same bindings in columns](images/shortcuts-help-overlay.png)
 

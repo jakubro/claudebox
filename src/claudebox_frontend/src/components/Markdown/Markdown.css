@@ -19,6 +19,12 @@
   background: var(--bg-tertiary);
 }
 
+/* A diff band is 100% wide, so its box spans the longest line rather than the visible width */
+.diff-fence-lines {
+  width: max-content;
+  min-width: 100%;
+}
+
 /* Quote copy button - placed and revealed like the code block's */
 .md-blockquote {
   position: relative;
@@ -148,4 +154,10 @@ dt {
 dd {
   margin: 0 0 0.4em 1.2em;
   color: var(--text-secondary);
+}
+
+/* Contain each message in its consumer's own root - no wrapper, the blocks must stay its direct children */
+:has(> [data-md-block]) {
+  contain: paint;
+  isolation: isolate;
 }

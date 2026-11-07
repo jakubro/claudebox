@@ -163,3 +163,35 @@ test.describe('Thinking Blocks', () => {
     expect(markdownElements).toBeGreaterThan(0)
   })
 })
+
+test.describe('Thinking Blocks - wide content', () => {
+  // SPEC: tool:thinking-wide-content
+  test('a code block wider than the turn scrolls inside expanded thinking; short content keeps its width', async ({
+    page,
+  }) => {
+    await openSessionWithAPI(page, 'events/thinking-wide-code.jsonl')
+    const blocks = page.locator('.thinking-block')
+    await expect(blocks).toHaveCount(2)
+    for (const block of await blocks.all()) {
+      await block.locator('.thinking-header-area').click()
+    }
+    const fences = page.locator('.thinking-content-inline .code-block-wrapper')
+    await expect(fences).toHaveCount(2)
+
+    const blockWidth = await blocks.first().evaluate(el => el.getBoundingClientRect().width)
+    const [wide, short] = await fences.evaluateAll(wrappers =>
+      wrappers.map(wrapper => {
+        const box = wrapper.querySelector(':scope > div')
+        return {
+          width: box.getBoundingClientRect().width,
+          client: box.clientWidth,
+          scroll: box.scrollWidth,
+        }
+      }),
+    )
+
+    expect(wide.width).toBeLessThanOrEqual(blockWidth)
+    expect(wide.scroll).toBeGreaterThan(wide.client + 100)
+    expect(short.width).toBeLessThan(blockWidth / 2)
+  })
+})

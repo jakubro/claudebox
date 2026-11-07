@@ -14,6 +14,8 @@ import useMessageQueue from './useMessageQueue'
 import usePendingMessages from './usePendingMessages'
 import useSendMessage from './useSendMessage'
 
+const NO_CARRIED = { held: null, queued: [] }
+
 /** Coordinate chat panel hooks with ChatController for scroll, pending, queue, and send. */
 export default function useChatController({ events, contextRefs, activeTurnId = null }) {
   // DOM refs - owned by this hook
@@ -33,8 +35,9 @@ export default function useChatController({ events, contextRefs, activeTurnId = 
     isReplaying,
     isResuming,
     containerId,
+    placeOpening,
   } = useEvents()
-  const { creations } = useStreamingStatus()
+  const { creations, getCreation } = useStreamingStatus()
   const { interruptStatus, startSubmitting, submitSucceeded, submitFailed, setError } =
     useInteraction()
 
@@ -102,11 +105,8 @@ export default function useChatController({ events, contextRefs, activeTurnId = 
   const isLoadingSession = isResuming || isReplaying
 
   // Pending messages with SSE reconciliation, against the owner's own events only
-  const { showPendingMessages, addPendingMessage, removePendingMessage } = usePendingMessages(
-    events,
-    ownerSessionId,
-    isOwnerAttached && !isLoadingSession,
-  )
+  const { showPendingMessages, addPendingMessage, removePendingMessage, sentTurnTimes } =
+    usePendingMessages(events, ownerSessionId, isOwnerAttached && !isLoadingSession)
 
   // The raw send; the queue wraps it so a failed send pauses its own session's queue.
   const sendMessage = useSendMessage({
@@ -163,13 +163,63 @@ export default function useChatController({ events, contextRefs, activeTurnId = 
         // Already have a deferred message - route subsequent to queue
         enqueueOwned(content, attachments)
       } else {
-        const msg = { content, attachments, owner: ownerNow() }
+        const msg = { content, attachments, owner: ownerNow(), sentAt: Date.now() }
         deferredSendRef.current = msg
         setHeldFirstMessage(msg)
       }
     },
     [enqueueOwned, ownerNow],
   )
+
+  // Carried messages arrive as the creation starts, a bundle's when it answers: the first takes a free
+  // held slot, the rest queue. A blocked link's leave again - the link effect shows them in the box.
+  const carriedRef = useRef({ seq: null, held: null, queued: [] })
+  useEffect(() => {
+    const seq = creations.current
+    const { carried, answer } = getCreation().bySeq[seq] ?? {}
+    const owner = { creation: seq }
+    const hold = (content, attachments = []) => {
+      deferredSendRef.current = { content, attachments, owner, sentAt: Date.now() }
+      setHeldFirstMessage(deferredSendRef.current)
+      return deferredSendRef.current
+    }
+    const place = content =>
+      deferredSendRef.current
+        ? { queued: enqueueMessage(content, null, owner) }
+        : { held: hold(content) }
+
+    if (carried) {
+      placeOpening(seq, 'carried')
+      const placed = carried.map(place)
+      const held = placed.find(p => p.held)?.held ?? null
+      carriedRef.current = { seq, held, queued: placed.filter(p => !p.held).map(p => p.queued) }
+    }
+    if (!answer) {
+      return
+    }
+    placeOpening(seq, 'answer')
+    if (answer.blocked) {
+      const { held, queued } = carriedRef.current.seq === seq ? carriedRef.current : NO_CARRIED
+      if (held && deferredSendRef.current === held) {
+        deferredSendRef.current = null
+        setHeldFirstMessage(null)
+      }
+      for (const id of queued) {
+        cancelQueuedItem(id)
+      }
+      // What was typed while the session was created takes the slot the link held.
+      const [first, ...rest] = deferredSendRef.current ? [] : takeCreation(seq)
+      if (first) {
+        hold(first.content, first.attachments ?? [])
+        for (const item of rest) {
+          enqueueMessage(item.content, item.attachments, owner)
+        }
+      }
+    }
+    for (const content of answer.bundle) {
+      place(content)
+    }
+  }, [creations, getCreation, placeOpening, enqueueMessage, cancelQueuedItem, takeCreation])
 
   // Shown while its creation is still unbound, or on its own session once bound.
   const heldFor = heldFirstMessage ? resolveOwner(heldFirstMessage.owner) : null
@@ -189,9 +239,10 @@ export default function useChatController({ events, contextRefs, activeTurnId = 
       !isApplyingPendingConfig &&
       !heldInFlightRef.current
     ) {
-      const { content, attachments } = heldFirstMessage
+      const { content, attachments, sentAt } = heldFirstMessage
+      const target = { sessionId: heldFor, containerId }
       heldInFlightRef.current = true
-      send(content, { attachments, target: { sessionId: heldFor, containerId } }).then(sent => {
+      send(content, { attachments, sentAt, target }).then(sent => {
         heldInFlightRef.current = false
         setHeldFirstMessage(null)
         deferredSendRef.current = null
@@ -332,6 +383,7 @@ export default function useChatController({ events, contextRefs, activeTurnId = 
       showPendingMessages,
       addPendingMessage,
       removePendingMessage,
+      sentTurnTimes,
     },
 
     // Message queue

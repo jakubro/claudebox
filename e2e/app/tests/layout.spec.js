@@ -137,12 +137,12 @@ test.describe('Layout', () => {
         'icon-todos': 'Todos (Alt+2)',
         'icon-stash': 'Stash (Alt+3)',
         'icon-tasks': 'Tasks (Alt+4)',
-        'icon-crons': 'Crons',
-        'icon-bookmarks': 'Bookmarks (Alt+5)',
-        'icon-boards': 'Boards (Alt+6)',
-        'icon-usage': 'Usage (Alt+7)',
-        'icon-mcp': 'MCP Servers (Alt+8)',
-        'icon-commands': 'Skills (Alt+9)',
+        'icon-crons': 'Crons (Alt+5)',
+        'icon-bookmarks': 'Bookmarks (Alt+6)',
+        'icon-boards': 'Boards (Alt+7)',
+        'icon-usage': 'Usage (Alt+8)',
+        'icon-mcp': 'MCP Servers (Alt+9)',
+        'icon-commands': 'Skills',
         'icon-logs': 'Logs (Alt+0)',
       }
       for (const [testid, title] of Object.entries(expected)) {
@@ -1052,8 +1052,8 @@ test.describe('Layout', () => {
 
       // Close every default-open panel: left sessions/bookmarks/boards, right todos/stash/tasks.
       await toggleSessionsPanel(page)
-      await page.keyboard.press('Alt+5') // bookmarks
-      await page.keyboard.press('Alt+6') // boards
+      await page.keyboard.press('Alt+6') // bookmarks
+      await page.keyboard.press('Alt+7') // boards
       await toggleTodosPanel(page)
       await toggleStashPanel(page)
       await page.keyboard.press('Alt+4') // tasks
@@ -1195,8 +1195,8 @@ test.describe('Layout', () => {
 
       await maximizeStash(page)
 
-      // Alt+8 toggles MCP.
-      await page.keyboard.press('Alt+8')
+      // Alt+9 toggles MCP.
+      await page.keyboard.press('Alt+9')
 
       await expect(page.locator('[data-testid="panel-mcp"]')).toBeVisible()
 

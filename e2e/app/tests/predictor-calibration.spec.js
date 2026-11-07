@@ -436,33 +436,46 @@ test.describe('predictor accuracy regression', () => {
 
           const turnIds = FIXTURES.map(f => f.turnId).filter(id => !state.excludedFixtures.has(id))
 
-          // List is windowed - sweep it fully, recording each turn's height as it mounts.
+          // List is windowed - sweep it, recording each turn's height as it mounts, until every turn is seen.
           const expectCollapsed = collapsed ? turnIds.filter(id => id !== lastTurnId) : []
           const captured = await page.evaluate(
             async ({ ids, collapsedIds }) => {
               const container = document.querySelector('.chat-messages')
               const contentArea = document.querySelector('.chat-content-area')
-              const settle = () =>
-                new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+              const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+              // On a loaded machine the window's rows land many frames after the scroll that asked for them.
+              const windowCaughtUp = () => {
+                const view = container.getBoundingClientRect()
+                return [...container.querySelectorAll('.turn-container[data-turn-id]')].some(el => {
+                  const box = el.getBoundingClientRect()
+                  return box.bottom > view.top && box.top < view.bottom
+                })
+              }
               const measured = {}
+              const measureMounted = () => {
+                for (const id of ids.filter(i => measured[i] == null)) {
+                  const el = document.querySelector(`.turn-container[data-turn-id="${id}"]`)
+                  // Replay can still be landing; a turn counts once it shows the state under test.
+                  if (el && el.classList.contains('turn-collapsed') === collapsedIds.includes(id)) {
+                    // The whole row the list positions, bottom margin included.
+                    const row = el.closest('.historical-turn-row')
+                    measured[id] = row
+                      ? Math.round(row.getBoundingClientRect().height)
+                      : el.offsetHeight + parseFloat(getComputedStyle(el).marginBottom)
+                  }
+                }
+              }
               const step = Math.max(1, Math.floor(container.clientHeight / 2))
 
-              for (let top = 0; top <= container.scrollHeight; top += step) {
-                container.scrollTop = top
-                await settle()
-                for (const id of ids) {
-                  if (measured[id] == null) {
-                    const el = document.querySelector(`.turn-container[data-turn-id="${id}"]`)
-                    // Replay can still be landing; a turn counts once it shows the state under test.
-                    const isCollapsed = el?.classList.contains('turn-collapsed')
-                    if (el && isCollapsed === collapsedIds.includes(id)) {
-                      // The whole row the list positions, bottom margin included.
-                      const row = el.closest('.historical-turn-row')
-                      measured[id] = row
-                        ? Math.round(row.getBoundingClientRect().height)
-                        : el.offsetHeight + parseFloat(getComputedStyle(el).marginBottom)
-                    }
+              for (let pass = 0; pass < 3 && ids.some(id => measured[id] == null); pass++) {
+                for (let top = 0; top <= container.scrollHeight; top += step) {
+                  container.scrollTop = top
+                  await frame()
+                  for (let waited = 0; waited < 300 && !windowCaughtUp(); waited++) {
+                    await frame()
                   }
+                  await frame()
+                  measureMounted()
                 }
               }
 

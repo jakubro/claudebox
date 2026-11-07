@@ -620,6 +620,49 @@ test.describe('Notifications', () => {
         .toBeGreaterThan(0)
     })
 
+    // SPEC: notify:desktop-sibling-quiet
+    test('a run a sibling message started chimes only when that run asks the user', async ({
+      page,
+    }) => {
+      await installAudioMock(page)
+      const controller = await openLiveSessionInHiddenTab(page)
+      const siblingRun = (reply, extra = []) => [
+        {
+          type: 'system',
+          subtype: 'sibling_message',
+          content: 'Sibling finished.',
+          turn_id: 'turn_sound',
+          message_data: { from_session_id: 'sib-1', from_name: 'lint-fix', outcome: 'ended' },
+          ts: new Date().toISOString(),
+        },
+        { type: 'assistant', subtype: 'text', content: reply, ts: new Date().toISOString() },
+        ...extra,
+        { type: 'result', subtype: 'success', turn_id: 'turn_sound', ts: new Date().toISOString() },
+      ]
+
+      await controller.sendEvents(siblingRun('Noted the sibling.'))
+      await expect(page.getByText('Noted the sibling.').first()).toBeVisible()
+      await page.waitForTimeout(300)
+      expect(await page.evaluate(() => window.__audioMockCalls.oscillatorStart)).toBe(0)
+
+      await controller.sendEvents(
+        siblingRun('Asking you now.', [
+          {
+            type: 'assistant',
+            subtype: 'tool_use',
+            content: 'mcp__claudebox__needs_user',
+            tool_name: 'mcp__claudebox__needs_user',
+            tool_use_id: 'tool_ask',
+            tool_input: { reason: 'Decide: R' },
+            ts: new Date().toISOString(),
+          },
+        ]),
+      )
+      await expect
+        .poll(() => page.evaluate(() => window.__audioMockCalls.oscillatorStart))
+        .toBeGreaterThan(0)
+    })
+
     // SPEC: notify:sound-trigger
     test('does not play sound when tab is focused', async ({ page }) => {
       await installAudioMock(page)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,8 @@ from claudebox.constants import (
     LABEL_ID,
     LABEL_WORKSPACE,
     NETWORK_NAME_TEMPLATE,
+    TUNNEL_CONTAINER_PORT,
+    TUNNEL_PORT_ENV,
     WEB_CONTAINER_PORT,
 )
 from .errors import (
@@ -75,6 +78,8 @@ class ContainerService:
         self._state_executor = state_executor
 
         self._runtime = create_runtime(self._claudebox_config)
+        # A local session runs on the host, so its ports need no tunnel to reach it.
+        self._tunnels = self._claudebox_config.backend != "local"
 
         self._containers: dict[str, Container] = {}
         self._state_path = config.config_dir / DAEMON_STATE_FILE
@@ -87,6 +92,7 @@ class ContainerService:
         # Ids a spawn in this process still holds: minted, not yet registered with an owner or settled.
         # In memory on purpose - after a restart nothing holds them, exactly when they are unreachable.
         self._spawning: set[str] = set()
+        self._status_observers: list[Callable[[Container], None]] = []
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -213,12 +219,15 @@ class ContainerService:
         observed: dict[str, tuple[str, ContainerStatus, int | None]],
         written: set[str],
     ) -> None:
+        changed: list[Container] = []
+
         for container_id, (backend_id, status, port) in observed.items():
             if container_id in written:
                 continue
 
             if existing := self._containers.get(container_id):
                 existing.backend_id = backend_id
+                was = existing.status
 
                 # The runtime says a process exists; only the probe says the API answers, so a
                 # crashed verdict outranks a running one, and the count belongs to the probe.
@@ -228,6 +237,9 @@ class ContainerService:
 
                 if not crashed_but_alive:
                     existing.status = status
+
+                if existing.status != was:
+                    changed.append(existing)
             else:
                 self._containers[container_id] = Container(
                     id=container_id,
@@ -245,8 +257,12 @@ class ContainerService:
         # Remove containers no longer present in the backend
         for container_id in list(self._containers):
             if container_id not in observed and container_id not in written:
-                del self._containers[container_id]
+                changed.append(self._containers.pop(container_id))
                 self._freshly_adopted.discard(container_id)
+
+        for container in changed:
+            for observer in self._status_observers:
+                observer(container)
 
     # Container Management
     # ----------------------------------------------------------------------------------------------
@@ -367,6 +383,17 @@ class ContainerService:
 
         if container.status != previous_status:
             await self._broadcast_status(container)
+
+    def add_status_observer(self, observer: Callable[[Container], None]) -> None:
+        """Call `observer` with each container whose state changes, removal included; must not block."""
+
+        self._status_observers.append(observer)
+
+    def remove_status_observer(self, observer: Callable[[Container], None]) -> None:
+        """Stop calling `observer`; one never added, as by a service stopped before it started, is ignored."""
+
+        if observer in self._status_observers:
+            self._status_observers.remove(observer)
 
     def release_spawn(self, container_id: str) -> None:
         """Drop a spawn's claim on its container once the operation that started it has settled."""
@@ -491,6 +518,9 @@ class ContainerService:
         self._mark_written(container_id)
         await self.save()
 
+        for observer in self._status_observers:
+            observer(container)
+
         if session_id:
             await self._events.broadcast(
                 SessionsChangedEvent(
@@ -601,6 +631,9 @@ class ContainerService:
             "CLAUDEBOX_PWD": str(self._workspace.path),
         }
 
+        if self._tunnels:
+            env[TUNNEL_PORT_ENV] = str(TUNNEL_CONTAINER_PORT)
+
         # Reload so mount/port/env/network reflect current settings.toml; agent/profile/backend
         # stay on the load-time snapshot.
         config = Config.load(self._workspace.path)
@@ -644,6 +677,7 @@ class ContainerService:
             raise ContainerTmpMountConflict(paths=exc.context["paths"]) from exc
 
         port = 0
+        tunnel_port = 0
 
         try:
             port = await loop.run_in_executor(
@@ -654,6 +688,16 @@ class ContainerService:
                     WEB_CONTAINER_PORT,
                 ),
             )
+
+            if self._tunnels:
+                tunnel_port = await loop.run_in_executor(
+                    self._executor,
+                    functools.partial(
+                        self._runtime.get_host_port,
+                        backend_id,
+                        TUNNEL_CONTAINER_PORT,
+                    ),
+                )
         except Exception:
             self._logger.warning(
                 "Failed to discover host port",
@@ -668,6 +712,7 @@ class ContainerService:
             port=port,
             status=ContainerStatus.STARTING,
             labels=labels,
+            tunnel_port=tunnel_port,
         )
 
     async def _create_network(self) -> None:
@@ -746,6 +791,9 @@ class ContainerService:
             self._written_during_sync.add(container_id)
 
     async def _broadcast_status(self, container: Container) -> None:
+        for observer in self._status_observers:
+            observer(container)
+
         await self._events.broadcast(
             ContainerStatusEvent(
                 container_id=container.id,

@@ -1,0 +1,7 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Reformat src/ in a sibling session.","ts":"2026-11-04T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Started lint-fix to reformat src/.","ts":"2026-11-04T12:00:01Z","turn_id":"turn_001","id":"evt_002","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-11-04T12:00:02Z","id":"evt_003","primary":false,"is_human":false}
+{"type":"system","subtype":"sibling_message","content":"Done: 40 files reformatted, ruff clean.","ts":"2026-11-04T12:05:00Z","turn_id":"turn_001","id":"evt_004","primary":false,"is_human":false,"message_data":{"from_session_id":"5f3a9c21-0000-4000-8000-000000000001","from_name":"lint-fix","outcome":"ended","delivery_id":"d-1"}}
+{"type":"assistant","subtype":"text","content":"lint-fix is done; stopping it.","ts":"2026-11-04T12:05:01Z","turn_id":"turn_001","id":"evt_005","primary":true,"is_human":false}
+{"type":"system","subtype":"sibling_message","content":"Nameless sibling says hi.","ts":"2026-11-04T12:05:02Z","turn_id":"turn_001","id":"evt_006","primary":false,"is_human":false,"message_data":{"from_session_id":"9b7e44d0-0000-4000-8000-000000000002","from_name":null,"outcome":"ended","delivery_id":"d-2"}}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2026-11-04T12:05:03Z","id":"evt_007","primary":false,"is_human":false}

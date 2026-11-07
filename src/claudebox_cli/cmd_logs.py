@@ -517,7 +517,7 @@ def _list_registered_workspace_ids() -> list[str]:
         return []
 
     try:
-        data = json.loads(config_path.read_text())
+        data = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
 

@@ -13,6 +13,7 @@ class RenderedListing:
 
     body: bytes
     session_count: int
+    sessions: tuple[SessionInfo, ...] = ()
 
 
 @dataclass
@@ -50,3 +51,12 @@ class SessionInfo(SessionMetadata):
     effort_level: str | None = None
     failed_prompts: list[str] | None = None
     failed_seeds: list[str] | None = None
+
+
+@dataclass
+class SiblingSummary(DataClass):
+    """One session a caller spawned, as the spawn socket's list verb reports it."""
+
+    session_id: str
+    name: str | None
+    state: str

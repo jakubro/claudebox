@@ -67,7 +67,11 @@ class TestMakeToolsAggregation:
             "session_spawn",
             "session_ask",
             "session_read",
+            "session_stop",
+            "session_list",
             "needs_user",
+            "port_open",
+            "port_close",
             "skill",
             "tool_search",
             "list_mcp_resources",
@@ -82,7 +86,7 @@ class TestMakeToolsAggregation:
         tools = make_tools(ctx)
         ctx.tool_catalog.tools.extend(tools)
 
-        assert len(ctx.tool_catalog.tools) == 25
+        assert len(ctx.tool_catalog.tools) == 29
         assert ctx.tool_catalog.tools[0] in tools
 
 
@@ -105,7 +109,7 @@ class TestConnectBindsTools:
             await runtime.connect()
 
         bound_tools = mock_create_agent.call_args.kwargs["tools"]
-        assert len(bound_tools) == 25
+        assert len(bound_tools) == 29
 
     @pytest.mark.anyio
     async def test_connect_degrades_to_chat_only_when_bind_tools_unsupported(self, tmp_path):
@@ -143,7 +147,7 @@ class TestConnectBindsTools:
         assert runtime.ready.is_set()
         # First attempt had the full toolset; rebuild used empty tools=[].
         assert len(call_log) == 2
-        assert len(call_log[0]) == 25
+        assert len(call_log[0]) == 29
         assert call_log[1] == []
 
 

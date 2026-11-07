@@ -11,7 +11,7 @@ export const TurnContext = createContext(null)
  * @param {Map} props.todoDiffs - Todo changes keyed by tool_use_id.
  * @param {function} [props.onFormSubmit] - (answer); absent when read-only, disabling forms.
  * @param {number} props.turnStartTime - Turn start timestamp in ms.
- * @param {number} props.now - Current time in ms for live-ticking.
+ * @param {number|null} props.now - The running turn's clock in ms; null when it is not running.
  * @param {string} [props.turnId] - Set only where parts and tool calls can be bookmarked.
  * @param {Set<string>} [props.bookmarkedParts] - The turn's bookmarked part and tool-call tails.
  * @param {function} [props.onToggleBookmark] - (turnId, tail, preview).

@@ -35,6 +35,7 @@ class Container(DataClass):
         members: Side-thread session ids sharing this container. Addressability, not liveness.
         live_session_ids: Session ids the container's registry reports as started, refreshed on
             every health probe. A member's liveness is membership here, never in `members`.
+        tunnel_port: Host port mapped to the container's port tunnel; 0 when it has none.
     """
 
     id: str
@@ -47,6 +48,7 @@ class Container(DataClass):
     session_id: str | None = None
     members: list[str] = field(default_factory=list)
     live_session_ids: list[str] = field(default_factory=list)
+    tunnel_port: int = 0
 
     @property
     def base_url(self) -> str:

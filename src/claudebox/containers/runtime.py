@@ -13,6 +13,7 @@ from .build import build_image
 from .run import get_container_run_args, run_container, substitute_held_ports, tmp_mount_conflicts
 from ..config import Config
 from ..core.logging import get_logger
+from ..core.ports import parse_ports
 from ..temp import TmpRemapBlocked
 
 
@@ -76,7 +77,7 @@ class ContainerRuntime:
         if conflicts := tmp_mount_conflicts(config):
             raise TmpRemapBlocked(paths=",".join(map(str, conflicts)), reason="mounted")
 
-        fixed_ports = any(int(port) for port in config.ports or {})
+        fixed_ports = any(parse_ports(config.ports) or {})
 
         with _FIXED_PORT_LOCK if fixed_ports else contextlib.nullcontext():
             substitutes = substitute_held_ports(config.ports) if fixed_ports else {}

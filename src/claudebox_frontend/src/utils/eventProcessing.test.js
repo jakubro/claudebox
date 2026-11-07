@@ -29,6 +29,7 @@ import {
   isVisibleEvent,
   processEvents,
   processNestedEvents,
+  recordTurnDurations,
   selectRunningBackgroundWork,
   TurnRoutingMode,
 } from './eventProcessing'
@@ -1271,6 +1272,8 @@ describe('isHiddenInFocused', () => {
     'Skill',
     'mcp__claudebox__needs_user',
     'mcp__claudebox__session_read',
+    'mcp__claudebox__session_list',
+    'session_list',
     'ListMcpResourcesTool',
     'ReadMcpResourceTool',
     'ReadMcpResourceDirTool',
@@ -2909,6 +2912,45 @@ describe('appendTurns', () => {
   })
 })
 
+describe('recordTurnDurations', () => {
+  const turn = (turn_id, extra = {}) => ({ turn_id, events: [], ...extra })
+
+  it("puts each result's recorded time on the latest turn with its id", () => {
+    const turns = [turn('turn-1'), turn('turn-2'), turn('turn-2')]
+    const batch = [
+      { type: 'assistant', subtype: 'text', turn_id: 'turn-2' },
+      { type: 'result', subtype: 'success', turn_id: 'turn-2', duration_ms: 1284 },
+      { type: 'result', subtype: 'success', turn_id: 'turn-1', duration_ms: 21626 },
+    ]
+
+    const result = recordTurnDurations(turns, batch)
+
+    expect(result.map(t => t.durationMs)).toEqual([21626, undefined, 1284])
+    expect(result[1]).toBe(turns[1])
+  })
+
+  it('adds up a turn whose agent picked up again after its background work', () => {
+    const turns = [turn('turn-1')]
+    const first = [{ type: 'result', subtype: 'success', turn_id: 'turn-1', duration_ms: 8000 }]
+    const followUp = [{ type: 'result', subtype: 'success', turn_id: 'turn-1', duration_ms: 3500 }]
+
+    expect(recordTurnDurations(recordTurnDurations(turns, first), followUp)[0].durationMs).toBe(
+      11500,
+    )
+  })
+
+  it('returns the same array when no result records a time for a known turn', () => {
+    const turns = [turn('turn-1')]
+    const batch = [
+      { type: 'result', subtype: 'success', turn_id: 'turn-1' },
+      { type: 'result', subtype: 'success', duration_ms: 900 },
+      { type: 'result', subtype: 'success', turn_id: 'turn-9', duration_ms: 900 },
+    ]
+
+    expect(recordTurnDurations(turns, batch)).toBe(turns)
+  })
+})
+
 describe('appendTurnResults', () => {
   it('returns original reference when no result events exist', () => {
     const existing = { 'turn-1': 'success' }
@@ -4034,5 +4076,54 @@ describe('computeDuplicateAskUserIds', () => {
       expect(() => computeDuplicateAskUserIds(turns)).not.toThrow()
       expect(computeDuplicateAskUserIds(turns).size).toBe(0)
     })
+  })
+})
+
+describe('sibling messages', () => {
+  const sibling = (content, extra = {}) => ({
+    type: 'system',
+    subtype: 'sibling_message',
+    content,
+    turn_id: 'turn-1',
+    message_data: { from_session_id: 's-1', from_name: 'lint-fix' },
+    ...extra,
+  })
+  const text = content => ({ type: 'assistant', subtype: 'text', content, turn_id: 'turn-1' })
+
+  it('draws a sibling block between the texts around it', () => {
+    const { blocks } = processEvents([text('Started it.'), sibling('Done.'), text('Stopping it.')])
+
+    expect(blocks.map(b => b.type)).toEqual(['text', 'sibling-message', 'text'])
+    expect(blocks[1].event.content).toBe('Done.')
+  })
+
+  it('draws nothing for a blank one or one nested under a subagent', () => {
+    const { blocks } = processEvents([sibling('  '), sibling('x', { parent_tool_use_id: 'tu_1' })])
+
+    expect(blocks).toEqual([])
+  })
+
+  it('joins the current turn and opens none', () => {
+    const { turns } = appendTurns([], INITIAL_TURN_GROUPING_STATE, [
+      { type: 'user', is_human: true, turn_id: 'turn-1', content: 'Hello' },
+      text('Started it.'),
+      sibling('Done.'),
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0].events.map(e => e.subtype)).toEqual(['text', 'sibling_message'])
+    expect(isVisibleEvent(sibling('Done.'))).toBe(true)
+  })
+
+  it('is neither a compaction summary nor a skill body', () => {
+    const events = [
+      { type: 'system', subtype: 'compact_boundary', id: 'cb-1', turn_id: 'turn-1' },
+      sibling('After the boundary.'),
+    ]
+
+    const { blocks } = processEvents(events)
+
+    expect(blocks.map(b => b.type)).toEqual(['compaction', 'sibling-message'])
+    expect(blocks[0].summary ?? null).toBeNull()
   })
 })

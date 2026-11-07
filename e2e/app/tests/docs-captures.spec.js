@@ -1,24 +1,25 @@
 /** Documentation screenshots, recorded from the same mocks the rest of the suite runs on. */
 
-import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { devices, expect, test } from '@playwright/test'
 import {
+  disableAutoCollapse,
   openLogsPanel,
-  openSession,
   openSessionsPanel,
   sessionsHandler,
   waitForAppReady,
+  waitForMobileReady,
   waitForShortcutsReady,
+  waitForStableScrollHeight,
 } from '../helpers.js'
+import { DEFAULT_CONTAINER_ID, loadFixture, mockAPI, mockBoards } from '../mocks/api.js'
 import {
-  DEFAULT_CONTAINER_ID,
-  DEFAULT_SESSION_ID,
-  DEFAULT_SESSION_URL,
-  DEFAULT_WORKSPACE_ID,
-  loadFixture,
-  mockAPI,
-  mockBoards,
-} from '../mocks/api.js'
-import { createLogsSSEController, mockSSE } from '../mocks/sse.js'
+  createLogsSSEController,
+  createSSEController,
+  loadEventsFromFixture,
+  mockSSE,
+  mockSSEDynamic,
+} from '../mocks/sse.js'
 
 // Captures compare at the default zero tolerance, never the visual suite's one-percent allowance:
 // a drifted capture is a stale picture. Masks are out too - one paints a box into a shipped PNG.
@@ -30,10 +31,22 @@ const GUIDE = ['guide', 'images']
 const ROOT = ['images']
 const REFERENCE = ['reference', 'images']
 
+// Not the shared mock ids: the footer, the switcher and every session row print these.
+const DOCS_WORKSPACE_ID = 'project'
+const DOCS_SESSION_ID = 'c41d7e09-5b2a-4f63-9e18-a07b3d5c2f94'
+const DOCS_BACKEND_ID = 'e5a90c3f7b21d4486c0a9e3f52b17d68c04a9b1e3f7d2c56a8e0b4d91f36a27c'
+const DOCS_SESSION_URL = `/#/workspaces/${DOCS_WORKSPACE_ID}/sessions/${DOCS_SESSION_ID}`
+const DOCS_WORKSPACES = [
+  { id: DOCS_WORKSPACE_ID, path: '/home/user/project', containers: { running: 0, stopped: 0 } },
+]
+
+const { defaultBrowserType: _ignored, ...PIXEL_5 } = devices['Pixel 5']
+const PLOT_PNG = readFileSync(new URL('../fixtures/files/plot.png', import.meta.url))
+
 const THREE_WORKSPACES = [
-  { id: DEFAULT_WORKSPACE_ID, path: '/home/user/project', name: 'project' },
-  { id: 'ws-docs', path: '/home/user/docs', name: 'docs' },
-  { id: 'ws-infra', path: '/home/user/infrastructure', name: 'infrastructure' },
+  { id: DOCS_WORKSPACE_ID, path: '/home/user/project', name: 'project' },
+  { id: 'docs', path: '/home/user/docs', name: 'docs' },
+  { id: 'infrastructure', path: '/home/user/infrastructure', name: 'infrastructure' },
 ]
 
 /** Dockview grid filling both sides of the chat, so a capture shows the docked arrangement. */
@@ -107,7 +120,15 @@ async function selectAssistantText(page, substring) {
 
 /** mockAPI carrying the documentation session's own status - named, real numbers, no bypass. */
 function mockDocsAPI(page, options = {}) {
-  return mockAPI(page, { statusFixture: 'status/docs.json', ...options })
+  return mockAPI(page, {
+    statusFixture: 'status/docs.json',
+    sessionsFixture: 'sessions/docs.json',
+    workspaceId: DOCS_WORKSPACE_ID,
+    sessionId: DOCS_SESSION_ID,
+    backendId: DOCS_BACKEND_ID,
+    workspaces: DOCS_WORKSPACES,
+    ...options,
+  })
 }
 
 /** Dockview grid with one right-hand panel wide enough to read, for a single-panel capture. */
@@ -147,25 +168,77 @@ function singlePanelLayout(id, title, width, side = 'right') {
   }
 }
 
+async function docsContainerRunning(route) {
+  await route.fulfill({
+    json: {
+      containers: [{ id: DEFAULT_CONTAINER_ID, session_id: DOCS_SESSION_ID, status: 'running' }],
+    },
+  })
+}
+
 /** Serve one preloaded dockview layout to whichever ui-state call the app makes. */
-function layoutHandler(layout) {
+function layoutHandler(layout, global = {}) {
   return async route => {
-    await route.fulfill({ json: { global: {}, session: layout } })
+    await route.fulfill({ json: { global, session: layout } })
   }
+}
+
+function chatOnlyLayout(sessionState = {}) {
+  return {
+    layout: {
+      grid: {
+        root: {
+          type: 'branch',
+          data: [
+            { type: 'leaf', data: { views: ['main'], activeView: 'main', id: 'main' }, size: 1280 },
+          ],
+          size: 720,
+        },
+        width: 1280,
+        height: 720,
+        orientation: 'HORIZONTAL',
+      },
+      panels: {
+        main: { id: 'main', contentComponent: 'main', tabComponent: 'icon', title: 'Main' },
+      },
+      activeGroup: 'main',
+    },
+    panelGroups: { left: { width: 0, order: [] }, right: { width: 0, order: [] } },
+    updated_at: '2025-01-18T12:00:00Z',
+    ...sessionState,
+  }
+}
+
+async function openChatOnly(page, fixture, sessionState = {}, apiOptions = {}) {
+  await openDocsSession(page, fixture, {
+    ...apiOptions,
+    handlers: { getUIState: layoutHandler(chatOnlyLayout(sessionState)), ...apiOptions.handlers },
+  })
 }
 
 test.use({ viewport: { width: 1280, height: 720 } })
 
 async function openSprintBoard(page) {
-  await mockBoards(page)
-  await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}/boards/sprint-1`)
+  await mockBoards(page, DOCS_WORKSPACE_ID)
+  await page.goto(`/#/workspaces/${DOCS_WORKSPACE_ID}/boards/sprint-1`)
   await expect(page.locator('[data-testid="footer-workspace"]')).toContainText('project')
   await page.evaluate(() => document.fonts.ready)
 }
 
 async function openDocsSession(page, fixture = 'events/docs-conversation.jsonl', apiOptions) {
   await mockDocsAPI(page, apiOptions)
-  await openSession(page, fixture)
+  await openDocsTranscript(page, fixture)
+}
+
+async function openDocsTranscript(page, events) {
+  if (Array.isArray(events)) {
+    await mockSSEDynamic(page, () => events)
+  } else {
+    await mockSSE(page, events)
+  }
+  await page.goto(DOCS_SESSION_URL)
+
+  return waitForAppReady(page)
 }
 
 test.describe('Docs captures - chat', () => {
@@ -183,14 +256,90 @@ test.describe('Docs captures - chat', () => {
   })
 
   test('the terminal column, with a failed command marked', async ({ page }) => {
-    await openDocsSession(page, 'events/terminal-column-mixed.jsonl', {
-      sessionUiStateDefaults: { terminalSplitEnabled: true },
-    })
+    await openChatOnly(page, 'events/terminal-column-mixed.jsonl', { rightSlotView: 'terminal' })
 
     const column = page.locator('[data-testid="terminal-column"]')
     await expect(column.locator('.terminal-entry-failed').first()).toBeVisible()
 
-    await expect(column).toHaveScreenshot([...FEATURES, 'chat-terminal.png'])
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-terminal.png'])
+  })
+
+  test('the work column, tool calls grouped by the turn that made them', async ({ page }) => {
+    await openChatOnly(page, 'events/docs-tool-calls.jsonl', { rightSlotView: 'work' })
+
+    const column = page.locator('[data-testid="work-column"]')
+    await expect(column.locator('[data-tool-use-id="tu_bench"]')).toBeVisible()
+    await waitForStableScrollHeight(page.locator('[data-testid="chat-messages"]'))
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-work.png'])
+  })
+
+  test('Focused: a turn reduced to what it changed and said, the newest naming its read', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date('2025-01-18T12:31:16Z') })
+    await page.clock.setFixedTime(new Date('2025-01-18T12:31:16Z'))
+    await openChatOnly(page, 'events/docs-focused.jsonl')
+    await disableAutoCollapse(page)
+    const scroller = page.locator('[data-testid="chat-messages"]')
+    await waitForStableScrollHeight(scroller)
+    await scroller.evaluate(el => {
+      el.scrollTop = el.scrollHeight
+    })
+
+    await expect(page.getByTestId('turn-progress-working')).toHaveText('Reading notes.md...')
+    await expect(page.locator('[data-tool-use-id="tu_write_migration"]')).toBeInViewport()
+    await expect(page.locator('[data-tool-use-id="tu_read_schema"]')).toHaveCount(0)
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-focused.png'])
+  })
+
+  test('Everything: the same conversation with its reads shown as blocks', async ({ page }) => {
+    await page.clock.install({ time: new Date('2025-01-18T12:31:16Z') })
+    await page.clock.setFixedTime(new Date('2025-01-18T12:31:16Z'))
+    await openChatOnly(page, 'events/docs-focused.jsonl', { rightSlotView: 'everything' })
+    await disableAutoCollapse(page)
+    const scroller = page.locator('[data-testid="chat-messages"]')
+    await waitForStableScrollHeight(scroller)
+    await scroller.evaluate(el => {
+      el.scrollTop = el.scrollHeight
+    })
+
+    await expect(page.locator('[data-tool-use-id="tu_read_schema"]')).toBeInViewport()
+    await expect(page.locator('[data-tool-use-id="tu_read_notes"]')).toBeInViewport()
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-everything.png'])
+  })
+
+  test('one part of a reply bookmarked, another under the pointer, the panel beside them', async ({
+    page,
+  }) => {
+    const part = 'turn_001:p-evt_002-0-1'
+    const bookmarks = {
+      bookmarkedTurns: { [DOCS_SESSION_ID]: [part] },
+      bookmarkMeta: {
+        [`${DOCS_SESSION_ID}/${part}`]: {
+          preview: 'The events table carries an index on the account column',
+          sessionName: 'reports rollup',
+          ts: Date.parse('2025-01-18T12:34:00Z'),
+        },
+      },
+    }
+    await page.clock.install({ time: new Date('2025-01-18T12:35:30Z') })
+    await page.clock.setFixedTime(new Date('2025-01-18T12:35:30Z'))
+    await openDocsSession(page, 'events/docs-part-bookmark.jsonl', {
+      handlers: {
+        getUIState: layoutHandler(singlePanelLayout('bookmarks', 'Bookmarks', 360), bookmarks),
+      },
+    })
+
+    const reply = page.locator('[data-testid="message-assistant"] .turn-text')
+    await expect(reply.locator('.md-block-bookmarked')).toHaveCount(1)
+    await expect(page.locator('[data-testid="bookmark-item"]')).toHaveCount(1)
+    await reply.locator('p', { hasText: 'Together, a first open' }).hover()
+    await expect(page.getByTestId('block-strip').first()).toBeVisible()
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-part-bookmark.png'])
   })
 
   test('a session that needs you, its reason in the sessions list and its replies offered', async ({
@@ -213,7 +362,7 @@ test.describe('Docs captures - chat', () => {
         getSessions: sessionsHandler([
           { ...docsStatus, container_id: DEFAULT_CONTAINER_ID, needs_user: reason },
           {
-            session_id: 'session-docs-notes',
+            session_id: '5d03a8c7-e2f9-41b6-9c4e-87a1f6d2b350',
             name: 'release notes',
             workspace: '/home/user/project',
             model: 'claude-sonnet-5-5',
@@ -227,15 +376,7 @@ test.describe('Docs captures - chat', () => {
           },
         ]),
         // A row shows its reason only while its session resolves to a running container.
-        getContainers: async route => {
-          await route.fulfill({
-            json: {
-              containers: [
-                { id: DEFAULT_CONTAINER_ID, session_id: DEFAULT_SESSION_ID, status: 'running' },
-              ],
-            },
-          })
-        },
+        getContainers: docsContainerRunning,
       },
     })
 
@@ -243,6 +384,20 @@ test.describe('Docs captures - chat', () => {
     await expect(page.locator('[data-testid="session-item"]', { hasText: reason })).toBeVisible()
 
     await expect(page).toHaveScreenshot([...FEATURES, 'chat-needs-you.png'])
+  })
+})
+
+test.describe('Docs captures - chat on a phone', () => {
+  test.use({ ...PIXEL_5, viewport: { width: 393, height: 851 }, hasTouch: true })
+
+  test('the single-column chat with its top bar and status strip', async ({ page }) => {
+    await mockSSE(page, 'events/docs-conversation.jsonl')
+    await mockDocsAPI(page)
+    await page.goto(DOCS_SESSION_URL)
+    await waitForMobileReady(page)
+    await expect(page.locator('.turn-container').first()).toBeVisible()
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'chat-phone.png'])
   })
 })
 
@@ -258,8 +413,45 @@ test.describe('Docs captures - rendering', () => {
     ])
   })
 
+  test('paths in a tool result, a relative link and a relative image in a reply', async ({
+    page,
+  }) => {
+    await mockDocsAPI(page, {
+      handlers: { getUIState: layoutHandler(chatOnlyLayout({ rightSlotView: 'everything' })) },
+    })
+    // Registered after mockAPI, whose own image route answers 404 and would otherwise win.
+    await page.route('**/api/workspaces/*/files/image*', route =>
+      new URL(route.request().url()).searchParams.get('path') === 'out/plot.png'
+        ? route.fulfill({ status: 200, contentType: 'image/png', body: PLOT_PNG })
+        : route.fulfill({ status: 404, json: { error: 'file_not_found' } }),
+    )
+    await page.route('**/api/files/resolve-paths*', async route => {
+      const { candidates } = JSON.parse(route.request().postData())
+      const resolved = Object.fromEntries(
+        candidates
+          .filter(path => /^(src|tests)\/\w+/.test(path))
+          .map(path => [path, `/home/user/project/${path}`]),
+      )
+      await route.fulfill({ json: { resolved } })
+    })
+    await openDocsTranscript(page, 'events/docs-rendering-paths.jsonl')
+
+    const image = page.locator('.turn-text img').first()
+    await expect.poll(() => image.evaluate(img => img.naturalWidth)).toBeGreaterThan(0)
+    const search = page.locator('[data-tool-use-id="tu_rg_rollup"]')
+    await search.locator('.tool-header-area').first().click()
+    await expect(search.locator('.path-link')).toHaveCount(3)
+    const scroller = page.locator('[data-testid="chat-messages"]')
+    await waitForStableScrollHeight(scroller)
+    await scroller.evaluate(el => {
+      el.scrollTop = 0
+    })
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'rendering-paths.png'])
+  })
+
   test('a word-level edit diff', async ({ page }) => {
-    await openDocsSession(page, 'events/tool-edit-char-highlight.jsonl')
+    await openDocsSession(page, 'events/docs-edit-diff.jsonl')
 
     const block = page.locator('[data-testid="tool-block"]').first()
     await expect(block.locator('.tool-expanded-content')).toBeVisible()
@@ -273,8 +465,8 @@ test.describe('Docs captures - diagrams', () => {
     await mockSSE(page, 'events/mermaid-diagram.jsonl')
     await mockDocsAPI(page)
     // The overlay dims the app rather than hiding it, so what shows through needs its routes.
-    await mockBoards(page)
-    await page.goto(DEFAULT_SESSION_URL)
+    await mockBoards(page, DOCS_WORKSPACE_ID)
+    await page.goto(DOCS_SESSION_URL)
     await waitForAppReady(page)
 
     // The renderer swaps its placeholder for the SVG asynchronously; shooting earlier catches it.
@@ -315,7 +507,7 @@ test.describe('Docs captures - panels', () => {
 
   test('panels docked around the chat, both icon strips in frame', async ({ page }) => {
     await openDocsSession(page, 'events/docs-panels.jsonl', {
-      sessionsFixture: 'sessions/multiple.json',
+      sessionsFixture: 'sessions/docs-several.json',
       handlers: { getUIState: layoutHandler(dockedLayout()) },
     })
 
@@ -392,22 +584,30 @@ test.describe('Docs captures - many sessions', () => {
   })
 
   test('the workspace switcher, listing what is registered', async ({ page }) => {
-    await openDocsSession(page, 'events/docs-conversation.jsonl', { workspaces: THREE_WORKSPACES })
+    await openDocsSession(page, 'events/docs-conversation.jsonl', {
+      workspaces: THREE_WORKSPACES,
+      handlers: {
+        getUIState: layoutHandler(singlePanelLayout('sessions', 'Sessions', 330, 'left')),
+        getSessions: sessionsHandler([
+          { ...loadFixture('status/docs.json'), container_id: DEFAULT_CONTAINER_ID },
+        ]),
+      },
+    })
 
     await page.locator('[data-testid="workspace-switcher"]').click()
     const dropdown = page.locator('[data-testid="workspace-switcher-dropdown"]')
     await expect(dropdown.locator('.workspace-switcher-option')).toHaveCount(3)
 
-    await expect(dropdown).toHaveScreenshot([...FEATURES, 'multi-session-switcher.png'])
+    await expect(page).toHaveScreenshot([...FEATURES, 'multi-session-switcher.png'])
   })
 
-  test('a session an agent started, appearing as an ordinary row', async ({ page }) => {
+  test('a session an agent started, its reply arriving under its name', async ({ page }) => {
     await mockSSE(page, 'events/docs-session-spawn.jsonl')
     await mockDocsAPI(page, {
       handlers: {
         getSessions: sessionsHandler([
           {
-            session_id: DEFAULT_SESSION_ID,
+            session_id: DOCS_SESSION_ID,
             name: 'reports rollup',
             workspace: '/home/user/project',
             model: 'claude-sonnet-5',
@@ -422,7 +622,7 @@ test.describe('Docs captures - many sessions', () => {
             container_id: DEFAULT_CONTAINER_ID,
           },
           {
-            session_id: 'sib-index',
+            session_id: 'b8e2f415-63ad-4c09-a7e1-5f2d9b84c036',
             name: 'events index',
             workspace: '/home/user/project',
             model: 'claude-sonnet-5',
@@ -430,24 +630,48 @@ test.describe('Docs captures - many sessions', () => {
             num_turns: 2,
             total_cost_usd: 0.03,
             total_duration_ms: 41000,
-            started_at: '2025-01-18T12:00:04Z',
-            updated_at: '2025-01-18T12:00:45Z',
-            first_message: 'Add the index on the events table',
-            last_message: 'Cold path is 1.4s with the index.',
-            container_id: 'claudebox-sib-index',
+            started_at: '2025-01-18T12:00:02Z',
+            updated_at: '2025-01-18T12:00:48Z',
+            first_message: 'Add the index on the events table and measure the cold path',
+            last_message: "The reports page's cold path went from 12.1s to 1.4s over five runs.",
+            container_id: null,
           },
         ]),
       },
     })
-    // The whole viewport: the point is the spawning call and the ordinary row it produced, together.
-    await mockBoards(page)
-    await page.goto(DEFAULT_SESSION_URL)
+    // The whole viewport: the spawn, the sibling's reply, the stop and the row it left, together.
+    await mockBoards(page, DOCS_WORKSPACE_ID)
+    await page.goto(DOCS_SESSION_URL)
     await waitForAppReady(page)
 
     await openSessionsPanel(page)
-    await expect(page.locator('[data-testid="tool-block"]').first()).toBeVisible()
+    await expect(page.locator('[data-testid="sibling-message"]')).toBeVisible()
 
     await expect(page).toHaveScreenshot([...FEATURES, 'multi-session-spawned.png'])
+  })
+})
+
+test.describe('Docs captures - container boundary', () => {
+  test('a port request waiting on its card, the session needing you', async ({ page }) => {
+    const reason = 'Approve: open port 5173'
+    const docsStatus = loadFixture('status/docs.json')
+    await openDocsSession(page, 'events/docs-port-request.jsonl', {
+      handlers: {
+        getUIState: layoutHandler(singlePanelLayout('sessions', 'Sessions', 330, 'left')),
+        getSessionStatus: async route => {
+          await route.fulfill({ json: { ...docsStatus, needs_user: reason } })
+        },
+        getSessions: sessionsHandler([
+          { ...docsStatus, container_id: DEFAULT_CONTAINER_ID, needs_user: reason },
+        ]),
+        getContainers: docsContainerRunning,
+      },
+    })
+
+    await expect(page.getByTestId('port-request')).toBeVisible()
+    await expect(page.locator('[data-testid="session-item"]', { hasText: reason })).toBeVisible()
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'container-boundary-port-request.png'])
   })
 })
 
@@ -475,15 +699,15 @@ test.describe('Docs captures - threads', () => {
       handlers: {
         getSessions: sessionsHandler([
           {
-            session_id: 'root-session',
+            session_id: '9f4c21e6-07b8-4d5a-b3e9-c6a8d1f50e27',
             name: 'reports rollup',
             parent_session_id: null,
             num_turns: 9,
           },
           {
-            session_id: DEFAULT_SESSION_ID,
+            session_id: DOCS_SESSION_ID,
             name: 'cache invalidation',
-            parent_session_id: 'root-session',
+            parent_session_id: '9f4c21e6-07b8-4d5a-b3e9-c6a8d1f50e27',
             num_turns: 3,
             container_id: DEFAULT_CONTAINER_ID,
             is_side_thread: true,
@@ -523,14 +747,87 @@ test.describe('Docs captures - threads', () => {
     ])
   })
 
+  test('a reply asked on its own, answered in the box beside its quote', async ({ page }) => {
+    await page.addInitScript(sessionId => {
+      localStorage.setItem(
+        `inline-replies:${sessionId}`,
+        JSON.stringify([
+          {
+            id: 'r1',
+            quote: 'a single call at the end of it',
+            from: 'assistant',
+            turnId: 'turn_003',
+            prefix: '',
+            suffix: '',
+            offset: 0,
+            response: '',
+            threadSessionId: 'side-1',
+            promotedSessionId: null,
+            railPromoted: false,
+          },
+        ]),
+      )
+    }, DOCS_SESSION_ID)
+    await mockDocsAPI(page, {
+      handlers: {
+        getUIState: layoutHandler(
+          chatOnlyLayout({ inlineReplySizes: { r1: { width: 560, height: 400 } } }),
+        ),
+      },
+    })
+    await page.route('**/api/sessions/side-1/events', route =>
+      route.fulfill({
+        json: {
+          events: loadEventsFromFixture('events/docs-ask-alone.jsonl'),
+          running: false,
+        },
+      }),
+    )
+    await openDocsTranscript(page, 'events/docs-conversation.jsonl')
+    await disableAutoCollapse(page)
+    const scroller = page.locator('[data-testid="chat-messages"]')
+    await waitForStableScrollHeight(scroller)
+    await scroller.evaluate(el => {
+      el.scrollTop = 0
+    })
+    await page
+      .locator('[data-turn-id="turn_003"]')
+      .evaluate(el => el.scrollIntoView({ block: 'start' }))
+    await waitForStableScrollHeight(scroller)
+
+    const point = await page.evaluate(sub => {
+      for (const message of document.querySelectorAll('[data-testid="message-assistant"]')) {
+        const walker = document.createTreeWalker(message, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const index = node.textContent.indexOf(sub)
+          if (index >= 0) {
+            const range = document.createRange()
+            range.setStart(node, index)
+            range.setEnd(node, index + sub.length)
+            const r = range.getBoundingClientRect()
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+          }
+        }
+      }
+      return null
+    }, 'a single call at the end of it')
+    await page.mouse.click(point.x, point.y)
+    const float = page.locator('.inline-float')
+    await expect(float.getByTestId('inline-thread-promote')).toBeVisible()
+    await expect(float.locator('[data-testid="tool-block"]')).toBeVisible()
+    await expect(float.getByTestId('message-user').first()).toBeInViewport()
+
+    await expect(page).toHaveScreenshot([...FEATURES, 'threads-ask-alone.png'])
+  })
+
   test('the control bar offering where a fork should land', async ({ page }) => {
-    await openDocsSession(page)
+    await openChatOnly(page, 'events/docs-conversation.jsonl')
 
     await page.locator('.chat-control-fork-chevron').click()
     const dropdown = page.locator('.chat-control-fork-dropdown')
     await expect(dropdown).toBeVisible()
 
-    await expect(dropdown).toHaveScreenshot([...FEATURES, 'threads-fork-menu.png'])
+    await expect(page).toHaveScreenshot([...FEATURES, 'threads-fork-menu.png'])
   })
 })
 
@@ -557,14 +854,14 @@ test.describe('Docs captures - a closed panel on hover', () => {
   test('a closed panel opening as a floating preview', async ({ page }) => {
     // A closed panel with something in it: the rolling cost windows would read all zeros unless
     // the fixture's sessions were dated against the wall clock, which a capture cannot do.
-    await openDocsSession(page, 'events/docs-mcp-servers.jsonl')
+    await openChatOnly(page, 'events/docs-mcp-servers.jsonl')
 
     await page.locator('[data-testid="icon-mcp"]').hover()
     const preview = page.locator('.floating-panel')
     await expect(preview).toBeVisible()
     await expect(preview.locator('.mcp-panel')).toBeVisible()
 
-    await expect(preview).toHaveScreenshot([...FEATURES, 'panels-hover-preview.png'])
+    await expect(page).toHaveScreenshot([...FEATURES, 'panels-hover-preview.png'])
   })
 })
 
@@ -634,10 +931,10 @@ test.describe('Docs captures - a board in motion', () => {
 test.describe('Docs captures - starting out', () => {
   test('the interface on first load, before any session exists', async ({ page }) => {
     await mockSSE(page, 'events/empty.jsonl')
-    await mockDocsAPI(page)
+    await mockDocsAPI(page, { sessionsFixture: 'sessions/docs-none.json' })
     // The whole viewport is in frame, so every panel behind the welcome screen needs its route.
-    await mockBoards(page)
-    await page.goto(`/#/workspaces/${DEFAULT_WORKSPACE_ID}`)
+    await mockBoards(page, DOCS_WORKSPACE_ID)
+    await page.goto(`/#/workspaces/${DOCS_WORKSPACE_ID}`)
     await expect(page.locator('[data-testid="welcome-page"]')).toBeVisible()
     await page.evaluate(() => document.fonts.ready)
 
@@ -665,8 +962,10 @@ test.describe('Docs captures - guides', () => {
 
     await expect(page.locator('.skills-item')).toHaveCount(4)
     await expect(page.locator('.skills-item-description').first()).toBeVisible()
+    await page.locator('[data-testid="chat-input"]').fill('/')
+    await expect(page.locator('[data-testid="command-autocomplete"]')).toBeVisible()
 
-    await expect(page.locator('.skills-panel')).toHaveScreenshot([...GUIDE, 'profiles-skills.png'])
+    await expect(page).toHaveScreenshot([...GUIDE, 'profiles-skills.png'])
   })
 
   test('the model picker open beside the runtime the session is on', async ({ page }) => {
@@ -692,9 +991,12 @@ test.describe('Docs captures - guides', () => {
 
   test('the Logs panel carrying a stream', async ({ page }) => {
     const logs = await createLogsSSEController(page)
-    await mockDocsAPI(page)
-    await page.goto(DEFAULT_SESSION_URL)
+    const chat = await createSSEController(page)
+    await mockDocsAPI(page, { handlers: { getUIState: layoutHandler(chatOnlyLayout()) } })
+    await page.goto(DOCS_SESSION_URL)
     await waitForAppReady(page)
+    await chat.sendEvents(loadEventsFromFixture('events/docs-conversation.jsonl'))
+    await expect(page.locator('.turn-container').first()).toBeVisible()
 
     await openLogsPanel(page)
     // Epoch seconds, the shape the log stream carries; anything else renders as "Invalid Date".
@@ -726,10 +1028,7 @@ test.describe('Docs captures - guides', () => {
     ])
     await expect(page.locator('.log-line')).toHaveCount(4)
 
-    await expect(page.locator('.logs-panel')).toHaveScreenshot([
-      ...GUIDE,
-      'troubleshooting-logs.png',
-    ])
+    await expect(page).toHaveScreenshot([...GUIDE, 'troubleshooting-logs.png'])
   })
 })
 

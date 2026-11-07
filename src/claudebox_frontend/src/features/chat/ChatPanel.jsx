@@ -9,7 +9,11 @@ import { getUiState, patchSessionUiState } from '../../api/uiState'
 import ConfirmStopModal from '../../components/ConfirmStopModal.jsx'
 import ErrorBoundary from '../../components/ErrorBoundary.jsx'
 import { TaskKind } from '../../config/schema'
-import { SCROLL_SETTLE_MAX_FRAMES, SCROLL_SETTLE_STILL_FRAMES } from '../../config/timing'
+import {
+  MOUNT_TIMEOUT_MS,
+  SCROLL_SETTLE_MAX_FRAMES,
+  SCROLL_SETTLE_STILL_FRAMES,
+} from '../../config/timing'
 import { useAppActions } from '../../context/AppActionsContext'
 import { useBookmarksContext } from '../../context/BookmarksContext'
 import { useDaemonStreamContext } from '../../context/DaemonStreamContext'
@@ -26,7 +30,7 @@ import useNewSession from '../../hooks/useNewSession'
 import useSessionOwnership from '../../hooks/useSessionOwnership'
 import { useScrollElementRef } from '../../hooks/useVirtualListGeometry'
 import { computeDuplicateAskUserIds, TurnRoutingMode } from '../../utils/eventProcessing'
-import { MOUNT_FRAMES, pollFrames, withMountedTurn } from '../../utils/mountTurn'
+import { pollFrames, withMountedTurn } from '../../utils/mountTurn'
 import { isOpenFor, toggleOpenFor } from '../../utils/sessionOwnership'
 import {
   findVisibleToolBlock,
@@ -218,7 +222,7 @@ export default function ChatPanel() {
       scrollToBottom,
       isAutoScrollEnabled: controllerAutoScrollEnabled,
     },
-    pending: { showPendingMessages },
+    pending: { showPendingMessages, sentTurnTimes },
     queue: {
       queueItems,
       enqueueMessage,
@@ -906,7 +910,7 @@ export default function ChatPanel() {
           handleToggleTurnCollapse(task.turnId)
         }
         pollFrames(
-          MOUNT_FRAMES,
+          MOUNT_TIMEOUT_MS,
           () => findVisibleToolBlock(task.id, panelRef.current, { reveal: task.reveal }),
           el => {
             if (el) {
@@ -1118,6 +1122,7 @@ export default function ChatPanel() {
     sessionName,
     workspace,
     notificationsEnabled,
+    canNeedUser: !sessionData?.spawned_from_session_id,
   })
 
   // Cross-turn dedup: hide errored AskUserQuestion retries (same question headers)
@@ -1425,6 +1430,8 @@ export default function ChatPanel() {
                             <Turn
                               key={`${activeTurn.turn_id || 'g'}-${lastTurnIndex}`}
                               {...turnRecordProps(activeTurn)}
+                              sentAt={sentTurnTimes[activeTurn.turn_id] ?? null}
+                              sharesRunningStart
                               todoDiffs={todoDiffs}
                               taskNotifications={taskNotifications}
                               resultStatus={activeResultStatus}
@@ -1470,6 +1477,8 @@ export default function ChatPanel() {
                                   attachments={pm.attachments}
                                   inlineReplies={pm.inlineReplies}
                                   note={pm.note}
+                                  sentAt={pm.sentAt}
+                                  sharesRunningStart
                                   events={[]}
                                   pending={true}
                                   hasNextUserMessage={true}
@@ -1491,6 +1500,8 @@ export default function ChatPanel() {
                                 key="deferred"
                                 userMessage={deferredSend.content}
                                 attachments={deferredSend.attachments}
+                                sentAt={deferredSend.sentAt}
+                                sharesRunningStart
                                 events={[]}
                                 pending={true}
                                 hasNextUserMessage={true}

@@ -121,5 +121,5 @@ def _open_build_lock() -> Generator[int]:
     path = build_lock_path()
     touch_dir(path.parent)
 
-    with path.open("a") as lock_file:
+    with path.open("a", encoding="utf-8") as lock_file:
         yield lock_file.fileno()

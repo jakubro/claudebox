@@ -79,17 +79,19 @@
 }
 
 .turn-progress-text {
-  flex: 1;
+  display: flex;
   min-width: 0;
   white-space: nowrap;
 }
 
 .turn-progress-text .turn-progress-label {
-  display: inline-block;
-  max-width: calc(100% - 3ch);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  vertical-align: bottom;
+}
+
+.turn-progress-text .dot {
+  flex-shrink: 0;
 }
 
 .turn-progress-complete {

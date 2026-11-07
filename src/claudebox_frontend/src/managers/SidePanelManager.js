@@ -2,11 +2,7 @@
 
 import { getWorkspaceId } from '../api/apiClient'
 import { getUiState } from '../api/uiState'
-
-// Panel titles that need special casing (acronyms, etc.)
-const PANEL_TITLES = {
-  mcp: 'MCP',
-}
+import PANEL_CONFIGS from '../config/panel'
 
 const SIDE_DIMENSION = { left: 'width', right: 'width' }
 const SIDE_DIRECTION = { left: 'left', right: 'right' }
@@ -194,6 +190,12 @@ export default class SidePanelManager {
       }
 
       this.api.fromJSON(session.layout)
+      for (const panel of this.api.panels) {
+        const title = PANEL_CONFIGS[panel.id]?.title
+        if (title) {
+          panel.api.setTitle(title)
+        }
+      }
 
       this.fromJSON(session.panelGroups)
 
@@ -366,6 +368,6 @@ export default class SidePanelManager {
   }
 
   _getPanelTitle(panelId) {
-    return PANEL_TITLES[panelId] || panelId.charAt(0).toUpperCase() + panelId.slice(1)
+    return PANEL_CONFIGS[panelId].title
   }
 }

@@ -260,6 +260,27 @@ describe('usePendingMessages', () => {
     expect(result.current.showPendingMessages.map(pm => pm.content)).toEqual(['yes'])
   })
 
+  it('keeps when each delivered message was sent, under the turn it started', () => {
+    const { result, rerender } = renderPending()
+    act(() => {
+      vi.setSystemTime(1000)
+      result.current.addPendingMessage('first', null, null, null, 400)
+      result.current.addPendingMessage('second')
+    })
+    act(() => {
+      vi.setSystemTime(6000)
+    })
+
+    const echoes = [
+      { type: 'user', is_human: true, content: 'first', timestamp: 5100, turn_id: 't1' },
+      { type: 'user', is_human: true, content: 'second', timestamp: 5200, turn_id: 't2' },
+    ]
+    rerender({ events: echoes })
+
+    expect(result.current.showPendingMessages).toHaveLength(0)
+    expect(result.current.sentTurnTimes).toEqual({ t1: 400, t2: 1000 })
+  })
+
   it('keeps a message through the resume bounce of its own session', () => {
     const [a] = BOUNCE
     const { result, rerender } = renderOwned({ events: EMPTY_EVENTS, owner: a, canReconcile: true })

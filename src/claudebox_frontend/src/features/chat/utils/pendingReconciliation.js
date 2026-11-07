@@ -25,3 +25,7 @@ export function isDelivered(delivered, content) {
   const normalized = content.replace(/^(\/\S+)\s+/, '$1 ').trim()
   return normalized !== content && delivered.has(normalized)
 }
+
+export function sentAtByTurn(deliveries) {
+  return Object.fromEntries(deliveries.filter(d => d.turnId).map(d => [d.turnId, d.pm.sentAt]))
+}

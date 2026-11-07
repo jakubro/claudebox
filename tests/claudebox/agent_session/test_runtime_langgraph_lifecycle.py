@@ -333,7 +333,7 @@ class TestReceiveEventsConnectFailure:
             await runtime.connect()
 
         assert runtime.connect_error is not None
-        runtime._prompt_queue.put_nowait(("staged before the failure was known", None))
+        runtime._prompt_queue.put_nowait(("staged before the failure was known", None, False))
 
         stream = runtime.receive_events()
         events = [evt async for evt in _drain_n(stream, 1)]
@@ -946,6 +946,36 @@ class TestHumanTurnAttribution:
 
         assert isinstance(human.payload, UserMessagePayload)
         assert human.payload.uuid
+
+    @pytest.mark.anyio
+    async def test_an_after_turn_prompt_waits_out_a_pending_questions_answer(self, tmp_path):
+        """A sibling's message must not become the answer to the question the graph waits on."""
+
+        runtime = self._one_turn_runtime(tmp_path)
+        runtime._awaiting_resume = True
+
+        await runtime.query("<sibling-message>", message_uuid="D1", after_turn=True)
+        await runtime.query("<response:AskUserQuestion>A</response:AskUserQuestion>")
+
+        events = [evt async for evt in _drain_n(runtime.receive_events(), 7)]
+        prompts = [evt.payload.content for evt in events if evt.kind == "user_message"]
+
+        assert prompts == [
+            "<response:AskUserQuestion>A</response:AskUserQuestion>",
+            "<sibling-message>",
+        ]
+
+    @pytest.mark.anyio
+    async def test_an_after_turn_prompt_runs_in_order_when_nothing_is_pending(self, tmp_path):
+        runtime = self._one_turn_runtime(tmp_path)
+
+        await runtime.query("<sibling-message>", message_uuid="D1", after_turn=True)
+        await runtime.query("next")
+
+        events = [evt async for evt in _drain_n(runtime.receive_events(), 7)]
+        prompts = [evt.payload.content for evt in events if evt.kind == "user_message"]
+
+        assert prompts == ["<sibling-message>", "next"]
 
     @pytest.mark.anyio
     async def test_structured_prompt_flattens_to_its_text(self, tmp_path):

@@ -68,7 +68,7 @@ export default function useNewSession() {
       // Drop stale sessionData now - the create response reseeds a full SessionInfo below:
       // workspace, session_dir, effort_level, zeroed stats.
       clearSessionData()
-      const seq = startCreating(activeSessionId ?? null)
+      const seq = startCreating(activeSessionId ?? null, messages ?? [])
       creationSeqRef.current = seq
       focusChatTab()
 
@@ -78,7 +78,10 @@ export default function useNewSession() {
           messages,
           bundle: bundle ?? deferredBundle ?? undefined,
         })
-        settleCreateRequest(seq, data?.session_id ?? null)
+        settleCreateRequest(seq, data?.session_id ?? null, {
+          undeliveredMessages: data?.undelivered_messages ?? [],
+          bundleMessages: data?.bundle_messages ?? [],
+        })
 
         if (data?.session_id) {
           // Seed the full SessionInfo response so the footer populates immediately.
@@ -159,7 +162,7 @@ export default function useNewSession() {
 
   /** Create a session from a link's carried messages; returns which ones the allowlist blocked. */
   const executeNewSessionFromLink = useCallback(
-    messages => createSession(messages),
+    messages => createSession(messages.filter(message => message.trim())),
     [createSession],
   )
 

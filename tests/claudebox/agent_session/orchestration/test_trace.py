@@ -8,9 +8,13 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import queue
 import socket
 import struct
+import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -592,6 +596,172 @@ class TestProtocol:
     @pytest.mark.parametrize("line", [b"not json", b'{"op": "verdict"}', b'{"op": "forget"}'])
     def test_an_unreadable_request_gets_an_error(self, line):
         assert "error" in trace.answer(trace.Tracker(FakeProcs()), line)
+
+
+class TestSlowReads:
+    """A notification whose caller's memory is slow to read holds no other notification.
+
+    The kernel's receive and answer calls are replaced by a pipe, so the real loop, its reader
+    threads and a read that genuinely blocks run anywhere, a session's supervisor included.
+    """
+
+    SLOW_PID, OTHER_PID = 4_000_001, 4_000_002
+    MKDIR = 83
+
+    def test_an_unrelated_call_is_answered_while_another_callers_page_is_slow(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        monkeypatch.chdir(tmp_path)
+        procs = tmp_path / "proc"
+        stat_line = Path("/proc/self/stat").read_text(encoding="utf-8")
+
+        for pid in (self.SLOW_PID, self.OTHER_PID):
+            (procs / str(pid)).mkdir(parents=True)
+            (procs / str(pid) / "stat").write_text(stat_line, encoding="utf-8")
+
+        mem = procs / str(self.SLOW_PID) / "mem"
+        os.mkfifo(mem)
+        notifications, answered = self._fake_kernel(monkeypatch)
+        child = subprocess.Popen(["sleep", "30"])
+        tracker = trace.Tracker(trace.ProcessTable(procs))
+        read_end, write_end = os.pipe()
+        server = threading.Thread(
+            target=trace.serve,
+            args=(Path("t.sock"), read_end, child.pid, tracker, procs),
+            daemon=True,
+        )
+        server.start()
+
+        try:
+            notifications.put(
+                (1, self.SLOW_PID, OPENAT, X86_64, (0xFFFFFF9C, 0x7000, os.O_WRONLY, 0, 0, 0)),
+            )
+            os.write(write_end, b"x")
+            time.sleep(0.2)
+            sent = time.monotonic()
+            notifications.put((2, self.OTHER_PID, self.MKDIR, X86_64, (0x7000, 0o755, 0, 0, 0, 0)))
+            os.write(write_end, b"x")
+
+            try:
+                other = answered.get(timeout=3)[0]
+            except queue.Empty:
+                other = None
+
+            waited = time.monotonic() - sent
+        finally:
+            # Released in any case: a loop stuck on the read would hang the run, which has no timeout.
+            os.close(os.open(mem, os.O_RDWR))
+            child.kill()
+            server.join(timeout=5)
+            child.wait()
+            os.close(write_end)
+
+        assert (other, waited < 1) == (2, True), f"answered {other} after {waited:.1f}s"
+
+    def test_an_unreadable_caller_still_counts_as_a_change(self, tmp_path, monkeypatch):
+        procs = tmp_path / "proc"
+        (procs / str(CLAUDE_SHELL.pid)).mkdir(parents=True)
+        (procs / str(CLAUDE_SHELL.pid) / "stat").write_text(
+            Path("/proc/self/stat").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        _, answered = self._fake_kernel(monkeypatch)
+        tracker, _ = _tracker_with(CLAUDE_SHELL)
+        applied = []
+        monkeypatch.setattr(tracker, "apply", lambda proc, effect: applied.append(effect))
+        settle = trace._Notifications(-1, tracker, procs)
+
+        settle._settle(
+            7,
+            CLAUDE_SHELL.pid,
+            OPENAT,
+            X86_64,
+            (0, 0x7000, os.O_WRONLY, 0, 0, 0),
+            read=False,
+        )
+        settle._settle(
+            8,
+            CLAUDE_SHELL.pid,
+            EXECVE,
+            X86_64,
+            (0x7000, 0x8000, 0, 0, 0, 0),
+            read=False,
+        )
+
+        assert [answered.get_nowait()[0], answered.get_nowait()[0]] == [7, 8]
+        assert applied == [trace.CHANGE, trace.Effect("exec")]
+
+    def test_past_the_reader_cap_a_call_is_answered_unread_as_a_change(self, tmp_path, monkeypatch):
+        procs = tmp_path / "proc"
+        (procs / str(self.SLOW_PID)).mkdir(parents=True)
+        (procs / str(self.SLOW_PID) / "stat").write_text(
+            Path("/proc/self/stat").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        os.mkfifo(procs / str(self.SLOW_PID) / "mem")
+        notifications, answered = self._fake_kernel(monkeypatch)
+        monkeypatch.setattr(trace, "_MAX_READERS", 0)
+        tracker = trace.Tracker(trace.ProcessTable(procs))
+        applied = []
+        monkeypatch.setattr(tracker, "apply", lambda proc, effect: applied.append(effect))
+        read_end, write_end = os.pipe()
+        notifications.put((3, self.SLOW_PID, OPENAT, X86_64, (0, 0x7000, os.O_WRONLY, 0, 0, 0)))
+        os.write(write_end, b"x")
+
+        trace._Notifications(read_end, tracker, procs).receive()
+
+        assert (answered.get_nowait()[0], applied) == (3, [trace.CHANGE])
+        os.close(read_end)
+        os.close(write_end)
+
+    def test_a_reader_that_cannot_start_answers_its_call_unread(self, tmp_path, monkeypatch):
+        procs = tmp_path / "proc"
+        (procs / str(self.SLOW_PID)).mkdir(parents=True)
+        (procs / str(self.SLOW_PID) / "stat").write_text(
+            Path("/proc/self/stat").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        notifications, answered = self._fake_kernel(monkeypatch)
+
+        def refuse(thread):
+            raise RuntimeError("can't start new thread")
+
+        monkeypatch.setattr(threading.Thread, "start", refuse)
+        tracker = trace.Tracker(trace.ProcessTable(procs))
+        applied = []
+        monkeypatch.setattr(tracker, "apply", lambda proc, effect: applied.append(effect))
+        read_end, write_end = os.pipe()
+        notifications.put((4, self.SLOW_PID, OPENAT, X86_64, (0, 0x7000, os.O_WRONLY, 0, 0, 0)))
+        os.write(write_end, b"x")
+        settle = trace._Notifications(read_end, tracker, procs)
+
+        settle.receive()
+
+        assert (answered.get_nowait()[0], applied, settle._reading) == (4, [trace.CHANGE], set())
+        os.close(read_end)
+        os.close(write_end)
+
+    @staticmethod
+    def _fake_kernel(monkeypatch):
+        notifications: queue.Queue = queue.Queue()
+        answered: queue.Queue = queue.Queue()
+
+        def receive(listener):
+            os.read(listener, 1)
+
+            return notifications.get_nowait()
+
+        monkeypatch.setattr(trace, "_receive_notification", receive)
+        monkeypatch.setattr(
+            trace,
+            "_respond",
+            lambda listener, notif_id: answered.put((notif_id, time.monotonic())),
+        )
+        monkeypatch.setattr(trace, "_still_waiting", lambda listener, notif_id: True)
+
+        return notifications, answered
 
 
 class TestTraceClient:

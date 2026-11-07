@@ -1,8 +1,8 @@
 /** Step prev/next between entries in a windowed scroll column. */
 
 import { useCallback, useRef } from 'react'
-import { MESSAGE_JUMP_HIGHLIGHT_MS } from '../../../config/timing'
-import { findTurnRow, MOUNT_FRAMES, pollFrames } from '../../../utils/mountTurn'
+import { MESSAGE_JUMP_HIGHLIGHT_MS, MOUNT_TIMEOUT_MS } from '../../../config/timing'
+import { findTurnRow, pollFrames } from '../../../utils/mountTurn'
 import { jumpTargets } from '../utils/jumpTargets'
 
 const HIGHLIGHT_CLASS = 'jump-highlight'
@@ -75,7 +75,7 @@ export default function useColumnStep({
       virtualizer.scrollToIndex(index, { align: 'start' })
       // The entry may be windowed out and only mount on a later frame, so highlighting on the next
       // frame alone would usually find nothing.
-      pollFrames(MOUNT_FRAMES, () => findTurnRow(index, rowSelector, root), highlightLanded)
+      pollFrames(MOUNT_TIMEOUT_MS, () => findTurnRow(index, rowSelector, root), highlightLanded)
     },
     [virtualizerRef, rowSelector, root, markProgrammaticScroll, markUserIntent, highlightLanded],
   )

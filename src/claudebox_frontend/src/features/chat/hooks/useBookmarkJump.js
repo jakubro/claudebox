@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect } from 'react'
 import { TaskKind } from '../../../config/schema'
+import { MOUNT_TIMEOUT_MS } from '../../../config/timing'
 import { parseTail } from '../../../utils/bookmarkIds'
 import { isShellCallInTurn, resolveBookmarkTarget } from '../../../utils/bookmarkJump'
-import { findTurnEl, MOUNT_FRAMES, pollFrames } from '../../../utils/mountTurn'
+import { findTurnEl, pollFrames } from '../../../utils/mountTurn'
+import { alignOffscreen } from '../../../utils/scroll'
 import { jumpToTask } from '../../../utils/taskScroll'
 
 const FLASH = { highlightClass: 'jump-highlight', highlightMs: 1500 }
+const FALLBACK = Symbol('response')
 
 /**
  * Publish `jumpToBookmarkRef` and return the jump. A tool call lands in whichever column shows it
@@ -45,12 +48,22 @@ export default function useBookmarkJump({
         if (!turnEl) {
           return
         }
+        // A turn drawn off screen, in the window's margin, can leave the window as it expands.
+        alignOffscreen(messagesRef.current, turnEl, markProgrammaticScroll)
         expandTurnRef.current?.(turnId)
         const liveTurn = () => findTurnEl(turnId, panelRef.current)
         pollFrames(
-          MOUNT_FRAMES,
-          () => liveTurn() && resolveBookmarkTarget(liveTurn(), 'assistant', target),
-          el => {
+          MOUNT_TIMEOUT_MS,
+          () => {
+            const turn = liveTurn()
+            if (!turn) {
+              return null
+            }
+            const part = resolveBookmarkTarget(turn, 'assistant', target)
+            return part ?? (turn.querySelector('.turn-content-collapsed') ? null : FALLBACK)
+          },
+          found => {
+            const el = found === FALLBACK ? null : found
             const landing =
               el ?? (liveTurn() && resolveBookmarkTarget(liveTurn(), 'assistant', null))
             if (landing) {

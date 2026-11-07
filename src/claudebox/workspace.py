@@ -85,7 +85,7 @@ class Workspace:
         ignore_path = self.path / ".ignore"
 
         if ignore_path.exists():
-            return ignore_path.read_text().splitlines()
+            return ignore_path.read_text(encoding="utf-8").splitlines()
 
         return []
 

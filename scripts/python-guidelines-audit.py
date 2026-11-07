@@ -569,11 +569,96 @@ class CallbackCatchAllAudit:
         return files
 
 
+class TextEncodingAudit:
+    """A text file opened, read or written in src/ names `encoding=`, or Python uses the locale's.
+
+    Flags builtin, `io` and `aiofiles` `open`, any other `.open`, and `.read_text` / `.write_text`,
+    unless the mode is binary or not a literal. An awaited `.open()` on anything but `aiofiles` is an
+    object's own method.
+    """
+
+    EXCLUDED_DIR_PARTS = frozenset(
+        {".venv", "__pycache__", ".ruff_cache", ".pytest_cache", "node_modules"},
+    )
+    OPENS_TAKING_A_PATH = frozenset({"aiofiles", "io"})
+
+    def __init__(self, root: Path):
+        self._root = root
+
+    def run(self, *, verbose: bool) -> int:
+        """Print violations to stdout; return total count."""
+
+        base = self._root / "src"
+        paths = sorted(
+            path
+            for path in (base.rglob("*.py") if base.exists() else [])
+            if not any(part in self.EXCLUDED_DIR_PARTS for part in path.parts)
+        )
+        total = 0
+
+        for path in paths:
+            rel = path.relative_to(self._root).as_posix()
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            awaited = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Await)}
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and self._opens_text(
+                    node,
+                    awaited=id(node) in awaited,
+                ):
+                    total += 1
+                    print(
+                        f'{rel}:{node.lineno}: {ast.unparse(node.func)} reads or writes text in the locale\'s encoding - name encoding="utf-8"',
+                    )
+
+        if verbose or total:
+            print(f"--- {len(paths)} files checked, {total} text I/O call(s) without an encoding")
+
+        return total
+
+    def _opens_text(self, node: ast.Call, *, awaited: bool) -> bool:
+        func = node.func
+
+        if any(k.arg == "encoding" for k in node.keywords):
+            return False
+
+        if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
+            return True
+
+        if isinstance(func, ast.Name) and func.id == "open":
+            return self._text_mode(node, 1)
+
+        if not (isinstance(func, ast.Attribute) and func.attr == "open"):
+            return False
+
+        module = func.value.id if isinstance(func.value, ast.Name) else None
+
+        if module in self.OPENS_TAKING_A_PATH:
+            return self._text_mode(node, 1)
+
+        return module != "os" and not awaited and self._text_mode(node, 0)
+
+    @staticmethod
+    def _text_mode(node: ast.Call, position: int) -> bool:
+        mode = next((k.value for k in node.keywords if k.arg == "mode"), None)
+
+        if mode is None and len(node.args) > position:
+            mode = node.args[position]
+
+        if mode is None:
+            return True
+
+        return (
+            isinstance(mode, ast.Constant) and isinstance(mode.value, str) and "b" not in mode.value
+        )
+
+
 AUDITS = [
     CrossPackageImportAudit,
     WhitespaceControlFlowAudit,
     SdkContainmentAudit,
     CallbackCatchAllAudit,
+    TextEncodingAudit,
 ]
 
 

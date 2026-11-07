@@ -105,6 +105,7 @@ def https_proxy(port: int) -> None:
                 }}
             """,
         ),
+        encoding="utf-8",
     )
 
     proc = subprocess.Popen(
@@ -124,7 +125,7 @@ def frontend_server(app: FastAPI) -> None:
         return
 
     assets_dir = FRONTEND_DIST_DIR / "assets"
-    index_html = (FRONTEND_DIST_DIR / "index.html").read_text()
+    index_html = (FRONTEND_DIST_DIR / "index.html").read_text(encoding="utf-8")
 
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 

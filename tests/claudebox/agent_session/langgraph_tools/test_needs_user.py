@@ -38,6 +38,7 @@ class TestNeedsUser:
 
         assert result.startswith("Ignored")
         assert "started it" in result
+        assert "End your turn with your question in plain text" in result
 
     def test_reply_thread_is_told_its_signal_was_ignored(self, tool_ctx):
         session_dir = tool_ctx.config.session_dir

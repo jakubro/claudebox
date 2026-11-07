@@ -82,6 +82,28 @@
   color: #f44336;
 }
 
+.turn-collapsed .turn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.turn-collapsed .turn > * {
+  grid-column: 1 / -1;
+}
+
+.turn-collapsed .turn > .turn-preview {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.turn-collapsed .turn > .turn-meta {
+  position: static;
+  grid-column: 2;
+  grid-row: 1;
+}
+
 /* Turn-level bookmark button wrapper (isolates click/hover from collapse) */
 .turn-bookmark-btn-wrapper {
   position: relative;

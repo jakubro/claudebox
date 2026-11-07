@@ -12,7 +12,6 @@ function defaultEventsData(overrides = {}) {
     connectionStatus: 'connected',
     connectionError: null,
     isResponding: false,
-    respondingSince: null,
     lastEventTimestamp: null,
     isResuming: false,
     isReplaying: false,

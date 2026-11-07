@@ -10,32 +10,32 @@ The repository root is the build root — recipes (`justfile`), JS lint configs 
 
 ```
 claudebox/
-├── bin/                           # Shell entry points - CLI, daemon, watchdog, installer
-├── container/                     # Container image build + run scripts
-├── docs/                          # ARCHITECTURE.md, GUIDELINES.md, SPEC.md, TEST-UI.md
-├── e2e/
-│   ├── app/                      # Frontend E2E (Playwright) - own package.json + playwright.config.js
-│   └── cli/                      # CLI E2E (pytest) - invokes claudebox binary as subprocess
-├── etc/                           # Profile/settings samples, systemd unit
-├── scripts/                      # Cross-tree tooling - see TEST-UI.md for scripts/test-ui/
-├── site/                         # Astro/Starlight docs site, renders docs/ unmodified - `just site`
-├── src/                          # Python packages + claudebox_frontend (React)
-├── tests/                        # Python unit tests - see section 7.1
-├── biome.json                    # JS lint config (Biome)
-├── .jscpd.json                   # Duplicate-code detection config
-├── .jscpd-baseline.json          # Accepted clones (jscpd fingerprints)
-├── .jscpd-reasons.json           # Why each accepted clone stays
-├── justfile                      # Single source of truth for all recipes
-├── knip.json                     # Unused-export detection config
-├── LICENSE
-├── NOTICE.md
-├── package.json                  # Root JS devDeps (biome + jscpd + knip)
-├── package-lock.json
-├── pyproject.toml                # Python project - testpaths: tests/, e2e/cli/
-├── README.md
-├── ruff.toml                     # Python lint/format config (Ruff)
-├── ty.toml                       # Python type-checker config (ty)
-└── uv.lock                       # Host-install lockfile - resolved fresh at container build
+|-- bin/                           # Shell entry points - CLI, daemon, watchdog, installer
+|-- container/                     # Container image build + run scripts
+|-- docs/                          # ARCHITECTURE.md, GUIDELINES.md, SPEC.md, TEST-UI.md
+|-- e2e/
+|   |-- app/                      # Frontend E2E (Playwright) - own package.json + playwright.config.js
+|   `-- cli/                      # CLI E2E (pytest) - invokes claudebox binary as subprocess
+|-- etc/                           # Profile/settings samples, systemd unit, host pin manifest
+|-- scripts/                      # Cross-tree tooling - see TEST-UI.md for scripts/test-ui/
+|-- site/                         # Astro/Starlight docs site, renders docs/ unmodified - `just site`
+|-- src/                          # Python packages + claudebox_frontend (React)
+|-- tests/                        # Python unit tests - see section 7.1
+|-- biome.json                    # JS lint config (Biome)
+|-- .jscpd.json                   # Duplicate-code detection config
+|-- .jscpd-baseline.json          # Accepted clones (jscpd fingerprints)
+|-- .jscpd-reasons.json           # Why each accepted clone stays
+|-- justfile                      # Single source of truth for all recipes
+|-- knip.json                     # Unused-export detection config
+|-- LICENSE
+|-- NOTICE.md
+|-- package.json                  # Root JS devDeps (biome + jscpd + knip)
+|-- package-lock.json
+|-- pyproject.toml                # Python project - testpaths: tests/, e2e/cli/
+|-- README.md
+|-- ruff.toml                     # Python lint/format config (Ruff)
+|-- ty.toml                       # Python type-checker config (ty)
+`-- uv.lock                       # Host-install lockfile - resolved fresh at container build
 ```
 
 ### Lint sweep
@@ -106,90 +106,94 @@ errors.py                 # Generic API error hierarchy - typed exceptions with 
 temp.py                   # Session /tmp symlink - ensure_tmp(), refuses across mounts
 
 core/                      # General-purpose utilities - zero claudebox domain knowledge
-├── __init__.py
-├── broadcaster.py        # Generic pub-sub Broadcaster with replay support for async event streaming
-├── cli.py                # CLI entry point utilities - Rich console, HelpFormatter, print_command/print_error
-├── concurrency.py        # maybe_awaitable() - async/sync bridging helper
-├── file_cache.py         # FileCache[T], file_stamp() - cache invalidated by a file's inode, size and change times
-├── fs.py                 # walk_up(), touch_dir(), touch_file(), resolve_path(), remove_path(), make_temp_dir(), walk_filtered(), find_files()
-├── http.py               # JSONResponse, ProxyClient, ProxyStreamingResponse, ProxyBufferedResponse, BroadcastEventSource (Protocol), AsyncBroadcastEventSource (Protocol), BroadcastEventSourceResponse, http_serve()
-├── io.py                 # write_text(), append_text(), write_json(), append_json(), read_json(), read_jsonl(), read_jsonl_from(), repair_jsonl_tail(), read_toml(), count_lines(), calculate_hash()
-├── log_rendering.py      # Shared structlog ConsoleRenderer with ISO timestamps for daemon stderr and `claudebox logs`
-├── logging.py            # Structured logging - configure_logging(), get_logger(), use_log_file(), use_rotating_log_file(), close_log_file()
-├── polling.py            # AsyncPoller, MtimeWatcher - base classes for periodic and file-stamp-driven background loops
-├── serialization.py      # JSONEncoder (datetime/Path/dataclass/Enum/Decimal), dumps/loads/dump/load wrappers
-├── structures.py         # DataClass mixin (asdict/fromdict), merge() deep-merge, invert() dict inversion
-├── time.py               # TIMESTAMP_FORMAT, get_timestamp(), parse_timestamp()
-└── string.py             # wrap_box() - box-drawing text wrapper
+|-- __init__.py
+|-- broadcaster.py        # Generic pub-sub Broadcaster with replay support for async event streaming
+|-- cli.py                # CLI entry point utilities - Rich console, HelpFormatter, print_command/print_error
+|-- concurrency.py        # maybe_awaitable() - async/sync bridging helper
+|-- file_cache.py         # FileCache[T], file_stamp() - cache invalidated by a file's inode, size and change times
+|-- fs.py                 # walk_up(), touch_dir(), touch_file(), resolve_path(), remove_path(), make_temp_dir(), walk_filtered(), find_files()
+|-- http.py               # JSONResponse, ProxyClient, ProxyStreamingResponse, ProxyBufferedResponse, PROXY_REQUEST_HEADERS, PROXY_RESPONSE_HEADERS, INLINE_MEDIA_TYPES, CONTAINED_CONTENT_HEADERS, BroadcastEventSource (Protocol), AsyncBroadcastEventSource (Protocol), BroadcastEventSourceResponse, http_serve()
+|-- io.py                 # write_text(), append_text(), write_json(), append_json(), read_json(), read_jsonl(), read_jsonl_from(), repair_jsonl_tail(), read_toml(), count_lines(), calculate_hash()
+|-- log_rendering.py      # Shared structlog ConsoleRenderer with ISO timestamps for daemon stderr and `claudebox logs`
+|-- logging.py            # Structured logging - configure_logging(), get_logger(), use_log_file(), use_rotating_log_file(), close_log_file()
+|-- polling.py            # AsyncPoller, MtimeWatcher - base classes for periodic and file-stamp-driven background loops
+|-- ports.py              # PortMapping, parse_ports(), publish_spec() - the [ports] table's forms and their --publish value
+|-- relay.py              # relay_streams() - copy bytes both ways between two stream pairs until either side ends
+|-- serialization.py      # JSONEncoder (datetime/Path/dataclass/Enum/Decimal), dumps/loads/dump/load wrappers
+|-- structures.py         # DataClass mixin (asdict/fromdict), merge() deep-merge, invert() dict inversion
+|-- time.py               # TIMESTAMP_FORMAT, get_timestamp(), parse_timestamp()
+`-- string.py             # wrap_box() - box-drawing text wrapper
 
 user/                       # User-facing integration - hook decorator, request context, statusline
-├── __init__.py
-├── hook.py               # @hook decorator - stdin JSON -> HookRequest -> HookResponse -> stdout
-├── request.py            # Request context - workspace + session + logger + profile_dir
-└── statusline.py         # @statusline decorator - stdin JSON -> StatuslineRequest -> stdout text
+|-- __init__.py
+|-- hook.py               # @hook decorator - stdin JSON -> HookRequest -> HookResponse -> stdout
+|-- request.py            # Request context - workspace + session + logger + profile_dir
+`-- statusline.py         # @statusline decorator - stdin JSON -> StatuslineRequest -> stdout text
 
 session/                    # Session domain: context, metadata, and repository
-├── __init__.py
-├── session.py            # Session context - directory, paths, lifecycle
-├── models.py             # SessionMetadata dataclass, SessionNotFound exception
-└── repository.py         # SessionRepository - shared disk I/O for session.json files
+|-- __init__.py
+|-- session.py            # Session context - directory, paths, lifecycle
+|-- models.py             # SessionMetadata dataclass, SessionNotFound exception
+`-- repository.py         # SessionRepository - shared disk I/O for session.json files
 
 agent_session/
-├── __init__.py           # Public re-exports - AgentSession, AgentSessionConfig, ClaudeAgentSessionConfig, ClaudeRuntime, RuntimeCapabilities, AgentEvent, HookCallbacks, catalog dataclasses; make_agent_session factory; UnknownRuntime
-├── protocol.py           # AgentSession Protocol - the boundary every runtime adapter implements
-├── config.py             # AgentSessionConfig base + ClaudeAgentSessionConfig subclass + RuntimeCapabilities (boolean capability matrix)
-├── events.py             # AgentEvent - kind discriminator + SDK-free payload dict
-├── errors.py             # Typed exception hierarchy for agent-session runtime adapters
-├── hooks.py              # HookCallbacks - lifecycle callbacks + CompactStartPayload
-├── catalogs.py           # Model, PermissionMode, EffortLevel, Skill, ContextUsage dataclasses (runtime-neutral shapes; concrete values live on the adapter)
-├── rate_limits.py        # Per-workspace plan-limit state - written by the container, read by both container and daemon
-├── session.py            # make_agent_session() - constructs the runtime adapter for the configured runtime
-├── runtime_claude.py     # ClaudeRuntime - only file importing `claude_agent_sdk` (composition wrapping BaseClaudeSDKClient); holds AVAILABLE_MODELS/EFFORT_LEVELS/PERMISSION_MODES class attributes + the Skill YAML-frontmatter parser
-├── runtime_langgraph.py  # LangGraphRuntime - AgentSession adapter wrapping a LangGraph compiled agent graph; sister adapter to ClaudeRuntime, routes model calls via LangChain's universal provider layer
-├── langgraph_tools/      # LangGraph @tool wrappers (filesystem, mcp, search, shell, task_mgmt, etc.) - runtime-neutral, shared with ClaudeRuntime where applicable
-├── _agent_registry.py    # Named AgentDefinitions for sub-agent dispatch - runtime-neutral catalog the LangGraph task tool reads for agent_type lookup
-├── _daemon_services.py   # DaemonServiceBundle - dependency-injection wrapper for cross-process services, read by LangGraph tool factories
-├── _needs_user.py        # needs_user tool - names, description and reply shared by both adapters; the projection sets the state
-├── _profile_hooks.py     # Profile session-start hook execution, runtime-neutral
-├── _providers.py         # Universal-provider plumbing for LangGraphRuntime - parse-time provider identity, install-hint surface, per-provider probe/catalog
-├── _registry.py          # Runtime class resolver - agent name -> runtime class for daemon-side defaults lookup, lazy-imported per runtime
-├── _sibling_sessions.py  # SiblingSessionClient - spawn/ask/read a sibling session, runtime-neutral logic shared by both adapters
-├── _skills.py            # Shared skill catalog walker - filesystem discovery + YAML frontmatter parsing, used by both runtimes
-├── _tasks.py             # TaskService - in-memory agentic task list backing the LangGraph task_* tools
-├── _titles.py           # Session titles - the prompt both runtimes send to name a session, and the reply cleanup
-└── orchestration/        # Session lifecycle, event pipeline, persistence, projection, broadcaster (see section 1.5)
-    ├── __init__.py
-    ├── session.py        #   Facade - only public interface for the container API
-    ├── pipeline.py       #   Orchestrator: AgentEvent loop -> enrich -> persist -> dispatch
-    ├── bash_layout.py    #   layout_bash_command - a Bash call's command laid out for display (tree-sitter-bash)
-    ├── bash_read_only.py #   is_read_only_command - whether a Bash call's command changes nothing (tree-sitter-bash allowlist)
-    ├── trace.py          #   TraceClient.register_command, verdict_for - asks the container's syscall supervisor what a Bash call did
-    ├── conversion.py     #   dict_message_to_events / to_published_event / serialize_event
-    ├── models.py         #   Event, PublishedEvent, SessionSummary
-    ├── persistence.py    #   EventLog - events.jsonl append + read
-    ├── broadcaster.py    #   SSE subscriber management + replay
-    ├── projection.py     #   Session summary accumulator -> session.json
-    ├── cost.py           #   cost_added - what a result's reported cost adds to its session's total
-    ├── turn_tracker.py   #   Turn ID state machine
-    ├── tool_output.py    #   Tool output file reading
-    ├── attachments.py    #   AttachmentService - path resolution + MIME inference
-    ├── async_tasks.py    #   AsyncTaskManager - detect/manage background tasks
-    ├── async_monitor.py  #   AsyncTaskMonitor - tail output file + emit events
-    └── errors.py         #   ApiError hierarchy (SessionNotReady, ValidationError, etc.)
+|-- __init__.py           # Public re-exports - AgentSession, AgentSessionConfig, ClaudeAgentSessionConfig, ClaudeRuntime, RuntimeCapabilities, AgentEvent, HookCallbacks, catalog dataclasses; make_agent_session factory; UnknownRuntime
+|-- protocol.py           # AgentSession Protocol - the boundary every runtime adapter implements
+|-- config.py             # AgentSessionConfig base + ClaudeAgentSessionConfig subclass + RuntimeCapabilities (boolean capability matrix)
+|-- events.py             # AgentEvent - kind discriminator + SDK-free payload dict
+|-- errors.py             # Typed exception hierarchy for agent-session runtime adapters
+|-- hooks.py              # HookCallbacks - lifecycle callbacks + CompactStartPayload
+|-- catalogs.py           # Model, PermissionMode, EffortLevel, Skill, ContextUsage dataclasses (runtime-neutral shapes; concrete values live on the adapter)
+|-- rate_limits.py        # Per-workspace plan-limit state - written by the container, read by both container and daemon
+|-- session.py            # make_agent_session() - constructs the runtime adapter for the configured runtime
+|-- runtime_claude.py     # ClaudeRuntime - only file importing `claude_agent_sdk` (composition wrapping BaseClaudeSDKClient); holds AVAILABLE_MODELS/EFFORT_LEVELS/PERMISSION_MODES class attributes + the Skill YAML-frontmatter parser
+|-- runtime_langgraph.py  # LangGraphRuntime - AgentSession adapter wrapping a LangGraph compiled agent graph; sister adapter to ClaudeRuntime, routes model calls via LangChain's universal provider layer
+|-- langgraph_tools/      # LangGraph @tool wrappers (filesystem, mcp, search, shell, task_mgmt, etc.) - runtime-neutral, shared with ClaudeRuntime where applicable
+|-- _agent_registry.py    # Named AgentDefinitions for sub-agent dispatch - runtime-neutral catalog the LangGraph task tool reads for agent_type lookup
+|-- _daemon_services.py   # DaemonServiceBundle - dependency-injection wrapper for cross-process services, read by LangGraph tool factories
+|-- _needs_user.py        # needs_user tool - names, description and reply shared by both adapters; the projection sets the state
+|-- _ports.py             # port_open/port_close tools - names, descriptions, the request's reply and the answer message, shared by both adapters
+|-- _profile_hooks.py     # Profile session-start hook execution, runtime-neutral
+|-- _providers.py         # Universal-provider plumbing for LangGraphRuntime - parse-time provider identity, install-hint surface, per-provider probe/catalog
+|-- _registry.py          # Runtime class resolver - agent name -> runtime class for daemon-side defaults lookup, lazy-imported per runtime
+|-- _sibling_sessions.py  # SiblingSessionClient - spawn/ask/read a sibling session, runtime-neutral logic shared by both adapters
+|-- _skills.py            # Shared skill catalog walker - filesystem discovery + YAML frontmatter parsing, used by both runtimes
+|-- _tasks.py             # TaskService - in-memory agentic task list backing the LangGraph task_* tools
+|-- _titles.py           # Session titles - the prompt both runtimes send to name a session, and the reply cleanup
+`-- orchestration/        # Session lifecycle, event pipeline, persistence, projection, broadcaster (see section 1.5)
+    |-- __init__.py
+    |-- session.py        #   Facade - only public interface for the container API
+    |-- pipeline.py       #   Orchestrator: AgentEvent loop -> enrich -> persist -> dispatch
+    |-- bash_layout.py    #   layout_bash_command - a Bash call's command laid out for display (tree-sitter-bash)
+    |-- bash_read_only.py #   is_read_only_command - whether a Bash call's command changes nothing (tree-sitter-bash allowlist)
+    |-- trace.py          #   TraceClient.register_command, verdict_for - asks the container's syscall supervisor what a Bash call did
+    |-- conversion.py     #   dict_message_to_events / to_published_event / serialize_event
+    |-- models.py         #   Event, PublishedEvent, SessionSummary
+    |-- persistence.py    #   EventLog - events.jsonl append + read
+    |-- broadcaster.py    #   SSE subscriber management + replay
+    |-- projection.py     #   Session summary accumulator -> session.json
+    |-- cost.py           #   cost_added - what a result's reported cost adds to its session's total
+    |-- turn_tracker.py   #   Turn ID state machine
+    |-- sibling_turns.py  #   A spawned session's brief, turn-end collector and <sibling-message> envelope
+    |-- tool_output.py    #   Tool output file reading
+    |-- attachments.py    #   AttachmentService - path resolution + MIME inference
+    |-- async_tasks.py    #   AsyncTaskManager - detect/manage background tasks
+    |-- async_monitor.py  #   AsyncTaskMonitor - tail output file + emit events
+    `-- errors.py         #   ApiError hierarchy (SessionNotReady, ValidationError, etc.)
 
 containers/
-├── __init__.py           # create_runtime() - factory selecting LocalRuntime vs ContainerRuntime
-├── backend.py            # ContainerBackend - podman/docker CLI abstraction
-├── build.py              # build_image() - temp dir context, profile overlay, podman build
-├── local.py              # LocalRuntime - subprocess-based runtime that bypasses podman/docker (used for in-container daemons)
-├── models.py             # ImageBuildMode enum (BUILD, UPDATE, REBUILD)
-├── protocol.py           # ContainerRuntimeProtocol - shared interface implemented by ContainerRuntime and LocalRuntime
-├── run.py                # run_container(), get_container_run_args(), get_volumes(), prepare_volume()
-└── runtime.py            # ContainerRuntime - high-level facade (build + run, delegating to ContainerBackend)
+|-- __init__.py           # create_runtime() - factory selecting LocalRuntime vs ContainerRuntime
+|-- backend.py            # ContainerBackend - podman/docker CLI abstraction
+|-- build.py              # build_image() - temp dir context, profile overlay, podman build
+|-- local.py              # LocalRuntime - subprocess-based runtime that bypasses podman/docker (used for in-container daemons)
+|-- models.py             # ImageBuildMode enum (BUILD, UPDATE, REBUILD)
+|-- protocol.py           # ContainerRuntimeProtocol - shared interface implemented by ContainerRuntime and LocalRuntime
+|-- run.py                # run_container(), get_container_run_args(), get_volumes(), prepare_volume()
+`-- runtime.py            # ContainerRuntime - high-level facade (build + run, delegating to ContainerBackend)
 
 extensions/               # Reusable domain packages
-├── __init__.py
-└── tickets/              # Tickets & Boards domain - Board, BoardState, BoardSummary, BoardTicket, Swimlane models, parser, ticket move/archive/assign, swimlane and state CRUD with FileLock. Consumed by claudebox_daemon.domain.boards.
+|-- __init__.py
+`-- tickets/              # Tickets & Boards domain - Board, BoardState, BoardSummary, BoardTicket, Swimlane models, parser, ticket move/archive/assign, swimlane and state CRUD with FileLock. Consumed by claudebox_daemon.domain.boards.
 ```
 
 ### 1.4 Agent Runtime Abstraction
@@ -321,7 +325,7 @@ AskUserQuestion via interrupt() - `ask_user_question(questions)`: the LangGraph 
 
 Task management - `task_create`, `task_get`, `task_list`, `task_output`, `task_stop`, `task_update`: the LangGraph `task_*` tools (in `langgraph_tools/task_mgmt.py`) are thin wrappers over `agent_session/_tasks.py::TaskService` - the daemon-service-shaped backing store the LangGraph runtime owns. `TaskService` lives in-container, in-process with the runtime: one instance per session, numeric monotonic ids matching Claude's UX, in-memory cache. There is NO separate `tasks.json` file - the canonical persistent log is `events.jsonl` (the same stream the frontend's `extractTasks` derives panel state from); `TaskService.rebuild_from_events(events_path)` replays prior `task_create` / `task_update` / `task_stop` / `task_output` tool_use entries on `connect()` so resume after container restart reconstructs the cache. Wire-format input / output keys are camelCase (`subject`, `description`, `activeForm`, `taskId`, `addBlockedBy`, `statusFilter`) to match Claude's TaskCreate / TaskUpdate shape; the in-chat `appendTaskDiffs` and panel rendering paths key on these names unchanged. The single Claude-vs-LangGraph deviation is the tool _name_ itself (`task_create` vs `TaskCreate`); `claudebox_frontend/src/config/schema.js::TOOL_NAME_ALIASES` + `normalizeToolName()` is the single normalisation point - `getToolConfig` and `appendTaskDiffs` both call it before lookup / gate comparison so the rest of the rendering pipeline reads the canonical Claude name. `DaemonServiceBundle` (shared `agent_session/_daemon_services.py`, frozen dataclass) carries `.tasks` on `ToolContext.daemon_services`.
 
-MCP resources + server-tools - `list_mcp_resources()`, `read_mcp_resource(uri)`, plus per-server tool binding: the LangGraph runtime wires Model Context Protocol servers (configured per workspace via `[langgraph.mcp.<name>]` TOML blocks) through `langchain-mcp-adapters`'s `MultiServerMCPClient`. Each `[langgraph.mcp.*]` sub-table is a connection dict (`transport: stdio | sse | streamable_http | websocket`, plus `command`/`args`/`env` for stdio or `url`/headers for HTTP variants) parsed in `claudebox/config.py::Config.langgraph_mcp_servers` and threaded through `orchestration/session.py` into `LangGraphAgentSessionConfig.mcp_servers`. `runtime_langgraph.connect()` builds the client and calls `_load_mcp_server_tools(client)` BEFORE `make_tools(ctx)` aggregates; the loader iterates `client.connections`, calls `get_tools(server_name=...)` per server in isolation, catches any exception into `self._mcp_failures: dict[str, str]`, and returns only the successful subset. This implements upstream issue #492's "one bad server does not poison the others" rule defensively. The runtime then constructs the ToolContext with `mcp_client=self._mcp_client` (a new field on ToolContext, placed alphabetically) and appends the surviving MCP-server tools after the local tool list: `tools = [*make_tools(ctx), *mcp_server_tools]`. `langgraph_tools/mcp.py` ships the two resource-side tools: `list_mcp_resources()` aggregates `client.get_resources(server_name=...)` per server (catching failures into the result list as `{server, error}` entries so the model can react), projecting each `Blob` into `{server, uri, name, description, mimetype}` dicts; `read_mcp_resource(uri)` tries each connected server in turn via `get_resources(server_name=..., uris=uri)` and returns the first matching server's content, raising `ToolException` when no server resolves the URI. The capability flag `supports_mcp_delegation` is False - the MCP control panel UI gates on per-server runtime toggles (enable/disable, reconnect, status) that `langchain-mcp-adapters` 0.2.x does not expose. The model still invokes MCP server tools and resources transparently via tool_use blocks - the user-facing surface is the tool block, not a panel. **Network reach callout**: MCP servers with HTTP/SSE transports reach external services (same posture as WebFetch + WebSearch). The [runtimes guide](guide/runtimes.md#a-word-on-network) documents the network surface; workspaces with strict privacy requirements review configured MCP servers before adoption.
+MCP resources + server-tools - `list_mcp_resources()`, `read_mcp_resource(uri)`, plus per-server tool binding: the LangGraph runtime wires Model Context Protocol servers (configured per workspace via `[langgraph.mcp.<name>]` TOML blocks) through `langchain-mcp-adapters`'s `MultiServerMCPClient`. Each `[langgraph.mcp.*]` sub-table is a connection dict (`transport: stdio | sse | streamable_http | websocket`, plus `command`/`args`/`env` for stdio or `url`/headers for HTTP variants) parsed in `claudebox/config.py::Config.langgraph_mcp_servers` and threaded through `orchestration/session.py` into `LangGraphAgentSessionConfig.mcp_servers`. `runtime_langgraph.connect()` builds the client and calls `_load_mcp_server_tools(client)` BEFORE `make_tools(ctx)` aggregates; the loader iterates `client.connections`, calls `get_tools(server_name=...)` per server in isolation, catches any exception into `self._mcp_failures: dict[str, str]`, and returns only the successful subset. This implements upstream issue #492's "one bad server does not poison the others" rule defensively. The runtime then constructs the ToolContext with `mcp_client=self._mcp_client` (a new field on ToolContext, placed alphabetically) and appends the surviving MCP-server tools after the local tool list: `tools = [*make_tools(ctx), *mcp_server_tools]`. `langgraph_tools/mcp.py` ships the two resource-side tools: `list_mcp_resources()` aggregates `client.get_resources(server_name=...)` per server (catching failures into the result list as `{server, error}` entries so the model can react), projecting each `Blob` into `{server, uri, name, description, mimetype}` dicts; `read_mcp_resource(uri)` tries each connected server in turn via `get_resources(server_name=..., uris=uri)` and returns the first matching server's content, raising `ToolException` when no server resolves the URI. The capability flag `supports_mcp_delegation` is False - the MCP control panel UI gates on per-server runtime toggles (enable/disable, reconnect, status) that `langchain-mcp-adapters` 0.2.x does not expose. The model still invokes MCP server tools and resources transparently via tool_use blocks - the user-facing surface is the tool block, not a panel. **Network reach callout**: MCP servers with HTTP/SSE transports reach external services (same posture as WebFetch + WebSearch). The [runtimes guide](guide/runtimes.md#network) documents the network surface; workspaces with strict privacy requirements review configured MCP servers before adoption.
 
 ToolSearch - `tool_search(query, max_results=5)`: the LangGraph `tool_search` tool (in `langgraph_tools/meta.py`) is a self-discovery aid. Semantic divergence from Claude's `MCPSearch`: Claude's tool surface keeps a long tail of tool schemas unbound at session start (token-budget pressure) and `MCPSearch` fetches specific schemas on demand. LangGraph binds every tool at graph construction time (`create_agent` materialises the full toolset; the system prompt accommodates all descriptions), so `tool_search` is discovery-only, not deferred loading - every result it surfaces is already callable. The factory closes over `ctx.tool_catalog`, which `connect()` populates AFTER `make_tools(ctx)` returns (the catalog-after-aggregation pattern); the tool reads `.tools` lazily at invoke time so it sees the full bound set, including `tool_search` itself. Scoring: `score = 3 * name.count(query) + description.count(query)` (case-insensitive substring count); zero-score entries dropped; sort descending; return top `max_results` as `{name, description[:200]}` dicts. Implementers tempted to graft deferred-loading on top of this surface should refer to this note - LangGraph's static binding is the design.
 
@@ -329,9 +333,13 @@ Skill - `skill(name, arguments)`: the LangGraph `skill` tool (in `langgraph_tool
 
 Frontmatter gates two distinct paths, not one: the `skill` tool itself refuses (`ToolException`) a `disable-model-invocation` skill, since a model tool call is the only way it can reach this path; a user-typed `/<skill>` never goes through this tool at all - `runtime_langgraph._resolve_slash_skill` (called from `_drive_turn`) resolves it directly against the same `find_skill_source`/`parse_frontmatter` helpers and checks `user-invocable` instead, falling back to literal text for `user-invocable: false` or an unrecognized name. `allowed-tools` / `model` / `effort` are parsed into `catalogs.Skill` but unenforced on either path - LangGraph binds tools and the model at graph construction (`_build_graph`), so scoping either per-skill would mean running the skill as a sub-agent graph rather than turn-level text.
 
-**Sibling sessions - the one family neither runtime owns outright.** `session_spawn(prompt)`, `session_ask(session_id, message)`, `session_read(session_id, limit=50)` let a session hand work to a second session and hold a conversation with it - both sides are ordinary sessions in the ordinary Sessions panel, nothing more. The behavior that would drift if written twice - judging when a sibling's turn has settled, telling a finished answer apart from a blocked question, forming the answer envelope, reporting an unreachable sibling, wording the depth-cap refusal - lives once in `agent_session/_sibling_sessions.py::SiblingSessionClient`, a runtime-neutral module built from `AgentSessionConfig`'s shared `session_id`/`cwd` fields, importing neither `claude_agent_sdk` nor `langchain*`/`langgraph*` (GUIDELINES SDK Containment). Each adapter binds it thinly: `langgraph_tools/sibling.py::make_sibling_tools(ctx)` wraps the three methods as `@tool` functions reading `ctx.daemon_services.sessions`; `ClaudeRuntime._build_mcp_servers()`/`_sibling_sdk_tools()` wrap the same three methods as `SdkMcpTool`s inside an in-process `create_sdk_mcp_server(name="claudebox", ...)`, passed through `ClaudeAgentOptions.mcp_servers`, since a custom tool has no non-MCP path under the SDK. `session_spawn` writes one JSON line to the daemon's spawn socket (§6.1, §6.2) and returns the child's session and container ids. `session_ask` attaches to the sibling's own event stream with `replay=false` *before* POSTing to its `/api/send` - attaching after send risks resolving against a replayed result from an earlier turn - then reads the settling turn for an `AskUserQuestion`/`ask_user_question` tool use and reports `{"state": "asking", ...}` instead of `{"state": "replied", ...}`; the next message to an asking sibling is wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>` by the tool itself, never left to the calling model to emit exactly. `session_read` never goes over HTTP - every session-state route on the container API is `/current`-scoped (§4.3) - so it resolves the sibling's directory via `find_session_dir` and reads `events.jsonl` off the bind-mounted sessions tree directly, which is also why it keeps working while the sibling's container is stopped. Depth is enforced by the daemon's spawn socket (§6.2), not here; a refusal is reformatted to name the cap and the depth reached, mirroring `subagent.py`'s cap-error shape, so the model reads a bound rather than a malfunction and stops instead of retrying.
+**Sibling sessions - the one family neither runtime owns outright.** `session_spawn(prompt, name=None, model=None, effort=None)`, `session_ask(session_id, message)`, `session_read(session_id, limit=50)`, `session_stop(session_id)` and `session_list()` let a session hand work to a second session, keep messaging it, stop it and list what it started - both sides are ordinary sessions in the ordinary Sessions panel. Everything that would drift if written twice lives once in `agent_session/_sibling_sessions.py`, a runtime-neutral module importing neither `claude_agent_sdk` nor `langchain*`/`langgraph*` (GUIDELINES SDK Containment): each tool's name, description and argument descriptions, the server's `CLAUDEBOX_MCP_INSTRUCTIONS`, and `SiblingSessionClient`, which builds every result both runtimes return. Each adapter binds it thinly: `langgraph_tools/sibling.py::make_sibling_tools(ctx)` as `@tool` functions with `Annotated` argument descriptions, `ClaudeRuntime._sibling_sdk_tools()` as `SdkMcpTool`s with full JSON schemas inside an in-process `create_sdk_mcp_server(name="claudebox", ...)` passed through `ClaudeAgentOptions.mcp_servers`, since a custom tool has no non-MCP path under the SDK. `create_sdk_mcp_server` takes no instructions, so `_build_mcp_servers` sets them on the `mcp` `Server` it wraps, which hands them to the agent CLI in `initialize`; the CLI lists them under its MCP server instructions, deferred tools or not. The client holds no sibling state: spawn, stop, list and every ask's wake go over the daemon's spawn socket (§6.3), which answers from the daemon's own records and refuses any session whose recorded spawner is not the caller. `session_ask` sends the daemon `resume` first - adopting a running sibling, starting a stopped one - and posts the message to the container the answer names, returning once it is delivered; a message to a sibling whose last top-level ask is an unanswered question form is wrapped in `<response:AskUserQuestion>...</response:AskUserQuestion>` by the tool itself. A sibling's reply travels the other way: its own `SessionService` feeds every published event to a `TurnTextCollector` (`orchestration/sibling_turns.py`), which ends a turn at each top-level result - not at a turn id, since a task notification's follow-up shares its turn's id - and joins the turn's text with blank lines, leaving thinking, tool calls and subagent output out. Each turn end of a session whose record names a spawner goes onto one FIFO with one sender (`report_sibling_turn_end`), so no later turn overtakes an earlier one; a lost stream ends an open turn as `failed`, a stop as `interrupted`, and a stop waits up to `SIBLING_TURN_END_DRAIN_SECONDS` for the queue. The daemon delivers each through `turn_ended` (§6.3) to the spawner's current container, whose `POST /api/sibling-message` hands it to `SessionService.deliver_sibling_message`: never `send()`, whose plain path would let the pipeline inject the text as the person's message. The runtime gets a `<sibling-message ...>` envelope under the delivery id as its message uuid, marked to run after any running turn (Claude: the agent CLI's `later` queue priority, which never folds a message into a running turn; LangGraph runs every prompt as its own turn, and holds such a message while its graph waits on a question's answer). The echo converts to a `system`/`sibling_message` event (Domain Glossary), which counts as nobody's message. `session_read` never goes over HTTP - every session-state route on the container API is `/current`-scoped (§4.3) - so it resolves the session's directory via `find_session_dir` and reads `events.jsonl` off the bind-mounted sessions tree, which is also why it works while that session is stopped. Depth is enforced by the daemon's spawn socket (§6.2); a refusal is reformatted to name the cap and the depth reached, mirroring `subagent.py`'s cap-error shape, so the model reads a bound rather than a malfunction and stops instead of retrying. A spawned session is briefed: its first message - when `SessionService.start` begins a new session whose record names a spawner - carries a `<sibling-brief session=... name=...>` block inside a system reminder, naming the session that started it, saying only that session reads what it writes, and telling it to end its turn with a plain question when it needs an answer; `_on_compact_start` adds the same brief to the post-compaction reminder. A fork of a spawned session has no lineage, so its first message instead carries a one-time `<sibling-brief-ended>` note. A profile reads the same lineage from `session.json`'s `spawned_from_session_id`.
 
 The server is deliberately invisible. Claudebox ships one MCP server of its own under a Claude workspace - in-process, always present - and it is not one of the servers §14's MCP panel lists; that panel's subject is what a workspace configured (a `.mcp.json` a user set up), not the runtime's own tooling. `ClaudeRuntime.get_mcp_status()` and `_translate_sdk_message()`'s `SystemInitData.mcp_servers` both filter it out by name before either seam is read downstream, so the panel and the icon-strip badge that shares its source show only what the workspace configured. `reconnect_mcp_server`/`toggle_mcp_server` reject the name outright (`McpServerProtected`) rather than merely omitting it from the list - the container API has no authentication, so leaving the toggle reachable would let any sibling on the workspace network silently disable another's ability to delegate.
+
+**Ports the agent opens.** `port_open(port)` asks the user to make one of the session's TCP ports reachable from their computer; `port_close(port)` closes one it opened. Both live once in `agent_session/_ports.py`, bound by `langgraph_tools/ports.py::make_port_tools(ctx)` and `ClaudeRuntime._port_sdk_tools()` on the same in-process `claudebox` server as the sibling tools. `port_open` changes nothing itself: it returns at once, telling the agent to end its turn, or refuses with `Not asked:` in a session another session started and in a reply thread, read from the session's own `session.json`. Under Claude it is a terminal tool (`CLAUDE_CODE_TERMINAL_MCP_TOOLS`), so the turn ends on the call as it does on `needs_user`, and both tools are in `allowed_tools`, so they run in every permission mode but Plan. The projection (`_needs_user_reason`) turns a top-level `port_open` call naming a valid port into the session's needs-you reason, `Approve: open port N`, as it does a question form's call, and clears it again when that call's result is an error or a `Not asked:` refusal; the card hides for both. The user's answer goes to the daemon (`POST /sessions/{id}/ports`, §6.3), whose `PortService` (`domain/ports/`) opens the port and sends the agent the answer as the user's own message - `<response:port_open port="N">Approved: port N is reachable at http://127.0.0.1:H.</response:port_open>` or `Rejected: port N stays closed.` - so the form-answer path that clears needs-you clears it here too. `port_close` reaches the daemon through the spawn socket's `port_close` verb (§6.3).
+
+An approval is the daemon's, not the container's: `PortService` keeps `{session: {port: host_port}}` in `{config_dir}/ports.json`, so it outlives containers and daemon restarts. A relay listens while the session's own container runs - the desired state `sync()` restores from `ContainerService` status changes and at workspace start - on `127.0.0.1:<host_port>`, the port's own number when the host lends it at approval (free, and not below an unprivileged daemon's 1024) and a free one otherwise. `ContainerService` tells its status observers about every change, those `sync_state` reads from the runtime included, so a container that exits or vanishes on its own closes its relays too; syncs queue behind one lock, so a change seen mid-sync is never folded into a run that read the old state. Closing a relay - `port_close`, a rejection of an open port, the session stopping - cuts the connections still open through it. When the recorded host port is taken on a later start, the relay takes a free one and appends a note to the session's `notes.pending.jsonl`, which the container's `SessionService` sends ahead of the next message as a system reminder. Each connection dials the container's tunnel - the container API's second listener on `TUNNEL_CONTAINER_PORT` (8081), served by `claudebox_container_api/tunnel.py` when `CLAUDEBOX_TUNNEL_PORT` is set and published loopback-only like the API (§2.5) - writes the port as one line, and relays bytes both ways (`claudebox.core.relay`); the tunnel dials `127.0.0.1:<port>` inside the container, and `::1` when nothing answers there. A container created without the tunnel publish answers an approval with `port_tunnel_missing` until it is resumed. Under the local backend nothing is relayed: the session runs on the host, so an approved port is already reachable at its own number.
 
 **Display echo matches Claude's tag format.** `runtime_langgraph._tag_slash_command` wraps any leading `/<name> [args]` in the same `<command-message>`/`<command-name>`/`<command-args>` tags Claude's CLI produces, applied in `_human_message_event` to the DISPLAY event only - independent of whether `_resolve_slash_skill` found a matching skill, matching Claude tagging an unrecognized command the same way. The frontend's `parseSlashCommand` (`utils/parsers.js`) is the single consumer of this format on either runtime, so the bold/underline/hover-card styling (`claim:chat:user-message-slash-command-styling`) looks the same whichever runtime produced the tags. The model-facing turn never sees these tags - it receives the resolved skill body or the untagged literal prompt, per `_drive_turn`.
 
@@ -382,7 +390,8 @@ A container can host more than one `Session` instance concurrently — a *primar
 | **Result-only turn** | Result-kind AgentEvent for a turn that emitted no assistant AgentEvent (e.g., unknown slash command). Pipeline injects synthetic events to make it visible. Detection is turn-scoped via TurnTracker, so a trailing result after a mid-response error does not re-surface an already-emitted assistant message. An interrupted turn's result carries no text on either runtime, so it never qualifies. |
 | **Agent-reported failure** | An assistant message the agent labels with an error (`authentication_failed`, `billing_error`, `rate_limit`, `invalid_request`, `server_error`, `unknown`). `ClaudeRuntime._translate_sdk_message` carries the label on `AssistantMessagePayload.error`; conversion projects a top-level labelled message to one `system`/`error` event instead of text blocks - claudebox's own login instruction for `authentication_failed`, the agent's text otherwise (the label itself when the message carries no text) - while a subagent's labelled message (nested, or a tailed sidechain line) stays a reply. The failure counts as the turn's reply, so the result that follows is not surfaced as a result-only turn, and the frontend never lets that result downgrade the failure to success. |
 | **Projection** | Derived session summary (`session.json`) accumulated from events. Recomputable from `events.jsonl`. |
-| **Synthetic user message** | Runtime-emitted user-kind AgentEvent whose payload `content` is system-generated rather than human-authored (compaction context, local-command stdout/stderr, task notifications, hook context, system reminders). Detected by `_SYNTHETIC_USER_MARKERS` prefix matching in `conversion._is_synthetic_user_message`. |
+| **Synthetic user message** | Runtime-emitted user-kind AgentEvent whose payload `content` is system-generated rather than human-authored (compaction context, local-command stdout/stderr, task notifications, hook context, system reminders, sibling messages). Detected by `_SYNTHETIC_USER_MARKERS` prefix matching in `conversion._is_synthetic_user_message`. A `<sibling-message session=... name=... outcome=... id=...>` envelope - a spawned session's turn end delivered to its spawner - is taken out of the user string first: each well-formed one becomes a `system`/`sibling_message` event carrying the text and `message_data` `{from_session_id, from_name, outcome, delivery_id}`, and only what is left is judged human, so a batch the agent CLI merged with the person's own text still opens a turn. A body line holding the closing tag is written `<\/sibling-message>` and read back, so no body can end its envelope early or carry one of its own. |
+| **Sibling brief** | `<sibling-brief session=... name=...>` inside a `<system-reminder>`, appended to a spawned session's first message and to its first message after each compaction: it names the session that started it and tells the agent to end its turn with a question in plain text. Derived from `spawned_from_session_id` at send time, never stored. A fork of a spawned session gets `<sibling-brief-ended>` once instead. |
 | **Injected context** | Text the agent received that no person wrote and the transcript does not draw as a message: a hook's block reason, the CLI's no-visible-output note. Shown behind a corner triangle on the block it follows. |
 
 #### Component Ownership
@@ -429,7 +438,7 @@ flowchart TD
   handle --> proj["Projection.update(): session.json"]
 ```
 
-**Turn identity.** A turn is opened only by a message the person sent: a user-kind runtime message with a `uuid`, no `parent_tool_use_id`, and content `conversion.is_human_message` accepts - a string that is not one of the synthetic wrappers (Domain Glossary), so never a tool result, whose content is a block list. Every event until the next such message carries that `uuid` as its `turn_id`: tool results, a background agent's events and the turn's `result` alike. An injected human event (attachments, inline replies, internal commands) opens its turn the same way through `on_inject`. The tracker also knows whether the current turn is running (`TurnTracker.observe`, fed each runtime event just before it is persisted): the person's message runs it, its top-level `result` ends it, and follow-up output after that - a `task_notification` or a top-level assistant event - runs it again until the follow-up's own `result`; runtime text nobody asked for (a command's output after a setting change) does not. An injected failure takes the current turn only while it runs, so a failure between turns - the connection ending while idle, a start failure after a restart - carries no `turn_id`, and the frontend shows its message in the last bubble without marking any turn. `interrupt_sent` keeps the current turn's id and records `turn_running`; the frontend marks the turn interrupted from that flag, while an `interrupt_sent` without it skips a turn whose result is `success`. A result or a failure arriving while no turn runs, in a cycle the person started whose message the runtime never echoed, has its question injected first, so the question and what answered it - the reply surfaced from the result and the result, or the failure - share one turn. A resumed pipeline continues the turn of the last non-nested human event in its history (`TurnTracker.resume`) - unless a send already opened one before the history was read - and counts it answered when an assistant event or a failure follows it there, so a `result` arriving just after a consumer replacement is not surfaced a second time; replaying `observe` over that history from the opener settles whether the turn still runs. Three things read the id: the frontend keys a turn's outcome - its red border, its ✗, its mini-map bar - by it; `has_assistant_emitted` decides from it whether a `result` stands alone; and a fork cuts at it (`_truncate_events` at its first occurrence, the transcript at the line carrying it as `uuid`).
+**Turn identity.** A turn is opened only by a message the person sent: a user-kind runtime message with a `uuid`, no `parent_tool_use_id`, and content `conversion.is_human_message` accepts - a string that is not one of the synthetic wrappers (Domain Glossary), so never a tool result, whose content is a block list. Every event until the next such message carries that `uuid` as its `turn_id`: tool results, a background agent's events and the turn's `result` alike. An injected human event (attachments, inline replies, internal commands) opens its turn the same way through `on_inject`. The tracker also knows whether the current turn is running (`TurnTracker.observe`, fed each runtime event just before it is persisted): the person's message runs it, its top-level `result` ends it, and follow-up output after that - a `task_notification` or a top-level assistant event - runs it again until the follow-up's own `result`; runtime text nobody asked for (a command's output after a setting change) does not. A `sibling_message` runs the current turn again the same way and opens none. An injected failure takes the current turn only while it runs, so a failure between turns - the connection ending while idle, a start failure after a restart - carries no `turn_id`, and the frontend shows its message in the last bubble without marking any turn. `interrupt_sent` keeps the current turn's id and records `turn_running`; the frontend marks the turn interrupted from that flag, while an `interrupt_sent` without it skips a turn whose result is `success`. A result or a failure arriving while no turn runs, in a cycle the person started whose message the runtime never echoed, has its question injected first, so the question and what answered it - the reply surfaced from the result and the result, or the failure - share one turn. A resumed pipeline continues the turn of the last non-nested human event in its history (`TurnTracker.resume`) - unless a send already opened one before the history was read - and counts it answered when an assistant event or a failure follows it there, so a `result` arriving just after a consumer replacement is not surfaced a second time; replaying `observe` over that history from the opener settles whether the turn still runs. Three things read the id: the frontend keys a turn's outcome - its red border, its ✗, its mini-map bar - by it; `has_assistant_emitted` decides from it whether a `result` stands alone; and a fork cuts at it (`_truncate_events` at its first occurrence, the transcript at the line carrying it as `uuid`).
 
 SDK-message-to-AgentEvent projection happens inside `ClaudeRuntime._translate_sdk_message` (§1.4) before the stream reaches the pipeline — no module in `claudebox/agent_session/orchestration/` imports `claude_agent_sdk` (enforced by the import audit per GUIDELINES §SDK Containment).
 
@@ -527,11 +536,11 @@ Monitors background Task agents spawned by the SDK:
 
 **events.jsonl** — append-only event log. Source of truth. One line per `PublishedEvent`, JSON-serialized. A process killed mid-append, or a host crash, can leave a final line with no newline; `EventLog.open` repairs that before its first append (`core/io.py`) - a final line that is a complete JSON object gets its newline back, an unparseable fragment is truncated away and logged - so the next run's first event never lands on the end of a dead line. Only the session's single writer repairs; readers skip an unterminated final line silently and warn on a complete line they cannot parse. The daemon's schedule index (`domain/sessions/schedules.py`, §6.3 Disk listing) reads a running session's log incrementally with `read_jsonl_from`, resuming from the byte offset past the last complete line it read.
 
-**session.json** — derived projection. Recomputable from events. Contains: `session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`, `name`, `auto_name`, `model`, `runtime`, `provider`, `num_turns`, `permission_mode`, `effort_level`, `todos`, `total_cost_usd`, `total_duration_ms`, `last_context_tokens`, `context_window`, `first_message`, `last_message`, `commands`, `session_prompt`, `parent_session_id`, `spawned_from_session_id`, `is_side_thread`, `is_promoted`, `bundle`, `fork_point_cost_usd`, `last_result_cost_usd`, `activity`, `needs_user`, `needs_user_replies`. `total_cost_usd` is what the session spent. Under Claude a result's `cost_usd` is the agent CLI's running total, which a resumed or forked process starts from the total it restored, so the projection adds the change from `last_result_cost_usd` while the figure rises and the whole figure when it falls; under LangGraph `cost_usd` is the turn's own cost and is added. `cost_added` (`orchestration/cost.py`) is that rule, shared with the daemon. A fork or a record written before the field existed starts without `last_result_cost_usd`, and `_handle_init` takes it from the last result in the session's own log. `_compute_derived_fields` applies the same rule, reading each figure's runtime from the `system/init` before it, so a fork's `fork_point_cost_usd` is the source's spend up to the fork. `runtime` is the adapter's display name (`"Claude"` / `"LangGraph"`), stamped once at creation and never overwritten; resume warns on mismatch against the workspace's current `agent` setting rather than switching silently (§1.4.1's sibling concern for LangGraph). `provider` is the `provider:model` prefix, `None` under Claude. `bundle` names the settings bundle the session was created under (§2.1), stamped by the daemon when the container's create answers and never selected afterwards; it is daemon-owned like `name`, `parent_session_id` and `spawned_from_session_id`, so the container's projection re-reads it from disk rather than overwriting it. A record holding only daemon-owned fields is not a loaded session: the projection still stamps `runtime` and `provider` over it. `auto_name` is the title a small model writes for an unnamed session: when a live third, sixth or tenth user message lands on a session without a hand `name` - a subagent's prompt, though marked human, does not count - `SessionService` asks the runtime's `generate_title` for a title of the first three, six or ten user messages from a background task - never awaited by the turn - and stores the reply through the projection, replacing the previous `auto_name` and bumping `updated_at` so the daemon's mutation poll refreshes the listing. A checkpoint cancels a title still being written for the previous one, so an older reply never lands over a newer one; the count is seeded from history on startup, so resume and fork never title retroactively. Claude asks a one-shot SDK query on the agent CLI's `haiku` alias with no tools, settings or saved transcript; LangGraph asks the session's own chat model. Unlike `name` it is projection-owned, and it stays beside `name` rather than replacing it: every surface shows `name`, else `auto_name`, and the Named filter reads `name` alone. A failed or empty reply keeps the previous value, and the next checkpoint is the only retry. `needs_user` is the one-line reason the agent is blocked on the user, or `null`; projection-owned, it lives in `session.json` so it survives a stop, resume and daemon restart. `Projection.update` sets it from a top-level `needs_user` tool use - `mcp__claudebox__needs_user` under Claude, bare `needs_user` under LangGraph, both registered in every session - to the first line of its `reason`; from an `AskUserQuestion`/`ask_user_question` tool use with a non-empty `questions` list to the first question's text (else its header); and from an `ExitPlanMode` carrying a non-empty `plan` to "Approve the plan". Any top-level human message clears it, a form answer included. Events nested under a subagent's tool (`parent_tool_use_id` set) neither set nor clear it, and a setting event first re-reads the daemon-owned fields so a spawned session (`spawned_from_session_id`) or a side thread (`is_side_thread`) never enters it. A fork starts without it: it is in neither `INHERITED_CONFIG_FIELDS` nor `_compute_derived_fields`. The tool itself only replies, telling a spawned session or a side thread its signal was ignored. Under Claude, `_build_sdk_options` also names the tool in the agent CLI's `CLAUDE_CODE_TERMINAL_MCP_TOOLS`, so a reply with no text after a successful call ends the turn instead of drawing the CLI's no-visible-output note. The variable is undocumented; the CLI applies it to the rest of any turn in which the call succeeded, an ignored call in a spawned session or a side thread included, and `test_config_builder.py` fails once the bundled CLI stops carrying its name. `needs_user_replies` is the list of one-click replies the same top-level `needs_user` tool use offered - its optional `replies` argument cut to the distinct first lines of its non-blank strings, at most five, `null` when none remain - and is assigned in the same step as `needs_user`: a form setting the state, a human message clearing it, or a `needs_user` call without replies leaves it `null`. When more than five were passed the tool's reply says how many were dropped. `activity` is `"working"` from a top-level human message, assistant event or task notification until a top-level result or failure, then `"waiting"` while a top-level background launch since the last `container_restarted` - a Bash result's `backgroundTaskId` or an async launch's `agentId` - has no task notification, else `null`; a `container_restarted` event resets it, a change writes the record at once rather than through the debounced save, and consumers trust it only while the session has a running container. The background rule is the browser's own (`appendBackgroundLaunches` / `selectRunningBackgroundWork`), and the two are pinned by mirrored test cases.
+**session.json** — derived projection. Recomputable from events. Contains: `session_id`, `session_dir`, `workspace`, `started_at`, `updated_at`, `name`, `auto_name`, `model`, `runtime`, `provider`, `num_turns`, `permission_mode`, `effort_level`, `todos`, `total_cost_usd`, `total_duration_ms`, `last_context_tokens`, `context_window`, `first_message`, `last_message`, `commands`, `session_prompt`, `parent_session_id`, `spawned_from_session_id`, `is_side_thread`, `is_promoted`, `bundle`, `fork_point_cost_usd`, `last_result_cost_usd`, `activity`, `needs_user`, `needs_user_replies`. `total_cost_usd` is what the session spent. Under Claude a result's `cost_usd` is the agent CLI's running total, which a resumed or forked process starts from the total it restored, so the projection adds the change from `last_result_cost_usd` while the figure rises and the whole figure when it falls; under LangGraph `cost_usd` is the turn's own cost and is added. `cost_added` (`orchestration/cost.py`) is that rule, shared with the daemon. A fork or a record written before the field existed starts without `last_result_cost_usd`, and `_handle_init` takes it from the last result in the session's own log. `_compute_derived_fields` applies the same rule, reading each figure's runtime from the `system/init` before it, so a fork's `fork_point_cost_usd` is the source's spend up to the fork. `runtime` is the adapter's display name (`"Claude"` / `"LangGraph"`), stamped once at creation and never overwritten; resume warns on mismatch against the workspace's current `agent` setting rather than switching silently (§1.4.1's sibling concern for LangGraph). `provider` is the `provider:model` prefix, `None` under Claude. `bundle` names the settings bundle the session was created under (§2.1), stamped by the daemon when the container's create answers and never selected afterwards; it is daemon-owned like `name`, `parent_session_id` and `spawned_from_session_id`, so the container's projection re-reads it from disk rather than overwriting it. A record holding only daemon-owned fields is not a loaded session: the projection still stamps `runtime` and `provider` over it. `auto_name` is the title a small model writes for an unnamed session: when a live third, sixth or tenth user message lands on a session without a hand `name` - a subagent's prompt, though marked human, does not count - `SessionService` asks the runtime's `generate_title` for a title of the first three, six or ten user messages from a background task - never awaited by the turn - and stores the reply through the projection, replacing the previous `auto_name` and bumping `updated_at` so the daemon's mutation poll refreshes the listing. A checkpoint cancels a title still being written for the previous one, so an older reply never lands over a newer one; the count is seeded from history on startup, so resume and fork never title retroactively. Claude asks a one-shot SDK query on the agent CLI's `haiku` alias with no tools, settings or saved transcript; LangGraph asks the session's own chat model. Unlike `name` it is projection-owned, and it stays beside `name` rather than replacing it: every surface shows `name`, else `auto_name`, and the Named filter reads `name` alone. A failed or empty reply keeps the previous value, and the next checkpoint is the only retry. `needs_user` is the one-line reason the agent is blocked on the user, or `null`; projection-owned, it lives in `session.json` so it survives a stop, resume and daemon restart. `Projection.update` sets it from a top-level `needs_user` tool use - `mcp__claudebox__needs_user` under Claude, bare `needs_user` under LangGraph, both registered in every session - to the first line of its `reason`; from an `AskUserQuestion`/`ask_user_question` tool use with a non-empty `questions` list to the first question's text (else its header); and from an `ExitPlanMode` carrying a non-empty `plan` to "Approve the plan". Any top-level human message clears it, a form answer included; a `sibling_message` - a session this one spawned reporting a turn end - neither sets nor clears it. Events nested under a subagent's tool (`parent_tool_use_id` set) neither set nor clear it, and a setting event first re-reads the daemon-owned fields so a spawned session (`spawned_from_session_id`) or a side thread (`is_side_thread`) never enters it. A fork starts without it: it is in neither `INHERITED_CONFIG_FIELDS` nor `_compute_derived_fields`. The tool itself only replies, telling a spawned session or a side thread its signal was ignored. Under Claude, `_build_sdk_options` also names the tool in the agent CLI's `CLAUDE_CODE_TERMINAL_MCP_TOOLS`, so a reply with no text after a successful call ends the turn instead of drawing the CLI's no-visible-output note. The variable is undocumented; the CLI applies it to the rest of any turn in which the call succeeded, an ignored call in a spawned session or a side thread included, and `test_config_builder.py` fails once the bundled CLI stops carrying its name. `needs_user_replies` is the list of one-click replies the same top-level `needs_user` tool use offered - its optional `replies` argument cut to the distinct first lines of its non-blank strings, at most five, `null` when none remain - and is assigned in the same step as `needs_user`: a form setting the state, a human message clearing it, or a `needs_user` call without replies leaves it `null`. When more than five were passed the tool's reply says how many were dropped. `activity` is `"working"` from a top-level human message, assistant event, task notification or sibling message until a top-level result or failure, then `"waiting"` while a top-level background launch since the last `container_restarted` - a Bash result's `backgroundTaskId` or an async launch's `agentId` - has no task notification, else `null`; a `container_restarted` event resets it, a change writes the record at once rather than through the debounced save, and consumers trust it only while the session has a running container. The background rule is the browser's own (`appendBackgroundLaunches` / `selectRunningBackgroundWork`), and the two are pinned by mirrored test cases.
 
 **Claude → LangGraph session migration** (one-shot, `scripts/migrate_claude_to_langgraph.py`) — the reverse of the pipeline above. Parses `events.jsonl` into a LangChain message list (`runtime_langgraph.py::events_to_messages`, kept in the adapter file per SDK Containment since it constructs `langchain_core.messages` objects), seeds it into a fresh `checkpoints.sqlite` through the target workspace's own `LangGraphRuntime` and `graph.aupdate_state(..., as_node="model")`, then flips `session.json`'s `runtime`/`provider` via `SessionRepository.update()`. A Claude tool call with a LangGraph equivalent (`TOOL_NAME_TO_LANGGRAPH`) becomes a real tool call; anything else flattens to plain text. Thinking blocks are dropped - LangChain has no first-class carrier for reasoning content on seeded history - and the CLI reports how many were dropped; an attached image or document re-encodes from the session's own `attachments/` directory into the same multi-part content blocks a live send builds, falling back to a text note when the file is gone or no `attachments_dir` was given. Idempotent by construction: `events_to_messages` derives message ids from the input, so `add_messages` merges a re-seed by id instead of duplicating history, and the CLI checks `runtime == "LangGraph"` up front as a second independent guard. Conversion leaves a native LangGraph session needing no further translation; the reverse direction has no native-resume path, the Claude SDK's session store being opaque.
 
-**rate-limits.json** — per-workspace plan-limit state (`RateLimitStore`, `claudebox/agent_session/rate_limits.py`), one entry per SDK `rate_limit_type` keyed window, folded from the `rate_limit` system event in `SessionService._handle_event`. Written container-side only: the daemon never sees this event itself, since `ProxyStreamingResponse` (`core/http.py:38`) forwards the container's SSE stream as opaque bytes rather than parsing it. Both sides read the same file directly — the workspace is bind-mounted at the same path in the container and on the host — via `RateLimitStore.get()`; no daemon-owned copy exists. Served as a `rate_limits` sibling field on both `GET .../api/sessions/current` (container, in-session) and `GET /api/workspaces/{id}/session-defaults` (daemon, pre-session), rather than a dedicated endpoint, since both were already polled or fetched at the moments a transition needs to surface. **Reconcile at session start**: every currently-stored window is marked unannounced (`_handle_init`); each `rate_limit` event re-announces its window, upserting it (or clearing it, for the `allowed` status the SDK announces for `five_hour` but never for `seven_day`); once the session's first `result` event lands, any window still unannounced is dropped — the absence of an announcement is the only "back to normal" signal the SDK gives for a weekly window.
+**rate-limits.json** — per-workspace plan-limit state (`RateLimitStore`, `claudebox/agent_session/rate_limits.py`), one entry per SDK `rate_limit_type` keyed window, folded from the `rate_limit` system event in `SessionService._handle_event`. Written container-side only: the daemon never sees this event itself, since `ProxyStreamingResponse` (`core/http.py:47`) forwards the container's SSE stream as opaque bytes rather than parsing it. Both sides read the same file directly — the workspace is bind-mounted at the same path in the container and on the host — via `RateLimitStore.get()`; no daemon-owned copy exists. Served as a `rate_limits` sibling field on both `GET .../api/sessions/current` (container, in-session) and `GET /api/workspaces/{id}/session-defaults` (daemon, pre-session), rather than a dedicated endpoint, since both were already polled or fetched at the moments a transition needs to surface. **Reconcile at session start**: every currently-stored window is marked unannounced (`_handle_init`); each `rate_limit` event re-announces its window, upserting it (or clearing it, for the `allowed` status the SDK announces for `five_hour` but never for `seven_day`); once the session's first `result` event lands, any window still unannounced is dropped — the absence of an announcement is the only "back to normal" signal the SDK gives for a weekly window.
 
 #### Executor Ownership
 
@@ -595,7 +604,7 @@ Thin host-side entry point. Argument parsing lives in `host_cli.py` (one level a
 | `containers` | `cmd_containers` | `list` / `stop {<id>\|all}` / `kill {<id>\|all}` — CLI-side prefix resolution; `all` via `asyncio.gather` |
 | `workspaces` | `cmd_workspaces` | `list` / `register [<path>]` / `deregister <id>` — POST/DELETE on top-level `/api/workspaces` |
 
-Workspace registration is explicit, from the CLI (`claudebox workspaces register`) or the daemon's own `POST /api/workspaces` (the workspace switcher's register modal), and both write the directory's `.workspace` marker: the CLI before it posts, the daemon after checking that the path, `~` expanded, is absolute and names an existing directory - refusing it with a 400 and a `message` otherwise - and before it registers. An unregistered cwd still falls back to cwd-as-workspace silently, with no marker written.
+Workspace registration is explicit, from the CLI (`claudebox workspaces register`) or the daemon's own `POST /api/workspaces` (the workspace switcher's register modal), and both write the directory's `.workspace` marker: the CLI before it posts, the daemon after checking that the path, `~` expanded, is absolute and names an existing directory - refusing it with a 400 and a `message` otherwise - and before it registers. A directory that holds the home directory or Claudebox's own files (`claudebox.paths.covers_home`: `$HOME`, anything above it, `~/.claudebox` and anything above that, compared after symlinks resolve) is registered only once its marker already exists: the CLI writes it before it posts, so the CLI registers it, while the daemon never writes a marker there and answers 400 `workspace_path_needs_cli`, naming the command. The marker is the confirmation - the browser cannot create a file on the host, and the daemon cannot be asked to - and it outlives a deregistration, so a directory marked once can be registered from the browser again until its marker is removed. A bare `claudebox workspaces register` in such a directory registers nothing and asks for the path, and the load-time marker repair skips such a directory. An unregistered cwd still falls back to cwd-as-workspace silently, with no marker written.
 
 #### Help rendering
 
@@ -642,7 +651,7 @@ Attachment is keyed on presence in the container list, not on having a live task
 
 ### 2.1 Config Hierarchy
 
-TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. A file not owned by the running user (root always trusts, for the in-container load) is skipped with a one-line stderr notice rather than merged - a settings file is authoritative only for the person who wrote it. `backend` is validated against `podman`, `docker`, `local` at load; any other value raises, naming the file it came from, since it becomes the executable the host runs next. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports`, `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional), `links_allow` (`[links] allow`, optional), `bundles` (`[bundles.<name>]`, raw tables keyed by name, optional) and `bundle` (the name a config was resolved under). A bundle is one more merge layer, applied last and only when named: `Config.resolve_bundle(workspace, name)` deep-merges `[bundles.<name>]` over the already-merged hierarchy with the same `merge` `_collect_config_files` feeds, so a bundle's `env` and `mounts` key-merge with the workspace's and its `mounts` resolve like any other. The keys a bundle may carry are an allowlist - `env`, `mounts`, `ports`, `network.mode`, `model`, `effort_level`, `permission_mode`, `session_prompt`, `messages` - checked with the bundle's name charset on every load, so a typo or a key bound before a bundle is known (`backend`, `profile`, `agent`, `root`) raises on the next load; an undeclared name raises at resolution. The five keys with no `Config` field stay readable on the resolved config's `bundles` table. `profile` falls back to `profile_dir()` (`~/.claudebox/profile`) when no explicit key is set and that directory exists - the installer copies `etc/profile.sample/` there on first run (`bin/install.sh` `install_profile()`).
+TOML walk-up: `Config.load()` (in `claudebox.config`) searches from cwd upward for `.claudebox/settings.toml` files, deep-merges them (nearest wins). When `workspace_path` is provided, uses it directly without walking up. A file not owned by the running user (root always trusts, for the in-container load) is skipped with a one-line stderr notice rather than merged - a settings file is authoritative only for the person who wrote it. `backend` is validated against `podman`, `docker`, `local` at load; any other value raises, naming the file it came from, since it becomes the executable the host runs next. Config dataclass holds: `work_dir`, `config_dir`, `profile`, `agent`, `backend`, `mounts`, `ports` (host port to a `PortMapping`: container port, optional protocol, bind address defaulting to `127.0.0.1`), `network_mode`, `env`, `containers_nested` (`[containers] nested`, default `false`), `editor_url_template` (`[editor] url_template`, optional), `links_allow` (`[links] allow`, optional), `bundles` (`[bundles.<name>]`, raw tables keyed by name, optional) and `bundle` (the name a config was resolved under). A bundle is one more merge layer, applied last and only when named: `Config.resolve_bundle(workspace, name)` deep-merges `[bundles.<name>]` over the already-merged hierarchy with the same `merge` `_collect_config_files` feeds, so a bundle's `env` and `mounts` key-merge with the workspace's and its `mounts` resolve like any other. The keys a bundle may carry are an allowlist - `env`, `mounts`, `ports`, `network.mode`, `model`, `effort_level`, `permission_mode`, `session_prompt`, `messages` - checked with the bundle's name charset on every load, so a typo or a key bound before a bundle is known (`backend`, `profile`, `agent`, `root`) raises on the next load; an undeclared name raises at resolution. The five keys with no `Config` field stay readable on the resolved config's `bundles` table. `profile` falls back to `profile_dir()` (`~/.claudebox/profile`) when no explicit key is set and that directory exists - the installer copies `etc/profile.sample/` there on first run (`bin/install.sh` `install_profile()`).
 
 `ContainerRuntime` combines `Config` + `ContainerBackend` + CLI flags into a single runtime object.
 
@@ -701,7 +710,7 @@ A container in dev mode (`CLAUDEBOX_DEV=1`) would sync dependencies into the lib
 
 `ContainerBackend` (in `claudebox.containers.backend`) abstracts podman/docker CLI differences. Key methods: `build_image()`, `run_container()`, `stop()`, `kill()`, `remove_container()`, `create_network()`, `print_container_logs()`, `inspect_container()`, `get_host_port()`, `list_containers()` - which returns podman's shape (a list of objects with `Id`, `State` and a `Labels` table) for either runtime, parsing docker's one-object-per-line output and its `key=value` label string. All commands go through `_exec()` which calls `subprocess.run()` (or `os.execvp()` when `replace=True`).
 
-`LocalRuntime` spawns `container_api_server.py` as an ordinary host subprocess (no container, no network namespace) and passes `--host 127.0.0.1`, so the session API is reachable only from the host. The containerized path reaches the same audience a different way: the in-container server still binds `0.0.0.0` - a container's own listener must, or no publish mapping could reach it - but the publish itself binds the host side to loopback (`--publish 127.0.0.1::{port}`), so the mapped port is unreachable from another container or another machine. The listener itself stays reachable from the workspace's other session containers at `http://{container_id}:{WEB_CONTAINER_PORT}` on the workspace network - the address `session_ask` uses (§1.4) - and the container API has no authentication of its own.
+`LocalRuntime` spawns `container_api_server.py` as an ordinary host subprocess (no container, no network namespace) and passes `--host 127.0.0.1`, so the session API is reachable only from the host. The containerized path reaches the same audience a different way: the in-container server still binds `0.0.0.0` - a container's own listener must, or no publish mapping could reach it - but the publish itself binds the host side to loopback (`--publish 127.0.0.1::{port}`), so the mapped port is unreachable from another container or another machine. The tunnel an approved port is relayed through (§1.4 "Ports the agent opens") is published the same way, `--publish 127.0.0.1::8081`. A `[ports]` entry is published the same way, on `127.0.0.1`, and on any other address only when the entry names a `bind`. The listener itself stays reachable from the workspace's other session containers at `http://{container_id}:{WEB_CONTAINER_PORT}` on the workspace network - the address `session_ask` uses (§1.4) - and the container API has no authentication of its own.
 
 The local runtime's in-memory registry is shared by the container pool's threads; every access holds one lock, and listing polls from a snapshot.
 
@@ -733,10 +742,12 @@ Four installation layers in `container/build/Containerfile`:
 
 | Layer | Script | Content | Rebuild frequency |
 |-------|--------|---------|-------------------|
-| Base | `install_base.sh` | System packages, mise, Python 3.13, Node 24, uv, Rust, just, gh | Rare |
+| Base | `install_base.sh` | System packages, mise, Python 3.13, Node 24, uv, Rust, just, gh - pinned by `image-pins.txt`; base image by digest | Rare |
 | Nesting | `install_containers.sh` | Podman-in-podman toolchain (§3.7); capability-gated at runtime, always baked | Rare |
 | Profile | `install_profile.sh` | Overridden by `{profile}/hooks/image-build.sh` — dev tools, linters, runtimes | On profile change |
-| Agent | `install_agent.sh` | Claude Code CLI (via mise) + Python dependencies and all LangGraph provider packages (`uv sync --extra langgraph-all` into `/opt/claudebox/.venv`, resolved fresh at build - `uv.lock` governs the host install only) | On `--layer agent` |
+| Agent | `install_agent.sh` | Claude Code CLI (via mise) + Python dependencies and all LangGraph provider packages (`uv sync --extra langgraph-all` into `/opt/claudebox/.venv`, resolved fresh at build - `uv.lock` governs the host install only) - floating by declaration: `claude-code` and the Python packages, recorded in the image at build | On `--layer agent` |
+
+**Pins.** Two manifests hold every version the installer and the image build download: `etc/host-pins.txt` (Caddy, uv, nvm, Node - read by `bin/install.sh` from the installed library) and `container/build/image-pins.txt` (mise, the language tools, `just`, the GitHub CLI keyring - copied into the build context with `fs/_pins.sh` ahead of the base layer, so a changed image pin rebuilds the base). One row per artifact: `name version platform sha256 url`, `{version}` substituted in the URL; `pin_field` reads a field and `fetch_pinned` downloads a row's file and moves it into place only when its sha256 matches, so nothing downloaded runs unchecked. A version-only row (`-` for platform, digest and URL) fixes the exact version and leaves integrity to the tool that installs it: nvm checks Node against its `SHASUMS256.txt`, mise checks its own downloads, cargo checks crates against the registry index. A `float` row declares an input that resolves fresh and why - `claude-code` and the agent's Python packages, which the daily agent-layer rebuild brings up to date, and the library clone itself; `install_agent.sh` records what such a build resolved in `/opt/claudebox/resolved.txt`. The base image is the one pin outside the manifests: `FROM` names the ubuntu tag for readers and the multi-arch index digest that governs. `just pins-bump NAME VERSION` is the only way a pin changes - it downloads every row of that name and records the digests (`base-image` takes a tag and resolves its index digest from the registry) - and `just pins-check`, part of `just lint`, fails on a malformed or floating version, a download without its digest, an unpinned base image, a Node pin off the `.nvmrc` major, a row no script reads, and any downloading line in `bin/install.sh`, `container/build/fs/*.sh` or the Containerfile that no row or float of the manifest it reads covers. apt packages float with the Ubuntu archive on the day the base layer is built, authenticated by apt's own signatures, and are declared as the `apt-packages` float; the digest and a cached layer hold them still between deliberate full rebuilds. An exact version has at least three numeric parts or is a date.
 
 Runtime config: `WORKDIR /workdir`, `BASH_ENV=/root/.bash_env`, `ENTRYPOINT ["/entrypoint.sh"]`.
 
@@ -818,7 +829,7 @@ The toolchain shares the session container's network namespace (`netns = "host"`
 
 ### 3.8 Syscall supervisor
 
-`claudebox-trace` (`container/run/fs/root/.local/bin/`) is a Python program using the standard library only; `entrypoint.sh` runs a web-mode session through it (`claudebox-trace -- claudebox-agent ...`), while a terminal session, which has nothing that reads a verdict, runs unwrapped. It forks; the child sets `no_new_privs`, installs a seccomp filter with a user-notification listener, hands the listener back over a socket pair and execs the session, so every descendant inherits the filter - the API server, the agent CLI, each Bash call's shell, a pipeline's later stages and a subagent's own shells. The parent keeps the listener and answers every notification with continue: it observes and never denies, so no command behaves differently for being watched. It reads what a stopped syscall would do - a path, a socket address, an exec's arguments - from `/proc/<pid>/mem` before answering, and credits it to every shell the process runs under.
+`claudebox-trace` (`container/run/fs/root/.local/bin/`) is a Python program using the standard library only; `entrypoint.sh` runs a web-mode session through it (`claudebox-trace -- claudebox-agent ...`), while a terminal session, which has nothing that reads a verdict, runs unwrapped. It forks; the child sets `no_new_privs`, installs a seccomp filter with a user-notification listener, hands the listener back over a socket pair and execs the session, so every descendant inherits the filter - the API server, the agent CLI, each Bash call's shell, a pipeline's later stages and a subagent's own shells. The parent keeps the listener and answers every notification with continue: it observes and never denies, so no command behaves differently for being watched. It reads what a stopped syscall would do - a path, a socket address, an exec's arguments - from `/proc/<pid>/mem` before answering, and credits it to every shell the process runs under. That read can wait on a page another stopped process has to serve - a file on a nested container's FUSE storage, say - so each syscall that needs it is settled on a thread of its own while the loop goes on answering the rest; syscalls settled from their registers alone are answered on the loop. With 64 reads in flight, or the same process's earlier read still waiting, a call is answered unread: it counts as a change, and an exec as no shell, so a call it starts carries no measurement. Each notification is credited before it is answered, and one lock serializes the bookkeeping, never a memory read.
 
 The filter is one BPF program. It notifies `open` and `openat` only when their flags ask to write (`O_WRONLY`, `O_RDWR`, `O_CREAT`, `O_TRUNC`, `O_APPEND`, or the temporary-file bit without its `O_DIRECTORY` part), `openat2` always (its flags live behind a pointer), the file-changing syscalls, `execve`/`execveat`, `socket` for every family but unix, `connect`/`bind`, `setsid`, the signalling syscalls, `ptrace`, `process_vm_writev`, the clock, hostname and mount syscalls and `io_uring_setup`; every other syscall runs at full speed. A 32-bit or x32 syscall is notified whatever it is and counts as a change.
 
@@ -855,22 +866,23 @@ app.py                  # FastAPI factory, lifespan, ApiError exception handler
 logging.py              # structlog configuration: configure_logging(), get_logger(), LogBroadcaster, attach/detach the workspace file log
 constants.py            # FILE_INDEX_CACHE_TTL, CONTAINER_API_LOG_FILENAME (HTTP-layer only; session vocabulary lives in claudebox/constants.py)
 session.py              # SessionRegistry (keyed Session instances, one primary) + managed() async context manager + get_session()/get_registry() dependencies
+tunnel.py               # managed() - the port tunnel's listener for the app's lifetime: one line naming a port, then bytes both ways (see section 1.4)
 
 files/
-├── __init__.py
-├── path_resolver.py    # PathResolver - resolve file references for click-to-open
-├── file_service.py     # FileService - wraps PathResolver and exposes resolve_paths() to handlers
-└── errors.py           # FileServiceNotReady and other file-related error types
+|-- __init__.py
+|-- path_resolver.py    # PathResolver - resolve file references for click-to-open
+|-- file_service.py     # FileService - wraps PathResolver and exposes resolve_paths() to handlers
+`-- errors.py           # FileServiceNotReady and other file-related error types
 
 handlers/
-├── __init__.py         # Aggregates every sub-router into api_router
-├── chat.py             # Send, stream (SSE), interrupt, model/permission-mode/effort-level switching
-├── sessions.py         # Session CRUD: list, current, new, resume, attachments, tool output (current-prefixed)
-├── files.py            # /api/files/resolve-paths - bulk path resolution for the frontend's click-to-open
-├── lifecycle.py        # Health check, log streaming
-├── mcp.py              # /api/mcp/{reconnect,toggle,status} - manage MCP servers used by the SDK
-├── _shared.py          # FastAPI dependency injection (SessionDep, FilesDep annotated types)
-└── _models.py          # Pydantic request/response models
+|-- __init__.py         # Aggregates every sub-router into api_router
+|-- chat.py             # Send, stream (SSE), interrupt, model/permission-mode/effort-level switching
+|-- sessions.py         # Session CRUD: list, current, new, resume, attachments, tool output (current-prefixed)
+|-- files.py            # /api/files/resolve-paths - bulk path resolution for the frontend's click-to-open
+|-- lifecycle.py        # Health check, log streaming
+|-- mcp.py              # /api/mcp/{reconnect,toggle,status} - manage MCP servers used by the SDK
+|-- _shared.py          # FastAPI dependency injection (SessionDep, FilesDep annotated types)
+`-- _models.py          # Pydantic request/response models
 ```
 
 `container_api.log` is one file per workspace with one writer per container. A container killed mid-record can leave a fragment that the next writer's first record is appended to; `read_jsonl` recovers the complete records a damaged line ends with, so only the torn record is lost.
@@ -944,6 +956,7 @@ All session-state endpoints address the *primary* session by default via the `/c
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/send` | POST | Queue prompt for SDK processing (primary, or `?session_id=`) |
+| `/api/sibling-message` | POST | Queue a spawned session's turn end behind any running turn, as nobody's message (primary, or `?session_id=`) |
 | `/api/stream` | GET (SSE) | Event stream (primary, or `?session_id=`); replays persisted history unless `?replay=false` |
 | `/api/interrupt` | POST | Stop current SDK processing (primary, or `?session_id=`) |
 | `/api/model` | POST | Switch active model (primary, or `?session_id=`) |
@@ -957,7 +970,7 @@ All session-state endpoints address the *primary* session by default via the `/c
 | `/api/sessions/{id}/stop` | POST | Stop and remove one non-primary session; refuses the primary (400 `cannot_stop_primary`) |
 | `/api/sessions/{id}/promote` | POST | Record a member session as promoted and cancel a running entry's turn-complete auto-stop; it runs until stopped like any other session from then on, whether or not it was running when promoted. 404 when the session has no record |
 | `/api/sessions/{id}/events` | GET | Persisted events for a named session plus whether it is currently registered - reads the session directory directly, no live instance required |
-| `/api/sessions/current/attachments/{filename}` | GET | Serve attachment from current session (primary, or `?session_id=`) |
+| `/api/sessions/current/attachments/{filename}` | GET | Serve attachment from current session (primary, or `?session_id=`); PNG, JPEG, GIF and WebP inline, every other type a download, all with nosniff and a sandboxing CSP |
 | `/api/sessions/{id}/tool-output/{tool_use_id}` | GET | Fetch a named session's tool output - no live instance required |
 | `/api/sessions/{id}/tool-output/{tool_use_id}/download` | GET | Download a named session's tool output file - no live instance required |
 | `/api/files/resolve-paths` | POST | Bulk-resolve file paths for click-to-open |
@@ -977,35 +990,35 @@ React 19 SPA communicating with the container API and daemon via HTTP + SSE.
 
 ```
 src/
-├── api/              # HTTP clients - daemon and container-API REST + SSE wrappers
-├── config/           # App configuration and constants (layout, panel, timing, dimensions, thresholds, urls, storage, schema, toolRegistry, colors)
-├── context/          # React Context providers (split contexts - see section 5.3)
-├── features/         # Feature modules (self-contained)
-│   ├── app/          # App shell, AppProviders, cross-cutting effects
-│   ├── chat/         # ChatPanel, ChatController, session rail (components/SessionRail.jsx, AncestorGroup.jsx, hooks/useSessionRail.js, hooks/useAncestorTranscript.js, utils/sessionRail.js - see section 5.6), right-slot view registry (utils/rightSlotViews.js) - one directory per view under components/ (components/terminal/, components/work/)
-│   ├── boards/       # BoardsPanel, BoardTab
-│   ├── bookmarks/    # BookmarksPanel
-│   ├── containers/   # ContainersPanel, ContainerRow
-│   ├── crons/        # CronsPanel, CronEntry
-│   ├── footer/       # Footer bar
-│   ├── help/         # HelpPanel
-│   ├── icon-strip/   # Panel toggle icon strips (left + right)
-│   ├── layout/       # BottomPanelContainer - fixed-position bottom-panel strip
-│   ├── logs/         # LogsPanel
-│   ├── mcp/          # McpPanel
-│   ├── sessions/     # SessionsPanel
-│   ├── skills/       # SkillsPanel
-│   ├── stash/        # StashPanel
-│   ├── tasks/        # TasksPanel
-│   ├── todos/        # TodosPanel
-│   └── usage/        # UsagePanel
-├── components/       # Cross-feature React components
-├── hooks/            # Cross-feature hooks (useBookmarks, useBottomAutoscroll, useDaemonStream, useDropdown, useIsMobile, useLocalStorage, useNewSession, usePathResolution, usePointerDragHandle, useSSE, useVirtualListGeometry)
-├── managers/         # Coordination logic classes - see section 5.5
-├── test-utils/       # Shared test render helpers and fixtures
-├── utils/            # Cross-feature pure functions (event processing, predicates, formatters, parsers, language detection, diff, xml block folding, scroll, scroll-intent latch, nested-scrollable detection, color, comparators, collections, attachment helpers, layout persistence, mermaid loader, path candidates, bookmark IDs, categorization, navigation, flash status)
-├── main.jsx          # React entry point
-└── main.css          # Cascade orchestrator (imports all feature index.css in order)
+|-- api/              # HTTP clients - daemon and container-API REST + SSE wrappers
+|-- config/           # App configuration and constants (layout, panel, timing, dimensions, thresholds, urls, storage, schema, toolRegistry, colors)
+|-- context/          # React Context providers (split contexts - see section 5.3)
+|-- features/         # Feature modules (self-contained)
+|   |-- app/          # App shell, AppProviders, cross-cutting effects
+|   |-- chat/         # ChatPanel, ChatController, session rail (components/SessionRail.jsx, AncestorGroup.jsx, hooks/useSessionRail.js, hooks/useAncestorTranscript.js, utils/sessionRail.js - see section 5.6), right-slot view registry (utils/rightSlotViews.js) - one directory per view under components/ (components/terminal/, components/work/)
+|   |-- boards/       # BoardsPanel, BoardTab
+|   |-- bookmarks/    # BookmarksPanel
+|   |-- containers/   # ContainersPanel, ContainerRow
+|   |-- crons/        # CronsPanel, CronEntry
+|   |-- footer/       # Footer bar
+|   |-- help/         # HelpPanel
+|   |-- icon-strip/   # Panel toggle icon strips (left + right)
+|   |-- layout/       # BottomPanelContainer - fixed-position bottom-panel strip
+|   |-- logs/         # LogsPanel
+|   |-- mcp/          # McpPanel
+|   |-- sessions/     # SessionsPanel
+|   |-- skills/       # SkillsPanel
+|   |-- stash/        # StashPanel
+|   |-- tasks/        # TasksPanel
+|   |-- todos/        # TodosPanel
+|   `-- usage/        # UsagePanel
+|-- components/       # Cross-feature React components
+|-- hooks/            # Cross-feature hooks (useBookmarks, useBottomAutoscroll, useDaemonStream, useDropdown, useIsMobile, useLocalStorage, useNewSession, usePathResolution, usePointerDragHandle, useSSE, useVirtualListGeometry)
+|-- managers/         # Coordination logic classes - see section 5.5
+|-- test-utils/       # Shared test render helpers and fixtures
+|-- utils/            # Cross-feature pure functions (event processing, predicates, formatters, parsers, language detection, diff, xml block folding, scroll, scroll-intent latch, nested-scrollable detection, color, comparators, collections, attachment helpers, layout persistence, mermaid loader, path candidates, bookmark IDs, categorization, navigation, flash status)
+|-- main.jsx          # React entry point
+`-- main.css          # Cascade orchestrator (imports all feature index.css in order)
 ```
 
 ### 5.2 SSE Connection
@@ -1049,7 +1062,7 @@ Split contexts ordered by update frequency:
 
 A resume issued for one session never addresses another: `sessionResume.js`'s helper re-checks the caller's identity after its await, on both branches, before any of its four writes (global container id, change notification, per-session mapping, reconnect) — mirroring `SessionRoutingEffect`'s own sequence guard on the routing path, since a resume resolving after the reader switched sessions is otherwise simply the last writer to the same shared addressing state.
 
-Per-session state carries an owner - the routed session, or a creation of this tab named by its sequence (`useSessionOwnership`) - and is never cleared by detecting a change of the attached session's id, which passes through empty on every switch. A loading flag is raised with its request and only its caller settles or aborts it; stream signals and clocks are soft ends the reducer ignores while the request is pending, and the safety timers arm only after settle. Owner-scoped this way: pending messages, the deferred first message (bound to its creation), the submitting / awaiting / interrupt flags, inline-reply records and input-history additions made with no session attached, and the composer's drafts, attachments and preserved input. Input typed during a creation - the first message and queue items - belongs to that creation: queue items carry its owner tag and are neither drained nor saved until the creation's session attaches, and a failed creation returns both to the composer. Both are sent with an explicit target - the session they belong to and the container its connected stream reads - because opening another session moves the module address before the render that detaches the old one commits. Every session-scoped call made after an await names its target the same way - the pick buffer's drain (`{ sessionId: attachedSessionId, containerId }`, fixed when the drain starts) and a side thread's question (the parent's container) - and `reloadSession` re-checks the routed session at entry and after its resume, like `sessionResume.js`.
+Per-session state carries an owner - the routed session, or a creation of this tab named by its sequence (`useSessionOwnership`) - and is never cleared by detecting a change of the attached session's id, which passes through empty on every switch. A loading flag is raised with its request and only its caller settles or aborts it; stream signals and clocks are soft ends the reducer ignores while the request is pending, and the safety timers arm only after settle. Owner-scoped this way: pending messages, the deferred first message (bound to its creation), the submitting / awaiting / interrupt flags, inline-reply records and input-history additions made with no session attached, and the composer's drafts, attachments and preserved input. Input typed during a creation - the first message and queue items - belongs to that creation: queue items carry its owner tag and are neither drained nor saved until the creation's session attaches, and a failed creation returns both to the composer. A creation's opening messages - a link's carried ones as it starts, a bundle's when it answers - wait in `EventsContext` under its sequence until the chat owning that creation takes them, once, and enter the same held slot and queue. Both are sent with an explicit target - the session they belong to and the container its connected stream reads - because opening another session moves the module address before the render that detaches the old one commits. Every session-scoped call made after an await names its target the same way - the pick buffer's drain (`{ sessionId: attachedSessionId, containerId }`, fixed when the drain starts) and a side thread's question (the parent's container) - and `reloadSession` re-checks the routed session at entry and after its resume, like `sessionResume.js`.
 
 A route with no session - the bare workspace address, a board, a workspace switch - releases the addressing state: `SessionRoutingEffect`'s no-session branch and `WorkspaceResetEffect` call `closeSSE`, which nulls the module container id and its mirror, so the welcome gate holds and no request, stream or refresh reaches the session left; `refreshSession` applies an answer only while the container it addressed is still current. `disconnectSSE` keeps the id, for paths where the session stays routed.
 
@@ -1129,7 +1142,7 @@ The run-detector (`groupBlocks` in `TurnBlockList`) only emits a grouped-Todos s
 
 **Fire-and-forget persistence**: Layout changes, stash updates, UI state use `fetch().catch(() => {})` — best-effort, never blocks UI.
 
-**Relative times read a shared clock.** Every "Xm ago" text comes from `useRelativeTime` (or `RelativeTime` where a hook cannot go), never from `formatRelativeTime` called in a render body. Its components sit behind memo barriers that break only on data change - session rows (`BoundSessionItem`), turns (`Turn`'s comparator) - so text computed in render freezes at its last draw. The hook subscribes through `useSyncExternalStore` to one module-level clock that runs one `RELATIVE_TIME_TICK_MS` interval while anything subscribes and re-reads on the tab becoming visible; each subscriber's snapshot is its formatted string, so a tick redraws only components whose text changed and a session row still redraws for nothing but its own session. Elapsed timers that need second resolution keep `useNow` / their own interval.
+**Relative times read a shared clock.** Every "Xm ago" text comes from `useRelativeTime` (or `RelativeTime` where a hook cannot go), never from `formatRelativeTime` called in a render body. Its components sit behind memo barriers that break only on data change - session rows (`BoundSessionItem`), turns (`Turn`'s comparator) - so text computed in render freezes at its last draw. The hook subscribes through `useSyncExternalStore` to one module-level clock that runs one `RELATIVE_TIME_TICK_MS` interval while anything subscribes and re-reads on the tab becoming visible; each subscriber's snapshot is its formatted string, so a tick redraws only components whose text changed and a session row still redraws for nothing but its own session. Elapsed timers that need second resolution keep `useNow` / their own interval, except a running turn's: its header and the footer's working time read `useTurnClock` (`utils/turnClock.js`), one clock per start time that ticks on that start's whole seconds, so both change in the same instant. The footer takes the start from `useRunningTurnStart`, which the transcript's own running turn - active, pending or deferred - holds through `sharesRunningStart`; a side thread's turn never does, so its run cannot move the footer.
 
 **Windowed turn list**: `HistoricalTurnList` renders only the turns intersecting the viewport plus `TURN_OVERSCAN` either side, via `@tanstack/react-virtual` (`useTurnVirtualizer`). Rows are absolutely positioned inside a spacer sized to the whole transcript, so scroll position, scrollbar, and every scroll offset behave as if all turns were present. Cost of opening a session stops scaling with its length: the mounted set stays bounded however many turns the session holds. `content-visibility: auto` is not enough for this - it skips layout and paint for off-screen turns but still builds their DOM, creates their React elements and runs their per-block render work.
 
@@ -1270,7 +1283,7 @@ ToolContentRenderer(toolName, details, filePath, outputMode)
 |   `- YES -> Markdown component (rendered as rich text, not code; WebFetch: baseUrl = input url)
 |
 `- Unknown tool
-    |- looksLikeMarkdown(content)? -> MarkdownPreview(content)
+    |- looksLikeMarkdown(content)? (2+ line-start structures; else no other language detected outside fenced blocks and 2+ signs; a fence counts only at a line start) -> MarkdownPreview(content)
     `- else -> CodeBlock(content)
        `- Simple pre-formatted text
 ```
@@ -1280,7 +1293,7 @@ ToolContentRenderer(toolName, details, filePath, outputMode)
 | Component | Location | Role |
 |-----------|----------|------|
 | `ToolContentRenderer` | `features/chat/.../tool-content-renderer/` | Entry point — routes to appropriate renderer |
-| `Markdown` | `components/` | Canonical markdown renderer — GFM, math, mermaid, syntax-highlighted code, path highlighting, and sanitized raw HTML (`rehype-raw` -> `rehype-sanitize` -> `rehype-katex`; the sanitize allowlist in `markdownSanitizeSchema.js` is the XSS boundary since no CSP is served — scripts/handlers/`javascript:` URLs and `iframe`/`object`/`embed`/`svg` are stripped); degrades gracefully outside `SessionDataContext`. Relative `href`/`src` resolve against the base the caller names, never a default: `baseDir` (a directory: links through the path-link handler, images through `/files/image`) or `baseUrl` (a web page, http(s) only: links open the resolved address in a new tab, images load it). With neither, a relative link is plain text and an image keeps its `src`. Bases by origin: the agent's own text (reply, thinking, compaction summary, subagent narration, Task prompt and result, plan) the working directory; a previewed file its folder (`fileFolder`, a relative path joined to the working directory); a skill body the folder on its `Base directory for this skill:` line (`skillBaseDir`); WebFetch its `url` input, threaded `ToolBlock` -> `ToolBlockExpandedContent` (in `contentData`) -> `ToolContentRenderer` as `sourceUrl`; WebSearch, ticket detail and tool-server output none; Bash and TaskOutput output the working directory. `geojson`/`topojson` fences draw as maps beside mermaid (Leaflet, lazy-loaded through `mapLoader.js`; no tile request until the reader opts in), and `stl` fences as 3D models (three.js, lazy-loaded through `stlLoader.js`, one WebGL context per mounted viewer, released on unmount) |
+| `Markdown` | `components/` | Canonical markdown renderer — GFM, math, mermaid, syntax-highlighted code, path highlighting, and sanitized raw HTML (`rehype-raw` -> `rehype-sanitize` -> `rehypeStyleFilter` -> `rehype-katex`; the sanitize allowlist in `markdownSanitizeSchema.js` is the XSS boundary since no CSP is served — scripts/handlers/`javascript:` URLs and `iframe`/`object`/`embed`/`svg` are stripped, `className` is limited to the classes the pipeline itself emits ahead of the sanitiser (`language-*`, `math-inline`, `math-display`, `markdown-alert*` and the GFM task-list and footnote classes) and `style` to `color`, `font-weight`, `text-align` and `width` with validated values; the filter runs before KaTeX so KaTeX's own inline sizing is untouched); degrades gracefully outside `SessionDataContext`. Relative `href`/`src` resolve against the base the caller names, never a default: `baseDir` (a directory: links through the path-link handler, images through `/files/image`) or `baseUrl` (a web page, http(s) only: links open the resolved address in a new tab, images load it). With neither, a relative link is plain text and an image keeps its `src`. Bases by origin: the agent's own text (reply, thinking, compaction summary, subagent narration, Task prompt and result, plan) the working directory; a previewed file its folder (`fileFolder`, a relative path joined to the working directory); a skill body the folder on its `Base directory for this skill:` line (`skillBaseDir`); WebFetch its `url` input, threaded `ToolBlock` -> `ToolBlockExpandedContent` (in `contentData`) -> `ToolContentRenderer` as `sourceUrl`; WebSearch, ticket detail and tool-server output none; Bash and TaskOutput output the working directory. `geojson`/`topojson` fences draw as maps beside mermaid (Leaflet, lazy-loaded through `mapLoader.js`; no tile request until the reader opts in), and `stl` fences as 3D models (three.js, lazy-loaded through `stlLoader.js`, one WebGL context per mounted viewer, released on unmount) |
 | `MarkdownPreview` | `features/chat/components/` | Wraps `Markdown` with toggle to raw source; mirrors MermaidDiagram pattern |
 | `SyntaxHighlightedCodeBlock` | `features/chat/.../tool-content-renderer/components/code-block/` | Syntax highlighting with table-row layout; language auto-detected via `utils/languageDetection.js` |
 | `ToolCodeBlock` | `features/chat/.../tool-content-renderer/components/code-block/` | Parses tool-specific formats → `CodeBlock` |
@@ -1290,7 +1303,7 @@ ToolContentRenderer(toolName, details, filePath, outputMode)
 
 **Element-override identity constraint**: `Markdown`'s `components` map is used by react-markdown as each tag's JSX element type, so a new identity per render (e.g. built inline, closing over `sessionDir`) makes React rebuild the subtree instead of updating it — defeating any memoisation inside it (`MarkdownCodeFence`, `MermaidDiagram`). Hoisted to module scope; per-render values reach the overrides through context instead of a closure.
 
-**Top-level block tags**: every top-level element of a rendered message carries `data-md-block` (its ordinal) and `data-md-start`/`data-md-end` (its markdown source offsets), set by the last rehype step. A display-math block loses its position inside `rehype-katex`, so the spans are recorded by ordinal before that step and written after it. The per-part hover strip copies `content.slice(start, end)`; same-message fragment links find their message as the parent of the nearest tagged block.
+**Top-level block tags**: every top-level element of a rendered message carries `data-md-block` (its ordinal) and `data-md-start`/`data-md-end` (its markdown source offsets), set by the last rehype step. A display-math block loses its position inside `rehype-katex`, so the spans are recorded by ordinal before that step and written after it. The per-part hover strip copies `content.slice(start, end)`; same-message fragment links find their message as the parent of the nearest tagged block. The element that directly holds a message's top-level blocks is contained by one rule in `Markdown.css`, `:has(> [data-md-block])` with `contain: paint; isolation: isolate`: the renderer adds no wrapper, because `BlockStrip`, `bookmarkJump`, `fragmentJump` and `Turn.css` all rely on the blocks being direct children of the consumer's own element. Containment makes that element an independent formatting context, so the outer margins of its first and last block, and of whatever nests at those edges down through lists, do not collapse through it. On the unpadded roots whose margins would otherwise absorb them (the plain `.turn-text` of a reply or a ticket's details, and `.nested-text-entry`), `Turn.css` gives the root an empty `::before` and `::after` whose margins are the margin that edge collapses with outside, once added and once taken away: they collapse with the edge blocks' margins and leave only what exceeds it, which is what collapsing through the root would leave. That margin is the root's own, `--text-edge-top` and `--text-edge-bottom` - 10px, 20px above a turn's first block, 0 below a last child, 4px around a nested entry - unless a neighbour's is larger, which `--text-edge-collapse-top` and `--text-edge-collapse-bottom` name: 8px at either end of a Task's Activity; below its last narration when nothing follows it inside the Task, 10px when a block follows the Task and 12px when the Task closes a work panel entry; and 1em above a reply or narration that follows one ending on a rule or display math, or a reply that follows a Task that such a narration closes. A narration's own last block has no margin, so there only a rule or display math closing its last list item counts. A reply's reminder row sits between its last block and the `::after`, so that block keeps its whole margin above the row and the reply after it collapses with its own margin only. Where both facing edges carry more than their boxes cancel, as with a rule deeper in a reply's or a narration's last list, or two narrations meeting at nested lists, code or rules, the two excesses add. The padded roots (previews, plans, skills, tool output, collapsible sections) always held their blocks' margins inside their padding and are left as they are.
 
 ### 5.9 Event Processing Pipeline
 
@@ -1336,6 +1349,7 @@ EVENT -> appendTurns(turns, state, visibleEvents)
 |- compact_boundary -> Use saved compactionStartTurnIndex
 |- user (non-human, during compaction) -> Append to compaction turn
 |- system/error -> Append to current turn, or a new orphan turn if none is open
+|- system/sibling_message -> Append to current turn (it opens none)
 `- interrupt_sent -> Mark turn.interrupted = true when its turn was running
 ```
 
@@ -1361,6 +1375,8 @@ EVENT -> appendTurns(turns, state, visibleEvents)
 | `todosBySubagent` | TodoWrite tracking per subagent | Todos panel |
 | `backgroundLaunches` | top-level Bash results carrying `backgroundTaskId`, async subagent launch results | Waiting state |
 | `lastRestartIndex`, `lastSettledIndex` | log positions of the last `container_restarted`, and of the last result, reported failure or top-level human message | Waiting state |
+
+**A sibling's message.** A `system`/`sibling_message` (Domain Glossary) carries the spawner's current `turn_id`, so it joins the newest turn's assistant bubble between the texts around it; `processEvents` draws it as a `SIBLING_MESSAGE` block (`SiblingMessageBlock`: a dashed box headed `from <name>`, else the first eight characters of the sender's id, read from the event's own `message_data`, never the sessions list), and `predictTurnHeight` prices its lines plus `PX_PER_SIBLING_MESSAGE`. It never reaches a reader of user messages, since every one filters with `isHumanEvent`. At a run's falling edge `useNotifications` asks `finishedRunOrigin(events)` whether the run was started by a sibling - no top-level human event since the previous run's first reply, and a sibling message the last thing before this run's first reply to start one - and whether the run itself asks (a top-level `needs_user`, `AskUserQuestion` or `ExitPlanMode`); a sibling-started run plays no chime and shows no desktop notification unless it asks and the session can need the user (`canNeedUser`, false for a spawned session). The tab-title prefix and the favicon still mark it.
 
 **Waiting on background work.** An agent can end its turn with a background command or subagent still running and pick up again by itself once it finishes, so "no turn running" is not "done". `taskNotifications` records each completion's log position, and `EventsContext` derives two values beside `isResponding`:
 
@@ -1409,6 +1425,8 @@ ToolBlock(toolUse, toolResult, nestedEvents)
 
 **Interactive tools**: AskUserQuestion and ExitPlanMode render forms via InteractiveQuestions. Form submit sets `wasAnsweredLocally`, collapses block, sends answer to the container API. `ChatPanel`'s `handleFormSubmit` reads whatever is sitting in the composer at that moment (`composerHandleRef.current.extractOrEmpty()`) and sends it alongside the answer as a sibling `note` instead of folding it into the answer text - the transcript matches the wrapped answer with an anchored regex no prefix survives (§1.4, "AskUserQuestion via interrupt()"). A one-click reply sends its composer text through the same `handleFormSubmit` and the same sibling `note`; `UserMessageContent` draws a note above a wrapped form answer and below a rule after anything else (`isFormResponse`, `utils/parsers.js`), and the copy text follows the same order. A reply's arrow segment sends nothing: it calls `composerHandleRef.current.replaceInput(label)`, which moves the composer's own text (`drafts.current` while Up/Down navigation shows another item) onto the draft stack, resets navigation and sets the label as the fresh draft.
 
+**Port request card**: `ToolBlock` renders `PortRequestCard` under every call; it draws only for a `port_open` call with an integer port whose result is not a `Not asked:` refusal. Approve and Reject post to the daemon's `/sessions/{id}/ports` (`api/sessions.js::answerPortRequest`), and the daemon - not the card - sends the agent the answer message. The card's outcome comes from that message when it is the turn's `nextUserMessage` (`parsePortAnswer`), so a reload shows the same outcome without buttons; between the click and the message's arrival it shows the outcome the route answered. `parseLocalCommandOutput` renders the answer message's text alone in the user bubble.
+
 **Per-tool formatters** live in `features/chat/components/turn/components/tool-block/utils/toolResultFormatters.js`. Tool routing for the *expanded* content area lives in `ToolContentRenderer` and consults `getToolConfig(toolName).renderer` from `config/toolRegistry.js` (`syntax-or-code`, `code`, `markdown`). `progressLabel(name, input)` gives the short phrase the working line shows while a hidden call is the turn's newest block, reading the same input fields as the tool's header formatter (and LangGraph's `path` and `name` where its tools name them so); `null` keeps `Working`.
 
 **MCP content-block results**: no `mcp__*` name has a `TOOL_REGISTRY` entry, so every MCP call reaches `defaultFormatter`. There the result string may parse into an array of typed objects (`{type: 'text' | 'image' | 'audio' | 'resource_link' | 'resource', ...}`) rather than plain text or a JSON document - this is the MCP server's own content list, forwarded verbatim by the backend and JSON-stringified onto the wire, not something the frontend builds. `defaultFormatter` recognizes the shape and returns it as `contentBlocks` (a third alternative alongside `details`/`jsonData`, carried through `useToolResult` and `ToolBlock` the same way); `ToolBlockExpandedContent` renders it via `McpContentBlocks`, which walks the array in order and dispatches per block's own `type`, falling back to a JSON view for a type it does not recognize. A `text` block routes through `ToolContentRenderer`'s own default branch, so markdown detection, JSON-in-text detection, syntax highlighting and the copy button are the same code the non-MCP default path already uses, not a second implementation.
@@ -1417,7 +1435,7 @@ ToolBlock(toolUse, toolResult, nestedEvents)
 
 **Segment grouping**: `groupBlocks` (`features/chat/components/turn/utils/groupBlocks.js`) splits a turn's blocks into two sides under a routing mode - `buildSegments` runs its positional pass (consecutive Todos runs, otherwise singles) independently over each side's own filtered sequence, so a run can merge across a block that routed to the other side the same way it would merge across one that never existed. `TurnBlockList` renders the `transcript` side through `TurnSegments` (`components/turn/components/TurnSegments.jsx`, the shared per-segment dispatch both columns use); the work panel's own turn entry renders the `panel` side through the same component (§5.6). Only a top-level `BlockType.TOOL` block can land on the panel side - text, thinking and compaction always stay on the transcript side, by construction of the same `belongsToThisSide` predicate both `buildSegments` calls share. A whole-turn gather then appends one trailing `LookupsGroup` segment on the **transcript side only** - a routed-away single was never a candidate for it, so under the work view every read-only call it would have gathered already left at the partition step, one pass earlier. Categorisation (`category: 'read-only' | 'default'`) lives in `config/toolRegistry.js`; `isReadOnlyCall(toolUse, toolResult)` adds a Bash call that changes nothing - measured once its result arrives, read from its command until then - and the gather and `predictTurnHeight.js` both ask it. The gather only sees top-level blocks, so a subagent's nested lookups are excluded by construction. The gather is switchable via `config/features.js::isLookupsGroupingEnabled()`; `predictTurnHeight.js` reads the same switch so predicted and rendered heights agree.
 
-**Hidden tool blocks**: two predicates in `utils/eventProcessing.js` decide whether a call is drawn at all; both hide it while pending or on success and show it once its paired result reports `is_error`. `isHiddenToolSearch(toolUse, toolResult)` hides a tool-schema search (`ToolSearch` / LangGraph's `tool_search`) in every mode. `isHiddenInFocused(toolUse, toolResult, bookmarkedParts, isMarked)` matches a call whose normalised name is in `config/toolRegistry.js::FOCUSED_HIDDEN_TOOLS` (the `read-only` category, `Skill`, `needs_user`, `session_read` and the MCP resource tools of both runtimes), a Bash call `isReadOnlyCall` finds changes nothing, an MCP call carrying `mcp_read_only`, and a call of a tool marked by hand (see **Hide-in-Focused affordance**) - unless the turn's `bookmarkedParts` holds the call's `toolBookmarkKey`; it applies under `TurnRoutingMode.FOCUSED` only. `isToolBlockHidden(mode, toolUse, toolResult, bookmarkedParts = null, isMarked)` combines the two, and every site that must agree calls it with the turn's bookmark tails and the session's marks: `groupBlocks` (top-level, skipped before Todos-run detection so a hidden call neither breaks nor absorbs into a run it interrupts; a hidden block's added-text entries move to the nearest earlier block that stays, or to the turn's own), `processNestedEvents(events, mode, isMarked)` (subagent Activity sections), and `isToolBlockVisible`, through which `hasVisibleBlock`, `getTurnPreview` and `predictTurnHeight` agree. A subagent's calls take no bookmark, so `processNestedEvents` passes none.
+**Hidden tool blocks**: two predicates in `utils/eventProcessing.js` decide whether a call is drawn at all; both hide it while pending or on success and show it once its paired result reports `is_error`. `isHiddenToolSearch(toolUse, toolResult)` hides a tool-schema search (`ToolSearch` / LangGraph's `tool_search`) in every mode. `isHiddenInFocused(toolUse, toolResult, bookmarkedParts, isMarked)` matches a call whose normalised name is in `config/toolRegistry.js::FOCUSED_HIDDEN_TOOLS` (the `read-only` category, `Skill`, `needs_user`, `session_read`, `session_list` and the MCP resource tools of both runtimes), a Bash call `isReadOnlyCall` finds changes nothing, an MCP call carrying `mcp_read_only`, and a call of a tool marked by hand (see **Hide-in-Focused affordance**) - unless the turn's `bookmarkedParts` holds the call's `toolBookmarkKey`; it applies under `TurnRoutingMode.FOCUSED` only. `isToolBlockHidden(mode, toolUse, toolResult, bookmarkedParts = null, isMarked)` combines the two, and every site that must agree calls it with the turn's bookmark tails and the session's marks: `groupBlocks` (top-level, skipped before Todos-run detection so a hidden call neither breaks nor absorbs into a run it interrupts; a hidden block's added-text entries move to the nearest earlier block that stays, or to the turn's own), `processNestedEvents(events, mode, isMarked)` (subagent Activity sections), and `isToolBlockVisible`, through which `hasVisibleBlock`, `getTurnPreview` and `predictTurnHeight` agree. A subagent's calls take no bookmark, so `processNestedEvents` passes none.
 
 `processNestedEvents` emits two discriminated block kinds in source order - `{kind: 'tool', toolUse, toolResult}` for a call (subject to the hidden-ToolSearch predicate above) and `{kind: 'text', event}` for the subagent's own non-empty assistant prose - so a consumer switches on `kind` rather than sniffing for `toolUse`. It still drops the human-marked Task prompt (shown separately by `TaskPrompt`) and the subagent's own non-human user text (its role prompt, not its output); neither ever reaches the Activity section.
 
@@ -1533,11 +1551,11 @@ BookmarksProvider -> FocusedHiddenToolsProvider -> StashProvider -> BottomPanels
 | Alt+2 | Toggle todos panel |
 | Alt+3 | Toggle stash panel |
 | Alt+4 | Toggle tasks panel |
-| Alt+5 | Toggle bookmarks panel |
-| Alt+6 | Toggle boards panel |
-| Alt+7 | Toggle usage panel |
-| Alt+8 | Toggle mcp panel |
-| Alt+9 | Toggle skills panel (`commands`) |
+| Alt+5 | Toggle crons panel |
+| Alt+6 | Toggle bookmarks panel |
+| Alt+7 | Toggle boards panel |
+| Alt+8 | Toggle usage panel |
+| Alt+9 | Toggle mcp panel |
 | Alt+↑/↓ | Previous/next message (transcript) |
 | Alt+Home/End | Jump to top/bottom (transcript) |
 | Alt+PageUp/PageDown | Step the right split slot's own column (terminal or work) |
@@ -1709,7 +1727,7 @@ DaemonService (singleton via domain.current)
 
 **The registry file is a cache, not a source of truth, for what the runtime can answer.** It lives beside the workspace's settings file, in the same directory a running container mounts read-write, so a container can rewrite its own entry. `backend_id`, `status` and `port` are re-derived from the runtime at every `sync_state()`, so a forged value in any of those three fields survives only until the next sync; a forged port that the daemon can still reach only redirects traffic until the next daemon restart, since a running process is unconditionally re-queried rather than trusted past the zero case. `_refresh_port` logs a `warning` (naming the container id, the recorded value and the runtime's value) the first time a non-zero recorded port disagrees with the runtime, and stays quiet afterward since the corrected value now agrees. Session ownership and membership are not answerable by the runtime, so they remain the file's alone - a forged entry there makes the daemon believe a session belongs to a container the runtime agrees exists, and no re-derivation corrects it.
 
-**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction, and that snapshot drives `ContainerService`'s construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService` — so changing any of them needs a daemon restart. Run-arg settings are re-read per container create instead: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so mounts, ports, env vars, network mode, and the nested-containers opt-in follow the current `settings.toml` from the next created session (new / resume / fork) on. A bundle rides the same reload: `create(bundle=...)` resolves `Config.resolve_bundle(workspace.path, name)` in place of the plain load, refusing an undeclared name with a 409 `bundle_not_declared` before anything spawns. Once the container is registered, `create` seeds the bundle's declared starting values - `model`, `permission_mode`, `effort_level` over the pickers' own container routes in the welcome buffer's drain order, each addressed with `?session_id=` and skipped when the runtime's `CAPABILITIES` cannot set it, so a LangGraph workspace makes no call that would 500. `session_prompt` is written onto the new record instead, because its route needs the projection the container first builds on the opening turn; the projection treats a record holding only daemon-owned fields and that seeded prompt as not yet a session and adopts the prompt. Seeding sits outside the spawn cleanup: a failed seed is logged and named on `SessionInfo.failed_seeds`, never raised. It precedes delivery, so opening messages run under the seeded model and permission mode; `POST /sessions/new` appends the bundle's `messages` after the allowlisted link messages - they are host-authored and never link-filtered - and resume and fork seed and deliver nothing. `GET /session-defaults` re-reads the settings per request and exposes `bundle_names` in declaration order plus a per-bundle `declared` map holding only the seeded keys the bundle set, so the frontend can tell unset from set-to-the-default. The name is stamped on the session, and resume and an own-container fork pass the recorded name back, so every later container re-resolves the bundle as the settings then declare it rather than inheriting a snapshot - a bundle deleted since makes the session unresumable. A fork inherits the name through `INHERITED_CONFIG_FIELDS`; a side thread joins its parent's container and spawns nothing; the spawn socket's child takes its resolved caller's bundle. The daemon's loopback publish of the container API port and `[ports]` are emitted together. A fixed host port can be held by one container at a time: `substitute_held_ports` (`claudebox.containers.run`) probes each one and maps a held port to a free one, which `get_container_run_args` publishes instead. `ContainerRuntime.run_container` probes and runs podman under one process-wide lock so two spawns cannot both see a port free; the CLI's `run_container` uses the same function and prints each substitution. A config naming a `[network] mode` podman keeps port mappings for (a named network, `bridge`, `pasta`, `slirp4netns`) replaces the workspace-scoped network, which costs sibling addressing (`http://{container_id}:{port}`) for that session. `host`, `none`, `container:` and `ns:` discard every publish, the daemon's own included, so `_spawn` refuses them before podman runs with a 409 `network_mode_unsupported` carrying the mode and its source (workspace or bundle). Distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`). The `POST /sessions/new` handler follows the same per-request pattern for `links_allow`: it calls `Config.load(workspace.path)` itself rather than reading `WorkspaceService.config`'s snapshot, so an edited allowlist governs the very next link opened, no daemon restart needed.
+**Per-workspace config reload on container create.** `WorkspaceService` loads each workspace's `Config` once at construction, and that snapshot drives `ContainerService`'s construction-time concerns — backend selection (`create_runtime`), `config_dir` / state-file path, and the `agent` / `profile` bound into `SessionService` — so changing any of them needs a daemon restart. Run-arg settings are re-read per container create instead: `ContainerService._start_container` calls `Config.load(workspace.path)` and threads the fresh copy into `ContainerRuntime.run_container(config=...)`, so mounts, ports, env vars, network mode, and the nested-containers opt-in follow the current `settings.toml` from the next created session (new / resume / fork) on. A bundle rides the same reload: `create(bundle=...)` resolves `Config.resolve_bundle(workspace.path, name)` in place of the plain load, refusing an undeclared name with a 409 `bundle_not_declared` before anything spawns. Once the container is registered, `create` seeds the bundle's declared starting values - `model`, `permission_mode`, `effort_level` over the pickers' own container routes in the welcome buffer's drain order, each addressed with `?session_id=` and skipped when the runtime's `CAPABILITIES` cannot set it, so a LangGraph workspace makes no call that would 500. `session_prompt` is written onto the new record instead, because its route needs the projection the container first builds on the opening turn; the projection treats a record holding only daemon-owned fields and that seeded prompt as not yet a session and adopts the prompt. Seeding sits outside the spawn cleanup: a failed seed is logged and named on `SessionInfo.failed_seeds`, never raised. It precedes the response, so a first message the browser sends runs under the seeded model and permission mode; `POST /sessions/new` returns the bundle's `messages` after the allowlisted link messages instead of delivering them - they are host-authored and never link-filtered - and resume and fork seed and deliver nothing. `GET /session-defaults` re-reads the settings per request and exposes `bundle_names` in declaration order plus a per-bundle `declared` map holding only the seeded keys the bundle set, so the frontend can tell unset from set-to-the-default. The name is stamped on the session, and resume and an own-container fork pass the recorded name back, so every later container re-resolves the bundle as the settings then declare it rather than inheriting a snapshot - a bundle deleted since makes the session unresumable. A fork inherits the name through `INHERITED_CONFIG_FIELDS`; a side thread joins its parent's container and spawns nothing; the spawn socket's child takes its resolved caller's bundle. The daemon's loopback publish of the container API port and `[ports]` are emitted together, both on `127.0.0.1` unless a `[ports]` entry names a `bind`. A fixed host port can be held by one container at a time: `substitute_held_ports` (`claudebox.containers.run`) probes each one and maps a held port to a free one, which `get_container_run_args` publishes instead. `ContainerRuntime.run_container` probes and runs podman under one process-wide lock so two spawns cannot both see a port free; the CLI's `run_container` uses the same function and prints each substitution. A config naming a `[network] mode` podman keeps port mappings for (a named network, `bridge`, `pasta`, `slirp4netns`) replaces the workspace-scoped network, which costs sibling addressing (`http://{container_id}:{port}`) for that session. `host`, `none`, `container:` and `ns:` discard every publish, the daemon's own included, so `_spawn` refuses them before podman runs with a 409 `network_mode_unsupported` carrying the mode and its source (workspace or bundle). Distinct from `DaemonService._reload_config()`, which re-reads only the registered-workspace list (`DaemonConfig`). The `POST /sessions/new` handler follows the same per-request pattern for `links_allow`: it calls `Config.load(workspace.path)` itself rather than reading `WorkspaceService.config`'s snapshot, so an edited allowlist governs the very next link opened, no daemon restart needed.
 
 **Fork transcripts are found, not computed.** The CLI names a project folder from its working directory by a rule claudebox does not replicate, and it locates a transcript by session id in any project folder, so the daemon does the same: `fork()` asks `find_sdk_transcript(projects_root, source_id)` for the source's `<id>.jsonl` and copies the transcript, truncates it and copies the `<id>/` session folder (tool results, subagents) beside it in that same folder. `projects_root` follows the backend - `<workspace>/.claudebox/fs/root/.claude/projects` for container backends, the daemon's own Claude folder (`CLAUDE_CONFIG_DIR`, else `~/.claude`, plus `projects/`) for the local backend, whose CLI runs with the daemon's environment. A Claude-runtime source (its record's `runtime`, or the workspace's `agent` when the record names none) with no transcript refuses the fork with a 409 `session_transcript_missing` before any copy, container update or resume post; a LangGraph source has no such transcript and forks as before. No module computes the CLI's folder name. A fork copies the session's own bytes: symlinks are recreated, never dereferenced, and a symlink that is absolute or resolves outside the session is dropped with a warning - the source trees are writable from inside the container, so a followed link would let an agent choose a host file for the daemon to copy; a transcript that is itself such a link is not copied. The container's tool-output reader resolves a session's `tool-results/` the same way, by id under the process's own Claude projects folder.
 
@@ -1721,7 +1739,7 @@ DaemonService (singleton via domain.current)
 
 **Re-parenting a fork whose source is itself a side thread.** `fork()`'s `parent_session_id` keyword overrides the identity-fresh field seeded at (1) above, defaulting to `source_session_id` when omitted so every ordinary fork is unaffected. Promoting a side thread supplies the thread's own `parent_session_id` instead of the thread's id: a side thread is never drawn in the sessions tree (§1.5), so parenting the promoted child to it literally would leave the child present in the fetched list but nested nowhere. The override is a fork *parameter*, resolved in the same seed write that creates `session.json` - never a follow-up `PATCH`, which would leave a window between the fork returning and the correction landing in which the child is un-drawable and the frontend's optimistic list insert (`seedSession`) would show it that way. The caller also stops the source session before calling `fork()`: `fork()` reads the source's session directory from disk, and the same session-scoped stop that closes the event log is what makes that read see a quiescent transcript rather than one still being appended to mid-copy.
 
-**The spawn socket's depth cap is derived, never trusted.** `SpawnListener` (`domain/sessions/spawn.py`) resolves its caller from the connection itself - `SO_PEERCRED` gives the peer's OS pid, `ContainerService.find_by_peer_pid` maps that to a registered `Container` via `ContainerRuntimeProtocol.identify_container_from_pid` (cgroup membership under podman/docker, process-group membership under the local subprocess runtime), and `Container.session_id` gives the caller's session id - never anything the request payload states. That resolved id is also what `SpawnListener` passes as `spawned_from_session_id` when it creates the child, so the field the walk reads and the field the connection verified are the same one; the request's own `caller_session_id` is an unverified claim, logged only if the request is refused, and recorded nowhere. `SessionService.compute_spawn_depth` then walks that session's ancestry: `spawned_from_session_id` hops count toward the depth, `parent_session_id` (fork) hops are free, so a fork of a spawned session inherits its spawner's depth rather than resetting to zero. A caller whose own record cannot be read fails closed (`None`, refused); an ancestor missing further up the chain just ends the walk at the depth reached, since that is a deleted ancestor, not a broken chain. `SpawnListener` refuses at `depth + 1 > MAX_SPAWN_DEPTH` (3, matching `_MAX_SUBAGENT_DEPTH` in `agent_session/langgraph_tools/subagent.py` by magnitude, not by import - the two bound the same failure mode, an agent recursing through agents, in different layers). The module-level `deliver_prompt` helper is the shared prompt-injection primitive both the spawn socket (via `SessionService.create_with_prompt`) and `BoardService.assign()` (via `_send_prompt_sequence`, which calls it directly rather than going through `create_with_prompt`) deliver through - a failed send is logged and reported, never raised, so a created session is never stranded over one failed message. `create_with_prompts` carries which prompts did not arrive on the returned `SessionInfo.failed_prompts`; the spawn socket's response names it as `prompt_delivered`; `BoardService.assign()`'s per-ticket result carries its own `failed_prompts` list, since a shared, non-parallel assignment delivers the same sequence to every ticket in the batch.
+**The spawn socket's depth cap is derived, never trusted.** `SpawnListener` (`domain/sessions/spawn.py`) resolves its caller from the connection itself - `SO_PEERCRED` gives the peer's OS pid, `ContainerService.find_by_peer_pid` maps that to a registered `Container` via `ContainerRuntimeProtocol.identify_container_from_pid` (cgroup membership under podman/docker, process-group membership under the local subprocess runtime), and `Container.session_id` gives the caller's session id - never anything the request payload states. That resolved id is also what `SpawnListener` passes as `spawned_from_session_id` when it creates the child, so the field the walk reads and the field the connection verified are the same one; the request's own `caller_session_id` is an unverified claim, logged only if the request is refused, and recorded nowhere. `SessionService.compute_spawn_depth` then walks that session's ancestry: `spawned_from_session_id` hops count toward the depth, `parent_session_id` (fork) hops are free, so a fork of a spawned session inherits its spawner's depth rather than resetting to zero. A caller whose own record cannot be read fails closed (`None`, refused); an ancestor missing further up the chain just ends the walk at the depth reached, since that is a deleted ancestor, not a broken chain. `SpawnListener` refuses at `depth + 1 > MAX_SPAWN_DEPTH` (3, matching `_MAX_SUBAGENT_DEPTH` in `agent_session/langgraph_tools/subagent.py` by magnitude, not by import - the two bound the same failure mode, an agent recursing through agents, in different layers). The module-level `deliver_prompt` helper is the shared prompt-injection primitive both the spawn socket (via `SessionService.create_with_prompt`) and `BoardService.assign()` (via `_send_prompt_sequence`, which calls it directly rather than going through `create_with_prompt`) deliver through - a failed send is logged and reported, never raised, so a created session is never stranded over one failed message. `create_with_prompts` carries which prompts did not arrive on the returned `SessionInfo.failed_prompts`; the spawn socket's response names it as `prompt_delivered`, which `SiblingSessionClient.spawn` reads as lost unless it is `true`; `BoardService.assign()`'s per-ticket result carries its own `failed_prompts` list, since a shared, non-parallel assignment delivers the same sequence to every ticket in the batch.
 
 ### 6.1.1 Blocking-Path Contract
 
@@ -1752,62 +1770,66 @@ serving.py                # Dev (uvicorn+reload+Vite) vs production (uvicorn+Cad
 constants.py              # health/lifecycle timings, registry filenames (paths live in claudebox.constants)
 
 domain/                    # Daemon domain facade - re-exports service, lifecycle, and singleton
-├── __init__.py
-├── service.py            # DaemonService - top-level singleton
-├── config.py             # DaemonConfig - daemon.json loader (registered workspaces)
-├── errors.py             # DaemonError base class (status_code, error_key)
-├── health.py             # HealthMonitor - periodic workspace/container polling (extends AsyncPoller)
-├── mutation_observer.py  # SessionMutationObserver - polls each container's primary and live member sessions and broadcasts SessionsChangedEvent on changes
-├── _locking.py           # Shared FileLock helper - bounded acquisition with a typed timeout error
-├── broadcaster.py        # Daemon event broadcaster - serializes domain events for SSE subscribers
-├── executors.py          # Blocking-work pools, split by concern (listing/podman/state) so one saturated class cannot starve the others
-├── serving.py            # Serving-capacity probe - can the daemon still get work done, not just schedule callbacks
-├── watchdog.py           # Event-loop lag detection, exposed via /api/daemon/health for host-side supervision
-├── workspaces/
-│   ├── __init__.py
-│   ├── models.py         # RegisteredWorkspace dataclass
-│   └── service.py        # WorkspaceService - per-workspace orchestration (Container/Session/UIState/Board services)
-├── containers/
-│   ├── __init__.py
-│   ├── models.py         # Container, ContainerStatus, ContainerStatusEvent
-│   ├── service.py        # ContainerService - podman lifecycle (backed by ContainerRuntime or LocalRuntime)
-│   ├── proxy.py          # ContainerProxyClient - reverse proxy via httpx
-│   └── errors.py         # ContainerNotFound, ContainerTimeout, ContainerUnavailable
-├── sessions/
-│   ├── __init__.py
-│   ├── models.py         # SessionInfo(SessionMetadata), SessionProgressEvent, SessionsChangedEvent
-│   ├── service.py        # SessionService - session CRUD, fork, container orchestration
-│   ├── schedules.py      # ScheduleIndex - each running session's schedule events, read from its log incrementally
-│   ├── spawn.py          # SpawnListener - per-workspace unix-socket spawn verb
-│   ├── links.py          # resolve_link_messages - link-carried message allowlist matching
-│   └── errors.py         # SessionNotFound, session-specific errors
-├── files/
-│   ├── __init__.py
-│   ├── service.py        # FileService - resolves an image path inside the workspace root or a session's temp dir
-│   └── errors.py         # FileNotFound, InvalidPath, UnsupportedMediaType
-├── ui_state/
-│   ├── __init__.py
-│   ├── models.py         # UIState dataclass (global_state + session_state)
-│   └── service.py        # UIStateService - versioned JSON state with dot-path PATCH operations; each write drops per-session entries idle past the workspace's session lifetime, never a pinned session's
-└── boards/
-    ├── __init__.py
-    ├── models.py         # BoardUpdateEvent - daemon-emitted SSE event.
-    │                     # Re-exports Board, BoardState, BoardSummary, BoardTicket, Swimlane from claudebox.extensions.tickets
-    ├── service.py        # BoardService - board listing/mutation; delegates parsing and YAML I/O to claudebox.extensions.tickets
-    ├── watcher.py        # BoardWatcher - extends MtimeWatcher, polls each board.yaml and the ticket files of boards already served and announces the owning board
-    └── errors.py         # BoardNotFound, BoardParseError, TicketNotFound, SwimlaneNotFound
+|-- __init__.py
+|-- service.py            # DaemonService - top-level singleton
+|-- config.py             # DaemonConfig - daemon.json loader (registered workspaces)
+|-- errors.py             # DaemonError base class (status_code, error_key)
+|-- health.py             # HealthMonitor - periodic workspace/container polling (extends AsyncPoller)
+|-- mutation_observer.py  # SessionMutationObserver - polls each container's primary and live member sessions and broadcasts SessionsChangedEvent on changes
+|-- _locking.py           # Shared FileLock helper - bounded acquisition with a typed timeout error
+|-- broadcaster.py        # Daemon event broadcaster - serializes domain events for SSE subscribers
+|-- executors.py          # Blocking-work pools, split by concern (listing/podman/state) so one saturated class cannot starve the others
+|-- serving.py            # Serving-capacity probe - can the daemon still get work done, not just schedule callbacks
+|-- watchdog.py           # Event-loop lag detection, exposed via /api/daemon/health for host-side supervision
+|-- workspaces/
+|   |-- __init__.py
+|   |-- models.py         # RegisteredWorkspace dataclass
+|   `-- service.py        # WorkspaceService - per-workspace orchestration (Container/Session/UIState/Board services)
+|-- containers/
+|   |-- __init__.py
+|   |-- models.py         # Container, ContainerStatus, ContainerStatusEvent
+|   |-- service.py        # ContainerService - podman lifecycle (backed by ContainerRuntime or LocalRuntime)
+|   |-- proxy.py          # ContainerProxyClient - reverse proxy via httpx
+|   `-- errors.py         # ContainerNotFound, ContainerTimeout, ContainerUnavailable
+|-- sessions/
+|   |-- __init__.py
+|   |-- models.py         # SessionInfo(SessionMetadata), SessionProgressEvent, SessionsChangedEvent
+|   |-- service.py        # SessionService - session CRUD, fork, container orchestration
+|   |-- schedules.py      # ScheduleIndex - each running session's schedule events, read from its log incrementally
+|   |-- spawn.py          # SpawnListener - per-workspace unix-socket spawn verb
+|   |-- links.py          # resolve_link_messages - link-carried message allowlist matching
+|   `-- errors.py         # SessionNotFound, session-specific errors
+|-- ports/
+|   |-- __init__.py
+|   |-- service.py        # PortService - approved ports in ports.json, a loopback relay per approved port while its session runs
+|   `-- errors.py         # PortRequestRefused, PortSessionNotRunning, PortTunnelMissing, PortNotOpen
+|-- files/
+|   |-- __init__.py
+|   |-- service.py        # FileService - resolves an image path inside the workspace root or a session's temp dir
+|   `-- errors.py         # FileNotFound, InvalidPath, UnsupportedMediaType
+|-- ui_state/
+|   |-- __init__.py
+|   |-- models.py         # UIState dataclass (global_state + session_state)
+|   `-- service.py        # UIStateService - versioned JSON state with dot-path PATCH operations; each write drops per-session entries idle past the workspace's session lifetime, never a pinned session's
+`-- boards/
+    |-- __init__.py
+    |-- models.py         # BoardUpdateEvent - daemon-emitted SSE event.
+    |                     # Re-exports Board, BoardState, BoardSummary, BoardTicket, Swimlane from claudebox.extensions.tickets
+    |-- service.py        # BoardService - board listing/mutation; delegates parsing and YAML I/O to claudebox.extensions.tickets
+    |-- watcher.py        # BoardWatcher - extends MtimeWatcher, polls each board.yaml and the ticket files of boards already served and announces the owning board
+    `-- errors.py         # BoardNotFound, BoardParseError, TicketNotFound, SwimlaneNotFound
 
 handlers/                  # Daemon HTTP handler package
-├── __init__.py
-├── daemon.py             # /api/daemon/* - health, stream, workspaces
-├── containers.py         # /api/workspaces/{id}/containers/* - container CRUD + reverse proxy
-├── sessions.py           # /api/workspaces/{id}/sessions/* - session CRUD, resume, fork
-├── workspaces.py         # /api/workspaces/{id}/session-defaults - workspace-level config metadata
-├── ui_state.py           # /api/workspaces/{id}/ui-state - GET/PATCH
-├── boards.py             # /api/workspaces/{id}/boards/* - board listing, detail, ticket and swimlane mutations, state reordering
-├── files.py              # /api/workspaces/{id}/files/image - image bytes for a path a message names
-├── _shared.py            # FastAPI dependency injection (DaemonDep, WorkspaceDep annotations)
-└── _models.py            # Pydantic request/response models
+|-- __init__.py
+|-- daemon.py             # /api/daemon/* - health, stream, workspaces
+|-- containers.py         # /api/workspaces/{id}/containers/* - container CRUD + reverse proxy
+|-- sessions.py           # /api/workspaces/{id}/sessions/* - session CRUD, resume, fork, port answers
+|-- workspaces.py         # /api/workspaces/{id}/session-defaults - workspace-level config metadata
+|-- ui_state.py           # /api/workspaces/{id}/ui-state - GET/PATCH
+|-- boards.py             # /api/workspaces/{id}/boards/* - board listing, detail, ticket and swimlane mutations, state reordering
+|-- files.py              # /api/workspaces/{id}/files/image - image bytes for a path a message names
+|-- _shared.py            # FastAPI dependency injection (DaemonDep, WorkspaceDep annotations)
+`-- _models.py            # Pydantic request/response models
 ```
 
 ### 6.3 API Endpoints
@@ -1825,7 +1847,7 @@ handlers/                  # Daemon HTTP handler package
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/workspaces` | GET | List registered workspaces with container counts |
-| `/api/workspaces` | POST | Register a directory as a workspace, writing its `.workspace` marker; answers the entry plus `already_registered`, or 400 with `error` and `message` for a path that is relative, missing, a file, or cannot be marked |
+| `/api/workspaces` | POST | Register a directory as a workspace, writing its `.workspace` marker; answers the entry plus `already_registered`, or 400 with `error` and `message` for a path that is relative, missing, a file, or cannot be marked, and for a directory that holds the home directory or Claudebox's own files and has no marker yet (`workspace_path_needs_cli`) |
 | `/api/workspaces/{id}` | DELETE | Deregister a workspace |
 
 **Workspace-scoped** (`/api/workspaces/{workspace_id}/...`):
@@ -1837,13 +1859,14 @@ handlers/                  # Daemon HTTP handler package
 | `/containers/{id}/stop` | POST | Stop a container |
 | `/containers/{id}/kill` | POST | Force-kill a container |
 | `/containers/{id}` | DELETE | Stop and remove a container |
-| `/containers/{id}/{path}` | * | Reverse-proxy to container backend |
+| `/containers/{id}/{path}` | * | Reverse-proxy to container backend; headers cross in both directions only through an allowlist and every response is sandboxed (Container-proxy header policy) |
 | `/sessions` | GET | List all sessions from workspace disk |
 | `/sessions/schedules` | GET | Schedule events of every running session that has scheduled a prompt — `{sessions: [{session_id, responding_since, events}]}`, read incrementally per log |
-| `/sessions/new` | POST | Spawn container and start new session — returns full `SessionInfo` (workspace, session_dir, model, effort_level defaults populated) plus `undelivered_messages`; an optional body message list is checked against `links_allow` before delivery |
+| `/sessions/new` | POST | Spawn container and start new session — returns full `SessionInfo` (workspace, session_dir, model, effort_level defaults populated) plus `undelivered_messages` (the carried messages `links_allow` blocked, all or nothing) and `bundle_messages` (the bundle's `messages`); it delivers no message itself - the browser sends the first and queues the rest |
 | `/sessions/{id}` | PATCH | Update session metadata |
 | `/sessions/{id}/resume` | POST | Resolve or spawn container, resume session — returns full `SessionInfo` (reads on-disk metadata via `_build_session_info` and overlays defaults) |
 | `/sessions/{id}/fork` | POST | Fork session at turn, optionally reusing the source's container — returns full `SessionInfo`. With `reuse_container=true`, transfers `Container.session_id` to the new session so the running indicator moves to the child. |
+| `/sessions/{id}/ports` | POST | Answer the port request a session's agent made - `{port, approve}`. Approving opens the port (`{port, host_port, address}`), rejecting answers `{port, state: "rejected"}`; either way the agent receives the answer as the user's message. 409 `port_request_refused` for a spawned session or a reply thread, `port_session_not_running` with no running container, `port_tunnel_missing` for a container created before the tunnel |
 | `/files/image` | GET | Query `path`, optional `session`. Image bytes of a file inside the workspace root, or, for a path under /tmp with session given, inside that session's temp directory. path is joined to its root and resolved with symlinks followed; outside the root, missing, or not a regular file is 404 file_not_found; empty, NUL-bearing, absolute other than /tmp/..., or /tmp/... without session is 400 invalid_path; an unknown session is 404 file_not_found; extension outside the image allowlist is 415 unsupported_media_type. Served with no-cache plus validators, nosniff, and a sandboxing CSP |
 | `/ui-state` | GET | Retrieve UI state (global + session) |
 | `/ui-state` | PATCH | Apply patch operations to UI state |
@@ -1871,9 +1894,24 @@ Board change events are broadcast on the daemon-level `/api/daemon/stream` (as `
 
 Both callers follow this: the frontend (`LogsStreamContext`, `SSEConnectionManager`) and the CLI (`cmd_logs._container_logs_url`). Do not "fix" the omission by injecting `/api` inside the proxy — that would break every other proxied path.
 
+#### Container-proxy header policy
+
+The proxy is the one place container bytes reach the app's origin, and the container is the agent's own process, so both directions are allowlists and the daemon decides what the browser may do with what it relays. Request side: only `Accept` and `Content-Type` reach the container - never the browser's `Cookie`, `Authorization` (the daemon's credential), `Origin` or `Referer`. The proxy's own client stores no cookie, so a `Set-Cookie` one container sends never comes back to it or reaches another. Response side: only `Content-Type`, `Cache-Control`, `ETag`, `Last-Modified` and `X-Accel-Buffering` come back, plus a `Content-Disposition` whose type is `attachment`; `Set-Cookie` and `Location` are among the headers dropped. Every response carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, set on the response the proxy builds, so any middleware added later may add headers beside them and must not replace them. A response whose media type is not `application/json`, `text/event-stream`, `image/png`, `image/jpeg`, `image/gif` or `image/webp` - an absent, repeated or comma-joined type included - is a download: `Content-Disposition: attachment`, the container's own when it names a file. The container API's attachment route states the same for its own files, so the container port is safe to open directly; the daemon's `/files/image` keeps its own header set.
+
 #### Spawn socket (not HTTP)
 
-One unix-socket listener per workspace, not a route on the table above — `SpawnListener` binds at `{config_dir}/sessions/spawn.sock` on the host, visible inside every container of that workspace at `/root/.claudebox/sessions/spawn.sock` (the same mount §2.4's Sessions row documents). Request, exactly three keys, unknown keys refused rather than ignored: `{"verb": "spawn", "caller_session_id": "<uuid>", "prompt": "<text>"}`. Response: `{"session_id": "<uuid>", "container_id": "<uuid>"}` — enough to address the new session over the container network (`http://{container_id}:{WEB_CONTAINER_PORT}`), never a host port or a filesystem path outside the sessions tree. No mount, run-arg, image, or privilege parameter exists in this vocabulary; the handler calls `SessionService.create_with_prompt()`, which forwards nothing from the request into container creation.
+One unix-socket listener per workspace, not a route on the table above — `SpawnListener` binds at `{config_dir}/sessions/spawn.sock` on the host, visible inside every container of that workspace at `/root/.claudebox/sessions/spawn.sock` (the same mount §2.4's Sessions row documents). One request line and one reply line per connection. Each verb is a closed key set - every key required, unknown keys refused rather than ignored - checked in order: `verb` names a verb (`unknown_verb`), the key set matches it exactly (`unknown_fields`), `caller_session_id` is a non-blank string, then the verb's values:
+
+| Verb | Request keys beyond `verb`, `caller_session_id` | Reply |
+|------|------|------|
+| `spawn` | `prompt`, `name`, `model`, `effort` (the last three may be null, never left out) | `{"session_id", "container_id", "prompt_delivered", "unapplied"}` |
+| `stop` | `session_id` | `{"session_id", "state": "stopped"}` |
+| `resume` | `session_id` | `{"session_id", "container_id", "resumed"}` |
+| `list` | - | `{"sessions": [{"session_id", "name", "state"}]}` |
+| `turn_ended` | `delivery_id`, `outcome` (`ended`, `asking`, `interrupted`, `failed`), `text` | `{"delivered": true}`, `{"held": true}` or `{"dropped": true}` |
+| `port_close` | `port` (an integer from 1 to 65535, else `invalid_port`) | `{"port", "state": "closed"}`; `port_not_open` for a port the caller never opened |
+
+A refusal is `{"error": "<key>"}`; `not_own_sibling` and `hosts_your_thread` also name the session they are about, `spawn_depth_exceeded` the cap and depth, and no other refusal carries context. A spawn reply's `container_id` is enough to address the new session over the container network (`http://{container_id}:{WEB_CONTAINER_PORT}`), never a host port or a filesystem path outside the sessions tree; `unapplied` names an explicit `model`/`effort` the runtime could not set. No mount, run-arg, image, bundle, runtime or privilege parameter exists in this vocabulary: `spawn` calls `SessionService.create_with_prompt()` with the caller's recorded bundle and the validated name, model and effort, and forwards nothing else into container creation. `stop`, `resume` and `list` act only on sessions whose recorded `spawned_from_session_id` is the resolved caller: a stop takes the target and every session below it, deepest first, each under its session lock and marked as stopped by its spawner, so the turn it cuts short is answered `dropped` rather than delivered; it refuses before stopping anything while a live reply thread shares a container in that tree. `turn_ended` hands a spawned caller's turn end to its spawner's current container (`api/sibling-message`), or, while the spawner has no container, appends it to `sibling-messages.pending.jsonl` in the spawner's session directory, which the spawner's `SessionService` queries, in order, ahead of the next message it receives. The listener reads lines up to `SPAWN_SOCKET_LINE_LIMIT` (16 MiB), since a turn's whole text rides one line. A container started before this vocabulary sends the three-key spawn and is refused `unknown_fields` until its session runs in a new container.
 
 The whole sessions tree is mounted into every container, so the socket path scopes the *workspace*, never the caller — any container in the workspace can reach it. Since the path cannot identify the caller, the recursion cap identifies it from the connection instead: `SO_PEERCRED` gives the OS pid, and the daemon walks connection → container → session → ancestry to compute a depth it trusts. The request's own `caller_session_id` never becomes that ancestry - it names no field the walk reads (see §6.1's spawn-depth paragraph).
 
@@ -1925,6 +1963,17 @@ RestartSec=8
 
 **Delegate=yes** — gives the service its own cgroup subtree. Podman can create proper sub-cgroups for container processes, cleanly separating them from the daemon process.
 
+**Sandboxing** — only the watchdog unit is sandboxed; the daemon and maintenance units set none of the options below on purpose, and `tests/distribution/test_systemd_units.py` fails if one appears there, naming this paragraph.
+
+| Option | Daemon | Maintenance | Watchdog |
+|--------|--------|-------------|----------|
+| `NoNewPrivileges=yes` | No | No | Yes |
+| `PrivateTmp=yes` | No | No | Yes |
+| `ProtectSystem=strict` (and `full`, `yes`) | No | No | Yes |
+| `ProtectHome=read-only` (and `yes`) | No | No | Yes |
+
+The watchdog script runs `curl`, `grep`, `sleep` and `systemctl --user restart`: none relies on a setuid helper or file capabilities, it writes no file (bash's here-string temporary lands in the private `/tmp`), and the user manager's socket under `/run/user/%U` stays connectable on a read-only mount. The daemon and the maintenance unit run rootless podman, and each option breaks it or leaks into every container: `NoNewPrivileges` is inherited by podman, `conmon` and every container process - it would put `no-new-privileges` on every session, nested mode included, and it disables the setuid or file-capability `newuidmap`/`newgidmap` podman maps subordinate ids with; `PrivateTmp`, `ProtectSystem` and `ProtectHome` each need a mount namespace, which an unprivileged user manager creates only inside a user namespace of the unit's own, where podman can neither join the pause process's namespaces nor map more ids than that namespace holds, and a first podman call from inside it would make the unit's private view the mount view of every podman command the user runs afterwards (the maintenance unit's build context in `/tmp/claudebox/build` would also vanish from a podman that joined another mount namespace); `ProtectHome` additionally covers `/run/user/%U`, where podman writes its runroot and `pause.pid`, and the daemon writes `~/.claudebox`, its virtualenv, uv's cache, Caddy's state, podman's storage and every registered workspace and `[mounts]` source, which no `ReadWritePaths=` written at install time can name. The seccomp-based options (`SystemCallFilter`, `RestrictNamespaces`, `RestrictSUIDSGID`, `MemoryDenyWriteExecute` and the rest) carry the no-new-privileges bit with them under a user manager and are inherited by every container - `MemoryDenyWriteExecute` would stop the agent's Node runtime, `RestrictSUIDSGID` `apt` inside a session; `ProtectControlGroups` makes the cgroupfs `Delegate=yes` needs read-only. Caddy, the one listener beyond loopback, runs inside the daemon unit with its authority. What would unlock the daemon's options: running the engine behind its own user socket unit with the daemon as a client, which first has to settle that `containers/backend.py` executes the engine rather than calling a socket, that the build lock reaches the build process as an inherited descriptor, and that `KillMode=process` relies on the helpers living in the daemon's cgroup. A rootful engine (`backend = "docker"`) has none of these constraints and may take a drop-in of its own; none ships, since the unit is shared. On a host where a user unit cannot be sandboxed at all (`systemd-run --user -p ProtectSystem=strict ... /bin/true` fails), `install_watchdog_timer` links `~/.config/systemd/user/claudebox-watchdog.service.d/unsandboxed.conf` turning the four off and warns, so the watchdog still runs; a later install on a host that can removes the drop-in.
+
 **Process lifecycle** — the launcher script (`bin/claudebox_daemon.sh`) runs `uv run --project $ROOT_DIR $ROOT_DIR/src/host_daemon.py` as a backgrounded child and traps SIGTERM/SIGINT via a `cleanup()` function. On signal, the function recursively walks the child process tree via `pgrep -P` and sends SIGTERM to each descendant (depth-first), then polls every 0.1s for the `uv` child to exit, up to a 5-second grace, and SIGKILLs whatever of the tree is left only if the grace runs out - so a stop takes as long as the daemon's own shutdown, and the budget stays under `TimeoutStopSec=15`. Waiting on the `uv` pid is enough: `uv run` forwards SIGTERM to its child and exits only after it, and the daemon's `atexit` stops Caddy before the Python process ends. The KILL pass exists because uvicorn's graceful shutdown plus Caddy's atexit termination can exceed `TimeoutStopSec` on a busy daemon, which would make systemd SIGKILL only the wrapper (because of `KillMode=process`) and leave the children as orphans. The recursive tree walk (rather than process-group signalling) is required because Caddy and the dev-mode Vite run in sessions of their own (`start_new_session=True`), outside the wrapper's process group.
 
 **Crash vs. clean-shutdown exit contract** — the wrapper exits 0 only when shutdown was signal-initiated: the `cleanup()` trap sets a flag, and the main path exits 0 when that flag is set, otherwise it propagates the child's exit status (captured via `wait … || status=$?` to stay clear of `set -e`). Combined with `Restart=always`, a crash (e.g. a startup port-bind race) surfaces as a non-zero exit that systemd restarts after `RestartSec` and records in `systemctl --user status`, while an intentional `systemctl stop`/`restart` exits 0 and is a systemd-initiated stop, so no spurious restart loop occurs. `Restart=always` (rather than `on-failure`) recovers from any unexpected exit — appropriate for an always-on daemon.
@@ -1937,7 +1986,7 @@ RestartSec=8
 
 Catches a stalled event loop (lock/synchronous-filesystem stalls), not a loop still running with a request parked on an await that never returns - that needs a liveness signal from the pollers themselves (`HealthMonitor`, `SessionMutationObserver`), which they do not emit.
 
-**Maintenance timer** — `claudebox-maintenance.service` (oneshot) re-runs `lib/bin/install.sh` to refresh the local installation: it refreshes the library — re-pointing the symlink when `~/.claudebox/lib` is a local checkout, fetching and hard-resetting to the remote HEAD when it is a clone (`install_lib_remote`'s `update_lib_in_place`), discarding local edits and untracked files and naming them first, while ignored build products - the virtualenv the running daemon executes from and the built frontend it serves - stay for `install_cli` and `build_frontend` to refresh in place, so the old UI keeps serving until the restart and a failed later step leaves it working — rebuilds the agent layer of the container image (`claudebox build --layer agent`), cleans stale session/temp directories in every workspace registered in `daemon.json`, the home directory's own `.claudebox`, and the workspace prune runs in when unregistered (`cleanup_stale_dirs`: a session directory's age is its record's `updated_at` - falling back to the newest mtime of the directory and the files directly in it (a hook's log line, a `claudebox run` id) when the record is missing or unreadable - never the creation timestamp in its name, and one set of checks gates both actions - removing the session past the workspace's `[prune] session_days` (default `SESSION_MAX_AGE`) and emptying its `tmp/`, the folder kept, past `[prune] tmp_days` (default 14): a session held by a running container - a side conversation included, live or not, and the session of a `claudebox run` container - is skipped, and so is a session pinned in the workspace's `ui-state.json` (`global.pinnedSessions`), read directly from the file; an unreadable pins file, or running sessions that cannot be determined, stop the session sweep for that workspace and fail the run; temp build/run directories keep the creation-timestamp rule, since nothing ever updates them afterward), and prunes build leftovers and dangling images. A clone git itself cannot fetch from falls back to `stage_and_swap_lib`: cloned fresh into a sibling directory, given the old tree's `.venv` and `src/claudebox_frontend/dist`, and swapped in only once that clone succeeds, so the previous installation - and the entry-point and systemd-unit symlinks into it - are never removed before a working replacement exists on disk; a failure at both stages leaves the existing installation untouched and exits non-zero. `claudebox-maintenance.timer` schedules this `OnCalendar=daily` with `RandomizedDelaySec=1h` and `Persistent=true` so missed runs catch up after the host wakes from sleep.
+**Maintenance timer** — `claudebox-maintenance.service` (oneshot) re-runs `lib/bin/install.sh` to refresh the local installation: it refreshes the library — re-pointing the symlink when `~/.claudebox/lib` is a local checkout, fetching and hard-resetting to the remote HEAD when it is a clone (`install_lib_remote`'s `update_lib_in_place`), discarding local edits and untracked files and naming them first, while ignored build products - the virtualenv the running daemon executes from and the built frontend it serves - stay for `install_cli` and `build_frontend` to refresh in place, so the old UI keeps serving until the restart and a failed later step leaves it working — fetches Caddy at the host manifest's version and checks its digest, does the same for uv's and nvm's installers when either tool is missing, and installs Node at its exact version through nvm - replacing `~/.claudebox/bin/caddy` when its version differs from the pin - rebuilds the agent layer of the container image (`claudebox build --layer agent`), cleans stale session/temp directories in every workspace registered in `daemon.json`, the home directory's own `.claudebox`, and the workspace prune runs in when unregistered (`cleanup_stale_dirs`: a session directory's age is its record's `updated_at` - falling back to the newest mtime of the directory and the files directly in it (a hook's log line, a `claudebox run` id) when the record is missing or unreadable - never the creation timestamp in its name, and one set of checks gates both actions - removing the session past the workspace's `[prune] session_days` (default `SESSION_MAX_AGE`) and emptying its `tmp/`, the folder kept, past `[prune] tmp_days` (default 14): a session held by a running container - a side conversation included, live or not, and the session of a `claudebox run` container - is skipped, and so is a session pinned in the workspace's `ui-state.json` (`global.pinnedSessions`), read directly from the file; an unreadable pins file, or running sessions that cannot be determined, stop the session sweep for that workspace and fail the run; temp build/run directories keep the creation-timestamp rule, since nothing ever updates them afterward), and prunes build leftovers and dangling images. A clone git itself cannot fetch from falls back to `stage_and_swap_lib`: cloned fresh into a sibling directory, given the old tree's `.venv` and `src/claudebox_frontend/dist`, and swapped in only once that clone succeeds, so the previous installation - and the entry-point and systemd-unit symlinks into it - are never removed before a working replacement exists on disk; a failure at both stages leaves the existing installation untouched and exits non-zero. `claudebox-maintenance.timer` schedules this `OnCalendar=daily` with `RandomizedDelaySec=1h` and `Persistent=true` so missed runs catch up after the host wakes from sleep.
 
 **Watchdog timer** — `claudebox-watchdog.service` (oneshot) runs `bin/claudebox_watchdog.sh`, the poll-and-restart script behind Health-polling supervision above. `claudebox-watchdog.timer` schedules it `OnBootSec=30s` / `OnUnitActiveSec=30s`.
 
@@ -1951,196 +2000,207 @@ Two pytest trees from the repository root: `tests/` for unit tests (mirrors sour
 
 ```
 tests/
-├── conftest.py                               # anyio_backend (asyncio), tmp_workspace, isolate_home fixtures
-├── fake_podman.py                            # Podman's port and network semantics for spawn tests
-├── test_pytest_socket_policy.py              # Sentinel - pytest-socket deny-by-default is active
-│
-├── claudebox/
-│   ├── agent_session/
-│   │   ├── langgraph_tools/
-│   │   │   ├── conftest.py                   # Shared fixtures for this tree
-│   │   │   ├── test_filesystem.py            # read_file, write_file, edit_file
-│   │   │   ├── test_mcp.py                   # list_mcp_resources + read_mcp_resource defensive routing
-│   │   │   ├── test_meta.py                  # tool_search keyword discovery over ctx.tool_catalog
-│   │   │   ├── test_middleware.py            # ClaudeboxToolHookMiddleware
-│   │   │   ├── test_needs_user.py            # needs_user @tool binding
-│   │   │   ├── test_notebook.py              # notebook_edit
-│   │   │   ├── test_question.py              # ask_user_question backed by interrupt()
-│   │   │   ├── test_search.py                # glob, grep
-│   │   │   ├── test_shell.py                 # bash
-│   │   │   ├── test_sibling.py                # session_spawn/session_ask/session_read @tool bindings
-│   │   │   ├── test_skill.py                 # workspace skill lookup + body return + ARGUMENTS appending
-│   │   │   ├── test_subagent.py              # task() sub-agent dispatcher + agent registry
-│   │   │   ├── test_task_mgmt.py             # 6 wrappers over TaskService
-│   │   │   └── test_web.py                   # web_fetch, web_search
-│   │   ├── orchestration/
-│   │   │   ├── _helpers.py                   # Shared helpers for this tree
-│   │   │   ├── test_async_monitor.py         # AsyncTaskMonitor
-│   │   │   ├── test_async_tasks.py           # background task lifecycle
-│   │   │   ├── test_attachments.py           # path resolution and MIME inference
-│   │   │   ├── test_bash_layout.py           # Bash command layout
-│   │   │   ├── test_bash_read_only.py        # Bash read-only mark
-│   │   │   ├── test_conversion.py            # message-to-event pipeline
-│   │   │   ├── test_models.py                # event and session data models
-│   │   │   ├── test_persistence.py           # event log I/O
-│   │   │   ├── test_pipeline.py              # result-only turn and echo suppression
-│   │   │   ├── test_pipeline_init.py         # initialization and event processing
-│   │   │   ├── test_pipeline_inject.py       # event injection and buffering
-│   │   │   ├── test_projection.py            # session summary accumulator
-│   │   │   ├── test_projection_runtime_coupling.py # Skill metadata comes from the active runtime, not ClaudeRuntime
-│   │   │   ├── test_session.py               # content block building and internal commands
-│   │   │   ├── test_session_internals.py     # dispose, projection resolution, state tracking
-│   │   │   ├── test_session_lifecycle.py     # send and stop lifecycle
-│   │   │   ├── test_tool_output.py           # file retrieval
-│   │   │   ├── test_trace.py                 # syscall supervisor and its client: filter, change table, attribution
-│   │   │   └── test_turn_tracker.py          # turn ID state machine
-│   │   ├── test_capability_transport.py      # Session.get_capabilities, REST endpoint, session-info envelope, SSE init enrichment
-│   │   ├── test_catalogs.py                  # ClaudeRuntime catalog accessors + Skill parser
-│   │   ├── test_config_builder.py            # config -> SDK options round-trip
-│   │   ├── test_event_translation.py         # SDK message -> typed AgentEvent
-│   │   ├── test_events_typed_shapes.py       # Typed init/usage shapes - no escape-hatch dicts
-│   │   ├── test_events_validation.py         # Typed AgentEvent payloads fail loud on contract violations
-│   │   ├── test_factory.py                   # make_agent_session factory + UnknownRuntime dispatch
-│   │   ├── test_hook_adaptation.py           # ClaudeRuntime hook adaptation + delta detection
-│   │   ├── test_profile_hooks.py             # Profile session-start hook resolution and execution
-│   │   ├── test_protocol.py                  # Structural Protocol satisfaction for AgentSession
-│   │   ├── test_providers.py                 # ProviderSpec parsing, install_hint, strategy dispatch, lookup helpers
-│   │   ├── test_rate_limits.py                # Per-workspace plan-limit store
-│   │   ├── test_registry.py                  # Resolver maps workspace `agent` strings to runtime classes
-│   │   ├── test_runtime_claude.py            # ClaudeRuntime composition adapter
-│   │   ├── test_runtime_langgraph_catalogs.py # Catalog methods - models via Ollama, context-window, defaults
-│   │   ├── test_runtime_langgraph_checkpointer.py # Persistent checkpointer - SqliteSaver per session_dir
-│   │   ├── test_runtime_langgraph_failures.py # Failure modes - Ollama unreachable, model not pulled, tool error, compaction
-│   │   ├── test_runtime_langgraph_hooks.py   # Hook synthesis - on_session_start at connect, compaction start and boundary
-│   │   ├── test_runtime_langgraph_interrupt.py # Interrupt / resume routing
-│   │   ├── test_runtime_langgraph_lifecycle.py # Lifecycle + event assembly + usage telemetry, against a stub model
-│   │   ├── test_runtime_langgraph_migration.py # events_to_messages (pure) and the Claude->LangGraph migration seed path
-│   │   ├── test_runtime_langgraph_providers.py # Universal-provider dispatch
-│   │   ├── test_runtime_langgraph_real_graph.py # Driven through a real compiled graph
-│   │   ├── test_runtime_langgraph_session_stop.py # Stop through the real session, event pipeline and runtime
-│   │   ├── test_runtime_langgraph_skeleton.py # Capability matrix, Protocol stubs, factory dispatch
-│   │   ├── test_runtime_langgraph_slash_routing.py # `_resolve_slash_skill`/`_tag_slash_command` - LangGraph's take on native slash handling
-│   │   ├── test_runtime_langgraph_tool_binding.py # Binds langgraph_tools/ factories into the compiled graph
-│   │   ├── test_sibling_sessions.py          # SiblingSessionClient spawn/ask/read against a fake transport
-│   │   ├── test_skills.py                    # Shared skill walker - walk_skills, parse helpers, body extraction, source lookup
-│   │   ├── test_tasks_service.py             # TaskService - in-memory store + event-replay rebuild
-│   │   └── test_titles.py                    # Session-title prompt framing and reply cleanup
-│   ├── containers/
-│   │   ├── test_backend.py                   # subprocess abstraction
-│   │   ├── test_build.py                     # build argument generation
-│   │   ├── test_local.py                     # LocalRuntime subprocess spawn
-│   │   ├── test_run.py                       # container CLI argument generation
-│   │   └── test_runtime.py                   # facade behavior over backend
-│   ├── core/
-│   │   ├── test_broadcaster.py               # async pub-sub with replay support
-│   │   ├── test_concurrency.py               # sync/async bridging and call collapsing
-│   │   ├── test_file_cache.py                # stamp-keyed file cache and settle window
-│   │   ├── test_fs.py                        # filesystem utilities
-│   │   ├── test_http.py                      # HTTP proxy client
-│   │   ├── test_io.py                        # file I/O utilities
-│   │   ├── test_log_rendering.py             # ISO timestamp + shape normalization + file-format guard
-│   │   ├── test_logging.py                   # rotating file handler in core logging module
-│   │   ├── test_polling.py                   # async polling primitives - AsyncPoller and MtimeWatcher
-│   │   ├── test_serialization.py             # JSON encoding and deserialization
-│   │   ├── test_structures.py                # DataClass mixin and deep merge
-│   │   └── test_time.py                      # timestamp generation and parsing
-│   ├── extensions/
-│   │   └── tickets/
-│   │       └── test_parser.py                # board YAML parser
-│   ├── session/
-│   │   ├── test_context.py                   # session context and path derivation
-│   │   ├── test_metadata.py                  # shared session metadata model
-│   │   └── test_repository.py                # shared session disk I/O
-│   ├── user/
-│   │   ├── test_hook.py                      # hook decorator and request/response types
-│   │   └── test_statusline.py                # statusline decorator and request type
-│   ├── test_cleanup.py                       # stale directory removal
-│   ├── test_config.py                        # configuration loading and merging
-│   ├── test_config_langgraph_mcp.py          # `[langgraph.mcp.<name>]` blocks -> Config.langgraph_mcp_servers
-│   ├── test_constants.py                     # env-overridable accessors
-│   ├── test_env.py                           # runtime environment checks
-│   ├── test_install.py                       # info formatting (install.format_install_info)
-│   ├── test_paths.py                         # workspace discovery and session naming
-│   ├── test_profile_sample.py                # every etc/profile.sample/ command and skill is discovered
-│   ├── test_settings_sample_drift.py         # settings.sample.toml <-> Config field drift, both directions
-│   ├── test_temp.py                          # session-scoped /tmp symlink management
-│   └── test_workspace.py                     # workspace context and session access
-│
-├── claudebox_cli/
-│   ├── test_completers.py                    # argcomplete completers - must never raise out of the completion subprocess
-│   ├── test_containers_targets.py            # ``claudebox containers`` action + target parsing
-│   ├── test_dispatch.py                      # Verb-mode parser dispatches each verb to its handler
-│   ├── test_doctor.py                        # ``doctor`` environment checks
-│   ├── test_help_snapshots.py                # Inline-snapshot --help output for every verb, stubs included
-│   ├── test_logs_targets.py                  # ``claudebox logs`` target + flag parsing
-│   ├── test_prune_errors.py                  # prune failure reporting - the runtime's own error must reach the user
-│   ├── test_unknown_verb.py                  # Bare, unknown-verb and legacy flag-mode invocations exit 2
-│   ├── test_update_flock.py                  # Anchor for SPEC ``cli:update:concurrent-blocked``
-│   └── test_workspaces_targets.py            # ``claudebox workspaces`` action + arg parsing
-│
-├── claudebox_container_api/
-│   ├── files/
-│   │   ├── test_file_service.py              # orchestrator facade
-│   │   └── test_path_resolver.py             # path resolution and file indexing
-│   ├── test_app.py                           # App factory - host binding forwarded to http_serve
-│   ├── test_handlers_chat.py                 # Chat handlers - stream readiness gating
-│   ├── test_handlers_sessions.py             # Sessions handler - /current response shape
-│   ├── test_logging.py                       # LogBroadcaster file-based replay
-│   └── test_session.py                       # Session lifespan - log-routing callback wiring
-│
-├── claudebox_daemon/
-│   ├── domain/
-│   │   ├── boards/
-│   │   │   ├── test_service.py               # BoardService
-│   │   │   └── test_watcher.py               # BoardWatcher announces the owning board of a changed file
-│   │   ├── containers/
-│   │   │   ├── test_models.py                # container data models
-│   │   │   ├── test_proxy.py                 # ContainerProxyClient timeout/pool bounds
-│   │   │   └── test_service.py               # container lifecycle
-│   │   ├── sessions/
-│   │   │   ├── test_service.py               # session lifecycle
-│   │   │   ├── test_schedules.py             # ScheduleIndex - kept events, the responding fold, incremental reads
-│   │   │   ├── test_spawn.py                 # SpawnListener - request validation, depth cap, socket lifecycle
-│   │   │   └── test_links.py                 # resolve_link_messages - allowlist matching
-│   │   ├── files/
-│   │   │   └── test_service.py               # FileService - media type per extension, non-images refused
-│   │   ├── ui_state/
-│   │   │   └── test_service.py               # persistent UI state store
-│   │   ├── workspaces/
-│   │   │   └── test_service.py               # workspace management
-│   │   ├── test_broadcaster.py               # daemon event delivery to subscribers
-│   │   ├── test_config.py                    # DaemonConfig persistence and workspace management
-│   │   ├── test_executors.py                 # per-concern pools and admission tracking
-│   │   ├── test_health.py                    # container health monitoring
-│   │   ├── test_mutation_observer.py         # session mutation detection
-│   │   ├── test_service.py                   # daemon service orchestration
-│   │   ├── test_serving.py                   # health must track serving capacity, not just lag
-│   │   └── test_watchdog.py                  # event-loop lag detection
-│   ├── handlers/
-│   │   ├── test_boards.py                    # HTTP adapter responses
-│   │   ├── test_daemon.py                    # HTTP adapter responses
-│   │   ├── test_files.py                     # HTTP adapter responses
-│   │   ├── test_sessions.py                  # HTTP adapter responses
-│   │   ├── test_workspaces.py                # HTTP adapter responses
-│   │   └── test_workspaces_runtime_agnostic.py # Defaults endpoint keys off `agent`: LangGraph its own matrix, unknown agents 422
-│   ├── test_containers_lifecycle.py          # service stop/kill/remove + DELETE composite + POST routes
-│   ├── test_serving.py                       # port calculation
-│   └── test_workspaces_routes.py             # CRUD routes - GET / POST / DELETE /api/workspaces
-│
-├── distribution/
-│   ├── conftest.py                           # Sources the shipped install.sh minus its entry-point guard
-│   ├── test_install_backend_resolution.py    # install.sh's backend default/persist step, and how an abort reports
-│   ├── test_install_lib_remote.py            # install.sh's fetch-and-reset update, staged-clone fallback, and the build products both keep
-│   ├── test_install_nvm.py                   # install.sh's nvm fetch URL and its detection of an existing install
-│   ├── test_install_routing.py               # install.sh's remote-vs-local branch, per execution context
-│   └── test_optional_dependencies.py         # Drift-guards pyproject extras against _providers.PROVIDER_EXTRAS
-│
-└── lint/
-    ├── test_callback_catchall_audit.py       # CallbackCatchAllAudit bans a **kwargs catch-all beside named callbacks
-    ├── test_daemon_event_consumers.py        # every daemon event type has a consumer, and every consumed type is emitted
-    ├── test_generated_reference_drift.py     # docs/reference/{cli,shortcuts}.md vs their generators, and vs SPEC.md
-    ├── test_image_layer_table_drift.py       # ARCHITECTURE.md's image-layer table vs the Containerfile, both directions
-    └── test_sdk_containment.py               # SdkContainmentAudit enforces SDK import prefix bans outside the allowlists
+|-- conftest.py                               # anyio_backend (asyncio), tmp_workspace, isolate_home fixtures
+|-- fake_podman.py                            # Podman's port and network semantics for spawn tests
+|-- test_pytest_socket_policy.py              # Sentinel - pytest-socket deny-by-default is active
+|
+|-- claudebox/
+|   |-- agent_session/
+|   |   |-- langgraph_tools/
+|   |   |   |-- conftest.py                   # Shared fixtures for this tree
+|   |   |   |-- test_filesystem.py            # read_file, write_file, edit_file
+|   |   |   |-- test_mcp.py                   # list_mcp_resources + read_mcp_resource defensive routing
+|   |   |   |-- test_meta.py                  # tool_search keyword discovery over ctx.tool_catalog
+|   |   |   |-- test_middleware.py            # ClaudeboxToolHookMiddleware
+|   |   |   |-- test_needs_user.py            # needs_user @tool binding
+|   |   |   |-- test_notebook.py              # notebook_edit
+|   |   |   |-- test_question.py              # ask_user_question backed by interrupt()
+|   |   |   |-- test_search.py                # glob, grep
+|   |   |   |-- test_shell.py                 # bash
+|   |   |   |-- test_sibling.py                # session_spawn/session_ask/session_read @tool bindings
+|   |   |   |-- test_skill.py                 # workspace skill lookup + body return + ARGUMENTS appending
+|   |   |   |-- test_subagent.py              # task() sub-agent dispatcher + agent registry
+|   |   |   |-- test_task_mgmt.py             # 6 wrappers over TaskService
+|   |   |   `-- test_web.py                   # web_fetch, web_search
+|   |   |-- orchestration/
+|   |   |   |-- _helpers.py                   # Shared helpers for this tree
+|   |   |   |-- test_async_monitor.py         # AsyncTaskMonitor
+|   |   |   |-- test_async_tasks.py           # background task lifecycle
+|   |   |   |-- test_attachments.py           # path resolution and MIME inference
+|   |   |   |-- test_bash_layout.py           # Bash command layout
+|   |   |   |-- test_bash_read_only.py        # Bash read-only mark
+|   |   |   |-- test_conversion.py            # message-to-event pipeline
+|   |   |   |-- test_models.py                # event and session data models
+|   |   |   |-- test_persistence.py           # event log I/O
+|   |   |   |-- test_pipeline.py              # result-only turn and echo suppression
+|   |   |   |-- test_pipeline_init.py         # initialization and event processing
+|   |   |   |-- test_pipeline_inject.py       # event injection and buffering
+|   |   |   |-- test_projection.py            # session summary accumulator
+|   |   |   |-- test_projection_runtime_coupling.py # Skill metadata comes from the active runtime, not ClaudeRuntime
+|   |   |   |-- test_session.py               # content block building and internal commands
+|   |   |   |-- test_session_internals.py     # dispose, projection resolution, state tracking
+|   |   |   |-- test_session_lifecycle.py     # send and stop lifecycle
+|   |   |   |-- test_sibling_turns.py         # turn-end collection and envelope round trip
+|   |   |   |-- test_tool_output.py           # file retrieval
+|   |   |   |-- test_trace.py                 # syscall supervisor and its client: filter, change table, attribution
+|   |   |   `-- test_turn_tracker.py          # turn ID state machine
+|   |   |-- test_capability_transport.py      # Session.get_capabilities, REST endpoint, session-info envelope, SSE init enrichment
+|   |   |-- test_catalogs.py                  # ClaudeRuntime catalog accessors + Skill parser
+|   |   |-- test_config_builder.py            # config -> SDK options round-trip
+|   |   |-- test_event_translation.py         # SDK message -> typed AgentEvent
+|   |   |-- test_events_typed_shapes.py       # Typed init/usage shapes - no escape-hatch dicts
+|   |   |-- test_events_validation.py         # Typed AgentEvent payloads fail loud on contract violations
+|   |   |-- test_factory.py                   # make_agent_session factory + UnknownRuntime dispatch
+|   |   |-- test_hook_adaptation.py           # ClaudeRuntime hook adaptation + delta detection
+|   |   |-- test_ports.py                     # port_open's reply and refusals, port_close over the spawn socket, the answer message
+|   |   |-- test_profile_hooks.py             # Profile session-start hook resolution and execution
+|   |   |-- test_protocol.py                  # Structural Protocol satisfaction for AgentSession
+|   |   |-- test_providers.py                 # ProviderSpec parsing, install_hint, strategy dispatch, lookup helpers
+|   |   |-- test_rate_limits.py                # Per-workspace plan-limit store
+|   |   |-- test_registry.py                  # Resolver maps workspace `agent` strings to runtime classes
+|   |   |-- test_runtime_claude.py            # ClaudeRuntime composition adapter
+|   |   |-- test_runtime_langgraph_catalogs.py # Catalog methods - models via Ollama, context-window, defaults
+|   |   |-- test_runtime_langgraph_checkpointer.py # Persistent checkpointer - SqliteSaver per session_dir
+|   |   |-- test_runtime_langgraph_failures.py # Failure modes - Ollama unreachable, model not pulled, tool error, compaction
+|   |   |-- test_runtime_langgraph_hooks.py   # Hook synthesis - on_session_start at connect, compaction start and boundary
+|   |   |-- test_runtime_langgraph_interrupt.py # Interrupt / resume routing
+|   |   |-- test_runtime_langgraph_lifecycle.py # Lifecycle + event assembly + usage telemetry, against a stub model
+|   |   |-- test_runtime_langgraph_migration.py # events_to_messages (pure) and the Claude->LangGraph migration seed path
+|   |   |-- test_runtime_langgraph_providers.py # Universal-provider dispatch
+|   |   |-- test_runtime_langgraph_real_graph.py # Driven through a real compiled graph
+|   |   |-- test_runtime_langgraph_session_stop.py # Stop through the real session, event pipeline and runtime
+|   |   |-- test_runtime_langgraph_skeleton.py # Capability matrix, Protocol stubs, factory dispatch
+|   |   |-- test_runtime_langgraph_slash_routing.py # `_resolve_slash_skill`/`_tag_slash_command` - LangGraph's take on native slash handling
+|   |   |-- test_runtime_langgraph_tool_binding.py # Binds langgraph_tools/ factories into the compiled graph
+|   |   |-- test_sibling_sessions.py          # SiblingSessionClient spawn/ask/read against a fake transport
+|   |   |-- test_skills.py                    # Shared skill walker - walk_skills, parse helpers, body extraction, source lookup
+|   |   |-- test_tasks_service.py             # TaskService - in-memory store + event-replay rebuild
+|   |   `-- test_titles.py                    # Session-title prompt framing and reply cleanup
+|   |-- containers/
+|   |   |-- test_backend.py                   # subprocess abstraction
+|   |   |-- test_build.py                     # build argument generation
+|   |   |-- test_local.py                     # LocalRuntime subprocess spawn
+|   |   |-- test_run.py                       # container CLI argument generation
+|   |   `-- test_runtime.py                   # facade behavior over backend
+|   |-- core/
+|   |   |-- test_broadcaster.py               # async pub-sub with replay support
+|   |   |-- test_concurrency.py               # sync/async bridging and call collapsing
+|   |   |-- test_file_cache.py                # stamp-keyed file cache and settle window
+|   |   |-- test_fs.py                        # filesystem utilities
+|   |   |-- test_http.py                      # HTTP proxy client
+|   |   |-- test_io.py                        # file I/O utilities
+|   |   |-- test_log_rendering.py             # ISO timestamp + shape normalization + file-format guard
+|   |   |-- test_logging.py                   # rotating file handler in core logging module
+|   |   |-- test_polling.py                   # async polling primitives - AsyncPoller and MtimeWatcher
+|   |   |-- test_serialization.py             # JSON encoding and deserialization
+|   |   |-- test_structures.py                # DataClass mixin and deep merge
+|   |   `-- test_time.py                      # timestamp generation and parsing
+|   |-- extensions/
+|   |   `-- tickets/
+|   |       `-- test_parser.py                # board YAML parser
+|   |-- session/
+|   |   |-- test_context.py                   # session context and path derivation
+|   |   |-- test_metadata.py                  # shared session metadata model
+|   |   `-- test_repository.py                # shared session disk I/O
+|   |-- user/
+|   |   |-- test_hook.py                      # hook decorator and request/response types
+|   |   `-- test_statusline.py                # statusline decorator and request type
+|   |-- test_cleanup.py                       # stale directory removal
+|   |-- test_config.py                        # configuration loading and merging
+|   |-- test_config_langgraph_mcp.py          # `[langgraph.mcp.<name>]` blocks -> Config.langgraph_mcp_servers
+|   |-- test_constants.py                     # env-overridable accessors
+|   |-- test_env.py                           # runtime environment checks
+|   |-- test_install.py                       # info formatting (install.format_install_info)
+|   |-- test_paths.py                         # workspace discovery and session naming
+|   |-- test_ports.py                         # [ports] entry forms, refusals and --publish values
+|   |-- test_profile_sample.py                # every etc/profile.sample/ command and skill is discovered
+|   |-- test_settings_sample_drift.py         # settings.sample.toml <-> Config field drift, both directions
+|   |-- test_temp.py                          # session-scoped /tmp symlink management
+|   `-- test_workspace.py                     # workspace context and session access
+|
+|-- claudebox_cli/
+|   |-- test_completers.py                    # argcomplete completers - must never raise out of the completion subprocess
+|   |-- test_containers_targets.py            # ``claudebox containers`` action + target parsing
+|   |-- test_dispatch.py                      # Verb-mode parser dispatches each verb to its handler
+|   |-- test_doctor.py                        # ``doctor`` environment checks
+|   |-- test_help_snapshots.py                # Inline-snapshot --help output for every verb, stubs included
+|   |-- test_logs_targets.py                  # ``claudebox logs`` target + flag parsing
+|   |-- test_prune_errors.py                  # prune failure reporting - the runtime's own error must reach the user
+|   |-- test_unknown_verb.py                  # Bare, unknown-verb and legacy flag-mode invocations exit 2
+|   |-- test_update_flock.py                  # Anchor for SPEC ``cli:update:concurrent-blocked``
+|   `-- test_workspaces_targets.py            # ``claudebox workspaces`` action + arg parsing
+|
+|-- claudebox_container_api/
+|   |-- files/
+|   |   |-- test_file_service.py              # orchestrator facade
+|   |   `-- test_path_resolver.py             # path resolution and file indexing
+|   |-- test_app.py                           # App factory - host binding forwarded to http_serve
+|   |-- test_handlers_chat.py                 # Chat handlers - stream readiness gating
+|   |-- test_handlers_sessions.py             # Sessions handler - /current response shape
+|   |-- test_logging.py                       # LogBroadcaster file-based replay
+|   |-- test_session.py                       # Session lifespan - log-routing callback wiring
+|   `-- test_tunnel.py                        # Port tunnel - one line naming a port, then bytes both ways
+|
+|-- claudebox_daemon/
+|   |-- domain/
+|   |   |-- boards/
+|   |   |   |-- test_service.py               # BoardService
+|   |   |   `-- test_watcher.py               # BoardWatcher announces the owning board of a changed file
+|   |   |-- containers/
+|   |   |   |-- test_models.py                # container data models
+|   |   |   |-- test_proxy.py                 # ContainerProxyClient timeout/pool bounds
+|   |   |   `-- test_service.py               # container lifecycle
+|   |   |-- sessions/
+|   |   |   |-- test_service.py               # session lifecycle
+|   |   |   |-- test_schedules.py             # ScheduleIndex - kept events, the responding fold, incremental reads
+|   |   |   |-- test_spawn.py                 # SpawnListener - request validation, depth cap, socket lifecycle
+|   |   |   `-- test_links.py                 # resolve_link_messages - allowlist matching
+|   |   |-- ports/
+|   |   |   `-- test_service.py               # PortService - answers, relays, reopening on start, closing
+|   |   |-- files/
+|   |   |   `-- test_service.py               # FileService - media type per extension, non-images refused
+|   |   |-- ui_state/
+|   |   |   `-- test_service.py               # persistent UI state store
+|   |   |-- workspaces/
+|   |   |   `-- test_service.py               # workspace management
+|   |   |-- test_broadcaster.py               # daemon event delivery to subscribers
+|   |   |-- test_config.py                    # DaemonConfig persistence and workspace management
+|   |   |-- test_executors.py                 # per-concern pools and admission tracking
+|   |   |-- test_health.py                    # container health monitoring
+|   |   |-- test_mutation_observer.py         # session mutation detection
+|   |   |-- test_service.py                   # daemon service orchestration
+|   |   |-- test_serving.py                   # health must track serving capacity, not just lag
+|   |   `-- test_watchdog.py                  # event-loop lag detection
+|   |-- handlers/
+|   |   |-- test_boards.py                    # HTTP adapter responses
+|   |   |-- test_daemon.py                    # HTTP adapter responses
+|   |   |-- test_files.py                     # HTTP adapter responses
+|   |   |-- test_sessions.py                  # HTTP adapter responses
+|   |   |-- test_workspaces.py                # HTTP adapter responses
+|   |   `-- test_workspaces_runtime_agnostic.py # Defaults endpoint keys off `agent`: LangGraph its own matrix, unknown agents 422
+|   |-- test_containers_lifecycle.py          # service stop/kill/remove + DELETE composite + POST routes
+|   |-- test_serving.py                       # port calculation
+|   `-- test_workspaces_routes.py             # CRUD routes - GET / POST / DELETE /api/workspaces
+|
+|-- distribution/
+|   |-- conftest.py                           # Sources the shipped install.sh minus its entry-point guard
+|   |-- test_install_backend_resolution.py    # install.sh's backend default/persist step, and how an abort reports
+|   |-- test_install_lib_remote.py            # install.sh's fetch-and-reset update, staged-clone fallback, and the build products both keep
+|   |-- test_install_nvm.py                   # install.sh's nvm fetch URL and its detection of an existing install
+|   |-- test_install_pins.py                  # install.sh's pinned downloads: a file lands or runs only when its digest matches
+|   |-- test_install_routing.py               # install.sh's remote-vs-local branch, per execution context
+|   |-- test_install_watchdog.py              # install.sh's watchdog step: sandboxed where the host allows, a drop-in where not
+|   |-- test_optional_dependencies.py         # Drift-guards pyproject extras against _providers.PROVIDER_EXTRAS
+|   `-- test_systemd_units.py                 # the watchdog unit's sandboxing; none on the two units that run podman
+|
+`-- lint/
+    |-- test_callback_catchall_audit.py       # CallbackCatchAllAudit bans a **kwargs catch-all beside named callbacks
+    |-- test_daemon_event_consumers.py        # every daemon event type has a consumer, and every consumed type is emitted
+    |-- test_generated_reference_drift.py     # docs/reference/{cli,shortcuts}.md vs their generators, and vs SPEC.md
+    |-- test_image_layer_table_drift.py       # ARCHITECTURE.md's image-layer table vs the Containerfile, both directions
+    |-- test_pins.py                          # scripts/pins.py check: the pin manifests vs every downloading script line
+    |-- test_sdk_containment.py               # SdkContainmentAudit enforces SDK import prefix bans outside the allowlists
+    `-- test_text_encoding_audit.py           # TextEncodingAudit flags text I/O in src/ that names no encoding
 ```
 
 **Stack**: pytest, pytest-anyio (async), inline-snapshot (complex assertions), pytest-cov (coverage).

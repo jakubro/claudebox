@@ -7,6 +7,15 @@ export function isHumanEvent(event) {
   return event.type === EventType.USER && event.is_human
 }
 
+/** Test whether event is a top-level message from a session this one spawned. */
+export function isSiblingMessage(event) {
+  return (
+    event.type === EventType.SYSTEM &&
+    event.subtype === EventSubtype.SIBLING_MESSAGE &&
+    !event.parent_tool_use_id
+  )
+}
+
 /** Test whether event indicates Claude is actively responding - a background subagent's own output is not. */
 export function isRespondingEvent(event) {
   return event.type === EventType.ASSISTANT && !event.parent_tool_use_id

@@ -174,11 +174,7 @@ def main() -> None:
     args = parser.parse_args()
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            channel="chrome",
-            headless=True,
-            args=["--no-sandbox"],
-        )
+        browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
         page = browser.new_page()
 
         # Navigate commands handle their own navigation

@@ -12,7 +12,7 @@ async function showMcpServer(page, controller, server) {
     ts: new Date().toISOString(),
     id: 'evt_mcp_init',
   })
-  await page.keyboard.press('Alt+8')
+  await page.keyboard.press('Alt+9')
   const panel = page.locator('.mcp-panel')
   await expect(panel).toContainText(server.name, { timeout: 5000 })
 
@@ -29,7 +29,7 @@ test.describe('MCP Panel', () => {
     // Default fixture has no MCP servers
     await openSession(page)
 
-    await page.keyboard.press('Alt+8')
+    await page.keyboard.press('Alt+9')
 
     const panel = page.locator('[data-testid="panel-mcp"]')
     await expect(panel).toBeVisible()
@@ -39,11 +39,21 @@ test.describe('MCP Panel', () => {
     await expect(panel).toContainText('No MCP servers connected')
   })
 
+  // SPEC: layout:panel-tab-name
+  test('its tab reads MCP Servers', async ({ page }) => {
+    await openSession(page)
+
+    await page.keyboard.press('Alt+9')
+
+    await expect(page.locator('[data-testid="panel-mcp"]')).toBeVisible()
+    await expect(page.locator('.icon-tab').filter({ hasText: 'MCP Servers' })).toHaveCount(1)
+  })
+
   // SPEC: panel-mcp:list
   test('shows MCP servers from session init', async ({ page }) => {
     await openSession(page, 'events/with-mcp-servers.jsonl')
 
-    await page.keyboard.press('Alt+8')
+    await page.keyboard.press('Alt+9')
 
     const panel = page.locator('[data-testid="panel-mcp"]')
     await expect(panel).toBeVisible()
@@ -60,7 +70,7 @@ test.describe('MCP Panel', () => {
     // Four documented status states; mount one server per state and check the dot class - CSS owns the colors.
     await openSession(page, 'events/with-mcp-servers.jsonl')
 
-    await page.keyboard.press('Alt+8')
+    await page.keyboard.press('Alt+9')
     const panel = page.locator('[data-testid="panel-mcp"]')
 
     // Connected (green) - the standard fixture has connected jina.
@@ -129,21 +139,21 @@ test.describe('MCP Panel', () => {
       await expect(svg).toBeVisible()
 
       const title = await mcpBtn.getAttribute('title')
-      expect(title).toBe('MCP Servers (Alt+8)')
+      expect(title).toBe('MCP Servers (Alt+9)')
     })
 
-    // SPEC: shortcut:alt8
-    test('Alt+8 toggles MCP panel open and closed', async ({ page }) => {
+    // SPEC: shortcut:alt9
+    test('Alt+9 toggles MCP panel open and closed', async ({ page }) => {
       await openSession(page)
 
       const panel = page.locator('[data-testid="panel-mcp"]')
 
       await expect(panel).not.toBeVisible()
 
-      await page.keyboard.press('Alt+8')
+      await page.keyboard.press('Alt+9')
       await expect(panel).toBeVisible()
 
-      await page.keyboard.press('Alt+8')
+      await page.keyboard.press('Alt+9')
       await expect(panel).not.toBeVisible()
     })
   })
@@ -162,7 +172,7 @@ test.describe('MCP Panel', () => {
         id: 'evt_mcp_init',
       })
 
-      await page.keyboard.press('Alt+8')
+      await page.keyboard.press('Alt+9')
       const panel = page.locator('.mcp-panel')
       await expect(panel).toBeVisible()
 

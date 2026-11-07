@@ -5,12 +5,16 @@ from __future__ import annotations
 import asyncio
 import errno
 import functools
+import importlib.machinery
+import importlib.util
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -63,11 +67,6 @@ for line in sys.stdin:
         )
     print("done", flush=True)
 """
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
 
 
 @pytest.fixture
@@ -233,6 +232,61 @@ async def test_without_a_supervisor_no_result_is_measured(unmeasured):
     assert {changed for _, changed in unmeasured.values()} == {None}
 
 
+# SPEC: container:nested-never-freezes
+def test_a_slow_page_in_one_callers_memory_holds_no_other_call(tmp_path, monkeypatch):
+    if _already_supervised():
+        pytest.skip("already under a seccomp supervisor, which allows no second listener")
+
+    supervisor = _supervisor_module()
+    monkeypatch.chdir(tmp_path)
+    procs = tmp_path / "proc"
+    procs.mkdir()
+    ours, theirs = socket.socketpair()
+    child = os.fork()
+
+    if child == 0:
+        ours.close()
+        supervisor._run_child(theirs, [sys.executable, "-c", _SLOW_PAGE_SCRIPT, str(tmp_path)])
+
+    theirs.close()
+    listener = supervisor._receive_listener(ours)
+
+    if listener is None:
+        os.kill(child, signal.SIGKILL)
+        os.waitpid(child, 0)
+        pytest.skip("this kernel gives no seccomp listener")
+
+    tracker = supervisor.Tracker(supervisor.ProcessTable(procs))
+    server = threading.Thread(
+        target=supervisor.serve,
+        args=(Path("t.sock"), listener, child, tracker, procs),
+        daemon=True,
+    )
+    server.start()
+    mem = None
+
+    try:
+        _wait_for((tmp_path / "opener.pid").exists)
+        pid = (tmp_path / "opener.pid").read_text(encoding="utf-8")
+        (procs / pid).mkdir()
+        (procs / pid / "stat").symlink_to(f"/proc/{pid}/stat")
+        mem = procs / pid / "mem"
+        os.mkfifo(mem)
+        (tmp_path / "go").touch()
+        deadline = time.monotonic() + 3
+
+        while not (tmp_path / "mkdir.seconds").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        # The opener's page is served in any case, so a supervisor that waits on it fails, not hangs.
+        if mem is not None:
+            os.close(os.open(mem, os.O_RDWR))
+
+        server.join(timeout=10)
+
+    assert float((tmp_path / "mkdir.seconds").read_text(encoding="utf-8")) < 1
+
+
 def test_a_supervisor_that_cannot_watch_still_runs_its_command_and_answers_unknown(
     tmp_path,
     monkeypatch,
@@ -252,6 +306,28 @@ def test_a_supervisor_that_cannot_watch_still_runs_its_command_and_answers_unkno
 
     assert verdict == {"verdict": "unknown"}
     assert (outer.returncode, Path("ran").read_text(encoding="utf-8")) == (0, "ran\n")
+
+
+def test_its_socket_appears_only_once_it_accepts_connections(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    for attempt in range(50):
+        path = Path(f"{attempt}.sock")
+
+        with subprocess.Popen(
+            [str(SUPERVISOR), "--socket", str(path), "--", "bash", "-c", "read"],
+            stdin=subprocess.PIPE,
+            text=True,
+        ) as supervisor:
+            deadline = time.monotonic() + 10
+
+            while not path.exists():
+                assert time.monotonic() < deadline, "timed out"
+
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.connect(str(path))
+
+            supervisor.communicate("go\n", timeout=10)
 
 
 def test_a_supervisor_that_cannot_serve_its_socket_still_runs_its_command(tmp_path):
@@ -355,6 +431,43 @@ def _ask(path: Path, request: dict) -> dict:
         conn.sendall(json.dumps(request).encode() + b"\n")
 
         return json.loads(conn.makefile().readline())
+
+
+_SLOW_PAGE_SCRIPT = """
+import os, subprocess, sys, time
+from pathlib import Path
+
+base = Path(sys.argv[1])
+opener = subprocess.Popen(
+    [sys.executable, "-c", "import sys; sys.stdin.read(1); open('opened.txt', 'w')"],
+    stdin=subprocess.PIPE,
+    cwd=base,
+)
+(base / "opener.pid").write_text(str(opener.pid))
+
+while not (base / "go").exists():
+    time.sleep(0.05)
+
+opener.stdin.write(b"x")
+opener.stdin.flush()
+time.sleep(0.5)
+started = time.monotonic()
+os.mkdir(base / "probe")
+(base / "mkdir.seconds").write_text(f"{time.monotonic() - started:.3f}")
+opener.wait()
+"""
+
+
+@functools.cache
+def _supervisor_module():
+    loader = importlib.machinery.SourceFileLoader("claudebox_trace_e2e", str(SUPERVISOR))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = module
+    loader.exec_module(module)
+
+    return module
 
 
 @functools.cache

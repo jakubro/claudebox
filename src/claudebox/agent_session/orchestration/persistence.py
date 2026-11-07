@@ -25,7 +25,7 @@ class EventLog:
         """Open the log file for async appending, first repairing a tail a killed writer tore."""
 
         repair_jsonl_tail(self._path)
-        self._file = await aiofiles.open(self._path, "a")
+        self._file = await aiofiles.open(self._path, "a", encoding="utf-8")
 
     async def append(self, event: PublishedEvent) -> None:
         """Serialize and append event to log asynchronously."""

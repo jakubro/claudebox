@@ -31,6 +31,7 @@ from claudebox.containers.run import (
     substitute_held_ports,
     tmp_mount_conflicts,
 )
+from claudebox.core.ports import PortMapping
 from ...fake_podman import FakePodman, on_fake_podman, publishes
 
 
@@ -156,15 +157,15 @@ class TestGetContainerArgs:
         config = _make_config(tmp_path)
         args = list(get_container_run_args(config, publish_all=True))
         assert "--publish-all" not in args
-        idx = args.index("--publish")
-        assert args[idx + 1] == f"127.0.0.1::{WEB_CONTAINER_PORT}"
+        publish_args = [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
+        assert publish_args == ["127.0.0.1::8080", "127.0.0.1::8081"]
 
     def test_explicit_ports(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path, ports={8080: 80})
         args = list(get_container_run_args(config))
 
         publish_args = [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
-        assert "8080:80" in publish_args
+        assert "127.0.0.1:8080:80" in publish_args
 
     def test_publish_all_and_config_ports_are_emitted_together(
         self,
@@ -176,7 +177,44 @@ class TestGetContainerArgs:
         args = list(get_container_run_args(config, publish_all=True))
 
         publish_args = [args[i + 1] for i, a in enumerate(args) if a == "--publish"]
-        assert publish_args == [f"127.0.0.1::{WEB_CONTAINER_PORT}", "8080:80", "9000:90"]
+        assert publish_args == [
+            f"127.0.0.1::{WEB_CONTAINER_PORT}",
+            "127.0.0.1::8081",
+            "127.0.0.1:8080:80",
+            "127.0.0.1:9000:90",
+        ]
+
+    @pytest.mark.parametrize(
+        ("entry", "spec"),
+        [
+            ({"container": 90, "bind": "0.0.0.0"}, "0.0.0.0:9000:90"),
+            ({"container": 90, "bind": "::"}, "[::]:9000:90"),
+        ],
+        ids=["every-interface", "ipv6"],
+    )
+    def test_an_entry_naming_a_bind_publishes_there(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+        entry,
+        spec,
+    ):
+        config = _make_config(tmp_path, ports={"9000": entry})
+        args = list(get_container_run_args(config))
+
+        assert [args[i + 1] for i, a in enumerate(args) if a == "--publish"] == [spec]
+
+    def test_a_free_host_port_publishes_on_loopback_with_no_host_port(
+        self,
+        _touch_file,
+        _touch_dir,
+        tmp_path,
+    ):
+        config = _make_config(tmp_path, ports={0: 3000})
+        args = list(get_container_run_args(config))
+
+        assert [args[i + 1] for i, a in enumerate(args) if a == "--publish"] == ["127.0.0.1::3000"]
 
     def test_no_ports(self, _touch_file, _touch_dir, tmp_path):
         config = _make_config(tmp_path)
@@ -655,19 +693,87 @@ def test_port_in_use_sees_a_loopback_listener():
     listener.listen()
     port = listener.getsockname()[1]
 
-    assert _port_in_use(port) is True
+    assert _port_in_use(port, PortMapping(container=80)) is True
     listener.close()
-    assert _port_in_use(port) is False
+    assert _port_in_use(port, PortMapping(container=80)) is False
+
+
+@pytest.mark.allow_hosts(["127.0.0.1", "::1"])
+@pytest.mark.parametrize(
+    ("family", "kind", "address", "entry"),
+    [
+        (socket.AF_INET6, socket.SOCK_STREAM, "::1", {"container": 80, "bind": "::1"}),
+        (socket.AF_INET6, socket.SOCK_STREAM, "::", {"container": 80, "bind": "::"}),
+        (socket.AF_INET, socket.SOCK_DGRAM, "127.0.0.1", "53/udp"),
+        (socket.AF_INET, socket.SOCK_STREAM, "127.0.0.1", 80),
+    ],
+    ids=["ipv6-loopback-tcp", "ipv6-wildcard-tcp", "ipv4-udp", "ipv4-tcp"],
+)
+def test_a_held_port_on_the_entrys_family_and_protocol_is_swapped(family, kind, address, entry):
+    with socket.socket(family, kind) as holder:
+        if family == socket.AF_INET6:
+            holder.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+
+        holder.bind((address, 0))
+
+        if kind == socket.SOCK_STREAM:
+            holder.listen()
+
+        port = holder.getsockname()[1]
+        swapped = substitute_held_ports({str(port): entry})
+
+    assert port in swapped
+    assert swapped[port] != port
+
+
+@pytest.mark.allow_hosts(["127.0.0.1", "::1"])
+@pytest.mark.parametrize(
+    ("family", "kind", "address", "entry"),
+    [
+        (socket.AF_INET6, socket.SOCK_STREAM, "::1", {"container": 80, "bind": "127.0.0.1"}),
+        (socket.AF_INET, socket.SOCK_DGRAM, "127.0.0.1", 80),
+        (socket.AF_INET, socket.SOCK_STREAM, "127.0.0.1", "53/udp"),
+    ],
+    ids=["ipv6-holder-ipv4-entry", "udp-holder-tcp-entry", "tcp-holder-udp-entry"],
+)
+def test_a_holder_of_another_family_or_protocol_leaves_the_entry_alone(
+    family,
+    kind,
+    address,
+    entry,
+):
+    with socket.socket(family, kind) as holder:
+        holder.bind((address, 0))
+
+        if kind == socket.SOCK_STREAM:
+            holder.listen()
+
+        port = holder.getsockname()[1]
+
+        assert substitute_held_ports({str(port): entry}) == {}
+
+
+@pytest.mark.allow_hosts(["127.0.0.1"])
+def test_an_sctp_entry_on_a_host_without_sctp_keeps_the_tcp_probe():
+    with (
+        patch.object(socket, "IPPROTO_SCTP", 253),
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder,
+    ):
+        holder.bind(("127.0.0.1", 0))
+        holder.listen()
+        port = holder.getsockname()[1]
+
+        assert port in substitute_held_ports({str(port): "132/sctp"})
 
 
 def test_substitute_held_ports():
     with (
-        patch("claudebox.containers.run._port_in_use", {8080}.__contains__),
-        patch("claudebox.containers.run._free_port", lambda: 41000),
+        patch("claudebox.containers.run._port_in_use", lambda port, _mapping: port == 8080),
+        patch("claudebox.containers.run._free_port", lambda _mapping: 41000),
     ):
         # TOML table keys arrive as strings.
         ports = {"8080": 80, "9000": 90, "0": 70}
-        assert substitute_held_ports(ports) == {8080: 41000}  # ty: ignore[invalid-argument-type]
+        assert substitute_held_ports(ports) == {8080: 41000}
 
 
 @patch("claudebox.containers.run.touch_dir")
@@ -679,8 +785,9 @@ def test_port_substitutes_reshape_only_the_named_entry(_tf, _td, tmp_path):
 
     assert [args[i + 1] for i, a in enumerate(args) if a == "--publish"] == [
         f"127.0.0.1::{WEB_CONTAINER_PORT}",
-        "41000:80",
-        "9000:90",
+        "127.0.0.1::8081",
+        "127.0.0.1:41000:80",
+        "127.0.0.1:9000:90",
     ]
 
 
@@ -694,7 +801,7 @@ def test_cli_substitutes_a_held_port_and_prints_it(_tf, _td, tmp_path, capsys):
     with on_fake_podman(podman):
         run_container(("bash",), config=config, backend=ContainerBackend("podman"), kind="shell")
 
-    assert publishes(podman.runs[0]) == ["40001:80"]
+    assert publishes(podman.runs[0]) == ["127.0.0.1:40001:80"]
     assert capsys.readouterr().err == (
         "claudebox: host port 8080 is in use; container port 80 is published on host port 40001 instead\n"
     )
@@ -707,7 +814,7 @@ def test_cli_probes_nothing_under_host_network(_tf, _td, tmp_path):
     backend.run_container.return_value = 0
     config = _make_config(tmp_path, ports={"8080": 80}, network_mode="host")
 
-    def _never(_port):
+    def _never(_port, _mapping):
         raise AssertionError("probed a port under host networking")
 
     with patch("claudebox.containers.run._port_in_use", _never):

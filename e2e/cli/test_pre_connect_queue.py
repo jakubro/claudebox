@@ -23,6 +23,9 @@ from claudebox_container_api.session import SessionRegistry
 from .scripted_cli import ScriptedCli
 
 
+pytestmark = pytest.mark.usefixtures("claude_runtime_env")
+
+
 REFUSAL = "Cannot set permission mode to bypassPermissions: not launched with skip-permissions"
 
 
@@ -35,23 +38,6 @@ class SlowStartingCli(ScriptedCli):
     async def set_permission_mode(self, mode: str) -> None:
         if mode == "bypassPermissions":
             raise Exception(REFUSAL)  # noqa: TRY002 - the SDK reports a refusal as a bare Exception
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-    monkeypatch.setenv("CLAUDEBOX_NO_TMP_REMAP", "1")
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home" / ".claude").mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
-
-    return tmp_path
 
 
 @pytest.fixture

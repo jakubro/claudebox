@@ -4,6 +4,7 @@ import { BlockType } from '../../../../../config/schema'
 import { reminderEntries } from '../../../../../utils/eventProcessing'
 import { extractSystemReminders } from '../../../../../utils/parsers'
 import CompactionBlock from './CompactionBlock'
+import SiblingMessageBlock from './SiblingMessageBlock'
 import ThinkingBlock from './ThinkingBlock'
 import TurnTextBlock from './TurnTextBlock'
 import ToolBlock from './tool-block'
@@ -52,6 +53,18 @@ export default function TurnSegments({
           content={content}
           eventId={block.event.id}
           segment={block.segment ?? 0}
+          injected={[...reminderEntries(reminders), ...(block.injected ?? [])]}
+        />
+      )
+    }
+    if (block.type === BlockType.SIBLING_MESSAGE) {
+      const { content, reminders } = extractSystemReminders(block.event.content)
+      return (
+        <SiblingMessageBlock
+          key={i}
+          content={content}
+          fromSessionId={block.event.message_data?.from_session_id ?? ''}
+          fromName={block.event.message_data?.from_name ?? null}
           injected={[...reminderEntries(reminders), ...(block.injected ?? [])]}
         />
       )

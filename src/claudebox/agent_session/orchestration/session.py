@@ -13,7 +13,7 @@ from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 from xml.sax.saxutils import escape, quoteattr
 
 from .attachments import AttachmentInfo, AttachmentService
@@ -23,6 +23,16 @@ from .errors import AttachmentInvalid, SessionNotReady
 from .models import EventSubtype, EventType, PublishedEvent, SessionSummary
 from .pipeline import EventPipeline
 from .projection import Projection
+from .sibling_turns import (
+    SIBLING_BRIEF_ENDED,
+    SIBLING_BRIEF_ENDED_TAG,
+    SIBLING_BRIEF_TAG,
+    SiblingMessage,
+    SiblingTurnEnd,
+    TurnTextCollector,
+    sibling_brief,
+    sibling_envelope,
+)
 from ..config import (
     AgentSessionConfig,
     ClaudeAgentSessionConfig,
@@ -40,13 +50,18 @@ from ...constants import (
     SDK_PROCESS_BUFFER_SIZE,
     SESSION_ATTACHMENTS_DIR,
     SESSION_METADATA_FILE,
+    SESSION_NOTES_PENDING_FILE,
     SESSION_STALL_CHECK_INTERVAL,
     SESSION_STALL_TIMEOUT,
     SESSION_TITLE_AFTER_MESSAGES,
+    SIBLING_MESSAGES_PENDING_FILE,
+    SIBLING_TURN_END_DRAIN_SECONDS,
 )
 from ...core.file_cache import FileCache
+from ...core.io import append_text, read_json, read_jsonl
 from ...core.logging import get_logger
 from ...env import is_dev_mode
+from ...session.models import SessionNotFound
 from ...session.repository import SessionRepository
 from ...session.session import Session as BaseSession
 from ...temp import ensure_tmp
@@ -55,6 +70,12 @@ from ...workspace import Workspace
 
 # Commands that SDK handles internally without emitting user message events
 INTERNAL_COMMAND_PATTERN = re.compile(r"^/(compact|context)(?:\s|$)")
+
+
+class ReportTurnEnd(Protocol):
+    """Hand a spawned session's finished turn to whoever delivers it to its parent; never raises."""
+
+    async def __call__(self, session_id: str, turn: SiblingTurnEnd) -> None: ...
 
 
 class SessionService:
@@ -70,10 +91,12 @@ class SessionService:
         *,
         remaps_tmp: bool = True,
         on_turn_complete: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+        report_turn_end: ReportTurnEnd | None = None,
     ):
         """Initialize session state; components attach in start(), hooks fire from start()/stop().
 
-        `remaps_tmp=False` leaves /tmp to whoever mapped it; `on_turn_complete` fires per turn end.
+        `remaps_tmp=False` leaves /tmp to whoever mapped it; `on_turn_complete` fires per turn end;
+        `report_turn_end` takes each turn end of a session another session spawned.
         """
 
         self._logger = get_logger(__name__)
@@ -83,6 +106,12 @@ class SessionService:
         self._on_turn_complete = on_turn_complete
         self._turn_complete_scheduled = False
         self._turn_complete_task: asyncio.Task | None = None
+        self._report_turn_end = report_turn_end
+        self._turn_collector = TurnTextCollector()
+        # One sender, so a later turn end never overtakes an earlier one.
+        self._turn_ends: asyncio.Queue[SiblingTurnEnd] = asyncio.Queue()
+        self._turn_end_task: asyncio.Task | None = None
+        self._sibling_deliveries: set[str] = set()
         self._rate_limit_store = RateLimitStore(self._workspace.path)
         # Windows announced at the last session start, not yet re-announced or ruled normal here.
         self._rate_limit_pending_reconcile: set[str] = set()
@@ -93,7 +122,9 @@ class SessionService:
         self._last_known_model: str | None = None
         self._last_known_permission_mode: str | None = None
         self._last_known_effort_level: str | None = None
-        self._pending_session_prompt: str | None = None
+        self._pending_compaction_reminder: str | None = None
+        self._brief_first_message = False
+        self._brief_ended_sent = False
         self._pending_compact_trigger: str | None = None
 
         # Set in start() from the workspace's current `agent` setting; compared against the
@@ -212,6 +243,8 @@ class SessionService:
 
         session_id = resume_session_id or session_id or str(uuid.uuid4())
         self._session_id = session_id
+        self._brief_first_message = resume_session_id is None
+        self._brief_ended_sent = False
         session = BaseSession(session_id=session_id, workspace=self._workspace)
 
         if self._on_start is not None:
@@ -287,7 +320,9 @@ class SessionService:
                 cost_overrides=workspace_config.langgraph_cost_overrides,
                 profile_hooks=workspace_config.langgraph_hooks,
                 system_prompt=(
-                    self._system_prompt_file.read_text() if self._system_prompt_file else None
+                    self._system_prompt_file.read_text(encoding="utf-8")
+                    if self._system_prompt_file
+                    else None
                 ),
             )
         else:
@@ -301,8 +336,16 @@ class SessionService:
             on_init=self._handle_init,
             on_event=self._handle_event,
             resume_session_id=resume_session_id,
-            on_stream_lost=self._schedule_turn_complete,
+            on_stream_lost=self._on_stream_lost,
         )
+
+        self._turn_collector = TurnTextCollector()
+        self._sibling_deliveries = set()
+
+        if self._report_turn_end is not None:
+            self._turn_ends = asyncio.Queue()
+            self._turn_end_task = asyncio.create_task(self._send_turn_ends(session_id))
+            self._turn_end_task.add_done_callback(partial(self._log_task_exit, "turn end sender"))
 
         self._broadcaster = Broadcaster()
         self._attachment_service = AttachmentService(self._workspace)
@@ -326,6 +369,8 @@ class SessionService:
 
         self._logger.info("Stopping session...", **self._log_context)
 
+        self._report_sibling_turn(self._turn_collector.close("interrupted"))
+        await self._drain_turn_ends()
         await self._dispose("_stall_watchdog_task", "cancel")
         await self._dispose("_title_task", "cancel")
         await self._dispose("_pipeline_task", "cancel")
@@ -353,7 +398,7 @@ class SessionService:
         self._last_known_permission_mode = None
         self._last_known_effort_level = None
         self._last_known_model = None
-        self._pending_session_prompt = None
+        self._pending_compaction_reminder = None
         self._session_id = None
         self._pending_compact_trigger = None
 
@@ -464,6 +509,47 @@ class SessionService:
             )
         except Exception:
             self._logger.exception("Failed to report connect failure", **self._log_context)
+
+    def _on_stream_lost(self) -> None:
+        self._schedule_turn_complete()
+        self._report_sibling_turn(self._turn_collector.close("failed"))
+
+    def _report_sibling_turn(self, ended: SiblingTurnEnd | None) -> None:
+        if ended is None or self._report_turn_end is None or not self._is_spawned():
+            return
+
+        self._turn_ends.put_nowait(ended)
+
+    def _is_spawned(self) -> bool:
+        return bool(self._projection and self._projection.value.spawned_from_session_id)
+
+    async def _send_turn_ends(self, session_id: str) -> None:
+        assert self._report_turn_end is not None
+
+        while True:
+            turn = await self._turn_ends.get()
+
+            try:
+                await self._report_turn_end(session_id, turn)
+            except Exception:
+                self._logger.exception("Sibling turn end not reported", **self._log_context)
+            finally:
+                self._turn_ends.task_done()
+
+    async def _drain_turn_ends(self) -> None:
+        if self._turn_end_task is None:
+            return
+
+        try:
+            await asyncio.wait_for(self._turn_ends.join(), SIBLING_TURN_END_DRAIN_SECONDS)
+        except TimeoutError:
+            self._logger.error(
+                "Sibling turn ends not reported before the session stopped",
+                left=self._turn_ends.qsize(),
+                **self._log_context,
+            )
+
+        await self._dispose("_turn_end_task", "cancel")
 
     def _schedule_turn_complete(self) -> None:
         """Schedule `on_turn_complete` off the loop; a no-op for a primary or a repeat.
@@ -711,6 +797,8 @@ class SessionService:
             if not prompt.strip() and not replies and not attachment_meta and not note:
                 return
 
+            await self._deliver_held_messages()
+
             # One id for the display event's turn, the agent's copy of the message and its echo.
             message_uuid = str(uuid.uuid4())
 
@@ -741,14 +829,19 @@ class SessionService:
             if extra_parts:
                 text = (prompt + "\n\n" if prompt else "") + "\n\n".join(extra_parts)
 
+            text = self._with_reminders(text)
+
             # The injected event is canonical; the agent's copy of this message is dropped.
             self._event_pipeline.suppress_user_echo(message_uuid)
 
             content_blocks = self._build_content_blocks(text, attachments or [])
             self._arm_stall_watchdog()
             await self._sdk_client.query(content_blocks, message_uuid=message_uuid)
+            self._release_held(SESSION_NOTES_PENDING_FILE)
 
             return
+
+        await self._deliver_held_messages()
 
         # SDK doesn't emit user message events for internal commands like /compact.
         if INTERNAL_COMMAND_PATTERN.match(prompt):
@@ -762,7 +855,118 @@ class SessionService:
 
         self._event_pipeline.set_prompt(prompt)
         self._arm_stall_watchdog()
-        await self._sdk_client.query(prompt)
+        await self._sdk_client.query(self._with_reminders(prompt))
+        self._release_held(SESSION_NOTES_PENDING_FILE)
+
+    def _take_sibling_briefing(self) -> str | None:
+        first, self._brief_first_message = self._brief_first_message, False
+        record = self._own_record()
+
+        if record.get("spawned_from_session_id"):
+            return (
+                f"<system-reminder>\n{self._sibling_brief(record)}\n</system-reminder>"
+                if first
+                else None
+            )
+
+        if self._brief_ended_sent or not record.get("parent_session_id"):
+            return None
+
+        said = [e.content or "" for e in self._event_pipeline.get_historical_events() if e.is_human]
+
+        if any(f"<{SIBLING_BRIEF_TAG}" in text for text in said) and not any(
+            f"<{SIBLING_BRIEF_ENDED_TAG}>" in text for text in said
+        ):
+            self._brief_ended_sent = True
+
+            return SIBLING_BRIEF_ENDED
+
+        return None
+
+    def _own_record(self) -> dict:
+        if self._session_id is None:
+            return {}
+
+        path = BaseSession(session_id=self._session_id, workspace=self._workspace).path
+
+        return read_json(path / SESSION_METADATA_FILE, default=None) or {}
+
+    def _sibling_brief(self, record: dict) -> str:
+        parent_id = record["spawned_from_session_id"]
+
+        try:
+            parent = self._repo.get(parent_id)
+        except SessionNotFound:
+            parent = None
+
+        return sibling_brief(parent_id, (parent.name or parent.auto_name) if parent else None)
+
+    async def deliver_sibling_message(self, message: SiblingMessage) -> None:
+        """Hand a turn end of a session this one spawned to the runtime, after any running turn.
+
+        Never a message of the user's: it opens no turn, and needs-you neither clears nor sets on it.
+        Raises SessionNotReady if the runtime never connected.
+        """
+
+        if self._runtime_connect_failed:
+            raise SessionNotReady()
+
+        await self._ensure_pipeline_alive()
+        await self._ensure_stream_healthy()
+        await self._deliver_held_messages()
+        await self._query_sibling_message(message, after_turn=True)
+
+    async def _deliver_held_messages(self) -> None:
+        for payload in self._take_held(SIBLING_MESSAGES_PENDING_FILE):
+            await self._query_sibling_message(SiblingMessage(**payload), after_turn=False)
+
+        self._release_held(SIBLING_MESSAGES_PENDING_FILE)
+
+    def _with_reminders(self, text: str) -> str:
+        reminders = [text] if text else []
+
+        if briefing := self._take_sibling_briefing():
+            reminders.append(briefing)
+
+        if notes := [p["text"] for p in self._take_held(SESSION_NOTES_PENDING_FILE)]:
+            reminders.append("<system-reminder>\n" + "\n".join(notes) + "\n</system-reminder>")
+
+        return "\n\n".join(reminders)
+
+    def _take_held(self, name: str) -> list[dict]:
+        if self._session_id is None:
+            return []
+
+        path = BaseSession(session_id=self._session_id, workspace=self._workspace).path / name
+        taking = path.with_name(f"{name}.taking")
+
+        # Taken aside first: whatever the daemon appends meanwhile waits for the next message, and
+        # what a failed delivery left behind goes again, ahead of anything newer.
+        if path.exists() and taking.exists():
+            arrived = path.with_name(f"{name}.arrived")
+            os.replace(path, arrived)
+            append_text(taking, arrived.read_text(encoding="utf-8"))
+            arrived.unlink()
+        elif path.exists():
+            os.replace(path, taking)
+
+        return list(read_jsonl(taking)) if taking.exists() else []
+
+    def _release_held(self, name: str) -> None:
+        if self._session_id is not None:
+            path = BaseSession(session_id=self._session_id, workspace=self._workspace).path
+            (path / f"{name}.taking").unlink(missing_ok=True)
+
+    async def _query_sibling_message(self, message: SiblingMessage, *, after_turn: bool) -> None:
+        if message.delivery_id in self._sibling_deliveries:
+            return
+
+        await self._sdk_client.query(
+            sibling_envelope(message),
+            message_uuid=message.delivery_id,
+            after_turn=after_turn,
+        )
+        self._sibling_deliveries.add(message.delivery_id)
 
     async def _ensure_pipeline_alive(self) -> None:
         """Replace a dead event consumer before querying into it.
@@ -829,7 +1033,7 @@ class SessionService:
                 on_init=self._handle_init,
                 on_event=self._handle_event,
                 resume_session_id=session_id,
-                on_stream_lost=self._schedule_turn_complete,
+                on_stream_lost=self._on_stream_lost,
             )
 
             self._suppress_restart_divider = True
@@ -1228,6 +1432,11 @@ class SessionService:
             if self._user_message_count in SESSION_TITLE_AFTER_MESSAGES:
                 self._schedule_title(self._user_message_count)
 
+        self._report_sibling_turn(self._turn_collector.observe(event))
+
+        if event.subtype == EventSubtype.SIBLING_MESSAGE and event.parent_tool_use_id is None:
+            self._arm_stall_watchdog()
+
         # A tool between start and output is working, not stalling - the runtime emits nothing for a long one.
         if event.subtype == "tool_use":
             self._tools_outstanding += 1
@@ -1253,9 +1462,9 @@ class SessionService:
         if event.subtype == "compact_boundary":
             self._pending_compact_trigger = None
 
-            if self._pending_session_prompt:
-                prompt = self._pending_session_prompt
-                self._pending_session_prompt = None
+            if self._pending_compaction_reminder:
+                prompt = self._pending_compaction_reminder
+                self._pending_compaction_reminder = None
                 await self._sdk_client.query(f"<system-reminder>\n{prompt}\n</system-reminder>")
 
     # Rate Limits
@@ -1356,11 +1565,16 @@ class SessionService:
     async def _on_compact_start(self, payload: CompactStartPayload) -> None:
         """Callback: emit compact_start event and capture session prompt for post-compaction sending."""
 
-        # Capture session prompt to send after compaction boundary
-        if self._projection and self._projection.value:
-            self._pending_session_prompt = self._projection.value.session_prompt
-        else:
-            self._pending_session_prompt = None
+        # Capture session prompt and sibling brief to send after compaction boundary
+        reminder = []
+
+        if self._projection and self._projection.value and self._projection.value.session_prompt:
+            reminder.append(self._projection.value.session_prompt)
+
+        if (record := self._own_record()).get("spawned_from_session_id"):
+            reminder.append(self._sibling_brief(record))
+
+        self._pending_compaction_reminder = "\n\n".join(reminder) or None
 
         self._pending_compact_trigger = payload.trigger
 
@@ -1387,7 +1601,7 @@ class SessionService:
             },
         )
 
-        self._pending_session_prompt = None
+        self._pending_compaction_reminder = None
         self._pending_compact_trigger = None
 
     async def _on_model_changed(self, model: str) -> None:

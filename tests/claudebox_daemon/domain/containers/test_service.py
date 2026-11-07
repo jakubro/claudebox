@@ -224,6 +224,37 @@ class TestSyncState:
         assert c.failure_count == 5
 
     @pytest.mark.anyio
+    async def test_observers_see_a_container_that_exited_or_vanished_on_its_own(self, tmp_path):
+        svc, _ = _make_service(tmp_path)
+        seen: list[tuple[str, ContainerStatus]] = []
+        svc.add_status_observer(lambda c: seen.append((c.id, c.status)))
+
+        for container_id in ("exited", "vanished", "unchanged"):
+            svc._containers[container_id] = Container(
+                id=container_id,
+                backend_id=f"b-{container_id}",
+                port=8080,
+                status=ContainerStatus.RUNNING,
+            )
+
+        svc._runtime._backend.list_containers.return_value = [
+            {
+                "Id": f"b-{container_id}",
+                "State": state,
+                "Labels": {"claudebox-id": container_id, "claudebox-workspace": "test-ws"},
+            }
+            for container_id, state in (("exited", "exited"), ("unchanged", "running"))
+        ]
+        svc._runtime._backend.get_host_port.return_value = 8080
+
+        await svc.sync_state()
+
+        assert sorted(seen) == [
+            ("exited", ContainerStatus.STOPPED),
+            ("vanished", ContainerStatus.RUNNING),
+        ]
+
+    @pytest.mark.anyio
     async def test_a_live_process_does_not_resurrect_a_crashed_container(self, tmp_path):
         """The runtime says a process exists; only the probe knows whether the API answers."""
 
@@ -835,7 +866,7 @@ mode = "research-net"
 """
 
 
-@patch("claudebox.containers.run._port_in_use", lambda _port: False)
+@patch("claudebox.containers.run._port_in_use", lambda _port, _mapping: False)
 @patch("claudebox.containers.run.touch_dir")
 @patch("claudebox.containers.run.touch_file")
 class TestBundleOnCreate:
@@ -856,7 +887,7 @@ class TestBundleOnCreate:
         assert "SHARED=workspace" not in env
         assert "ONLY_WORKSPACE=w" in env
         assert f"{tmp_path / 'bundle_src'}:/bundle-data" in _created_volumes(backend)
-        assert "8181:81" in _created_args(backend, "--publish")
+        assert "127.0.0.1:8181:81" in _created_args(backend, "--publish")
         assert _created_args(backend, "--network") == ["research-net"]
 
     @pytest.mark.anyio
@@ -878,7 +909,7 @@ class TestBundleOnCreate:
         assert "SHARED=workspace" in env
         assert "SHARED=bundle" not in env
         assert not any("bundle-data" in v for v in _created_volumes(backend))
-        assert _created_args(backend, "--publish") == ["127.0.0.1::8080"]
+        assert _created_args(backend, "--publish") == ["127.0.0.1::8080", "127.0.0.1::8081"]
         assert _created_args(backend, "--network") == [svc._network]
 
     @pytest.mark.anyio
@@ -1343,9 +1374,13 @@ class TestSpawnsShareTheHost:
             second = await svc.create(session_id="session-b")
 
         assert first.port and second.port
-        assert "8080:80" in publishes(podman.runs[0])
+        assert "127.0.0.1:8080:80" in publishes(podman.runs[0])
         moved = [p for p in publishes(podman.runs[1]) if p.endswith(":80")]
-        assert len(moved) == 1 and moved[0] != "8080:80"
+        assert (
+            len(moved) == 1
+            and moved[0].startswith("127.0.0.1:")
+            and moved[0] != "127.0.0.1:8080:80"
+        )
 
     @pytest.mark.anyio
     async def test_a_freed_port_is_taken_again(self, _tf, _td, tmp_path):
@@ -1358,7 +1393,7 @@ class TestSpawnsShareTheHost:
             await svc.remove(first.id)
             await svc.create(session_id="session-c")
 
-        assert "8080:80" in publishes(podman.runs[2])
+        assert "127.0.0.1:8080:80" in publishes(podman.runs[2])
 
     @pytest.mark.anyio
     @pytest.mark.parametrize("mode", ["host", "none", "container:abc", "ns:/run/netns/x"])

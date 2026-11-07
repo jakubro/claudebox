@@ -30,24 +30,10 @@ from claudebox_daemon.handlers.sessions import router as daemon_sessions_router
 from .scripted_cli import ScriptedCli
 
 
+pytestmark = pytest.mark.usefixtures("claude_runtime_env")
+
+
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-    monkeypatch.setenv("CLAUDEBOX_NO_TMP_REMAP", "1")
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home" / ".claude").mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
-
-    return tmp_path
 
 
 @pytest.fixture

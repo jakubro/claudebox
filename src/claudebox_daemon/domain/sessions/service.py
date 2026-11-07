@@ -26,6 +26,7 @@ from claudebox import (
     SessionRepository,
     SingleFlight,
     Workspace,
+    append_json,
     cost_added,
     find_sdk_transcript,
     find_session_dir,
@@ -42,6 +43,7 @@ from claudebox.constants import (
     SESSION_CHECKPOINT_TURNS_FILE,
     SESSION_EVENTS_FILE,
     SESSION_METADATA_FILE,
+    SIBLING_MESSAGES_PENDING_FILE,
 )
 from .errors import (
     SessionContainerCreateFailed,
@@ -49,9 +51,19 @@ from .errors import (
     SessionContainerResumeFailed,
     SessionContainerUnavailable,
     SessionNotFound,
+    SessionNotSpawned,
     SessionTranscriptMissing,
+    SiblingNotOwned,
+    SiblingStopHostsThread,
+    SpawnerUnreachable,
 )
-from .models import RenderedListing, SessionInfo, SessionProgressEvent, SessionsChangedEvent
+from .models import (
+    RenderedListing,
+    SessionInfo,
+    SessionProgressEvent,
+    SessionsChangedEvent,
+    SiblingSummary,
+)
 from .schedules import CRON_CREATE, ScheduleIndex
 from ..errors import ListingTimeout, ValidationError
 from ..executors import Admission, ObservedPool, tracked
@@ -208,6 +220,8 @@ class SessionService:
         self._resume_flight = KeyedSingleFlight()
         # Resume, a side thread's resume and fork's container phase serialize per session id.
         self._session_locks: dict[str, asyncio.Lock] = {}
+        # Siblings their spawner is stopping right now; a turn the stop cuts short is not reported.
+        self._stopped_by_spawner: set[str] = set()
 
     # Service
     # ----------------------------------------------------------------------------------------------
@@ -315,7 +329,7 @@ class SessionService:
 
         body = serialization.dumps({"sessions": sessions}).encode("utf-8")
 
-        return RenderedListing(body=body, session_count=len(sessions))
+        return RenderedListing(body=body, session_count=len(sessions), sessions=tuple(sessions))
 
     async def _warm_listing(self) -> None:
         try:
@@ -451,7 +465,15 @@ class SessionService:
 
         return result
 
-    async def create(self, bundle: str | None = None) -> SessionInfo:
+    async def create(
+        self,
+        bundle: str | None = None,
+        *,
+        spawned_from_session_id: str | None = None,
+        name: str | None = None,
+        model: str | None = None,
+        effort_level: str | None = None,
+    ) -> SessionInfo:
         """Create a new session: spawn container, wait for health, initialize session.
 
         Returns a fully-populated SessionInfo so the frontend footer renders immediately; the
@@ -493,8 +515,18 @@ class SessionService:
             # Register session_id now so find_by_session() locates it before the next health poll.
             await self._containers.update(container, session_id=session_id)
 
-            if bundle:
-                self._record_daemon_fields(session_id, bundle=bundle)
+            recorded = {
+                key: value
+                for key, value in (
+                    ("bundle", bundle),
+                    ("spawned_from_session_id", spawned_from_session_id),
+                    ("name", name),
+                )
+                if value
+            }
+
+            if recorded:
+                self._record_daemon_fields(session_id, **recorded)
         except (Exception, asyncio.CancelledError):
             await asyncio.shield(self._cleanup_spawned_container(container.id))
 
@@ -510,8 +542,12 @@ class SessionService:
         new_session_dir = workspace.ensure_session(session_id).path
         cls = resolve_runtime_class(self._agent)
         now = datetime.now(UTC)
-        seeded, failed_seeds = (
-            await self._seed_bundle(container.id, session_id, bundle) if bundle else ({}, None)
+        seeded, failed_seeds = await self._seed_starting_values(
+            container.id,
+            session_id,
+            bundle,
+            model=model,
+            effort_level=effort_level,
         )
 
         return SessionInfo(
@@ -528,6 +564,8 @@ class SessionService:
             permission_mode=seeded.get("permission_mode", cls.get_default_permission_mode()),
             effort_level=seeded.get("effort_level", cls.get_default_effort_level()),
             bundle=bundle,
+            name=name,
+            spawned_from_session_id=spawned_from_session_id,
             failed_seeds=failed_seeds,
         )
 
@@ -537,6 +575,9 @@ class SessionService:
         *,
         spawned_from_session_id: str | None = None,
         bundle: str | None = None,
+        name: str | None = None,
+        model: str | None = None,
+        effort_level: str | None = None,
     ) -> SessionInfo:
         """Create a session and inject one prompt as its first turn."""
 
@@ -544,6 +585,9 @@ class SessionService:
             [prompt],
             spawned_from_session_id=spawned_from_session_id,
             bundle=bundle,
+            name=name,
+            model=model,
+            effort_level=effort_level,
         )
 
     async def create_with_prompts(
@@ -552,22 +596,24 @@ class SessionService:
         *,
         spawned_from_session_id: str | None = None,
         bundle: str | None = None,
+        name: str | None = None,
+        model: str | None = None,
+        effort_level: str | None = None,
     ) -> SessionInfo:
         """Create a session and inject each prompt as a turn. `spawned_from_session_id` must be a
         resolved caller (walked by compute_spawn_depth); the result's failed_prompts names any that failed.
         """
 
-        result = await self.create(bundle=bundle)
+        result = await self.create(
+            bundle=bundle,
+            spawned_from_session_id=spawned_from_session_id,
+            name=name,
+            model=model,
+            effort_level=effort_level,
+        )
         # create() always synthesizes container_id from the container it just spawned; the
         # field is Optional only because other SessionInfo call paths (list/get) can lack one.
         assert result.container_id is not None
-
-        if spawned_from_session_id:
-            self._record_daemon_fields(
-                result.session_id,
-                spawned_from_session_id=spawned_from_session_id,
-            )
-            result.spawned_from_session_id = spawned_from_session_id
 
         failed = []
 
@@ -628,6 +674,140 @@ class SessionService:
                 current = self._repo.get(next_id)
             except (SharedSessionNotFound, InvalidSessionId):
                 return depth
+
+    async def resume_spawned(self, caller: str, session_id: str) -> tuple[SessionInfo, bool]:
+        """Resume a session `caller` spawned, adopting a running one; whether a container started."""
+
+        self._require_spawned_by(caller, session_id)
+        existing = await self._containers.find_by_session(session_id)
+        info = await self.resume(session_id)
+
+        return info, existing is None or existing.id != info.container_id
+
+    async def list_spawned(self, caller: str) -> list[SiblingSummary]:
+        """Every session `caller` spawned, oldest first, as working, idle or stopped."""
+
+        listing = await self.list_all()
+        statuses = {container.id: container.status for container in self._containers.list_all()}
+        siblings = sorted(
+            (info for info in listing.sessions if info.spawned_from_session_id == caller),
+            key=lambda info: info.started_at or datetime.min.replace(tzinfo=UTC),
+        )
+
+        return [
+            SiblingSummary(
+                session_id=info.session_id,
+                name=info.name or info.auto_name,
+                state=_sibling_state(info, statuses),
+            )
+            for info in siblings
+        ]
+
+    async def stop_spawned(self, caller: str, session_id: str) -> None:
+        """Stop a session `caller` spawned and every session below it, deepest first.
+
+        Refused before anything stops while a live reply thread shares a container in that tree.
+        """
+
+        self._require_spawned_by(caller, session_id)
+        listing = await self.list_all()
+        tree = _spawn_tree(session_id, listing.sessions)
+
+        for member in tree:
+            container = await self._containers.find_by_session(member)
+
+            if container is None or container.session_id != member:
+                continue
+
+            if threads := set(container.members) & set(container.live_session_ids):
+                raise SiblingStopHostsThread(session_id=min(threads))
+
+        for member in reversed(tree):
+            async with self._session_lock(member):
+                container = await self._containers.find_by_session(member)
+
+                if container is None or container.session_id != member:
+                    continue
+
+                self._stopped_by_spawner.add(member)
+
+                try:
+                    await self._containers.stop_container(container.id)
+                    await self._containers.remove(container.id)
+                finally:
+                    self._stopped_by_spawner.discard(member)
+
+        await self._broadcast_sessions_changed()
+
+    async def deliver_turn_end(
+        self,
+        caller: str,
+        *,
+        delivery_id: str,
+        outcome: str,
+        text: str,
+    ) -> str:
+        """Hand a spawned session's turn end to its spawner, or hold it while the spawner is stopped.
+
+        Answers "delivered", "held", or "dropped" for a turn the spawner's own stop cut short.
+        """
+
+        try:
+            sender = self._repo.get(caller)
+        except (SharedSessionNotFound, InvalidSessionId) as exc:
+            raise SessionNotSpawned(session_id=caller) from exc
+
+        parent_id = sender.spawned_from_session_id
+
+        if not parent_id:
+            raise SessionNotSpawned(session_id=caller)
+
+        if caller in self._stopped_by_spawner:
+            return "dropped"
+
+        payload = {
+            "from_session_id": caller,
+            "from_name": sender.name or sender.auto_name,
+            "delivery_id": delivery_id,
+            "outcome": outcome,
+            "text": text,
+        }
+
+        try:
+            parent = await self.get(parent_id)
+        except SessionNotFound as exc:
+            raise SpawnerUnreachable(session_id=parent_id) from exc
+
+        if not parent.container_id:
+            held = Workspace(self._workspace.path).ensure_session(parent_id).path
+            append_json(held / SIBLING_MESSAGES_PENDING_FILE, payload)
+
+            return "held"
+
+        try:
+            await self._containers.send(
+                payload=payload,
+                container_id=parent.container_id,
+                endpoint=f"api/sibling-message?session_id={parent_id}",
+                method="POST",
+            )
+        except Exception as exc:
+            raise SpawnerUnreachable(session_id=parent_id) from exc
+
+        return "delivered"
+
+    def _require_spawned_by(self, caller: str, session_id: str) -> SessionMetadata:
+        """Read `session_id`'s record; an unknown, malformed or foreign id reads the same: refused."""
+
+        try:
+            metadata = self._repo.get(session_id)
+        except (SharedSessionNotFound, InvalidSessionId) as exc:
+            raise SiblingNotOwned(session_id=session_id) from exc
+
+        if metadata.spawned_from_session_id != caller:
+            raise SiblingNotOwned(session_id=session_id)
+
+        return metadata
 
     async def resume(self, session_id: str) -> SessionInfo:
         """Resume a session: reuse a container once it confirms the session, or spawn one.
@@ -1087,17 +1267,30 @@ class SessionService:
 
         raise ContainerTimeout(container_id=container_id)
 
-    async def _seed_bundle(
+    async def _seed_starting_values(
         self,
         container_id: str,
         session_id: str,
-        bundle: str,
+        bundle: str | None,
+        *,
+        model: str | None = None,
+        effort_level: str | None = None,
     ) -> tuple[dict[str, str], list[str] | None]:
-        """Apply a bundle's starting values over the pickers' routes; return applied and failed keys.
+        """Seed a bundle's starting values overlaid with explicit ones; return applied and failed keys.
+
         The session prompt goes onto the record: its route needs the projection a first turn builds.
+        A value the runtime cannot set counts as failed only when it was explicit.
         """
 
-        declared = (Config.load(self._workspace.path).bundles or {}).get(bundle, {})
+        declared = (
+            (Config.load(self._workspace.path).bundles or {}).get(bundle, {}) if bundle else {}
+        )
+        explicit = {
+            key: value
+            for key, value in (("model", model), ("effort_level", effort_level))
+            if value is not None
+        }
+        values = {**declared, **explicit}
         caps = resolve_runtime_class(self._agent).CAPABILITIES
         supported = {
             "model": caps.supports_set_model_mid_session,
@@ -1108,22 +1301,28 @@ class SessionService:
         failed = []
 
         for key in SEEDED_BUNDLE_KEYS:
-            if key not in declared or not supported.get(key, True):
+            if key not in values:
+                continue
+
+            if not supported.get(key, True):
+                if key in explicit:
+                    failed.append(key)
+
                 continue
 
             try:
                 if key == "session_prompt":
-                    self._record_daemon_fields(session_id, session_prompt=declared[key])
+                    self._record_daemon_fields(session_id, session_prompt=values[key])
                 else:
                     await self._containers.send(
-                        payload={key: declared[key]},
+                        payload={key: values[key]},
                         container_id=container_id,
                         endpoint=f"{_SEED_ROUTES[key]}?session_id={session_id}",
                         method="POST",
                     )
             except Exception:  # noqa: BLE001 - a missed starting value must not fail the creation
                 self._logger.warning(
-                    "Failed to seed bundle value",
+                    "Failed to seed starting value",
                     key=key,
                     bundle=bundle,
                     session_id=session_id,
@@ -1131,7 +1330,7 @@ class SessionService:
                 )
                 failed.append(key)
             else:
-                seeded[key] = declared[key]
+                seeded[key] = values[key]
 
         return seeded, failed or None
 
@@ -1217,7 +1416,7 @@ class SessionService:
 
         kept = []
 
-        for line in _jsonl_lines(path.read_text()):
+        for line in _jsonl_lines(path.read_text(encoding="utf-8")):
             data = self._parse_jsonl_line(line, path)
 
             if data is not None and data.get("type") == "user" and data.get("uuid") == turn_id:
@@ -1225,7 +1424,7 @@ class SessionService:
 
             kept.append(line)
 
-        path.write_text("".join(kept))
+        path.write_text("".join(kept), encoding="utf-8")
 
     def _copy_claudebox_session(
         self,
@@ -1306,7 +1505,7 @@ class SessionService:
 
         kept = []
 
-        for line in _jsonl_lines(path.read_text()):
+        for line in _jsonl_lines(path.read_text(encoding="utf-8")):
             data = self._parse_jsonl_line(line, path)
 
             if data is not None and data.get("turn_id") == turn_id:
@@ -1314,7 +1513,7 @@ class SessionService:
 
             kept.append(line)
 
-        path.write_text("".join(kept))
+        path.write_text("".join(kept), encoding="utf-8")
 
     def _truncate_langgraph_checkpoint(
         self,
@@ -1402,7 +1601,7 @@ class SessionService:
                 if data.get("duration_ms"):
                     duration_ms += data["duration_ms"]
 
-                if data.get("is_human"):
+                if data.get("is_human") and data.get("parent_tool_use_id") is None:
                     num_turns += 1
 
                     if data.get("content"):
@@ -1550,6 +1749,39 @@ def _init_runtime(init: dict) -> str | None:
         return "Claude"
     else:
         return None
+
+
+def _spawn_tree(root: str, sessions: tuple[SessionInfo, ...]) -> list[str]:
+    """`root` and every session whose spawner chain leads to it, each before those it spawned."""
+
+    children: dict[str, list[str]] = {}
+
+    for info in sessions:
+        if info.spawned_from_session_id:
+            children.setdefault(info.spawned_from_session_id, []).append(info.session_id)
+
+    tree = [root]
+    index = 0
+
+    while index < len(tree):
+        tree += [child for child in children.get(tree[index], []) if child not in tree]
+        index += 1
+
+    return tree
+
+
+def _sibling_state(info: SessionInfo, statuses: dict) -> str:
+    from ..containers import ContainerStatus
+
+    if not info.container_id:
+        return "stopped"
+    elif statuses.get(info.container_id) == ContainerStatus.STARTING or info.activity in (
+        "working",
+        "waiting",
+    ):
+        return "working"
+    else:
+        return "idle"
 
 
 def _previews(first: str | None, last: str | None) -> tuple[str | None, str | None]:

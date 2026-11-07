@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MIN_PENDING_DISPLAY_MS } from '../../../config/timing'
 import { isHumanEvent } from '../../../utils/eventPredicates'
-import { getDeliveredContents, isDelivered } from '../utils/pendingReconciliation'
+import { getDeliveredContents, isDelivered, sentAtByTurn } from '../utils/pendingReconciliation'
 
 /**
  * Only the owner session's entries show, and only its own events reconcile them: `canReconcile`
@@ -14,6 +14,7 @@ import { getDeliveredContents, isDelivered } from '../utils/pendingReconciliatio
  */
 export default function usePendingMessages(events, ownerSessionId, canReconcile) {
   const [pendingMessages, setPendingMessages] = useState([])
+  const [sentTurns, setSentTurns] = useState({})
   const ownerRef = useRef(ownerSessionId)
   ownerRef.current = ownerSessionId
 
@@ -41,27 +42,41 @@ export default function usePendingMessages(events, ownerSessionId, canReconcile)
     })
   }, [ownPending, events, canReconcile])
 
-  // Clear pending messages when SSE delivers matching human messages
-  useEffect(() => {
+  const deliveries = useMemo(() => {
     if (ownPending.length === 0 || !canReconcile) {
-      return
+      return []
     }
 
     const humanEvents = events.filter(isHumanEvent)
-    const delivered = new Set(
-      ownPending
-        .filter(pm => isDelivered(getDeliveredContents(humanEvents, pm.addedAt), pm.content))
-        .map(pm => pm.id),
-    )
 
-    if (delivered.size > 0) {
-      setPendingMessages(prev => prev.filter(pm => !delivered.has(pm.id)))
-    }
+    return ownPending.flatMap(pm => {
+      const event = humanEvents.find(e =>
+        isDelivered(getDeliveredContents([e], pm.addedAt), pm.content),
+      )
+      return event ? [{ pm, turnId: event.turn_id }] : []
+    })
   }, [events, ownPending, canReconcile])
+
+  // Clear pending messages when SSE delivers matching human messages
+  useEffect(() => {
+    if (deliveries.length === 0) {
+      return
+    }
+
+    const delivered = new Set(deliveries.map(d => d.pm.id))
+    setPendingMessages(prev => prev.filter(pm => !delivered.has(pm.id)))
+    setSentTurns(prev => ({ ...prev, ...sentAtByTurn(deliveries) }))
+  }, [deliveries])
+
+  // The effect above records a delivery only after the turn it starts is drawn, so merge it here too
+  const sentTurnTimes = useMemo(
+    () => (deliveries.length === 0 ? sentTurns : { ...sentTurns, ...sentAtByTurn(deliveries) }),
+    [sentTurns, deliveries],
+  )
 
   // Add a pending message with optional attachments, inline replies, and a note; returns its ID
   const addPendingMessage = useCallback(
-    (content, attachments = null, inlineReplies = null, note = null) => {
+    (content, attachments = null, inlineReplies = null, note = null, sentAt = Date.now()) => {
       const id = crypto.randomUUID()
       const sessionId = ownerRef.current
       setPendingMessages(prev => [
@@ -74,6 +89,7 @@ export default function usePendingMessages(events, ownerSessionId, canReconcile)
           inlineReplies: inlineReplies?.length ? inlineReplies : null,
           note: note || null,
           addedAt: Date.now(),
+          sentAt,
         },
       ])
       return id
@@ -86,5 +102,5 @@ export default function usePendingMessages(events, ownerSessionId, canReconcile)
     setPendingMessages(prev => prev.filter(pm => pm.id !== id))
   }, [])
 
-  return { showPendingMessages, addPendingMessage, removePendingMessage }
+  return { showPendingMessages, addPendingMessage, removePendingMessage, sentTurnTimes }
 }

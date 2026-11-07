@@ -105,6 +105,28 @@ class TestProjectionUpdate:
         assert proj.value.first_message == "first"
         assert proj.value.last_message == "second"
 
+    def test_a_subagents_prompt_is_neither_a_turn_nor_a_message(self, tmp_workspace, monkeypatch):
+        proj = self._make_projection(tmp_workspace, monkeypatch)
+        proj.update(_make_event(is_human=True, content="review the diff"))
+        proj.update(
+            _make_event(is_human=True, content="Check every hunk.", parent_tool_use_id="tu_agent"),
+        )
+        proj.update(_make_event(is_human=True, content="now commit", parent_tool_use_id=None))
+
+        assert (proj.value.num_turns, proj.value.first_message, proj.value.last_message) == (
+            2,
+            "review the diff",
+            "now commit",
+        )
+
+    def test_a_subagents_prompt_never_becomes_the_first_message(self, tmp_workspace, monkeypatch):
+        proj = self._make_projection(tmp_workspace, monkeypatch)
+        proj.update(
+            _make_event(is_human=True, content="Check every hunk.", parent_tool_use_id="tu_agent"),
+        )
+
+        assert (proj.value.num_turns, proj.value.first_message) == (0, None)
+
     def test_model_updated(self, tmp_workspace, monkeypatch):
         proj = self._make_projection(tmp_workspace, monkeypatch)
         proj.update(_make_event(model="claude-sonnet-5"))
@@ -698,6 +720,147 @@ def _notice(task_id, status="completed"):
 
 def _restart():
     return _make_event(type="system", subtype="container_restarted")
+
+
+class TestProjectionPortRequest:
+    """A port request awaiting the user's choice marks the session as needing them."""
+
+    @pytest.mark.parametrize("name", ["mcp__claudebox__port_open", "port_open"])
+    def test_names_the_port(self, tmp_workspace, monkeypatch, name):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("asks-port", Workspace(start_dir=tmp_workspace))
+
+        proj.update(_make_event(subtype="tool_use", tool_name=name, tool_input={"port": 8080}))
+
+        assert proj.value.needs_user == "Approve: open port 8080"
+
+    def test_the_answer_clears_it(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("asks-port", Workspace(start_dir=tmp_workspace))
+        proj.update(
+            _make_event(subtype="tool_use", tool_name="port_open", tool_input={"port": 8080}),
+        )
+
+        proj.update(
+            _make_event(
+                type="user",
+                subtype="message",
+                is_human=True,
+                content='<response:port_open port="8080">Rejected: port 8080 stays closed.</response:port_open>',
+            ),
+        )
+
+        assert proj.value.needs_user is None
+
+    @pytest.mark.parametrize("port", [0, 70000, True, "8080"])
+    def test_a_port_that_is_none_asks_nothing(self, tmp_workspace, monkeypatch, port):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("asks-port", Workspace(start_dir=tmp_workspace))
+
+        proj.update(
+            _make_event(subtype="tool_use", tool_name="port_open", tool_input={"port": port}),
+        )
+
+        assert proj.value.needs_user is None
+
+    @pytest.mark.parametrize(
+        ("content", "is_error"),
+        [
+            ("Error: permission denied", True),
+            ("Not asked: the port must be from 1 to 65535.", False),
+        ],
+    )
+    def test_a_request_that_failed_asks_nothing(
+        self,
+        tmp_workspace,
+        monkeypatch,
+        content,
+        is_error,
+    ):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("asks-port", Workspace(start_dir=tmp_workspace))
+        proj.update(
+            _make_event(
+                subtype="tool_use",
+                tool_name="port_open",
+                tool_use_id="call-1",
+                tool_input={"port": 8080},
+            ),
+        )
+
+        proj.update(
+            _make_event(
+                subtype="tool_result",
+                tool_use_id="call-1",
+                content=content,
+                is_error=is_error,
+            ),
+        )
+
+        assert proj.value.needs_user is None
+
+    def test_another_call_failing_leaves_the_request_waiting(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("asks-port", Workspace(start_dir=tmp_workspace))
+        proj.update(
+            _make_event(
+                subtype="tool_use",
+                tool_name="port_open",
+                tool_use_id="call-1",
+                tool_input={"port": 8080},
+            ),
+        )
+
+        proj.update(
+            _make_event(subtype="tool_result", tool_use_id="call-2", content="boom", is_error=True),
+        )
+
+        assert proj.value.needs_user == "Approve: open port 8080"
+
+
+class TestProjectionSiblingMessage:
+    """A message from a session this one spawned is never the user's: needs-you stays as it was."""
+
+    @staticmethod
+    def _sibling():
+        return _make_event(type="system", subtype="sibling_message", content="Done.")
+
+    def test_a_session_that_needs_the_user_keeps_its_reason_and_replies(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("parent", Workspace(start_dir=tmp_workspace))
+        proj.update(
+            _make_event(
+                subtype="tool_use",
+                tool_name="needs_user",
+                tool_input={"reason": "Decide: R", "replies": ["Go"]},
+            ),
+        )
+
+        proj.update(self._sibling())
+
+        assert (proj.value.needs_user, proj.value.needs_user_replies) == ("Decide: R", ["Go"])
+
+    def test_a_session_that_does_not_need_the_user_stays_that_way(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("parent", Workspace(start_dir=tmp_workspace))
+
+        proj.update(self._sibling())
+
+        assert proj.value.needs_user is None
+        assert proj.value.num_turns == 0
+        assert proj.value.last_message is None
+
+    def test_a_sibling_message_starts_work(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        proj = Projection("parent", Workspace(start_dir=tmp_workspace))
+
+        proj.update(self._sibling())
+
+        assert proj.value.activity == "working"
 
 
 class TestProjectionActivity:

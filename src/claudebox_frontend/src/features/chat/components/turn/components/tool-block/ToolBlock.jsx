@@ -14,6 +14,7 @@ import { useFocusedMarks } from '../../hooks/useFocusedMarks'
 import { useTurn } from '../../hooks/useTurn'
 import { useTurnRoutingMode } from '../../hooks/useTurnRoutingMode'
 import InteractiveQuestions from './components/interactive-questions'
+import PortRequestCard from './components/PortRequestCard'
 import ToolBlockHeader from './components/ToolBlockHeader'
 import CollapsibleSection from './components/tool-block-expanded-content/components/CollapsibleSection'
 import ToolBlockExpandedContent from './components/tool-block-expanded-content/ToolBlockExpandedContent'
@@ -382,6 +383,8 @@ export default function ToolBlock({
           }}
         />
       )}
+
+      <PortRequestCard toolName={toolName} port={input.port} toolResult={toolResult} />
 
       {/* Expanded content: completed tools, pending Task (nested streams in), unhandled tools */}
       {/* with input, or a pending Bash with a command to show. */}

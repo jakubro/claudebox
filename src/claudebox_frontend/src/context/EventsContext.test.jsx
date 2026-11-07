@@ -863,6 +863,45 @@ describe('EventsContext', () => {
       })
     })
 
+    it("records a creation's opening messages until each part is placed", () => {
+      const { result } = renderEvents()
+      let seq
+
+      act(() => {
+        seq = result.current.startCreating('A', ['alpha', 'bravo'])
+      })
+      const atStart = result.current.getCreation().bySeq[seq]
+      act(() => {
+        result.current.placeOpening(seq, 'carried')
+        result.current.settleCreateRequest(seq, 'sess-c', {
+          undeliveredMessages: ['alpha', 'bravo'],
+          bundleMessages: ['delta'],
+        })
+      })
+      const atAnswer = result.current.getCreation().bySeq[seq]
+      act(() => {
+        result.current.placeOpening(seq, 'answer')
+      })
+
+      expect(atStart).toEqual({
+        status: 'pending',
+        sessionId: null,
+        fromRoute: 'A',
+        carried: ['alpha', 'bravo'],
+      })
+      expect(atAnswer).toEqual({
+        status: 'created',
+        sessionId: 'sess-c',
+        fromRoute: 'A',
+        answer: { blocked: true, bundle: ['delta'] },
+      })
+      expect(result.current.getCreation().bySeq[seq]).toEqual({
+        status: 'created',
+        sessionId: 'sess-c',
+        fromRoute: 'A',
+      })
+    })
+
     it('reads the creation record synchronously, before the next render', () => {
       const { result } = renderEvents()
 

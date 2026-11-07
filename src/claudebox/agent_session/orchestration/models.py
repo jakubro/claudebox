@@ -38,6 +38,7 @@ class EventSubtype(StrEnum):
     EFFORT_LEVEL_CHANGED = "effort_level_changed"
     CONTAINER_RESTARTED = "container_restarted"
     TASK_NOTIFICATION = "task_notification"
+    SIBLING_MESSAGE = "sibling_message"
     RATE_LIMIT = "rate_limit"
     HOOK_RESPONSE = "hook_response"
     INIT = "init"

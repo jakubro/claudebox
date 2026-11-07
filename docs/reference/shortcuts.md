@@ -1,7 +1,6 @@
 # Keyboard shortcuts
 
-Every binding the app registers, generated from the same list the in-app Help panel draws. This
-file is generated - run `just docs` to bring it back in step after changing a binding.
+Every binding the app registers, generated from the same list the in-app Help panel draws. This file is generated - run `just docs` to bring it back in step after changing a binding.
 
 ![The keyboard help overlay, listing the same bindings in columns](images/shortcuts-help-overlay.png)
 
@@ -62,11 +61,11 @@ file is generated - run `just docs` to bring it back in step after changing a bi
 | `Alt+2` | Toggle Todos |
 | `Alt+3` | Toggle Stash |
 | `Alt+4` | Toggle Tasks |
-| `Alt+5` | Toggle Bookmarks |
-| `Alt+6` | Toggle Boards |
-| `Alt+7` | Toggle Usage |
-| `Alt+8` | Toggle MCP Servers |
-| `Alt+9` | Toggle Skills |
+| `Alt+5` | Toggle Crons |
+| `Alt+6` | Toggle Bookmarks |
+| `Alt+7` | Toggle Boards |
+| `Alt+8` | Toggle Usage |
+| `Alt+9` | Toggle MCP Servers |
 | `Alt+0` | Toggle Logs |
 | `Alt+?` | Help overlay |
 | `Double-click tab` | Maximize panel |

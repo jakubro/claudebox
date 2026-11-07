@@ -305,7 +305,7 @@ def _running_labels(backend: str, listings: dict[str, list[dict]]) -> list[dict]
 
 def _run_id(session: Path) -> str | None:
     try:
-        return (session / SESSION_RUN_ID_FILE).read_text().strip() or None
+        return (session / SESSION_RUN_ID_FILE).read_text(encoding="utf-8").strip() or None
     except (FileNotFoundError, NotADirectoryError):
         return None
 

@@ -2,7 +2,7 @@
 
 import { expect, test } from '@playwright/test'
 import { openResumingSession, openSkillsPanel, waitForAppReady } from '../helpers.js'
-import { DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
+import { DEFAULT_SESSION_ID, DEFAULT_SESSION_URL, mockAPI } from '../mocks/api.js'
 import { mockSSE } from '../mocks/sse.js'
 
 async function mockCommands(page, commands) {
@@ -42,6 +42,26 @@ test.describe('Skills Panel', () => {
     expect(box.x).toBeGreaterThan(viewport.width / 2)
   })
 
+  // SPEC: layout:panel-tab-name
+  test('its tab reads Skills, also when a layout saved under Commands reopens it', async ({
+    page,
+  }) => {
+    const uiState = { global: {}, sessions: {} }
+    await mockAPI(page, { uiState })
+    await openSkills(page)
+    const tabs = page.locator('.icon-tab')
+    await expect(tabs.filter({ hasText: 'Skills' })).toHaveCount(1)
+    const saved = () => uiState.sessions[DEFAULT_SESSION_ID]?.layout?.panels?.commands
+    await expect.poll(() => saved()?.title).toBe('Skills')
+
+    saved().title = 'Commands'
+    await page.reload()
+    await waitForAppReady(page)
+
+    await expect(tabs.filter({ hasText: 'Skills' })).toHaveCount(1)
+    await expect(tabs.filter({ hasText: 'Commands' })).toHaveCount(0)
+  })
+
   // SPEC: layout:icon-tooltip
   test('commands icon button exists with Command icon', async ({ page }) => {
     await mockAPI(page)
@@ -50,26 +70,26 @@ test.describe('Skills Panel', () => {
 
     const iconBtn = page.locator('[data-testid="icon-commands"]')
     await expect(iconBtn).toBeVisible()
-    await expect(iconBtn).toHaveAttribute('title', 'Skills (Alt+9)')
+    await expect(iconBtn).toHaveAttribute('title', 'Skills')
 
     const svg = iconBtn.locator('svg')
     await expect(svg).toBeVisible()
   })
 
-  // SPEC: shortcut:alt9
-  test('Alt+9 toggles commands panel', async ({ page }) => {
+  test('no Alt+digit toggles the Skills panel; its icon does', async ({ page }) => {
     await mockAPI(page)
     await page.goto(DEFAULT_SESSION_URL)
     await waitForAppReady(page)
+    const skills = page.locator('[data-testid="panel-skills"]')
 
-    const iconBtn = page.locator('[data-testid="icon-commands"]')
-    await expect(iconBtn).toHaveAttribute('title', 'Skills (Alt+9)')
+    for (const digit of '1234567890') {
+      await page.keyboard.press(`Alt+${digit}`)
+      await expect(skills, `after Alt+${digit}`).not.toBeVisible()
+      await page.keyboard.press(`Alt+${digit}`)
+    }
 
-    await expect(page.locator('[data-testid="panel-skills"]')).not.toBeVisible()
-    await page.keyboard.press('Alt+9')
-    await expect(page.locator('[data-testid="panel-skills"]')).toBeVisible()
-    await page.keyboard.press('Alt+9')
-    await expect(page.locator('[data-testid="panel-skills"]')).not.toBeVisible()
+    await page.locator('[data-testid="icon-commands"]').click()
+    await expect(skills).toBeVisible()
   })
 
   // SPEC: panel-command:tabs

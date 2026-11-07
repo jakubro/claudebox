@@ -319,6 +319,7 @@ export const FOCUSED_HIDDEN_TOOLS = new Set([
   ToolName.SKILL,
   ToolName.NEEDS_USER,
   ToolName.SESSION_READ,
+  ToolName.SESSION_LIST,
   ToolName.LIST_MCP_RESOURCES,
   ToolName.READ_MCP_RESOURCE,
   ToolName.READ_MCP_RESOURCE_DIR,

@@ -29,6 +29,13 @@ class ForkSessionRequest(BaseModel):
     parent_session_id: str | None = None
 
 
+class PortAnswerRequest(BaseModel):
+    """Body for POST /sessions/{id}/ports - the user's answer to an agent's port request."""
+
+    port: int = Field(ge=1, le=65535)
+    approve: bool
+
+
 class StopContainerRequest(BaseModel):
     """Body for POST /containers/{container_id}/stop."""
 

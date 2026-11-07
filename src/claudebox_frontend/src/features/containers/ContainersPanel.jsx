@@ -1,4 +1,4 @@
-/** Cross-workspace container list - bottom-left slot panel. */
+/** The current workspace's container list - bottom-left slot panel. */
 
 import { useMemo } from 'react'
 import ContainerRow from './ContainerRow'

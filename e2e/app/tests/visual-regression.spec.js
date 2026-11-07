@@ -685,7 +685,7 @@ test.describe('Visual Regression - Side Panels', () => {
   test('MCP panel with servers', async ({ page }) => {
     await openSessionWithAPI(page, 'events/with-mcp-servers.jsonl')
 
-    await page.keyboard.press('Alt+8')
+    await page.keyboard.press('Alt+9')
     await expect(page.locator('.mcp-panel')).toBeVisible()
     await expect(page.locator('.mcp-panel')).toHaveScreenshot('panel-mcp.png', OPTS)
   })

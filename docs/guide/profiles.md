@@ -1,10 +1,10 @@
 # Writing a profile
 
-A profile is a directory. It carries the system prompt your agent runs with, the shell hooks that shape its container, and the skills, subagents and slash commands it can reach. Everything that makes an agent yours rather than stock lives in one place you can version.
+A profile is a directory. It carries the system prompt an agent runs with, the shell hooks that shape its container, and the skills, subagents and slash commands it can reach, in one place that can be versioned.
 
-## You already have one
+## The sample profile
 
-A fresh install copies the shipped sample to `~/.claudebox/profile`, so there is something to read and edit before you write a line. Point somewhere else whenever you like:
+A fresh install copies the shipped sample to `~/.claudebox/profile`, ready to read and edit. The `profile` key points claudebox at another directory:
 
 ```toml
 profile = "~/code/my-profile"
@@ -35,7 +35,7 @@ profile/
 
 ## The system prompt
 
-`prompt.md` is the entry point. A runtime other than the default reads `prompt.<agent>.md` instead - `prompt.langgraph.md` for LangGraph - so you can give the two different instructions without maintaining two copies of everything.
+`prompt.md` is the entry point. A runtime other than the default reads `prompt.<agent>.md` instead - `prompt.langgraph.md` for LangGraph - so the two can get different instructions without two copies of everything.
 
 A session started under a settings bundle extends the same convention with the bundle's name: `prompt.research.md` for a bundle named `research`, or `prompt.langgraph.research.md` under LangGraph. When that file does not exist the runtime's own entry point is read, as for any other session, and a bundle never borrows the other runtime's file.
 
@@ -48,17 +48,17 @@ Neither file has to be one file. Include forms compose it:
 | `{{ /absolute/path }}` | That exact path, included as-is |
 | `{{ !name }}` | The output of the built-in `name` - `path` for the working directory, `tree` for a filtered listing of the workspace |
 
-Two behaviors are worth knowing before you are surprised by them.
+Two behaviors of includes:
 
 **An executable target is run, not read.** If the file an include names has its executable bit set, Claudebox runs it and includes what it prints. That is how a prompt gets today's date, the current branch, or anything else that has to be computed at session start - and it is also why a stray `chmod +x` on a prompt fragment makes it vanish from the output.
 
 **Only fragments beside the prompt are interpolated recursively.** What decides this is where the target lands, not which form named it: anything resolving inside the prompt file's own directory is expanded again, so includes can nest, and anything outside it is included literally, braces and all.
 
-Indentation carries, on one condition: an include whose line holds nothing but whitespace before the braces indents every line it brings in, so a fragment dropped into a fenced block keeps its place. Put anything else on that line first - a list marker, a label - and the following lines come in unindented.
+Indentation carries, on one condition: an include whose line holds nothing but whitespace before the braces indents every line it brings in, so a fragment dropped into a fenced block keeps its place. With anything else on that line first - a list marker, a label - the following lines come in unindented.
 
 ## Hooks
 
-The shell hooks, and the difference between them is not cosmetic.
+The shell hooks differ in how they run:
 
 | Hook | Runs | How |
 |---|---|---|
@@ -68,7 +68,7 @@ The shell hooks, and the difference between them is not cosmetic.
 | `agent-stop.sh` | After an interactive session ends | Executed as its own process, once |
 | `image-build.sh` | Image build | Becomes a layer of the image |
 
-Sourced hooks run inside the container's own shell, so what they set survives. Executed hooks do not - anything they export is gone when they exit. Reach for `container-start.sh` when you want the environment changed, and `agent-start.sh` when you want something done.
+Sourced hooks run inside the container's own shell, so what they set survives. Executed hooks do not - anything they export is gone when they exit. `container-start.sh` is for changing the environment, and `agent-start.sh` for running something once.
 
 `agent-start.sh` and `agent-stop.sh` are skipped for non-interactive runs.
 
@@ -78,15 +78,15 @@ The profile itself is mounted read-only - it is shared across every workspace th
 
 ## Making skills and commands visible
 
-The sample's `container-start.sh` earns its place here: it symlinks the profile's `agents/`, `commands/` and `skills/` directories into the agent's configuration directory at the start of every session. That symlink is what makes them discoverable. A profile that replaces the hook without keeping that loop gets a profile whose skills never appear.
+The sample's `container-start.sh` symlinks the profile's `agents/`, `commands/` and `skills/` directories into the agent's configuration directory at the start of every session. That symlink is what makes them discoverable. A profile that replaces the hook without keeping that loop gets a profile whose skills never appear.
 
-It also copies `config/claude.json` over the agent's settings, so changes made during a session do not leak back to the host, and links `config/.gitconfig` so commits carry your identity.
+It also copies `config/claude.json` over the agent's settings, so changes made during a session do not leak back to the host, and links `config/.gitconfig`, so commits carry the identity it sets.
 
-A `commands/*.md` file needs YAML frontmatter with a `name`. A `skills/<name>/SKILL.md` falls back to its directory name when frontmatter omits one. A file that fails to parse is dropped rather than half-loaded, so it simply never appears in the Skills panel or in `/` autocomplete.
+A `commands/*.md` file needs YAML frontmatter with a `name`. A `skills/<name>/SKILL.md` falls back to its directory name when frontmatter omits one. A file that fails to parse is dropped rather than half-loaded, so it never appears in the Skills panel or in `/` autocomplete.
 
-![The Skills panel listing the profile's commands, each with the way it is typed and a line saying what it does](images/profiles-skills.png)
+![The Skills panel docked right listing the profile's commands, each with the way it is typed and a line saying what it does, and the same commands offered by the autocomplete that `/` opens in the message box](images/profiles-skills.png)
 
-## Details
+## Related pages
 
 - [Configuration reference](../reference/configuration.md) - the `profile` key
 - [Panels](../features/panels.md) - the Skills panel, where commands show up

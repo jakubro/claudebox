@@ -1,0 +1,7 @@
+{"type":"user","subtype":"text","is_human":true,"content":"Which file holds the cache key?","ts":"2025-01-18T12:00:00Z","turn_id":"turn_001","id":"evt_001","primary":true}
+{"type":"assistant","subtype":"text","content":"Looking at the writer first.","ts":"2025-01-18T12:00:01Z","id":"evt_002","primary":true,"is_human":false}
+{"type":"assistant","subtype":"text","content":"The key is built in the report module.","ts":"2025-01-18T12:00:04Z","id":"evt_003","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_001","ts":"2025-01-18T12:00:04.500Z","id":"evt_004","primary":false,"is_human":false}
+{"type":"user","subtype":"text","is_human":true,"content":"Reply with the single word OK.","ts":"2025-01-18T12:01:00Z","turn_id":"turn_002","id":"evt_005","primary":true}
+{"type":"assistant","subtype":"text","content":"OK","ts":"2025-01-18T12:01:14.200Z","id":"evt_006","primary":true,"is_human":false}
+{"type":"result","subtype":"success","turn_id":"turn_002","duration_ms":14000,"ts":"2025-01-18T12:01:14.400Z","id":"evt_007","primary":false,"is_human":false}

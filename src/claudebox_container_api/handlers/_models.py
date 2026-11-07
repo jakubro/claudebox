@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from claudebox import EffortLevelId, PermissionModeId
@@ -16,6 +18,16 @@ class SendRequest(BaseModel):
     inline_replies: list[dict] | None = None
     # Message typed alongside an AskUserQuestion/ExitPlanMode answer.
     note: str | None = None
+
+
+class SiblingMessageRequest(BaseModel):
+    """Body for POST /api/sibling-message - a turn end of a session this one spawned."""
+
+    from_session_id: str
+    from_name: str | None = None
+    delivery_id: str
+    outcome: Literal["ended", "asking", "interrupted", "failed"]
+    text: str
 
 
 class SetModelRequest(BaseModel):

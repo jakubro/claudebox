@@ -13,6 +13,9 @@ from pytest_httpserver import HTTPServer
 
 pytestmark = pytest.mark.allow_hosts(["127.0.0.1", "::1"])
 
+# Long hermetic paths must not wrap mid-path in the CLI's Rich output.
+_WIDE = {"COLUMNS": "1000"}
+
 
 # SPEC: cli:workspaces-list
 class TestWorkspacesBare:
@@ -76,6 +79,89 @@ class TestWorkspacesRegister:
         )
         assert (target / ".workspace").exists()
         assert "Traceback" not in result.stderr
+
+
+# SPEC: cli:workspaces-register-home
+class TestWorkspacesRegisterHome:
+    """The home directory registers only when named; a bare register run there registers nothing."""
+
+    @staticmethod
+    def _daemon(httpserver: HTTPServer) -> None:
+        httpserver.expect_request("/api/workspaces", method="GET").respond_with_json(
+            {"workspaces": []},
+        )
+        httpserver.expect_request("/api/workspaces", method="POST").respond_with_json(
+            {"id": "registered"},
+        )
+
+    @staticmethod
+    def _posts(httpserver: HTTPServer) -> int:
+        return sum(1 for request, _ in httpserver.log if request.method == "POST")
+
+    @pytest.mark.parametrize("argv", [[], [""]], ids=["no-path", "empty-path"])
+    def test_a_bare_register_in_home_registers_nothing(
+        self,
+        hermetic_home,
+        run_claudebox,
+        httpserver: HTTPServer,
+        argv: list[str],
+    ) -> None:
+        self._daemon(httpserver)
+
+        result = run_claudebox(
+            ["workspaces", "register", *argv],
+            cwd=hermetic_home,
+            env=_WIDE,
+            timeout=15,
+        )
+
+        assert result.returncode == 2
+        assert f"claudebox workspaces register {hermetic_home}" in result.stdout + result.stderr
+        assert not (hermetic_home / ".workspace").exists()
+        assert self._posts(httpserver) == 0
+
+    def test_naming_home_registers_it_and_says_what_it_takes_in(
+        self,
+        hermetic_home,
+        run_claudebox,
+        httpserver: HTTPServer,
+    ) -> None:
+        self._daemon(httpserver)
+
+        result = run_claudebox(
+            ["workspaces", "register", str(hermetic_home)],
+            env=_WIDE,
+            timeout=15,
+        )
+
+        assert result.returncode == 0
+        assert (hermetic_home / ".workspace").exists()
+        assert self._posts(httpserver) == 1
+        assert "now belongs to this workspace" in result.stdout + result.stderr
+
+    @pytest.mark.parametrize("argv", [[], [""]], ids=["no-path", "empty-path"])
+    def test_a_bare_register_in_a_project_under_home_registers_it(
+        self,
+        hermetic_home,
+        run_claudebox,
+        httpserver: HTTPServer,
+        argv: list[str],
+    ) -> None:
+        self._daemon(httpserver)
+        project = hermetic_home / "code" / "app"
+        project.mkdir(parents=True)
+
+        result = run_claudebox(
+            ["workspaces", "register", *argv],
+            cwd=project,
+            env=_WIDE,
+            timeout=15,
+        )
+
+        assert result.returncode == 0
+        assert (project / ".workspace").exists()
+        assert self._posts(httpserver) == 1
+        assert "now belongs to this workspace" not in result.stdout + result.stderr
 
 
 # SPEC: cli:run:no-auto-register

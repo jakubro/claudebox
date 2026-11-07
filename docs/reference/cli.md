@@ -1,8 +1,6 @@
 # Claudebox CLI reference
 
-Complete `--help` for `claudebox` and every verb it registers, captured from the parser itself.
-This file is generated - run `just docs` to bring it back in step after changing a verb's
-description, its options or its epilog.
+Complete `--help` for `claudebox` and every verb it registers, captured from the parser itself. This file is generated - run `just docs` to bring it back in step after changing a verb's description, its options or its epilog.
 
 ## `claudebox`
 
@@ -352,12 +350,16 @@ Examples:
   claudebox workspaces list                  table of all registered workspaces
   claudebox workspaces register              register cwd as a workspace
   claudebox workspaces register ~/dev/bar    register a specific path
+  claudebox workspaces register ~            register the home directory, on purpose
   claudebox workspaces deregister foo        remove from the daemon's registry
 
 Notes:
   Register creates the `.workspace` marker file if absent, then registers with the
   daemon. Re-registering an already-registered path is idempotent and exits 0.
   Basename collisions are disambiguated by an 8-char path-hash suffix on the id.
+
+  The home directory, a directory above it and `~/.claudebox` register only when named,
+  never from a bare `register` run in them, and the browser refuses them until they have.
 
   Deregister removes the workspace from the daemon's registry only - the `.workspace`
   marker file on disk is preserved.

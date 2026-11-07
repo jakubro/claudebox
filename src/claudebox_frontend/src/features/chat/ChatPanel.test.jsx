@@ -373,6 +373,7 @@ function defaultChatControllerData(overrides = {}) {
       showPendingMessages: [],
       addPendingMessage: vi.fn(),
       removePendingMessage: vi.fn(),
+      sentTurnTimes: {},
     },
     queue: {
       queueItems: [],
@@ -1790,5 +1791,6 @@ function pendingMessage(content) {
     showPendingMessages: [{ id: 'p1', content }],
     addPendingMessage: vi.fn(),
     removePendingMessage: vi.fn(),
+    sentTurnTimes: {},
   }
 }

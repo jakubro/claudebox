@@ -23,6 +23,8 @@ export const LINE_HEIGHT_PX = 18
 export const PX_PER_TEXT_BLOCK_GAP = 12
 export const PX_PER_THINKING_BLOCK = 60
 export const PX_PER_TOOL_BLOCK = 40
+/** A sibling's message adds its name line, border and padding around its text. */
+export const PX_PER_SIBLING_MESSAGE = 44
 /** Bash's own Command + Result sections add chrome beyond a plain tool block. */
 export const PX_PER_BASH_TOOL_BLOCK = 200
 export const PX_PER_ATTACHMENT_ROW = 42

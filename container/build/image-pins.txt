@@ -1,0 +1,15 @@
+# Image inputs the install scripts download: name, exact version, platform, sha256, url ({version} substituted).
+# A version-only row (platform, sha256 and url all -) leaves integrity to the tool that installs it.
+# A float row names an input allowed to resolve fresh, the text that marks it in a script (single-quoted
+# when it holds a space), and why. Change a pin only with `just pins-bump`.
+mise         2026.11.2   linux_amd64   62cad463c1413f05398ca339168a8f655120b6f0b0b8adce3bc6758bafaf0602  https://github.com/jdx/mise/releases/download/v{version}/mise-v{version}-linux-x64
+mise         2026.11.2   linux_arm64   18bf3ac02033c2a50b772b411e35528cd1888386b4316895fcae626db6ad96f3  https://github.com/jdx/mise/releases/download/v{version}/mise-v{version}-linux-arm64
+python       3.13.18     -             -  -
+node         24.22.2     -             -  -
+uv           0.13.7      -             -  -
+rust         1.99.1      -             -  -
+just         1.59.0      -             -  -
+gh-keyring   2026-11-03  *             6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b  https://cli.github.com/packages/githubcli-archive-keyring.gpg
+float claude-code npm:@anthropic-ai/claude-code the agent's own releases are wanted at every daily agent-layer rebuild
+float agent-python-deps langgraph-all the agent's Python packages resolve within pyproject.toml's bounds at every agent-layer rebuild; uv.lock governs the host only
+float apt-packages apt-get the system packages of the base and nesting layers follow the Ubuntu archive on the day the base layer is built, authenticated by apt's own signatures

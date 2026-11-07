@@ -319,8 +319,12 @@ test.describe('Keyboard Shortcuts', () => {
     test('Alt+c moves focus into the chat input from elsewhere', async ({ page }) => {
       await openSession(page)
 
-      // Wait for post-replay auto-focus to settle: ChatInput's overlayMode-clear effect re-focuses
-      // it via 2-rAF after replay_ended; without this wait, sessionsIcon.focus() races and flakes ~13%.
+      // ChatInput re-focuses itself two frames after replay ends; a focus moved away before that
+      // is taken back, and the input can hold focus from before replay while the re-focus is due.
+      await expect(page.locator('[data-testid="chat-input"]')).toHaveAttribute(
+        'data-focus-restored',
+        'true',
+      )
       await expect
         .poll(async () =>
           page.evaluate(() => document.activeElement?.getAttribute?.('data-testid')),
@@ -418,71 +422,71 @@ test.describe('Keyboard Shortcuts', () => {
     })
 
     // SPEC: shortcut:alt5
-    test('Alt+5 toggles bookmarks panel', async ({ page }) => {
+    test('Alt+5 toggles crons panel', async ({ page }) => {
+      await openSession(page)
+
+      await expect(page.locator('[data-testid="panel-crons"]')).toBeVisible()
+
+      await page.keyboard.press('Alt+5')
+      await expect(page.locator('[data-testid="panel-crons"]')).not.toBeVisible()
+
+      await page.keyboard.press('Alt+5')
+      await expect(page.locator('[data-testid="panel-crons"]')).toBeVisible()
+    })
+
+    // SPEC: shortcut:alt6
+    test('Alt+6 toggles bookmarks panel', async ({ page }) => {
       await openSession(page)
 
       // Bookmarks is visible by default
       await expect(page.locator('[data-testid="panel-bookmarks"]')).toBeVisible()
 
-      await page.keyboard.press('Alt+5')
+      await page.keyboard.press('Alt+6')
       await expect(page.locator('[data-testid="panel-bookmarks"]')).not.toBeVisible()
 
-      await page.keyboard.press('Alt+5')
+      await page.keyboard.press('Alt+6')
       await expect(page.locator('[data-testid="panel-bookmarks"]')).toBeVisible()
     })
 
-    // SPEC: shortcut:alt6
-    test('Alt+6 toggles boards panel', async ({ page }) => {
+    // SPEC: shortcut:alt7
+    test('Alt+7 toggles boards panel', async ({ page }) => {
       await openSession(page)
 
       // Boards is visible by default
       await expect(page.locator('[data-testid="panel-boards"]')).toBeVisible()
 
-      await page.keyboard.press('Alt+6')
+      await page.keyboard.press('Alt+7')
       await expect(page.locator('[data-testid="panel-boards"]')).not.toBeVisible()
 
-      await page.keyboard.press('Alt+6')
+      await page.keyboard.press('Alt+7')
       await expect(page.locator('[data-testid="panel-boards"]')).toBeVisible()
     })
 
-    // SPEC: shortcut:alt7
-    test('Alt+7 toggles usage panel', async ({ page }) => {
+    // SPEC: shortcut:alt8
+    test('Alt+8 toggles usage panel', async ({ page }) => {
       await openSession(page)
 
       // Usage is hidden by default.
       await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
 
-      await page.keyboard.press('Alt+7')
+      await page.keyboard.press('Alt+8')
       await expect(page.locator('[data-testid="panel-usage"]')).toBeVisible()
 
-      await page.keyboard.press('Alt+7')
+      await page.keyboard.press('Alt+8')
       await expect(page.locator('[data-testid="panel-usage"]')).not.toBeVisible()
     })
 
-    // SPEC: shortcut:alt8
-    test('Alt+8 toggles MCP panel', async ({ page }) => {
+    // SPEC: shortcut:alt9
+    test('Alt+9 toggles MCP panel', async ({ page }) => {
       await openSession(page)
 
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
 
-      await page.keyboard.press('Alt+8')
+      await page.keyboard.press('Alt+9')
       await expect(page.locator('[data-testid="panel-mcp"]')).toBeVisible()
 
-      await page.keyboard.press('Alt+8')
+      await page.keyboard.press('Alt+9')
       await expect(page.locator('[data-testid="panel-mcp"]')).not.toBeVisible()
-    })
-
-    // SPEC: shortcut:alt9
-    test('Alt+9 toggles commands panel', async ({ page }) => {
-      await openSession(page)
-
-      await expect(page.locator('[data-testid="panel-skills"]')).not.toBeVisible()
-
-      await page.keyboard.press('Alt+9')
-      await expect(page.locator('[data-testid="panel-skills"]')).toBeVisible()
-
-      await page.keyboard.press('Alt+9')
-      await expect(page.locator('[data-testid="panel-skills"]')).not.toBeVisible()
     })
   })
 

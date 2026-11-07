@@ -40,17 +40,17 @@ test.describe('Bookmarks Panel', () => {
   })
 
   // SPEC: panel-bookmarks:shortcut
-  test('Alt+5 toggles bookmarks panel', async ({ page }) => {
+  test('Alt+6 toggles bookmarks panel', async ({ page }) => {
     await openSession(page)
 
     // Bookmarks panel is open by default.
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     await expect(panel).toBeVisible()
 
-    await page.keyboard.press('Alt+5')
+    await page.keyboard.press('Alt+6')
     await expect(panel).not.toBeVisible()
 
-    await page.keyboard.press('Alt+5')
+    await page.keyboard.press('Alt+6')
     await expect(panel).toBeVisible()
   })
 
@@ -105,9 +105,9 @@ test.describe('Bookmarks Panel', () => {
 
     const panel = page.locator('[data-testid="panel-bookmarks"]')
     if (!(await panel.isVisible())) {
-      // Move focus off the chat input so Alt+5 triggers the panel shortcut.
+      // Move focus off the chat input so Alt+6 triggers the panel shortcut.
       await page.locator('body').click()
-      await page.keyboard.press('Alt+5')
+      await page.keyboard.press('Alt+6')
     }
     await expect(panel).toBeVisible({ timeout: 5000 })
 
@@ -205,7 +205,7 @@ test.describe('Bookmarks Panel', () => {
     await expect(bookmarkBtn).toBeVisible()
 
     const title = await bookmarkBtn.getAttribute('title')
-    expect(title).toBe('Bookmarks (Alt+5)')
+    expect(title).toBe('Bookmarks (Alt+6)')
   })
 })
 

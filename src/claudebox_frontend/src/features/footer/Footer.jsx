@@ -11,6 +11,7 @@ import useBackgroundWaiting from '../../hooks/useBackgroundWaiting'
 import useCapabilities from '../../hooks/useCapabilities'
 import useCopyFlash from '../../hooks/useCopyFlash'
 import useCurrentBackendId from '../../hooks/useCurrentBackendId'
+import useRunningTurnStart from '../../hooks/useRunningTurnStart'
 import useSessionDefaults from '../../hooks/useSessionDefaults'
 import { getContextBarColor } from '../../utils/color'
 import { computeContextBar } from '../../utils/contextBar'
@@ -35,7 +36,6 @@ export default function Footer() {
     connectionStatus,
     connectionError,
     isResponding,
-    respondingSince,
     lastEventTimestamp,
     isResuming,
     isReplaying,
@@ -45,6 +45,7 @@ export default function Footer() {
     isOpeningWorkspace,
   } = useEvents()
   const { isWaiting, awaitingPickup } = useBackgroundWaiting()
+  const runningSince = useRunningTurnStart()
 
   const {
     model,
@@ -105,7 +106,7 @@ export default function Footer() {
         connectionStatus={connectionStatus}
         connectionError={connectionError}
         isResponding={isResponding || awaitingPickup}
-        respondingSince={respondingSince}
+        runningSince={runningSince}
         lastEventTimestamp={lastEventTimestamp}
         isSubmitting={isSubmitting}
         isAwaitingResponse={isAwaitingResponse}

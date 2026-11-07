@@ -88,7 +88,15 @@ def on_fake_podman(podman: FakePodman):
 
     with (
         patch("claudebox.containers.backend.subprocess.run", podman),
-        patch("claudebox.containers.run._port_in_use", podman.held.__contains__, create=True),
-        patch("claudebox.containers.run._free_port", podman.free_port, create=True),
+        patch(
+            "claudebox.containers.run._port_in_use",
+            lambda port, _mapping: port in podman.held,
+            create=True,
+        ),
+        patch(
+            "claudebox.containers.run._free_port",
+            lambda _mapping: podman.free_port(),
+            create=True,
+        ),
     ):
         yield

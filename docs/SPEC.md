@@ -64,6 +64,7 @@ When two bottom-slot panels are open at the same time, they split the bottom str
 
 - Chat panel always visible (cannot be closed) <!-- claim:layout:panel-chat-permanent -->
 - Each side panel's tab shows the panel's icon-strip icon before its title <!-- claim:layout:panel-tab-icon -->
+- Each side panel's tab carries the same name as its icon's tooltip, also when a saved layout reopens it <!-- claim:layout:panel-tab-name -->
 - Skills, Tasks, and Containers panel rows share a padded-card look with a subtle background, brighter on hover, and consistent vertical spacing. Identifier values are monospaced; other text uses the regular font. <!-- claim:layout:panel-row-card -->
 - Hovering an icon while panels are maximized opens that panel as a floating overlay anchored to the icon, after a short hover-intent delay. The overlay grows to fit its content and stays within the icon strip's vertical bounds <!-- claim:layout:floating-panel -->
 - Logs and Containers floating previews open wider than other panels to fit their horizontally-dense rows <!-- claim:layout:floating-panel-wide-panels -->
@@ -110,11 +111,13 @@ The browser URL hash reflects the active session and the user's current scroll p
 | `#/workspaces/{id}/sessions/{sessionId}/turns/a-{turnId}/{part}` | Active session; paused at one bookmarked paragraph or tool call in turn `{turnId}` | <!-- claim:url:session-turn-part -->
 | `#/workspaces/{id}/boards/{boardId}`                     | Active board                                                   | <!-- claim:url:board -->
 
-A workspace-only URL may also carry one or more messages, opening a new session and submitting them as its first turns: <!-- claim:url:link-new-session -->
+A workspace-only URL may also carry one or more messages, opening a new session that sends the first and queues the rest: <!-- claim:url:link-new-session -->
 
-- Repeated carried text submits in the order it appears in the URL <!-- claim:url:link-send-order -->
+- Carried messages are sent in the order they appear in the URL, each as its own message with its own reply <!-- claim:url:link-send-order -->
+- Every carried message after the first waits in the session's message queue exactly like a message queued with Alt+Enter (§3.16): a dimmed bubble with send now, edit and cancel, sent when the reply before it finishes <!-- claim:url:link-queued -->
 - Text submits automatically only when it matches a pattern the workspace's settings approve; if any piece of carried text does not match, none of it submits <!-- claim:url:link-allowlist -->
 - Carried text spanning several lines is matched as a whole, and a pattern's wildcard matches across its line breaks <!-- claim:url:link-allowlist-multiline -->
+- A carried message with no text is skipped; a link carrying nothing else opens a new session that sends nothing <!-- claim:url:link-empty-skipped -->
 - Text that does not submit waits in the message box instead, with a notice explaining why <!-- claim:url:link-blocked-to-input -->
 - The carried text is used once — reloading the page the link produced reopens the same session without submitting anything again <!-- claim:url:link-consumed-once -->
 - A link naming a workspace that is not registered opens no session and submits nothing <!-- claim:url:link-unregistered-workspace -->
@@ -140,11 +143,11 @@ A workspace-only URL may also carry one or more messages, opening a new session 
 | Alt+2    | Toggle Todos     | <!-- claim:shortcut:alt2 -->
 | Alt+3    | Toggle Stash     | <!-- claim:shortcut:alt3 -->
 | Alt+4    | Toggle Tasks     | <!-- claim:shortcut:alt4 -->
-| Alt+5    | Toggle Bookmarks | <!-- claim:shortcut:alt5 -->
-| Alt+6    | Toggle Boards    | <!-- claim:shortcut:alt6 -->
-| Alt+7    | Toggle Usage     | <!-- claim:shortcut:alt7 -->
-| Alt+8    | Toggle MCP       | <!-- claim:shortcut:alt8 -->
-| Alt+9    | Toggle Skills    | <!-- claim:shortcut:alt9 -->
+| Alt+5    | Toggle Crons     | <!-- claim:shortcut:alt5 -->
+| Alt+6    | Toggle Bookmarks | <!-- claim:shortcut:alt6 -->
+| Alt+7    | Toggle Boards    | <!-- claim:shortcut:alt7 -->
+| Alt+8    | Toggle Usage     | <!-- claim:shortcut:alt8 -->
+| Alt+9    | Toggle MCP       | <!-- claim:shortcut:alt9 -->
 | Alt+? (or Alt+/) | Help overlay (toggle) | <!-- claim:shortcut:alt-question -->
 | Alt+N    | New session (current browser tab) | <!-- claim:shortcut:alt-n -->
 | Alt+Shift+N | New session (new browser tab) | <!-- claim:shortcut:alt-shift-n -->
@@ -322,6 +325,8 @@ The center area of the workspace shows a single **main panel** whose content is 
 - Any turn the agent reports as failed - not logged in, billing, rate limit, a rejected request, a server fault - shows as failed <!-- claim:chat:agent-reported-failure -->
 - A session whose runtime fails to start shows a failure with its reason rather than accepting messages and losing them; a message sent while it is failed is refused, not silently dropped, and the failure is still visible after a reload <!-- skip:claim:chat:runtime-connect-failed --> (no e2e test reaches a runtime that fails to start)
 - Completed turns show final duration <!-- claim:chat:completed-duration -->
+- A finished turn shows how long the agent worked on it, in its header and after "worked for" alike - the same time the footer's total adds up; a turn whose agent kept no record of its time shows the time between its first and last step <!-- claim:chat:duration-recorded -->
+- A running turn's time counts up each second from when its message was sent: from the press of send for a message sent in this tab, and from the time the session recorded it for one sent from another tab or seen after a reload <!-- claim:chat:duration-running-start -->
 - When a turn ends while background work it started is still running, the turn shows what the session is waiting on - the task's description, or the number of tasks when there are several - until that work finishes <!-- claim:chat:waiting-on-background -->
 - A message sent while the session waits starts a turn as usual <!-- claim:chat:waiting-accepts-messages -->
 - Background work still running when the session stopped counts as killed once the session is resumed; a stopped session never shows waiting <!-- claim:chat:waiting-ends-on-stop -->
@@ -332,6 +337,8 @@ The center area of the workspace shows a single **main panel** whose content is 
 - A new session's first message is sent to that session only <!-- claim:chat:first-message-own-session -->
 - Empty state: "Waiting for messages..." <!-- claim:chat:empty-state -->
 - Assistant messages rendered as markdown (code blocks, inline code, lists, links, LaTeX math); the same renderer is used for ticket detail content so chat and ticket markdown look identical <!-- claim:chat:markdown -->
+- In a ```diff code block, the band behind each removed or added line reaches the end of the block's longest line, so a line scrolled into view keeps its colour; when every line fits, the bands fill the block's width <!-- claim:chat:diff-fence-full-width -->
+- A ```diff code block marks removed and added lines with the same faint red and green bands as an Edit diff; the text keeps its usual colours <!-- claim:chat:diff-fence-tints -->
 - Inline code holding just a colour - #RRGGBB, rgb(R, G, B) or hsl(H, S%, L%) - shows a small swatch of that colour after the value <!-- claim:chat:color-swatch -->
 - All six heading levels appear as headings of one style, stepping down in size, the smallest two just below body text size <!-- claim:chat:heading-levels -->
 - Inline math may be written $x$ or, as on GitHub, $`x`$; both appear as the same typeset formula, and the backtick form may contain a dollar sign <!-- claim:chat:inline-math-forms -->
@@ -339,6 +346,8 @@ The center area of the workspace shows a single **main panel** whose content is 
 - A details block appears as an expandable section the reader can open and close <!-- claim:chat:html-details-toggle -->
 - Unsafe HTML in a message never runs: scripts, inline event handlers, and javascript: links are removed, and embedded frames and standalone vector graphics do not appear <!-- claim:chat:html-safe -->
 - A link in a message to a web address opens in a new tab without giving the opened page access back to the app <!-- claim:chat:html-link-safe -->
+- HTML in a message, or in a tool's output shown as formatted text, can set text colour, font weight, text alignment and width; any other styling is ignored, and neither can borrow the look of the app's own dialogs, overlays or buttons by naming them <!-- claim:chat:html-style-limited -->
+- Whatever a message or a tool's formatted output contains stays inside its own area: content wider than the area is cut off at its edge and never covers the controls around it <!-- claim:chat:html-contained -->
 - A link in a message to a relative file path, such as docs/guide.md, points into the directory the agent works in; hovering shows the full path, clicking copies it, and Alt+Click opens it in your editor the same way as a highlighted path <!-- claim:chat:relative-link -->
 - A relative link that would lead outside the agent's working directory appears as plain text <!-- claim:chat:relative-link-confined -->
 - An image in a message with a relative path, such as ./out/plot.png, displays the file from the agent's working directory, fitted to the message width, including in a stopped session <!-- claim:chat:relative-image -->
@@ -370,6 +379,7 @@ The center area of the workspace shows a single **main panel** whose content is 
 - The line stays on one line and shows only the first line of a name; a name too long for it is cut with an ellipsis at the column's edge, and the dots stay visible after the cut <!-- claim:turn:progress-label-one-line -->
 - While the session waits on background work, the ring turns at half the working speed, dimmed, and centred on its label <!-- claim:turn:progress-waiting-ring -->
 - When stopping, displays "Stopping..." instead of "Working..." <!-- claim:turn:progress-stopping -->
+- The Working line and "Stopping..." show no time <!-- claim:turn:progress-no-time -->
 - Completed turns show a "worked for [duration]" summary, led by a green ✓, or a red ✗ when the turn failed; appears only when the current runtime reports cost telemetry <!-- claim:turn:progress-complete --> <!-- claim:cost-display:capability-gated -->
 - Hovering "worked for" shows the date and time the turn ended <!-- claim:turn:progress-complete-hover -->
 - The compaction indicator appears only while a compaction is in progress, then clears when the compaction completes <!-- claim:chat:compaction-indicator-bounded -->
@@ -510,6 +520,7 @@ Control bar at top of Chat panel with two groups: <!-- claim:chat:control-bar --
 - Text written with angle brackets that is not markup, such as a < b, appears in the collapsed preview as written <!-- claim:turn:preview-keeps-angle-brackets -->
 - A turn whose blocks all moved to the work column shows a collapsed preview naming no tool count, since none of its tool calls are in the transcript to count <!-- claim:chat:work-view-emptied-turn -->
 - When a reply's visible content is only code, only a table, or only an image, the collapsed preview shows the first line of that content instead, and the turn keeps its normal collapsed height <!-- claim:turn:collapsed-preview-fallback -->
+- A collapsed turn's first line ends with an ellipsis before its time and buttons and never runs under them, however narrow the conversation <!-- claim:turn:preview-clear-of-meta -->
 - Collapsed content remains searchable via browser Ctrl+F <!-- claim:turn:collapse-css -->
 - With auto-collapse on, only the last turn stays expanded; turning it off expands every collapsed turn, and when a new turn arrives the previously-last turn collapses; a turn you expand by hand stays open as new turns arrive, until you collapse it by hand or turn auto-collapse off and back on <!-- claim:chat:turn-autocollapse-behavior -->
 
@@ -604,6 +615,7 @@ Attach files/images to messages: <!-- claim:input:attachment -->
 - Click image attachment in message history to open zoom overlay <!-- claim:chat:attachment-zoom -->
 - Escape, backdrop click, or close button closes zoom overlay <!-- claim:chat:attachment-zoom-close -->
 - A message sent with a text file shows the message and the file's chip once; the agent's reply holds only its own answer <!-- claim:chat:attachment-text-once -->
+- Opening a stored attachment on its own shows PNG, JPEG, GIF and WebP pictures and downloads any other file, SVG and PDF included; an attached SVG still appears as a thumbnail in the message history <!-- claim:chat:attachment-download -->
 
 ### 3.12 Conversation Rewind
 
@@ -815,7 +827,7 @@ The chat shows a session in one of four views, picked in the control bar. Focuse
 **Focused and Everything:**
 
 - On a desktop, a session that never picked a view opens Focused; a session where a view was picked opens in that view <!-- claim:chat:focused-view-default -->
-- In Focused a turn leaves out the calls that only read: file reads, file and text searches, web searches and page fetches, task list lookups and background task output, tool searches, skill loads, shell commands that change nothing, the agent's own needs-you calls, its reads of other sessions, listings and reads of MCP resources, and MCP tool calls whose server declares the tool read-only. A shell command's own actions settle the question when it finishes, so a command left out while it ran can appear, and one shown while it ran can be left out <!-- claim:chat:focused-view-hides -->
+- In Focused a turn leaves out the calls that only read: file reads, file and text searches, web searches and page fetches, task list lookups and background task output, tool searches, skill loads, shell commands that change nothing, the agent's own needs-you calls, its reads of other sessions and its listings of the sessions it started, listings and reads of MCP resources, and MCP tool calls whose server declares the tool read-only. A shell command's own actions settle the question when it finishes, so a command left out while it ran can appear, and one shown while it ran can be left out <!-- claim:chat:focused-view-hides -->
 - A call of one of those kinds that failed shows in Focused, marked failed as in any view <!-- claim:chat:focused-view-failed-shown -->
 - A bookmarked call shows in Focused whatever its kind; removing its bookmark there leaves it out again <!-- claim:chat:focused-view-bookmarked -->
 - Every other call shows in Focused exactly as in Everything: writes and edits, other shell commands, subagents, questions and plan approvals, task list changes, and every other MCP tool call <!-- claim:chat:focused-view-shows -->
@@ -1151,6 +1163,7 @@ Nested tool calls in Task blocks display progressively in real-time: <!-- claim:
 - Clickable header shows first line as preview (truncated with ellipsis, no quotes) <!-- claim:tool:thinking-preview -->
 - Expands to show full content as formatted Markdown <!-- claim:tool:thinking-expand -->
 - Expanded content replaces the ellipsized preview line in place <!-- claim:tool:thinking-expand-inline -->
+- Expanded thinking stays within the turn's width; a code block wider than the turn scrolls sideways inside it, as it does in a reply <!-- claim:tool:thinking-wide-content -->
 - Uses hollow circle bullet (○) to distinguish from tools <!-- claim:tool:thinking-bullet -->
 
 ### 4.7 Compaction Blocks
@@ -1238,6 +1251,7 @@ Inline character highlighting for changes: <!-- claim:tool:edit-diff-inline -->
 - Consecutive add/remove line pairs show word-level diff <!-- claim:tool:edit-diff-word -->
 - Changed characters within paired lines highlighted (like GitHub word-diff) <!-- claim:tool:edit-diff-highlight -->
 - Unrelated add/remove lines show full-line highlighting <!-- claim:tool:edit-diff-fullline -->
+- Removed and added lines show their text in the same colour as unchanged code; a faint red or green band marks each line, and a stronger tint marks the changed words <!-- claim:tool:edit-diff-text-color -->
 
 ### 4.12 System Reminders
 
@@ -1333,6 +1347,7 @@ Tool output with code or text content: <!-- claim:tool:codeblock-detect -->
 - Known file types: syntax highlighted by extension <!-- claim:tool:codeblock-extension -->
 - Unknown content: auto-detected language, highlighted if recognized <!-- claim:tool:codeblock-auto -->
 - Markdown files and markdown-like output render as formatted text (headings, lists, links) instead of raw code <!-- claim:tool:markdown-auto-render -->
+- Output that reads as source code shows as code, even when its text holds links, code fences or other markdown signs <!-- claim:tool:code-output-stays-code -->
 - Hovering a markdown block reveals a toolbar with a source toggle and copy button <!-- claim:tool:markdown-toolbar -->
 - Source toggle switches between rendered markdown and syntax-highlighted code view <!-- claim:tool:markdown-toggle -->
 - Copy button copies the raw markdown source <!-- claim:tool:markdown-copy -->
@@ -1351,6 +1366,7 @@ Tool output with code or text content: <!-- claim:tool:codeblock-detect -->
 - Hovering turns / cost / each timestamp segment reveals informative tooltips: "Turns — N", "API cost this session — $X.XX", "Started — …", "Last active — …" <!-- claim:panel-session:meta-tooltips -->
 - Clicking session ID copies full session directory path to clipboard; shows "Copied!" briefly <!-- claim:panel-session:copy-id -->
 - Preview of first and last messages (last prefixed with "...") <!-- claim:panel-session:preview -->
+- The turn count and the message previews follow only the user's own messages: a prompt the agent gives one of its subagents is neither previewed as a message nor counted as a turn <!-- claim:panel-session:user-messages-only -->
 - Hovering a message preview shows up to its first 300 characters, ending in ... when cut <!-- claim:panel-session:preview-tooltip -->
 - Auto-refresh when sessions change <!-- claim:panel-session:auto-refresh -->
 - Auto-refresh follows only the shown workspace: changes to sessions and containers in other workspaces leave the list as it is <!-- claim:panel-session:auto-refresh-scoped -->
@@ -1678,7 +1694,7 @@ Displays keyboard shortcuts reference tables. <!-- claim:panel-help:shortcuts-ta
 |----------------|------------------------------------------------------------------------------------------|
 | Connection dot | Green (connected), Amber (connecting/stopping), Red (error/reconnecting)                | <!-- claim:footer:connection-dot -->
 | Status text    | "Ready", "Submitting...", "Working...", "Waiting...", "Stopping...", "Stopped", "Connecting", "Resuming...", "Forking...", "Creating session...", "Opening board...", "Opening workspace...", "Reconnecting...", "Disconnected", error | <!-- claim:footer:status-text -->
-| Elapsed timer  | "(Ns)" suffix on Submitting/Working, counts seconds since response started | <!-- claim:footer:elapsed-timer -->
+| Elapsed timer  | "(Ns)" suffix on Submitting/Working, counting from where the running turn's own time starts - the press of send in this tab, or the time the session recorded the message - and changing in the same instant as the turn's time; whole minutes past a minute | <!-- claim:footer:elapsed-timer -->
 | Interrupt hint | "Ctrl+. to stop" (when working or submitting)                                            | <!-- claim:footer:interrupt-hint -->
 | Loading hint | "Wait for the session to load" for a few seconds after Enter or Alt+Enter is pressed while a session is loading | <!-- claim:footer:loading-hint -->
 
@@ -1878,6 +1894,7 @@ Browser notification when response completes: <!-- claim:notify:desktop -->
 - Click action: focus claudebox tab <!-- claim:notify:desktop-click -->
 - Requires browser permission <!-- claim:notify:desktop-permission -->
 - Do NOT notify on session resume <!-- claim:notify:desktop-no-resume -->
+- A turn started by a message from a session this one started shows no notification and plays no chime when it finishes, unless that turn asks you something <!-- claim:notify:desktop-sibling-quiet -->
 
 ### 13.2 Sound Alerts
 
@@ -1922,6 +1939,7 @@ Visual indicator in browser tab: <!-- claim:notify:tab-indicator -->
 - A session keeps needing you across a stop and a resume <!-- claim:notify:needs-you-persists -->
 - A fork starts without needing you <!-- claim:notify:needs-you-fork -->
 - A session started by another session never needs you; its questions go to the session that started it. A fork of it can <!-- claim:notify:needs-you-spawned -->
+- A message arriving from a session this one started does not count as yours: a session that needs you keeps needing you, and one that does not stays that way <!-- claim:notify:needs-you-sibling-message -->
 - A reply thread never needs you <!-- claim:notify:needs-you-side-thread -->
 - The agent can offer up to five replies with its ask; they show as buttons at the bottom of its last message, the first one highlighted <!-- claim:notify:needs-you-replies -->
 - In Focused the agent's needs-you call shows no block of its own; the needs-you mark and the reply buttons show as in every view <!-- claim:notify:needs-you-call-focused -->
@@ -1974,7 +1992,7 @@ Visual indicator in browser tab: <!-- claim:notify:tab-indicator -->
 
 ### 15.3 Bookmarks Panel
 
-- Side panel on right strip below Crons and above Boards, accessible via Alt+5 <!-- claim:panel-bookmarks:shortcut -->
+- Side panel on right strip below Crons and above Boards, accessible via Alt+6 <!-- claim:panel-bookmarks:shortcut -->
 - Two tabs: "This session" and "All sessions", with count badges <!-- claim:panel-bookmarks:tabs -->
 - Active tab tracks active-session presence: "This session" while a session is open, "All sessions" while none is. Manual clicks override; the next session-state change re-asserts the auto-mapping (auto-switch wins) <!-- claim:panel-bookmarks:tab-auto-switch -->
 - "This session" tab lists bookmarks in current session; clicking scrolls to the bookmarked turn <!-- claim:panel-bookmarks:session-scroll -->
@@ -2106,7 +2124,7 @@ Displays available slash commands organized by category:
 - All tab: all commands unfiltered <!-- claim:panel-command:all-filter -->
 - Tab badges show count per category <!-- claim:panel-command:tab-counts -->
 - Commands displayed with `/` prefix (e.g., `/deploy`) <!-- claim:panel-command:slash-prefix -->
-- Empty state: "No commands" <!-- claim:panel-command:empty -->
+- Empty state: "No skills" <!-- claim:panel-command:empty -->
 - Resume state: "Resuming..." <!-- claim:panel-command:resume -->
 
 ---
@@ -2134,6 +2152,7 @@ Displays available slash commands organized by category:
 - A "+ Register workspace…" footer item below the color palette opens a modal that accepts an absolute path, or one starting with ~, to an existing directory and registers it <!-- claim:workspace:register -->
 - Registering a directory makes it a workspace in its own right: its sessions, its agent's login and its interface state live under it, and no other directory's sessions are listed for it <!-- claim:workspace:register-marker -->
 - A path that is not absolute, has no directory at it, is a file, or cannot be made a workspace is refused: the modal stays open and says which, and nothing is registered <!-- claim:workspace:register-invalid-path -->
+- A path that holds the home directory or Claudebox's own files - the home directory itself, a directory above it, or Claudebox's own folder in it - is refused: the modal stays open, says to run `claudebox workspaces register` for it in a terminal, and nothing is registered <!-- claim:workspace:register-needs-cli -->
 - Registering an already-known path is idempotent: the modal shows an inline notice and auto-closes; no duplicate workspace row is created <!-- claim:workspace:register-idempotent -->
 
 ### 21.3 Deep Linking
@@ -2169,6 +2188,7 @@ When creating a new session: <!-- claim:container:creation-overlay -->
 
 - A workspace or mount that lives under /tmp fails creation with a message naming the path and the setting that allows it <!-- claim:container:creation-tmp-conflict -->
 - Several sessions of one workspace run side by side when its settings publish a fixed port; the first to start holds that port and each later one publishes it on a free port instead (needs a real container host; proven by the daemon's fake-podman tests) <!-- skip:claim:container:fixed-port-side-by-side -->
+- A port the workspace settings publish is reachable from this computer only; an entry that names a wider address makes it reachable from the network <!-- claim:container:published-port-loopback -->
 - A network mode in the workspace settings or a bundle that leaves a session in the browser unreachable (host, none, or another container's or namespace's network) fails creation with a message naming the mode and where it is set <!-- claim:container:creation-network-mode-refused -->
 - Starting or reloading a session leaves the session list in place - its rows stay as they were while the session comes up - so the browser stays responsive however many sessions the workspace holds <!-- claim:container:start-keeps-session-list -->
 
@@ -2228,6 +2248,7 @@ A bottom-slot panel listing the current workspace's containers. Mounted at the b
 
 - A workspace may opt in so the agent can run and build its own containers inside its session <!-- claim:container:nested-opt-in -->
 - Containers the agent runs stay invisible to the host and to other sessions, and disappear when the session ends <!-- claim:container:nested-isolation -->
+- A container the agent runs inside its session never freezes the session or makes it restart, however busy it is <!-- claim:container:nested-never-freezes -->
 
 ### 21.10 Session Bundles
 
@@ -2235,6 +2256,7 @@ A workspace may declare named session bundles - alternative starting setups a ne
 
 - The "+" dropdown lists, below a divider, one "New session - <name>" row per declared bundle in declaration order; both "+" buttons show the same rows <!-- claim:bundle:menu-rows -->
 - Choosing a bundle row starts a session under that bundle <!-- claim:bundle:menu-start -->
+- A bundle's opening messages follow the session's own first message, if it has one - text a link carried or a message typed on the welcome screen; whichever message comes first is sent, and every later one waits in the session's message queue as carried link messages do <!-- claim:bundle:opening-messages-queued -->
 - On the welcome screen a bundle picker sits beside the model, effort and permission pickers, showing the chosen bundle immediately; the next session created from the welcome view starts under it <!-- claim:bundle:welcome-picker -->
 - A workspace declaring no bundles shows no divider, no bundle rows, no bundle picker and no bundle name in the footer <!-- claim:bundle:none-declared -->
 - A session started under a bundle shows the bundle's name in the footer; it reports rather than offers, and clicking it opens nothing <!-- claim:bundle:pill-read-only -->
@@ -2243,6 +2265,17 @@ A workspace may declare named session bundles - alternative starting setups a ne
 - A value picked on the welcome screen over the bundle's shows the dot from the session's first moment <!-- claim:bundle:drift-from-welcome -->
 - A bundle that sets none of those values never shows the dot <!-- claim:bundle:no-drift-possible -->
 - A side thread opened on its own shows the bundle of the session it came from <!-- claim:bundle:side-thread -->
+
+### 21.11 Ports the Agent Opens
+
+- The agent can ask for one of its session's ports to be reachable from this computer while the session keeps running, in both Claude and LangGraph workspaces; the request shows in its conversation as a card naming the port, with Approve and Reject buttons <!-- claim:container:port-request -->
+- Asking ends the agent's turn, and the session needs you until you choose, with a reason naming the port <!-- claim:container:port-request-needs-you -->
+- Approving makes the port reachable from this computer only - on the same port number when it is free, on a free one otherwise - without restarting the session; the agent is told the address and carries on <!-- claim:container:port-approve -->
+- Rejecting makes nothing reachable; the agent is told the request was rejected and carries on <!-- claim:container:port-reject -->
+- Once you choose, the card shows the outcome - the address, or that the request was rejected - and offers no buttons <!-- claim:container:port-card-answered -->
+- An opened port stays reachable until the agent closes it, also while claudebox itself restarts; while the session is stopped it is closed, and each time the session runs it opens again - on the same port number when that is free, on a free one otherwise - and the agent is told a changed address with the next message it receives <!-- claim:container:port-lifetime -->
+- A session started by another session, and a reply thread, cannot ask for a port; the agent is told where to ask instead <!-- claim:container:port-own-session-only -->
+- In Claude workspaces, asking for and closing a port work in every permission mode except Plan <!-- claim:container:port-permission-mode -->
 
 ---
 
@@ -2424,6 +2457,7 @@ Running `claudebox workspaces list`, `register`, or `deregister` manages the dae
 
 - Running `workspaces list` shows every registered workspace <!-- claim:cli:workspaces-list -->
 - Running `workspaces register` registers the current directory (or the given path) as a workspace and creates the `.workspace` marker if absent <!-- claim:cli:workspaces-register -->
+- Running `workspaces register` with a path that holds the home directory or Claudebox's own files registers it and says that every directory below it without a `.workspace` marker of its own now belongs to it; run with no path in such a directory, it registers nothing and asks for the path to be named <!-- claim:cli:workspaces-register-home -->
 - Registering an already-registered workspace succeeds and reports it was already registered <!-- claim:cli:workspaces-register-idempotent -->
 - Two paths sharing a basename get distinct workspace IDs <!-- claim:cli:workspaces-register-collision -->
 - Running `workspaces deregister <id>` removes the workspace from the registry; the `.workspace` marker file is preserved <!-- claim:cli:workspaces-deregister -->
@@ -2457,4 +2491,17 @@ Workspaces choose their agent runtime via the `agent` field in `.claudebox/setti
 - LangGraph workspaces have a tool-search meta-tool the model invokes for self-discovery; the conversation shows the search only when it fails, with what was searched for and what came back <!-- claim:langgraph:tool-search -->
 - LangGraph workspaces connect to MCP servers declared per-workspace; the model can list and read their resources and invoke their tools identically to Claude workspaces, and one misbehaving server does not prevent the others from working <!-- claim:langgraph:mcp -->
 - LangGraph workspaces talk to the model provider declared in their `[langgraph] model = "provider:model"` workspace setting; the runtime identity pill displays "LangGraph" and the assistant turn appears identically regardless of which provider answers <!-- claim:langgraph:universal-provider-support -->
-- A workspace's agent can hand a piece of work to a second session, ask it questions and wait for its answers, and read its transcript, in both Claude and LangGraph workspaces identically; the second session appears as an ordinary row in the Sessions and Containers panels the moment it starts, and either side can be opened in a tab at any time. Depth is capped; a workspace's MCP status panel is unaffected either way <!-- claim:runtime:sibling-sessions -->
+- A workspace's agent can hand a piece of work to a second session, send it messages, and read its transcript, in both Claude and LangGraph workspaces identically; the second session appears as an ordinary row in the Sessions and Containers panels the moment it starts, and either side can be opened in a tab at any time. Depth is capped; a workspace's MCP status panel is unaffected either way <!-- claim:runtime:sibling-sessions -->
+- Each time the second session finishes a turn, everything it wrote in that turn arrives in the first session's conversation, in the order its turns finish, and the first session carries on from it; handing work over or sending a message never holds up the first session's own turn <!-- claim:runtime:sibling-replies -->
+- When the first session is stopped as the second session finishes a turn, what the second session wrote waits and reaches the first session just ahead of the next message it receives; the first session starts no turn on its own <!-- claim:runtime:sibling-replies-held -->
+- In the first session's conversation, a message from the second session shows under the second session's name, apart from your own messages <!-- claim:runtime:sibling-reply-shown -->
+- The second session is told which session started it, that only that session reads what it writes, and to end its turn with a plain question when it needs an answer; it is still told after it compacts <!-- claim:runtime:sibling-briefed -->
+- The agent can give the second session a name, a model and an effort level when starting it; the second session runs under the first session's settings bundle <!-- claim:runtime:sibling-settings -->
+- When the second session starts but the work handed to it never reaches it, the agent is told so and can send the work again or stop the session <!-- claim:runtime:sibling-prompt-lost -->
+- The agent can stop a second session it started; the session stays in the Sessions panel as stopped and can be resumed <!-- claim:runtime:sibling-stop -->
+- Stopping a second session also stops every session it started, and theirs in turn <!-- claim:runtime:sibling-stop-tree -->
+- The agent's stop is refused, naming the thread, while a reply thread you opened runs in any session it would stop <!-- claim:runtime:sibling-stop-spares-your-thread -->
+- The agent can list the second sessions it started, each shown as working, idle or stopped, also after its own session was stopped and resumed <!-- claim:runtime:sibling-list -->
+- A message the agent sends to a stopped second session it started resumes that session, then reaches it; a second session resumed in any way stays reachable <!-- claim:runtime:sibling-wake -->
+- The agent can message only the sessions it started, and stop only those and the sessions they started in turn; it can read any session's transcript <!-- claim:runtime:sibling-own-only -->
+- In Claude workspaces, reading a session's transcript and listing the sessions it started work in every permission mode; starting, messaging and stopping a session follow the session's permission mode <!-- claim:runtime:sibling-permission-mode -->

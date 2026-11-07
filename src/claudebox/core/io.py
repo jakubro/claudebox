@@ -38,7 +38,7 @@ def write_text(path: str | Path, data) -> None:
     tmp = target.with_name(f"{target.name}.tmp-{uuid.uuid4().hex}")
 
     try:
-        tmp.write_text(str(data))
+        tmp.write_text(str(data), encoding="utf-8")
 
         # A fresh temp file carries the umask; without this the rename resets the target's mode.
         if target.exists():

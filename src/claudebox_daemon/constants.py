@@ -9,6 +9,7 @@ import httpx
 
 # Registry filenames under each workspace's claudebox config dir.
 DAEMON_STATE_FILE = "daemon-state.json"  # per-workspace container registry
+PORTS_STATE_FILE = "ports.json"  # ports agents opened, per session, under config_dir
 
 
 # Container health - ongoing monitoring

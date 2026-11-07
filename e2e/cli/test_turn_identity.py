@@ -135,21 +135,6 @@ class _UnechoedUnknownCommandCli(ScriptedCli):
         await super().query(prompt)
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    (tmp_path / ".workspace").touch()
-    monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_path))
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.chdir(tmp_path)
-
-    return tmp_path
-
-
 def _events(workspace: Path, session_id: str) -> list[dict]:
     session = Workspace(start_dir=workspace).find_session(session_id)
     assert session is not None

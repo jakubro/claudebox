@@ -56,7 +56,7 @@ class AsyncTaskMonitor:
         if not self._running:
             return
 
-        async with aiofiles.open(self.output_file, "r") as f:
+        async with aiofiles.open(self.output_file, "r", encoding="utf-8") as f:
             await f.seek(self._offset)
 
             while self._running:

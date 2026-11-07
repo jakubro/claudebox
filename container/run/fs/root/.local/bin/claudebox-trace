@@ -16,6 +16,7 @@ import signal
 import socket
 import struct
 import sys
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -239,6 +240,7 @@ class Tracker:
 
     def __init__(self, procs: ProcessTable):
         self._procs = procs
+        self._lock = threading.Lock()
         self._unclaimed: OrderedDict[tuple[int, int], Root] = OrderedDict()
         self._claimed: OrderedDict[str, Root] = OrderedDict()
         self._pending: OrderedDict[str, str] = OrderedDict()
@@ -249,39 +251,45 @@ class Tracker:
     def register(self, call_id: str, command: str) -> None:
         """Bind Bash call `call_id` to the oldest shell running `command`, now or once it starts."""
 
-        if call_id in self._claimed or call_id in self._pending:
-            return
-
-        for key, root in self._unclaimed.items():
-            if match := _match(root.script, command):
-                del self._unclaimed[key]
-                self._claim(call_id, root, match)
-
+        with self._lock:
+            if call_id in self._claimed or call_id in self._pending:
                 return
 
-        self._pending[call_id] = command
-        _bound(self._pending, self.MAX_PENDING)
+            for key, root in self._unclaimed.items():
+                if match := _match(root.script, command):
+                    del self._unclaimed[key]
+                    self._claim(call_id, root, match)
+
+                    return
+
+            self._pending[call_id] = command
+            _bound(self._pending, self.MAX_PENDING)
 
     def verdict(self, call_id: str) -> str:
         """Return what call `call_id` did and forget it; unknown while it may still act."""
 
-        self._pending.pop(call_id, None)
-        root = self._claimed.pop(call_id, None)
+        with self._lock:
+            self._pending.pop(call_id, None)
+            root = self._claimed.pop(call_id, None)
 
-        if root is None:
-            return UNKNOWN
+            if root is None:
+                return UNKNOWN
 
-        self._forget(root)
+            self._forget(root)
 
-        # Only the agent CLI's wrapper writes a cwd file; anywhere else it is the command's write.
-        if root.changed or (root.wrote_cwd_file and not root.wrapped):
-            return CHANGED
+            # Only the agent CLI's wrapper writes a cwd file; anywhere else it is the command's write.
+            if root.changed or (root.wrote_cwd_file and not root.wrapped):
+                return CHANGED
 
-        return UNKNOWN if self._running(root) else UNCHANGED
+            return UNKNOWN if self._running(root) else UNCHANGED
 
     def apply(self, proc: Proc, effect: Effect) -> None:
         """Credit `effect`, done by `proc`, to every shell `proc` runs under."""
 
+        with self._lock:
+            self._apply(proc, effect)
+
+    def _apply(self, proc: Proc, effect: Effect) -> None:
         roots = self._roots_of(proc)
 
         for root in roots:
@@ -518,6 +526,14 @@ def decode(nr: int, arch: int, args: tuple[int, ...], caller: Caller) -> Effect:
     return CHANGE
 
 
+def reads_memory(nr: int, arch: int) -> bool:
+    """Whether settling syscall `nr` reads its caller's memory: a path, an exec's arguments, an address."""
+
+    return (
+        arch == AUDIT_ARCH_X86_64 and not nr & X32_SYSCALL_BIT and _NAMES.get(nr) in _MEMORY_READS
+    )
+
+
 def filter_program() -> bytes:
     """Build the BPF program notifying the watched syscalls, write-intent opens and foreign ABIs."""
 
@@ -605,14 +621,21 @@ def install_filter() -> int:
     return fd
 
 
-def serve(socket_path: Path, listener: int | None, child: int, tracker: Tracker | None) -> int:
+def serve(
+    socket_path: Path,
+    listener: int | None,
+    child: int,
+    tracker: Tracker | None,
+    proc_dir: Path = Path("/proc"),
+) -> int:
     """Answer notifications and requests until `child` exits; return its exit status."""
 
     selector = selectors.DefaultSelector()
+    notifications = _Notifications(listener, tracker, proc_dir) if listener is not None else None
     server = _listen(socket_path)
     exited = _exit_fd(child)
 
-    for fileobj, data in ((server, _ACCEPT), (exited, _EXIT), (listener, _NOTIFY)):
+    for fileobj, data in ((server, _ACCEPT), (exited, _EXIT), (listener, notifications)):
         if fileobj is not None:
             selector.register(fileobj, selectors.EVENT_READ, data)
 
@@ -632,8 +655,8 @@ def serve(socket_path: Path, listener: int | None, child: int, tracker: Tracker 
                 if key.data is _EXIT:
                     continue
 
-                if key.data is _NOTIFY:
-                    _handle_notification(key.fd, tracker)
+                if isinstance(key.data, _Notifications):
+                    key.data.receive()
                 elif key.data is _ACCEPT and server is not None:
                     conn, _ = server.accept()
                     conn.setblocking(False)
@@ -703,8 +726,9 @@ _SECCOMP_FILTER_FLAG_NEW_LISTENER = 8
 
 _ACCEPT = "accept"
 _EXIT = "exit"
-_NOTIFY = "notify"
 _EXIT_POLL_S = 0.5
+_MAX_READERS = 64
+_MEMORY_READS = frozenset({"open", "creat", "openat", "openat2", "execve", "execveat", "connect"})
 _MAX_REQUEST = 4 * 1024 * 1024
 _MAX_ARGV = 64
 _MAX_SCRIPT = 256 * 1024
@@ -756,40 +780,116 @@ def _receive_listener(conn: socket.socket) -> int | None:
     return None
 
 
-def _handle_notification(listener: int, tracker: Tracker | None) -> None:
+class _Notifications:
+    """Settles notified syscalls. One that needs its caller's memory is read on a thread of its own,
+    since that read can wait on a page another stopped process must serve; the rest are settled
+    here. Past `_MAX_READERS` reads, or with the caller's own earlier read still in flight, a call is
+    settled unread and counts as a change - an exec as no shell at all.
+    """
+
+    def __init__(self, listener: int, tracker: Tracker | None, proc_dir: Path):
+        self._listener = listener
+        self._tracker = tracker
+        self._proc_dir = proc_dir
+        self._procs = ProcessTable(proc_dir)
+        self._lock = threading.Lock()
+        self._reading: set[int] = set()
+
+    def receive(self) -> None:
+        notification = _receive_notification(self._listener)
+
+        if notification is None:
+            return
+
+        pid, nr, arch = notification[1], notification[2], notification[3]
+
+        if self._tracker is None or not reads_memory(nr, arch):
+            self._settle(*notification, read=True)
+
+            return
+
+        with self._lock:
+            start = len(self._reading) < _MAX_READERS and pid not in self._reading
+
+            if start:
+                self._reading.add(pid)
+
+        if not start:
+            self._settle(*notification, read=False)
+
+            return
+
+        try:
+            threading.Thread(target=self._read_and_settle, args=notification, daemon=True).start()
+        except RuntimeError:
+            with self._lock:
+                self._reading.discard(pid)
+
+            self._settle(*notification, read=False)
+
+    def _read_and_settle(self, notif_id: int, pid: int, nr: int, arch: int, args: tuple) -> None:
+        try:
+            self._settle(notif_id, pid, nr, arch, args, read=True)
+        except Exception as exc:  # noqa: BLE001
+            _log(f"skipped a notification: {exc!r}")
+        finally:
+            with self._lock:
+                self._reading.discard(pid)
+
+    def _settle(
+        self,
+        notif_id: int,
+        pid: int,
+        nr: int,
+        arch: int,
+        args: tuple,
+        *,
+        read: bool,
+    ) -> None:
+        try:
+            proc = self._procs.stat(pid)
+
+            if proc is None or self._tracker is None:
+                return
+
+            if not read:
+                effect = Effect("exec") if _NAMES.get(nr) in ("execve", "execveat") else CHANGE
+            else:
+                try:
+                    with Caller(pid, self._proc_dir) as caller:
+                        effect = decode(nr, arch, args, caller)
+                except Exception:  # noqa: BLE001
+                    effect = CHANGE
+
+            if _still_waiting(self._listener, notif_id):
+                self._tracker.apply(proc, effect)
+        finally:
+            _respond(self._listener, notif_id)
+
+
+def _receive_notification(listener: int) -> tuple[int, int, int, int, tuple[int, ...]] | None:
     # The kernel refuses to fill a notification buffer that is not zeroed.
     buffer = bytearray(struct.calcsize(_NOTIF_FORMAT))
 
     try:
         fcntl.ioctl(listener, _NOTIF_RECV, buffer)
     except OSError:
-        return
+        return None
 
     notif_id, pid, _flags, nr, arch, _ip, *args = struct.unpack(_NOTIF_FORMAT, buffer)
 
+    return notif_id, pid, nr, arch, tuple(args)
+
+
+def _respond(listener: int, notif_id: int) -> None:
     try:
-        proc = ProcessTable().stat(pid)
-
-        if proc is None or tracker is None:
-            return
-
-        try:
-            with Caller(pid) as caller:
-                effect = decode(nr, arch, tuple(args), caller)
-        except Exception:  # noqa: BLE001
-            effect = CHANGE
-
-        if _still_waiting(listener, notif_id):
-            tracker.apply(proc, effect)
-    finally:
-        try:
-            fcntl.ioctl(
-                listener,
-                _NOTIF_SEND,
-                struct.pack(_RESPONSE_FORMAT, notif_id, 0, 0, _USER_NOTIF_FLAG_CONTINUE),
-            )
-        except OSError:
-            pass
+        fcntl.ioctl(
+            listener,
+            _NOTIF_SEND,
+            struct.pack(_RESPONSE_FORMAT, notif_id, 0, 0, _USER_NOTIF_FLAG_CONTINUE),
+        )
+    except OSError:
+        pass
 
 
 def _still_waiting(listener: int, notif_id: int) -> bool:
@@ -833,15 +933,20 @@ def _read_request(
 
 def _listen(path: Path) -> socket.socket | None:
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    # Bound under another name and moved into place once listening: a client that waits for the
+    # file to appear would otherwise connect between bind and listen and be refused.
+    pending = path.with_name(f"{path.name}~")
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.unlink(missing_ok=True)
-        server.bind(str(path))
-        path.chmod(0o600)
+        pending.unlink(missing_ok=True)
+        server.bind(str(pending))
+        pending.chmod(0o600)
         server.listen(64)
+        pending.replace(path)
     except OSError as exc:
         server.close()
+        pending.unlink(missing_ok=True)
         _log(f"serving no verdicts: {path}: {exc}")
 
         return None

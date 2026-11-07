@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 LOCK_FILE="$HOME/.claudebox/update.lock"
 LOCK_INFO="$HOME/.claudebox/update.lock.info"
+HOST_PINS=${HOST_PINS:-$HOME/.claudebox/lib/etc/host-pins.txt}
 
 SCRIPT_PATH=${BASH_SOURCE[0]:-}
 
@@ -345,6 +346,19 @@ install_watchdog_timer() {
   ln -sf ~/.claudebox/lib/etc/systemd/claudebox-watchdog.service ~/.config/systemd/user/
   ln -sf ~/.claudebox/lib/etc/systemd/claudebox-watchdog.timer ~/.config/systemd/user/
 
+  # A watchdog that cannot start is worse than an unsandboxed one, so a host that refuses the sandbox gets it off.
+  local dropin=~/.config/systemd/user/claudebox-watchdog.service.d/unsandboxed.conf
+
+  if systemd-run --user --wait --collect --quiet \
+    -p NoNewPrivileges=yes -p PrivateTmp=yes -p ProtectSystem=strict -p ProtectHome=read-only \
+    /bin/true &>/dev/null; then
+    rm -f "$dropin"
+  else
+    mkdir -p "$(dirname "$dropin")"
+    printf '[Service]\nNoNewPrivileges=no\nPrivateTmp=no\nProtectSystem=no\nProtectHome=no\n' >"$dropin"
+    print_warn "this host cannot sandbox a user unit - the watchdog runs unsandboxed"
+  fi
+
   systemctl --user daemon-reload
   systemctl --user enable --now claudebox-watchdog.timer
 
@@ -398,14 +412,15 @@ ensure_uv() {
     return
   fi
 
-  curl -LsSf https://astral.sh/uv/install.sh | /bin/bash
+  fetch_pinned "$HOST_PINS" uv '*' "$TMP_DIR/uv-installer.sh"
+  /bin/bash "$TMP_DIR/uv-installer.sh"
   print_success "Installed"
 }
 
 # Ensure Node.js is available
 ensure_nodejs() {
   local node_version
-  node_version=$(cat ~/.claudebox/lib/.nvmrc)
+  node_version=$(pin_field "$HOST_PINS" node - version)
 
   ensure_nvm
 
@@ -429,7 +444,8 @@ ensure_nvm() {
     return
   fi
 
-  curl -LsSf https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | /bin/bash
+  fetch_pinned "$HOST_PINS" nvm '*' "$TMP_DIR/nvm-install.sh"
+  /bin/bash "$TMP_DIR/nvm-install.sh"
   source_nvm
   print_success "Installed"
 }
@@ -459,40 +475,71 @@ ensure_caddy() {
 
   local caddy_dir=~/.claudebox/bin
   local caddy_bin="$caddy_dir/caddy"
+  local platform="${PLATFORM_OS}_${PLATFORM_ARCH}"
+  local version installed=""
+  version=$(pin_field "$HOST_PINS" caddy "$platform" version)
 
   if [[ -x $caddy_bin ]]; then
-    print_skip "already installed"
+    read -r installed _ < <("$caddy_bin" version 2>/dev/null) || true
+  fi
+
+  if [[ $installed == "v$version" ]]; then
+    print_skip "already at v$version"
     return
   fi
 
   mkdir -p "$caddy_dir"
+  fetch_pinned "$HOST_PINS" caddy "$platform" "$TMP_DIR/caddy.tar.gz"
+  tar xzf "$TMP_DIR/caddy.tar.gz" -C "$TMP_DIR" caddy
+  chmod +x "$TMP_DIR/caddy"
+  # Staged beside the binary so the swap is one rename: a move across filesystems is a copy.
+  mv "$TMP_DIR/caddy" "$caddy_dir/caddy.new"
+  mv "$caddy_dir/caddy.new" "$caddy_bin"
 
-  # Resolve latest version via GitHub redirect (no API, no rate limits)
-  local version
-  version=$(
-    curl -sSI https://github.com/caddyserver/caddy/releases/latest \
-      | grep -i '^location:' \
-      | grep -oP 'v\K[0-9.]+' \
-      || true
-  )
+  print_success "Installed v$version"
+}
 
-  # A redirect that stops carrying a version reads as an empty match, which must not pass for one.
-  if [[ -z $version ]]; then
-    print_error_top "could not resolve the latest Caddy release from GitHub"
+# Print one field of the manifest row for name and platform; a `*` row matches any platform
+pin_field() {
+  local manifest=$1 name=$2 platform=$3 field=$4
+
+  awk -v name="$name" -v platform="$platform" -v field="$field" '
+    { sub(/#.*/, "") }
+    NF == 5 && $1 == name && ($3 == platform || $3 == "*") {
+      value = field == "version" ? $2 : field == "sha256" ? $4 : field == "url" ? $5 : ""
+      if (field == "url") gsub(/\{version\}/, $2, value)
+      print value
+      found = 1
+      exit
+    }
+    END { exit found ? 0 : 1 }
+  ' "$manifest"
+}
+
+# Download a manifest row's file to dest, refusing it unless its sha256 is the pinned one
+fetch_pinned() {
+  local manifest=$1 name=$2 platform=$3 dest=$4
+  local version url expected actual download
+
+  version=$(pin_field "$manifest" "$name" "$platform" version)
+  url=$(pin_field "$manifest" "$name" "$platform" url)
+  expected=$(pin_field "$manifest" "$name" "$platform" sha256)
+  download=$(mktemp "$TMP_DIR/download.XXXXXX")
+
+  curl -fsSL "$url" -o "$download"
+  if command -v sha256sum &>/dev/null; then
+    actual=$(sha256sum "$download" | cut -d' ' -f1)
+  else
+    actual=$(shasum -a 256 "$download" | cut -d' ' -f1)
+  fi
+
+  if [[ $actual != "$expected" ]]; then
+    rm -f "$download"
+    print_error_top "$name $version: $url has sha256 $actual, the manifest pins $expected"
     exit 1
   fi
 
-  local url="https://github.com/caddyserver/caddy/releases/download/v${version}/caddy_${version}_${PLATFORM_OS}_${PLATFORM_ARCH}.tar.gz"
-
-  (
-    cd "$TMP_DIR"
-    curl -LsSf "$url" -o caddy.tar.gz
-    tar xzf caddy.tar.gz caddy
-    mv caddy "$caddy_bin"
-    chmod +x "$caddy_bin"
-  )
-
-  print_success "Installed"
+  mv "$download" "$dest"
 }
 
 # --------------------------------------------------------------------------------------------------

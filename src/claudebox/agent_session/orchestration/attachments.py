@@ -19,6 +19,7 @@ MEDIA_TYPES = {
     ".pdf": "application/pdf",
     ".svg": "image/svg+xml",
 }
+INLINE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 
 @dataclass
@@ -27,6 +28,12 @@ class AttachmentInfo:
 
     path: Path
     media_type: str
+
+    @property
+    def inline(self) -> bool:
+        """Whether the file is shown on its own address rather than downloaded."""
+
+        return self.media_type in INLINE_MEDIA_TYPES
 
 
 class AttachmentService:

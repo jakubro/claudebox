@@ -1,8 +1,8 @@
 /** Resolve and jump to a task's tool block, in the transcript, the work column or the terminal column. */
 
 import { AUTOSCROLL_THRESHOLD } from '../config/dimensions'
-import { TASK_HIGHLIGHT_MS } from '../config/timing'
-import { findTurnRow, MOUNT_FRAMES, pollFrames } from './mountTurn'
+import { MOUNT_TIMEOUT_MS, TASK_HIGHLIGHT_MS } from '../config/timing'
+import { findTurnRow, pollFrames } from './mountTurn'
 import { computeScrollDestination, scrollAndHighlight } from './scroll'
 
 /**
@@ -92,7 +92,7 @@ export function jumpToTaskInWorkColumn(
 
   markProgrammaticScroll?.()
   virtualizer.scrollToIndex(turnIndex, { align: 'start' })
-  pollFrames(MOUNT_FRAMES, () => findTurnRow(turnIndex, '.work-row', root), landOnBlock)
+  pollFrames(MOUNT_TIMEOUT_MS, () => findTurnRow(turnIndex, '.work-row', root), landOnBlock)
 }
 
 /** Mount a windowed-out terminal entry if needed, then land on the command's entry. */
@@ -122,5 +122,5 @@ export function jumpToTaskInTerminalColumn(
 
   markProgrammaticScroll?.()
   virtualizer.scrollToIndex(entryIndex, { align: 'start' })
-  pollFrames(MOUNT_FRAMES, findEntry, landOnEntry)
+  pollFrames(MOUNT_TIMEOUT_MS, findEntry, landOnEntry)
 }

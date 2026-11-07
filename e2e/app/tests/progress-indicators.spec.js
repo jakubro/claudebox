@@ -158,7 +158,8 @@ test.describe('Progress Indicators', () => {
 })
 
 test.describe('Working line in the Focused view', () => {
-  const line = page => page.getByTestId('turn-progress-working')
+  const workingRow = page => page.getByTestId('turn-progress-working')
+  const line = page => workingRow(page).locator('.turn-progress-text')
 
   // SPEC: turn:progress-names-hidden-call
   // SPEC: turn:progress-follows-newest
@@ -251,6 +252,7 @@ test.describe('Working line in the Focused view', () => {
         {},
         'Running session_read...',
       ],
+      ['tu_sl', 'mcp__claudebox__session_list', {}, {}, 'Running session_list...'],
     ]) {
       await controller.sendEvent({ ...call(id, name, input), ...mark })
       await expect(line(page)).toHaveText(expected)
@@ -315,13 +317,13 @@ test.describe('Working line in the Focused view', () => {
     await controller.sendEvent(human('Read the long one'))
     await controller.sendEvent({ type: 'assistant', subtype: 'text', content: 'Looking.' })
     await expect(line(page)).toHaveText('Working...')
-    const workingHeight = (await line(page).boundingBox()).height
+    const workingHeight = (await workingRow(page).boundingBox()).height
 
     const name = `release-checklist-${'x'.repeat(180)}.md`
     await controller.sendEvent(call('tu_long', 'Read', { file_path: `/work/${name}\nsecond` }))
     await expect(line(page)).toContainText('Reading release-checklist-')
 
-    const geometry = await line(page).evaluate(row => {
+    const geometry = await workingRow(page).evaluate(row => {
       const label = row.querySelector('.turn-progress-label')
       const rowBox = row.getBoundingClientRect()
       return {

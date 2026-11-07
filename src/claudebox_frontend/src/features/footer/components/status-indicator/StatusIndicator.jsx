@@ -10,7 +10,7 @@ import ActiveStatus from './components/ActiveStatus'
  * @param {string} props.connectionStatus - WebSocket connection state.
  * @param {string|null} props.connectionError - Connection error message.
  * @param {boolean} props.isResponding - Whether Claude is actively streaming.
- * @param {number|null} props.respondingSince - Timestamp when current response started.
+ * @param {number|null} props.runningSince - When the running turn started, for the elapsed timer.
  * @param {number|null} props.lastEventTimestamp - Timestamp of last SSE event.
  * @param {boolean} props.isSubmitting - Whether a request is being submitted.
  * @param {boolean} props.isAwaitingResponse - Whether waiting for first response.
@@ -28,7 +28,7 @@ export default function StatusIndicator({
   connectionStatus,
   connectionError,
   isResponding,
-  respondingSince,
+  runningSince,
   lastEventTimestamp,
   isSubmitting,
   isAwaitingResponse,
@@ -191,7 +191,7 @@ export default function StatusIndicator({
         <ActiveStatus
           label="Working"
           status="working"
-          respondingSince={respondingSince}
+          runningSince={runningSince}
           lastEventTimestamp={lastEventTimestamp}
         />
       )
@@ -199,7 +199,7 @@ export default function StatusIndicator({
 
     // Submitting state (POST in flight)
     if (isSubmitting) {
-      return <ActiveStatus label="Submitting" status="submitting" />
+      return <ActiveStatus label="Submitting" status="submitting" runningSince={runningSince} />
     }
 
     if (isWaiting) {

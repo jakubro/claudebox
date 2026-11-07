@@ -23,6 +23,8 @@
 {"type":"user","subtype":"tool_result","content":".\n..\nparser.py","tool_use_id":"tu_bash_ro","id":"evt_023","primary":false,"is_human":false,"ts":"2025-01-18T12:00:23Z"}
 {"type":"assistant","subtype":"tool_use","content":"mcp__claudebox__session_read","tool_use_id":"tu_session_read","tool_name":"mcp__claudebox__session_read","tool_input":{"session_id":"other"},"id":"evt_024","primary":false,"is_human":false,"ts":"2025-01-18T12:00:24Z"}
 {"type":"user","subtype":"tool_result","content":"{}","tool_use_id":"tu_session_read","id":"evt_025","primary":false,"is_human":false,"ts":"2025-01-18T12:00:25Z"}
+{"type":"assistant","subtype":"tool_use","content":"mcp__claudebox__session_list","tool_use_id":"tu_session_list","tool_name":"mcp__claudebox__session_list","tool_input":{},"id":"evt_025b","primary":false,"is_human":false,"ts":"2025-01-18T12:00:25Z"}
+{"type":"user","subtype":"tool_result","content":"[]","tool_use_id":"tu_session_list","id":"evt_025c","primary":false,"is_human":false,"ts":"2025-01-18T12:00:25Z"}
 {"type":"assistant","subtype":"tool_use","content":"ListMcpResourcesTool","tool_use_id":"tu_list_res","tool_name":"ListMcpResourcesTool","tool_input":{},"id":"evt_026","primary":false,"is_human":false,"ts":"2025-01-18T12:00:26Z"}
 {"type":"user","subtype":"tool_result","content":"[]","tool_use_id":"tu_list_res","id":"evt_027","primary":false,"is_human":false,"ts":"2025-01-18T12:00:27Z"}
 {"type":"assistant","subtype":"tool_use","content":"ReadMcpResourceTool","tool_use_id":"tu_read_res","tool_name":"ReadMcpResourceTool","tool_input":{"server":"notes","uri":"notes://a"},"id":"evt_028","primary":false,"is_human":false,"ts":"2025-01-18T12:00:28Z"}

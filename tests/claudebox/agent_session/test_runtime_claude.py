@@ -146,7 +146,7 @@ class TestQuery:
 
         runtime = _make_runtime()
         await runtime.query("hello")
-        assert list(runtime._queue) == [("hello", None)]
+        assert list(runtime._queue) == [("hello", None, False)]
 
     @pytest.mark.anyio
     async def test_buffers_content_blocks_when_not_ready(self):
@@ -155,7 +155,7 @@ class TestQuery:
         runtime = _make_runtime()
         blocks = [{"type": "text", "text": "hi"}]
         await runtime.query(blocks)
-        assert list(runtime._queue) == [(blocks, None)]
+        assert list(runtime._queue) == [(blocks, None, False)]
 
     @pytest.mark.anyio
     async def test_buffer_preserves_order(self):
@@ -165,7 +165,35 @@ class TestQuery:
         await runtime.query("first")
         await runtime.query("second")
         await runtime.query("third")
-        assert list(runtime._queue) == [("first", None), ("second", None), ("third", None)]
+        assert list(runtime._queue) == [
+            ("first", None, False),
+            ("second", None, False),
+            ("third", None, False),
+        ]
+
+    @pytest.mark.anyio
+    async def test_an_after_turn_query_is_buffered_with_its_flag(self):
+        runtime = _make_runtime()
+        await runtime.query("<sibling-message>", message_uuid="D1", after_turn=True)
+        assert list(runtime._queue) == [("<sibling-message>", "D1", True)]
+
+    @pytest.mark.anyio
+    async def test_an_after_turn_message_is_marked_later_for_the_cli(self):
+        """A message at the CLI's `later` priority is never folded into a running turn."""
+
+        runtime = _make_runtime()
+        _connected(runtime)
+        sent: list[dict] = []
+
+        async def capture(stream):
+            sent.extend([message async for message in stream])
+
+        runtime._sdk.query = AsyncMock(side_effect=capture)
+
+        await runtime.query("from a sibling", message_uuid="D1", after_turn=True)
+        await runtime.query("from the user", message_uuid="U1")
+
+        assert [(m["uuid"], m.get("priority")) for m in sent] == [("D1", "later"), ("U1", None)]
 
     @pytest.mark.anyio
     async def test_a_message_uuid_rides_on_the_transport_message(self):
@@ -647,15 +675,88 @@ class TestMcpServerBuilding:
         assert servers[CLAUDEBOX_MCP_SERVER_NAME]["type"] == "sdk"
         assert servers[CLAUDEBOX_MCP_SERVER_NAME]["name"] == CLAUDEBOX_MCP_SERVER_NAME
 
-    def test_sibling_sdk_tools_returns_three_tools_with_expected_names(self):
+    def test_sibling_sdk_tools_returns_the_five_session_tools(self):
         runtime = _make_runtime()
 
         names = {t.name for t in runtime._sibling_sdk_tools()}
 
-        assert names == {"session_spawn", "session_ask", "session_read"}
+        assert names == {
+            "session_spawn",
+            "session_ask",
+            "session_read",
+            "session_stop",
+            "session_list",
+        }
+
+    def test_each_tool_carries_the_shared_description(self):
+        from claudebox.agent_session import _sibling_sessions as texts
+
+        tools = {t.name: t for t in _make_runtime()._sibling_sdk_tools()}
+
+        assert {name: tool.description for name, tool in tools.items()} == {
+            "session_spawn": texts.SESSION_SPAWN_DESCRIPTION,
+            "session_ask": texts.SESSION_ASK_DESCRIPTION,
+            "session_read": texts.SESSION_READ_DESCRIPTION,
+            "session_stop": texts.SESSION_STOP_DESCRIPTION,
+            "session_list": texts.SESSION_LIST_DESCRIPTION,
+        }
+
+    def test_only_read_and_list_are_marked_read_only(self):
+        tools = {t.name: t for t in _make_runtime()._sibling_sdk_tools()}
+
+        read_only = {
+            name
+            for name, tool in tools.items()
+            if tool.annotations is not None and tool.annotations.readOnlyHint
+        }
+
+        assert read_only == {"session_read", "session_list"}
+
+    @pytest.mark.parametrize(
+        ("tool", "required"),
+        [
+            ("session_spawn", ["prompt"]),
+            ("session_ask", ["session_id", "message"]),
+            ("session_read", ["session_id"]),
+            ("session_stop", ["session_id"]),
+            ("session_list", []),
+        ],
+    )
+    def test_only_the_arguments_a_call_needs_are_required(self, tool, required):
+        tools = {t.name: t for t in _make_runtime()._sibling_sdk_tools()}
+
+        assert tools[tool].input_schema.get("required", []) == required
+
+    @pytest.mark.parametrize(
+        ("args", "error"),
+        [
+            ({"session_id": "s"}, None),
+            ({"session_id": "s", "limit": 5}, None),
+            ({"session_id": "s", "limit": 0}, "0 is less than the minimum of 1"),
+        ],
+    )
+    def test_read_schema_checks_limit_as_the_sdk_runs_it(self, args, error):
+        import jsonschema
+
+        tools = {t.name: t for t in _make_runtime()._sibling_sdk_tools()}
+        schema = tools["session_read"].input_schema
+
+        if error is None:
+            jsonschema.validate(args, schema)
+        else:
+            with pytest.raises(jsonschema.ValidationError, match=error):
+                jsonschema.validate(args, schema)
+
+    def test_every_text_fits_the_cli_description_limit(self):
+        from claudebox.agent_session import _sibling_sessions as texts
+
+        tools = _make_runtime()._sibling_sdk_tools()
+
+        assert all(len(t.description) < 4096 for t in tools)
+        assert len(texts.CLAUDEBOX_MCP_INSTRUCTIONS) < 4096
 
     @pytest.mark.anyio
-    async def test_session_spawn_tool_delegates_to_client(self):
+    async def test_session_spawn_tool_forwards_prompt_and_settings(self):
         runtime = _make_runtime()
         tools = {t.name: t for t in runtime._sibling_sdk_tools()}
 
@@ -665,14 +766,142 @@ class TestMcpServerBuilding:
             new_callable=AsyncMock,
         ) as mock_spawn:
             mock_spawn.return_value = {"session_id": "s1", "container_id": "c1"}
-            result = await tools["session_spawn"].handler({"prompt": "do the thing"})
+            result = await tools["session_spawn"].handler(
+                {"prompt": "do the thing", "name": "lint-fix", "model": "haiku", "effort": "low"},
+            )
 
-        mock_spawn.assert_awaited_once_with("do the thing")
+        mock_spawn.assert_awaited_once_with(
+            "do the thing",
+            name="lint-fix",
+            model="haiku",
+            effort="low",
+        )
         assert json.loads(result["content"][0]["text"]) == {
             "session_id": "s1",
             "container_id": "c1",
         }
         assert "is_error" not in result
+
+    @pytest.mark.anyio
+    async def test_session_spawn_tool_leaves_unset_settings_none(self):
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(
+            runtime._sibling_sessions,
+            "spawn",
+            new_callable=AsyncMock,
+        ) as mock_spawn:
+            mock_spawn.return_value = {}
+            await tools["session_spawn"].handler({"prompt": "x"})
+
+        mock_spawn.assert_awaited_once_with("x", name=None, model=None, effort=None)
+
+    @pytest.mark.anyio
+    async def test_a_lost_prompt_is_a_result_not_an_error(self):
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+        lost = {"session_id": "s1", "container_id": "c1", "prompt_delivered": False, "note": "n"}
+
+        with patch.object(runtime._sibling_sessions, "spawn", new_callable=AsyncMock) as mock_spawn:
+            mock_spawn.return_value = lost
+            result = await tools["session_spawn"].handler({"prompt": "x"})
+
+        assert json.loads(result["content"][0]["text"]) == lost
+        assert "is_error" not in result
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("tool", "method", "args", "expected_args"),
+        [
+            ("session_stop", "stop", {"session_id": "s1"}, ("s1",)),
+            ("session_list", "list_siblings", {}, ()),
+        ],
+    )
+    async def test_stop_and_list_delegate_and_report_errors(
+        self,
+        tool,
+        method,
+        args,
+        expected_args,
+    ):
+        from claudebox.agent_session._sibling_sessions import SiblingSessionError
+
+        runtime = _make_runtime()
+        tools = {t.name: t for t in runtime._sibling_sdk_tools()}
+
+        with patch.object(runtime._sibling_sessions, method, new_callable=AsyncMock) as mock:
+            mock.return_value = {"ok": 1}
+            result = await tools[tool].handler(args)
+            mock.side_effect = SiblingSessionError(f"{tool}: refused (x)")
+            failed = await tools[tool].handler(args)
+
+        mock.assert_awaited_with(*expected_args)
+        assert json.loads(result["content"][0]["text"]) == {"ok": 1}
+        assert failed["is_error"] is True
+        assert failed["content"][0]["text"] == f"{tool}: refused (x)"
+
+    @pytest.mark.anyio
+    async def test_port_open_asks_and_tells_the_agent_to_end_its_turn(self, tmp_path):
+        runtime = _make_runtime(session_dir=tmp_path)
+        tools = {t.name: t for t in runtime._port_sdk_tools()}
+
+        result = await tools["port_open"].handler({"port": 8080})
+
+        assert result["content"][0]["text"].startswith("Asked the user to open port 8080")
+        assert "is_error" not in result
+
+    @pytest.mark.anyio
+    async def test_port_open_in_a_spawned_session_says_where_to_ask(self, tmp_path):
+        write_json(tmp_path / "session.json", {"spawned_from_session_id": "parent-1"})
+        runtime = _make_runtime(session_dir=tmp_path)
+        tools = {t.name: t for t in runtime._port_sdk_tools()}
+
+        result = await tools["port_open"].handler({"port": 8080})
+
+        assert result["content"][0]["text"].startswith(
+            "Not asked: a session another session started",
+        )
+
+    @pytest.mark.parametrize(
+        ("args", "error"),
+        [({"port": 0}, "minimum"), ({"port": 70000}, "maximum")],
+    )
+    def test_the_port_schema_bounds_the_port(self, args, error):
+        import jsonschema
+
+        tools = {t.name: t for t in _make_runtime()._port_sdk_tools()}
+
+        with pytest.raises(jsonschema.ValidationError, match=error):
+            jsonschema.validate(args, tools["port_open"].input_schema)
+
+    @pytest.mark.anyio
+    async def test_port_close_reports_a_refusal_as_an_error(self):
+        from claudebox.agent_session._sibling_sessions import SiblingSessionError
+
+        tools = {t.name: t for t in _make_runtime()._port_sdk_tools()}
+
+        with patch(
+            "claudebox.agent_session.runtime_claude.close_port",
+            new=AsyncMock(side_effect=SiblingSessionError("port_close: port 8080 is not open")),
+        ):
+            result = await tools["port_close"].handler({"port": 8080})
+
+        assert result == {
+            "content": [{"type": "text", "text": "port_close: port 8080 is not open"}],
+            "is_error": True,
+        }
+
+    def test_server_carries_its_instructions_into_initialize(self):
+        from claudebox.agent_session._sibling_sessions import (
+            CLAUDEBOX_MCP_INSTRUCTIONS,
+            CLAUDEBOX_MCP_SERVER_NAME,
+        )
+
+        servers = _make_runtime()._build_mcp_servers()
+        instance = servers[CLAUDEBOX_MCP_SERVER_NAME]["instance"]
+
+        assert instance.create_initialization_options().instructions == CLAUDEBOX_MCP_INSTRUCTIONS
 
     @pytest.mark.anyio
     async def test_session_spawn_tool_reports_sibling_error_without_raising(self):
@@ -698,11 +927,11 @@ class TestMcpServerBuilding:
         tools = {t.name: t for t in runtime._sibling_sdk_tools()}
 
         with patch.object(runtime._sibling_sessions, "ask", new_callable=AsyncMock) as mock_ask:
-            mock_ask.return_value = {"state": "replied", "text": "done"}
+            mock_ask.return_value = {"session_id": "s1", "delivered": True}
             result = await tools["session_ask"].handler({"session_id": "s1", "message": "hi"})
 
         mock_ask.assert_awaited_once_with("s1", "hi")
-        assert json.loads(result["content"][0]["text"]) == {"state": "replied", "text": "done"}
+        assert json.loads(result["content"][0]["text"]) == {"session_id": "s1", "delivered": True}
 
     @pytest.mark.anyio
     async def test_session_read_tool_defaults_limit_to_fifty(self):
@@ -734,15 +963,30 @@ class TestMcpServerBuilding:
 
         tools = {t.name: t for t in create.call_args.kwargs["tools"]}
 
-        assert set(tools) == {"session_spawn", "session_ask", "session_read", "needs_user"}
+        assert set(tools) == {
+            "session_spawn",
+            "session_ask",
+            "session_read",
+            "session_stop",
+            "session_list",
+            "needs_user",
+            "port_open",
+            "port_close",
+        }
         schema = tools["needs_user"].input_schema
         assert set(schema["properties"]) == {"reason", "replies"}
         assert schema["required"] == ["reason"]
 
-    def test_needs_user_is_allowed_without_a_permission_prompt(self):
+    def test_needs_user_read_list_and_ports_are_allowed_without_a_permission_prompt(self):
         options = ClaudeRuntime._build_sdk_options(_make_config(permission_mode="default"))
 
-        assert options.allowed_tools == ["mcp__claudebox__needs_user"]
+        assert options.allowed_tools == [
+            "mcp__claudebox__needs_user",
+            "mcp__claudebox__session_read",
+            "mcp__claudebox__session_list",
+            "mcp__claudebox__port_open",
+            "mcp__claudebox__port_close",
+        ]
 
     @pytest.mark.anyio
     async def test_needs_user_tool_acknowledges(self, tmp_path):
@@ -1306,7 +1550,7 @@ class TestQueuedChanges:
         await runtime.query("after")
 
         runtime._sdk.query.assert_not_awaited()
-        assert list(runtime._queue) == [("after", None)]
+        assert list(runtime._queue) == [("after", None, False)]
 
 
 class TestStderr:

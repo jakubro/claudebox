@@ -872,12 +872,17 @@ test.describe('Terminal Column', () => {
     await expect(terminal.evaluate(el => el.scrollTop)).resolves.toBe(offsetAfterScrollUp)
 
     // Scroll back to the bottom by hand: land the position directly and let the native scroll
-    // event carry the re-engagement, the same event handleScroll always reacts to.
-    await terminal.evaluate(el => {
-      el.scrollTop = el.scrollHeight
-    })
-    await terminal.dispatchEvent('scroll')
-    await expect.poll(distanceFromBottom).toBeLessThan(50)
+    // event carry the re-engagement, the same event handleScroll always reacts to. Entries below
+    // can still resolve their real heights after a landing, so keep landing until it holds.
+    await expect
+      .poll(async () => {
+        await terminal.evaluate(el => {
+          el.scrollTop = el.scrollHeight
+        })
+        await terminal.dispatchEvent('scroll')
+        return distanceFromBottom()
+      })
+      .toBeLessThan(50)
 
     await controller.sendEvents([
       {

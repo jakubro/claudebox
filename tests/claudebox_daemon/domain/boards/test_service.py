@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
 import threading
 import time
 from datetime import timedelta
@@ -476,6 +480,68 @@ class TestReadTicketContent:
             "board_id": board_id,
             "ticket_path": "tickets/missing.md",
         }
+
+
+_NON_UTF8_CHILD = r"""
+import json, locale, os, sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+from claudebox_daemon.domain.boards.service import BoardService
+from claudebox_daemon.domain.executors import ObservedPool
+from claudebox_daemon.domain.workspaces.models import RegisteredWorkspace
+
+svc = BoardService(
+    RegisteredWorkspace(id="ws", path=Path(sys.argv[1])), MagicMock(), MagicMock(), AsyncMock(),
+    ObservedPool(1, name="listing"),
+)
+svc._watcher = MagicMock()
+board_id = svc._list_all_sync()[0].id
+body = svc.read_ticket_content(board_id, "tickets/cafe.md")
+svc.rename(board_id, "Equipe \u00e9t\u00e9")
+name = svc.get(board_id).name
+print(json.dumps({"encoding": locale.getencoding(), "utf8_mode": sys.flags.utf8_mode, "body": body, "name": name}))
+sys.stdout.flush()
+os._exit(0)
+"""
+
+
+class TestNonUtf8Locale:
+    """Ticket text keeps its accents when the process's own encoding is not UTF-8."""
+
+    def test_a_ticket_and_a_board_name_round_trip_unchanged(self, tmp_path):
+        (tmp_path / ".workspace").touch()
+        (tmp_path / "docs" / "tickets").mkdir(parents=True)
+        (tmp_path / "docs" / "board.yaml").write_bytes(
+            b"name: Board\nstates:\n- id: backlog\n  label: Backlog\n  folder: tickets/\n"
+            b"backlog:\n- path: tickets/cafe.md\n",
+        )
+        (tmp_path / "docs" / "tickets" / "cafe.md").write_bytes("# Caf\u00e9 cr\u00e8me\n".encode())
+        # The C locale alone is coerced to UTF-8 and turns UTF-8 mode on; with both off it is ASCII.
+        env = {
+            **os.environ,
+            "LC_ALL": "C",
+            "PYTHONUTF8": "0",
+            "PYTHONCOERCECLOCALE": "0",
+            "PYTHONPATH": str(Path(__file__).resolve().parents[4] / "src"),
+        }
+
+        result = subprocess.run(
+            [sys.executable, "-c", _NON_UTF8_CHILD, str(tmp_path)],
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        seen = json.loads(result.stdout)
+
+        assert seen["utf8_mode"] == 0
+        assert seen["encoding"].lower().replace("-", "") != "utf8"
+        assert seen["body"] == "# Caf\u00e9 cr\u00e8me\n"
+        assert seen["name"] == "Equipe \u00e9t\u00e9"
+        assert "Equipe \u00e9t\u00e9".encode() in (tmp_path / "docs" / "board.yaml").read_bytes()
 
 
 class TestAssignMoveRefusal:

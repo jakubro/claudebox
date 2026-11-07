@@ -20,7 +20,7 @@ def make_filesystem_tools(ctx: ToolContext) -> list[BaseTool]:
     def read_file(path: str) -> str:
         """Read the full text content of a file at `path`."""
 
-        return Path(path).resolve().read_text()
+        return Path(path).resolve().read_text(encoding="utf-8")
 
     @tool
     def write_file(path: str, content: str) -> str:
@@ -28,7 +28,7 @@ def make_filesystem_tools(ctx: ToolContext) -> list[BaseTool]:
 
         resolved = Path(path).resolve()
         resolved.parent.mkdir(parents=True, exist_ok=True)
-        written = resolved.write_text(content)
+        written = resolved.write_text(content, encoding="utf-8")
 
         return f"Wrote {written} bytes to {resolved}"
 
@@ -46,7 +46,7 @@ def make_filesystem_tools(ctx: ToolContext) -> list[BaseTool]:
         """
 
         resolved = Path(path).resolve()
-        original = resolved.read_text()
+        original = resolved.read_text(encoding="utf-8")
 
         count = original.count(old_string)
 
@@ -64,7 +64,7 @@ def make_filesystem_tools(ctx: ToolContext) -> list[BaseTool]:
             if replace_all
             else original.replace(old_string, new_string, 1)
         )
-        resolved.write_text(updated)
+        resolved.write_text(updated, encoding="utf-8")
         replaced = count if replace_all else 1
 
         return f"Replaced {replaced} occurrence(s) in {resolved}"

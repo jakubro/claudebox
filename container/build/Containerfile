@@ -1,4 +1,4 @@
-FROM ubuntu
+FROM docker.io/library/ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
 LABEL app=claudebox
 
@@ -11,6 +11,7 @@ ENV LANG=en_US.UTF-8 \
 ###########################################################
 
 COPY fs/_install.sh /_install.sh
+COPY fs/_pins.sh image-pins.txt /tmp/claudebox-install/
 
 # Install base system (system dependencies, mise runtime manager, and language runtimes)
 COPY fs/install_base.sh /install_base.sh

@@ -2218,6 +2218,32 @@ test.describe('Tools Display', () => {
       await expect(removeLine).toContainText('const value =')
       await expect(addLine).toContainText('const value =')
     })
+
+    // SPEC: tool:edit-diff-text-color
+    test('removed and added text reads in the code colour, over distinct bands and word markers', async ({
+      page,
+    }) => {
+      await openSession(page, 'events/tool-edit-char-highlight.jsonl')
+      const block = page.locator('[data-testid="tool-block"]').first()
+      const paint = el => ({
+        color: getComputedStyle(el).color,
+        background: getComputedStyle(el).backgroundColor,
+      })
+
+      const code = await block.locator('.code-block').evaluate(paint)
+      const parts = [
+        await block.locator('.code-block-type-diff-remove').first().evaluate(paint),
+        await block.locator('.code-block-type-diff-add').first().evaluate(paint),
+        await block.locator('.diff-inline-removed').first().evaluate(paint),
+        await block.locator('.diff-inline-added').first().evaluate(paint),
+      ]
+
+      for (const part of parts) {
+        expect(part.color).toBe(code.color)
+      }
+      const backgrounds = new Set([code, ...parts].map(part => part.background))
+      expect(backgrounds.size).toBe(parts.length + 1)
+    })
   })
 
   test.describe('Write Tool Content Display', () => {
@@ -2302,6 +2328,23 @@ test.describe('Tools Display', () => {
       await expect(expanded.locator('.code-block')).not.toBeVisible()
 
       await expect(expanded.locator('.markdown-preview-content')).toContainText('My Project')
+    })
+
+    // SPEC: tool:code-output-stays-code
+    test('source code a command prints shows as code despite the markdown signs in its strings', async ({
+      page,
+    }) => {
+      const toolBlock = await openToolWithStatus(
+        page,
+        'events/tool-bash-source-code.jsonl',
+        'completed',
+      )
+
+      const expanded = toolBlock.locator('.tool-expanded-content')
+      await expect(expanded).toBeVisible()
+
+      await expect(expanded.locator('pre code').first()).toContainText("import fs from 'node:fs'")
+      await expect(expanded.locator('.markdown-preview-container')).toHaveCount(0)
     })
 
     // SPEC: tool:markdown-toolbar

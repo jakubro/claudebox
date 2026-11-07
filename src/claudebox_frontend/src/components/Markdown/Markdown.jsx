@@ -18,6 +18,7 @@ import MARKDOWN_COMPONENTS from './markdownComponents'
 import markdownSanitizeSchema from './utils/markdownSanitizeSchema'
 import rehypeMarkBlocks, { rehypeRecordBlockSpans } from './utils/rehypeMarkBlocks'
 import rehypeQuoteCopy from './utils/rehypeQuoteCopy'
+import rehypeStyleFilter from './utils/rehypeStyleFilter'
 import remarkGithubAlerts from './utils/remarkGithubAlerts'
 import remarkMathBacktick from './utils/remarkMathBacktick'
 
@@ -27,6 +28,7 @@ const REHYPE_PLUGINS = [
   rehypeRaw,
   rehypeSlug,
   [rehypeSanitize, markdownSanitizeSchema],
+  rehypeStyleFilter,
   rehypeQuoteCopy,
   rehypeRecordBlockSpans,
   rehypeKatex,

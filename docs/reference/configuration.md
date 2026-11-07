@@ -2,7 +2,7 @@
 
 Every key `.claudebox/settings.toml` accepts, with its type, its default and what it does. For how the files compose and which one wins, see the [configuration guide](../guide/configuration.md).
 
-Settings are TOML. Claudebox walks up from the working directory, then reads your home directory, and deep-merges what it finds - nearest wins. A file declaring `root = true` stops the walk there. A file not owned by the user running claudebox is skipped, with a one-line notice on stderr naming it - a settings file is authoritative only for the person who wrote it.
+Settings are TOML. Claudebox walks up from the working directory, then reads the home directory, and deep-merges what it finds - nearest wins. A file declaring `root = true` stops the walk there. A file not owned by the user running claudebox is skipped, with a one-line notice on stderr naming it - a settings file is authoritative only for the person who wrote it.
 
 ## Top level
 
@@ -20,7 +20,7 @@ Paths accept `~` and relative forms; both are resolved when the settings are loa
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `[mounts]` | table of path = path | none | Extra host-path to container-path mounts. The workspace itself is always mounted at the same path inside and out |
-| `[ports]` | table of int = int | none | Host port to container port, published on every interface of the host. A host port of `0` takes a random free one. A fixed host port already in use is published on a free port instead; `claudebox run` and `claudebox shell` print which |
+| `[ports]` | table of host port = container port, or host port = `{ container, bind }` | none | Host port to container port, published on `127.0.0.1`. `container` is a port or `"<port>/<tcp|udp|sctp>"`; `bind` is an IPv4 or IPv6 address (`0.0.0.0` and `::` for every interface) and defaults to `127.0.0.1`. A host port of `0` takes a random free one. A fixed host port already in use is published on a free port at the same address instead; `claudebox run` and `claudebox shell` print which |
 | `[network] mode` | string | unset | Container network mode. Unset gives the session its own private network namespace. `host`, `none`, `container:` and `ns:` modes apply to `claudebox run` and `claudebox shell`; a session in the browser refuses to start under them |
 | `[containers] nested` | boolean | `false` | Let the agent build images and run containers inside its session. See [nested containers](../features/nested-containers.md) |
 | `[env]` | table of name = value | none | Environment variables passed into the container |
@@ -54,7 +54,7 @@ A bundle may carry `env`, `mounts`, `ports`, `network.mode`, `model`, `effort_le
 | `effort_level` | string | Effort level the session starts at |
 | `permission_mode` | string | Permission mode the session starts in |
 | `session_prompt` | string | Session prompt the session starts with |
-| `messages` | list of strings | Sent in order as the session's opening turns, once, when the session is created; never checked against `[links] allow` |
+| `messages` | list of strings | Opening messages, once, when the session is created, after any message the session opens with: the first is sent and the rest wait in the message queue, each sent when the reply before it finishes. Never checked against `[links] allow` |
 
 A starting value is skipped on a runtime that cannot change it, and a value picked on the welcome screen wins over the bundle's. A session keeps its bundle across resumes and forks and reads it from the settings afresh each time, so a session whose bundle has been deleted cannot resume. A bundle's name may hold letters, digits, `-` and `_`. Bundles declared in several settings files merge like every other table, the nearest file winning per key.
 
@@ -75,7 +75,7 @@ Read when `agent = "langgraph"`.
 
 A provider's credentials come from the environment, not from these files.
 
-## A worked file
+## An example file
 
 ```toml
 root = true
@@ -100,7 +100,7 @@ url_template = "jetbrains://idea/navigate/reference?project=demo&path={path}:{li
 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = 1
 ```
 
-## Details
+## Related pages
 
 - [Configuration guide](../guide/configuration.md) - the hierarchy as a task
 - [Runtimes guide](../guide/runtimes.md) - choosing between the two agents

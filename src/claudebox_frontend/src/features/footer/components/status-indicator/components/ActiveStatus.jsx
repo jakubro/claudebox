@@ -2,46 +2,39 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { SILENCE_THRESHOLD } from '../../../../../config/timing'
+import useTurnClock from '../../../../../hooks/useTurnClock'
 import { formatDurationCompact } from '../../../../../utils/formatters'
 
 /**
  * @param {object} props
  * @param {string} props.label - Status label text (e.g., "Working", "Submitting").
  * @param {string} props.status - Status key for data attribute.
- * @param {number|null} [props.respondingSince] - Timestamp when response started, for elapsed timer.
+ * @param {number|null} [props.runningSince] - When the running turn started; with none, the timer
+ *   counts from when this status appeared.
  * @param {number|null} [props.lastEventTimestamp] - Timestamp of last received event for silence detection.
  */
-export default function ActiveStatus({ label, status, respondingSince, lastEventTimestamp }) {
+export default function ActiveStatus({ label, status, runningSince, lastEventTimestamp }) {
   const fallbackRef = useRef(Date.now())
-  const anchorTimestamp = respondingSince ?? fallbackRef.current
-  const [elapsed, setElapsed] = useState(0)
+  const anchorTimestamp = runningSince ?? fallbackRef.current
+  const now = useTurnClock(anchorTimestamp)
+  const elapsed = Math.floor((now - anchorTimestamp) / 1000)
   const [isSilent, setIsSilent] = useState(false)
 
+  // Event-driven, not polled: recomputes on lastEventTimestamp change (no up-to-1s lag) and
+  // schedules a one-shot timer for the exact moment silence begins.
   useEffect(() => {
-    const elapsedInterval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - anchorTimestamp) / 1000))
-    }, 1000)
-
-    // Event-driven, not polled: recomputes on lastEventTimestamp change (no up-to-1s lag) and
-    // schedules a one-shot timer for the exact moment silence begins.
-    let tripTimer = null
-    if (lastEventTimestamp) {
-      const sinceLastEvent = Date.now() - lastEventTimestamp
-      if (sinceLastEvent >= SILENCE_THRESHOLD) {
-        setIsSilent(true)
-      } else {
-        setIsSilent(false)
-        tripTimer = setTimeout(() => setIsSilent(true), SILENCE_THRESHOLD - sinceLastEvent)
-      }
+    if (!lastEventTimestamp) {
+      return
     }
-
-    return () => {
-      clearInterval(elapsedInterval)
-      if (tripTimer) {
-        clearTimeout(tripTimer)
-      }
+    const sinceLastEvent = Date.now() - lastEventTimestamp
+    if (sinceLastEvent >= SILENCE_THRESHOLD) {
+      setIsSilent(true)
+      return
     }
-  }, [anchorTimestamp, lastEventTimestamp])
+    setIsSilent(false)
+    const tripTimer = setTimeout(() => setIsSilent(true), SILENCE_THRESHOLD - sinceLastEvent)
+    return () => clearTimeout(tripTimer)
+  }, [lastEventTimestamp])
 
   return (
     <>

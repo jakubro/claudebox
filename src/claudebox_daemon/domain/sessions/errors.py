@@ -45,3 +45,31 @@ class SessionTranscriptMissing(DaemonError):
 
     status_code = 409
     error_key = "session_transcript_missing"
+
+
+class SessionNotSpawned(DaemonError):
+    """A turn end came from a session no other session spawned."""
+
+    status_code = 409
+    error_key = "not_spawned"
+
+
+class SpawnerUnreachable(DaemonError):
+    """A turn end could not be handed to the running session that spawned its sender."""
+
+    status_code = 502
+    error_key = "parent_unreachable"
+
+
+class SiblingNotOwned(DaemonError):
+    """A session-tool verb named a session the caller did not spawn, or one that does not exist."""
+
+    status_code = 403
+    error_key = "not_own_sibling"
+
+
+class SiblingStopHostsThread(DaemonError):
+    """A stop would reach a container serving a reply thread the user opened."""
+
+    status_code = 409
+    error_key = "hosts_your_thread"

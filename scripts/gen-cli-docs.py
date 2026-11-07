@@ -19,13 +19,13 @@ DOCS_PATH = Path(__file__).resolve().parents[1] / "docs" / "reference" / "cli.md
 _INSTALL_FOOTER = re.compile(r"^install:\n  .+$", re.MULTILINE)
 _INSTALL_PLACEHOLDER = "install:\n  <branch> (<commit>) @ <path>"
 
-_HEADER = """\
-# Claudebox CLI reference
-
-Complete `--help` for `claudebox` and every verb it registers, captured from the parser itself.
-This file is generated - run `just docs` to bring it back in step after changing a verb's
-description, its options or its epilog.
-"""
+_HEADER = (
+    "# Claudebox CLI reference\n"
+    "\n"
+    "Complete `--help` for `claudebox` and every verb it registers, captured from the parser itself. "
+    "This file is generated - run `just docs` to bring it back in step after changing a verb's "
+    "description, its options or its epilog.\n"
+)
 
 
 def build_document() -> str:

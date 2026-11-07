@@ -12,7 +12,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from . import constants
+    from .agent_session._ports import port_answer
     from .agent_session._registry import resolve_runtime_class
+    from .agent_session._sibling_sessions import report_sibling_turn_end
     from .agent_session.catalogs import (
         ContextUsage,
         EffortLevel,
@@ -40,6 +42,7 @@ if TYPE_CHECKING:
     from .agent_session.orchestration.models import EventSubtype, EventType
     from .agent_session.orchestration.persistence import EventLog
     from .agent_session.orchestration.session import SessionService
+    from .agent_session.orchestration.sibling_turns import SiblingMessage
     from .agent_session.orchestration.tool_output import ToolOutput
     from .agent_session.protocol import AgentSession
     from .agent_session.rate_limits import RateLimitStore
@@ -75,6 +78,7 @@ if TYPE_CHECKING:
         walk_up,
     )
     from .core.http import (
+        CONTAINED_CONTENT_HEADERS,
         AsyncBroadcastEventSource,
         BroadcastEventSource,
         BroadcastEventSourceResponse,
@@ -105,6 +109,7 @@ if TYPE_CHECKING:
         use_rotating_log_file,
     )
     from .core.polling import AsyncPoller, MtimeWatcher
+    from .core.relay import relay_streams
     from .core.string import wrap_box
     from .core.structures import DataClass, invert, merge
     from .core.time import TIMESTAMP_FORMAT, days_before, get_timestamp, parse_timestamp
@@ -113,6 +118,7 @@ if TYPE_CHECKING:
     from .install import epilog, format_install_info, get_install_info, library_commit
     from .paths import (
         InvalidSessionId,
+        covers_home,
         find_session_dir,
         make_timestamped_dir_prefix,
         validate_session_id,
@@ -136,6 +142,8 @@ _SUBMODULES = {
 # Defining module (relative to this package) for each re-exported name.
 _EXPORTS_BY_MODULE = {
     "agent_session._registry": ("resolve_runtime_class",),
+    "agent_session._ports": ("port_answer",),
+    "agent_session._sibling_sessions": ("report_sibling_turn_end",),
     "agent_session.catalogs": (
         "ContextUsage",
         "EffortLevel",
@@ -163,6 +171,7 @@ _EXPORTS_BY_MODULE = {
     "agent_session.orchestration.models": ("EventSubtype", "EventType"),
     "agent_session.orchestration.persistence": ("EventLog",),
     "agent_session.orchestration.session": ("SessionService",),
+    "agent_session.orchestration.sibling_turns": ("SiblingMessage",),
     "agent_session.orchestration.tool_output": ("ToolOutput",),
     "agent_session.protocol": ("AgentSession",),
     "agent_session.rate_limits": ("RateLimitStore",),
@@ -198,6 +207,7 @@ _EXPORTS_BY_MODULE = {
         "walk_up",
     ),
     "core.http": (
+        "CONTAINED_CONTENT_HEADERS",
         "AsyncBroadcastEventSource",
         "BroadcastEventSource",
         "BroadcastEventSourceResponse",
@@ -228,6 +238,7 @@ _EXPORTS_BY_MODULE = {
         "use_rotating_log_file",
     ),
     "core.polling": ("AsyncPoller", "MtimeWatcher"),
+    "core.relay": ("relay_streams",),
     "core.string": ("wrap_box",),
     "core.structures": ("DataClass", "invert", "merge"),
     "core.time": ("TIMESTAMP_FORMAT", "days_before", "get_timestamp", "parse_timestamp"),
@@ -235,6 +246,7 @@ _EXPORTS_BY_MODULE = {
     "errors": ("ApiError",),
     "paths": (
         "InvalidSessionId",
+        "covers_home",
         "find_session_dir",
         "make_timestamped_dir_prefix",
         "validate_session_id",

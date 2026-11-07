@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import shlex
 from pathlib import Path
 
 import httpx
@@ -23,12 +24,16 @@ Examples:
   claudebox workspaces list                  table of all registered workspaces
   claudebox workspaces register              register cwd as a workspace
   claudebox workspaces register ~/dev/bar    register a specific path
+  claudebox workspaces register ~            register the home directory, on purpose
   claudebox workspaces deregister foo        remove from the daemon's registry
 
 Notes:
   Register creates the `.workspace` marker file if absent, then registers with the
   daemon. Re-registering an already-registered path is idempotent and exits 0.
   Basename collisions are disambiguated by an 8-char path-hash suffix on the id.
+
+  The home directory, a directory above it and `~/.claudebox` register only when named,
+  never from a bare `register` run in them, and the browser refuses them until they have.
 
   Deregister removes the workspace from the daemon's registry only - the `.workspace`
   marker file on disk is preserved.
@@ -141,10 +146,23 @@ async def _list_(client: httpx.AsyncClient) -> int:
 async def _register(client: httpx.AsyncClient, args: argparse.Namespace) -> int:
     """Resolve target path, create .workspace marker, POST /api/workspaces."""
 
+    # Deferred: the paths module pulls pathspec, which the cold path must not pay for.
+    from claudebox import covers_home
+
     raw_path = getattr(args, "path", None)
     target = await asyncio.to_thread(_resolved, raw_path) if raw_path else Path.cwd()
+    gated = await asyncio.to_thread(covers_home, target)
 
-    # Marker creation is filesystem-side and happens unconditionally before the POST.
+    if gated and not raw_path:
+        print_fail(
+            f"not registering {_shorten_home(target)}: it holds your home directory or Claudebox's "
+            f"own files. To register it on purpose, name it: claudebox workspaces register "
+            f"{shlex.quote(str(target))}",
+        )
+
+        return 2
+
+    # Written before the POST: the daemon registers a home directory only once it is marked.
     marker = target / WORKSPACE_MARKER
 
     if not marker.exists():
@@ -177,6 +195,12 @@ async def _register(client: httpx.AsyncClient, args: argparse.Namespace) -> int:
 
     data = response.json()
     print_ok(f"registered {_shorten_home(target)} (id: {data.get('id', '?')})")
+
+    if gated:
+        print_info(
+            f"{_shorten_home(target)} holds your home directory or Claudebox's own files: every "
+            "directory below it without a .workspace marker of its own now belongs to this workspace",
+        )
 
     return 0
 

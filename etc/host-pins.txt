@@ -1,0 +1,13 @@
+# Host binaries bin/install.sh downloads: name, exact version, platform, sha256, url ({version} substituted).
+# A version-only row (platform, sha256 and url all -) leaves integrity to the tool that installs it.
+# A float row names an input allowed to resolve fresh, the text that marks it in a script (single-quoted
+# when it holds a space), and why. Change a pin only with `just pins-bump`.
+caddy        2.11.9      linux_amd64   5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb  https://github.com/caddyserver/caddy/releases/download/v{version}/caddy_{version}_linux_amd64.tar.gz
+caddy        2.11.9      linux_arm64   5e377cff994fc9362a6fcf695c53f226cfca3a3ef85bd3a3687cf252d6310165  https://github.com/caddyserver/caddy/releases/download/v{version}/caddy_{version}_linux_arm64.tar.gz
+caddy        2.11.9      darwin_amd64  22af256a2cc45606f6bfa8786cd89130529331319665926f4e972234a658fb30  https://github.com/caddyserver/caddy/releases/download/v{version}/caddy_{version}_mac_amd64.tar.gz
+caddy        2.11.9      darwin_arm64  d075afc620376679a77b453399bf7ada264cab3280b2833e4ed1372abc0c1c13  https://github.com/caddyserver/caddy/releases/download/v{version}/caddy_{version}_mac_arm64.tar.gz
+uv           0.13.7      *             d263ee68314cf5bea36b08e6bd9e2c4563240d7adb73756cf33af5c199b92db4  https://github.com/astral-sh/uv/releases/download/{version}/uv-installer.sh
+nvm          0.41.0      *             045932fe05f0d4247c946f2ec0ec4026dbfd8ce88a5f67ea28d8ea833227f48b  https://raw.githubusercontent.com/nvm-sh/nvm/v{version}/install.sh
+node         24.22.2     -             -  -
+float claudebox-library "$source" the library itself, cloned from the repository the installer runs from
+float claudebox-library-update 'git fetch' the installed clone's own update, from the repository it was cloned from

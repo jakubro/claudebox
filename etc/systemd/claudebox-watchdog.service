@@ -4,3 +4,7 @@ Description=Claudebox Daemon Health Watchdog
 [Service]
 Type=oneshot
 ExecStart=%h/.claudebox/lib/bin/claudebox_watchdog.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only

@@ -1,38 +1,37 @@
 # Claudebox
 
-Run AI coding agents in disposable containers - one per session, full agent capabilities, and a web interface built for conversations long enough to get lost in.
+Claudebox runs AI coding agents in disposable containers, one per session, with the agent's full capabilities inside the container and a web interface for long conversations.
 
-Each session gets its own container. The agent has everything it needs inside it and writes nothing on the host beyond the workspace, its session data and its login. The container runs until you stop the session, and a stopped session keeps its whole history.
+Each session gets its own container. The agent has everything it needs inside it and writes nothing on the host beyond the workspace, its session data and its login. The container runs until the session is stopped, and a stopped session keeps its whole history.
 
 ![claudebox: an agent tracking todos, researching a spec, and fixing a bug end to end](/claudebox/demo.gif)
 
-## I want to run agents in isolation
+## Installation and setup
 
-[**Start here**](start.md) takes you from nothing to a session that answers a message. One prerequisite the installer will not supply for you: podman or docker.
+[**Start here**](start.md) goes from installation to a session that answers a message. The installer does not supply one prerequisite: podman or docker.
 
-Then what people configure first:
+Setup guides:
 
-- [Profiles](guide/profiles.md) - the system prompt, hooks, skills and commands your agent runs with
+- [Profiles](guide/profiles.md) - the system prompt, hooks, skills and commands an agent runs with
 - [Workspaces](guide/workspaces.md) - scoping sessions and credentials per project
-- [Configuration](guide/configuration.md) - which settings file wins, the keys worth knowing, and named session bundles
+- [Configuration](guide/configuration.md) - which settings file wins, the most common keys, and named session bundles
 - [Security](guide/security.md) - what a session's container can reach, and what reaches it
 
-## I want to see what it does
-
-The interface is the reason to use this rather than a terminal.
+## Features
 
 - [Chat](features/chat.md) - collapsing turns, a minimap instead of a scrollbar, a Focused view that leaves out the calls that only read, a session that says when it needs you, a message queue, a right-hand column carrying every shell command or every tool call of the session, and a single-column layout on a phone
-- [Threads](features/threads.md) - quote any sentence, reply beside it, and take that reply into a session of its own without stopping the one you are reading
+- [Threads](features/threads.md) - quote any sentence, reply beside it, and take that reply into a session of its own without stopping the one in view
 - [Rendering](features/rendering.md) - markdown, math, callouts, colour swatches, word-level diffs, clickable paths and relative links
 - [Diagrams, maps and models](features/diagrams.md) - Mermaid diagrams, GeoJSON maps and STL models drawn in place, each saying so when it cannot be drawn
 - [Panels](features/panels.md) - todos, tasks, scheduled prompts, bookmarks, boards, usage, logs and more, docked around the chat
-- [Boards](features/boards.md) - a kanban board backed by files in your repository; drag a ticket into an active column and a session starts on it
-- [Nested containers](features/nested-containers.md) - let the agent build images and run services inside its own session
+- [Boards](features/boards.md) - a kanban board backed by files in the repository; dragging a ticket into an active column starts a session on it
+- [Nested containers](features/nested-containers.md) - the agent builds images and runs services inside its own session
+- [The container boundary](features/container-boundary.md) - ports the agent opens to this computer once approved, and ports published from the settings
 - [Many sessions](features/multi-session.md) - several workspaces, several containers, and agents that start sessions of their own
 
-Not tied to one model: [either runtime](guide/runtimes.md), and through LangGraph any LangChain provider, including models on your own machine.
+[Runtimes](guide/runtimes.md): Claude Code through the Claude Agent SDK, or LangGraph with any LangChain provider, local models included.
 
-## I want the details
+## Reference
 
 - [CLI reference](reference/cli.md) - every verb and flag, generated from the parser
 - [Configuration reference](reference/configuration.md) - every key, type and default

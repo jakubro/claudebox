@@ -89,9 +89,11 @@ export async function mockAPI(page, options = {}) {
   // Merged over the session-defaults response - e.g. the bundles a workspace declares.
   const sessionDefaultsOverrides = options.sessionDefaults || {}
   const workspaces = options.workspaces || DEFAULT_WORKSPACES
+  const sessionId = options.sessionId || DEFAULT_SESSION_ID
+  const backendId = options.backendId || DEFAULT_BACKEND_ID
 
-  const ws = wsPrefix()
-  const cp = cPrefix()
+  const ws = wsPrefix(options.workspaceId)
+  const cp = cPrefix(options.workspaceId)
 
   // --- Top-level workspace endpoints ---
 
@@ -126,10 +128,10 @@ export async function mockAPI(page, options = {}) {
           status: 200,
           json: {
             id: DEFAULT_CONTAINER_ID,
-            backend_id: DEFAULT_BACKEND_ID,
+            backend_id: backendId,
             port: 8080,
             status: 'running',
-            session_id: DEFAULT_SESSION_ID,
+            session_id: sessionId,
           },
         })
       }
@@ -241,7 +243,7 @@ export async function mockAPI(page, options = {}) {
       await route.fulfill({
         status: 200,
         json: {
-          session_id: DEFAULT_SESSION_ID,
+          session_id: sessionId,
           container_id: DEFAULT_CONTAINER_ID,
         },
       })

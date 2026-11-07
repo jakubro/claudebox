@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import AsyncIterator
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from pathlib import Path
 from typing import Any, Protocol, Self
 
@@ -20,6 +21,19 @@ from starlette.responses import StreamingResponse as BaseStreamingResponse
 from . import serialization
 from .broadcaster import CLOSED
 from .concurrency import maybe_awaitable
+
+
+PROXY_REQUEST_HEADERS = frozenset({"accept", "content-type"})
+PROXY_RESPONSE_HEADERS = frozenset(
+    {"cache-control", "content-type", "etag", "last-modified", "x-accel-buffering"},
+)
+INLINE_MEDIA_TYPES = frozenset(
+    {"application/json", "image/gif", "image/jpeg", "image/png", "image/webp", "text/event-stream"},
+)
+CONTAINED_CONTENT_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+}
 
 
 class JSONResponse(BaseJSONResponse):
@@ -75,6 +89,8 @@ class ProxyClient:
 
     def __init__(self, **kwargs) -> None:
         kwargs.setdefault("transport", httpx.AsyncHTTPTransport(retries=1))
+        # Every container is localhost to the daemon, and a cookie matches whatever the port.
+        kwargs.setdefault("cookies", CookieJar(DefaultCookiePolicy(allowed_domains=[])))
         self._client = httpx.AsyncClient(**kwargs)
 
     async def close(self) -> None:
@@ -95,28 +111,42 @@ class ProxyClient:
         res = await self._client.send(req, stream=True)
 
         headers = self._response_headers(res)
-        content_type = res.headers.get("content-type", "")
 
-        if content_type.startswith("text/event-stream"):
+        if _media_type(res.headers.get("content-type", "")) == "text/event-stream":
             return ProxyStreamingResponse(res, headers=headers)
         else:
             return await ProxyBufferedResponse.from_upstream(res, headers=headers)
 
     @classmethod
     def _request_headers(cls, request: Request) -> dict[str, str]:
-        """Strip the Host header from an incoming request."""
+        """Keep only the request headers a container may receive."""
 
-        return {key: val for key, val in request.headers.items() if key.lower() != "host"}
+        return {
+            key: val for key, val in request.headers.items() if key.lower() in PROXY_REQUEST_HEADERS
+        }
 
     @classmethod
     def _response_headers(cls, response: httpx.Response) -> dict[str, str]:
-        """Strip content-length, transfer-encoding, and content-encoding headers."""
+        """Keep the allowed headers, force the sandbox pair, and make a non-inline answer a download."""
 
-        return {
-            key: val
+        kept = {
+            key.lower(): val
             for key, val in response.headers.items()
-            if key.lower() not in ("content-length", "transfer-encoding", "content-encoding")
+            if key.lower() in PROXY_RESPONSE_HEADERS
         }
+        media = _media_type(kept.get("content-type", ""))
+
+        if response.status_code not in (204, 304) and media not in INLINE_MEDIA_TYPES:
+            upstream = response.headers.get("content-disposition", "")
+            kept["content-disposition"] = (
+                upstream
+                if upstream.split(";", 1)[0].strip(" \t").lower() == "attachment"
+                else "attachment"
+            )
+
+        kept.update(CONTAINED_CONTENT_HEADERS)
+
+        return kept
 
 
 class BroadcastEventSource(Protocol):
@@ -205,3 +235,11 @@ def http_serve(
         reload_excludes=[".git", ".venv", "node_modules"] if reload else None,
         log_config=None,
     )
+
+
+def _media_type(content_type: str) -> str:
+    # httpx comma-joins a repeated header; the browser may honour a later value than the first.
+    if "," in content_type:
+        return ""
+
+    return content_type.split(";", 1)[0].strip().lower()

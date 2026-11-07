@@ -148,8 +148,11 @@ describe('useNewSession', () => {
     const ok = await result.current.executeNewSession()
 
     expect(ok).toBe(true)
-    expect(mockStartCreating).toHaveBeenCalledWith('sess-a')
-    expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, 's1')
+    expect(mockStartCreating).toHaveBeenCalledWith('sess-a', [])
+    expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, 's1', {
+      undeliveredMessages: [],
+      bundleMessages: [],
+    })
     expect(mockSettleCreateRequest.mock.invocationCallOrder[0]).toBeLessThan(
       mockReconnectSSE.mock.invocationCallOrder[0],
     )
@@ -186,7 +189,10 @@ describe('useNewSession', () => {
 
     expect(ok).toBe(true)
     expect(mockStartCreating).toHaveBeenCalledTimes(1)
-    expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, null)
+    expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, null, {
+      undeliveredMessages: [],
+      bundleMessages: [],
+    })
     expect(mockSetAddress).not.toHaveBeenCalled()
     expect(mockNotifyAddressChanged).not.toHaveBeenCalled()
     expect(mockReconnectSSE).not.toHaveBeenCalled()
@@ -282,6 +288,24 @@ describe('useNewSession', () => {
       })
       expect(success).toBe(true)
       expect(undeliveredMessages).toEqual(['/danger'])
+    })
+
+    it('hands the carried messages to the creation, and the answer about them and the bundle after', async () => {
+      mockNewSession.mockResolvedValue({
+        session_id: 's6',
+        container_id: 'c6',
+        undelivered_messages: ['/danger'],
+        bundle_messages: ['open the plan'],
+      })
+
+      const { result } = renderHook(() => useNewSession())
+      await result.current.executeNewSessionFromLink(['/danger'])
+
+      expect(mockStartCreating).toHaveBeenCalledWith('sess-a', ['/danger'])
+      expect(mockSettleCreateRequest).toHaveBeenCalledWith(4, 's6', {
+        undeliveredMessages: ['/danger'],
+        bundleMessages: ['open the plan'],
+      })
     })
 
     it('defaults undeliveredMessages to empty when the response omits it', async () => {

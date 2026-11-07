@@ -167,12 +167,17 @@ DEFAULT_AGENT = "claude"
 DEFAULT_BACKEND = "podman"
 ACCEPTED_BACKENDS = frozenset({"podman", "docker", "local"})
 WEB_CONTAINER_PORT = 8080
+TUNNEL_CONTAINER_PORT = 8081  # where a session container relays a port it opened to the host
+TUNNEL_PORT_ENV = "CLAUDEBOX_TUNNEL_PORT"  # set in a container whose API serves the tunnel
 DAEMON_PORT = 41820
 DAEMON_DEV_PORT = 41920
 GIT_SUBPROCESS_TIMEOUT = timedelta(seconds=5)
 SDK_CONTROL_REQUEST_TIMEOUT = timedelta(seconds=30)  # ceiling on a single SDK control round-trip
 QUEUED_CHANGE_TIMEOUT = timedelta(seconds=35)  # above the control timeout, below the UI's 40s bound
 SPAWN_SOCKET_CONNECT_TIMEOUT_SECONDS = 5.0  # bound on dialing the daemon's spawn socket
+SPAWN_SOCKET_LINE_LIMIT = (
+    16 * 1024 * 1024
+)  # longest request line, a sibling turn's whole text included
 
 
 def daemon_base_url() -> str:
@@ -202,6 +207,11 @@ SESSION_CHECKPOINT_TURNS_FILE = (
     "checkpoint_turns.json"  # LangGraph: turn_id -> boundary checkpoint_id
 )
 SESSION_ATTACHMENTS_DIR = "attachments"  # per-session attachment files
+SIBLING_MESSAGES_PENDING_FILE = "sibling-messages.pending.jsonl"  # held for a stopped parent
+SESSION_NOTES_PENDING_FILE = "notes.pending.jsonl"  # told the agent ahead of its next message
+SIBLING_TURN_END_DRAIN_SECONDS = (
+    5.0  # how long a stopping spawned session waits to report its turn ends
+)
 RATE_LIMITS_FILE = "rate-limits.json"  # per-workspace plan-limit state, under config_dir
 UI_STATE_FILE = "ui-state.json"  # per-workspace UI state, under config_dir
 UI_STATE_VERSION = 3  # a UI-state file of a lower version is discarded whole

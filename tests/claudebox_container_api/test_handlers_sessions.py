@@ -8,12 +8,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from claudebox import SessionEntryNotFound
+from claudebox.agent_session.orchestration.attachments import AttachmentInfo
 from claudebox.agent_session.orchestration.errors import ToolOutputNotFound
 from claudebox.agent_session.orchestration.models import PublishedEvent, SessionSummary
 from claudebox.agent_session.orchestration.persistence import EventLog
 from claudebox.workspace import Workspace
 from claudebox_container_api.handlers.sessions import (
     download_session_tool_output,
+    get_attachment,
     get_current_session,
     get_session_events,
     get_session_tool_output,
@@ -198,3 +200,45 @@ async def test_session_tool_output_download_serves_the_named_session_file(
 async def test_session_tool_output_missing_is_not_found(_stopped_side_thread_output):
     with pytest.raises(ToolOutputNotFound):
         await get_session_tool_output(_stopped_side_thread_output, "side-1", "toolu_missing")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("media_type", ["image/png", "image/jpeg", "image/gif", "image/webp"])
+async def test_an_attached_picture_answers_inline_and_sandboxed(tmp_path, media_type):
+    """A raster picture shows on its own address; nosniff and the sandbox policy still apply."""
+
+    response = await get_attachment(
+        _attachment_service(tmp_path / "att_001_pic", media_type),
+        "att_001_pic",
+    )
+
+    assert "content-disposition" not in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-security-policy"] == "default-src 'none'; sandbox"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "media_type",
+    ["image/svg+xml", "application/pdf", "application/octet-stream"],
+)
+async def test_any_other_attachment_downloads_under_its_name(tmp_path, media_type):
+    """An SVG, a PDF or an unknown file downloads instead of opening as a page."""
+
+    response = await get_attachment(
+        _attachment_service(tmp_path / "att_002_logo.svg", media_type),
+        "x",
+    )
+
+    assert response.headers["content-disposition"] == 'attachment; filename="att_002_logo.svg"'
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-security-policy"] == "default-src 'none'; sandbox"
+
+
+def _attachment_service(path, media_type: str) -> MagicMock:
+    path.write_bytes(b"x")
+    svc = MagicMock()
+    svc.current_session_id = "sid"
+    svc.get_attachment.return_value = AttachmentInfo(path=path, media_type=media_type)
+
+    return svc

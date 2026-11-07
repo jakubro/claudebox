@@ -22,6 +22,7 @@ export const EventSubtype = Object.freeze({
   EFFORT_LEVEL_CHANGED: 'effort_level_changed',
   CONTAINER_RESTARTED: 'container_restarted',
   TASK_NOTIFICATION: 'task_notification',
+  SIBLING_MESSAGE: 'sibling_message',
   HOOK_RESPONSE: 'hook_response',
   INIT: 'init',
   COMPACT_START: 'compact_start',
@@ -58,7 +59,11 @@ export const ToolName = Object.freeze({
   SESSION_SPAWN: 'mcp__claudebox__session_spawn',
   SESSION_ASK: 'mcp__claudebox__session_ask',
   SESSION_READ: 'mcp__claudebox__session_read',
+  SESSION_STOP: 'mcp__claudebox__session_stop',
+  SESSION_LIST: 'mcp__claudebox__session_list',
   NEEDS_USER: 'mcp__claudebox__needs_user',
+  PORT_OPEN: 'mcp__claudebox__port_open',
+  PORT_CLOSE: 'mcp__claudebox__port_close',
   LIST_MCP_RESOURCES: 'ListMcpResourcesTool',
   READ_MCP_RESOURCE: 'ReadMcpResourceTool',
   READ_MCP_RESOURCE_DIR: 'ReadMcpResourceDirTool',
@@ -87,7 +92,11 @@ export const TOOL_NAME_ALIASES = Object.freeze({
   session_spawn: ToolName.SESSION_SPAWN,
   session_ask: ToolName.SESSION_ASK,
   session_read: ToolName.SESSION_READ,
+  session_stop: ToolName.SESSION_STOP,
+  session_list: ToolName.SESSION_LIST,
   needs_user: ToolName.NEEDS_USER,
+  port_open: ToolName.PORT_OPEN,
+  port_close: ToolName.PORT_CLOSE,
   list_mcp_resources: ToolName.LIST_MCP_RESOURCES,
   read_mcp_resource: ToolName.READ_MCP_RESOURCE,
 })
@@ -153,6 +162,7 @@ export const BlockType = Object.freeze({
   THINKING: 'thinking',
   TOOL: 'tool',
   COMPACTION: 'compaction',
+  SIBLING_MESSAGE: 'sibling-message',
 })
 
 // --- Task status ---

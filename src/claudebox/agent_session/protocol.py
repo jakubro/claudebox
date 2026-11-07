@@ -29,7 +29,13 @@ class AgentSession(Protocol):
 
     async def disconnect(self) -> None: ...
 
-    async def query(self, prompt: str | list[dict], *, message_uuid: str | None = None) -> None: ...
+    async def query(
+        self,
+        prompt: str | list[dict],
+        *,
+        message_uuid: str | None = None,
+        after_turn: bool = False,
+    ) -> None: ...
 
     async def interrupt(self) -> None: ...
 

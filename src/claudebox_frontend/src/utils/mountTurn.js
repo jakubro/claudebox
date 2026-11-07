@@ -1,7 +1,6 @@
 /** Bring a windowed-out turn into the DOM so it can be scrolled to. */
 
-/** Frames to keep looking for a turn after asking the virtualizer for it. */
-export const MOUNT_FRAMES = 12
+import { MOUNT_TIMEOUT_MS } from '../config/timing'
 
 /**
  * Ensure a turn is mounted, then hand its element to `onResolved` - null if it never mounts.
@@ -27,7 +26,7 @@ export function withMountedTurn({ turnId, turns, virtualizer, onResolved, root }
   }
 
   virtualizer.scrollToIndex(index, { align: 'start' })
-  pollFrames(MOUNT_FRAMES, () => findTurnEl(turnId, root), onResolved)
+  pollFrames(MOUNT_TIMEOUT_MS, () => findTurnEl(turnId, root), onResolved)
 }
 
 /**
@@ -46,16 +45,20 @@ export function findTurnRow(index, rowSelector = '.historical-turn-row', root) {
   return (root || document).querySelector(`${rowSelector}[data-index="${index}"]`)
 }
 
-/** Call `resolve` each frame until it returns something; reports null after `frames` attempts. */
-export function pollFrames(frames, resolve, onResolved) {
-  const found = resolve()
-  if (found) {
-    onResolved(found)
-    return
+/** Call `resolve` each frame until it returns something; reports null once `timeoutMs` has passed. */
+export function pollFrames(timeoutMs, resolve, onResolved) {
+  const deadline = performance.now() + timeoutMs
+  const attempt = () => {
+    const found = resolve()
+    if (found) {
+      onResolved(found)
+      return
+    }
+    if (performance.now() >= deadline) {
+      onResolved(null)
+      return
+    }
+    requestAnimationFrame(attempt)
   }
-  if (frames <= 0) {
-    onResolved(null)
-    return
-  }
-  requestAnimationFrame(() => pollFrames(frames - 1, resolve, onResolved))
+  attempt()
 }

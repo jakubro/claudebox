@@ -22,8 +22,10 @@ from claudebox.agent_session.events import (
     UserMessagePayload,
 )
 from claudebox.agent_session.orchestration.models import Event, PublishedEvent
+from claudebox.agent_session.orchestration.persistence import EventLog
 from claudebox.agent_session.orchestration.pipeline import EventPipeline
 from claudebox.agent_session.orchestration.trace import TraceClient
+from claudebox.workspace import Workspace
 
 
 # --- Helpers ---
@@ -1354,6 +1356,65 @@ def _make_nested_event(
         tool_use_id=tool_use_id,
         source_file=source_file,
     )
+
+
+class TestSiblingMessageDedup:
+    """Each sibling delivery shows once, also when a copy of it was already in the history."""
+
+    @staticmethod
+    def _sibling(delivery_id: str, event_id: str) -> PublishedEvent:
+        return PublishedEvent(
+            type="system",
+            subtype="sibling_message",
+            content="Done.",
+            primary=False,
+            is_human=False,
+            raw={},
+            id=event_id,
+            ts=datetime.now(UTC),
+            turn_id="T1",
+            message_data={"delivery_id": delivery_id},
+        )
+
+    @pytest.mark.anyio
+    async def test_a_second_copy_of_a_delivery_is_dropped(self):
+        pipeline = _make_pipeline()
+        first, again, other = (
+            self._sibling("d1", "e1"),
+            self._sibling("d1", "e2"),
+            self._sibling("d2", "e3"),
+        )
+
+        for event in (first, again, other):
+            await pipeline._process_event(event)
+
+        published = [c.args[0] for c in pipeline._on_event.await_args_list]  # ty: ignore[unresolved-attribute]
+        assert published == [first, other]
+
+    @pytest.mark.anyio
+    async def test_a_delivery_already_in_history_is_dropped(self, tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        workspace = Workspace(start_dir=tmp_workspace)
+        log = EventLog("sess-1", workspace)
+
+        try:
+            await log.open()
+            await log.append(self._sibling("d1", "e1"))
+        finally:
+            await log.close()
+
+        pipeline = EventPipeline(
+            sdk_client=MagicMock(),
+            workspace=workspace,
+            on_init=AsyncMock(),
+            on_event=AsyncMock(),
+        )
+        await pipeline.ensure_initialized("sess-1")
+
+        await pipeline._process_event(self._sibling("d1", "e9"))
+
+        pipeline._on_event.assert_not_awaited()  # ty: ignore[unresolved-attribute]
+        await pipeline.stop()
 
 
 class TestNestedEventDedup:

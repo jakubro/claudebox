@@ -86,9 +86,21 @@ class TestNvmDetection:
 class TestNvmInstallerUrl:
     """Which upstream file the installer fetches."""
 
-    def test_the_fetched_url_names_a_shell_script(self, install_sh_head):
-        urls = re.findall(r"https://raw\.githubusercontent\.com/nvm-sh/nvm/\S+", install_sh_head)
+    def test_the_pinned_url_names_a_release_tags_shell_script(self, lib_root):
+        rows = [
+            line.split()
+            for line in (lib_root / "etc" / "host-pins.txt")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line.split()[:1] == ["nvm"]
+        ]
 
-        assert urls, "install.sh fetches nvm from somewhere else now"
+        assert rows, "the host manifest pins no nvm installer"
         # Upstream serves the installer at install.sh; the extensionless path 404s.
-        assert all(url.endswith("/install.sh") for url in urls), urls
+        assert all(
+            re.fullmatch(
+                r"https://raw\.githubusercontent\.com/nvm-sh/nvm/v\{version\}/install\.sh",
+                row[4],
+            )
+            for row in rows
+        ), rows

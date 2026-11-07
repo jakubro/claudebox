@@ -305,7 +305,7 @@ describe('Markdown', () => {
       expect(link?.getAttribute('href') ?? '').not.toContain('javascript:')
     })
 
-    it('preserves inline style verbatim', () => {
+    it('keeps an allowed inline style property', () => {
       const { container } = render(<Markdown>{'<span style="color: red">styled</span>'}</Markdown>)
 
       const span = container.querySelector('span[style]')

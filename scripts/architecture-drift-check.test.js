@@ -35,9 +35,9 @@ function diffFixtureBlock(lines, root) {
 
 const FIXTURE_HEADING = '## 1. Fixture (`fixture_mod`)'
 
-// Tree-glyph prefixes as escapes to keep this file pure ASCII (tee U+251C, elbow U+2514, U+2500).
-const TEE = '\u251c\u2500\u2500 '
-const ELBOW = '\u2514\u2500\u2500 '
+const TEE = '|-- '
+const ELBOW = '`-- '
+const PIPE = '|   '
 
 describe('tree/module-map blocks', () => {
   it('flags a fenced entry naming a file that does not exist', t => {
@@ -65,6 +65,42 @@ describe('tree/module-map blocks', () => {
     assert.equal(problems.length, 1)
     assert.equal(problems[0].kind, 'unlisted-on-disk')
     assert.equal(problems[0].path, './pkg/extra.py')
+  })
+  it('reads an entry two levels down through the ASCII prefix', t => {
+    const root = makeTmpRoot(t)
+    mkdirSync(join(root, 'pkg', 'sub'), { recursive: true })
+    writeFileSync(join(root, 'pkg', 'sub', 'real.py'), '')
+    writeFileSync(join(root, 'pkg', 'top.py'), '')
+
+    const lines = [
+      FIXTURE_HEADING,
+      '',
+      '```',
+      'pkg/',
+      `${TEE}sub/`,
+      `${PIPE}${TEE}real.py`,
+      `${PIPE}${ELBOW}gone.py`,
+      `${ELBOW}top.py`,
+      '```',
+    ]
+    const problems = diffFixtureBlock(lines, root)
+
+    assert.deepEqual(
+      problems.map(p => [p.kind, p.path]),
+      [['missing-on-disk', './pkg/sub/gone.py']],
+    )
+  })
+
+  it('reads a tree drawn with box-drawing glyphs as no tree at all', t => {
+    const root = makeTmpRoot(t)
+    mkdirSync(join(root, 'pkg'))
+    writeFileSync(join(root, 'pkg', 'real.py'), '')
+    writeFileSync(join(root, 'pkg', 'other.py'), '')
+
+    const box = ['\u251c\u2500\u2500 real.py', '\u2514\u2500\u2500 other.py']
+    const lines = [FIXTURE_HEADING, '', '```', 'pkg/', ...box, '```']
+
+    assert.equal(diffFixtureBlock(lines, root), null)
   })
 })
 

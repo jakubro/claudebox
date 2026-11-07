@@ -16,7 +16,7 @@ import { CRON_MAX_AGE_MS } from '../config/timing'
 import { FOCUSED_HIDDEN_TOOLS, isReadOnlyCall } from '../config/toolRegistry'
 import { toolBookmarkKey } from './bookmarkIds'
 import { nextFireTime, nextRecurringFire } from './cron'
-import { isAsyncTask, isHumanEvent } from './eventPredicates'
+import { isAsyncTask, isHumanEvent, isSiblingMessage } from './eventPredicates'
 import { extractSystemReminders } from './parsers'
 
 /** Initial state for incremental turn grouping across batches. */
@@ -197,6 +197,14 @@ export function processEvents(events) {
       continue
     }
 
+    const ownBlock = blockOfItsOwn(event, compactionSummary, hasCompactBoundary)
+    if (ownBlock !== undefined) {
+      if (ownBlock) {
+        blocks.push(ownBlock)
+      }
+      continue
+    }
+
     if (event.subtype === EventSubtype.TEXT && event.content?.trim()) {
       // Filter "(No content)" placeholder emitted when assistant starts with thinking/tool use
       if (
@@ -263,24 +271,30 @@ export function processEvents(events) {
         nestedEvents: nested,
         skillContent: skill,
       })
-    } else if (event.subtype === EventSubtype.COMPACT_START) {
-      // Show compacting progress only if boundary hasn't arrived yet
-      if (!hasCompactBoundary) {
-        blocks.push({ type: BlockType.COMPACTION, event, isCompacting: true })
-      }
-    } else if (event.subtype === EventSubtype.COMPACT_BOUNDARY) {
-      const summary = compactionSummary.get(event.id)
-      blocks.push({ type: BlockType.COMPACTION, event, summary, isCompacting: false })
-    } else if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR) {
-      if (event.content?.trim()) {
-        blocks.push({ type: BlockType.TEXT, event })
-      }
     }
     // tool_result is paired above; model_changed/permission_mode_changed render via
     // turn.settingChanges, not here.
   }
 
   return { blocks, injected }
+}
+
+/** A sibling message, compaction or failure as its block - null when it draws none, else undefined. */
+function blockOfItsOwn(event, compactionSummary, hasCompactBoundary) {
+  if (isSiblingMessage(event)) {
+    return event.content?.trim() ? { type: BlockType.SIBLING_MESSAGE, event } : null
+  }
+  if (event.subtype === EventSubtype.COMPACT_START) {
+    return hasCompactBoundary ? null : { type: BlockType.COMPACTION, event, isCompacting: true }
+  }
+  if (event.subtype === EventSubtype.COMPACT_BOUNDARY) {
+    const summary = compactionSummary.get(event.id)
+    return { type: BlockType.COMPACTION, event, summary, isCompacting: false }
+  }
+  if (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR) {
+    return event.content?.trim() ? { type: BlockType.TEXT, event } : null
+  }
+  return undefined
 }
 
 export const InjectedSource = Object.freeze({
@@ -481,7 +495,8 @@ export function appendTurns(prevTurns, prevState, newVisibleEvents, turnResults 
       event.subtype === EventSubtype.COMPACT_START ||
       event.subtype === EventSubtype.COMPACT_BOUNDARY ||
       (event.type === EventType.USER && !event.is_human) ||
-      (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR)
+      (event.type === EventType.SYSTEM && event.subtype === EventSubtype.ERROR) ||
+      isSiblingMessage(event)
     ) {
       if (event.subtype === EventSubtype.COMPACT_START) {
         // Buffer compact_start - don't place yet, the new turn hasn't been created
@@ -548,6 +563,26 @@ export function appendTurnResults(existing, newEvents) {
     }
   }
   return updated || existing
+}
+
+/** Add each result's recorded `duration_ms` to the turn it ends; the same array when none records one. */
+export function recordTurnDurations(turns, batch) {
+  let updated = null
+  for (const e of batch) {
+    if (e.type !== EventType.RESULT || !e.turn_id || typeof e.duration_ms !== 'number') {
+      continue
+    }
+    const index = (updated || turns).findLastIndex(t => t.turn_id === e.turn_id)
+    if (index < 0) {
+      continue
+    }
+    updated ??= [...turns]
+    updated[index] = {
+      ...updated[index],
+      durationMs: (updated[index].durationMs ?? 0) + e.duration_ms,
+    }
+  }
+  return updated || turns
 }
 
 /** Append task notifications with their ts and log index (baseIndex + batch position); same reference if none. */

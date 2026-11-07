@@ -56,7 +56,7 @@ class TurnTracker:
             self._current = payload.uuid
 
     def observe(self, event: PublishedEvent) -> None:
-        """End the turn on a result; the person, the agent or a task notification runs it."""
+        """End the turn on a result; the person, the agent, a task notification or a sibling runs it."""
 
         if event.parent_tool_use_id is not None:
             return
@@ -66,7 +66,7 @@ class TurnTracker:
         elif (
             _opens_turn(event)
             or event.type == EventType.ASSISTANT
-            or event.subtype == EventSubtype.TASK_NOTIFICATION
+            or event.subtype in (EventSubtype.TASK_NOTIFICATION, EventSubtype.SIBLING_MESSAGE)
         ):
             self._running = True
 

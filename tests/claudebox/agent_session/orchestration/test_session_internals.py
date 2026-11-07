@@ -39,6 +39,12 @@ def _make_session(tmp_workspace) -> SessionService:
     return session
 
 
+async def _until(predicate, timeout: float = 5.0) -> None:
+    async with asyncio.timeout(timeout):
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+
 # --- _dispose ---
 
 
@@ -168,7 +174,7 @@ class TestOnCompactStart:
 
         await session._on_compact_start(CompactStartPayload(trigger="manual"))
 
-        assert session._pending_session_prompt == "Remember: you are a helpful assistant"
+        assert session._pending_compaction_reminder == "Remember: you are a helpful assistant"
         session._event_pipeline.inject_event.assert_awaited_once()
         call_kwargs = session._event_pipeline.inject_event.call_args.kwargs
         assert call_kwargs["subtype"] == "compact_start"
@@ -234,7 +240,7 @@ class TestEmitCompactBoundaryFallback:
         session._event_pipeline.inject_event = AsyncMock()
         session._event_pipeline.turn_tracker = MagicMock(is_compacting=True)
         session._pending_compact_trigger = "context_limit"
-        session._pending_session_prompt = "carry-over"
+        session._pending_compaction_reminder = "carry-over"
 
         await session._emit_compact_boundary_fallback(status="interrupted")
 
@@ -245,7 +251,7 @@ class TestEmitCompactBoundaryFallback:
             "compact_metadata": {"trigger": "context_limit", "status": "interrupted"},
         }
         assert session._pending_compact_trigger is None
-        assert session._pending_session_prompt is None
+        assert session._pending_compaction_reminder is None
 
     @pytest.mark.anyio
     async def test_emits_unknown_trigger_when_not_captured(self, tmp_workspace):
@@ -347,7 +353,7 @@ class TestInterrupt:
 
         await session._on_compact_start(CompactStartPayload(trigger="manual"))
 
-        assert session._pending_session_prompt is None
+        assert session._pending_compaction_reminder is None
 
     @pytest.mark.anyio
     async def test_no_session_prompt_sets_none(self, tmp_workspace):
@@ -365,7 +371,7 @@ class TestInterrupt:
 
         await session._on_compact_start(CompactStartPayload(trigger="manual"))
 
-        assert session._pending_session_prompt is None
+        assert session._pending_compaction_reminder is None
 
 
 # --- _handle_event ---
@@ -423,27 +429,37 @@ class TestHandleEvent:
         record = session._projection._path
         release = threading.Event()
         held = []
+        held_landed = threading.Event()
+        landed_after_it = threading.Event()
         real_write_json = projection_module.write_json
 
         def write_json(path, data):
-            if threading.current_thread() is threading.main_thread() or held:
+            if threading.current_thread() is threading.main_thread():
                 real_write_json(path, data)
+
+                return
+
+            if held:
+                real_write_json(path, data)
+
+                if held_landed.is_set():
+                    landed_after_it.set()
 
                 return
 
             held.append(serialization.dumps(data))
             release.wait(5)
             path.write_text(held[0])
+            held_landed.set()
 
         with patch.object(projection_module, "write_json", write_json):
             await session._handle_event(_make_event(type="assistant", subtype="text", content="a"))
             await session._handle_event(_make_event(type="assistant", subtype="text", content="b"))
-            await asyncio.sleep(0.7)
+            await _until(lambda: bool(held))
             await session._handle_event(_make_event(type="result", subtype="success"))
             release.set()
-            await asyncio.sleep(0.7)
+            await _until(landed_after_it.is_set)
 
-        assert held
         assert read_json(record)["activity"] is None
 
     @pytest.mark.anyio
@@ -454,7 +470,7 @@ class TestHandleEvent:
         session._projection = MagicMock()
         session._sdk_client = MagicMock()
         session._sdk_client.query = AsyncMock()
-        session._pending_session_prompt = "Stay focused on the task"
+        session._pending_compaction_reminder = "Stay focused on the task"
 
         event = _make_event(subtype="compact_boundary")
         await session._handle_event(event)
@@ -462,7 +478,7 @@ class TestHandleEvent:
         session._sdk_client.query.assert_awaited_once()
         query_arg = session._sdk_client.query.call_args.args[0]
         assert "Stay focused on the task" in query_arg
-        assert session._pending_session_prompt is None
+        assert session._pending_compaction_reminder is None
 
     @pytest.mark.anyio
     async def test_tool_use_and_result_track_outstanding_work(self, tmp_workspace):
@@ -505,7 +521,7 @@ class TestHandleEvent:
         session._projection = MagicMock()
         session._sdk_client = MagicMock()
         session._sdk_client.query = AsyncMock()
-        session._pending_session_prompt = None
+        session._pending_compaction_reminder = None
 
         event = _make_event(subtype="compact_boundary")
         await session._handle_event(event)
@@ -2087,3 +2103,373 @@ class TestEnsureStreamHealthy:
         await session._ensure_stream_healthy()
 
         session.restart.assert_not_awaited()
+
+
+class TestSiblingTurnEnds:
+    """A spawned session reports each turn end, in order; a session nobody spawned reports none."""
+
+    @staticmethod
+    def _session(tmp_workspace, *, spawned: bool):
+        reported: list = []
+
+        async def report(session_id, turn):
+            reported.append((session_id, turn))
+
+        session = SessionService(workspace=tmp_workspace, report_turn_end=report)
+        session._broadcaster = MagicMock(broadcast=AsyncMock(), close=AsyncMock())
+        session._projection = MagicMock(flush=AsyncMock())
+        session._projection.value.spawned_from_session_id = "parent-1" if spawned else None
+        session._projection.update.return_value = False
+        session._sdk_client = MagicMock()
+        session._turn_end_task = asyncio.create_task(session._send_turn_ends("sib-1"))
+
+        return session, reported
+
+    @staticmethod
+    async def _feed(session, *events):
+        for event in events:
+            await session._handle_event(event)
+
+    @pytest.mark.anyio
+    async def test_each_result_reports_that_turns_whole_text(self, tmp_workspace):
+        session, reported = self._session(tmp_workspace, spawned=True)
+
+        await self._feed(
+            session,
+            _make_event(type="user", subtype="message", is_human=True, content="go"),
+            _make_event(type="assistant", subtype="text", content="one"),
+            _make_event(type="result", subtype="success", turn_id="T1"),
+            _make_event(type="assistant", subtype="text", content="two"),
+            _make_event(type="result", subtype="success", turn_id="T1"),
+        )
+        await _until(lambda: len(reported) == 2)
+
+        assert [(sid, turn.outcome, turn.text) for sid, turn in reported] == [
+            ("sib-1", "ended", "one"),
+            ("sib-1", "ended", "two"),
+        ]
+        await session._dispose("_turn_end_task", "cancel")
+
+    @pytest.mark.anyio
+    async def test_a_session_nobody_spawned_reports_nothing(self, tmp_workspace):
+        session, reported = self._session(tmp_workspace, spawned=False)
+
+        await self._feed(
+            session,
+            _make_event(type="assistant", subtype="text", content="one"),
+            _make_event(type="result", subtype="success"),
+        )
+        await asyncio.sleep(0.05)
+
+        assert reported == []
+        await session._dispose("_turn_end_task", "cancel")
+
+    @pytest.mark.anyio
+    async def test_a_lost_stream_reports_the_open_turn_as_failed(self, tmp_workspace):
+        session, reported = self._session(tmp_workspace, spawned=True)
+        await self._feed(session, _make_event(type="assistant", subtype="text", content="half"))
+
+        session._on_stream_lost()
+        await _until(lambda: len(reported) == 1)
+
+        assert (reported[0][1].outcome, reported[0][1].text) == ("failed", "half")
+        await session._dispose("_turn_end_task", "cancel")
+
+    @pytest.mark.anyio
+    async def test_stopping_reports_the_open_turn_as_interrupted_before_it_ends(
+        self,
+        tmp_workspace,
+    ):
+        session, reported = self._session(tmp_workspace, spawned=True)
+        await self._feed(session, _make_event(type="assistant", subtype="text", content="half"))
+
+        await session.stop()
+
+        assert [(turn.outcome, turn.text) for _, turn in reported] == [("interrupted", "half")]
+        assert session._turn_end_task is None
+
+    @pytest.mark.anyio
+    async def test_a_report_still_queued_past_the_drain_is_logged(self, tmp_workspace, monkeypatch):
+        monkeypatch.setattr(
+            "claudebox.agent_session.orchestration.session.SIBLING_TURN_END_DRAIN_SECONDS",
+            0.05,
+        )
+
+        async def never(_session_id, _turn):
+            await asyncio.sleep(3600)
+
+        session, _ = self._session(tmp_workspace, spawned=True)
+        session._report_turn_end = never
+        await self._feed(session, _make_event(type="assistant", subtype="text", content="x"))
+
+        with patch.object(session._logger, "error") as error:
+            await session.stop()
+
+        logged = [call.args[0] for call in error.call_args_list]
+        assert "Sibling turn ends not reported before the session stopped" in logged
+
+
+class TestSiblingMessages:
+    """A spawned session's turn end reaches the runtime once, after any running turn; held ones go first."""
+
+    @staticmethod
+    def _session(tmp_workspace, monkeypatch):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        session = SessionService(workspace=tmp_workspace)
+        session._session_id = "parent-1"
+        session._sdk_client = MagicMock(
+            query=AsyncMock(),
+            stream_health=MagicMock(return_value=None),
+        )
+        session._event_pipeline = MagicMock(is_alive=True, set_prompt=MagicMock())
+
+        return session
+
+    @staticmethod
+    def _message(delivery_id: str, text: str = "Done."):
+        from claudebox.agent_session.orchestration.sibling_turns import SiblingMessage
+
+        return SiblingMessage("sib-1", "lint-fix", "ended", delivery_id, text)
+
+    @pytest.mark.anyio
+    async def test_it_is_queried_after_the_turn_under_its_delivery_id(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch)
+
+        await session.deliver_sibling_message(self._message("d1"))
+        await session.deliver_sibling_message(self._message("d1"))
+
+        session._sdk_client.query.assert_awaited_once()
+        call = session._sdk_client.query.await_args
+        assert call.args[0].startswith('<sibling-message session="sib-1" name="lint-fix"')
+        assert call.kwargs == {"message_uuid": "d1", "after_turn": True}
+        session._event_pipeline.set_prompt.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_held_ones_go_ahead_of_the_next_message_in_order(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        from claudebox.core.io import append_json
+
+        session = self._session(tmp_workspace, monkeypatch)
+        held = Workspace(start_dir=tmp_workspace).ensure_session("parent-1").path
+        pending = held / "sibling-messages.pending.jsonl"
+
+        for delivery_id in ("d1", "d2"):
+            append_json(pending, self._message(delivery_id, f"text {delivery_id}").__dict__)
+
+        await session.send("my own words")
+
+        calls = session._sdk_client.query.await_args_list
+        assert [
+            c.args[0].splitlines()[1] if c.args[0].startswith("<") else c.args[0] for c in calls
+        ] == [
+            "text d1",
+            "text d2",
+            "my own words",
+        ]
+        assert [c.kwargs.get("after_turn", False) for c in calls] == [False, False, False]
+        assert not pending.exists()
+
+    @pytest.mark.anyio
+    async def test_held_ones_a_failed_delivery_left_go_again_ahead_of_newer_ones(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        from claudebox.core.io import append_json
+
+        session = self._session(tmp_workspace, monkeypatch)
+        pending = (
+            Workspace(start_dir=tmp_workspace).ensure_session("parent-1").path
+            / "sibling-messages.pending.jsonl"
+        )
+        append_json(pending, self._message("d1", "text d1").__dict__)
+        session._sdk_client.query = AsyncMock(side_effect=[OSError("gone"), None, None, None])
+
+        with pytest.raises(OSError):
+            await session.send("first try")
+
+        append_json(pending, self._message("d2", "text d2").__dict__)
+        await session.send("second try")
+
+        sent = [c.args[0] for c in session._sdk_client.query.await_args_list[1:]]
+        assert [s.splitlines()[1] if s.startswith("<") else s for s in sent] == [
+            "text d1",
+            "text d2",
+            "second try",
+        ]
+        assert not pending.exists()
+        assert not pending.with_name("sibling-messages.pending.jsonl.taking").exists()
+
+    @pytest.mark.anyio
+    async def test_held_ones_wait_out_a_send_that_carries_nothing(self, tmp_workspace, monkeypatch):
+        from claudebox.core.io import append_json
+
+        session = self._session(tmp_workspace, monkeypatch)
+        pending = (
+            Workspace(start_dir=tmp_workspace).ensure_session("parent-1").path
+            / "sibling-messages.pending.jsonl"
+        )
+        append_json(pending, self._message("d1").__dict__)
+
+        await session.send("", inline_replies=[{"quote": "q", "response": "  "}])
+
+        session._sdk_client.query.assert_not_awaited()
+        assert pending.exists()
+
+    @pytest.mark.anyio
+    async def test_held_notes_ride_the_next_message_and_only_that_one(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        from claudebox.core.io import append_json
+
+        session = self._session(tmp_workspace, monkeypatch)
+        held = Workspace(start_dir=tmp_workspace).ensure_session("parent-1").path
+
+        for text in ("Port 3000 moved.", "Port 4000 moved."):
+            append_json(held / "notes.pending.jsonl", {"text": text})
+
+        await session.send("hello")
+        await session.send("again")
+
+        sent = [c.args[0] for c in session._sdk_client.query.await_args_list]
+        assert sent == [
+            "hello\n\n<system-reminder>\nPort 3000 moved.\nPort 4000 moved.\n</system-reminder>",
+            "again",
+        ]
+        assert not (held / "notes.pending.jsonl").exists()
+
+    @pytest.mark.anyio
+    async def test_a_runtime_that_never_connected_refuses_it(self, tmp_workspace, monkeypatch):
+        from claudebox.agent_session.orchestration.errors import SessionNotReady
+
+        session = self._session(tmp_workspace, monkeypatch)
+        session._runtime_connect_failed = True
+
+        with pytest.raises(SessionNotReady):
+            await session.deliver_sibling_message(self._message("d1"))
+
+
+class TestSiblingBrief:
+    """A spawned session is told who started it on its first turn and after each compaction."""
+
+    @staticmethod
+    def _session(tmp_workspace, monkeypatch, record: dict | None, *, resumed: bool = False):
+        monkeypatch.setenv("CLAUDEBOX_PWD", str(tmp_workspace))
+        workspace = Workspace(start_dir=tmp_workspace)
+        write_json(
+            workspace.ensure_session("parent-1").path / "session.json",
+            {"session_id": "parent-1", "fork_point_cost_usd": 0.0, "name": "planner"},
+        )
+
+        if record is not None:
+            write_json(workspace.ensure_session("sib-1").path / "session.json", record)
+
+        session = SessionService(workspace=tmp_workspace)
+        session._session_id = "sib-1"
+        session._brief_first_message = not resumed
+        session._sdk_client = MagicMock(
+            query=AsyncMock(),
+            stream_health=MagicMock(return_value=None),
+        )
+        session._event_pipeline = MagicMock(
+            is_alive=True,
+            get_historical_events=MagicMock(return_value=[]),
+        )
+
+        return session
+
+    @staticmethod
+    def _sent(session) -> list[str]:
+        return [call.args[0] for call in session._sdk_client.query.await_args_list]
+
+    @pytest.mark.anyio
+    async def test_a_spawned_sessions_first_message_carries_the_brief_once(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch, {"spawned_from_session_id": "parent-1"})
+
+        await session.send("lint src/")
+        await session.send("and tests/")
+
+        first, second = self._sent(session)
+        assert first.startswith('lint src/\n\n<system-reminder>\n<sibling-brief session="parent-1"')
+        assert "Session planner (parent-1) started this session" in first
+        assert "end your turn with the question in plain text" in first
+        assert second == "and tests/"
+        session._event_pipeline.set_prompt.assert_any_call("lint src/")
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("record", "resumed"),
+        [({"spawned_from_session_id": "parent-1"}, True), ({}, False), (None, False)],
+    )
+    async def test_no_brief_for_a_resumed_or_unspawned_session(
+        self,
+        tmp_workspace,
+        monkeypatch,
+        record,
+        resumed,
+    ):
+        session = self._session(tmp_workspace, monkeypatch, record, resumed=resumed)
+
+        await session.send("hello")
+
+        assert self._sent(session) == ["hello"]
+
+    @pytest.mark.anyio
+    async def test_the_brief_is_resent_after_compaction_with_the_session_prompt(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(tmp_workspace, monkeypatch, {"spawned_from_session_id": "parent-1"})
+        session._projection = MagicMock()
+        session._projection.value.session_prompt = "Cite file:line."
+        session._projection.update.return_value = False
+        session._broadcaster = MagicMock(broadcast=AsyncMock())
+        session._event_pipeline.inject_event = AsyncMock()
+
+        await session._on_compact_start(CompactStartPayload(trigger="manual"))
+        await session._handle_event(_make_event(type="system", subtype="compact_boundary"))
+
+        (reminder,) = self._sent(session)
+        assert reminder.startswith("<system-reminder>\nCite file:line.\n\n<sibling-brief")
+
+    @pytest.mark.anyio
+    async def test_a_fork_of_a_spawned_session_is_told_once_the_brief_no_longer_applies(
+        self,
+        tmp_workspace,
+        monkeypatch,
+    ):
+        session = self._session(
+            tmp_workspace,
+            monkeypatch,
+            {"parent_session_id": "sib-0"},
+            resumed=True,
+        )
+        session._event_pipeline.get_historical_events.return_value = [
+            _make_event(
+                type="user",
+                subtype="message",
+                is_human=True,
+                content="go\n<sibling-brief x>",
+            ),
+        ]
+
+        await session.send("now for the user")
+        await session.send("again")
+
+        first, second = self._sent(session)
+        assert "<sibling-brief-ended>" in first
+        assert second == "again"

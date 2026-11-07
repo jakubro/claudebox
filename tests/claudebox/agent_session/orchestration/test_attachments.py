@@ -65,3 +65,30 @@ class TestAttachmentServiceResolve:
 
         with pytest.raises(AttachmentNotFound):
             svc.resolve("sid", "nonexistent.png")
+
+
+class TestAttachmentInline:
+    """Only raster pictures are shown inline on their own address; every other file downloads."""
+
+    @pytest.mark.parametrize("name", ["a.png", "a.PNG", "a.jpg", "a.jpeg", "a.gif", "a.webp"])
+    def test_a_raster_picture_is_inline(self, tmp_workspace, name):
+        assert _resolved(tmp_workspace, name).inline is True
+
+    @pytest.mark.parametrize("name", ["a.pdf", "a.svg", "a.bin"])
+    def test_anything_else_is_not(self, tmp_workspace, name):
+        assert _resolved(tmp_workspace, name).inline is False
+
+    @pytest.mark.parametrize("name", ["a.png", "a.jpg", "a.gif", "a.webp"])
+    def test_the_proxy_keeps_every_inline_type_inline(self, tmp_workspace, name):
+        from claudebox.core.http import INLINE_MEDIA_TYPES
+
+        assert _resolved(tmp_workspace, name).media_type in INLINE_MEDIA_TYPES
+
+
+def _resolved(tmp_workspace, name: str) -> AttachmentInfo:
+    ws = Workspace(start_dir=tmp_workspace)
+    attachments = ws.ensure_session("sid").path / "attachments"
+    attachments.mkdir(parents=True, exist_ok=True)
+    (attachments / name).write_bytes(b"fake")
+
+    return AttachmentService(ws).resolve("sid", name)

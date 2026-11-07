@@ -34,6 +34,7 @@ const HIDDEN = [
   'tu_skill',
   'tu_bash_ro',
   'tu_session_read',
+  'tu_session_list',
   'tu_list_res',
   'tu_read_res',
   'tu_read_res_dir',

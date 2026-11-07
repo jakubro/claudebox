@@ -205,7 +205,7 @@ test.describe('Boards Panel', () => {
     await mockBoardsAPI(page)
   })
 
-  test('Alt+6 toggles boards panel', async ({ page }) => {
+  test('Alt+7 toggles boards panel', async ({ page }) => {
     // SPEC: panel-boards:panel
     await openSession(page)
 
@@ -213,10 +213,10 @@ test.describe('Boards Panel', () => {
     const panel = page.locator('[data-testid="panel-boards"]')
     await expect(panel).toBeVisible()
 
-    await page.keyboard.press('Alt+6')
+    await page.keyboard.press('Alt+7')
     await expect(panel).not.toBeVisible()
 
-    await page.keyboard.press('Alt+6')
+    await page.keyboard.press('Alt+7')
     await expect(panel).toBeVisible()
   })
 
@@ -297,7 +297,7 @@ test.describe('Boards Panel', () => {
     const { y: bookmarksY } = await bookmarksIcon.boundingBox()
     expect(boardsY).toBeGreaterThan(bookmarksY)
 
-    expect(await boardsIcon.getAttribute('title')).toBe('Boards (Alt+6)')
+    expect(await boardsIcon.getAttribute('title')).toBe('Boards (Alt+7)')
   })
 
   // SPEC: panel-boards:meta-refresh

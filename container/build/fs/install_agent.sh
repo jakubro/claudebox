@@ -18,3 +18,9 @@ mise install \
   export UV_PROJECT_ENVIRONMENT=/opt/claudebox/.venv
   uv sync --extra langgraph-all
 )
+
+# What this build resolved, readable back from the image
+{
+  echo "claude-code $(mise exec -- claude --version)"
+  uv pip freeze --python /opt/claudebox/.venv/bin/python
+} >/opt/claudebox/resolved.txt

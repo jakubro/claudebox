@@ -47,6 +47,8 @@ just test-py         # pytest tests/, one worker per core (-n 0 runs serially)
 just test-py-cov     # pytest tests/ with coverage
 ```
 
+Every text file opened, read or written names `encoding="utf-8"`, and `just lint` enforces it beyond the calls ruff can type.
+
 `just install-py` installs the core dev surface. The Tier 1 Anthropic integration test (`tests/claudebox/agent_session/test_runtime_langgraph_providers.py::TestTier1AnthropicIntegration`) needs the `langchain-anthropic` provider package, behind the `[anthropic]` extra — install it explicitly to run that test locally; without it, the test skips via `pytest.importorskip`:
 
 ```bash
@@ -63,9 +65,11 @@ Linting and auto-fix are whole-repo only: `just lint` runs ruff check + ruff for
 
 jscpd scans Python and JS/CSS separately, test files included, both runs against the committed `.jscpd-baseline.json`. `just lint` fails on a clone the baseline does not list, naming both sides, and on an accepted clone with no reason in `.jscpd-reasons.json` or a reason with no clone. A new clone is removed, or accepted: `just dupes` refreshes the baseline, prints every clone and lists each accepted one still lacking a reason. The jscpd version is pinned exactly in `package.json`, because the baseline's fingerprints are that version's format.
 
-`architecture-drift-check.js` checks ARCHITECTURE.md's fenced tree/module-map blocks and HTTP route tables against the filesystem and the registered routers, both directions - an entry naming a file that doesn't exist and a real file the doc omits are both failures. Its own fixture tests (`architecture-drift-check.test.js`, run via `node --test`) run ahead of it in `just lint`.
+`architecture-drift-check.js` checks ARCHITECTURE.md's fenced tree/module-map blocks, drawn in ASCII with `|-- `, `` `-- `` and `|   `, and HTTP route tables against the filesystem and the registered routers, both directions - an entry naming a file that doesn't exist and a real file the doc omits are both failures. Its own fixture tests (`architecture-drift-check.test.js`, run via `node --test`) run ahead of it in `just lint`.
 
 `tests/lint/test_image_layer_table_drift.py` checks ARCHITECTURE.md's image-layer table against the Containerfile's real install steps - a fifth install layer, or one the table omits, fails it.
+
+`just pins-check` runs in `just lint`: a new download in `bin/install.sh` or an image script needs a row in `etc/host-pins.txt` or `container/build/image-pins.txt` (or a `float` declaration with its reason), and is added or changed with `just pins-bump NAME VERSION` - never by editing a checksum by hand.
 
 ### Frontend (vite + vitest)
 
@@ -817,10 +821,19 @@ just update-docs-captures  # re-record every one of them
 - Captures live beside the pages that embed them, in an `images/` directory next to the page (`docs/features/images/`, `docs/guide/images/`), one PNG per capture, named for what it shows. The file Playwright writes IS the committed artifact - the `docs` project's `snapshotPathTemplate` points there, so nothing is copied by hand.
 - ✅ **Always** pass the snapshot name as an array (`['features', 'images', 'x.png']`). A slash-bearing string is sanitised and the capture lands flat in `docs/`.
 - ✅ **Always** compare at the default zero tolerance. The visual suite's one-percent allowance is for antialiasing; a docs capture that drifts is a stale picture, and widening the tolerance hides exactly the staleness the gate exists to catch.
-- ✅ **Always** drive state from a fixture with fixed timestamps. Anything reading the wall clock - a running turn's elapsed counter above all - moves between runs and cannot be captured.
+- ✅ **Always** drive state from a fixture with fixed timestamps, and freeze the page's clock with `page.clock.install({ time })` before capturing anything that reads it - a running turn's elapsed counter above all.
 - 🚫 **Never** mask a region: a mask paints a solid box into a PNG that ships. Choose a state with nothing live in frame instead.
 - 🚫 **Never** capture a panel in its empty or error state unless the empty state is the subject.
-- Four captures per page is the ceiling, not a quota, and content is invented - no real workspace, employer or personal vocabulary, and no `foo`/`test123` placeholders either.
+- Content is invented - no real workspace, employer or personal vocabulary, and no `foo`/`test123` placeholders either.
+
+### Documentation Voice
+
+The site pages and the README state what claudebox does, in a neutral register.
+
+- ✅ **Always** state what a feature does, what appears on screen, or what to run.
+- ✅ **Always** give a heading the name of what its section contains.
+- 🚫 **Never** describe an audience: what people, users or readers do, want, reach for or configure first.
+- 🚫 **Never** write a line whose job is to persuade - a slogan, a closing flourish, a contrast with a terminal.
 
 ### Principles
 

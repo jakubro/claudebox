@@ -202,6 +202,7 @@ lint:
     {{ UV_RUN }} deptry src 2>&1 | tee -a /tmp/claudebox--lint.log
     PYTHONPATH=src {{ UV_RUN }} lint-imports --no-logo --cache-dir /tmp/.import-linter-claudebox 2>&1 | tee -a /tmp/claudebox--lint.log
     {{ UV_RUN }} python scripts/python-guidelines-audit.py 2>&1 | tee -a /tmp/claudebox--lint.log
+    {{ UV_RUN }} python scripts/pins.py check 2>&1 | tee -a /tmp/claudebox--lint.log
     npx biome check 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/frontend-guidelines-audit.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
     node scripts/spec-coverage.js --verbose 2>&1 | tee -a /tmp/claudebox--lint.log
@@ -215,6 +216,14 @@ lint:
         || { {{ UV_RUN }} python scripts/new_clones.py /tmp/claudebox--jscpd-js/jscpd-report.json \
         | tee -a /tmp/claudebox--lint.log; exit 1; }
     just clone-reasons 2>&1 | tee -a /tmp/claudebox--lint.log
+
+# Check the pin manifests offline - rows well formed, every download pinned
+pins-check:
+    {{ UV_RUN }} python scripts/pins.py check
+
+# Set a pin's version and record its downloads' digests (network); base-image takes an ubuntu tag
+pins-bump NAME VERSION:
+    {{ UV_RUN }} python scripts/pins.py bump {{ NAME }} {{ VERSION }}
 
 # Refresh the clone baseline, print every clone, and list each accepted one still lacking a reason
 dupes:

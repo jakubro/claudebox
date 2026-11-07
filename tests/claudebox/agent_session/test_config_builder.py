@@ -52,7 +52,7 @@ class TestBuildSdkOptions:
 
         assert opts.env == {
             "FOO": "bar",
-            "CLAUDE_CODE_TERMINAL_MCP_TOOLS": "mcp__claudebox__needs_user",
+            "CLAUDE_CODE_TERMINAL_MCP_TOOLS": "mcp__claudebox__needs_user,mcp__claudebox__port_open",
         }
 
     def test_bundled_cli_still_reads_the_terminal_tools_variable(self):

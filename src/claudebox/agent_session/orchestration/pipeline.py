@@ -88,6 +88,8 @@ class EventPipeline:
         # Per-parent dedup keys for published nested events, mapped to whether the claiming copy
         # was tailed (source_file set) or live. Seeded from history on resume. See _process_event.
         self._seen_nested_keys: dict[tuple[str, str, str], bool] = {}
+        # A sibling's turn end can reach the runtime twice (a held copy, a retried delivery); one shows.
+        self._seen_delivery_ids: set[str] = set()
 
         # Buffering before session_id available
         self._buffer: list[PublishedEvent] = []
@@ -533,6 +535,8 @@ class EventPipeline:
             if event.parent_tool_use_id is not None:
                 key = self._nested_dedup_key(event, event.parent_tool_use_id)
                 self._seen_nested_keys.setdefault(key, event.source_file is not None)
+            elif delivery_id := _delivery_id(event):
+                self._seen_delivery_ids.add(delivery_id)
 
         await self._event_log.open()
 
@@ -571,6 +575,11 @@ class EventPipeline:
                 self._seen_nested_keys[key] = is_tailed
             elif claimed_by_tailed != is_tailed:
                 return
+        elif delivery_id := _delivery_id(event):
+            if delivery_id in self._seen_delivery_ids:
+                return
+
+            self._seen_delivery_ids.add(delivery_id)
 
         await self._event_log.append(event)  # ty: ignore[unresolved-attribute]
         await self._on_event(event)
@@ -756,3 +765,10 @@ class EventPipeline:
         if self._event_log:
             await self._event_log.close()
             self._event_log = None
+
+
+def _delivery_id(event: PublishedEvent) -> str | None:
+    if event.subtype != EventSubtype.SIBLING_MESSAGE:
+        return None
+
+    return (event.message_data or {}).get("delivery_id")

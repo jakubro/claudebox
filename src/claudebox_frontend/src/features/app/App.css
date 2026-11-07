@@ -29,6 +29,8 @@
   /* Interrupted-turn border - shared by the transcript's .turn-interrupted and the work panel's
      matching block border, so the two columns can never mean two different yellows. */
   --interrupt-border-color: #ffeb3b;
+  --diff-removed-bg: rgba(244, 67, 54, 0.1);
+  --diff-added-bg: rgba(76, 175, 80, 0.1);
   --block-strip-btn-width: 26px;
   --block-strip-btn-height: 16px;
   --block-strip-gap: 4px;

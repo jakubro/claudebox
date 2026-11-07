@@ -89,28 +89,24 @@ describe('useKeyboardShortcuts', () => {
       expect(handleTogglePanel).toHaveBeenCalledWith('tasks')
     })
 
-    it('Alt+5 toggles bookmarks panel', () => {
+    it.each([
+      ['5', 'crons'],
+      ['6', 'bookmarks'],
+      ['7', 'boards'],
+      ['8', 'usage'],
+      ['9', 'mcp'],
+    ])('Alt+%s toggles the %s panel', (digit, panel) => {
       renderHook(() => useKeyboardShortcuts(createProps()))
-      fireKey('5', { altKey: true })
-      expect(handleTogglePanel).toHaveBeenCalledWith('bookmarks')
+      fireKey(digit, { altKey: true })
+      expect(handleTogglePanel.mock.calls).toEqual([[panel]])
     })
 
-    it('Alt+6 toggles boards panel', () => {
+    it('no Alt+digit toggles the skills panel', () => {
       renderHook(() => useKeyboardShortcuts(createProps()))
-      fireKey('6', { altKey: true })
-      expect(handleTogglePanel).toHaveBeenCalledWith('boards')
-    })
-
-    it('Alt+8 toggles mcp panel', () => {
-      renderHook(() => useKeyboardShortcuts(createProps()))
-      fireKey('8', { altKey: true })
-      expect(handleTogglePanel).toHaveBeenCalledWith('mcp')
-    })
-
-    it('Alt+9 toggles commands panel', () => {
-      renderHook(() => useKeyboardShortcuts(createProps()))
-      fireKey('9', { altKey: true })
-      expect(handleTogglePanel).toHaveBeenCalledWith('commands')
+      for (const digit of '1234567890') {
+        fireKey(digit, { altKey: true })
+      }
+      expect(handleTogglePanel).not.toHaveBeenCalledWith('commands')
     })
   })
 

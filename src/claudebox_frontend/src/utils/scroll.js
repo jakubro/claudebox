@@ -25,6 +25,26 @@ export function computeScrollDestination(container, target, edge = 'top') {
 }
 
 /**
+ * Align `target` with the top of `container` at once, unless some of it already shows.
+ *
+ * @param {HTMLElement | null} container - Scrollable element; nothing happens without one.
+ * @param {HTMLElement} target - Element to align.
+ * @param {function} [markProgrammaticScroll] - Called before the write, so it reads as no user scroll.
+ */
+export function alignOffscreen(container, target, markProgrammaticScroll) {
+  if (!container) {
+    return
+  }
+  const box = target.getBoundingClientRect()
+  const view = container.getBoundingClientRect()
+  if (box.bottom > view.top && box.top < view.bottom) {
+    return
+  }
+  markProgrammaticScroll?.()
+  container.scrollTop = computeScrollDestination(container, target, 'top')
+}
+
+/**
  * Smooth-scroll a container so that target element's edge aligns with viewport edge.
  *
  * @param {HTMLElement} container - Scrollable element.

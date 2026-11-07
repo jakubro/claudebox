@@ -47,7 +47,7 @@ def touch_file(path: str | Path, content: str = "") -> Path:
         return path
 
     touch_dir(path.parent)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
 
     return path
 
@@ -177,7 +177,7 @@ def _collect_ignore_specs(path: Path, ignore_filenames: list[str]) -> list[tuple
         if not file.is_file():
             continue
 
-        lines = file.read_text().splitlines()
+        lines = file.read_text(encoding="utf-8").splitlines()
         spec = PathSpec.from_lines("gitignore", lines)
 
         rv.append((path, spec))

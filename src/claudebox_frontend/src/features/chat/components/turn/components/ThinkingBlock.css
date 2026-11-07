@@ -64,6 +64,7 @@
 .thinking-content-inline {
   color: #777777;
   word-break: break-word;
+  min-width: 0;
 }
 
 /* Reuse turn-text spacing for markdown content */

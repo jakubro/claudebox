@@ -17,7 +17,7 @@ from claudebox import (
     serialization,
 )
 from claudebox.constants import CONTAINER_API_DIR, CORE_DIR
-from . import files, handlers, session
+from . import files, handlers, session, tunnel
 
 
 def run_container_api(*args, **cli_args) -> None:
@@ -78,6 +78,7 @@ def api_lifespan(workspace: str, **cli_args) -> Callable:
             await stack.enter_async_context(session.managed(workspace=workspace, **cli_args)(app))
             assert session.registry is not None
             await stack.enter_async_context(files.managed(session.registry.workspace)(app))
+            await stack.enter_async_context(tunnel.managed()(app))
             yield
 
     return handler

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ..boards import BoardService
     from ..containers import ContainerProxyClient, ContainerService
     from ..files import FileService
+    from ..ports import PortService
     from ..sessions import SessionService
     from ..ui_state import UIStateService
 
@@ -41,6 +42,7 @@ class WorkspaceService:
         from ..boards import BoardService
         from ..containers import ContainerService
         from ..files import FileService
+        from ..ports import PortService
         from ..sessions import SessionService, SpawnListener
         from ..ui_state import UIStateService
 
@@ -58,6 +60,7 @@ class WorkspaceService:
         self._session_service: SessionService | None = None
         self._board_service: BoardService | None = None
         self._file_service: FileService | None = None
+        self._port_service: PortService | None = None
         self._spawn_listener: SpawnListener | None = None
 
         if not self.available:
@@ -99,11 +102,19 @@ class WorkspaceService:
 
         self._file_service = FileService(workspace, executor=executors.listing)
 
+        self._port_service = PortService(
+            workspace=workspace,
+            containers=self._container_service,
+            config=self._config,
+            state_executor=executors.state,
+        )
+
         self._spawn_listener = SpawnListener(
             workspace=workspace,
             sessions=self._session_service,
             containers=self._container_service,
             socket_dir=self._config.config_dir / SESSIONS_DIR_NAME,
+            ports=self._port_service,
         )
 
     # Sub-service access
@@ -138,6 +149,13 @@ class WorkspaceService:
         return self._board_service
 
     @property
+    def port_service(self) -> PortService:
+        self._require_available("port_service")
+        assert self._port_service is not None
+
+        return self._port_service
+
+    @property
     def file_service(self) -> FileService:
         self._require_available("file_service")
         assert self._file_service is not None
@@ -154,7 +172,7 @@ class WorkspaceService:
     # ----------------------------------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Start the container, session, board and spawn-listener services when available."""
+        """Start the container, session, board, port and spawn-listener services when available."""
 
         self._logger.debug("Starting workspace service...", **self._log_context)
 
@@ -162,6 +180,7 @@ class WorkspaceService:
             await self.container_service.start()
             await self.session_service.start()
             await self.board_service.start()
+            await self.port_service.start()
             await self._start_spawn_listener()
 
         self._logger.info("Workspace service started", **self._log_context)
@@ -185,13 +204,14 @@ class WorkspaceService:
             )
 
     async def stop(self) -> None:
-        """Stop the spawn listener, board, session, and container services."""
+        """Stop the spawn listener, port, board, session, and container services."""
 
         self._logger.debug("Stopping workspace service...", **self._log_context)
 
         if self.available:
             assert self._spawn_listener is not None
             await self._spawn_listener.stop()
+            await self.port_service.stop()
             await self.board_service.stop()
             await self.session_service.stop()
             await self.container_service.stop()

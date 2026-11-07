@@ -99,5 +99,47 @@ class TestRunPortInUse:
             if line.startswith("run ")
         ]
         published = run.split("--publish ")[1].split(" ")[0]
+        assert published.startswith("127.0.0.1:")
         assert published.endswith(":80")
-        assert published != f"{held}:80"
+        assert published != f"127.0.0.1:{held}:80"
+
+
+# SPEC: container:published-port-loopback
+class TestRunPublishesOnLoopback:
+    """A port the settings publish listens on loopback unless its entry names a wider bind."""
+
+    @pytest.mark.parametrize(
+        ("entry", "prefix", "container"),
+        [
+            ("{port} = 80", "127.0.0.1", "80"),
+            ('{port} = {{ container = 90, bind = "0.0.0.0" }}', "0.0.0.0", "90"),
+        ],
+        ids=["default", "every-interface"],
+    )
+    def test_the_publish_names_its_address(
+        self,
+        tmp_path,
+        run_claudebox,
+        record_dir,
+        entry,
+        prefix,
+        container,
+    ):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+
+        (tmp_path / ".workspace").touch()
+        (tmp_path / ".claudebox").mkdir()
+        (tmp_path / ".claudebox" / "settings.toml").write_text(
+            "[ports]\n" + entry.format(port=port) + "\n",
+        )
+
+        run_claudebox(["run", "--", "-p", "x"], cwd=tmp_path, timeout=60)
+
+        (run,) = [
+            line
+            for line in (record_dir / "podman.log").read_text().splitlines()
+            if line.startswith("run ")
+        ]
+        assert f"--publish {prefix}:{port}:{container}" in run

@@ -1,16 +1,16 @@
-# When something goes wrong
+# Troubleshooting
 
-Roughly in the order a first run hits them.
+Problems are listed roughly in the order a first run meets them.
 
-## Start here
+## `claudebox doctor`
 
 ```bash
 claudebox doctor
 ```
 
-It runs an ordered set of environment checks and prints one row each - container runtime, `uv`, the daemon over HTTP, the daemon's service unit, the watchdog timer, the library directory, your profile, whether a session would delete your workspace or a mount under `/tmp`, the workspace marker, permissions, and free space in `/tmp`. A tick passed, a cross failed, a circle is informational (no profile configured, no workspace marker). It exits non-zero if anything failed, so it is safe to put in a script.
+It runs an ordered set of environment checks and prints one row each - container runtime, `uv`, the daemon over HTTP, the daemon's service unit, the watchdog timer, the library directory, the profile, whether a session would delete the workspace or a mount under `/tmp`, the workspace marker, permissions, and free space in `/tmp`. A tick passed, a cross failed, a circle is informational (no profile configured, no workspace marker). It exits non-zero if anything failed, so it is safe to put in a script.
 
-Add `-v` to see the probe behind each row when a result surprises you.
+`-v` shows the probe behind each row.
 
 ## No container runtime
 
@@ -18,9 +18,9 @@ The installer does not supply podman or docker, and does not check for one. If n
 
 For rootless podman specifically, `podman system migrate` and a set `XDG_RUNTIME_DIR` resolve most socket errors.
 
-## The first run takes a while
+## The first run is slow
 
-Expected once. The first install builds a multi-layer container image - five to fifteen minutes depending on network and CPU - and later runs reuse the cached layers. `claudebox build --layer agent` rebuilds only the agent layer afterwards, which is the fast path for picking up a new agent release; `--layer all` discards every cache.
+Only the first one is. The first install builds a multi-layer container image - five to fifteen minutes depending on network and CPU - and later runs reuse the cached layers. `claudebox build --layer agent` rebuilds only the agent layer afterwards, which is the fast path for picking up a new agent release; `--layer all` discards every cache.
 
 ## A session says it is not logged in
 
@@ -28,7 +28,7 @@ The welcome page says so when a workspace has no login, and a message sent there
 
 ## The browser warns about the certificate
 
-Expected, once per browser. The daemon is fronted by Caddy with a self-signed certificate. Accept it and it stays accepted.
+Expected, once per browser. The daemon is fronted by Caddy with a self-signed certificate. Accepted once, it stays accepted.
 
 ## Nothing is served at all
 
@@ -44,11 +44,15 @@ On macOS and anywhere else without systemd the service is not installed, and the
 claudeboxd
 ```
 
-If the port is taken, either free it or move: `claudeboxd --port <other>`.
+If the port is taken, free it or move the daemon: `claudeboxd --port <other>`.
 
 ## A session refuses to start under /tmp
 
 A session's container replaces its `/tmp` with the session's own temp directory, so a session refuses to start - naming the path - when the workspace or a `[mounts]` target sits at or under `/tmp`, which that would delete. Move the workspace, or set `[env] CLAUDEBOX_NO_TMP_REMAP = "1"` to leave the container's own `/tmp` alone. The tmp mounts row of `claudebox doctor` reports the same thing.
+
+## The installer warns that the watchdog runs unsandboxed
+
+The watchdog that restarts an unresponsive daemon runs under systemd's sandboxing options where the host allows them. On a host where a user unit cannot be sandboxed, the installer turns them off for the watchdog alone, says so, and the watchdog still runs; an install on a host that can sandbox it turns them back on.
 
 ## A container will not start
 
@@ -57,6 +61,10 @@ Run the CLI verbosely to see the full runtime command it issued, then read the l
 ```bash
 claudebox --verbose run
 ```
+
+## A dev server is reachable on localhost but not from another machine
+
+A port listed under `[ports]` listens on `127.0.0.1` only. To reach it from a phone, another machine or another container through this machine's address, name the address on its entry - `8080 = { container = 80, bind = "0.0.0.0" }` for every interface - and start a new session; the bind takes effect when the container is created.
 
 ## Disk fills up
 
@@ -84,15 +92,15 @@ claudebox logs           # the daemon
 claudebox logs all       # daemon plus every container, prefixed by source
 ```
 
-The same stream is in the interface, on the Logs panel (`Alt+0`), which follows the session you are looking at.
+The same stream is in the interface, on the Logs panel (`Alt+0`), which follows the session in view.
 
-![The Logs panel listing four entries, each with its time, level, logger and message, an error among them](images/troubleshooting-logs.png)
+![The Logs strip above the footer listing four entries, each with its time, level, logger and message, an error among them, the session's conversation above it](images/troubleshooting-logs.png)
 
 ## Find-on-page misses older messages
 
-Not a fault. The chat and the terminal column build only the entries near the viewport, so long sessions stay fast, and the browser can only search or print what is currently built. Scroll to the region first. For the transcript, the minimap and `Alt+Up` / `Alt+Down` get you there faster.
+Not a fault. The chat and the terminal column build only the entries near the viewport, so long sessions stay fast, and the browser can only search or print what is currently built. Scroll to the region first. In the transcript, the minimap and `Alt+Up` / `Alt+Down` reach a region faster.
 
-## Details
+## Related pages
 
 - [CLI reference](../reference/cli.md) - every verb and flag
 - [Configuration reference](../reference/configuration.md)

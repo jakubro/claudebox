@@ -61,6 +61,27 @@ describe('WelcomeContent', () => {
     expect(shortcuts).toHaveTextContent('Help')
   })
 
+  it('lists the panel keys clockwise from Sessions', () => {
+    render(<WelcomeContent />)
+
+    const rows = [
+      ...screen.getByTestId('welcome-shortcuts').querySelectorAll('.welcome-shortcut-row'),
+    ]
+      .map(row => row.textContent)
+      .filter(text => /^Alt\+\d/.test(text))
+    expect(rows).toEqual([
+      'Alt+1Sessions',
+      'Alt+2Todos',
+      'Alt+3Stash',
+      'Alt+4Tasks',
+      'Alt+5Crons',
+      'Alt+6Bookmarks',
+      'Alt+7Boards',
+      'Alt+8Usage',
+      'Alt+9MCP',
+    ])
+  })
+
   it('applies workspace accent color to name when set', () => {
     mockSessionsCtx.workspaceColor = '#1a2332'
 

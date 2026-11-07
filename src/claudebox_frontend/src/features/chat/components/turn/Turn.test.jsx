@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TurnRoutingMode } from '../../../../utils/eventProcessing'
+import { runningTurnStart } from '../../../../utils/runningTurnStart'
 import Turn from './Turn'
 import { TurnCollapseProvider } from './TurnCollapseContext'
 import { TurnRoutingContext } from './TurnRoutingContext'
@@ -679,6 +680,106 @@ describe('Turn', () => {
     })
   })
 
+  describe('the time a turn shows', () => {
+    const header = () => document.querySelector('.turn-duration').textContent
+
+    it('is the recorded time once the turn has finished, in its header and after "worked for"', () => {
+      const events = [
+        textEvent('Response start', '2025-01-18T12:00:01.100Z'),
+        textEvent('Response end', '2025-01-18T12:00:01.900Z'),
+      ]
+
+      render(<Turn events={events} recordedDurationMs={14600} />)
+
+      expect(header()).toBe('14s')
+      expect(screen.getByText('worked for 14s')).toBeInTheDocument()
+    })
+
+    it('is the span between its first and last step when the agent recorded none', () => {
+      const events = [
+        textEvent('Response start', '2025-01-18T12:00:01Z'),
+        textEvent('Response end', '2025-01-18T12:00:06Z'),
+      ]
+
+      render(<Turn events={events} />)
+
+      expect(header()).toBe('5s')
+    })
+
+    it('counts a running turn from when its message was sent', () => {
+      vi.setSystemTime(new Date('2025-01-18T12:00:10Z'))
+      const events = [textEvent('Response start', '2025-01-18T12:00:08Z')]
+
+      render(
+        <Turn
+          events={events}
+          userMessageTime="2025-01-18T12:00:00Z"
+          recordedDurationMs={500}
+          isActive={true}
+          showProgress={true}
+        />,
+      )
+      expect(header()).toBe('10s')
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(header()).toBe('12s')
+    })
+
+    it("shows no time on a running turn's working line", () => {
+      vi.setSystemTime(new Date('2025-01-18T12:00:03Z'))
+
+      render(
+        <Turn
+          events={[]}
+          pending={true}
+          showProgress={true}
+          sentAt={Date.parse('2025-01-18T12:00:00Z')}
+        />,
+      )
+      const working = screen.getByTestId('turn-progress-working')
+      expect(working).toHaveTextContent(/^Working\.\.\.$/)
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(working).toHaveTextContent(/^Working\.\.\.$/)
+    })
+
+    it('counts from when this tab sent the message, ahead of the time recorded for it', () => {
+      vi.setSystemTime(new Date('2025-01-18T12:00:10Z'))
+      const events = [textEvent('Response start', '2025-01-18T12:00:08Z')]
+
+      render(
+        <Turn
+          events={events}
+          userMessageTime="2025-01-18T12:00:05Z"
+          sentAt={Date.parse('2025-01-18T12:00:00Z')}
+          isActive={true}
+          showProgress={true}
+        />,
+      )
+
+      expect(header()).toBe('10s')
+      expect(screen.getByTestId('turn-progress-working')).toHaveTextContent(/^Working\.\.\.$/)
+    })
+
+    it('shows no time while stopping', () => {
+      render(
+        <Turn
+          events={[]}
+          pending={true}
+          showProgress={true}
+          isStopping={true}
+          sentAt={Date.now() - 4000}
+        />,
+      )
+
+      expect(screen.getByTestId('turn-progress-stopping')).toHaveTextContent(/^Stopping\.\.\.$/)
+    })
+  })
+
   describe('live ticking duration', () => {
     it('updates duration every second when active', () => {
       const events = timedTextEvents(3000)
@@ -694,6 +795,43 @@ describe('Turn', () => {
       })
 
       expect(durationEl.textContent).not.toBe(initialText)
+    })
+  })
+
+  describe('the running start handed to the footer', () => {
+    const sentAt = Date.parse('2025-01-18T12:00:00Z')
+
+    beforeEach(() => {
+      vi.setSystemTime(sentAt + 3000)
+    })
+
+    it('holds its start while it runs and releases it once it stops', () => {
+      const { rerender } = render(
+        <Turn events={[]} pending={true} showProgress={true} sentAt={sentAt} sharesRunningStart />,
+      )
+      expect(runningTurnStart()).toBe(sentAt)
+
+      rerender(
+        <Turn events={[]} pending={true} showProgress={false} sentAt={sentAt} sharesRunningStart />,
+      )
+
+      expect(runningTurnStart()).toBeNull()
+    })
+
+    it('releases its start when it leaves the transcript', () => {
+      const { unmount } = render(
+        <Turn events={[]} pending={true} showProgress={true} sentAt={sentAt} sharesRunningStart />,
+      )
+
+      unmount()
+
+      expect(runningTurnStart()).toBeNull()
+    })
+
+    it('holds nothing when not marked as the transcript running turn', () => {
+      render(<Turn events={[]} pending={true} showProgress={true} sentAt={sentAt} />)
+
+      expect(runningTurnStart()).toBeNull()
     })
   })
 
